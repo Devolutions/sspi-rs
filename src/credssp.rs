@@ -122,7 +122,9 @@ impl SspiProvider {
         let mut ntlm_version = [0x00; NTLM_VERSION_SIZE];
         ntlm_version.clone_from_slice(version.as_ref());
 
-        SspiProvider::NtlmContext(Ntlm::new(credentials, ntlm_version))
+        let mut ntlm_context = Ntlm::new(credentials);
+        ntlm_context.set_version(ntlm_version);
+        SspiProvider::NtlmContext(ntlm_context)
     }
 }
 

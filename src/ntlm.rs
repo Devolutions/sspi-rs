@@ -15,6 +15,8 @@ use crate::{
 };
 
 pub const NTLM_VERSION_SIZE: usize = 8;
+pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] = [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];
+
 pub const ENCRYPTED_RANDOM_SESSION_KEY_SIZE: usize = 16;
 
 const SIGNATURE_SIZE: usize = SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE + SIGNATURE_SEQ_NUM_SIZE;
@@ -82,7 +84,7 @@ struct AuthenticateMessage {
 }
 
 impl Ntlm {
-    pub fn new(credentials: Option<Credentials>, version: [u8; NTLM_VERSION_SIZE]) -> Self {
+    pub fn new(credentials: Option<Credentials>) -> Self {
         Self {
             negotiate_message: None,
             challenge_message: None,
@@ -91,7 +93,7 @@ impl Ntlm {
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
             identity: credentials.map(std::convert::Into::into),
-            version,
+            version: DEFAULT_NTLM_VERSION,
 
             send_single_host_data: false,
 
@@ -100,6 +102,10 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
         }
+    }
+
+    pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
+        self.version = version;
     }
 }
 
