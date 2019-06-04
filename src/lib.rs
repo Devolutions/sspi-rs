@@ -3,7 +3,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::useless_attribute))]
 
 mod ber;
-mod encryption;
+mod crypto;
 
 pub mod credssp;
 pub mod ntlm;

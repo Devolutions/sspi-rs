@@ -6,7 +6,7 @@ use rand::{rngs::OsRng, Rng};
 
 use self::ts_request::{TsRequest, NONCE_SIZE};
 use crate::{
-    encryption::compute_sha256,
+    crypto::compute_sha256,
     ntlm::{Ntlm, NTLM_VERSION_SIZE},
     sspi::{self, CredentialsBuffers, PackageType, Sspi, SspiError, SspiErrorType, SspiOk},
     Credentials,

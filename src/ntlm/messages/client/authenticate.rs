@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use rand::{rngs::OsRng, Rng};
 
 use crate::{
-    encryption::rc4::Rc4,
+    crypto::rc4::Rc4,
     ntlm::{
         messages::{
             computations::*, MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, NTLM_SIGNATURE,

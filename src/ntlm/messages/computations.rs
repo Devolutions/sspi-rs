@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use rand::{rngs::OsRng, Rng};
 
 use crate::{
-    encryption::{compute_hmac_md5, compute_md4, compute_md5, HASH_SIZE},
+    crypto::{compute_hmac_md5, compute_md4, compute_md5, HASH_SIZE},
     ntlm::{messages::av_pair::*, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE},
     sspi::{self, bytes_to_utf16_string, string_to_utf16, CredentialsBuffers, SspiError, SspiErrorType},
 };

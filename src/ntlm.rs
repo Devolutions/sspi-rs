@@ -9,7 +9,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 use self::messages::{client, server};
 use crate::{
-    encryption::{compute_hmac_md5, rc4::Rc4, HASH_SIZE},
+    crypto::{compute_hmac_md5, rc4::Rc4, HASH_SIZE},
     sspi::{self, CredentialsBuffers, PackageType, Sspi, SspiError, SspiErrorType},
     Credentials,
 };

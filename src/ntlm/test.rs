@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 
 use crate::{
-    encryption::{rc4, HASH_SIZE},
+    crypto::{rc4, HASH_SIZE},
     ntlm::{
         messages::test::{get_test_identity, NTLM_VERSION},
         AuthenticateMessage, ChallengeMessage, Mic, NegotiateFlags, NegotiateMessage, Ntlm, NtlmState, CHALLENGE_SIZE,

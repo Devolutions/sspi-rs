@@ -1,6 +1,6 @@
-use crate::encryption::HASH_SIZE;
+use crate::crypto::HASH_SIZE;
 use crate::{
-    encryption::rc4::Rc4,
+    crypto::rc4::Rc4,
     ntlm::{
         messages::{computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC},
         Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
