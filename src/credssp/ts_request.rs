@@ -3,9 +3,9 @@ mod test;
 
 use std::io::{self, Read};
 
+use super::CredSspMode;
 use crate::{
     ber,
-    credssp::NegotiationRequestFlags,
     sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
 };
 
@@ -244,13 +244,12 @@ impl TsRequest {
 
 pub fn write_ts_credentials(
     identity: &CredentialsBuffers,
-    nego_flags: NegotiationRequestFlags,
+    cred_ssp_mode: CredSspMode,
 ) -> io::Result<Vec<u8>> {
     let empty_identity = CredentialsBuffers::default();
-    let identity = if nego_flags.contains(NegotiationRequestFlags::RESTRICTED_ADMIN_MODE_REQUIRED) {
-        &empty_identity
-    } else {
-        identity
+    let identity = match cred_ssp_mode {
+        CredSspMode::WithCredentials => identity,
+        CredSspMode::CredentialLess => &empty_identity,
     };
 
     let ts_credentials_len = sizeof_ts_credentials(identity);

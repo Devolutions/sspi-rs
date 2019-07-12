@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 
 use super::*;
 use crate::{
-    credssp::NegotiationRequestFlags,
+    credssp::CredSspMode,
     sspi::{Credentials, CredentialsBuffers},
 };
 
@@ -523,8 +523,8 @@ fn encode_ts_credentials_with_one_symbol_user_and_password() {
     let expected_buffer = TS_CREDENTIALS_ONE_SYMBOL_USERNAME_AND_PASSWORD;
 
     let identity = &AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD;
-    let nego_flags = NegotiationRequestFlags::default();
-    let buffer = write_ts_credentials(&identity, nego_flags).unwrap();
+    let cred_ssp_mode = CredSspMode::WithCredentials;
+    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -543,8 +543,8 @@ fn encode_ts_credentials_with_strong_user_and_password() {
     let expected_buffer = TS_CREDENTIALS_STRONG_USERNAME_AND_PASSWORD;
 
     let identity = &AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD;
-    let nego_flags = NegotiationRequestFlags::default();
-    let buffer = write_ts_credentials(&identity, nego_flags).unwrap();
+    let cred_ssp_mode = CredSspMode::WithCredentials;
+    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -566,8 +566,8 @@ fn encode_ts_credentials_with_simple_username_and_domain_and_password() {
     let expected_buffer = TS_CREDENTIALS_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD;
 
     let identity = &AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD;
-    let nego_flags = NegotiationRequestFlags::default();
-    let buffer = write_ts_credentials(&identity, nego_flags).unwrap();
+    let cred_ssp_mode = CredSspMode::WithCredentials;
+    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -586,8 +586,8 @@ fn encode_ts_credentials_with_restricted_admin_mode_required() {
     let expected_buffer = TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED;
 
     let identity = &AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED;
-    let nego_flags = NegotiationRequestFlags::RESTRICTED_ADMIN_MODE_REQUIRED;
-    let buffer = write_ts_credentials(&identity, nego_flags).unwrap();
+    let cred_ssp_mode = CredSspMode::CredentialLess;
+    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }

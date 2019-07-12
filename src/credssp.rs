@@ -2,7 +2,6 @@ pub mod ts_request;
 
 use std::io;
 
-use bitflags::bitflags;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -15,20 +14,6 @@ use crate::{
     sspi::{self, CredentialsBuffers, PackageType, Sspi, SspiError, SspiErrorType, SspiOk},
     Credentials,
 };
-
-bitflags! {
-    /// Holds the negotiation protocol flags of the *request* message.
-    ///
-    /// # MSDN
-    ///
-    /// * [RDP Negotiation Request (RDP_NEG_REQ)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/902b090b-9cb3-4efc-92bf-ee13373371e3)
-    #[derive(Default)]
-    pub struct NegotiationRequestFlags: u8 {
-        const RESTRICTED_ADMIN_MODE_REQUIRED = 0x01;
-        const REDIRECTED_AUTHENTICATION_MODE_REQUIRED = 0x02;
-        const CORRELATION_INFO_PRESENT = 0x08;
-    }
-}
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
@@ -55,6 +40,15 @@ pub trait CredSsp {
     fn process(&mut self, ts_request: TsRequest) -> sspi::Result<CredSspResult>;
 }
 
+/// Indicates to the [`CredSspClient`](struct.CredSspClient.html) whether or not to transfer
+/// the credentials in the auth_info [`TsRequest`](struct.TsRequest.html) field.
+#[derive(Copy, Clone, Debug)]
+pub enum CredSspMode {
+    WithCredentials,
+    /// Indicates that the client requires credential-less logon over CredSSP (also known as "restricted admin mode").
+    CredentialLess,
+}
+
 /// Implements the CredSSP *client*. The client's credentials are to
 /// be securely delegated to the server.
 ///
@@ -67,7 +61,7 @@ pub struct CredSspClient {
     credentials: Credentials,
     version: Vec<u8>,
     public_key: Vec<u8>,
-    nego_flags: NegotiationRequestFlags,
+    cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
 }
 
@@ -163,7 +157,7 @@ impl CredSspClient {
         public_key: Vec<u8>,
         credentials: Credentials,
         version: Vec<u8>,
-        nego_flags: NegotiationRequestFlags,
+        cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::Initial,
@@ -171,7 +165,7 @@ impl CredSspClient {
             credentials,
             version,
             public_key,
-            nego_flags,
+            cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
     }
@@ -269,7 +263,7 @@ impl CredSsp for CredSspClient {
                         self.context
                             .as_mut()
                             .unwrap()
-                            .encrypt_ts_credentials(self.nego_flags)?,
+                            .encrypt_ts_credentials(self.cred_ssp_mode)?,
                     );
 
                     self.state = CredSspState::Final;
@@ -584,16 +578,13 @@ impl CredSspContext {
         Ok(())
     }
 
-    fn encrypt_ts_credentials(
-        &mut self,
-        nego_flags: NegotiationRequestFlags,
-    ) -> sspi::Result<Vec<u8>> {
+    fn encrypt_ts_credentials(&mut self, cred_ssp_mode: CredSspMode) -> sspi::Result<Vec<u8>> {
         let ts_credentials = ts_request::write_ts_credentials(
             self.sspi_context
                 .identity()
                 .as_ref()
                 .expect("Identity must be set from authenticate message"),
-            nego_flags,
+            cred_ssp_mode,
         )?;
 
         self.encrypt_message(&ts_credentials)
