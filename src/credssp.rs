@@ -1,7 +1,11 @@
 pub mod ts_request;
 
 use std::io;
+
 use bitflags::bitflags;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 use rand::{rngs::OsRng, Rng};
 
 use self::ts_request::{TsRequest, NONCE_SIZE};
@@ -25,6 +29,8 @@ bitflags! {
         const CORRELATION_INFO_PRESENT = 0x08;
     }
 }
+
+pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
 const HASH_MAGIC_LEN: usize = 38;
 const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
@@ -94,6 +100,37 @@ pub enum CredSspResult {
     Finished,
     /// Used as a result of  processing of authentication info by the server.
     ClientCredentials(Credentials),
+}
+
+/// The Early User Authorization Result PDU is sent from server to client
+/// and is used to convey authorization information to the client.
+/// This PDU is only sent by the server if the client advertised support for it
+/// by specifying the ['HYBRID_EX protocol'](struct.SecurityProtocol.htlm)
+/// of the [RDP Negotiation Request (RDP_NEG_REQ)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/902b090b-9cb3-4efc-92bf-ee13373371e3)
+/// and it MUST be sent immediately after the CredSSP handshake has completed.
+#[derive(Debug, FromPrimitive, ToPrimitive)]
+#[repr(u32)]
+pub enum EarlyUserAuthResult {
+    /// The user has permission to access the server.
+    Success = 0,
+    /// The user does not have permission to access the server.
+    AccessDenied = 5,
+}
+
+impl EarlyUserAuthResult {
+    pub fn from_buffer(mut stream: impl std::io::Read) -> Result<Self, io::Error> {
+        let result = stream.read_u32::<LittleEndian>()?;
+
+        EarlyUserAuthResult::from_u32(result).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Got invalid Early User Authorization Result",
+            )
+        })
+    }
+    pub fn to_buffer(&self, mut stream: impl std::io::Write) -> Result<(), io::Error> {
+        stream.write_u32::<LittleEndian>(self.to_u32().unwrap())
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
