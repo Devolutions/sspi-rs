@@ -6,10 +6,11 @@ use crate::sspi::CredentialsBuffers;
 use crate::{
     ntlm::{
         messages::{
-            av_pair::MsvAvFlags, computations::*, read_ntlm_header, try_read_version, MessageFields, MessageTypes,
+            av_pair::MsvAvFlags, computations::*, read_ntlm_header, try_read_version,
+            MessageFields, MessageTypes,
         },
-        AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState, ENCRYPTED_RANDOM_SESSION_KEY_SIZE,
-        MESSAGE_INTEGRITY_CHECK_SIZE,
+        AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
+        ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
     },
     sspi::{self, SspiError, SspiErrorType},
 };
@@ -60,7 +61,9 @@ fn check_state(state: NtlmState) -> sspi::Result<()> {
     }
 }
 
-fn read_header(mut buffer: impl io::Read) -> sspi::Result<(AuthenticateMessageFields, NegotiateFlags)> {
+fn read_header(
+    mut buffer: impl io::Read,
+) -> sspi::Result<(AuthenticateMessageFields, NegotiateFlags)> {
     let mut lm_challenge_response = MessageFields::new();
     let mut nt_challenge_response = MessageFields::new();
     let mut domain_name = MessageFields::new();
@@ -74,10 +77,11 @@ fn read_header(mut buffer: impl io::Read) -> sspi::Result<(AuthenticateMessageFi
     user_name.read_from(&mut buffer)?;
     workstation.read_from(&mut buffer)?;
     encrypted_random_session_key.read_from(&mut buffer)?;
-    let negotiate_flags =
-        NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?).unwrap_or_else(NegotiateFlags::empty);
+    let negotiate_flags = NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?)
+        .unwrap_or_else(NegotiateFlags::empty);
 
-    let negotiate_key_exchange = negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH);
+    let negotiate_key_exchange =
+        negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH);
     if negotiate_key_exchange && encrypted_random_session_key.buffer.is_empty()
         || !negotiate_key_exchange && !encrypted_random_session_key.buffer.is_empty()
     {
@@ -129,8 +133,12 @@ where
     message_fields.domain_name.read_buffer_from(&mut buffer)?;
     message_fields.user_name.read_buffer_from(&mut buffer)?;
     message_fields.workstation.read_buffer_from(&mut buffer)?;
-    message_fields.lm_challenge_response.read_buffer_from(&mut buffer)?;
-    message_fields.nt_challenge_response.read_buffer_from(&mut buffer)?;
+    message_fields
+        .lm_challenge_response
+        .read_buffer_from(&mut buffer)?;
+    message_fields
+        .nt_challenge_response
+        .read_buffer_from(&mut buffer)?;
     message_fields
         .encrypted_random_session_key
         .read_buffer_from(&mut buffer)?;
@@ -150,7 +158,8 @@ fn process_message_fields(
             String::from("NtChallengeResponse cannot be empty"),
         ));
     }
-    let (target_info, client_challenge) = read_ntlm_v2_response(message_fields.nt_challenge_response.buffer.as_ref())?;
+    let (target_info, client_challenge) =
+        read_ntlm_v2_response(message_fields.nt_challenge_response.buffer.as_ref())?;
     let mic = if mic.is_some() {
         let challenge_response_av_flags = get_av_flags_from_response(target_info.as_ref())?;
         if challenge_response_av_flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
@@ -165,7 +174,8 @@ fn process_message_fields(
     // will not set workstation because it is not used anywhere
 
     let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
-    encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
+    encrypted_random_session_key
+        .clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
 
     let mut identity = if let Some(identity) = identity {
         identity.clone()

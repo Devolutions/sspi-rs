@@ -19,10 +19,14 @@ const NTLM_SIGNATURE: &[u8; NTLM_SIGNATURE_SIZE] = b"NTLMSSP\0";
 const NTLM_SIGNATURE_SIZE: usize = 8;
 
 const MAGIC_SIZE: usize = 59;
-const CLIENT_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server signing key magic constant\0";
-const SERVER_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client signing key magic constant\0";
-const CLIENT_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server sealing key magic constant\0";
-const SERVER_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client sealing key magic constant\0";
+const CLIENT_SIGN_MAGIC: &[u8; MAGIC_SIZE] =
+    b"session key to client-to-server signing key magic constant\0";
+const SERVER_SIGN_MAGIC: &[u8; MAGIC_SIZE] =
+    b"session key to server-to-client signing key magic constant\0";
+const CLIENT_SEAL_MAGIC: &[u8; MAGIC_SIZE] =
+    b"session key to client-to-server sealing key magic constant\0";
+const SERVER_SEAL_MAGIC: &[u8; MAGIC_SIZE] =
+    b"session key to server-to-client sealing key magic constant\0";
 
 #[derive(Clone, Copy)]
 pub enum MessageTypes {
@@ -76,7 +80,10 @@ impl MessageFields {
     }
 }
 
-fn try_read_version(flags: NegotiateFlags, mut cursor: impl io::Read) -> io::Result<Option<[u8; NTLM_VERSION_SIZE]>> {
+fn try_read_version(
+    flags: NegotiateFlags,
+    mut cursor: impl io::Read,
+) -> io::Result<Option<[u8; NTLM_VERSION_SIZE]>> {
     if flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION) {
         // major version 1 byte
         // minor version 1 byte
@@ -92,7 +99,10 @@ fn try_read_version(flags: NegotiateFlags, mut cursor: impl io::Read) -> io::Res
     }
 }
 
-pub fn read_ntlm_header(mut stream: impl io::Read, expected_message_type: MessageTypes) -> sspi::Result<()> {
+pub fn read_ntlm_header(
+    mut stream: impl io::Read,
+    expected_message_type: MessageTypes,
+) -> sspi::Result<()> {
     let mut signature = [0x00; NTLM_SIGNATURE_SIZE];
     stream.read_exact(signature.as_mut())?;
     let message_type = stream.read_u32::<LittleEndian>()?;

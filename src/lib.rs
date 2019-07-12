@@ -13,8 +13,9 @@ mod crypto;
 
 pub use crate::{
     credssp::{
-        ts_request::TsRequest, CredSsp, CredSspClient, CredSspResult, CredSspServer, CredentialsProxy,
-        EarlyUserAuthResult, EARLY_USER_AUTH_RESULT_PDU_SIZE, NegotiationRequestFlags
+        ts_request::TsRequest, CredSsp, CredSspClient, CredSspResult, CredSspServer,
+        CredentialsProxy, EarlyUserAuthResult, NegotiationRequestFlags,
+        EARLY_USER_AUTH_RESULT_PDU_SIZE,
     },
     ntlm::NTLM_VERSION_SIZE,
     sspi::{Credentials, SspiError, SspiErrorType},

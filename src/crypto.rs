@@ -39,8 +39,12 @@ pub fn compute_sha256(data: &[u8]) -> [u8; SHA256_SIZE] {
 }
 
 pub fn compute_hmac_md5(key: &[u8], input: &[u8]) -> io::Result<[u8; HASH_SIZE]> {
-    let mut mac = hmac::Hmac::<Md5>::new_varkey(key)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to compute hmac md5: {}", e)))?;
+    let mut mac = hmac::Hmac::<Md5>::new_varkey(key).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to compute hmac md5: {}", e),
+        )
+    })?;
     let mut result = [0x00; HASH_SIZE];
     mac.input(input);
     result.clone_from_slice(&mac.result().code());

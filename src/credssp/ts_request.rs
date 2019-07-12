@@ -5,7 +5,7 @@ use std::io::{self, Read};
 
 use crate::{
     ber,
-    credssp::{NegotiationRequestFlags},
+    credssp::NegotiationRequestFlags,
     sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
 };
 
@@ -49,76 +49,84 @@ impl TsRequest {
     pub fn from_buffer(buffer: &[u8]) -> io::Result<TsRequest> {
         let mut stream = io::Cursor::new(buffer);
 
-        let ts_request_len =
-            ber::read_sequence_tag(&mut stream).map_err(|e| io::Error::new(io::ErrorKind::UnexpectedEof, e))?;
+        let ts_request_len = ber::read_sequence_tag(&mut stream)
+            .map_err(|e| io::Error::new(io::ErrorKind::UnexpectedEof, e))?;
         if buffer.len() < ber::sizeof_sequence(ts_request_len) as usize {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Incomplete buffer"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Incomplete buffer",
+            ));
         }
 
         ber::read_contextual_tag(&mut stream, 0, ber::Pc::Construct)?;
 
         let peer_version = ber::read_integer(&mut stream)? as u32;
 
-        let nego_tokens = if ber::read_contextual_tag_or_unwind(&mut stream, 1, ber::Pc::Construct)?.is_some() {
-            ber::read_sequence_tag(&mut stream)?;
-            ber::read_sequence_tag(&mut stream)?;
-            ber::read_contextual_tag(&mut stream, 0, ber::Pc::Construct)?;
-            let length = ber::read_octet_string_tag(&mut stream)?;
-            let mut nego_tokens = vec![0x00; length as usize];
-            stream.read_exact(&mut nego_tokens)?;
-
-            Some(nego_tokens)
-        } else {
-            None
-        };
-
-        let auth_info = if ber::read_contextual_tag_or_unwind(&mut stream, 2, ber::Pc::Construct)?.is_some() {
-            let length = ber::read_octet_string_tag(&mut stream)?;
-            let mut auth_info = vec![0x00; length as usize];
-            stream.read_exact(&mut auth_info)?;
-
-            Some(auth_info)
-        } else {
-            None
-        };
-
-        let pub_key_auth = if ber::read_contextual_tag_or_unwind(&mut stream, 3, ber::Pc::Construct)?.is_some() {
-            let length = ber::read_octet_string_tag(&mut stream)?;
-            let mut pub_key_auth = vec![0x00; length as usize];
-            stream.read_exact(&mut pub_key_auth)?;
-
-            Some(pub_key_auth)
-        } else {
-            None
-        };
-
-        let error_code =
-            if peer_version >= 3 && ber::read_contextual_tag_or_unwind(&mut stream, 4, ber::Pc::Construct)?.is_some() {
-                let read_error_code = ber::read_integer(&mut stream)?;
-                let error_code = read_error_code as u32;
-
-                Some(error_code)
-            } else {
-                None
-            };
-
-        let client_nonce =
-            if peer_version >= 5 && ber::read_contextual_tag_or_unwind(&mut stream, 5, ber::Pc::Construct)?.is_some() {
+        let nego_tokens =
+            if ber::read_contextual_tag_or_unwind(&mut stream, 1, ber::Pc::Construct)?.is_some() {
+                ber::read_sequence_tag(&mut stream)?;
+                ber::read_sequence_tag(&mut stream)?;
+                ber::read_contextual_tag(&mut stream, 0, ber::Pc::Construct)?;
                 let length = ber::read_octet_string_tag(&mut stream)?;
-                if length != NONCE_SIZE as u16 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("Got ClientNonce with invalid length: {}", length),
-                    ));
-                }
+                let mut nego_tokens = vec![0x00; length as usize];
+                stream.read_exact(&mut nego_tokens)?;
 
-                let mut client_nonce = [0x00; NONCE_SIZE];
-                stream.read_exact(&mut client_nonce)?;
-
-                Some(client_nonce)
+                Some(nego_tokens)
             } else {
                 None
             };
+
+        let auth_info =
+            if ber::read_contextual_tag_or_unwind(&mut stream, 2, ber::Pc::Construct)?.is_some() {
+                let length = ber::read_octet_string_tag(&mut stream)?;
+                let mut auth_info = vec![0x00; length as usize];
+                stream.read_exact(&mut auth_info)?;
+
+                Some(auth_info)
+            } else {
+                None
+            };
+
+        let pub_key_auth =
+            if ber::read_contextual_tag_or_unwind(&mut stream, 3, ber::Pc::Construct)?.is_some() {
+                let length = ber::read_octet_string_tag(&mut stream)?;
+                let mut pub_key_auth = vec![0x00; length as usize];
+                stream.read_exact(&mut pub_key_auth)?;
+
+                Some(pub_key_auth)
+            } else {
+                None
+            };
+
+        let error_code = if peer_version >= 3
+            && ber::read_contextual_tag_or_unwind(&mut stream, 4, ber::Pc::Construct)?.is_some()
+        {
+            let read_error_code = ber::read_integer(&mut stream)?;
+            let error_code = read_error_code as u32;
+
+            Some(error_code)
+        } else {
+            None
+        };
+
+        let client_nonce = if peer_version >= 5
+            && ber::read_contextual_tag_or_unwind(&mut stream, 5, ber::Pc::Construct)?.is_some()
+        {
+            let length = ber::read_octet_string_tag(&mut stream)?;
+            if length != NONCE_SIZE as u16 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Got ClientNonce with invalid length: {}", length),
+                ));
+            }
+
+            let mut client_nonce = [0x00; NONCE_SIZE];
+            stream.read_exact(&mut client_nonce)?;
+
+            Some(client_nonce)
+        } else {
+            None
+        };
 
         Ok(TsRequest {
             nego_tokens,
@@ -157,7 +165,10 @@ impl TsRequest {
                 &mut buffer,
                 ber::sizeof_sequence(ber::sizeof_sequence_octet_string(nego_tokens.len() as u16)),
             )?; /* SEQUENCE OF NegoDataItem */
-            ber::write_sequence_tag(&mut buffer, ber::sizeof_sequence_octet_string(nego_tokens.len() as u16))?; /* NegoDataItem */
+            ber::write_sequence_tag(
+                &mut buffer,
+                ber::sizeof_sequence_octet_string(nego_tokens.len() as u16),
+            )?; /* NegoDataItem */
             ber::write_sequence_octet_string(&mut buffer, 0, &nego_tokens)?; /* OCTET STRING */
         }
 
@@ -172,14 +183,21 @@ impl TsRequest {
         }
 
         /* [4] errorCode (INTEGER) */
-        if self.peer_version.is_some() && self.peer_version.unwrap() >= 3 && self.error_code.is_some() {
-            let (error_code_len, _) = get_error_code_len(self.peer_version.unwrap(), self.error_code);
+        if self.peer_version.is_some()
+            && self.peer_version.unwrap() >= 3
+            && self.error_code.is_some()
+        {
+            let (error_code_len, _) =
+                get_error_code_len(self.peer_version.unwrap(), self.error_code);
             ber::write_contextual_tag(&mut buffer, 4, error_code_len, ber::Pc::Construct)?;
             ber::write_integer(&mut buffer, self.error_code.unwrap())?;
         }
 
         /* [5] clientNonce (OCTET STRING) */
-        if self.peer_version.is_some() && self.peer_version.unwrap() >= 5 && self.client_nonce.is_some() {
+        if self.peer_version.is_some()
+            && self.peer_version.unwrap() >= 5
+            && self.client_nonce.is_some()
+        {
             ber::write_sequence_octet_string(&mut buffer, 5, self.client_nonce.as_ref().unwrap())?;
         }
 
@@ -205,12 +223,14 @@ impl TsRequest {
             Some(peer_version) => get_error_code_len(peer_version, self.error_code),
             None => (0, 0),
         };
-        let client_nonce_len =
-            if self.client_nonce.is_some() && self.peer_version.is_some() && self.peer_version.unwrap() >= 5 {
-                NONCE_FIELD_LEN
-            } else {
-                0
-            };
+        let client_nonce_len = if self.client_nonce.is_some()
+            && self.peer_version.is_some()
+            && self.peer_version.unwrap() >= 5
+        {
+            NONCE_FIELD_LEN
+        } else {
+            0
+        };
         let fields_len = get_nego_tokens_len(&self.nego_tokens)
             + get_field_len(&self.pub_key_auth)
             + get_field_len(&self.auth_info)
@@ -222,7 +242,10 @@ impl TsRequest {
     }
 }
 
-pub fn write_ts_credentials(identity: &CredentialsBuffers, nego_flags: NegotiationRequestFlags) -> io::Result<Vec<u8>> {
+pub fn write_ts_credentials(
+    identity: &CredentialsBuffers,
+    nego_flags: NegotiationRequestFlags,
+) -> io::Result<Vec<u8>> {
     let empty_identity = CredentialsBuffers::default();
     let identity = if nego_flags.contains(NegotiationRequestFlags::RESTRICTED_ADMIN_MODE_REQUIRED) {
         &empty_identity
@@ -306,7 +329,9 @@ pub fn read_ts_credentials(mut buffer: impl io::Read) -> io::Result<CredentialsB
 fn sizeof_ts_credentials(identity: &CredentialsBuffers) -> u16 {
     ber::sizeof_integer(1)
         + ber::sizeof_contextual_tag(ber::sizeof_integer(1))
-        + ber::sizeof_sequence_octet_string(ber::sizeof_sequence(sizeof_ts_password_creds(&identity)))
+        + ber::sizeof_sequence_octet_string(ber::sizeof_sequence(sizeof_ts_password_creds(
+            &identity,
+        )))
 }
 
 fn sizeof_ts_password_creds(identity: &CredentialsBuffers) -> u16 {

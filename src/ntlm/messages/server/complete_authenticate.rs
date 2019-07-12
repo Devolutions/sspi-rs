@@ -2,7 +2,10 @@ use crate::crypto::HASH_SIZE;
 use crate::{
     crypto::rc4::Rc4,
     ntlm::{
-        messages::{computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC},
+        messages::{
+            computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC,
+            SERVER_SIGN_MAGIC,
+        },
         Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
     },
     sspi::{self, SspiError, SspiErrorType},
@@ -44,8 +47,14 @@ pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<()> {
     )?;
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(
+        session_key.as_ref(),
+        SERVER_SEAL_MAGIC,
+    )));
+    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(
+        session_key.as_ref(),
+        CLIENT_SEAL_MAGIC,
+    )));
 
     check_mic_correctness(
         negotiate_message.message.as_ref(),
@@ -85,7 +94,8 @@ fn check_mic_correctness(
         // we need empty the MIC part of auth. message and then will come back the MIC.
         let mic = mic.as_ref().unwrap();
         let mut authenticate_message = authenticate_message.to_vec();
-        authenticate_message[mic.offset as usize..mic.offset as usize + MESSAGE_INTEGRITY_CHECK_SIZE]
+        authenticate_message
+            [mic.offset as usize..mic.offset as usize + MESSAGE_INTEGRITY_CHECK_SIZE]
             .clone_from_slice(&[0x00; MESSAGE_INTEGRITY_CHECK_SIZE]);
         let calculated_mic = compute_message_integrity_check(
             negotiate_message,

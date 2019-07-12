@@ -11,8 +11,16 @@ pub trait Sspi {
     fn package_type(&self) -> PackageType;
     fn identity(&self) -> Option<CredentialsBuffers>;
     fn update_identity(&mut self, identity: Option<CredentialsBuffers>);
-    fn initialize_security_context(&mut self, input: impl io::Read, output: impl io::Write) -> self::SspiResult;
-    fn accept_security_context(&mut self, input: impl io::Read, output: impl io::Write) -> self::SspiResult;
+    fn initialize_security_context(
+        &mut self,
+        input: impl io::Read,
+        output: impl io::Write,
+    ) -> self::SspiResult;
+    fn accept_security_context(
+        &mut self,
+        input: impl io::Read,
+        output: impl io::Write,
+    ) -> self::SspiResult;
     fn complete_auth_token(&mut self) -> self::Result<()>;
     fn encrypt_message(&mut self, input: &[u8], message_seq_number: u32) -> self::Result<Vec<u8>>;
     fn decrypt_message(&mut self, input: &[u8], message_seq_number: u32) -> self::Result<Vec<u8>>;
@@ -49,7 +57,11 @@ impl Credentials {
 
 impl CredentialsBuffers {
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
-        Self { user, domain, password }
+        Self {
+            user,
+            domain,
+            password,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -78,7 +90,9 @@ impl From<CredentialsBuffers> for Credentials {
             domain: if credentials_buffers.domain.is_empty() {
                 None
             } else {
-                Some(utils::bytes_to_utf16_string(credentials_buffers.domain.as_ref()))
+                Some(utils::bytes_to_utf16_string(
+                    credentials_buffers.domain.as_ref(),
+                ))
             },
         }
     }
@@ -132,13 +146,19 @@ impl fmt::Display for SspiError {
 
 impl From<io::Error> for SspiError {
     fn from(err: io::Error) -> Self {
-        Self::new(SspiErrorType::InternalError, format!("IO error: {}", err.to_string()))
+        Self::new(
+            SspiErrorType::InternalError,
+            format!("IO error: {}", err.to_string()),
+        )
     }
 }
 
 impl From<rand::Error> for SspiError {
     fn from(err: rand::Error) -> Self {
-        Self::new(SspiErrorType::InternalError, format!("Rand error: {}", err.to_string()))
+        Self::new(
+            SspiErrorType::InternalError,
+            format!("Rand error: {}", err.to_string()),
+        )
     }
 }
 

@@ -15,11 +15,13 @@ use crate::{
 };
 
 pub const NTLM_VERSION_SIZE: usize = 8;
-pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] = [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];
+pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] =
+    [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];
 
 pub const ENCRYPTED_RANDOM_SESSION_KEY_SIZE: usize = 16;
 
-const SIGNATURE_SIZE: usize = SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE + SIGNATURE_SEQ_NUM_SIZE;
+const SIGNATURE_SIZE: usize =
+    SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE + SIGNATURE_SEQ_NUM_SIZE;
 const CHALLENGE_SIZE: usize = 8;
 const SESSION_KEY_SIZE: usize = 16;
 const MESSAGE_INTEGRITY_CHECK_SIZE: usize = 16;
@@ -119,7 +121,11 @@ impl Sspi for Ntlm {
     fn update_identity(&mut self, identity: Option<CredentialsBuffers>) {
         self.identity = identity;
     }
-    fn initialize_security_context(&mut self, input: impl io::Read, mut output: impl io::Write) -> sspi::SspiResult {
+    fn initialize_security_context(
+        &mut self,
+        input: impl io::Read,
+        mut output: impl io::Write,
+    ) -> sspi::SspiResult {
         match self.state {
             NtlmState::Initial => {
                 self.state = NtlmState::Negotiate;
@@ -135,7 +141,11 @@ impl Sspi for Ntlm {
             )),
         }
     }
-    fn accept_security_context(&mut self, input: impl io::Read, mut output: impl io::Write) -> sspi::SspiResult {
+    fn accept_security_context(
+        &mut self,
+        input: impl io::Read,
+        mut output: impl io::Write,
+    ) -> sspi::SspiResult {
         match self.state {
             NtlmState::Initial => {
                 self.state = NtlmState::Negotiate;
@@ -198,7 +208,12 @@ impl NegotiateMessage {
 }
 
 impl ChallengeMessage {
-    fn new(message: Vec<u8>, target_info: Vec<u8>, server_challenge: [u8; CHALLENGE_SIZE], timestamp: u64) -> Self {
+    fn new(
+        message: Vec<u8>,
+        target_info: Vec<u8>,
+        server_challenge: [u8; CHALLENGE_SIZE],
+        timestamp: u64,
+    ) -> Self {
         Self {
             message,
             target_info,
@@ -351,8 +366,10 @@ fn compute_digest(key: &[u8], seq_num: u32, data: &[u8]) -> io::Result<[u8; 16]>
 fn compute_signature(checksum: &[u8], seq_num: u32) -> [u8; SIGNATURE_SIZE] {
     let mut signature = [0x00; SIGNATURE_SIZE];
     signature[..SIGNATURE_VERSION_SIZE].clone_from_slice(&MESSAGES_VERSION.to_le_bytes());
-    signature[SIGNATURE_VERSION_SIZE..SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE].clone_from_slice(&checksum);
-    signature[SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE..].clone_from_slice(&seq_num.to_le_bytes());
+    signature[SIGNATURE_VERSION_SIZE..SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE]
+        .clone_from_slice(&checksum);
+    signature[SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE..]
+        .clone_from_slice(&seq_num.to_le_bytes());
 
     signature
 }
