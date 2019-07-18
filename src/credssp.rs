@@ -16,10 +16,12 @@ use crate::{
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
+pub const VERSION_SIZE: usize = 8;
 
 const HASH_MAGIC_LEN: usize = 38;
 const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
 const CLIENT_SERVER_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Client-To-Server Binding Hash\0";
+const DEFAULT_VERSION: [u8; VERSION_SIZE] = [0x00; VERSION_SIZE];
 
 /// Provides an interface for implementing proxy credentials structures.
 pub trait CredentialsProxy {
@@ -156,8 +158,8 @@ impl CredSspClient {
     pub fn new(
         public_key: Vec<u8>,
         credentials: Credentials,
-        version: Vec<u8>,
         cred_ssp_mode: CredSspMode,
+        version: Vec<u8>,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::Initial,
@@ -168,6 +170,19 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
+    }
+
+    pub fn with_default_version(
+        public_key: Vec<u8>,
+        credentials: Credentials,
+        cred_ssp_mode: CredSspMode,
+    ) -> sspi::Result<Self> {
+        Self::new(
+            public_key,
+            credentials,
+            cred_ssp_mode,
+            DEFAULT_VERSION.to_vec(),
+        )
     }
 }
 
@@ -180,6 +195,10 @@ impl<C: CredentialsProxy> CredSspServer<C> {
             version,
             public_key,
         })
+    }
+
+    pub fn with_default_version(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
+        Self::new(public_key, credentials, DEFAULT_VERSION.to_vec())
     }
 }
 
