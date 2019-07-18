@@ -1,7 +1,8 @@
 use std::{error::Error, fmt, io, str};
 
-use byteorder::{LittleEndian, ReadBytesExt};
 use serde_derive::{Deserialize, Serialize};
+
+use crate::utils;
 
 pub type SspiResult = std::result::Result<SspiOk, SspiError>;
 pub type Result<T> = std::result::Result<T, SspiError>;
@@ -10,8 +11,16 @@ pub trait Sspi {
     fn package_type(&self) -> PackageType;
     fn identity(&self) -> Option<CredentialsBuffers>;
     fn update_identity(&mut self, identity: Option<CredentialsBuffers>);
-    fn initialize_security_context(&mut self, input: impl io::Read, output: impl io::Write) -> self::SspiResult;
-    fn accept_security_context(&mut self, input: impl io::Read, output: impl io::Write) -> self::SspiResult;
+    fn initialize_security_context(
+        &mut self,
+        input: impl io::Read,
+        output: impl io::Write,
+    ) -> self::SspiResult;
+    fn accept_security_context(
+        &mut self,
+        input: impl io::Read,
+        output: impl io::Write,
+    ) -> self::SspiResult;
     fn complete_auth_token(&mut self) -> self::Result<()>;
     fn encrypt_message(&mut self, input: &[u8], message_seq_number: u32) -> self::Result<Vec<u8>>;
     fn decrypt_message(&mut self, input: &[u8], message_seq_number: u32) -> self::Result<Vec<u8>>;
@@ -21,7 +30,8 @@ pub enum PackageType {
     Ntlm,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Owns credentials of an identity used in negotiations and communications.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
@@ -47,7 +57,11 @@ impl Credentials {
 
 impl CredentialsBuffers {
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
-        Self { user, domain, password }
+        Self {
+            user,
+            domain,
+            password,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -58,9 +72,12 @@ impl CredentialsBuffers {
 impl From<Credentials> for CredentialsBuffers {
     fn from(credentials: Credentials) -> Self {
         Self {
-            user: string_to_utf16(credentials.username),
-            domain: credentials.domain.map(string_to_utf16).unwrap_or_default(),
-            password: string_to_utf16(credentials.password),
+            user: utils::string_to_utf16(credentials.username.as_str()),
+            domain: credentials
+                .domain
+                .map(|v| utils::string_to_utf16(v.as_str()))
+                .unwrap_or_default(),
+            password: utils::string_to_utf16(credentials.password.as_str()),
         }
     }
 }
@@ -68,27 +85,35 @@ impl From<Credentials> for CredentialsBuffers {
 impl From<CredentialsBuffers> for Credentials {
     fn from(credentials_buffers: CredentialsBuffers) -> Self {
         Self {
-            username: bytes_to_utf16_string(credentials_buffers.user.as_ref()),
-            password: bytes_to_utf16_string(credentials_buffers.password.as_ref()),
+            username: utils::bytes_to_utf16_string(credentials_buffers.user.as_ref()),
+            password: utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()),
             domain: if credentials_buffers.domain.is_empty() {
                 None
             } else {
-                Some(bytes_to_utf16_string(credentials_buffers.domain.as_ref()))
+                Some(utils::bytes_to_utf16_string(
+                    credentials_buffers.domain.as_ref(),
+                ))
             },
         }
     }
 }
 
+/// The kind of an SSPI related error. Enables to specify the error based on its type.
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SspiErrorType {
+    /// May correspond to any internal error (I/O error, server error, etc.).
     InternalError = 0x8009_0304,
+    /// Used in cases when supplied data is missing or invalid.
     InvalidToken = 0x8009_0308,
+    /// Used when a required NTLM state does not correspond to the current.
     OutOfSequence = 0x8009_0310,
+    /// Used in contexts of supplying invalid credentials.
     MessageAltered = 0x8009_030F,
     TargetUnknown = 0x8009_0303,
 }
 
+/// Holds the [`SspiErrorType`](enum.SspiErrorType.html) and the description of the error.
 #[derive(Debug, PartialEq)]
 pub struct SspiError {
     pub error_type: SspiErrorType,
@@ -102,6 +127,7 @@ pub enum SspiOk {
 }
 
 impl SspiError {
+    /// Allows to fill a new error easily, supplying it with a coherent description.
     pub fn new(error_type: SspiErrorType, error: String) -> Self {
         Self {
             error_type,
@@ -120,13 +146,19 @@ impl fmt::Display for SspiError {
 
 impl From<io::Error> for SspiError {
     fn from(err: io::Error) -> Self {
-        Self::new(SspiErrorType::InternalError, format!("IO error: {}", err.to_string()))
+        Self::new(
+            SspiErrorType::InternalError,
+            format!("IO error: {}", err.to_string()),
+        )
     }
 }
 
 impl From<rand::Error> for SspiError {
     fn from(err: rand::Error) -> Self {
-        Self::new(SspiErrorType::InternalError, format!("Rand error: {}", err.to_string()))
+        Self::new(
+            SspiErrorType::InternalError,
+            format!("Rand error: {}", err.to_string()),
+        )
     }
 }
 
@@ -152,20 +184,4 @@ impl fmt::Display for SspiOk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
-}
-
-pub fn string_to_utf16(value: String) -> Vec<u8> {
-    value
-        .encode_utf16()
-        .flat_map(|i| i.to_le_bytes().to_vec())
-        .collect::<Vec<u8>>()
-}
-
-pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
-    let mut value_u16 = vec![0x00; value.len() / 2];
-    value
-        .read_u16_into::<LittleEndian>(value_u16.as_mut())
-        .expect("read_u16_into cannot fail at this point");
-
-    String::from_utf16_lossy(value_u16.as_ref())
 }

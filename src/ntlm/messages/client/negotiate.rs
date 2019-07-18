@@ -56,7 +56,12 @@ pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> ssp
 
     let mut buffer = Vec::with_capacity(message_fields.data_len());
 
-    write_header(negotiate_flags, context.version.as_ref(), &message_fields, &mut buffer)?;
+    write_header(
+        negotiate_flags,
+        context.version.as_ref(),
+        &message_fields,
+        &mut buffer,
+    )?;
     write_payload(&message_fields, &mut buffer)?;
     context.flags = negotiate_flags;
 
@@ -106,7 +111,10 @@ fn write_header(
     Ok(())
 }
 
-fn write_payload(message_fields: &NegotiateMessageFields, mut buffer: impl io::Write) -> io::Result<()> {
+fn write_payload(
+    message_fields: &NegotiateMessageFields,
+    mut buffer: impl io::Write,
+) -> io::Result<()> {
     message_fields.domain_name.write_buffer_to(&mut buffer)?;
     message_fields.workstation.write_buffer_to(&mut buffer)?;
 

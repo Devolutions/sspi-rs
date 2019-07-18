@@ -10,8 +10,12 @@ use rand::{rngs::OsRng, Rng};
 
 use crate::{
     crypto::{compute_hmac_md5, compute_md4, compute_md5, HASH_SIZE},
-    ntlm::{messages::av_pair::*, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE},
-    sspi::{self, bytes_to_utf16_string, string_to_utf16, CredentialsBuffers, SspiError, SspiErrorType},
+    ntlm::{
+        messages::av_pair::*, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE,
+        MESSAGE_INTEGRITY_CHECK_SIZE,
+    },
+    sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
+    utils,
 };
 
 pub const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
@@ -40,7 +44,10 @@ lazy_static! {
     };
 }
 
-pub fn get_system_time_as_file_time<T>(start_date: DateTime<T>, end_date: DateTime<T>) -> sspi::Result<u64>
+pub fn get_system_time_as_file_time<T>(
+    start_date: DateTime<T>,
+    end_date: DateTime<T>,
+) -> sspi::Result<u64>
 where
     T: TimeZone,
 {
@@ -75,7 +82,10 @@ pub fn get_challenge_target_info(timestamp: u64) -> sspi::Result<Vec<u8>> {
     Ok(AvPair::list_to_buffer(&av_pairs)?)
 }
 
-pub fn get_authenticate_target_info(target_info: &[u8], send_single_host_data: bool) -> sspi::Result<Vec<u8>> {
+pub fn get_authenticate_target_info(
+    target_info: &[u8],
+    send_single_host_data: bool,
+) -> sspi::Result<Vec<u8>> {
     let mut av_pairs = AvPair::buffer_to_av_pairs(&target_info)?;
 
     av_pairs.retain(|av_pair| av_pair.as_u16() != AV_PAIR_EOL);
@@ -132,8 +142,9 @@ pub fn compute_message_integrity_check(
 pub fn convert_password_hash(identity_password: &[u8]) -> sspi::Result<[u8; HASH_SIZE]> {
     if identity_password.len() >= SSPI_CREDENTIALS_HASH_LENGTH_OFFSET + HASH_SIZE * 2 {
         let mut result = [0x00; HASH_SIZE];
-        let password_hash =
-            &identity_password[0..identity_password.len() - SSPI_CREDENTIALS_HASH_LENGTH_OFFSET].to_ascii_uppercase();
+        let password_hash = &identity_password
+            [0..identity_password.len() - SSPI_CREDENTIALS_HASH_LENGTH_OFFSET]
+            .to_ascii_uppercase();
 
         let magic_transform = |elem: u8| {
             if elem > b'9' {
@@ -153,7 +164,10 @@ pub fn convert_password_hash(identity_password: &[u8]) -> sspi::Result<[u8; HASH
     } else {
         Err(SspiError::new(
             SspiErrorType::InvalidToken,
-            format!("Got password with a small length: {}", identity_password.len()),
+            format!(
+                "Got password with a small length: {}",
+                identity_password.len()
+            ),
         ))
     }
 }
@@ -166,8 +180,9 @@ pub fn compute_ntlm_v2_hash(identity: &CredentialsBuffers) -> sspi::Result<[u8; 
             compute_md4(&identity.password)
         };
 
-        let user_utf16 = bytes_to_utf16_string(identity.user.as_ref());
-        let mut user_uppercase_with_domain = string_to_utf16(user_utf16.to_uppercase());
+        let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref());
+        let mut user_uppercase_with_domain =
+            utils::string_to_utf16(user_utf16.to_uppercase().as_str());
         user_uppercase_with_domain.extend(&identity.domain);
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
@@ -190,7 +205,8 @@ pub fn compute_lm_v2_response(
     lm_challenge_data[CHALLENGE_SIZE..].clone_from_slice(client_challenge);
 
     let mut lm_challenge_response = [0x00; LM_CHALLENGE_RESPONSE_BUFFER_SIZE];
-    lm_challenge_response[0..HASH_SIZE].clone_from_slice(compute_hmac_md5(ntlm_v2_hash, &lm_challenge_data)?.as_ref());
+    lm_challenge_response[0..HASH_SIZE]
+        .clone_from_slice(compute_hmac_md5(ntlm_v2_hash, &lm_challenge_data)?.as_ref());
     lm_challenge_response[HASH_SIZE..].clone_from_slice(client_challenge);
     Ok(lm_challenge_response)
 }
@@ -224,7 +240,9 @@ pub fn compute_ntlm_v2_response(
     Ok((nt_challenge_response, key_exchange_key))
 }
 
-pub fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u8>, [u8; CHALLENGE_SIZE])> {
+pub fn read_ntlm_v2_response(
+    mut challenge_response: &[u8],
+) -> io::Result<(Vec<u8>, [u8; CHALLENGE_SIZE])> {
     let mut response = [0x00; HASH_SIZE];
     challenge_response.read_exact(response.as_mut())?;
     let _resp_type = challenge_response.read_u8()?;
@@ -246,7 +264,10 @@ pub fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u
 pub fn get_av_flags_from_response(target_info: &[u8]) -> io::Result<MsvAvFlags> {
     let av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
 
-    if let Some(AvPair::Flags(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_FLAGS) {
+    if let Some(AvPair::Flags(value)) = av_pairs
+        .iter()
+        .find(|&av_pair| av_pair.as_u16() == AV_PAIR_FLAGS)
+    {
         Ok(MsvAvFlags::from_bits(*value).unwrap_or_else(MsvAvFlags::empty))
     } else {
         Ok(MsvAvFlags::empty())
@@ -256,7 +277,10 @@ pub fn get_av_flags_from_response(target_info: &[u8]) -> io::Result<MsvAvFlags> 
 pub fn get_challenge_timestamp_from_response(target_info: &[u8]) -> sspi::Result<u64> {
     let av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
 
-    if let Some(AvPair::Timestamp(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_TIMESTAMP) {
+    if let Some(AvPair::Timestamp(value)) = av_pairs
+        .iter()
+        .find(|&av_pair| av_pair.as_u16() == AV_PAIR_TIMESTAMP)
+    {
         Ok(*value)
     } else {
         generate_timestamp()

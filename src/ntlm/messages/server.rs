@@ -6,6 +6,6 @@ mod negotiate;
 mod test;
 
 pub use self::{
-    authenticate::read_authenticate, challenge::write_challenge, complete_authenticate::complete_authenticate,
-    negotiate::read_negotiate,
+    authenticate::read_authenticate, challenge::write_challenge,
+    complete_authenticate::complete_authenticate, negotiate::read_negotiate,
 };

@@ -47,8 +47,8 @@ fn read_header(mut buffer: impl io::Read) -> sspi::Result<NegotiateFlags> {
     let mut domain_name = MessageFields::new();
     let mut workstation = MessageFields::new();
 
-    let negotiate_flags =
-        NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?).unwrap_or_else(NegotiateFlags::empty);
+    let negotiate_flags = NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?)
+        .unwrap_or_else(NegotiateFlags::empty);
 
     if !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET)
         || !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM)

@@ -5,7 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crate::ntlm::ChallengeMessage;
 use crate::{
     ntlm::{
-        messages::{computations::*, read_ntlm_header, try_read_version, MessageFields, MessageTypes},
+        messages::{
+            computations::*, read_ntlm_header, try_read_version, MessageFields, MessageTypes,
+        },
         NegotiateFlags, Ntlm, NtlmState, CHALLENGE_SIZE,
     },
     sspi::{self, SspiError, SspiErrorType},
@@ -30,7 +32,8 @@ pub fn read_challenge(mut context: &mut Ntlm, mut stream: impl io::Read) -> sspi
     context.flags = flags;
     let _version = try_read_version(context.flags, &mut buffer)?;
     read_payload(&mut message_fields, &mut buffer)?;
-    let timestamp = get_challenge_timestamp_from_response(message_fields.target_info.buffer.as_ref())?;
+    let timestamp =
+        get_challenge_timestamp_from_response(message_fields.target_info.buffer.as_ref())?;
 
     let message = buffer.into_inner();
     context.challenge_message = Some(ChallengeMessage::new(
@@ -63,8 +66,8 @@ fn read_header(
     let mut target_info = MessageFields::new();
 
     target_name.read_from(&mut buffer)?;
-    let negotiate_flags =
-        NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?).unwrap_or_else(NegotiateFlags::empty);
+    let negotiate_flags = NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?)
+        .unwrap_or_else(NegotiateFlags::empty);
     let mut server_challenge = [0x00; CHALLENGE_SIZE];
     buffer.read_exact(&mut server_challenge)?;
     let _reserved = buffer.read_u64::<LittleEndian>()?;
@@ -78,7 +81,10 @@ fn read_header(
     Ok((message_fields, negotiate_flags, server_challenge))
 }
 
-fn read_payload(message_fields: &mut ChallengeMessageFields, mut buffer: impl io::Read + io::Seek) -> sspi::Result<()> {
+fn read_payload(
+    message_fields: &mut ChallengeMessageFields,
+    mut buffer: impl io::Read + io::Seek,
+) -> sspi::Result<()> {
     message_fields.target_name.read_buffer_from(&mut buffer)?;
     message_fields.target_info.read_buffer_from(&mut buffer)?;
 

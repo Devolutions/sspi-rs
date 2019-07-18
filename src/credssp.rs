@@ -1,7 +1,10 @@
 pub mod ts_request;
 
 use std::io;
-use bitflags::bitflags;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 use rand::{rngs::OsRng, Rng};
 
 use self::ts_request::{TsRequest, NONCE_SIZE};
@@ -12,38 +15,64 @@ use crate::{
     Credentials,
 };
 
-bitflags! {
-    /// https://msdn.microsoft.com/en-us/library/cc240500.aspx
-    #[derive(Default)]
-    pub struct NegotiationRequestFlags: u8 {
-        const RESTRICTED_ADMIN_MODE_REQUIRED = 0x01;
-        const REDIRECTED_AUTHENTICATION_MODE_REQUIRED = 0x02;
-        const CORRELATION_INFO_PRESENT = 0x08;
-    }
-}
+pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
+pub const VERSION_SIZE: usize = 8;
 
 const HASH_MAGIC_LEN: usize = 38;
 const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
 const CLIENT_SERVER_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Client-To-Server Binding Hash\0";
+const DEFAULT_VERSION: [u8; VERSION_SIZE] = [0x00; VERSION_SIZE];
 
+/// Provides an interface for implementing proxy credentials structures.
 pub trait CredentialsProxy {
+    /// A method signature for implementing a behavior of searching and returning
+    /// a user password based on a username and a domain provided as arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - the username string
+    /// * `domain` - the domain string (optional)
     fn password_by_user(&mut self, username: String, domain: Option<String>) -> io::Result<String>;
 }
 
+/// Provides an interface to be implemented by the CredSSP-related structs:
+/// [`CredSspServer`](struct.CredSspServer.html) and
+/// [`CredSspClient`](struct.CredSspClient.html).
 pub trait CredSsp {
     fn process(&mut self, ts_request: TsRequest) -> sspi::Result<CredSspResult>;
 }
 
+/// Indicates to the [`CredSspClient`](struct.CredSspClient.html) whether or not to transfer
+/// the credentials in the auth_info [`TsRequest`](struct.TsRequest.html) field.
+#[derive(Copy, Clone, Debug)]
+pub enum CredSspMode {
+    WithCredentials,
+    /// Indicates that the client requires credential-less logon over CredSSP (also known as "restricted admin mode").
+    CredentialLess,
+}
+
+/// Implements the CredSSP *client*. The client's credentials are to
+/// be securely delegated to the server.
+///
+/// # MSDN
+///
+/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
 pub struct CredSspClient {
     state: CredSspState,
     context: Option<CredSspContext>,
     credentials: Credentials,
     version: Vec<u8>,
     public_key: Vec<u8>,
-    nego_flags: NegotiationRequestFlags,
+    cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
 }
 
+/// Implements the CredSSP *server*. The client's credentials
+/// securely delegated to the server for authentication using TLS.
+///
+/// # MSDN
+///
+/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
 pub struct CredSspServer<C: CredentialsProxy> {
     pub credentials: C,
     state: CredSspState,
@@ -52,13 +81,52 @@ pub struct CredSspServer<C: CredentialsProxy> {
     public_key: Vec<u8>,
 }
 
+/// The result of a CredSSP client or server processing.
+/// The enum may carry a [`TsRequest`](struct.TsRequest.html) or
+/// [`Credentials`](struct.Credentials.html).
 #[derive(Debug)]
 pub enum CredSspResult {
+    /// Used as a result of processing of negotiation tokens by the client and server.
     ReplyNeeded(TsRequest),
+    /// Used as a result of processing of authentication info by the client.
     FinalMessage(TsRequest),
+    /// Used by the server when processing of negotiation tokens resulted in error.
     WithError(TsRequest),
+    /// Used as a result of the final state of the client and server.
     Finished,
+    /// Used as a result of  processing of authentication info by the server.
     ClientCredentials(Credentials),
+}
+
+/// The Early User Authorization Result PDU is sent from server to client
+/// and is used to convey authorization information to the client.
+/// This PDU is only sent by the server if the client advertised support for it
+/// by specifying the ['HYBRID_EX protocol'](struct.SecurityProtocol.htlm)
+/// of the [RDP Negotiation Request (RDP_NEG_REQ)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/902b090b-9cb3-4efc-92bf-ee13373371e3)
+/// and it MUST be sent immediately after the CredSSP handshake has completed.
+#[derive(Debug, FromPrimitive, ToPrimitive)]
+#[repr(u32)]
+pub enum EarlyUserAuthResult {
+    /// The user has permission to access the server.
+    Success = 0,
+    /// The user does not have permission to access the server.
+    AccessDenied = 5,
+}
+
+impl EarlyUserAuthResult {
+    pub fn from_buffer(mut stream: impl std::io::Read) -> Result<Self, io::Error> {
+        let result = stream.read_u32::<LittleEndian>()?;
+
+        EarlyUserAuthResult::from_u32(result).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Got invalid Early User Authorization Result",
+            )
+        })
+    }
+    pub fn to_buffer(&self, mut stream: impl std::io::Write) -> Result<(), io::Error> {
+        stream.write_u32::<LittleEndian>(self.to_u32().unwrap())
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -90,8 +158,8 @@ impl CredSspClient {
     pub fn new(
         public_key: Vec<u8>,
         credentials: Credentials,
+        cred_ssp_mode: CredSspMode,
         version: Vec<u8>,
-        nego_flags: NegotiationRequestFlags,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::Initial,
@@ -99,9 +167,22 @@ impl CredSspClient {
             credentials,
             version,
             public_key,
-            nego_flags,
+            cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
+    }
+
+    pub fn with_default_version(
+        public_key: Vec<u8>,
+        credentials: Credentials,
+        cred_ssp_mode: CredSspMode,
+    ) -> sspi::Result<Self> {
+        Self::new(
+            public_key,
+            credentials,
+            cred_ssp_mode,
+            DEFAULT_VERSION.to_vec(),
+        )
     }
 }
 
@@ -114,6 +195,10 @@ impl<C: CredentialsProxy> CredSspServer<C> {
             version,
             public_key,
         })
+    }
+
+    pub fn with_default_version(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
+        Self::new(public_key, credentials, DEFAULT_VERSION.to_vec())
     }
 }
 
@@ -159,12 +244,13 @@ impl CredSsp for CredSspClient {
                         let peer_version = self.context.as_ref().unwrap().peer_version.expect(
                             "An encrypt public key client function cannot be fired without any incoming TSRequest",
                         );
-                        ts_request.pub_key_auth = Some(self.context.as_mut().unwrap().encrypt_public_key(
-                            self.public_key.as_ref(),
-                            EndpointType::Client,
-                            &Some(self.client_nonce),
-                            peer_version,
-                        )?);
+                        ts_request.pub_key_auth =
+                            Some(self.context.as_mut().unwrap().encrypt_public_key(
+                                self.public_key.as_ref(),
+                                EndpointType::Client,
+                                &Some(self.client_nonce),
+                                peer_version,
+                            )?);
                         ts_request.client_nonce = Some(self.client_nonce);
                         self.state = CredSspState::AuthInfo;
                     }
@@ -192,8 +278,12 @@ impl CredSsp for CredSspClient {
                         peer_version,
                     )?;
 
-                    ts_request.auth_info =
-                        Some(self.context.as_mut().unwrap().encrypt_ts_credentials(self.nego_flags)?);
+                    ts_request.auth_info = Some(
+                        self.context
+                            .as_mut()
+                            .unwrap()
+                            .encrypt_ts_credentials(self.cred_ssp_mode)?,
+                    );
 
                     self.state = CredSspState::Final;
 
@@ -214,13 +304,19 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
         loop {
             match self.state {
                 CredSspState::Initial => {
-                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(None, self.version.clone())));
+                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(
+                        None,
+                        self.version.clone(),
+                    )));
 
                     self.state = CredSspState::NegoToken;
                 }
                 CredSspState::NegoToken => {
                     let input = ts_request.nego_tokens.take().ok_or_else(|| {
-                        SspiError::new(SspiErrorType::InvalidToken, String::from("Got empty nego_tokens field"))
+                        SspiError::new(
+                            SspiErrorType::InvalidToken,
+                            String::from("Got empty nego_tokens field"),
+                        )
                     })?;
                     let mut output = Vec::new();
                     match self
@@ -242,12 +338,15 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
                                         .unwrap()
                                         .sspi_context
                                         .identity()
-                                        .expect("Identity must be set from NTLM authenticate message")
+                                        .expect(
+                                            "Identity must be set from NTLM authenticate message",
+                                        )
                                         .into();
 
-                                    credentials.password = self
-                                        .credentials
-                                        .password_by_user(credentials.username.clone(), credentials.domain.clone())?;;
+                                    credentials.password = self.credentials.password_by_user(
+                                        credentials.username.clone(),
+                                        credentials.domain.clone(),
+                                    )?;;
 
                                     self.context
                                         .as_mut()
@@ -257,7 +356,11 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
                                 }
                             };
 
-                            self.context.as_mut().unwrap().sspi_context.complete_auth_token()?;
+                            self.context
+                                .as_mut()
+                                .unwrap()
+                                .sspi_context
+                                .complete_auth_token()?;
                             ts_request.nego_tokens = None;
 
                             let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
@@ -276,18 +379,21 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
                                 &ts_request.client_nonce,
                                 peer_version,
                             )?;
-                            ts_request.pub_key_auth = Some(self.context.as_mut().unwrap().encrypt_public_key(
-                                self.public_key.as_ref(),
-                                EndpointType::Server,
-                                &ts_request.client_nonce,
-                                peer_version,
-                            )?);
+                            ts_request.pub_key_auth =
+                                Some(self.context.as_mut().unwrap().encrypt_public_key(
+                                    self.public_key.as_ref(),
+                                    EndpointType::Server,
+                                    &ts_request.client_nonce,
+                                    peer_version,
+                                )?);
 
                             self.state = CredSspState::AuthInfo;
                         }
                         Err(e) => {
-                            ts_request.error_code =
-                                Some(((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32);
+                            ts_request.error_code = Some(
+                                ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000)
+                                    as u32,
+                            );
 
                             return Ok(CredSspResult::WithError(ts_request));
                         }
@@ -376,7 +482,9 @@ impl CredSspContext {
                 hash_magic,
                 &client_nonce.ok_or(SspiError::new(
                     SspiErrorType::InvalidToken,
-                    String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
+                    String::from(
+                        "client nonce from the TSRequest is empty, but a peer version is >= 5",
+                    ),
                 ))?,
             )
         }
@@ -404,13 +512,19 @@ impl CredSspContext {
                 hash_magic,
                 &client_nonce.ok_or(SspiError::new(
                     SspiErrorType::InvalidToken,
-                    String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
+                    String::from(
+                        "client nonce from the TSRequest is empty, but a peer version is >= 5",
+                    ),
                 ))?,
             )
         }
     }
 
-    fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> sspi::Result<Vec<u8>> {
+    fn encrypt_public_key_echo(
+        &mut self,
+        public_key: &[u8],
+        endpoint: EndpointType,
+    ) -> sspi::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
         match self.sspi_context.package_type() {
@@ -483,13 +597,13 @@ impl CredSspContext {
         Ok(())
     }
 
-    fn encrypt_ts_credentials(&mut self, nego_flags: NegotiationRequestFlags) -> sspi::Result<Vec<u8>> {
+    fn encrypt_ts_credentials(&mut self, cred_ssp_mode: CredSspMode) -> sspi::Result<Vec<u8>> {
         let ts_credentials = ts_request::write_ts_credentials(
             self.sspi_context
                 .identity()
                 .as_ref()
                 .expect("Identity must be set from authenticate message"),
-            nego_flags,
+            cred_ssp_mode,
         )?;
 
         self.encrypt_message(&ts_credentials)
@@ -498,7 +612,9 @@ impl CredSspContext {
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<CredentialsBuffers> {
         let ts_credentials_buffer = self.decrypt_message(&auth_info)?;
 
-        Ok(ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())?)
+        Ok(ts_request::read_ts_credentials(
+            ts_credentials_buffer.as_slice(),
+        )?)
     }
 
     fn encrypt_message(&mut self, buffer: &[u8]) -> sspi::Result<Vec<u8>> {
@@ -545,7 +661,11 @@ impl Sspi for SspiProvider {
             SspiProvider::NtlmContext(ntlm) => ntlm.initialize_security_context(input, output),
         }
     }
-    fn accept_security_context(&mut self, input: impl std::io::Read, output: impl std::io::Write) -> sspi::SspiResult {
+    fn accept_security_context(
+        &mut self,
+        input: impl std::io::Read,
+        output: impl std::io::Write,
+    ) -> sspi::SspiResult {
         match self {
             SspiProvider::NtlmContext(ntlm) => ntlm.accept_security_context(input, output),
         }
