@@ -127,6 +127,9 @@ impl EarlyUserAuthResult {
     pub fn to_buffer(&self, mut stream: impl std::io::Write) -> Result<(), io::Error> {
         stream.write_u32::<LittleEndian>(self.to_u32().unwrap())
     }
+    pub fn buffer_len(&self) -> usize {
+        EARLY_USER_AUTH_RESULT_PDU_SIZE
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
