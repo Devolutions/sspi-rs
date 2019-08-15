@@ -10,6 +10,8 @@ use crate::{
 };
 
 pub const NONCE_SIZE: usize = 32;
+pub const MAX_TS_REQUEST_LENGTH_BUFFER_SIZE: usize = 4;
+
 const NLA_VERSION: u32 = 6;
 const NONCE_FIELD_LEN: u16 = 36;
 
@@ -41,17 +43,27 @@ pub struct TsRequest {
 }
 
 impl TsRequest {
+    /// Returns a length of the 'TsRequest' buffer length
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - an input stream
+    pub fn read_length(mut stream: impl io::Read) -> io::Result<usize> {
+        let ts_request_len = ber::read_sequence_tag(&mut stream)
+            .map_err(|e| io::Error::new(io::ErrorKind::UnexpectedEof, e))?;
+
+        Ok(usize::from(ber::sizeof_sequence(ts_request_len)))
+    }
+
     /// Creates a `TsRequest` structure from a raw array.
     ///
     /// # Arguments
     ///
-    /// * `buffer` - the array of bytess
+    /// * `buffer` - the array of bytes
     pub fn from_buffer(buffer: &[u8]) -> io::Result<TsRequest> {
         let mut stream = io::Cursor::new(buffer);
 
-        let ts_request_len = ber::read_sequence_tag(&mut stream)
-            .map_err(|e| io::Error::new(io::ErrorKind::UnexpectedEof, e))?;
-        if buffer.len() < ber::sizeof_sequence(ts_request_len) as usize {
+        if buffer.len() < TsRequest::read_length(&mut stream)? {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Incomplete buffer",
