@@ -34,11 +34,18 @@ pub trait CredentialsProxy {
     fn password_by_user(&mut self, username: String, domain: Option<String>) -> io::Result<String>;
 }
 
-/// Provides an interface to be implemented by the CredSSP-related structs:
-/// [`CredSspServer`](struct.CredSspServer.html) and
-/// [`CredSspClient`](struct.CredSspClient.html).
-pub trait CredSsp {
-    fn process(&mut self, ts_request: TsRequest) -> sspi::Result<CredSspResult>;
+macro_rules! try_cred_ssp {
+    ($e:expr, $ts_request:ident) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => {
+                let e = From::from(e);
+                $ts_request.error_code = Some(construct_error(e));
+
+                return Err($ts_request);
+            }
+        }
+    };
 }
 
 /// Indicates to the [`CredSspClient`](struct.CredSspClient.html) whether or not to transfer
@@ -59,8 +66,6 @@ pub enum CredSspResult {
     ReplyNeeded(TsRequest),
     /// Used as a result of processing of authentication info by the client.
     FinalMessage(TsRequest),
-    /// Used by the server when processing of negotiation tokens resulted in error.
-    WithError(TsRequest),
     /// Used as a result of the final state of the client and server.
     Finished,
     /// Used as a result of  processing of authentication info by the server.
@@ -144,10 +149,8 @@ impl CredSspClient {
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
     }
-}
 
-impl CredSsp for CredSspClient {
-    fn process(&mut self, mut ts_request: TsRequest) -> sspi::Result<CredSspResult> {
+    pub fn process(&mut self, mut ts_request: TsRequest) -> sspi::Result<CredSspResult> {
         ts_request.check_error()?;
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
@@ -244,40 +247,43 @@ impl<C: CredentialsProxy> CredSspServer<C> {
             public_key,
         })
     }
-}
 
-impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
-    fn process(&mut self, mut ts_request: TsRequest) -> sspi::Result<CredSspResult> {
-        if let Some(ref mut context) = self.context {
-            context.check_peer_version(ts_request.version)?;
-        } else {
+    pub fn process(&mut self, mut ts_request: TsRequest) -> Result<CredSspResult, TsRequest> {
+        if self.context.is_none() {
             self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(None)));
+        }
+        try_cred_ssp!(
             self.context
                 .as_mut()
                 .unwrap()
-                .check_peer_version(ts_request.version)?;
-        }
+                .check_peer_version(ts_request.version),
+            ts_request
+        );
 
         match self.state {
             CredSspState::NegoToken => {
-                let input = ts_request.nego_tokens.take().ok_or_else(|| {
-                    SspiError::new(
-                        SspiErrorType::InvalidToken,
-                        String::from("Got empty nego_tokens field"),
-                    )
-                })?;
+                let input = try_cred_ssp!(
+                    ts_request.nego_tokens.take().ok_or_else(|| {
+                        SspiError::new(
+                            SspiErrorType::InvalidToken,
+                            String::from("Got empty nego_tokens field"),
+                        )
+                    }),
+                    ts_request
+                );
                 let mut output = Vec::new();
-                match self
-                    .context
-                    .as_mut()
-                    .unwrap()
-                    .sspi_context
-                    .accept_security_context(input.as_slice(), &mut output)
-                {
-                    Ok(SspiOk::ContinueNeeded) => {
+                match try_cred_ssp!(
+                    self.context
+                        .as_mut()
+                        .unwrap()
+                        .sspi_context
+                        .accept_security_context(input.as_slice(), &mut output),
+                    ts_request
+                ) {
+                    SspiOk::ContinueNeeded => {
                         ts_request.nego_tokens = Some(output);
                     }
-                    Ok(SspiOk::CompleteNeeded) => {
+                    SspiOk::CompleteNeeded => {
                         match self.context.as_ref().unwrap().sspi_context.package_type() {
                             PackageType::Ntlm => {
                                 let mut credentials: Credentials = self
@@ -289,10 +295,13 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
                                     .expect("Identity must be set from NTLM authenticate message")
                                     .into();
 
-                                credentials.password = self.credentials.password_by_user(
-                                    credentials.username.clone(),
-                                    credentials.domain.clone(),
-                                )?;;
+                                credentials.password = try_cred_ssp!(
+                                    self.credentials.password_by_user(
+                                        credentials.username.clone(),
+                                        credentials.domain.clone(),
+                                    ),
+                                    ts_request
+                                );
 
                                 self.context
                                     .as_mut()
@@ -302,68 +311,76 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
                             }
                         };
 
-                        self.context
-                            .as_mut()
-                            .unwrap()
-                            .sspi_context
-                            .complete_auth_token()?;
+                        try_cred_ssp!(
+                            self.context
+                                .as_mut()
+                                .unwrap()
+                                .sspi_context
+                                .complete_auth_token(),
+                            ts_request
+                        );
                         ts_request.nego_tokens = None;
 
-                        let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
-                            SspiError::new(
-                                SspiErrorType::InvalidToken,
-                                String::from("Expected an encrypted public key"),
-                            )
-                        })?;
+                        let pub_key_auth = try_cred_ssp!(
+                            ts_request.pub_key_auth.take().ok_or_else(|| {
+                                SspiError::new(
+                                    SspiErrorType::InvalidToken,
+                                    String::from("Expected an encrypted public key"),
+                                )
+                            }),
+                            ts_request
+                        );
                         let peer_version = self.context.as_ref().unwrap().peer_version.expect(
                                 "An decrypt public key server function cannot be fired without any incoming TSRequest",
                             );
-                        self.context.as_mut().unwrap().decrypt_public_key(
-                            self.public_key.as_ref(),
-                            pub_key_auth.as_ref(),
-                            EndpointType::Server,
-                            &ts_request.client_nonce,
-                            peer_version,
-                        )?;
-                        ts_request.pub_key_auth =
-                            Some(self.context.as_mut().unwrap().encrypt_public_key(
+                        try_cred_ssp!(
+                            self.context.as_mut().unwrap().decrypt_public_key(
+                                self.public_key.as_ref(),
+                                pub_key_auth.as_ref(),
+                                EndpointType::Server,
+                                &ts_request.client_nonce,
+                                peer_version,
+                            ),
+                            ts_request
+                        );
+                        let pub_key_auth = try_cred_ssp!(
+                            self.context.as_mut().unwrap().encrypt_public_key(
                                 self.public_key.as_ref(),
                                 EndpointType::Server,
                                 &ts_request.client_nonce,
                                 peer_version,
-                            )?);
+                            ),
+                            ts_request
+                        );
+                        ts_request.pub_key_auth = Some(pub_key_auth);
 
                         self.state = CredSspState::AuthInfo;
-                    }
-                    Err(e) => {
-                        ts_request.error_code = Some(
-                            ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000)
-                                as u32,
-                        );
-
-                        return Ok(CredSspResult::WithError(ts_request));
                     }
                 };
 
                 Ok(CredSspResult::ReplyNeeded(ts_request))
             }
             CredSspState::AuthInfo => {
-                let auth_info = ts_request.auth_info.take().ok_or_else(|| {
-                    SspiError::new(
-                        SspiErrorType::InvalidToken,
-                        String::from("Expected an encrypted ts credentials"),
-                    )
-                })?;
+                let auth_info = try_cred_ssp!(
+                    ts_request.auth_info.take().ok_or_else(|| {
+                        SspiError::new(
+                            SspiErrorType::InvalidToken,
+                            String::from("Expected an encrypted ts credentials"),
+                        )
+                    }),
+                    ts_request
+                );
                 self.state = CredSspState::Final;
 
-                let read_credentials = self
-                    .context
-                    .as_mut()
-                    .unwrap()
-                    .decrypt_ts_credentials(&auth_info)?
-                    .into();
+                let read_credentials = try_cred_ssp!(
+                    self.context
+                        .as_mut()
+                        .unwrap()
+                        .decrypt_ts_credentials(&auth_info),
+                    ts_request
+                );
 
-                Ok(CredSspResult::ClientCredentials(read_credentials))
+                Ok(CredSspResult::ClientCredentials(read_credentials.into()))
             }
             CredSspState::Final => Ok(CredSspResult::Finished),
         }
@@ -660,4 +677,8 @@ fn integer_increment_le(buffer: &mut [u8]) {
             break;
         }
     }
+}
+
+fn construct_error(e: SspiError) -> u32 {
+    ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32
 }

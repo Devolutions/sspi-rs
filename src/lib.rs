@@ -10,7 +10,7 @@ mod crypto;
 pub use crate::{
     credssp::{
         ts_request::{TsRequest, MAX_TS_REQUEST_LENGTH_BUFFER_SIZE},
-        CredSsp, CredSspClient, CredSspMode, CredSspResult, CredSspServer, CredentialsProxy,
+        CredSspClient, CredSspMode, CredSspResult, CredSspServer, CredentialsProxy,
         EarlyUserAuthResult, EARLY_USER_AUTH_RESULT_PDU_SIZE,
     },
     ntlm::NTLM_VERSION_SIZE,
