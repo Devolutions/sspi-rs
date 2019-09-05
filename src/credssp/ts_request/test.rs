@@ -243,13 +243,13 @@ lazy_static! {
 fn ntlm_decode_first_phase_with_nego_token_and_client_nonce() {
     let buffer = NTLM_1_PHASE_TS_REQUEST;
 
-    let expected_version = NLA_VERSION;
+    let expected_version = TS_REQUEST_VERSION;
     let expected_nego_token = NTLM_1_PHASE_NEGO_TOKEN;
     let expected_client_nonce = NTLM_CLIENT_NONCE;
 
     let ts_request = TsRequest::from_buffer(&buffer).unwrap();
 
-    assert_eq!(expected_version, ts_request.peer_version.unwrap());
+    assert_eq!(expected_version, ts_request.version);
     assert_eq!(
         ts_request.nego_tokens.unwrap().as_slice(),
         expected_nego_token.as_ref()
@@ -264,13 +264,13 @@ fn ntlm_decode_first_phase_with_nego_token_and_client_nonce() {
 fn ntlm_decode_second_phase_with_nego_token_and_client_nonce() {
     let buffer = NTLM_2_PHASE_TS_REQUEST;
 
-    let expected_version = NLA_VERSION;
+    let expected_version = TS_REQUEST_VERSION;
     let expected_nego_token = NTLM_2_PHASE_NEGO_TOKEN;
     let expected_client_nonce = NTLM_CLIENT_NONCE;
 
     let ts_request = TsRequest::from_buffer(&buffer).unwrap();
 
-    assert_eq!(expected_version, ts_request.peer_version.unwrap());
+    assert_eq!(expected_version, ts_request.version);
     assert_eq!(
         ts_request.nego_tokens.unwrap().as_slice(),
         expected_nego_token.as_ref()
@@ -285,7 +285,7 @@ fn ntlm_decode_second_phase_with_nego_token_and_client_nonce() {
 fn ntlm_decode_third_phase_with_nego_token_and_pub_key_auth_and_client_nonce() {
     let buffer = NTLM_3_PHASE_TS_REQUEST;
 
-    let expected_version = NLA_VERSION;
+    let expected_version = TS_REQUEST_VERSION;
 
     let expected_nego_token = NTLM_3_PHASE_NEGO_TOKEN;
     let expected_pub_key_auth = NTLM_3_PHASE_PUB_KEY_AUTH;
@@ -293,7 +293,7 @@ fn ntlm_decode_third_phase_with_nego_token_and_pub_key_auth_and_client_nonce() {
 
     let ts_request = TsRequest::from_buffer(&buffer).unwrap();
 
-    assert_eq!(expected_version, ts_request.peer_version.unwrap());
+    assert_eq!(expected_version, ts_request.version);
     assert_eq!(
         ts_request.nego_tokens.unwrap().as_slice(),
         expected_nego_token.as_ref()
@@ -311,13 +311,13 @@ fn ntlm_decode_third_phase_with_nego_token_and_pub_key_auth_and_client_nonce() {
 fn ntlm_decode_fourth_phase_with_pub_key_auth_and_client_nonce() {
     let buffer = NTLM_4_PHASE_TS_REQUEST;
 
-    let expected_version = NLA_VERSION;
+    let expected_version = TS_REQUEST_VERSION;
     let expected_pub_key_auth = NTLM_4_PHASE_PUB_KEY_AUTH;
     let expected_client_nonce = NTLM_CLIENT_NONCE;
 
     let ts_request = TsRequest::from_buffer(&buffer).unwrap();
 
-    assert_eq!(expected_version, ts_request.peer_version.unwrap());
+    assert_eq!(expected_version, ts_request.version);
     assert_eq!(
         ts_request.pub_key_auth.unwrap().as_slice(),
         expected_pub_key_auth.as_ref()
@@ -332,13 +332,13 @@ fn ntlm_decode_fourth_phase_with_pub_key_auth_and_client_nonce() {
 fn ntlm_decode_fiveth_phase_with_auth_info_and_client_nonce() {
     let buffer = NTLM_5_PHASE_TS_REQUEST;
 
-    let expected_version = NLA_VERSION;
+    let expected_version = TS_REQUEST_VERSION;
     let expected_auth_info = NTLM_5_PHASE_AUTH_INFO;
     let expected_client_nonce = NTLM_CLIENT_NONCE;
 
     let ts_request = TsRequest::from_buffer(&buffer).unwrap();
 
-    assert_eq!(expected_version, ts_request.peer_version.unwrap());
+    assert_eq!(expected_version, ts_request.version);
     assert_eq!(
         ts_request.auth_info.unwrap().as_slice(),
         expected_auth_info.as_ref()
@@ -387,7 +387,7 @@ fn ntlm_encode_first_phase_with_nego_token_and_client_nonce() {
         pub_key_auth: None,
         error_code: None,
         client_nonce: Some(NTLM_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();
@@ -409,7 +409,7 @@ fn ntlm_encode_second_phase_with_nego_token_and_client_nonce() {
         pub_key_auth: None,
         error_code: None,
         client_nonce: Some(NTLM_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();
@@ -431,7 +431,7 @@ fn ntlm_encode_third_phase_with_nego_token_and_pub_key_auth_and_client_nonce() {
         pub_key_auth: Some(NTLM_3_PHASE_PUB_KEY_AUTH.to_vec()),
         error_code: None,
         client_nonce: Some(NTLM_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();
@@ -453,7 +453,7 @@ fn ntlm_encode_fourth_phase_with_pub_key_auth_and_client_nonce() {
         pub_key_auth: Some(NTLM_4_PHASE_PUB_KEY_AUTH.to_vec()),
         error_code: None,
         client_nonce: Some(NTLM_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();
@@ -475,7 +475,7 @@ fn ntlm_encode_fiveth_phase_with_auth_info_and_client_nonce() {
         pub_key_auth: None,
         error_code: None,
         client_nonce: Some(NTLM_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();
@@ -497,7 +497,7 @@ fn ntlm_encode_with_error_code() {
         pub_key_auth: Some(NTLM_WITH_ERROR_CODE_PUB_KEY_AUTH.to_vec()),
         error_code: Some(NTLM_WITH_ERROR_CODE_ERROR_CODE),
         client_nonce: Some(NTLM_WITH_ERROR_CODE_CLIENT_NONCE),
-        peer_version: Some(NLA_VERSION),
+        version: TS_REQUEST_VERSION,
     };
 
     let ts_request_len = ts_request.buffer_len();

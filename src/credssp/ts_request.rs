@@ -9,10 +9,10 @@ use crate::{
     sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
 };
 
+pub const TS_REQUEST_VERSION: u32 = 6;
 pub const NONCE_SIZE: usize = 32;
 pub const MAX_TS_REQUEST_LENGTH_BUFFER_SIZE: usize = 4;
 
-const NLA_VERSION: u32 = 6;
 const NONCE_FIELD_LEN: u16 = 36;
 
 /// Used for communication in the CredSSP [client](struct.CredSspServer.html)
@@ -22,10 +22,10 @@ const NONCE_FIELD_LEN: u16 = 36;
 /// # MSDN
 ///
 /// * [TSRequest](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/6aac4dea-08ef-47a6-8747-22ea7f6d8685)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TsRequest {
     /// Specifies the supported version of the CredSSP protocol.
-    pub peer_version: Option<u32>,
+    pub version: u32,
     /// Contains the SPNEGO tokens or NTLM messages that are passed between the client
     /// and server.
     pub nego_tokens: Option<Vec<u8>>,
@@ -40,6 +40,19 @@ pub struct TsRequest {
     /// An array of cryptographically random bytes used to provide sufficient
     /// entropy during hash computation.
     pub client_nonce: Option<[u8; NONCE_SIZE]>,
+}
+
+impl Default for TsRequest {
+    fn default() -> Self {
+        Self {
+            version: TS_REQUEST_VERSION,
+            nego_tokens: None,
+            auth_info: None,
+            pub_key_auth: None,
+            error_code: None,
+            client_nonce: None,
+        }
+    }
 }
 
 impl TsRequest {
@@ -72,7 +85,7 @@ impl TsRequest {
 
         ber::read_contextual_tag(&mut stream, 0, ber::Pc::Construct)?;
 
-        let peer_version = ber::read_integer(&mut stream)? as u32;
+        let version = ber::read_integer(&mut stream)? as u32;
 
         let nego_tokens =
             if ber::read_contextual_tag_or_unwind(&mut stream, 1, ber::Pc::Construct)?.is_some() {
@@ -110,7 +123,7 @@ impl TsRequest {
                 None
             };
 
-        let error_code = if peer_version >= 3
+        let error_code = if version >= 3
             && ber::read_contextual_tag_or_unwind(&mut stream, 4, ber::Pc::Construct)?.is_some()
         {
             let read_error_code = ber::read_integer(&mut stream)?;
@@ -121,7 +134,7 @@ impl TsRequest {
             None
         };
 
-        let client_nonce = if peer_version >= 5
+        let client_nonce = if version >= 5
             && ber::read_contextual_tag_or_unwind(&mut stream, 5, ber::Pc::Construct)?.is_some()
         {
             let length = ber::read_octet_string_tag(&mut stream)?;
@@ -141,12 +154,12 @@ impl TsRequest {
         };
 
         Ok(TsRequest {
+            version,
             nego_tokens,
             auth_info,
             pub_key_auth,
             error_code,
             client_nonce,
-            peer_version: Some(peer_version),
         })
     }
 
@@ -161,7 +174,7 @@ impl TsRequest {
         ber::write_sequence_tag(&mut buffer, len)?;
         /* [0] version */
         ber::write_contextual_tag(&mut buffer, 0, 3, ber::Pc::Construct)?;
-        ber::write_integer(&mut buffer, NLA_VERSION)?;
+        ber::write_integer(&mut buffer, self.version)?;
 
         /* [1] negoTokens (NegoData) */
         if let Some(ref nego_tokens) = self.nego_tokens {
@@ -195,21 +208,14 @@ impl TsRequest {
         }
 
         /* [4] errorCode (INTEGER) */
-        if self.peer_version.is_some()
-            && self.peer_version.unwrap() >= 3
-            && self.error_code.is_some()
-        {
-            let (error_code_len, _) =
-                get_error_code_len(self.peer_version.unwrap(), self.error_code);
+        if self.version >= 3 && self.error_code.is_some() {
+            let (error_code_len, _) = get_error_code_len(self.version, self.error_code);
             ber::write_contextual_tag(&mut buffer, 4, error_code_len, ber::Pc::Construct)?;
             ber::write_integer(&mut buffer, self.error_code.unwrap())?;
         }
 
         /* [5] clientNonce (OCTET STRING) */
-        if self.peer_version.is_some()
-            && self.peer_version.unwrap() >= 5
-            && self.client_nonce.is_some()
-        {
+        if self.version >= 5 && self.client_nonce.is_some() {
             ber::write_sequence_octet_string(&mut buffer, 5, self.client_nonce.as_ref().unwrap())?;
         }
 
@@ -231,14 +237,9 @@ impl TsRequest {
     }
 
     fn ts_request_len(&self) -> u16 {
-        let (error_code_len, error_code_context_len) = match self.peer_version {
-            Some(peer_version) => get_error_code_len(peer_version, self.error_code),
-            None => (0, 0),
-        };
-        let client_nonce_len = if self.client_nonce.is_some()
-            && self.peer_version.is_some()
-            && self.peer_version.unwrap() >= 5
-        {
+        let (error_code_len, error_code_context_len) =
+            get_error_code_len(self.version, self.error_code);
+        let client_nonce_len = if self.client_nonce.is_some() && self.version >= 5 {
             NONCE_FIELD_LEN
         } else {
             0
