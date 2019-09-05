@@ -50,34 +50,6 @@ pub enum CredSspMode {
     CredentialLess,
 }
 
-/// Implements the CredSSP *client*. The client's credentials are to
-/// be securely delegated to the server.
-///
-/// # MSDN
-///
-/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
-pub struct CredSspClient {
-    state: CredSspState,
-    context: Option<CredSspContext>,
-    credentials: Credentials,
-    public_key: Vec<u8>,
-    cred_ssp_mode: CredSspMode,
-    client_nonce: [u8; NONCE_SIZE],
-}
-
-/// Implements the CredSSP *server*. The client's credentials
-/// securely delegated to the server for authentication using TLS.
-///
-/// # MSDN
-///
-/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
-pub struct CredSspServer<C: CredentialsProxy> {
-    pub credentials: C,
-    state: CredSspState,
-    context: Option<CredSspContext>,
-    public_key: Vec<u8>,
-}
-
 /// The result of a CredSSP client or server processing.
 /// The enum may carry a [`TsRequest`](struct.TsRequest.html) or
 /// [`Credentials`](struct.Credentials.html).
@@ -142,15 +114,19 @@ enum EndpointType {
     Server,
 }
 
-struct CredSspContext {
-    peer_version: Option<u32>,
-    sspi_context: SspiProvider,
-    send_seq_num: u32,
-    recv_seq_num: u32,
-}
-
-enum SspiProvider {
-    NtlmContext(Ntlm),
+/// Implements the CredSSP *client*. The client's credentials are to
+/// be securely delegated to the server.
+///
+/// # MSDN
+///
+/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
+pub struct CredSspClient {
+    state: CredSspState,
+    context: Option<CredSspContext>,
+    credentials: Credentials,
+    public_key: Vec<u8>,
+    cred_ssp_mode: CredSspMode,
+    client_nonce: [u8; NONCE_SIZE],
 }
 
 impl CredSspClient {
@@ -167,23 +143,6 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
-    }
-}
-
-impl<C: CredentialsProxy> CredSspServer<C> {
-    pub fn new(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
-        Ok(Self {
-            state: CredSspState::NegoToken,
-            context: None,
-            credentials,
-            public_key,
-        })
-    }
-}
-
-impl SspiProvider {
-    pub fn new_ntlm(credentials: Option<Credentials>) -> Self {
-        SspiProvider::NtlmContext(Ntlm::new(credentials))
     }
 }
 
@@ -260,6 +219,30 @@ impl CredSsp for CredSspClient {
             }
             CredSspState::Final => Ok(CredSspResult::Finished),
         }
+    }
+}
+
+/// Implements the CredSSP *server*. The client's credentials
+/// securely delegated to the server for authentication using TLS.
+///
+/// # MSDN
+///
+/// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
+pub struct CredSspServer<C: CredentialsProxy> {
+    pub credentials: C,
+    state: CredSspState,
+    context: Option<CredSspContext>,
+    public_key: Vec<u8>,
+}
+
+impl<C: CredentialsProxy> CredSspServer<C> {
+    pub fn new(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
+        Ok(Self {
+            state: CredSspState::NegoToken,
+            context: None,
+            credentials,
+            public_key,
+        })
     }
 }
 
@@ -385,6 +368,13 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
             CredSspState::Final => Ok(CredSspResult::Finished),
         }
     }
+}
+
+struct CredSspContext {
+    peer_version: Option<u32>,
+    sspi_context: SspiProvider,
+    send_seq_num: u32,
+    recv_seq_num: u32,
 }
 
 impl CredSspContext {
@@ -588,6 +578,16 @@ impl CredSspContext {
         self.recv_seq_num += 1;
 
         Ok(decrypted_buffer)
+    }
+}
+
+enum SspiProvider {
+    NtlmContext(Ntlm),
+}
+
+impl SspiProvider {
+    pub fn new_ntlm(credentials: Option<Credentials>) -> Self {
+        SspiProvider::NtlmContext(Ntlm::new(credentials))
     }
 }
 
