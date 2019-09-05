@@ -10,7 +10,7 @@ use rand::{rngs::OsRng, Rng};
 use self::ts_request::{TsRequest, NONCE_SIZE};
 use crate::{
     crypto::compute_sha256,
-    ntlm::{Ntlm, NTLM_VERSION_SIZE},
+    ntlm::Ntlm,
     sspi::{self, CredentialsBuffers, PackageType, Sspi, SspiError, SspiErrorType, SspiOk},
     Credentials,
 };
@@ -21,7 +21,6 @@ pub const VERSION_SIZE: usize = 8;
 const HASH_MAGIC_LEN: usize = 38;
 const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
 const CLIENT_SERVER_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Client-To-Server Binding Hash\0";
-const DEFAULT_VERSION: [u8; VERSION_SIZE] = [0x00; VERSION_SIZE];
 
 /// Provides an interface for implementing proxy credentials structures.
 pub trait CredentialsProxy {
@@ -61,7 +60,6 @@ pub struct CredSspClient {
     state: CredSspState,
     context: Option<CredSspContext>,
     credentials: Credentials,
-    version: Vec<u8>,
     public_key: Vec<u8>,
     cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
@@ -77,7 +75,6 @@ pub struct CredSspServer<C: CredentialsProxy> {
     pub credentials: C,
     state: CredSspState,
     context: Option<CredSspContext>,
-    version: Vec<u8>,
     public_key: Vec<u8>,
 }
 
@@ -162,57 +159,32 @@ impl CredSspClient {
         public_key: Vec<u8>,
         credentials: Credentials,
         cred_ssp_mode: CredSspMode,
-        version: Vec<u8>,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::Initial,
             context: None,
             credentials,
-            version,
             public_key,
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
         })
     }
-
-    pub fn with_default_version(
-        public_key: Vec<u8>,
-        credentials: Credentials,
-        cred_ssp_mode: CredSspMode,
-    ) -> sspi::Result<Self> {
-        Self::new(
-            public_key,
-            credentials,
-            cred_ssp_mode,
-            DEFAULT_VERSION.to_vec(),
-        )
-    }
 }
 
 impl<C: CredentialsProxy> CredSspServer<C> {
-    pub fn new(public_key: Vec<u8>, credentials: C, version: Vec<u8>) -> sspi::Result<Self> {
+    pub fn new(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::Initial,
             context: None,
             credentials,
-            version,
             public_key,
         })
-    }
-
-    pub fn with_default_version(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
-        Self::new(public_key, credentials, DEFAULT_VERSION.to_vec())
     }
 }
 
 impl SspiProvider {
-    pub fn new_ntlm(credentials: Option<Credentials>, version: Vec<u8>) -> Self {
-        let mut ntlm_version = [0x00; NTLM_VERSION_SIZE];
-        ntlm_version.clone_from_slice(version.as_ref());
-
-        let mut ntlm_context = Ntlm::new(credentials);
-        ntlm_context.set_version(ntlm_version);
-        SspiProvider::NtlmContext(ntlm_context)
+    pub fn new_ntlm(credentials: Option<Credentials>) -> Self {
+        SspiProvider::NtlmContext(Ntlm::new(credentials))
     }
 }
 
@@ -226,10 +198,9 @@ impl CredSsp for CredSspClient {
         loop {
             match self.state {
                 CredSspState::Initial => {
-                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(
-                        Some(self.credentials.clone()),
-                        self.version.clone(),
-                    )));
+                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(Some(
+                        self.credentials.clone(),
+                    ))));
 
                     self.state = CredSspState::NegoToken;
                 }
@@ -307,10 +278,7 @@ impl<C: CredentialsProxy> CredSsp for CredSspServer<C> {
         loop {
             match self.state {
                 CredSspState::Initial => {
-                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(
-                        None,
-                        self.version.clone(),
-                    )));
+                    self.context = Some(CredSspContext::new(SspiProvider::new_ntlm(None)));
 
                     self.state = CredSspState::NegoToken;
                 }
