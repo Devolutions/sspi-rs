@@ -24,6 +24,11 @@ use crate::sspi::{
 
 const SEC_WINNT_AUTH_IDENTITY_UNICODE: c_ulong = 0x2;
 
+/// Retrieves information about a specified security package. This information includes credentials and contexts.
+///
+/// # MSDN
+///
+/// * [QuerySecurityPackageInfoW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfow)
 pub fn query_security_package_info(package_type: SecurityPackageType) -> sspi::Result<PackageInfo> {
     let mut package_name = package_type
         .to_string()
@@ -45,6 +50,15 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> sspi::R
     Ok(package_info)
 }
 
+/// Returns an array of `PackageInfo` structures that provide information about the security packages available to the client.
+///
+/// # Returns
+///
+/// * `Vec` of `PackageInfo` structures upon success
+///
+/// # MSDN
+///
+/// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> sspi::Result<Vec<PackageInfo>> {
     let mut size: u32 = 0;
     let mut packages = ptr::null_mut() as *mut SecPkgInfoW;

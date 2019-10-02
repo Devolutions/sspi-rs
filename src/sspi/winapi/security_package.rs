@@ -33,12 +33,30 @@ use crate::sspi::{
 
 const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x8000_0084;
 
+/// Represents a Windows-provided SSP that doesn't have a wrapper.
+///
+/// Using the methods of this structure, it is possible to get a Windows-provided SSP even if
+/// it doesn't have a wrapper or a platform independent implementation. It is still recommended
+/// to use a wrapper if one is available.
 pub struct SecurityPackage {
     context: Option<SecurityContext>,
     package_name: String,
 }
 
 impl SecurityPackage {
+    /// Creates the `SecurityPackage` from a string. You can get any available Windows-provided
+    /// SSPs using this method.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[cfg(windows)]
+    /// # mod win {
+    /// #     fn main() {
+    /// let negotiate = sspi::winapi::SecurityPackage::from_package_name("Negotiate".to_string());
+    /// #     }
+    /// # }
+    /// ```
     pub fn from_package_name(package_name: String) -> Self {
         Self {
             context: None,
@@ -46,6 +64,11 @@ impl SecurityPackage {
         }
     }
 
+    /// Enables an application to query a security package for certain attributes of a security context.
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes function](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--general)
     fn query_context_attributes<T>(
         &mut self,
         attribute: u32,

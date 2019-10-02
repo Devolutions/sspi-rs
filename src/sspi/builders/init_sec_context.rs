@@ -31,6 +31,9 @@ pub type FilledInitializeSecurityContext<'a, I, C> = InitializeSecurityContext<
     WithOutput,
 >;
 
+/// Contains data returned by calling the `execute` method of
+/// the `InitializeSecurityContextBuilder` structure. The builder is returned by calling
+/// the `initialize_security_context` method.
 #[derive(Debug, Clone)]
 pub struct InitializeSecurityContextResult {
     pub status: SecurityStatus,
@@ -38,6 +41,15 @@ pub struct InitializeSecurityContextResult {
     pub expiry: Option<NaiveDateTime>,
 }
 
+/// A builder to execute one of the SSPI functions. Returned by the `initialize_security_context` method.
+///
+/// # Requirements for execution
+///
+/// These methods are required to be called before calling the `execute` method
+/// * [`with_credentials_handle`](struct.InitializeSecurityContext.html#method.with_credentials_handle)
+/// * [`with_context_requirements`](struct.InitializeSecurityContext.html#method.with_context_requirements)
+/// * [`with_target_data_representation`](struct.InitializeSecurityContext.html#method.with_target_data_representation)
+/// * [`with_output`](struct.InitializeSecurityContext.html#method.with_output)
 pub struct InitializeSecurityContext<
     'a,
     Inner,
@@ -105,6 +117,8 @@ impl<
         }
     }
 
+    /// Specifies a handle to the credentials returned by `acquire_credentials_handle`. This handle is used
+    /// to build the security context. The builder requires at least `CredentialUse::Outbound` credentials.
     pub fn with_credentials_handle(
         self,
         credentials_handle: &'a mut CredsHandle,
@@ -134,6 +148,7 @@ impl<
         }
     }
 
+    /// Specifies bit flags that indicate requests for the context. Not all packages can support all requirements.
     pub fn with_context_requirements(
         self,
         context_requirements: ClientRequestFlags,
@@ -163,6 +178,7 @@ impl<
         }
     }
 
+    /// Specifies the data representation, such as byte ordering, on the target.
     pub fn with_target_data_representation(
         self,
         target_data_representation: DataRepresentation,
@@ -192,6 +208,7 @@ impl<
         }
     }
 
+    /// Specifies a mutable reference to a buffer with `SecurityBuffer` that receives the output data.
     pub fn with_output(
         self,
         output: &'a mut [SecurityBuffer],
@@ -228,6 +245,9 @@ impl<
         }
     }
 
+    /// Specifies a mutable reference to a buffer with `SecurityBuffer` structures. Don't call this method on during
+    /// the first execution of the builder. On the second execution, this parameter is a reference to the partially
+    /// formed context returned during the first call.
     pub fn with_input(self, input: &'a mut [SecurityBuffer]) -> Self {
         Self {
             input: Some(input),
@@ -239,6 +259,7 @@ impl<
 impl<'a, Inner: SspiImpl<CredentialsHandle = CredsHandle>, CredsHandle>
     FilledInitializeSecurityContext<'a, Inner, CredsHandle>
 {
+    /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<InitializeSecurityContextResult> {
         let inner = self.inner.take().unwrap();
 

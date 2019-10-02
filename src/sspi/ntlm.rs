@@ -62,6 +62,12 @@ enum NtlmState {
     Final,
 }
 
+/// Specifies the NT LAN Manager (NTLM) Authentication Protocol, used for authentication between clients and servers.
+/// NTLM is used by application protocols to authenticate remote users and, optionally, to provide session security when requested by the application.
+///
+/// # MSDN
+///
+/// * [[MS-NLMP]: NT LAN Manager (NTLM) Authentication Protocol](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b38c36ed-2804-4868-a9ff-8dd3182128e4)
 #[derive(Debug, Clone)]
 pub struct Ntlm {
     negotiate_message: Option<NegotiateMessage>,
@@ -426,7 +432,11 @@ impl Mic {
     }
 }
 
-/// Owns credentials of an identity used in negotiations and communications.
+/// Allows you to pass a particular user name and password to the run-time library for the purpose of authentication
+///
+/// # MSDN
+///
+/// * [SEC_WINNT_AUTH_IDENTITY_W structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_w)
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AuthIdentity {
     pub username: String,

@@ -18,6 +18,7 @@ use crate::sspi::{
     PackageInfo, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi,
 };
 
+/// Represents a wrapper for Windows-provided NTLM.
 pub struct Ntlm(SecurityPackage);
 
 impl Ntlm {

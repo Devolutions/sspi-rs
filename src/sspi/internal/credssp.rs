@@ -63,8 +63,8 @@ macro_rules! try_cred_ssp {
     };
 }
 
-/// Indicates to the [`CredSspClient`](struct.CredSspClient.html) whether or not to transfer
-/// the credentials in the auth_info [`TsRequest`](struct.TsRequest.html) field.
+/// Indicates to the `CredSspClient` whether or not to transfer
+/// the credentials in the auth_info `TsRequest` field.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CredSspMode {
     WithCredentials,
@@ -73,8 +73,6 @@ pub enum CredSspMode {
 }
 
 /// The result of a CredSSP client or server processing.
-/// The enum may carry a [`TsRequest`](struct.TsRequest.html) or
-/// [`AuthIdentity`](struct.AuthIdentity.html).
 #[derive(Debug, Clone)]
 pub enum CredSspResult {
     /// Used as a result of processing of negotiation tokens by the client and server.
