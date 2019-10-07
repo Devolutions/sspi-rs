@@ -34,19 +34,10 @@ enum Tag {
     Sequence = 0x10,
 }
 
-pub const SIZEOF_ENUMERATED: u16 = 3;
-pub const SIZEOF_BOOL: u16 = 3;
-
 const TAG_MASK: u8 = 0x1F;
 
 pub fn sizeof_sequence(length: u16) -> u16 {
     1 + sizeof_length(length) + length
-}
-
-pub fn sizeof_application_tag(tagnum: u8, length: u16) -> u16 {
-    let tag_len = if tagnum > 0x1E { 2 } else { 1 };
-
-    sizeof_length(length) + tag_len
 }
 
 pub fn sizeof_sequence_tag(length: u16) -> u16 {
@@ -136,81 +127,6 @@ pub fn read_contextual_tag_or_unwind(
     }
 }
 
-pub fn write_application_tag(
-    mut stream: impl io::Write,
-    tagnum: u8,
-    length: u16,
-) -> io::Result<usize> {
-    let taglen = if tagnum > 0x1E {
-        stream.write_u8(Class::Application as u8 | Pc::Construct as u8 | TAG_MASK)?;
-        stream.write_u8(tagnum)?;
-        2
-    } else {
-        stream.write_u8(Class::Application as u8 | Pc::Construct as u8 | (TAG_MASK & tagnum))?;
-        1
-    };
-
-    write_length(stream, length).map(|length| length + taglen)
-}
-
-pub fn read_application_tag(mut stream: impl io::Read, tagnum: u8) -> io::Result<u16> {
-    let identifier = stream.read_u8()?;
-
-    if tagnum > 0x1E {
-        if identifier != Class::Application as u8 | Pc::Construct as u8 | TAG_MASK {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid application tag identifier",
-            ));
-        }
-        if stream.read_u8()? != tagnum {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid application tag identifier",
-            ));
-        }
-    } else if identifier != Class::Application as u8 | Pc::Construct as u8 | (TAG_MASK & tagnum) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid application tag identifier",
-        ));
-    }
-
-    read_length(stream)
-}
-
-pub fn write_enumerated(mut stream: impl io::Write, enumerated: u8) -> io::Result<usize> {
-    let mut size = 0;
-    size += write_universal_tag(&mut stream, Tag::Enumerated, Pc::Primitive)?;
-    size += write_length(&mut stream, 1)?;
-    stream.write_u8(enumerated)?;
-    size += 1;
-
-    Ok(size)
-}
-
-pub fn read_enumerated(mut stream: impl io::Read, count: u8) -> io::Result<u8> {
-    read_universal_tag(&mut stream, Tag::Enumerated, Pc::Primitive)?;
-
-    let length = read_length(&mut stream)?;
-    if length != 1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid enumerated len",
-        ));
-    }
-
-    let enumerated = stream.read_u8()?;
-    if enumerated + 1 > count {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid enumerated value",
-        ));
-    }
-
-    Ok(enumerated)
-}
-
 pub fn write_integer(mut stream: impl io::Write, value: u32) -> io::Result<usize> {
     write_universal_tag(&mut stream, Tag::Integer, Pc::Primitive)?;
 
@@ -263,30 +179,6 @@ pub fn read_integer(mut stream: impl io::Read) -> io::Result<u64> {
     }
 }
 
-pub fn write_bool(mut stream: impl io::Write, value: bool) -> io::Result<usize> {
-    let mut size = 0;
-    size += write_universal_tag(&mut stream, Tag::Boolean, Pc::Primitive)?;
-    size += write_length(&mut stream, 1)?;
-    stream.write_u8(if value { 0xFF } else { 0x00 })?;
-    size += 1;
-
-    Ok(size)
-}
-
-pub fn read_bool(mut stream: impl io::Read) -> io::Result<bool> {
-    read_universal_tag(&mut stream, Tag::Boolean, Pc::Primitive)?;
-    let length = read_length(&mut stream)?;
-
-    if length != 1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid integer len",
-        ));
-    }
-
-    Ok(stream.read_u8()? != 0)
-}
-
 pub fn write_sequence_octet_string(
     mut stream: impl io::Write,
     tagnum: u8,
@@ -312,15 +204,6 @@ pub fn write_octet_string(mut stream: impl io::Write, value: &[u8]) -> io::Resul
 pub fn write_octet_string_tag(mut stream: impl io::Write, length: u16) -> io::Result<usize> {
     write_universal_tag(&mut stream, Tag::OctetString, Pc::Primitive)?;
     write_length(&mut stream, length).map(|length| length + 1)
-}
-
-pub fn read_octet_string(mut stream: impl io::Read) -> io::Result<Vec<u8>> {
-    let length = read_octet_string_tag(&mut stream)?;
-
-    let mut buffer = vec![0; length as usize];
-    stream.read_exact(&mut buffer)?;
-
-    Ok(buffer)
 }
 
 pub fn read_octet_string_tag(mut stream: impl io::Read) -> io::Result<u16> {
