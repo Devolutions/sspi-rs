@@ -1,10 +1,7 @@
 use lazy_static::lazy_static;
 
 use super::*;
-use crate::{
-    credssp::CredSspMode,
-    sspi::{Credentials, CredentialsBuffers},
-};
+use crate::{internal::credssp::CredSspMode, sspi::ntlm::AuthIdentityBuffers, AuthIdentity};
 
 const NTLM_CLIENT_NONCE: [u8; 32] = [
     0x22, 0x10, 0x12, 0xad, 0x12, 0x5c, 0x7a, 0x15, 0xfe, 0xb6, 0x4b, 0x1f, 0xcb, 0x94, 0x83, 0x3a,
@@ -221,22 +218,22 @@ const TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: [u8; 25] = [
 ];
 
 lazy_static! {
-    static ref AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: CredentialsBuffers =
-        Credentials::new(String::from("a"), String::from("1"), None).into();
-    static ref AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: CredentialsBuffers = Credentials::new(
-        String::from("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890"),
-        String::from("@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?"),
-        None
-    )
+    static ref AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: AuthIdentityBuffers =
+        AuthIdentity { username: String::from("a"), password:  String::from("1"), domain: None}.into();
+    static ref AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: AuthIdentityBuffers = AuthIdentity {
+        username: String::from("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890"),
+        password: String::from("@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?"),
+        domain: None
+    }
     .into();
-    static ref AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: CredentialsBuffers = Credentials::new(
-        String::from("Username"),
-        String::from("Password"),
-        Some(String::from("Domain"))
-    )
+    static ref AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: AuthIdentityBuffers = AuthIdentity {
+        username: String::from("Username"),
+        password: String::from("Password"),
+        domain: Some(String::from("Domain"))
+    }
     .into();
-    static ref AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: CredentialsBuffers =
-        Credentials::new(String::from(""), String::from(""), Some(String::from(""))).into();
+    static ref AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: AuthIdentityBuffers =
+        AuthIdentity { username: String::from(""), password: String::from(""), domain: Some(String::from("")) }.into();
 }
 
 #[test]

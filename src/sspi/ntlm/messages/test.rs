@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 
-use crate::ntlm::NTLM_VERSION_SIZE;
+use crate::sspi::ntlm::{AuthIdentityBuffers, NTLM_VERSION_SIZE};
 use crate::sspi::*;
 
 pub const SIGNATURE_SIZE: usize = 8;
@@ -123,12 +123,10 @@ lazy_static! {
 
         result
     };
-}
-
-pub fn get_test_identity() -> Option<Credentials> {
-    Some(Credentials::new(
-        String::from("User"),
-        String::from("Password"),
-        Some(String::from("Domain")),
-    ))
+    pub static ref TEST_CREDENTIALS: AuthIdentityBuffers = AuthIdentity {
+        username: String::from("User"),
+        password: String::from("Password"),
+        domain: Some(String::from("Domain")),
+    }
+    .into();
 }

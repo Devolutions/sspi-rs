@@ -1,9 +1,9 @@
 use super::*;
-use crate::ntlm::{messages::test::*, *};
+use crate::sspi::ntlm::{messages::test::*, *};
 
 #[test]
 fn write_negotiate_writes_correct_signature() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -15,7 +15,7 @@ fn write_negotiate_writes_correct_signature() {
 
 #[test]
 fn write_negotiate_writes_correct_message_type() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -30,7 +30,7 @@ fn write_negotiate_writes_correct_message_type() {
 
 #[test]
 fn write_negotiate_writes_flags() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -49,7 +49,7 @@ fn write_negotiate_writes_flags() {
 
 #[test]
 fn write_negotiate_writes_domain_name() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -64,7 +64,7 @@ fn write_negotiate_writes_domain_name() {
 
 #[test]
 fn write_negotiate_writes_workstation() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -79,7 +79,7 @@ fn write_negotiate_writes_workstation() {
 
 #[test]
 fn write_negotiate_writes_version() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -94,7 +94,7 @@ fn write_negotiate_writes_version() {
 
 #[test]
 fn write_negotiate_writes_buffer_to_context() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -106,7 +106,7 @@ fn write_negotiate_writes_buffer_to_context() {
 
 #[test]
 fn write_negotiate_changes_context_state_on_success() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Negotiate;
 
@@ -120,7 +120,7 @@ fn write_negotiate_changes_context_state_on_success() {
 
 #[test]
 fn write_negotiate_failed_on_incorrect_state() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
 
@@ -130,7 +130,7 @@ fn write_negotiate_failed_on_incorrect_state() {
 
 #[test]
 fn read_challenge_does_not_fail_with_correct_header() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -142,7 +142,7 @@ fn read_challenge_does_not_fail_with_correct_header() {
 
 #[test]
 fn read_challenge_fails_with_incorrect_signature() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -155,7 +155,7 @@ fn read_challenge_fails_with_incorrect_signature() {
 
 #[test]
 fn read_challenge_fails_with_incorrect_message_type() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -168,7 +168,7 @@ fn read_challenge_fails_with_incorrect_message_type() {
 
 #[test]
 fn read_challenge_reads_correct_flags() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -189,7 +189,7 @@ fn read_challenge_reads_correct_flags() {
 
 #[test]
 fn read_challenge_reads_correct_target_info() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -206,7 +206,7 @@ fn read_challenge_reads_correct_target_info() {
 
 #[test]
 fn read_challenge_reads_correct_server_challenge() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -223,7 +223,7 @@ fn read_challenge_reads_correct_server_challenge() {
 
 #[test]
 fn read_challenge_reads_correct_timestamp() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -240,7 +240,7 @@ fn read_challenge_reads_correct_timestamp() {
 
 #[test]
 fn read_challenge_writes_buffer_to_context() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -257,7 +257,7 @@ fn read_challenge_writes_buffer_to_context() {
 
 #[test]
 fn read_challenge_fails_on_incorrect_state() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(LOCAL_NEGOTIATE_VERSION);
     context.state = NtlmState::Authenticate;
     context.negotiate_message = Some(NegotiateMessage::new(LOCAL_NEGOTIATE_MESSAGE.to_vec()));
@@ -269,7 +269,7 @@ fn read_challenge_fails_on_incorrect_state() {
 
 #[test]
 fn write_authenticate_writes_correct_header() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(NTLM_VERSION);
     context.state = NtlmState::Authenticate;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -284,7 +284,7 @@ fn write_authenticate_writes_correct_header() {
         0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x03, 0x00, 0x00, 0x00,
     ];
 
-    write_authenticate(&mut context, &mut buff).unwrap();
+    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[SIGNATURE_START..AUTHENTICATE_LM_CHALLENGE_RESPONSE_START],
@@ -294,7 +294,7 @@ fn write_authenticate_writes_correct_header() {
 
 #[test]
 fn write_authenticate_changes_context_state_on_success() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(NTLM_VERSION);
     let mut buff = Vec::new();
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -307,7 +307,7 @@ fn write_authenticate_changes_context_state_on_success() {
     context.state = NtlmState::Authenticate;
     let expected_state = NtlmState::Final;
 
-    write_authenticate(&mut context, &mut buff).unwrap();
+    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(context.state, expected_state);
 }
@@ -319,7 +319,7 @@ fn write_authenticate_correct_writes_domain_name() {
         0x44, 0x00, 0x6f, 0x00, 0x6d, 0x00, 0x61, 0x00, 0x69, 0x00, 0x6e, 0x00,
     ];
 
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(NTLM_VERSION);
     context.state = NtlmState::Authenticate;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -338,7 +338,7 @@ fn write_authenticate_correct_writes_domain_name() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    write_authenticate(&mut context, &mut buff).unwrap();
+    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[AUTHENTICATE_DOMAIN_NAME_START..AUTHENTICATE_USER_NAME_START],
@@ -346,7 +346,7 @@ fn write_authenticate_correct_writes_domain_name() {
     );
     assert_eq!(
         buff[AUTHENTICATE_OFFSET_WITH_MIC
-            ..AUTHENTICATE_OFFSET_WITH_MIC + context.identity.as_ref().unwrap().domain.len()],
+            ..AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.len()],
         expected_buffer[..]
     );
 }
@@ -356,7 +356,7 @@ fn write_authenticate_correct_writes_user_name() {
     let expected = [0x08, 0x00, 0x08, 0x00, 0x64, 0x00, 0x00, 0x00];
     let expected_buffer = [0x55, 0x00, 0x73, 0x00, 0x65, 0x00, 0x72, 0x00];
 
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(NTLM_VERSION);
     context.state = NtlmState::Authenticate;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -375,22 +375,22 @@ fn write_authenticate_correct_writes_user_name() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    write_authenticate(&mut context, &mut buff).unwrap();
+    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[AUTHENTICATE_USER_NAME_START..AUTHENTICATE_WORKSTATION_START],
         expected
     );
-    let offset = AUTHENTICATE_OFFSET_WITH_MIC + context.identity.as_ref().unwrap().domain.len();
+    let offset = AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.len();
     assert_eq!(
-        buff[offset..offset + context.identity.as_ref().unwrap().user.len()],
+        buff[offset..offset + TEST_CREDENTIALS.user.len()],
         expected_buffer[..]
     );
 }
 
 #[test]
 fn write_authenticate_fails_on_incorrect_state() {
-    let mut context = Ntlm::new(get_test_identity());
+    let mut context = Ntlm::new();
     context.set_version(NTLM_VERSION);
     context.state = NtlmState::Final;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -409,5 +409,5 @@ fn write_authenticate_fails_on_incorrect_state() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    assert!(write_authenticate(&mut context, &mut buff).is_err());
+    assert!(write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).is_err());
 }

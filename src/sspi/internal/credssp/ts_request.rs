@@ -6,13 +6,12 @@ use std::io::{self, Read};
 use super::CredSspMode;
 use crate::{
     ber,
-    sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
+    sspi::{self, ntlm::AuthIdentityBuffers},
 };
 
-pub const TS_REQUEST_VERSION: u32 = 6;
 pub const NONCE_SIZE: usize = 32;
-pub const MAX_TS_REQUEST_LENGTH_BUFFER_SIZE: usize = 4;
 
+const TS_REQUEST_VERSION: u32 = 6;
 const NONCE_FIELD_LEN: u16 = 36;
 
 /// Used for communication in the CredSSP [client](struct.CredSspServer.html)
@@ -228,8 +227,8 @@ impl TsRequest {
 
     pub fn check_error(&self) -> sspi::Result<()> {
         match self.error_code {
-            Some(error_code) if error_code != 0 => Err(SspiError::new(
-                SspiErrorType::InvalidToken,
+            Some(error_code) if error_code != 0 => Err(sspi::Error::new(
+                sspi::ErrorKind::InvalidToken,
                 format!("Server has returned an error: 0x{:x}", error_code),
             )),
             _ => Ok(()),
@@ -256,12 +255,12 @@ impl TsRequest {
 }
 
 pub fn write_ts_credentials(
-    identity: &CredentialsBuffers,
+    credentials: &AuthIdentityBuffers,
     cred_ssp_mode: CredSspMode,
 ) -> io::Result<Vec<u8>> {
-    let empty_identity = CredentialsBuffers::default();
+    let empty_identity = AuthIdentityBuffers::default();
     let identity = match cred_ssp_mode {
-        CredSspMode::WithCredentials => identity,
+        CredSspMode::WithCredentials => credentials,
         CredSspMode::CredentialLess => &empty_identity,
     };
 
@@ -298,7 +297,7 @@ pub fn write_ts_credentials(
     Ok(buffer)
 }
 
-pub fn read_ts_credentials(mut buffer: impl io::Read) -> io::Result<CredentialsBuffers> {
+pub fn read_ts_credentials(mut buffer: impl io::Read) -> io::Result<AuthIdentityBuffers> {
     // TSCredentials (SEQUENCE)
     ber::read_sequence_tag(&mut buffer)?;
     // [0] credType (INTEGER)
@@ -335,10 +334,10 @@ pub fn read_ts_credentials(mut buffer: impl io::Read) -> io::Result<CredentialsB
         buffer.read_exact(&mut password)?;
     }
 
-    Ok(CredentialsBuffers::new(user, domain, password))
+    Ok(AuthIdentityBuffers::new(user, domain, password))
 }
 
-fn sizeof_ts_credentials(identity: &CredentialsBuffers) -> u16 {
+fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
     ber::sizeof_integer(1)
         + ber::sizeof_contextual_tag(ber::sizeof_integer(1))
         + ber::sizeof_sequence_octet_string(ber::sizeof_sequence(sizeof_ts_password_creds(
@@ -346,7 +345,7 @@ fn sizeof_ts_credentials(identity: &CredentialsBuffers) -> u16 {
         )))
 }
 
-fn sizeof_ts_password_creds(identity: &CredentialsBuffers) -> u16 {
+fn sizeof_ts_password_creds(identity: &AuthIdentityBuffers) -> u16 {
     ber::sizeof_sequence_octet_string(identity.domain.len() as u16)
         + ber::sizeof_sequence_octet_string(identity.user.len() as u16)
         + ber::sizeof_sequence_octet_string(identity.password.len() as u16)
@@ -369,13 +368,14 @@ fn get_nego_tokens_len(nego_tokens: &Option<Vec<u8>>) -> u16 {
 }
 
 fn get_error_code_len(version: u32, error_code: Option<u32>) -> (u16, u16) {
-    if version >= 3 && version != 5 && error_code.is_some() {
-        let len = ber::sizeof_integer(error_code.unwrap());
-        let context_len = ber::sizeof_contextual_tag(len);
+    match error_code {
+        Some(error_code) if version >= 3 && version != 5 => {
+            let len = ber::sizeof_integer(error_code);
+            let context_len = ber::sizeof_contextual_tag(len);
 
-        (len, context_len)
-    } else {
-        (0, 0)
+            (len, context_len)
+        }
+        _ => (0, 0),
     }
 }
 

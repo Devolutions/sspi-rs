@@ -1,3 +1,5 @@
+pub mod internal;
+
 use std::{error::Error, fmt, io, str};
 
 use serde_derive::{Deserialize, Serialize};

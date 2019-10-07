@@ -4,16 +4,19 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use rand::{rngs::OsRng, Rng};
 
 use crate::{
-    crypto::rc4::Rc4,
-    ntlm::{
-        messages::{
-            computations::*, MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC,
-            NTLM_SIGNATURE, NTLM_VERSION_SIZE, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC,
+    crypto::Rc4,
+    sspi::{
+        self,
+        ntlm::{
+            messages::{
+                computations::*, MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC,
+                NTLM_SIGNATURE, NTLM_VERSION_SIZE, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC,
+            },
+            AuthIdentityBuffers, AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
+            ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
         },
-        AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
-        ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
+        SecurityStatus,
     },
-    sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
 };
 
 const MIC_SIZE: usize = 16;
@@ -31,7 +34,7 @@ struct AuthenticateMessageFields {
 
 impl AuthenticateMessageFields {
     pub fn new(
-        identity: &CredentialsBuffers,
+        identity: &AuthIdentityBuffers,
         lm_challenge_response: &[u8],
         nt_challenge_response: &[u8],
         negotiate_flags: NegotiateFlags,
@@ -39,7 +42,7 @@ impl AuthenticateMessageFields {
         offset: u32,
     ) -> Self {
         let mut workstation = MessageFields::new();
-        let mut domain_name = MessageFields::new();
+        let mut domain_name = MessageFields::with_buffer(identity.domain.clone());
         let mut encrypted_random_session_key = MessageFields::new();
         let mut user_name = MessageFields::with_buffer(identity.user.clone());
         let mut lm_challenge_response = MessageFields::with_buffer(lm_challenge_response.to_vec());
@@ -50,10 +53,6 @@ impl AuthenticateMessageFields {
         }
 
         // will not set workstation because it is not used anywhere
-
-        if !identity.domain.is_empty() {
-            domain_name.buffer = identity.domain.clone();
-        }
 
         domain_name.buffer_offset = offset;
 
@@ -88,8 +87,9 @@ impl AuthenticateMessageFields {
 
 pub fn write_authenticate(
     mut context: &mut Ntlm,
+    credentials: &AuthIdentityBuffers,
     mut transport: impl io::Write,
-) -> sspi::SspiResult {
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_message = context
@@ -100,10 +100,6 @@ pub fn write_authenticate(
         .challenge_message
         .as_ref()
         .expect("challenge message must be set on challenge phase");
-    let identity = context
-        .identity
-        .as_ref()
-        .expect("Identity must be present on authenticate phase");
 
     // calculate needed fields
     // NTLMv2
@@ -113,7 +109,7 @@ pub fn write_authenticate(
     )?;
 
     let client_challenge = generate_challenge()?;
-    let ntlm_v2_hash = compute_ntlm_v2_hash(identity)?;
+    let ntlm_v2_hash = compute_ntlm_v2_hash(credentials)?;
     let lm_challenge_response = compute_lm_v2_response(
         client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
@@ -131,9 +127,9 @@ pub fn write_authenticate(
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
 
-    context.flags = get_flags(context.flags, identity);
+    context.flags = get_flags(context.flags, credentials);
     let message_fields = AuthenticateMessageFields::new(
-        identity,
+        credentials,
         lm_challenge_response.as_ref(),
         nt_challenge_response.as_ref(),
         context.flags,
@@ -186,13 +182,13 @@ pub fn write_authenticate(
     ));
     context.state = NtlmState::Final;
 
-    Ok(sspi::SspiOk::CompleteNeeded)
+    Ok(sspi::SecurityStatus::Ok)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Authenticate {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Write authenticate was fired but the state is not an Authenticate"),
         ))
     } else {
@@ -200,7 +196,7 @@ fn check_state(state: NtlmState) -> sspi::Result<()> {
     }
 }
 
-fn get_flags(negotiate_flags: NegotiateFlags, identity: &CredentialsBuffers) -> NegotiateFlags {
+fn get_flags(negotiate_flags: NegotiateFlags, identity: &AuthIdentityBuffers) -> NegotiateFlags {
     // set KEY_EXCH flag if it was in the challenge message
     let mut negotiate_flags = negotiate_flags & NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 

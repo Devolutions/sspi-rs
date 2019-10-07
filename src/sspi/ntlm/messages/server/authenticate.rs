@@ -2,17 +2,17 @@ use std::io::{self, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::sspi::CredentialsBuffers;
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{
         messages::{
             av_pair::MsvAvFlags, computations::*, read_ntlm_header, try_read_version,
             MessageFields, MessageTypes,
         },
-        AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
+        AuthIdentityBuffers, AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
         ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
     },
-    sspi::{self, SspiError, SspiErrorType},
+    SecurityStatus,
 };
 
 const HEADER_SIZE: usize = 64;
@@ -26,7 +26,10 @@ struct AuthenticateMessageFields {
     nt_challenge_response: MessageFields,
 }
 
-pub fn read_authenticate(mut context: &mut Ntlm, mut stream: impl io::Read) -> sspi::SspiResult {
+pub fn read_authenticate(
+    mut context: &mut Ntlm,
+    mut stream: impl io::Read,
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
@@ -47,13 +50,13 @@ pub fn read_authenticate(mut context: &mut Ntlm, mut stream: impl io::Read) -> s
 
     context.state = NtlmState::Completion;
 
-    Ok(sspi::SspiOk::CompleteNeeded)
+    Ok(sspi::SecurityStatus::CompleteNeeded)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Authenticate {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Read authenticate was fired but the state is not an Authenticate"),
         ))
     } else {
@@ -85,8 +88,8 @@ fn read_header(
     if negotiate_key_exchange && encrypted_random_session_key.buffer.is_empty()
         || !negotiate_key_exchange && !encrypted_random_session_key.buffer.is_empty()
     {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             String::from(
                 "Negotiate key exchange flag is set but encrypted random session key \
                  is empty or the flag is not set but the key is not empty",
@@ -95,8 +98,8 @@ fn read_header(
     }
 
     if encrypted_random_session_key.buffer.len() != ENCRYPTED_RANDOM_SESSION_KEY_SIZE {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             String::from("Invalid encrypted random session key"),
         ));
     }
@@ -147,14 +150,14 @@ where
 }
 
 fn process_message_fields(
-    identity: &Option<CredentialsBuffers>,
+    identity: &Option<AuthIdentityBuffers>,
     message_fields: AuthenticateMessageFields,
     mic: Option<Mic>,
     authenticate_message: Vec<u8>,
-) -> sspi::Result<(AuthenticateMessage, CredentialsBuffers)> {
+) -> sspi::Result<(AuthenticateMessage, AuthIdentityBuffers)> {
     if message_fields.nt_challenge_response.buffer.is_empty() {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             String::from("NtChallengeResponse cannot be empty"),
         ));
     }
@@ -180,7 +183,7 @@ fn process_message_fields(
     let mut identity = if let Some(identity) = identity {
         identity.clone()
     } else {
-        CredentialsBuffers::default()
+        AuthIdentityBuffers::default()
     };
 
     if !message_fields.user_name.buffer.is_empty() {

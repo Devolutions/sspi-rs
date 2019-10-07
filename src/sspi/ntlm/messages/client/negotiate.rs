@@ -2,12 +2,13 @@ use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{
         messages::{MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE},
         NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
     },
-    sspi::{self, SspiError, SspiErrorType},
+    SecurityStatus,
 };
 
 const HEADER_SIZE: usize = 32;
@@ -39,8 +40,8 @@ impl NegotiateMessageFields {
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Negotiate {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Write negotiate was fired but the state is not a Negotiate"),
         ))
     } else {
@@ -48,7 +49,10 @@ fn check_state(state: NtlmState) -> sspi::Result<()> {
     }
 }
 
-pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> sspi::SspiResult {
+pub fn write_negotiate(
+    context: &mut Ntlm,
+    mut transport: impl io::Write,
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_flags = get_flags();
@@ -73,7 +77,7 @@ pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> ssp
     context.negotiate_message = Some(NegotiateMessage::new(message));
     context.state = NtlmState::Challenge;
 
-    Ok(sspi::SspiOk::ContinueNeeded)
+    Ok(sspi::SecurityStatus::ContinueNeeded)
 }
 
 fn get_flags() -> NegotiateFlags {

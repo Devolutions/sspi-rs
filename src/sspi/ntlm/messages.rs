@@ -1,18 +1,18 @@
 pub mod client;
-pub mod computations;
 pub mod server;
 #[cfg(test)]
 pub mod test;
 
 mod av_pair;
+mod computations;
 
 use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{NegotiateFlags, NTLM_VERSION_SIZE},
-    sspi::{self, SspiError, SspiErrorType},
 };
 
 const NTLM_SIGNATURE: &[u8; NTLM_SIGNATURE_SIZE] = b"NTLMSSP\0";
@@ -108,14 +108,14 @@ pub fn read_ntlm_header(
     let message_type = stream.read_u32::<LittleEndian>()?;
 
     if signature.as_ref() != NTLM_SIGNATURE {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             format!("Read NTLM signature is invalid: {:?}", signature),
         ));
     }
     if message_type != expected_message_type as u32 {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             format!(
                 "Message type is invalid: {} != expected ({})",
                 message_type, expected_message_type as u32

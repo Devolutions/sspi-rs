@@ -3,7 +3,7 @@ use std::io;
 use bitflags::bitflags;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{crypto::HASH_SIZE, ntlm::messages::computations::SINGLE_HOST_DATA_SIZE};
+use crate::{crypto::HASH_SIZE, sspi::ntlm::messages::computations::SINGLE_HOST_DATA_SIZE};
 
 pub const AV_PAIR_ID_BYTES_SIZE: usize = 2;
 pub const AV_PAIR_LEN_BYTES_SIZE: usize = 2;

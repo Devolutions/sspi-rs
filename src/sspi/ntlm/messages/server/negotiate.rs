@@ -2,18 +2,22 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{
         messages::try_read_version,
         messages::{read_ntlm_header, MessageFields, MessageTypes},
         NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
     },
-    sspi::{self, SspiError, SspiErrorType},
+    SecurityStatus,
 };
 
 const HEADER_SIZE: usize = 32;
 
-pub fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> sspi::SspiResult {
+pub fn read_negotiate(
+    context: &mut Ntlm,
+    mut stream: impl io::Read,
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
@@ -29,13 +33,13 @@ pub fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> sspi::Ss
 
     context.state = NtlmState::Challenge;
 
-    Ok(sspi::SspiOk::ContinueNeeded)
+    Ok(sspi::SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Negotiate {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Read negotiate was fired but the state is not a Negotiate"),
         ))
     } else {
@@ -54,8 +58,8 @@ fn read_header(mut buffer: impl io::Read) -> sspi::Result<NegotiateFlags> {
         || !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM)
         || !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE)
     {
-        return Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        return Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             String::from("Negotiate flags do not contain the necessary flags"),
         ));
     }

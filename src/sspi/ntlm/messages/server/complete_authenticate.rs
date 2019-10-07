@@ -1,17 +1,19 @@
-use crate::crypto::HASH_SIZE;
 use crate::{
-    crypto::rc4::Rc4,
-    ntlm::{
-        messages::{
-            computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC,
-            SERVER_SIGN_MAGIC,
+    crypto::{Rc4, HASH_SIZE},
+    sspi::{
+        self,
+        ntlm::{
+            messages::{
+                computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC,
+                SERVER_SIGN_MAGIC,
+            },
+            Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
         },
-        Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
+        SecurityStatus,
     },
-    sspi::{self, SspiError, SspiErrorType},
 };
 
-pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<()> {
+pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_message = context
@@ -66,13 +68,13 @@ pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<()> {
 
     context.state = NtlmState::Final;
 
-    Ok(())
+    Ok(SecurityStatus::Ok)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Completion {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Complete authenticate was fired but the state is not a Completion"),
         ))
     } else {
@@ -105,8 +107,8 @@ fn check_mic_correctness(
         )?;
 
         if mic.value != calculated_mic {
-            return Err(SspiError::new(
-                SspiErrorType::MessageAltered,
+            return Err(sspi::Error::new(
+                sspi::ErrorKind::MessageAltered,
                 String::from("Message Integrity Check (MIC) verification failed!"),
             ));
         }

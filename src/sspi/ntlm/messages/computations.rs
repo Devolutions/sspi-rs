@@ -10,11 +10,13 @@ use rand::{rngs::OsRng, Rng};
 
 use crate::{
     crypto::{compute_hmac_md5, compute_md4, compute_md5, HASH_SIZE},
-    ntlm::{
-        messages::av_pair::*, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE,
-        MESSAGE_INTEGRITY_CHECK_SIZE,
+    sspi::{
+        self,
+        ntlm::{
+            messages::av_pair::*, AuthIdentityBuffers, CHALLENGE_SIZE,
+            LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
+        },
     },
-    sspi::{self, CredentialsBuffers, SspiError, SspiErrorType},
     utils,
 };
 
@@ -52,8 +54,8 @@ where
     T: TimeZone,
 {
     if start_date > end_date {
-        Err(SspiError::new(
-            SspiErrorType::InternalError,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::InternalError,
             format!(
                 "Failed to convert system time to file time, where the start date: {:?}, end date: {:?}",
                 start_date, end_date
@@ -162,8 +164,8 @@ pub fn convert_password_hash(identity_password: &[u8]) -> sspi::Result<[u8; HASH
 
         Ok(result)
     } else {
-        Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             format!(
                 "Got password with a small length: {}",
                 identity_password.len()
@@ -172,7 +174,7 @@ pub fn convert_password_hash(identity_password: &[u8]) -> sspi::Result<[u8; HASH
     }
 }
 
-pub fn compute_ntlm_v2_hash(identity: &CredentialsBuffers) -> sspi::Result<[u8; HASH_SIZE]> {
+pub fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> sspi::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
         let hmac_key = if identity.password.len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
             convert_password_hash(&identity.password)?
@@ -187,8 +189,8 @@ pub fn compute_ntlm_v2_hash(identity: &CredentialsBuffers) -> sspi::Result<[u8; 
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     } else {
-        Err(SspiError::new(
-            SspiErrorType::InvalidToken,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::InvalidToken,
             String::from("Got empty identity"),
         ))
     }

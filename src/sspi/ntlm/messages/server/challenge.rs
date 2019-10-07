@@ -2,14 +2,15 @@ use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{
         messages::{
             computations::*, MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE,
         },
         ChallengeMessage, NegotiateFlags, Ntlm, NtlmState,
     },
-    sspi::{self, SspiError, SspiErrorType},
+    SecurityStatus,
 };
 
 const BASE_OFFSET: usize = 48;
@@ -41,7 +42,10 @@ impl ChallengeMessageFields {
     }
 }
 
-pub fn write_challenge(mut context: &mut Ntlm, mut transport: impl io::Write) -> sspi::SspiResult {
+pub fn write_challenge(
+    mut context: &mut Ntlm,
+    mut transport: impl io::Write,
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let server_challenge = generate_challenge()?;
@@ -76,13 +80,13 @@ pub fn write_challenge(mut context: &mut Ntlm, mut transport: impl io::Write) ->
     ));
     context.state = NtlmState::Authenticate;
 
-    Ok(sspi::SspiOk::ContinueNeeded)
+    Ok(sspi::SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Challenge {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Write challenge was fired but the state is not a Challenge"),
         ))
     } else {

@@ -1,8 +1,8 @@
 use chrono::{TimeZone, Utc};
 
 use crate::{
-    ntlm::messages::{av_pair::*, computations::*, test::*},
-    Credentials,
+    sspi::ntlm::messages::{av_pair::*, computations::*, test::*},
+    AuthIdentity,
 };
 
 #[test]
@@ -231,22 +231,21 @@ fn get_authenticate_target_info_returns_without_principal_name() {
 
 #[test]
 fn compute_ntlmv2_hash_password_is_less_than_hash_len_offset() {
-    let identity = get_test_identity().unwrap().into();
     let expected = [
         0xc, 0x86, 0x8a, 0x40, 0x3b, 0xfd, 0x7a, 0x93, 0xa3, 0x0, 0x1e, 0xf2, 0x2e, 0xf0, 0x2e,
         0x3f,
     ];
 
-    assert_eq!(compute_ntlm_v2_hash(&identity).unwrap(), expected);
+    assert_eq!(compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap(), expected);
 }
 
 #[test]
 fn compute_ntlmv2_hash_password_local_logon() {
-    let identity = Credentials::new(
-        String::from("username"),
-        String::from("password"),
-        Some(String::from("win7")),
-    )
+    let identity = AuthIdentity {
+        username: String::from("username"),
+        password: String::from("password"),
+        domain: Some(String::from("win7")),
+    }
     .into();
     let expected = [
         0xef, 0xc2, 0xc0, 0x9f, 0x06, 0x11, 0x3d, 0x71, 0x08, 0xd0, 0xd2, 0x29, 0xfa, 0x4d, 0xe6,
@@ -258,11 +257,11 @@ fn compute_ntlmv2_hash_password_local_logon() {
 
 #[test]
 fn compute_ntlmv2_hash_password_domain_logon() {
-    let identity = Credentials::new(
-        String::from("Administrator"),
-        String::from("Password123!"),
-        Some(String::from("AWAKECODING")),
-    )
+    let identity = AuthIdentity {
+        username: String::from("Administrator"),
+        password: String::from("Password123!"),
+        domain: Some(String::from("AWAKECODING")),
+    }
     .into();
     let expected = [
         0xf7, 0x46, 0x48, 0xaa, 0x78, 0x78, 0x2e, 0x92, 0x0f, 0x92, 0x9a, 0xed, 0x7f, 0x1d, 0xd5,
@@ -274,11 +273,11 @@ fn compute_ntlmv2_hash_password_domain_logon() {
 
 #[test]
 fn compute_ntlmv2_hash_fails_on_empty_password() {
-    let identity = Credentials::new(
-        String::from("Administrator"),
-        String::new(),
-        Some(String::from("AWAKECODING")),
-    )
+    let identity = AuthIdentity {
+        username: String::from("Administrator"),
+        password: String::new(),
+        domain: Some(String::from("AWAKECODING")),
+    }
     .into();
     assert!(compute_ntlm_v2_hash(&identity).is_err());
 }
@@ -290,11 +289,11 @@ fn compute_ntlmv2_hash_with_large_password() {
     password.extend_from_slice(&garbage);
     let password = String::from_utf8(password).unwrap();
 
-    let identity = Credentials::new(
-        String::from("Administrator"),
+    let identity = AuthIdentity {
+        username: String::from("Administrator"),
         password,
-        Some(String::from("AWAKECODING")),
-    )
+        domain: Some(String::from("AWAKECODING")),
+    }
     .into();
 
     let expected = [
@@ -310,15 +309,12 @@ fn compute_ntlmv2_hash_with_large_password() {
 #[test]
 #[should_panic]
 fn compute_ntlmv2_hash_fails_on_empty_identity() {
-    let identity = get_test_identity().unwrap().into();
-
-    assert!(compute_ntlm_v2_hash(&identity).is_err());
+    assert!(compute_ntlm_v2_hash(&*TEST_CREDENTIALS).is_err());
 }
 
 #[test]
 fn compute_lm_v2_repsonse_correct_computes_response() {
-    let identity = get_test_identity().unwrap().into();
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&identity).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
     let client_challenge = CLIENT_CHALLENGE.as_ref();
     let server_challenge = SERVER_CHALLENGE.as_ref();
 
@@ -336,12 +332,10 @@ fn compute_lm_v2_repsonse_correct_computes_response() {
 
 #[test]
 fn compute_ntlm_v2_repsonse_correct_computes_challenge_response() {
-    let identity = get_test_identity().unwrap().into();
-
     let server_challenge = SERVER_CHALLENGE;
     let client_challenge = CLIENT_CHALLENGE;
     let target_info = Vec::new();
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&identity).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
     let timestamp = TIMESTAMP;
 
     let expected = [
@@ -363,12 +357,10 @@ fn compute_ntlm_v2_repsonse_correct_computes_challenge_response() {
 
 #[test]
 fn compute_ntlm_v2_repsonse_correct_computes_key_exchange_key() {
-    let identity = get_test_identity().unwrap().into();
-
     let server_challenge = SERVER_CHALLENGE;
     let client_challenge = CLIENT_CHALLENGE;
     let target_info = Vec::new();
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&identity).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
     let timestamp = TIMESTAMP;
 
     let expected = [

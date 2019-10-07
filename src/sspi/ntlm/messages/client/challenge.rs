@@ -2,15 +2,15 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::ntlm::ChallengeMessage;
-use crate::{
+use crate::sspi::{
+    self,
     ntlm::{
         messages::{
             computations::*, read_ntlm_header, try_read_version, MessageFields, MessageTypes,
         },
-        NegotiateFlags, Ntlm, NtlmState, CHALLENGE_SIZE,
+        ChallengeMessage, NegotiateFlags, Ntlm, NtlmState, CHALLENGE_SIZE,
     },
-    sspi::{self, SspiError, SspiErrorType},
+    SecurityStatus,
 };
 
 const HEADER_SIZE: usize = 48;
@@ -20,7 +20,10 @@ struct ChallengeMessageFields {
     target_info: MessageFields,
 }
 
-pub fn read_challenge(mut context: &mut Ntlm, mut stream: impl io::Read) -> sspi::SspiResult {
+pub fn read_challenge(
+    mut context: &mut Ntlm,
+    mut stream: impl io::Read,
+) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
@@ -45,13 +48,13 @@ pub fn read_challenge(mut context: &mut Ntlm, mut stream: impl io::Read) -> sspi
 
     context.state = NtlmState::Authenticate;
 
-    Ok(sspi::SspiOk::ContinueNeeded)
+    Ok(sspi::SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> sspi::Result<()> {
     if state != NtlmState::Challenge {
-        Err(SspiError::new(
-            SspiErrorType::OutOfSequence,
+        Err(sspi::Error::new(
+            sspi::ErrorKind::OutOfSequence,
             String::from("Read challenge was fired but the state is not a Challenge"),
         ))
     } else {
