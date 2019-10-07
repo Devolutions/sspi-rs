@@ -1,18 +1,16 @@
-#[macro_use]
-pub mod utils;
-pub mod ber;
-pub mod credssp;
-pub mod ntlm;
-pub mod sspi;
-
+mod ber;
 mod crypto;
+mod sspi;
+mod utils;
 
-pub use crate::{
-    credssp::{
-        ts_request::{TsRequest, MAX_TS_REQUEST_LENGTH_BUFFER_SIZE},
-        CredSspClient, CredSspMode, CredSspResult, CredSspServer, CredentialsProxy,
-        EarlyUserAuthResult, EARLY_USER_AUTH_RESULT_PDU_SIZE,
-    },
-    ntlm::NTLM_VERSION_SIZE,
-    sspi::{Credentials, SspiError, SspiErrorType},
+#[cfg(windows)]
+pub use crate::sspi::winapi;
+pub use crate::sspi::{
+    builders, enumerate_security_packages, internal, query_security_package_info,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
+    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
+    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Ntlm,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx,
 };
