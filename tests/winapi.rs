@@ -9,7 +9,7 @@ use common::{
 use sspi::{
     enumerate_security_packages,
     winapi::{Ntlm, SecurityPackage},
-    AuthIdentity, Sspi,
+    AuthIdentity, SecurityPackageType, Sspi,
 };
 
 const NEGOTIATE_SECURITY_PACKAGE_NAME: &str = "Negotiate";
@@ -61,12 +61,14 @@ fn ntlm_authentication_fails_with_invalid_client_auth_data() {
 
 #[test]
 fn successful_negotiate_authentication_without_client_auth_data() {
-    let mut client =
-        SecurityPackage::from_package_name(String::from(NEGOTIATE_SECURITY_PACKAGE_NAME));
+    let mut client = SecurityPackage::from_package_type(SecurityPackageType::Other(String::from(
+        NEGOTIATE_SECURITY_PACKAGE_NAME,
+    )));
     let client_credentials_handle = create_client_credentials_handle(&mut client, None).unwrap();
 
-    let mut server =
-        SecurityPackage::from_package_name(String::from(NEGOTIATE_SECURITY_PACKAGE_NAME));
+    let mut server = SecurityPackage::from_package_type(SecurityPackageType::Other(String::from(
+        NEGOTIATE_SECURITY_PACKAGE_NAME,
+    )));
     let server_credentials_handle = create_server_credentials_handle(&mut server).unwrap();
 
     let (client_status, server_status) = process_authentication_without_complete(

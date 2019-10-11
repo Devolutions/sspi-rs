@@ -52,7 +52,9 @@ fn main() {
 
 Example of acquiring an SSP provided by Windows:
 ```Rust
-let mut negotiate = SecurityPackage::from_package_name("Negotiate");
+let mut negotiate = SecurityPackage::from_package_type(
+    SecurityPackageType::Other(String::from("Negotiate"))
+);
 ```
 
 ## Projects that use sspi-rs

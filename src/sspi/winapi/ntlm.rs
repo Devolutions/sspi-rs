@@ -23,8 +23,8 @@ pub struct Ntlm(SecurityPackage);
 
 impl Ntlm {
     pub fn new() -> Self {
-        Self(SecurityPackage::from_package_name(
-            SecurityPackageType::Ntlm.to_string(),
+        Self(SecurityPackage::from_package_type(
+            SecurityPackageType::Ntlm,
         ))
     }
 }

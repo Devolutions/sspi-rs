@@ -65,7 +65,7 @@
 //!     .expect("query_security_package_info resulted in error");
 //!
 //! // Acquire the SSP using its name
-//! let pack = sspi::winapi::SecurityPackage::from_package_name(package_name.to_string());
+//! let pack = sspi::winapi::SecurityPackage::from_package_type(package.name);
 //! # }
 //! # }
 //! ```

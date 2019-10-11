@@ -230,9 +230,9 @@ where
     ///
     /// ```
     /// #  use sspi::Sspi;
-    /// #  
+    /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
-    /// #  
+    /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
     /// #     password: "password".to_string(),
@@ -335,7 +335,7 @@ where
     /// #     .with_auth_data(&identity)
     /// #     .execute()
     /// #     .unwrap();
-    /// #     
+    /// #
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #

@@ -27,8 +27,8 @@ use crate::sspi::{
     CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
     ClientResponseFlags, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags,
-    ServerResponseFlags, Sspi,
+    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    ServerRequestFlags, ServerResponseFlags, Sspi,
 };
 
 const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x8000_0084;
@@ -40,7 +40,7 @@ const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x8000_0084;
 /// to use a wrapper if one is available.
 pub struct SecurityPackage {
     context: Option<SecurityContext>,
-    package_name: String,
+    package_type: SecurityPackageType,
 }
 
 impl SecurityPackage {
@@ -52,15 +52,19 @@ impl SecurityPackage {
     /// ```
     /// # #[cfg(windows)]
     /// # mod win {
+    /// #     use sspi::{winapi::SecurityPackage, SecurityPackageType};
+    /// #
     /// #     fn main() {
-    /// let negotiate = sspi::winapi::SecurityPackage::from_package_name("Negotiate".to_string());
+    /// let negotiate = SecurityPackage::from_package_type(
+    ///     SecurityPackageType::Other(String::from("Negotiate"))
+    /// );
     /// #     }
     /// # }
     /// ```
-    pub fn from_package_name(package_name: String) -> Self {
+    pub fn from_package_type(package_type: SecurityPackageType) -> Self {
         Self {
             context: None,
-            package_name,
+            package_type,
         }
     }
 
@@ -107,7 +111,7 @@ impl SspiImpl for SecurityPackage {
             .map(|mut v| v.as_mut_ptr())
             .unwrap_or(ptr::null_mut());
 
-        let mut package_name = str_to_win_wstring(self.package_name.as_str());
+        let mut package_name = str_to_win_wstring(self.package_type.to_string().as_str());
         let mut credentials_handle = CredHandle::default();
 
         let logon_id = as_mut_ptr_or_null(builder.logon_id.as_mut());
