@@ -49,15 +49,18 @@ pub trait CredentialsProxy {
     ) -> io::Result<Self::AuthenticationData>;
 }
 
-macro_rules! try_cred_ssp {
+macro_rules! try_cred_ssp_server {
     ($e:expr, $ts_request:ident) => {
         match $e {
             Ok(v) => v,
             Err(e) => {
-                let e = From::from(e);
-                $ts_request.error_code = Some(construct_error(e));
+                let error = sspi::Error::from(e);
+                $ts_request.error_code = Some(construct_error(&error));
 
-                return Err($ts_request);
+                return Err(ServerError {
+                    ts_request: $ts_request,
+                    error,
+                });
             }
         }
     };
@@ -72,17 +75,30 @@ pub enum CredSspMode {
     CredentialLess,
 }
 
-/// The result of a CredSSP client or server processing.
+/// The result of a CredSSP client processing.
 #[derive(Debug, Clone)]
-pub enum CredSspResult {
-    /// Used as a result of processing of negotiation tokens by the client and server.
+pub enum ClientState {
+    /// Used as a result of processing of negotiation tokens.
     ReplyNeeded(TsRequest),
-    /// Used as a result of processing of authentication info by the client.
+    /// Used as a result of processing of authentication info.
     FinalMessage(TsRequest),
-    /// Used as a result of the final state of the client and server.
-    Finished,
-    /// Used as a result of  processing of authentication info by the server.
-    ClientCredentials(AuthIdentity),
+}
+
+/// The result of a CredSSP server processing.
+#[derive(Debug, Clone)]
+pub enum ServerState {
+    /// Used as a result of processing of negotiation tokens.
+    ReplyNeeded(TsRequest),
+    /// Used as a result of the final state. Contains result of processing of authentication info.
+    Finished(AuthIdentity),
+}
+
+/// The error of a CredSSP server processing.
+/// Contains `TsRequest` with non-empty `error_code`, and the error which caused the server to fail.
+#[derive(Debug, Clone)]
+pub struct ServerError {
+    pub ts_request: TsRequest,
+    pub error: sspi::Error,
 }
 
 /// The Early User Authorization Result PDU is sent from server to client
@@ -166,7 +182,7 @@ impl CredSspClient {
         })
     }
 
-    pub fn process(&mut self, mut ts_request: TsRequest) -> sspi::Result<CredSspResult> {
+    pub fn process(&mut self, mut ts_request: TsRequest) -> sspi::Result<ClientState> {
         ts_request.check_error()?;
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
@@ -228,7 +244,7 @@ impl CredSspClient {
                     self.state = CredSspState::AuthInfo;
                 }
 
-                Ok(CredSspResult::ReplyNeeded(ts_request))
+                Ok(ClientState::ReplyNeeded(ts_request))
             }
             CredSspState::AuthInfo => {
                 ts_request.nego_tokens = None;
@@ -259,9 +275,11 @@ impl CredSspClient {
 
                 self.state = CredSspState::Final;
 
-                Ok(CredSspResult::FinalMessage(ts_request))
+                Ok(ClientState::FinalMessage(ts_request))
             }
-            CredSspState::Final => Ok(CredSspResult::Finished),
+            CredSspState::Final => panic!(
+                "CredSSP client's 'process' method must not be fired after the 'Finished' state"
+            ),
         }
     }
 }
@@ -274,7 +292,7 @@ impl CredSspClient {
 /// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
 #[derive(Debug, Clone)]
 pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>> {
-    pub credentials: C,
+    credentials: C,
     state: CredSspState,
     context: Option<CredSspContext>,
     public_key: Vec<u8>,
@@ -292,12 +310,12 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
         })
     }
 
-    pub fn process(&mut self, mut ts_request: TsRequest) -> Result<CredSspResult, TsRequest> {
+    pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
             self.context = Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new())));
             let AcquireCredentialsHandleResult {
                 credentials_handle, ..
-            } = try_cred_ssp!(
+            } = try_cred_ssp_server!(
                 self.context
                     .as_mut()
                     .unwrap()
@@ -309,7 +327,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             );
             self.credentials_handle = credentials_handle;
         }
-        try_cred_ssp!(
+        try_cred_ssp_server!(
             self.context
                 .as_mut()
                 .unwrap()
@@ -319,7 +337,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
         match self.state {
             CredSspState::AuthInfo => {
-                let auth_info = try_cred_ssp!(
+                let auth_info = try_cred_ssp_server!(
                     ts_request.auth_info.take().ok_or_else(|| {
                         sspi::Error::new(
                             sspi::ErrorKind::InvalidToken,
@@ -328,20 +346,20 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     }),
                     ts_request
                 );
-                self.state = CredSspState::Final;
 
-                let read_credentials = try_cred_ssp!(
+                let read_credentials = try_cred_ssp_server!(
                     self.context
                         .as_mut()
                         .unwrap()
                         .decrypt_ts_credentials(&auth_info),
                     ts_request
                 );
+                self.state = CredSspState::Final;
 
-                Ok(CredSspResult::ClientCredentials(read_credentials.into()))
+                Ok(ServerState::Finished(read_credentials.into()))
             }
             CredSspState::NegoToken => {
-                let input = try_cred_ssp!(
+                let input = try_cred_ssp_server!(
                     ts_request.nego_tokens.take().ok_or_else(|| {
                         sspi::Error::new(
                             sspi::ErrorKind::InvalidToken,
@@ -357,7 +375,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 )];
 
                 let mut credentials_handle = self.credentials_handle.take();
-                match try_cred_ssp!(
+                match try_cred_ssp_server!(
                     self.context
                         .as_mut()
                         .unwrap()
@@ -379,7 +397,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     AcceptSecurityContextResult { status, .. }
                         if status == SecurityStatus::CompleteNeeded =>
                     {
-                        let ContextNames { username, domain } = try_cred_ssp!(
+                        let ContextNames { username, domain } = try_cred_ssp_server!(
                             self.context
                                 .as_mut()
                                 .unwrap()
@@ -387,8 +405,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                                 .query_context_names(),
                             ts_request
                         );
-                        let auth_data = try_cred_ssp!(
-                            self.credentials.auth_data_by_user(username, domain),
+                        let auth_data = try_cred_ssp_server!(
+                            self.credentials
+                                .auth_data_by_user(username, domain)
+                                .map_err(|e| sspi::Error::new(
+                                    sspi::ErrorKind::LogonDenied,
+                                    e.to_string()
+                                )),
                             ts_request
                         );
                         self.context
@@ -397,7 +420,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             .sspi_context
                             .custom_set_auth_identity(auth_data);
 
-                        try_cred_ssp!(
+                        try_cred_ssp_server!(
                             self.context
                                 .as_mut()
                                 .unwrap()
@@ -407,7 +430,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         );
                         ts_request.nego_tokens = None;
 
-                        let pub_key_auth = try_cred_ssp!(
+                        let pub_key_auth = try_cred_ssp_server!(
                             ts_request.pub_key_auth.take().ok_or_else(|| {
                                 sspi::Error::new(
                                     sspi::ErrorKind::InvalidToken,
@@ -419,7 +442,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         let peer_version = self.context.as_ref().unwrap().peer_version.expect(
                             "An decrypt public key server function cannot be fired without any incoming TSRequest",
                         );
-                        try_cred_ssp!(
+                        try_cred_ssp_server!(
                             self.context.as_mut().unwrap().decrypt_public_key(
                                 self.public_key.as_ref(),
                                 pub_key_auth.as_ref(),
@@ -429,7 +452,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             ),
                             ts_request
                         );
-                        let pub_key_auth = try_cred_ssp!(
+                        let pub_key_auth = try_cred_ssp_server!(
                             self.context.as_mut().unwrap().encrypt_public_key(
                                 self.public_key.as_ref(),
                                 EndpointType::Server,
@@ -446,9 +469,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 };
                 self.credentials_handle = credentials_handle;
 
-                Ok(CredSspResult::ReplyNeeded(ts_request))
+                Ok(ServerState::ReplyNeeded(ts_request))
             }
-            CredSspState::Final => Ok(CredSspResult::Finished),
+            CredSspState::Final => panic!(
+                "CredSSP server's 'process' method must not be fired after the 'Finished' state"
+            ),
         }
     }
 }
@@ -815,6 +840,6 @@ fn integer_increment_le(buffer: &mut [u8]) {
     }
 }
 
-fn construct_error(e: sspi::Error) -> u32 {
+fn construct_error(e: &sspi::Error) -> u32 {
     ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32
 }

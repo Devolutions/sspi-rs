@@ -4,7 +4,7 @@ use chrono::Local;
 use lazy_static::lazy_static;
 
 use sspi::{
-    internal::CredentialsProxy, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
+    internal::credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
     ContextNames, CredentialUse, DataRepresentation, EncryptionFlags, SecurityBuffer,
     SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
 };
@@ -28,7 +28,7 @@ impl<'a> CredentialsProxyImpl<'a> {
     }
 }
 
-impl<'a> CredentialsProxy for CredentialsProxyImpl<'a> {
+impl<'a> credssp::CredentialsProxy for CredentialsProxyImpl<'a> {
     type AuthenticationData = AuthIdentity;
 
     fn auth_data_by_user(
@@ -168,7 +168,7 @@ pub fn set_identity_and_try_complete_authentication<T, C>(
 ) -> sspi::Result<()>
 where
     T: Sspi + SspiEx,
-    C: CredentialsProxy<AuthenticationData = T::AuthenticationData>,
+    C: credssp::CredentialsProxy<AuthenticationData = T::AuthenticationData>,
 {
     if auth_server_status == SecurityStatus::CompleteNeeded
         || auth_server_status == SecurityStatus::CompleteAndContinue

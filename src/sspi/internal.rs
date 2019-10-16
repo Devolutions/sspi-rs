@@ -1,9 +1,4 @@
-mod credssp;
-
-pub use self::credssp::{
-    CredSspClient, CredSspMode, CredSspResult, CredSspServer, CredentialsProxy,
-    EarlyUserAuthResult, TsRequest, EARLY_USER_AUTH_RESULT_PDU_SIZE,
-};
+pub mod credssp;
 
 use crate::sspi::{
     self,
