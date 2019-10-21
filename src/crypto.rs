@@ -1,4 +1,6 @@
-pub mod rc4;
+mod rc4;
+
+pub use rc4::Rc4;
 
 use std::io;
 
@@ -9,7 +11,8 @@ use md5::Md5;
 use sha2::Sha256;
 
 pub const HASH_SIZE: usize = 16;
-pub const SHA256_SIZE: usize = 32;
+
+const SHA256_SIZE: usize = 32;
 
 pub fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
     let mut context = Md4::new();

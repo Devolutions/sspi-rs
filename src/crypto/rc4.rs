@@ -1,14 +1,16 @@
-#[derive(Clone)]
+use std::{fmt, ops};
+
+#[derive(Debug, Clone)]
 pub struct Rc4 {
     i: usize,
     j: usize,
-    state: [u8; 256],
+    state: State,
 }
 
 impl Rc4 {
     pub fn new(key: &[u8]) -> Self {
         // key scheduling
-        let mut state = [0u8; 256];
+        let mut state = State::default();
         for (i, item) in state.iter_mut().enumerate().take(256) {
             *item = i as u8;
         }
@@ -35,6 +37,35 @@ impl Rc4 {
         }
 
         output
+    }
+}
+
+#[derive(Clone)]
+struct State([u8; 256]);
+
+impl Default for State {
+    fn default() -> Self {
+        Self([0; 256])
+    }
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl ops::Deref for State {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl ops::DerefMut for State {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut()
     }
 }
 
