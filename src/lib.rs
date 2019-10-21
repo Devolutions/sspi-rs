@@ -72,8 +72,15 @@
 
 mod ber;
 mod crypto;
-mod sspi;
 mod utils;
+
+cfg_if::cfg_if! {
+    if #[cfg(fuzzing)] {
+        pub mod sspi;
+    } else {
+        mod sspi;
+    }
+}
 
 #[cfg(windows)]
 pub use crate::sspi::winapi;

@@ -1,4 +1,10 @@
-mod ts_request;
+cfg_if::cfg_if! {
+    if #[cfg(fuzzing)] {
+        pub mod ts_request;
+    } else {
+        mod ts_request;
+    }
+}
 
 pub use ts_request::TsRequest;
 
