@@ -169,6 +169,7 @@ pub struct CredSspClient {
     cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
     credentials_handle: Option<AuthIdentityBuffers>,
+    ts_request_version: Option<u32>,
 }
 
 impl CredSspClient {
@@ -185,6 +186,24 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
+            ts_request_version: None,
+        })
+    }
+    pub fn new_with_version(
+        public_key: Vec<u8>,
+        credentials: AuthIdentity,
+        cred_ssp_mode: CredSspMode,
+        ts_request_version: u32,
+    ) -> sspi::Result<Self> {
+        Ok(Self {
+            state: CredSspState::NegoToken,
+            context: None,
+            credentials,
+            public_key,
+            cred_ssp_mode,
+            client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
+            credentials_handle: None,
+            ts_request_version: Some(ts_request_version),
         })
     }
 
@@ -206,6 +225,10 @@ impl CredSspClient {
                 .with_credential_use(CredentialUse::Outbound)
                 .execute()?;
             self.credentials_handle = credentials_handle;
+        }
+
+        if let Some(version) = self.ts_request_version {
+            ts_request.version = version;
         }
 
         match self.state {
@@ -303,6 +326,7 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     context: Option<CredSspContext>,
     public_key: Vec<u8>,
     credentials_handle: Option<AuthIdentityBuffers>,
+    ts_request_version: Option<u32>,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
@@ -313,6 +337,22 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             credentials,
             public_key,
             credentials_handle: None,
+            ts_request_version: None,
+        })
+    }
+
+    pub fn new_with_version(
+        public_key: Vec<u8>,
+        credentials: C,
+        ts_request_version: u32,
+    ) -> sspi::Result<Self> {
+        Ok(Self {
+            state: CredSspState::NegoToken,
+            context: None,
+            credentials,
+            public_key,
+            credentials_handle: None,
+            ts_request_version: Some(ts_request_version),
         })
     }
 
@@ -340,6 +380,10 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 .check_peer_version(ts_request.version),
             ts_request
         );
+
+        if let Some(version) = self.ts_request_version {
+            ts_request.version = version;
+        }
 
         match self.state {
             CredSspState::AuthInfo => {
