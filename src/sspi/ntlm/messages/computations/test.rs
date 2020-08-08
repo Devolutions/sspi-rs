@@ -272,14 +272,17 @@ fn compute_ntlmv2_hash_password_domain_logon() {
 }
 
 #[test]
-fn compute_ntlmv2_hash_fails_on_empty_password() {
+fn compute_ntlmv2_hash_works_on_empty_password() {
     let identity = AuthIdentity {
         username: String::from("Administrator"),
         password: String::new(),
         domain: Some(String::from("AWAKECODING")),
     }
     .into();
-    assert!(compute_ntlm_v2_hash(&identity).is_err());
+    let expected = [
+        0xa0, 0x84, 0x29, 0x48, 0xa6, 0xb9, 0xac, 0xa7, 0x6c, 0xf5, 0x54, 0xdb, 0x5e, 0xc3, 0x17, 0x76
+    ];
+    assert_eq!(compute_ntlm_v2_hash(&identity).unwrap(), expected);
 }
 
 #[test]

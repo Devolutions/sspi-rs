@@ -461,7 +461,7 @@ impl AuthIdentityBuffers {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.user.is_empty() || self.password.is_empty()
+        self.user.is_empty()
     }
 }
 
