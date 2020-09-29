@@ -9,9 +9,9 @@ use crate::{
     sspi::{self, ntlm::AuthIdentityBuffers},
 };
 
-pub const NONCE_SIZE: usize = 32;
+pub const TS_REQUEST_VERSION: u32 = 6;
 
-const TS_REQUEST_VERSION: u32 = 6;
+pub const NONCE_SIZE: usize = 32;
 const NONCE_FIELD_LEN: u16 = 36;
 
 /// Used for communication in the CredSSP [client](struct.CredSspServer.html)
