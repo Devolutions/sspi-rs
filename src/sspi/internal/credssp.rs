@@ -29,7 +29,7 @@ use crate::{
     },
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
-use ts_request::NONCE_SIZE;
+use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
@@ -169,7 +169,7 @@ pub struct CredSspClient {
     cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
     credentials_handle: Option<AuthIdentityBuffers>,
-    ts_request_version: Option<u32>,
+    ts_request_version: u32,
 }
 
 impl CredSspClient {
@@ -186,7 +186,7 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
-            ts_request_version: None,
+            ts_request_version: TS_REQUEST_VERSION,
         })
     }
     pub fn new_with_version(
@@ -203,7 +203,7 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
-            ts_request_version: Some(ts_request_version),
+            ts_request_version: ts_request_version,
         })
     }
 
@@ -227,9 +227,7 @@ impl CredSspClient {
             self.credentials_handle = credentials_handle;
         }
 
-        if let Some(version) = self.ts_request_version {
-            ts_request.version = version;
-        }
+        ts_request.version = self.ts_request_version;
 
         match self.state {
             CredSspState::NegoToken => {
@@ -326,7 +324,7 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     context: Option<CredSspContext>,
     public_key: Vec<u8>,
     credentials_handle: Option<AuthIdentityBuffers>,
-    ts_request_version: Option<u32>,
+    ts_request_version: u32,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
@@ -337,7 +335,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             credentials,
             public_key,
             credentials_handle: None,
-            ts_request_version: None,
+            ts_request_version: TS_REQUEST_VERSION,
         })
     }
 
@@ -352,7 +350,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             credentials,
             public_key,
             credentials_handle: None,
-            ts_request_version: Some(ts_request_version),
+            ts_request_version: ts_request_version,
         })
     }
 
@@ -381,9 +379,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             ts_request
         );
 
-        if let Some(version) = self.ts_request_version {
-            ts_request.version = version;
-        }
+        ts_request.version = self.ts_request_version;
 
         match self.state {
             CredSspState::AuthInfo => {
