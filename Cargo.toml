@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.3.1"
+version = "0.3.2"
 license = "MIT/Apache-2.0"
 homepage = "https://github.com/devolutions/sspi-rs"
 repository = "https://github.com/devolutions/sspi-rs"
