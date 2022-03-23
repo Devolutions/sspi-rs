@@ -1,6 +1,7 @@
 /// The builders are required to compose and execute some of the `Sspi` methods.
 pub mod builders;
 pub mod internal;
+pub mod kerberos;
 #[cfg(windows)]
 pub mod winapi;
 
