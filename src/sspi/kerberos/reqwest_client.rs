@@ -4,6 +4,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ReadBytesExt};
+use url::Url;
 
 use super::{NetworkClient, NetworkClientError};
 
@@ -16,7 +17,7 @@ impl ReqwestNetworkClient {
 }
 
 impl NetworkClient for ReqwestNetworkClient {
-    fn send(&self, url: url::Url, data: &[u8]) -> Result<Vec<u8>, NetworkClientError> {
+    fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>, NetworkClientError> {
         match url.scheme() {
             "tcp" => {
                 let mut stream = TcpStream::connect(&format!(
@@ -43,7 +44,7 @@ impl NetworkClient for ReqwestNetworkClient {
         }
     }
 
-    fn send_http(&self, url: url::Url, data: &[u8]) -> Result<Vec<u8>, NetworkClientError> {
+    fn send_http(&self, _url: &Url, _data: &[u8]) -> Result<Vec<u8>, NetworkClientError> {
         todo!()
     }
 }
