@@ -9,8 +9,8 @@ use picky_krb::messages::{AsRep, TgsRep};
 use thiserror::Error;
 use url::Url;
 
-use self::config::KerberosConfig;
 use self::{
+    config::KerberosConfig,
     client::{
         extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, generate_as_req,
         generate_authenticator_from_as_rep, generate_tgs_req,
@@ -20,8 +20,8 @@ use self::{
 use super::ntlm::AuthIdentityBuffers;
 use crate::{
     sspi,
-    sspi::{Sspi, SspiEx, SspiImpl},
-    AcquireCredentialsHandleResult, AuthIdentity, CredentialUse,
+    sspi::{Result, Sspi, SspiEx, SspiImpl, ErrorKind, Error},
+    AcquireCredentialsHandleResult, AuthIdentity, CredentialUse, ClientResponseFlags, InitializeSecurityContextResult, SecurityStatus,
 };
 
 pub const KERBEROS_VERSION: u8 = 0x05;
@@ -36,10 +36,11 @@ pub enum NetworkClientError {
 }
 
 pub trait NetworkClient {
-    fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>, NetworkClientError>;
-    fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>, NetworkClientError>;
+    fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
+    fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
 }
 
+#[derive(Debug)]
 pub enum KerberosState {
     Preauthentication,
     ApExchange,
@@ -143,7 +144,7 @@ impl SspiImpl for Kerberos {
     ) -> super::Result<crate::InitializeSecurityContextResult> {
         let credentials = builder.credentials_handle.unwrap().as_ref().unwrap();
 
-        let state = match self.state {
+        let status = match self.state {
             KerberosState::Preauthentication => {
                 let username = String::from_utf8(credentials.user.clone()).unwrap();
                 let domain = String::from_utf8(credentials.domain.clone()).unwrap();
@@ -153,14 +154,16 @@ impl SspiImpl for Kerberos {
                 let response = self
                     .config
                     .network_client
-                    .send(&self.config.url, &serialize_message(&as_req))
-                    .unwrap();
+                    .send(&self.config.url, &serialize_message(&as_req))?;
 
-                let as_rep: AsRep = picky_asn1_der::from_bytes(&response[4..]).unwrap();
+                let as_rep: AsRep = picky_asn1_der::from_bytes(&response[4..]).map_err(|e| Error {
+                    error_type: ErrorKind::DecryptFailure,
+                    description: format!("{:?}", e),
+                })?;
 
-                let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep);
+                let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
                 let authenticator = generate_authenticator_from_as_rep(&as_rep);
-                let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password);
+                let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password)?;
 
                 let tgs_req = generate_tgs_req(
                     &username,
@@ -173,22 +176,39 @@ impl SspiImpl for Kerberos {
                 let response = self
                     .config
                     .network_client
-                    .send(&self.config.url, &serialize_message(&tgs_req))
-                    .unwrap();
+                    .send(&self.config.url, &serialize_message(&tgs_req))?;
 
-                let tsg_rep: TgsRep = picky_asn1_der::from_bytes(&response[4..]).unwrap();
+                let tsg_rep: TgsRep = picky_asn1_der::from_bytes(&response[4..]).map_err(|e| Error {
+                    error_type: ErrorKind::DecryptFailure,
+                    description: format!("{:?}", e),
+                })?;
+
+                // generate and write ap_req
+                todo!();
+                SecurityStatus::CompleteNeeded
+            }
+            KerberosState::ApExchange => {
+                // handle ap_rep
                 todo!()
             }
-            KerberosState::ApExchange => {}
-            KerberosState::Final => {}
+            KerberosState::Final => return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    format!("Got wrong Kerbros state: {:?}", self.state),
+                ))
         };
-        todo!()
+
+        Ok(InitializeSecurityContextResult {
+            status,
+            flags: ClientResponseFlags::empty(),
+            expiry: None,
+        })
     }
 
     fn accept_security_context_impl(
         &mut self,
         _builder: crate::builders::FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
     ) -> super::Result<crate::AcceptSecurityContextResult> {
+        // handle ap_req
         todo!()
     }
 }
@@ -235,9 +255,9 @@ mod tests {
 
         let as_rep: AsRep = picky_asn1_der::from_bytes(&response[4..]).unwrap();
 
-        let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep);
+        let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep).unwrap();
         let authenticator = generate_authenticator_from_as_rep(&as_rep);
-        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password);
+        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password).unwrap();
 
         let tgs_req = generate_tgs_req(
             &username,
