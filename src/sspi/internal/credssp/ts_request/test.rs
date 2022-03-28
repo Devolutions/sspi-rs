@@ -592,7 +592,7 @@ fn encode_ts_credentials_with_restricted_admin_mode_required() {
 #[test]
 fn decode_ts_request_fails_on_incomplete_buffer() {
     let mut buffer = NTLM_3_PHASE_TS_REQUEST.to_vec();
-    buffer.split_off(buffer.len() - 1);
+    let _ = buffer.split_off(buffer.len() - 1);
 
     assert!(TsRequest::from_buffer(buffer.as_ref()).is_err());
 }
@@ -600,7 +600,7 @@ fn decode_ts_request_fails_on_incomplete_buffer() {
 #[test]
 fn decode_ts_credentials_fails_on_incomplete_buffer() {
     let mut buffer = TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED.to_vec();
-    buffer.split_off(buffer.len() - 1);
+    let _ = buffer.split_off(buffer.len() - 1);
 
     assert!(read_ts_credentials(buffer.as_slice()).is_err());
 }

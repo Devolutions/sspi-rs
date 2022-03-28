@@ -9,6 +9,7 @@ use url::Url;
 use super::NetworkClient;
 use crate::sspi::{Error, ErrorKind, Result};
 
+#[derive(Debug, Clone)]
 pub struct ReqwestNetworkClient {}
 
 impl ReqwestNetworkClient {
@@ -59,5 +60,9 @@ impl NetworkClient for ReqwestNetworkClient {
 
     fn send_http(&self, _url: &Url, _data: &[u8]) -> Result<Vec<u8>> {
         todo!()
+    }
+
+    fn clone(&self) -> Box<dyn NetworkClient> {
+        Box::new(Clone::clone(self))
     }
 }

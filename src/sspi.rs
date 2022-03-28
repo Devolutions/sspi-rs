@@ -58,6 +58,7 @@ const PACKAGE_ID_NONE: u16 = 0xFFFF;
 pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<PackageInfo> {
     match package_type {
         SecurityPackageType::Ntlm => Ok(ntlm::PACKAGE_INFO.clone()),
+        SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -1040,6 +1041,7 @@ pub enum CredentialUse {
 #[derive(Debug, Clone)]
 pub enum SecurityPackageType {
     Ntlm,
+    Kerberos,
     Other(String),
 }
 
@@ -1047,6 +1049,7 @@ impl string::ToString for SecurityPackageType {
     fn to_string(&self) -> String {
         match self {
             SecurityPackageType::Ntlm => ntlm::PKG_NAME.to_string(),
+            SecurityPackageType::Kerberos => kerberos::PKG_NAME.to_string(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1058,6 +1061,7 @@ impl str::FromStr for SecurityPackageType {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
+            kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }

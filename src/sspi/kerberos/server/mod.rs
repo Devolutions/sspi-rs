@@ -1,5 +1,5 @@
 use picky_krb::messages::AsReq;
 
-pub fn generate_as_req() -> AsReq {
+pub fn _generate_ap_rep() -> AsReq {
     todo!()
 }

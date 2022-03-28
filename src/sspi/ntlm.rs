@@ -315,6 +315,7 @@ impl Sspi for Ntlm {
     ) -> sspi::Result<DecryptionFlags> {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+
         *data.buffer.as_mut() = self
             .recv_sealing_key
             .as_mut()
