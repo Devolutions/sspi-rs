@@ -439,9 +439,7 @@ fn convert_password_hash_only_spaces() {
 
 #[test]
 fn get_av_flags_from_response_returns_empty_flags_if_flags_are_absent() {
-    let mut input_flags = Vec::with_capacity(2);
-    input_flags.push(AvPair::Timestamp(0));
-    input_flags.push(AvPair::EOL);
+    let input_flags = vec![AvPair::Timestamp(0), AvPair::EOL];
 
     let expected_flags = MsvAvFlags::empty();
 
@@ -484,18 +482,19 @@ fn av_pair_list_to_buffer_with_all_possible_pairs() {
     let target_name = b"TargetName".to_vec();
     let channel_bindings = [0xff; HASH_SIZE];
 
-    let mut av_pairs = Vec::with_capacity(11);
-    av_pairs.push(AvPair::NbComputerName(nb_computer_name));
-    av_pairs.push(AvPair::NbDomainName(nb_domain_name));
-    av_pairs.push(AvPair::DnsComputerName(dns_computer_name));
-    av_pairs.push(AvPair::DnsDomainName(dns_domain_name));
-    av_pairs.push(AvPair::DnsTreeName(dns_tree_name));
-    av_pairs.push(AvPair::Flags(flags));
-    av_pairs.push(AvPair::Timestamp(timestamp));
-    av_pairs.push(AvPair::SingleHost(single_host_data));
-    av_pairs.push(AvPair::TargetName(target_name));
-    av_pairs.push(AvPair::ChannelBindings(channel_bindings));
-    av_pairs.push(AvPair::EOL);
+    let av_pairs = vec![
+        AvPair::NbComputerName(nb_computer_name),
+        AvPair::NbDomainName(nb_domain_name),
+        AvPair::DnsComputerName(dns_computer_name),
+        AvPair::DnsDomainName(dns_domain_name),
+        AvPair::DnsTreeName(dns_tree_name),
+        AvPair::Flags(flags),
+        AvPair::Timestamp(timestamp),
+        AvPair::SingleHost(single_host_data),
+        AvPair::TargetName(target_name),
+        AvPair::ChannelBindings(channel_bindings),
+        AvPair::EOL,
+    ];
 
     let av_pairs_buffer = AvPair::list_to_buffer(av_pairs.as_ref()).unwrap();
 

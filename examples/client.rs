@@ -81,7 +81,7 @@ fn do_authentication(
     let mut acq_cred_result = ntlm
         .acquire_credentials_handle()
         .with_credential_use(CredentialUse::Outbound)
-        .with_auth_data(&identity)
+        .with_auth_data(identity)
         .execute()?;
 
     let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -172,7 +172,7 @@ pub fn write_message<T: io::Write>(stream: &mut T, input_buffer: &[u8]) -> Resul
         );
 
         stream.write_u16::<LittleEndian>(input_buffer.len() as u16)?;
-        stream.write_all(&input_buffer)?;
+        stream.write_all(input_buffer)?;
     }
 
     Ok(())

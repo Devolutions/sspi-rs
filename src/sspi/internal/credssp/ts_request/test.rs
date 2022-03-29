@@ -521,7 +521,7 @@ fn encode_ts_credentials_with_one_symbol_user_and_password() {
 
     let identity = &AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD;
     let cred_ssp_mode = CredSspMode::WithCredentials;
-    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
+    let buffer = write_ts_credentials(identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -541,7 +541,7 @@ fn encode_ts_credentials_with_strong_user_and_password() {
 
     let identity = &AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD;
     let cred_ssp_mode = CredSspMode::WithCredentials;
-    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
+    let buffer = write_ts_credentials(identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -564,7 +564,7 @@ fn encode_ts_credentials_with_simple_username_and_domain_and_password() {
 
     let identity = &AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD;
     let cred_ssp_mode = CredSspMode::WithCredentials;
-    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
+    let buffer = write_ts_credentials(identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }
@@ -584,7 +584,7 @@ fn encode_ts_credentials_with_restricted_admin_mode_required() {
 
     let identity = &AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED;
     let cred_ssp_mode = CredSspMode::CredentialLess;
-    let buffer = write_ts_credentials(&identity, cred_ssp_mode).unwrap();
+    let buffer = write_ts_credentials(identity, cred_ssp_mode).unwrap();
 
     assert_eq!(expected_buffer.as_ref(), buffer.as_slice());
 }

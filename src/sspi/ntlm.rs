@@ -615,7 +615,7 @@ fn compute_signature(checksum: &[u8], seq_num: u32) -> [u8; SIGNATURE_SIZE] {
     let mut signature = [0x00; SIGNATURE_SIZE];
     signature[..SIGNATURE_VERSION_SIZE].clone_from_slice(&MESSAGES_VERSION.to_le_bytes());
     signature[SIGNATURE_VERSION_SIZE..SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE]
-        .clone_from_slice(&checksum);
+        .clone_from_slice(checksum);
     signature[SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE..]
         .clone_from_slice(&seq_num.to_le_bytes());
 

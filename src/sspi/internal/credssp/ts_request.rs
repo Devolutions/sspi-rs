@@ -193,7 +193,7 @@ impl TsRequest {
                 &mut buffer,
                 ber::sizeof_sequence_octet_string(nego_tokens.len() as u16),
             )?; /* NegoDataItem */
-            ber::write_sequence_octet_string(&mut buffer, 0, &nego_tokens)?; /* OCTET STRING */
+            ber::write_sequence_octet_string(&mut buffer, 0, nego_tokens)?; /* OCTET STRING */
         }
 
         /* [2] authInfo (OCTET STRING) */
@@ -341,7 +341,7 @@ fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
     ber::sizeof_integer(1)
         + ber::sizeof_contextual_tag(ber::sizeof_integer(1))
         + ber::sizeof_sequence_octet_string(ber::sizeof_sequence(sizeof_ts_password_creds(
-            &identity,
+            identity,
         )))
 }
 

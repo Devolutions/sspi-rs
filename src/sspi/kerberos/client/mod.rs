@@ -75,8 +75,8 @@ pub fn generate_as_req(username: &str, password: &str, realm: &str) -> AsReq {
     let timestamp_bytes = picky_asn1_der::to_vec(&timestamp).unwrap();
 
     let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-    let salt = cipher.generate_salt(&realm, &username);
-    let key = cipher.generate_key_from_string(&password, &salt);
+    let salt = cipher.generate_salt(realm, username);
+    let key = cipher.generate_key_from_string(password, &salt);
 
     let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
 
@@ -131,7 +131,7 @@ pub fn generate_as_req(username: &str, password: &str, realm: &str) -> AsReq {
             }))),
             from: Optional::from(None),
             till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(
-                expiration_date.clone(),
+                expiration_date,
             ))),
             rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
                 GeneralizedTime::from(expiration_date),
@@ -207,7 +207,7 @@ pub fn generate_tgs_req(
             }))),
             from: Optional::from(None),
             till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(
-                expiration_date.clone(),
+                expiration_date,
             ))),
             rtime: Optional::from(None),
             nonce: ExplicitContextTag7::from(IntegerAsn1::from(
@@ -337,7 +337,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                 description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
             })?;
             Ok((
-                pa_etype_into2.etype.0 .0.get(0).map(|t| *t).unwrap(),
+                pa_etype_into2.etype.0 .0.get(0).copied().unwrap(),
                 pa_etype_into2
                     .salt
                     .0
@@ -504,14 +504,14 @@ mod tests {
                         .0
                          .0
                         .get(0)
-                        .map(|t| *t)
+                        .copied()
                         .unwrap_or(default_encryption_params.0),
                     pa_etype_into2
                         .salt
                         .0
                         .as_ref()
                         .map(|salt| salt.0.to_string())
-                        .unwrap_or(default_encryption_params.1.clone()),
+                        .unwrap_or(default_encryption_params.1),
                 )
             }
             None => default_encryption_params,

@@ -5,7 +5,7 @@ pub use rc4::Rc4;
 use std::io;
 
 use crypto_mac::Mac;
-use hmac;
+
 use md4::{Digest, Md4};
 use md5::Md5;
 use sha2::Sha256;

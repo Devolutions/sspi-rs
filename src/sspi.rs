@@ -762,16 +762,16 @@ bitflags! {
         /// Support a stream-oriented connection.
         const STREAM = 0x8000;
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
-        const INTEGRITY = 0x10_000;
-        const IDENTIFY = 0x20_000;
-        const NULL_SESSION = 0x40_000;
+        const INTEGRITY = 0x0001_0000;
+        const IDENTIFY = 0x0002_0000;
+        const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
-        const MANUAL_CRED_VALIDATION = 0x80_000;
-        const RESERVED1 = 0x100_000;
-        const FRAGMENT_TO_FIT = 0x200_000;
-        const FORWARD_CREDENTIALS = 0x400_000;
+        const MANUAL_CRED_VALIDATION = 0x0008_0000;
+        const RESERVED1 = 0x0010_0000;
+        const FRAGMENT_TO_FIT = 0x0020_0000;
+        const FORWARD_CREDENTIALS = 0x0040_0000;
         /// If this flag is set, the `Integrity` flag is ignored. This value is supported only by the Negotiate and Kerberos security packages.
-        const NO_INTEGRITY = 0x800_000;
+        const NO_INTEGRITY = 0x0080_0000;
         const USE_HTTP_STYLE = 0x100_0000;
         const UNVERIFIED_TARGET_NAME = 0x2000_0000;
         const CONFIDENTIALITY_ONLY = 0x4000_0000;
@@ -807,13 +807,13 @@ bitflags! {
         /// When errors occur, the remote party will be notified.
         const EXTENDED_ERROR = 0x8000;
         /// Support a stream-oriented connection.
-        const STREAM = 0x10_000;
-        const INTEGRITY = 0x20_000;
-        const LICENSING = 0x40_000;
-        const IDENTIFY = 0x80_000;
-        const ALLOW_NULL_SESSION = 0x100_000;
-        const ALLOW_NON_USER_LOGONS = 0x200_000;
-        const ALLOW_CONTEXT_REPLAY = 0x400_000;
+        const STREAM = 0x0001_0000;
+        const INTEGRITY = 0x0002_0000;
+        const LICENSING = 0x0004_0000;
+        const IDENTIFY = 0x0008_0000;
+        const ALLOW_NULL_SESSION = 0x0010_0000;
+        const ALLOW_NON_USER_LOGONS = 0x0020_0000;
+        const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
         const FRAGMENT_TO_FIT = 0x80_0000;
         const NO_TOKEN = 0x100_0000;
         const PROXY_BINDINGS = 0x400_0000;
@@ -858,14 +858,14 @@ bitflags! {
         /// Support a stream-oriented connection.
         const STREAM = 0x8000;
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
-        const INTEGRITY = 0x10_000;
-        const IDENTIFY = 0x20_000;
-        const NULL_SESSION = 0x40_000;
+        const INTEGRITY = 0x0001_0000;
+        const IDENTIFY = 0x0002_0000;
+        const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
-        const MANUAL_CRED_VALIDATION = 0x80_000;
+        const MANUAL_CRED_VALIDATION = 0x0008_0000;
         const RESERVED1 = 0x10_0000;
-        const FRAGMENT_ONLY = 0x200_000;
-        const FORWARD_CREDENTIALS = 0x400_000;
+        const FRAGMENT_ONLY = 0x0020_0000;
+        const FORWARD_CREDENTIALS = 0x0040_0000;
         const USED_HTTP_STYLE = 0x100_0000;
         const NO_ADDITIONAL_TOKEN = 0x200_0000;
         const REAUTHENTICATION = 0x800_0000;
@@ -902,14 +902,14 @@ bitflags! {
         /// When errors occur, the remote party will be notified.
         const EXTENDED_ERROR = 0x8000;
         /// Support a stream-oriented connection.
-        const STREAM = 0x10_000;
-        const INTEGRITY = 0x20_000;
-        const LICENSING = 0x40_000;
-        const IDENTIFY = 0x80_000;
-        const NULL_SESSION = 0x100_000;
-        const ALLOW_NON_USER_LOGONS = 0x200_000;
-        const ALLOW_CONTEXT_REPLAY = 0x400_000;
-        const FRAGMENT_ONLY = 0x800_000;
+        const STREAM = 0x0001_0000;
+        const INTEGRITY = 0x0002_0000;
+        const LICENSING = 0x0004_0000;
+        const IDENTIFY = 0x0008_0000;
+        const NULL_SESSION = 0x0010_0000;
+        const ALLOW_NON_USER_LOGONS = 0x0020_0000;
+        const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
+        const FRAGMENT_ONLY = 0x0080_0000;
         const NO_TOKEN = 0x100_0000;
         const NO_ADDITIONAL_TOKEN = 0x200_0000;
     }
@@ -1229,14 +1229,14 @@ bitflags! {
         /// and one of the name choices in the end certificate is explicitly excluded.
         const HAS_EXCLUDED_NAME_CONSTRAINT = 0x8000;
         /// The certificate chain is not complete.
-        const IS_PARTIAL_CHAIN = 0x10_000;
+        const IS_PARTIAL_CHAIN = 0x0001_0000;
         /// A [certificate trust list](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly)
         /// (CTL) used to create this chain was not time valid.
-        const CTL_IS_NOT_TIME_VALID = 0x20_000;
+        const CTL_IS_NOT_TIME_VALID = 0x0002_0000;
         /// A CTL used to create this chain did not have a valid signature.
-        const CTL_IS_NOT_SIGNATURE_VALID = 0x40_000;
+        const CTL_IS_NOT_SIGNATURE_VALID = 0x0004_0000;
         /// A CTL used to create this chain is not valid for this usage.
-        const CTL_IS_NOT_VALID_FOR_USAGE = 0x80_000;
+        const CTL_IS_NOT_VALID_FOR_USAGE = 0x0008_0000;
         /// The revocation status of the certificate or one of the certificates in the certificate chain is either offline or stale.
         const IS_OFFLINE_REVOCATION = 0x100_0000;
         /// The end certificate does not have any resultant issuance policies, and one of the issuing
@@ -1275,15 +1275,15 @@ bitflags! {
         const IS_PEER_TRUSTED = 0x800;
         /// This certificate's [certificate revocation list](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly)
         /// (CRL) validity has been extended. This status code applies to certificates only.
-        const HAS_CRL_VALIDITY_EXTENDED = 0x1_000;
-        const IS_FROM_EXCLUSIVE_TRUST_STORE = 0x2_000;
-        const IS_CA_TRUSTED = 0x4_000;
-        const HAS_AUTO_UPDATE_WEAK_SIGNATURE = 0x8_000;
-        const SSL_HANDSHAKE_OCSP = 0x40_000;
-        const SSL_TIME_VALID_OCSP = 0x80_000;
-        const SSL_RECONNECT_OCSP = 0x100_000;
-        const IS_COMPLEX_CHAIN = 0x10_000;
-        const HAS_ALLOW_WEAK_SIGNATURE = 0x20_000;
+        const HAS_CRL_VALIDITY_EXTENDED = 0x1000;
+        const IS_FROM_EXCLUSIVE_TRUST_STORE = 0x2000;
+        const IS_CA_TRUSTED = 0x4000;
+        const HAS_AUTO_UPDATE_WEAK_SIGNATURE = 0x8000;
+        const SSL_HANDSHAKE_OCSP = 0x0004_0000;
+        const SSL_TIME_VALID_OCSP = 0x0008_0000;
+        const SSL_RECONNECT_OCSP = 0x0010_0000;
+        const IS_COMPLEX_CHAIN = 0x0001_0000;
+        const HAS_ALLOW_WEAK_SIGNATURE = 0x0002_0000;
         const SSL_TIME_VALID = 0x100_0000;
         const NO_TIME_CHECK = 0x200_0000;
     }

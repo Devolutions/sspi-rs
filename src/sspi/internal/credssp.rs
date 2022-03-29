@@ -204,7 +204,7 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
-            ts_request_version: ts_request_version,
+            ts_request_version,
         })
     }
 
@@ -353,7 +353,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             credentials,
             public_key,
             credentials_handle: None,
-            ts_request_version: ts_request_version,
+            ts_request_version,
         })
     }
 
@@ -530,6 +530,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum SspiContext {
     #[allow(dead_code)]
     Ntlm(Ntlm),
@@ -832,7 +833,7 @@ impl CredSspContext {
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
-        let ts_credentials_buffer = self.decrypt_message(&auth_info)?;
+        let ts_credentials_buffer = self.decrypt_message(auth_info)?;
 
         Ok(ts_request::read_ts_credentials(
             ts_credentials_buffer.as_slice(),

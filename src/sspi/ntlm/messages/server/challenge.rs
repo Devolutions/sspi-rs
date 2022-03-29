@@ -67,7 +67,7 @@ pub fn write_challenge(
     )?;
     write_payload(&message_fields, &mut buffer)?;
 
-    let message = buffer.into_inner().clone();
+    let message = buffer.into_inner();
 
     transport.write_all(message.as_slice())?;
     transport.flush()?;

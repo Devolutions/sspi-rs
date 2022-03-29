@@ -25,6 +25,7 @@ const AV_PAIR_FLAGS_SIZE: usize = 4;
 const AV_PAIR_TIMESTAMP_SIZE: usize = 8;
 
 #[derive(Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum AvPair {
     EOL,
     NbComputerName(Vec<u8>),

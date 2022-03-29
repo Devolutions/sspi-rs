@@ -71,15 +71,15 @@ where
 }
 
 pub fn get_challenge_target_info(timestamp: u64) -> sspi::Result<Vec<u8>> {
-    let mut av_pairs: Vec<AvPair> = Vec::with_capacity(6);
-
     // Windows requires _DomainName, _ComputerName fields, but does not care what they are contain
-    av_pairs.push(AvPair::NbDomainName(Vec::new()));
-    av_pairs.push(AvPair::NbComputerName(Vec::new()));
-    av_pairs.push(AvPair::DnsDomainName(Vec::new()));
-    av_pairs.push(AvPair::DnsComputerName(Vec::new()));
-    av_pairs.push(AvPair::Timestamp(timestamp));
-    av_pairs.push(AvPair::EOL);
+    let av_pairs = vec![
+        AvPair::NbDomainName(Vec::new()),
+        AvPair::NbComputerName(Vec::new()),
+        AvPair::DnsDomainName(Vec::new()),
+        AvPair::DnsComputerName(Vec::new()),
+        AvPair::Timestamp(timestamp),
+        AvPair::EOL,
+    ];
 
     Ok(AvPair::list_to_buffer(&av_pairs)?)
 }
@@ -88,7 +88,7 @@ pub fn get_authenticate_target_info(
     target_info: &[u8],
     send_single_host_data: bool,
 ) -> sspi::Result<Vec<u8>> {
-    let mut av_pairs = AvPair::buffer_to_av_pairs(&target_info)?;
+    let mut av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
 
     av_pairs.retain(|av_pair| av_pair.as_u16() != AV_PAIR_EOL);
 

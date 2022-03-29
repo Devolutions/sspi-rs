@@ -159,24 +159,25 @@ impl Sspi for Kerberos {
         let cipther =
             new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
 
-        for key in vec![
+        for key in [
             self.server_secret_key.as_ref(),
             self.session_key2.as_ref(),
             self.session_key1.as_ref(),
             self.client_secret_key.as_ref(),
-        ] {
-            if let Some(key) = key {
-                if let Ok(unencrypted_data) = cipther.decrypt(key, 2, &data.buffer) {
-                    *data.buffer.as_mut() = unencrypted_data;
-                    return Ok(DecryptionFlags::empty());
-                }
+        ]
+        .iter()
+        .flatten()
+        {
+            if let Ok(unencrypted_data) = cipther.decrypt(key, 2, &data.buffer) {
+                *data.buffer.as_mut() = unencrypted_data;
+                return Ok(DecryptionFlags::empty());
             }
         }
 
-        return Err(Error::new(
+        Err(Error::new(
             ErrorKind::MessageAltered,
             "Signature verification failed, something nasty is going on!".to_owned(),
-        ));
+        ))
     }
 
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
@@ -383,10 +384,14 @@ impl SspiImpl for Kerberos {
 
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-        let salt = cipher.generate_salt(&identity.domain.clone().unwrap_or_default(), &identity.username);
+        let cipher =
+            new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+        let salt = cipher.generate_salt(
+            &identity.domain.clone().unwrap_or_default(),
+            &identity.username,
+        );
         let key = cipher.generate_key_from_string(&identity.username, &salt);
-        
+
         self.client_secret_key = Some(key);
         self.auth_identity = Some(identity.into());
     }
