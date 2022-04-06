@@ -37,6 +37,8 @@ picky-asn1-der = { path = "../picky-rs/picky-asn1-der", version = "0.3.0" }
 kerberos_crypto = "0.3.6"
 kerberos_constants = "0.0.9"
 thiserror = "1.0"
+oid = "0.2.1"
+bincode = "1.3.3"
 
 [dev-dependencies]
 whoami = "0.5"
