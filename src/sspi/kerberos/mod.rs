@@ -16,12 +16,17 @@ use url::Url;
 
 use self::{
     client::{
-        extract_encryption_params_from_as_rep, extract_session_key_from_as_rep,
-        extract_session_key_from_tgs_rep, generate_ap_req, generate_ap_req_2, generate_as_req,
-        generate_authenticator_from_kdc_rep, generate_tgs_req,
+        extractors::{
+            extract_encryption_params_from_as_rep, extract_session_key_from_as_rep,
+            extract_session_key_from_tgs_rep,
+        },
+        generators::{
+            generate_ap_req, generate_as_req, generate_authenticator_for_ap_req,
+            generate_authenticator_for_tgs_ap_req, generate_tgs_req,
+        },
     },
     config::KerberosConfig,
-    negotiate::{extract_tgt_tiket, generate_neg_ap_req, generate_neg_token_init},
+    negotiate::{extract_tgt_ticket, generate_neg_ap_req, generate_neg_token_init},
     reqwest_client::ReqwestNetworkClient,
     utils::{serialize_message, utf16_bytes_to_string},
 };
@@ -121,6 +126,17 @@ impl Kerberos {
             encryption_type: None,
         }
     }
+
+    pub fn set_seq_num(&mut self, seq_num: u32) {
+        self.seq_number = seq_num;
+    }
+
+    pub fn next_seq_number(&mut self) -> u32 {
+        let seq_num = self.seq_number;
+        self.seq_number = seq_num + 1;
+
+        seq_num
+    }
 }
 
 impl Sspi for Kerberos {
@@ -174,16 +190,20 @@ impl Sspi for Kerberos {
         let cipher =
             new_kerberos_cipher(self.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
 
-        for key in [self.session_key.as_ref(), self.client_secret_key.as_ref()]
-            .iter()
-            .flatten()
+        let key = if let Some(key) = self.session_key.as_ref() {
+            key
+        } else {
+            return Err(Error::new(
+                ErrorKind::EncryptFailure,
+                "No encryption key provided".into(),
+            ));
+        };
+
+        if let Ok(decrypted_data) =
+            cipher.decrypt(key, self.key_usage_number.unwrap_or(24), &data.buffer)
         {
-            if let Ok(decrypted_data) =
-                cipher.decrypt(key, self.key_usage_number.unwrap_or(2), &data.buffer)
-            {
-                *data.buffer.as_mut() = decrypted_data;
-                return Ok(DecryptionFlags::empty());
-            }
+            *data.buffer.as_mut() = decrypted_data;
+            return Ok(DecryptionFlags::empty());
         }
 
         Err(Error::new(
@@ -312,16 +332,13 @@ impl SspiImpl for Kerberos {
                 let b = input_token.buffer.clone();
                 println!("nego response: {:?}", b);
 
-                let tgt_ticket = extract_tgt_tiket(&b);
+                let tgt_ticket = extract_tgt_ticket(&b);
 
                 let credentials = builder.credentials_handle.unwrap().as_ref().unwrap();
 
                 let username = utf16_bytes_to_string(&credentials.user);
                 let domain = utf16_bytes_to_string(&credentials.domain);
                 let password = utf16_bytes_to_string(&credentials.password);
-
-                println!("{}, {}, {}", username, domain, password);
-                println!("{:?}", self.config.url);
 
                 let as_req = generate_as_req(&username, &password, &domain);
 
@@ -330,9 +347,8 @@ impl SspiImpl for Kerberos {
                     .network_client
                     .send(&self.config.url, &serialize_message(&as_req))?;
 
-                // println!("as rep here {:?}", &response[4..]);
-
                 let as_rep: AsRep =
+                    // first 4 bytes is message leb. skipping them
                     picky_asn1_der::from_bytes(&response[4..]).map_err(|e| Error {
                         error_type: ErrorKind::DecryptFailure,
                         description: format!("{:?}", e),
@@ -341,7 +357,7 @@ impl SspiImpl for Kerberos {
                 println!("yes, as_rep parsed");
 
                 let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-                let authenticator = generate_authenticator_from_kdc_rep(&as_rep.0);
+                let authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
 
                 let session_key_1 = extract_session_key_from_as_rep(&as_rep, &salt, &password)?;
 
@@ -351,6 +367,7 @@ impl SspiImpl for Kerberos {
                     &session_key_1,
                     as_rep.0.ticket.0,
                     &authenticator,
+                    Some(vec![tgt_ticket]),
                 );
 
                 let response = self
@@ -360,15 +377,21 @@ impl SspiImpl for Kerberos {
 
                 println!("tgs req here");
 
+                // first 4 bytes is message leb. skipping them
                 let tgs_rep: TgsRep = picky_asn1_der::from_bytes(&response[4..])
                     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
 
                 self.session_key =
                     Some(extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1)?);
 
-                let authenticator = generate_authenticator_from_kdc_rep(&tgs_rep.0);
 
-                let ap_req = generate_ap_req_2(
+                println!("{:?}", self.session_key);
+
+                let authenticator =
+                    generate_authenticator_for_ap_req(&tgs_rep.0, self.next_seq_number());
+                println!("new ap_req authenticator: {:?}", authenticator);
+
+                let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
                     self.session_key.as_ref().unwrap(),
                     &authenticator,
@@ -491,8 +514,10 @@ mod tests {
     use super::NetworkClient;
     use super::{
         client::{
-            extract_encryption_params_from_as_rep, extract_session_key_from_as_rep,
-            generate_as_req, generate_authenticator_from_kdc_rep, generate_tgs_req,
+            extractors::{extract_encryption_params_from_as_rep, extract_session_key_from_as_rep},
+            generators::{
+                generate_as_req, generate_authenticator_for_tgs_ap_req, generate_tgs_req,
+            },
         },
         utils::serialize_message,
     };
@@ -519,7 +544,7 @@ mod tests {
         let as_rep: AsRep = picky_asn1_der::from_bytes(&response[4..]).unwrap();
 
         let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep).unwrap();
-        let authenticator = generate_authenticator_from_kdc_rep(&as_rep.0);
+        let authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
         let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password).unwrap();
 
         let tgs_req = generate_tgs_req(
@@ -528,6 +553,7 @@ mod tests {
             &session_key,
             as_rep.0.ticket.0,
             &authenticator,
+            None,
         );
 
         println!("tgs_req: {:?}", tgs_req);

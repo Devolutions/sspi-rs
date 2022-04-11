@@ -236,12 +236,7 @@ pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit>
     ApplicationTag0(GssApiNegInit {
         oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.3.6.1.5.5.2").unwrap()),
         neg_token_init: ExplicitContextTag0::from(NegTokenInit {
-            mech_types: Optional::from(Some(ExplicitContextTag0::from(MechTypeList::from(vec![
-                MechType::from(ObjectIdentifier::try_from("1.2.840.48018.1.2.2").unwrap()),
-                MechType::from(ObjectIdentifier::try_from("1.2.840.113554.1.2.2").unwrap()),
-                MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
-                MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
-            ])))),
+            mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
             req_flags: Optional::from(None),
             mech_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
                 picky_asn1_der::to_vec(&krb5_neg_token_init).unwrap(),
@@ -251,12 +246,19 @@ pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit>
     })
 }
 
-pub fn extract_tgt_tiket(data: &[u8]) -> Ticket {
+pub fn get_mech_list() -> MechTypeList {
+    MechTypeList::from(vec![
+        MechType::from(ObjectIdentifier::try_from("1.2.840.48018.1.2.2").unwrap()),
+        MechType::from(ObjectIdentifier::try_from("1.2.840.113554.1.2.2").unwrap()),
+        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
+        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
+    ])
+}
+
+pub fn extract_tgt_ticket(data: &[u8]) -> Ticket {
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&data).unwrap();
-    // println!("{:?}", neg_token_targ);
 
     let mut resp_token = neg_token_targ.0.response_token.0.unwrap().0 .0;
-    // println!("{:?}", resp_token);
     let mut c = Cursor::new(resp_token);
 
     let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c).unwrap();

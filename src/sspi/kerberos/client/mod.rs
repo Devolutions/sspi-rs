@@ -1,391 +1,9 @@
-use chrono::{Duration, Utc};
-use kerberos_crypto::new_kerberos_cipher;
-use picky_asn1::{
-    bit_string::BitString,
-    date::GeneralizedTime,
-    restricted_string::IA5String,
-    wrapper::{
-        Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2,
-        ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6,
-        ExplicitContextTag7, ExplicitContextTag8, GeneralizedTimeAsn1, IntegerAsn1,
-        OctetStringAsn1, Optional,
-    },
-};
-use picky_krb::{
-    data_types::{
-        ApOptions, Authenticator, AuthenticatorInner, EncryptedData, EtypeInfo2, KerbPaPacRequest,
-        KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions,
-        PrincipalName, Realm, Ticket,
-    },
-    messages::{
-        ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody,
-        TgsRep, TgsReq,
-    },
-};
-use rand::{rngs::OsRng, Rng};
+pub mod extractors;
+pub mod generators;
 
-use crate::sspi::{
-    kerberos::{KERBEROS_VERSION, SERVICE_NAME},
-    Error, ErrorKind, Result,
-};
-
-const AS_REQ_MSG_TYPE: u8 = 0x0a;
-const TGS_REQ_MSG_TYPE: u8 = 0x0c;
-const AP_REQ_MSG_TYPE: u8 = 0x0e;
-
-const NT_PRINCIPAL: u8 = 0x01;
-const NT_SRV_INST: u8 = 0x02;
-const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
-const NONCE_LEN: usize = 4;
-
-const AES128_CTS_HMAC_SHA1_96: u8 = 0x11;
-const AES256_CTS_HMAC_SHA1_96: u8 = 0x12;
-
-const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
-const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x00];
-
-const PA_ENC_TIMESTAMP: [u8; 1] = [0x02];
-const PA_ENC_TIMESTAMP_KEY_USAGE: i32 = 1;
-const PA_PAC_REQUEST_TYPE: [u8; 2] = [0x00, 0x80];
-const PA_ETYPE_INFO2_TYPE: [u8; 1] = [0x13];
-const PA_TGS_REQ_TYPE: [u8; 1] = [0x01];
-const PA_PAC_OPTIONS_TYPE: [u8; 2] = [0x00, 0xa7];
-
-const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
-
-pub fn generate_as_req(username: &str, password: &str, realm: &str) -> AsReq {
-    let expiration_date = Utc::now()
-        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
-        .unwrap();
-
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
-    }
-
-    let timestamp = PaEncTsEnc {
-        patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(
-            current_date,
-        ))),
-        pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
-            microseconds.to_be_bytes().to_vec(),
-        )))),
-    };
-    let timestamp_bytes = picky_asn1_der::to_vec(&timestamp).unwrap();
-
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-    let salt = cipher.generate_salt(realm, username);
-    let key = cipher.generate_key_from_string(password, &salt);
-
-    let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
-
-    let pa_enc_timestamp = PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96])),
-                kvno: Optional::from(None),
-                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_timestamp)),
-            })
-            .unwrap(),
-        )),
-    };
-
-    let pa_pac_request = PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&KerbPaPacRequest {
-                include_pac: ExplicitContextTag0::from(true),
-            })
-            .unwrap(),
-        )),
-    };
-
-    AsReq::from(KdcReq {
-        pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
-        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
-            pa_enc_timestamp,
-            pa_pac_request,
-        ])))),
-        req_body: ExplicitContextTag4::from(KdcReqBody {
-            kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-                DEFAULT_AS_REQ_OPTIONS.to_vec(),
-            ))),
-            cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(username.into()).unwrap()),
-                ])),
-            }))),
-            realm: ExplicitContextTag2::from(Realm::from(
-                IA5String::from_string(realm.into()).unwrap(),
-            )),
-            sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
-                ])),
-            }))),
-            from: Optional::from(None),
-            till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(
-                expiration_date,
-            ))),
-            rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
-                GeneralizedTime::from(expiration_date),
-            )))),
-            nonce: ExplicitContextTag7::from(IntegerAsn1::from(
-                OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
-            )),
-            etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
-                IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96]),
-                IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96]),
-            ])),
-            addresses: Optional::from(None),
-            enc_authorization_data: Optional::from(None),
-            additional_tickets: Optional::from(None),
-        }),
-    })
-}
-
-pub fn generate_tgs_req(
-    username: &str,
-    realm: &str,
-    session_key: &[u8],
-    ticket: Ticket,
-    authenticator: &Authenticator,
-) -> TgsReq {
-    let expiration_date = Utc::now()
-        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
-        .unwrap();
-
-    let pa_tgs_req = PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_TGS_REQ_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&generate_ap_req(ticket, session_key, authenticator)).unwrap(),
-        )),
-    };
-
-    let pa_pac_options = PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_OPTIONS_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&PaPacOptions {
-                flags: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(vec![
-                    0x40, 0x00, 0x00, 0x00,
-                ]))),
-            })
-            .unwrap(),
-        )),
-    };
-
-    TgsReq::from(KdcReq {
-        pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![TGS_REQ_MSG_TYPE])),
-        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
-            pa_tgs_req,
-            pa_pac_options,
-        ])))),
-        req_body: ExplicitContextTag4::from(KdcReqBody {
-            kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-                DEFAULT_TGS_REQ_OPTIONS.to_vec(),
-            ))),
-            cname: Optional::from(None),
-            realm: ExplicitContextTag2::from(Realm::from(
-                IA5String::from_string(realm.into()).unwrap(),
-            )),
-            sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
-                    KerberosStringAsn1::from(
-                        IA5String::from_string(format!("{}.{}", username, realm.to_lowercase()))
-                            .unwrap(),
-                    ),
-                ])),
-            }))),
-            from: Optional::from(None),
-            till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(
-                expiration_date,
-            ))),
-            rtime: Optional::from(None),
-            nonce: ExplicitContextTag7::from(IntegerAsn1::from(
-                OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
-            )),
-            etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
-                IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96]),
-                IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96]),
-            ])),
-            addresses: Optional::from(None),
-            enc_authorization_data: Optional::from(None),
-            additional_tickets: Optional::from(None),
-        }),
-    })
-}
-
-pub fn generate_authenticator_from_kdc_rep(kdc_rep: &KdcRep) -> Authenticator {
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
-    }
-
-    Authenticator::from(AuthenticatorInner {
-        authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
-        cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
-        cksum: Optional::from(None),
-        cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-        ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        subkey: Optional::from(None),
-        seq_number: Optional::from(None),
-        authorization_data: Optional::from(None),
-    })
-}
-
-pub fn generate_ap_req(ticket: Ticket, session_key: &[u8], authenticator: &Authenticator) -> ApReq {
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-
-    let encrypted_authenticator = cipher.encrypt(
-        session_key,
-        7,
-        &picky_asn1_der::to_vec(&authenticator).unwrap(),
-    );
-
-    ApReq::from(ApReqInner {
-        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
-        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(vec![
-            0x60, 0x00, 0x00, 0x00,
-        ]))),
-        ticket: ExplicitContextTag3::from(ticket),
-        authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96])),
-            kvno: Optional::from(None),
-            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
-        }),
-    })
-}
-
-pub fn generate_ap_req_2(
-    ticket: Ticket,
-    session_key: &[u8],
-    authenticator: &Authenticator,
-) -> ApReq {
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-
-    let encrypted_authenticator = cipher.encrypt(
-        session_key,
-        11,
-        &picky_asn1_der::to_vec(&authenticator).unwrap(),
-    );
-
-    ApReq::from(ApReqInner {
-        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
-        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(vec![
-            0x00, 0x00, 0x00, 0x00,
-        ]))),
-        ticket: ExplicitContextTag3::from(ticket),
-        authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96])),
-            kvno: Optional::from(None),
-            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
-        }),
-    })
-}
-
-pub fn extract_session_key_from_as_rep(
-    as_rep: &AsRep,
-    salt: &str,
-    password: &str,
-) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-
-    let key = cipher.generate_key_from_string(password, salt.as_bytes());
-
-    let enc_data = cipher
-        .decrypt(&key, 3, &as_rep.0.enc_part.0.cipher.0 .0)
-        .map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("{:?}", e),
-        })?;
-
-    let enc_as_rep_part: EncAsRepPart =
-        picky_asn1_der::from_bytes(&enc_data).map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("{:?}", e),
-        })?;
-
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
-}
-
-pub fn extract_session_key_from_tgs_rep(tgs_rep: &TgsRep, session_key: &[u8]) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-
-    let enc_data = cipher
-        .decrypt(session_key, 8, &tgs_rep.0.enc_part.0.cipher.0 .0)
-        .map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("{:?}", e),
-        })?;
-
-    let enc_as_rep_part: EncTgsRepPart =
-        picky_asn1_der::from_bytes(&enc_data).map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("{:?}", e),
-        })?;
-
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
-}
-
-pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, String)> {
-    match as_rep
-        .0
-        .padata
-        .0
-        .as_ref()
-        .map(|v| {
-            v.0 .0
-                .iter()
-                .find(|e| e.padata_type.0 .0 == PA_ETYPE_INFO2_TYPE)
-                .map(|pa_data| pa_data.padata_data.0 .0.clone())
-        })
-        .unwrap_or_default()
-    {
-        Some(data) => {
-            let pa_etype_into2: EtypeInfo2 =
-                picky_asn1_der::from_bytes(&data).map_err(|e| Error {
-                    error_type: ErrorKind::DecryptFailure,
-                    description: format!("{:?}", e),
-                })?;
-            let pa_etype_into2 = pa_etype_into2.0.get(0).ok_or(Error {
-                error_type: ErrorKind::InvalidParameter,
-                description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
-            })?;
-            Ok((
-                pa_etype_into2.etype.0 .0.get(0).copied().unwrap(),
-                pa_etype_into2
-                    .salt
-                    .0
-                    .as_ref()
-                    .map(|salt| salt.0.to_string())
-                    .ok_or(Error {
-                        error_type: ErrorKind::InvalidParameter,
-                        description: "Missing salt in EtypeInto2Entry".into(),
-                    })?,
-            ))
-        }
-        None => Err(Error {
-            error_type: ErrorKind::NoPaData,
-            description: format!(
-                "Missing PaData: PA_ETYPE_INFO2 ({:0x?})",
-                PA_ETYPE_INFO2_TYPE
-            ),
-        }),
-    }
-}
+// supported encryption types
+pub const AES128_CTS_HMAC_SHA1_96: i32 = kerberos_constants::etypes::AES128_CTS_HMAC_SHA1_96;
+pub const AES256_CTS_HMAC_SHA1_96: i32 = kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96;
 
 #[cfg(test)]
 mod tests {
@@ -395,14 +13,20 @@ mod tests {
     use picky_krb::data_types::EtypeInfo2;
     use picky_krb::messages::{ApReq, AsRep, EncAsRepPart, EncTgsRepPart, TgsRep};
 
-    use crate::sspi::kerberos::client::extract_session_key_from_tgs_rep;
-
-    use super::super::reqwest_client::ReqwestNetworkClient;
-    use super::super::NetworkClient;
     use super::{
-        extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, generate_as_req,
+        super::{reqwest_client::ReqwestNetworkClient, NetworkClient},
+        extractors::{extract_encryption_params_from_as_rep, extract_session_key_from_as_rep},
+        generators::{
+            generate_ap_req, generate_as_req, generate_authenticator_for_ap_req,
+            generate_authenticator_for_tgs_ap_req, generate_tgs_req,
+        },
+        AES256_CTS_HMAC_SHA1_96,
     };
-    use super::{AES256_CTS_HMAC_SHA1_96, PA_ETYPE_INFO2_TYPE};
+    use crate::crypto::compute_sha256;
+    use crate::sspi::kerberos::client::extractors::extract_session_key_from_tgs_rep;
+    use crate::sspi::kerberos::gssapi::{MicToken, WrapToken};
+    use crate::sspi::kerberos::negotiate::get_mech_list;
+    use crate::sspi::kerberos::utils::{rotate_right, unrotate_right};
 
     #[test]
     fn test_as_req_generation() {
@@ -512,7 +136,7 @@ mod tests {
         let as_rep: AsRep = picky_asn1_der::from_bytes(&as_rep_bytes).unwrap();
         // println!("{:?}", as_rep);
 
-        let default_encryption_params = (AES256_CTS_HMAC_SHA1_96, "default_salt".to_owned());
+        let default_encryption_params = (AES256_CTS_HMAC_SHA1_96 as u8, "default_salt".to_owned());
         let (encryption_type, salt) = match as_rep
             .0
             .padata
@@ -923,6 +547,15 @@ mod tests {
             62, 9, 11, 243, 8, 92, 242, 200, 50, 214, 48, 110, 175, 163, 72, 130, 6, 200, 249, 232,
             173, 101, 205, 5, 170, 170, 187, 175, 67,
         ];
+        let tgs_req_authenticator = [
+            75, 160, 148, 116, 99, 238, 40, 25, 44, 189, 14, 0, 61, 10, 96, 210, 111, 149, 55, 178,
+            64, 6, 44, 206, 28, 62, 237, 139, 241, 63, 11, 223, 232, 128, 189, 68, 167, 233, 47,
+            132, 136, 72, 128, 35, 102, 181, 138, 10, 238, 133, 226, 140, 135, 105, 18, 211, 29,
+            255, 239, 100, 251, 25, 232, 210, 60, 170, 130, 76, 180, 139, 225, 132, 143, 5, 133,
+            28, 106, 102, 199, 14, 178, 203, 227, 83, 57, 148, 67, 187, 72, 141, 8, 212, 154, 62,
+            4, 131, 148, 74, 212, 199, 172, 164, 122, 105, 32, 151, 73, 157, 143, 66, 7, 175, 50,
+            171, 96, 191, 17, 230, 99, 60, 28, 42, 217, 143, 121, 115, 232, 162, 5, 122,
+        ];
         let tgs_rep_1 = [
             109, 130, 5, 175, 48, 130, 5, 171, 160, 3, 2, 1, 5, 161, 3, 2, 1, 13, 163, 13, 27, 11,
             81, 75, 65, 84, 73, 79, 78, 46, 67, 79, 77, 164, 15, 48, 13, 160, 3, 2, 1, 1, 161, 6,
@@ -1172,6 +805,17 @@ mod tests {
         let session_key_2_1 = extract_session_key_from_tgs_rep(&tgs_rep_1, &session_key_1).unwrap();
         let session_key_2_2 = extract_session_key_from_tgs_rep(&tgs_rep_2, &session_key_1).unwrap();
 
+        let cipher =
+            new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+        let key = cipher.generate_key_from_string(password, salt.as_bytes());
+
+        println!(
+            "tgs_req_ap_req authenticator: {:?}",
+            cipher
+                .decrypt(&session_key_1, 7, &tgs_req_authenticator)
+                .unwrap()
+        );
+
         println!("session_key_2_1: {:?}", session_key_2_1);
         println!("session_key_2_2: {:?}", session_key_2_2);
 
@@ -1195,5 +839,198 @@ mod tests {
             "{:?}",
             cipher.decrypt(&session_key_2_2, 11, &ap_req.0.authenticator.cipher.0 .0)
         );
+
+        let ap_rep_enc_raw = cipher
+            .decrypt(&session_key_2_2, 12, &ap_rep.0.enc_part.cipher.0 .0)
+            .unwrap();
+
+        println!("{:?}", ap_rep_enc_raw);
+
+        let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&ap_rep_enc_raw).unwrap();
+        println!("{:?}", ap_rep_enc_part);
+
+        let sub_key = ap_rep_enc_part.0.subkey.0.unwrap().key_value.0 .0.clone();
+        println!("sub_key: {:?}", sub_key);
+    }
+
+    #[test]
+    fn test_decrypt_wrap() {
+        let sub_key = [
+            225, 45, 62, 116, 165, 142, 214, 44, 102, 216, 202, 158, 12, 78, 40, 121, 161, 178,
+            118, 68, 81, 178, 188, 246, 235, 201, 45, 41, 17, 64, 189, 185,
+        ];
+
+        let wrap_token_raw = [
+            5, 4, 6, 255, 0, 0, 0, 28, 0, 0, 0, 0, 90, 181, 116, 98, 255, 212, 120, 29, 19, 35, 95,
+            91, 192, 216, 160, 95, 135, 227, 86, 195, 248, 21, 226, 203, 98, 231, 109, 149, 168,
+            198, 63, 143, 64, 138, 30, 8, 241, 82, 184, 48, 216, 142, 130, 64, 115, 237, 26, 204,
+            70, 175, 90, 166, 133, 159, 55, 132, 201, 214, 37, 21, 33, 64, 239, 83, 135, 18, 103,
+            64, 219, 219, 16, 166, 251, 120, 195, 31, 57, 126, 188, 123,
+        ];
+
+        let mut c = Cursor::new(wrap_token_raw);
+        let wrap_token = WrapToken::decode(&mut c).unwrap();
+        println!("wrap_token: {:?}", wrap_token);
+
+        let origin_checksum = wrap_token.checksum;
+        println!("origin checksum len: {}", origin_checksum.len());
+
+        let cipher =
+            new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+
+        let checksum = unrotate_right(origin_checksum.clone(), 48);
+        let origin_payload = cipher.decrypt(&sub_key, 24, &checksum).unwrap();
+        println!("{:?}", origin_payload);
+
+        let public_key = [
+            48, 130, 2, 10, 2, 130, 2, 1, 0, 197, 114, 236, 33, 105, 242, 109, 238, 195, 71, 124,
+            121, 111, 87, 239, 77, 247, 94, 92, 118, 97, 59, 138, 223, 11, 238, 38, 80, 122, 184,
+            40, 152, 15, 94, 71, 56, 213, 11, 100, 243, 131, 113, 9, 44, 83, 205, 182, 246, 94,
+            195, 163, 152, 145, 210, 145, 84, 226, 133, 57, 12, 39, 28, 77, 126, 105, 206, 127,
+            149, 45, 65, 70, 26, 76, 109, 197, 32, 70, 13, 33, 182, 241, 214, 224, 190, 199, 127,
+            199, 196, 119, 1, 96, 78, 110, 167, 154, 178, 187, 107, 232, 167, 98, 81, 26, 248, 195,
+            132, 47, 34, 60, 241, 206, 57, 165, 20, 53, 190, 141, 15, 48, 195, 90, 190, 8, 126,
+            160, 251, 248, 186, 153, 93, 183, 228, 117, 142, 181, 56, 69, 117, 99, 218, 211, 45,
+            232, 82, 166, 190, 119, 3, 9, 214, 77, 81, 38, 129, 151, 223, 222, 53, 129, 91, 8, 250,
+            111, 46, 248, 209, 11, 29, 106, 115, 90, 169, 222, 136, 3, 240, 101, 45, 168, 11, 199,
+            188, 31, 151, 147, 58, 252, 114, 58, 104, 122, 121, 171, 127, 137, 76, 187, 255, 40,
+            61, 254, 229, 152, 44, 37, 246, 68, 174, 227, 88, 103, 186, 74, 41, 26, 157, 154, 170,
+            75, 151, 160, 20, 183, 64, 148, 80, 5, 1, 138, 101, 137, 15, 74, 44, 2, 26, 221, 55,
+            105, 106, 44, 124, 167, 162, 47, 37, 99, 202, 76, 14, 160, 253, 186, 0, 217, 151, 33,
+            150, 108, 93, 253, 241, 4, 216, 138, 109, 200, 240, 37, 194, 167, 123, 49, 215, 75,
+            216, 162, 96, 80, 194, 9, 98, 128, 220, 63, 131, 194, 107, 45, 165, 209, 7, 199, 189,
+            91, 83, 79, 234, 187, 220, 11, 112, 158, 202, 120, 250, 237, 44, 96, 76, 185, 231, 232,
+            110, 113, 3, 45, 26, 127, 221, 89, 48, 135, 0, 111, 112, 51, 87, 57, 144, 249, 114, 57,
+            156, 236, 141, 138, 132, 87, 55, 214, 116, 217, 196, 110, 67, 163, 179, 73, 71, 208,
+            252, 217, 175, 8, 7, 99, 21, 172, 205, 47, 94, 163, 230, 234, 131, 126, 157, 238, 207,
+            53, 98, 71, 170, 72, 244, 90, 51, 21, 20, 143, 165, 61, 208, 54, 163, 33, 212, 193,
+            126, 32, 32, 115, 245, 90, 247, 37, 250, 5, 165, 251, 2, 214, 35, 109, 78, 153, 237,
+            41, 41, 158, 23, 127, 216, 188, 60, 240, 54, 244, 98, 84, 177, 85, 134, 188, 86, 69,
+            30, 26, 65, 190, 66, 65, 12, 100, 101, 206, 56, 165, 143, 61, 120, 95, 217, 1, 209, 89,
+            165, 165, 54, 109, 59, 243, 43, 129, 129, 192, 66, 186, 46, 253, 225, 111, 48, 100,
+            132, 113, 129, 84, 121, 29, 110, 104, 167, 142, 247, 104, 213, 75, 173, 141, 3, 122,
+            171, 142, 153, 130, 122, 27, 194, 135, 99, 203, 130, 248, 78, 192, 164, 28, 48, 147,
+            238, 5, 78, 122, 69, 24, 217, 15, 91, 228, 171, 2, 3, 1, 0, 1,
+        ];
+        let magic_hash = [
+            67, 114, 101, 100, 83, 83, 80, 32, 67, 108, 105, 101, 110, 116, 45, 84, 111, 45, 83,
+            101, 114, 118, 101, 114, 32, 66, 105, 110, 100, 105, 110, 103, 32, 72, 97, 115, 104, 0,
+        ];
+        let nonce = [
+            0x72, 0xac, 0x88, 0x83, 0x22, 0xb0, 0x16, 0x6e, 0x20, 0xe3, 0x57, 0x7d, 0x90, 0xd7,
+            0x50, 0x4f, 0x12, 0x9b, 0xe8, 0xc9, 0x6a, 0x30, 0x22, 0xc4, 0x1d, 0xab, 0xa1, 0x72,
+            0xd9, 0xbb, 0xe8, 0xad,
+        ];
+
+        let mut data = magic_hash.to_vec();
+        data.extend(nonce);
+        data.extend(public_key);
+        let encrypted_public_key = compute_sha256(&data);
+
+        let wrap_token = WrapToken::with_seq_number(1521841250);
+
+        let mut payload = encrypted_public_key.to_vec();
+        payload.extend_from_slice(&wrap_token.header());
+
+        println!(
+            "{:?} {:?} {} {}",
+            origin_payload,
+            payload,
+            origin_payload == payload,
+            payload.len()
+        );
+
+        // let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+
+        // let checksum = cipher.encrypt(&sub_key, 24, &payload);
+        // println!("{}", origin_checksum == checksum);
+
+        // let checksum = rotate_right(checksum, 28);
+        // println!("{}", origin_checksum == checksum);
+
+        // let session_key_2 = [
+        //     141, 41, 213, 27, 229, 150, 208, 214, 139, 198, 60, 124, 252, 214, 41, 162, 196, 166,
+        //     24, 210, 10, 228, 106, 208, 1, 72, 18, 27, 40, 126, 86, 195,
+        // ];
+
+        // let checksum = unrotate_right(checksum, 28);
+        // let checksum = [
+        //     255, 212, 120, 29, 19, 35, 95, 91, 192, 216, 160, 95, 135, 227, 86, 195, 248, 21, 226,
+        //     203, 98, 231, 109, 149, 168, 198, 63, 143, 64, 138, 30, 8, 241, 82, 184, 48, 216, 142,
+        //     130, 64, 115, 237, 26, 204,
+        // ];
+        // println!("checksum.len(): {}", checksum.len());
+
+        // let cipher =
+        //     new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+
+        // println!("{:?}", cipher.decrypt(&sub_key, 22, &checksum));
+        // println!("{:?}", cipher.decrypt(&sub_key, 23, &checksum));
+        // println!("{:?}", cipher.decrypt(&sub_key, 24, &checksum));
+        // println!("{:?}", cipher.decrypt(&sub_key, 25, &checksum));
+    }
+
+    #[test]
+    fn test_mic() {
+        let session_key_2 = [
+            91, 57, 216, 63, 97, 41, 101, 11, 127, 141, 196, 191, 145, 244, 229, 194, 133, 47, 24,
+            173, 167, 71, 9, 90, 208, 76, 33, 129, 175, 138, 107, 253,
+        ];
+
+        let sub_key = [
+            111, 47, 107, 42, 228, 180, 117, 85, 132, 12, 40, 244, 116, 249, 36, 116, 33, 114, 129,
+            251, 147, 198, 188, 161, 61, 54, 241, 5, 246, 72, 237, 193,
+        ];
+
+        let authenticator_sub_key = [
+            148, 172, 145, 221, 220, 228, 122, 153, 207, 127, 28, 212, 105, 144, 145, 118, 175,
+            159, 255, 89, 238, 108, 63, 243, 16, 68, 45, 111, 198, 228, 26, 65,
+        ];
+
+        let checksum = [
+            0x63, 0xb9, 0x3b, 0x38, 0x26, 0x46, 0xf9, 0x75, 0xa4, 0xe2, 0xcd, 0xd4,
+        ];
+
+        let mut mic_token = MicToken::with_acceptor_flags().with_seq_number(1448744421);
+
+        let mut payload = picky_asn1_der::to_vec(&get_mech_list()).unwrap();
+        payload.extend_from_slice(&mic_token.header());
+
+        let my_checksum = checksum_sha_aes(&sub_key, 23, &payload, &AesSizes::Aes256);
+        println!("{}", my_checksum == checksum);
+
+        mic_token.set_checksum(my_checksum.clone());
+    }
+
+    #[test]
+    fn test_mic_i() {
+        // let session_key_2 = [
+        //     91, 57, 216, 63, 97, 41, 101, 11, 127, 141, 196, 191, 145, 244, 229, 194, 133, 47, 24,
+        //     173, 167, 71, 9, 90, 208, 76, 33, 129, 175, 138, 107, 253,
+        // ];
+
+        let sub_key = [
+            225, 45, 62, 116, 165, 142, 214, 44, 102, 216, 202, 158, 12, 78, 40, 121, 161, 178,
+            118, 68, 81, 178, 188, 246, 235, 201, 45, 41, 17, 64, 189, 185,
+        ];
+
+        // let authenticator_sub_key = [
+        //     148, 172, 145, 221, 220, 228, 122, 153, 207, 127, 28, 212, 105, 144, 145, 118, 175,
+        //     159, 255, 89, 238, 108, 63, 243, 16, 68, 45, 111, 198, 228, 26, 65,
+        // ];
+
+        let checksum = [
+            0x71, 0x05, 0x92, 0xb9, 0xd5, 0x63, 0x69, 0xfe, 0xf8, 0x34, 0x25, 0x51,
+        ];
+
+        let mut mic_token = MicToken::with_initiator_flags().with_seq_number(1521841249);
+
+        let mut payload = picky_asn1_der::to_vec(&get_mech_list()).unwrap();
+        payload.extend_from_slice(&mic_token.header());
+
+        let my_checksum = checksum_sha_aes(&sub_key, 25, &payload, &AesSizes::Aes256);
+        println!("{}", my_checksum == checksum);
+
+        mic_token.set_checksum(my_checksum.clone());
     }
 }

@@ -774,7 +774,33 @@ impl CredSspContext {
         data.extend(public_key);
         let encrypted_public_key = compute_sha256(&data);
 
-        self.encrypt_message(&encrypted_public_key)
+        match &mut self.sspi_context {
+            SspiContext::Ntlm(_) => self.encrypt_message(&encrypted_public_key),
+            SspiContext::Kerberos(kerberos) => {
+                let mut wrap_token = WrapToken::with_seq_number(kerberos.next_seq_number() as u64);
+
+                let mut payload = encrypted_public_key.to_vec();
+                payload.extend_from_slice(&wrap_token.header());
+
+                println!("payload len: {}", payload.len());
+
+                let checksum = self.encrypt_message(&payload)?;
+                println!("check len: {}", checksum.len());
+
+                wrap_token.set_rrc(28);
+
+                let checksum = rotate_right(checksum, 48);
+
+                wrap_token.set_checksum(checksum);
+
+                let mut raw_wrap_token = Vec::with_capacity(92);
+                wrap_token.encode(&mut raw_wrap_token)?;
+
+                println!("res token len: {:?}", raw_wrap_token.len());
+
+                Ok(raw_wrap_token)
+            }
+        }
     }
 
     fn decrypt_public_key_echo(
