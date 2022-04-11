@@ -6,10 +6,10 @@ use picky_asn1::{
     date::GeneralizedTime,
     restricted_string::IA5String,
     wrapper::{
-        Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1,
-        ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5,
-        ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8, GeneralizedTimeAsn1,
-        IntegerAsn1, OctetStringAsn1, Optional,
+        Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2,
+        ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6,
+        ExplicitContextTag7, ExplicitContextTag8, GeneralizedTimeAsn1, IntegerAsn1,
+        OctetStringAsn1, Optional,
     },
 };
 use picky_krb::{
@@ -24,10 +24,7 @@ use picky_krb::{
         KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName, Realm,
         Ticket,
     },
-    messages::{
-        ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody,
-        TgsReq,
-    },
+    messages::{ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, TgsReq},
 };
 use rand::{rngs::OsRng, Rng};
 

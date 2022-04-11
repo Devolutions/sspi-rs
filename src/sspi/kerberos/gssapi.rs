@@ -1,6 +1,8 @@
 use std::{io::{Result, Error, ErrorKind, Read, Write}};
 
-use byteorder::{WriteBytesExt, BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use kerberos_crypto::{checksum_sha_aes, AesSizes};
+use picky_krb::constants::key_usages::INITIATOR_SIGN;
 
 const MIC_TOKEN_ID: [u8; 2] = [0x04, 0x04];
 const MIC_FILLER: [u8; 5] = [0xff, 0xff, 0xff, 0xff, 0xff];
@@ -54,6 +56,28 @@ impl MicToken {
             checksum,
             payload: None
         })
+    }
+
+    pub fn generate_initiator_raw(
+        mut payload: Vec<u8>,
+        seq_number: u64,
+        session_key: &[u8],
+    ) -> Vec<u8> {
+        let mut mic_token = Self::with_initiator_flags().with_seq_number(seq_number);
+
+        payload.extend_from_slice(&mic_token.header());
+
+        mic_token.set_checksum(checksum_sha_aes(
+            session_key,
+            INITIATOR_SIGN,
+            &payload,
+            &AesSizes::Aes256,
+        ));
+
+        let mut mic_token_raw = Vec::new();
+        mic_token.encode(&mut mic_token_raw).unwrap();
+
+        mic_token_raw
     }
 }
 

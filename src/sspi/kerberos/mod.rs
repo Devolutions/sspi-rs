@@ -11,7 +11,8 @@ use std::{env, fmt::Debug, io::Write, str::FromStr};
 
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
-use picky_krb::messages::{ApRep, ApReq, AsRep, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, TgsRep};
+use rand::{OsRng, Rng};
 use url::Url;
 
 use self::{
@@ -32,7 +33,16 @@ use self::{
 };
 use super::ntlm::AuthIdentityBuffers;
 use crate::{
-    sspi,
+    sspi::{
+        self,
+        kerberos::{
+            gssapi::MicToken,
+            negotiate::{generate_final_neg_token_targ, get_mech_list},
+            server::generators::{
+                extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep,
+            },
+        },
+    },
     sspi::{Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE},
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
     ContextNames, ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult,
@@ -125,10 +135,6 @@ impl Kerberos {
             key_usage_number: None,
             encryption_type: None,
         }
-    }
-
-    pub fn set_seq_num(&mut self, seq_num: u32) {
-        self.seq_number = seq_num;
     }
 
     pub fn next_seq_number(&mut self) -> u32 {
@@ -317,8 +323,6 @@ impl SspiImpl for Kerberos {
 
                 self.state = KerberosState::Preauthentication;
 
-                println!("nego data sent!");
-
                 SecurityStatus::ContinueNeeded
             }
             KerberosState::Preauthentication => {
@@ -329,10 +333,8 @@ impl SspiImpl for Kerberos {
                     )
                 })?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let b = input_token.buffer.clone();
-                println!("nego response: {:?}", b);
 
-                let tgt_ticket = extract_tgt_ticket(&b);
+                let tgt_ticket = extract_tgt_ticket(&input_token.buffer);
 
                 let credentials = builder.credentials_handle.unwrap().as_ref().unwrap();
 
@@ -418,14 +420,33 @@ impl SspiImpl for Kerberos {
                     )
                 })?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                println!("input: {:?}", input_token.buffer);
 
-                // let _ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)
-                //     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
+                let ap_rep = extract_ap_rep_from_neg_token_targ(&input_token.buffer);
 
-                // handle ap_rep
+                println!("session_key: {:?}", self.session_key);
 
+                self.session_key = Some(extract_sub_session_key_from_ap_rep(
+                    &ap_rep,
+                    self.session_key.as_ref().unwrap(),
+                ));
+
+                println!("session_key: {:?}", self.session_key);
                 println!("all good in ap_rep");
+
+                let neg_token_targ =
+                    generate_final_neg_token_targ(Some(MicToken::generate_initiator_raw(
+                        picky_asn1_der::to_vec(&get_mech_list()).unwrap(),
+                        self.next_seq_number() as u64,
+                        self.session_key.as_ref().unwrap(),
+                    )));
+
+                let output_token =
+                    SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                output_token
+                    .buffer
+                    .write_all(&picky_asn1_der::to_vec(&neg_token_targ).unwrap())?;
+
+                self.key_usage_number = Some(24);
 
                 self.state = KerberosState::Final;
 
@@ -488,8 +509,6 @@ impl SspiImpl for Kerberos {
 
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        println!("custom set auth identity");
-
         let cipher =
             new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
         let salt = cipher.generate_salt(
@@ -576,7 +595,7 @@ mod tests {
         ts_request.nego_tokens = Some(vec![1, 2, 3, 4, 5]);
 
         let mut res_data = Vec::new();
-        ts_request.encode_ts_request(&mut res_data);
+        ts_request.encode_ts_request(&mut res_data).unwrap();
 
         println!("{:?}", res_data);
     }

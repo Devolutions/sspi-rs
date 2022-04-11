@@ -18,10 +18,14 @@ use picky_asn1_der::{application_tag::ApplicationTag, Asn1RawDer};
 use picky_krb::{
     data_types::{KerberosStringAsn1, PrincipalName, Ticket},
     messages::ApReq,
+    constants::{oids::{MS_KRB5, KRB5, SPNEGO, KRB5_USER_TO_USER}, types::TGT_REQ_MSG_TYPE},
 };
-use serde::{de, de::Error, ser, Deserialize, Serialize};
+use serde::{ser, Deserialize, Serialize};
 
 use crate::sspi::kerberos::KERBEROS_VERSION;
+
+const AP_REQ_TOKEN_ID: [u8; 2] = [0x01, 0x00];
+const TGT_REQ_TOKEN_ID: [u8; 2] = [0x04, 0x00];
 
 pub type MechType = ObjectIdentifierAsn1;
 
@@ -92,35 +96,22 @@ impl<T: Serialize> KrbMessage<T> {
     }
 }
 
-impl<'a, T: Deserialize<'a>> KrbMessage<T> {
-    pub fn deserialize(data: &'a [u8]) -> Self {
-        let mut cursor = Cursor::new(data);
+// impl<'a, T: Deserialize<'a>> KrbMessage<T> {
+//     pub fn deserialize(data: &'a [u8]) -> Self {
+//         let mut cursor = Cursor::new(data);
 
-        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_reader(data).unwrap();
+//         let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_reader(data).unwrap();
 
-        let mut token_id = [0, 0];
-        cursor.read_exact(&mut token_id).unwrap();
+//         let mut token_id = [0, 0];
+//         cursor.read_exact(&mut token_id).unwrap();
 
-        let msg: T = picky_asn1_der::from_reader(&data[(cursor.position() as usize)..]).unwrap();
+//         let msg: T = picky_asn1_der::from_reader(&data[(cursor.position() as usize)..]).unwrap();
 
-        Self {
-            krb5_oid: oid,
-            krb5_token_id: token_id,
-            krb_msg: msg,
-        }
-    }
-}
-
-// impl<'d, T: de::Deserialize<'d> + Debug + PartialEq> de::Deserialize<'d> for KrbMessage<T> {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: de::Deserializer<'d>,
-//     {
-//         let mut data = Asn1RawDer::deserialize(deserializer)?;
-
-//         let inner: KrbMessage<T> = KrbMessage::deserialize1(&data.0);
-
-//         Ok(inner)
+//         Self {
+//             krb5_oid: oid,
+//             krb5_token_id: token_id,
+//             krb_msg: msg,
+//         }
 //     }
 // }
 
@@ -152,23 +143,6 @@ pub struct GssApiNegInit {
 #[derive(Debug, PartialEq)]
 pub struct ApplicationTag0<T>(pub T);
 
-// impl<'d, T: de::Deserialize<'d> + Debug + PartialEq> de::Deserialize<'d> for ApplicationTag0<T> {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: de::Deserializer<'d>,
-//     {
-//         let mut data = Asn1RawDer::deserialize(deserializer)?;
-
-//         data.0[0] = 0x30;
-
-//         let mut deserializer = picky_asn1_der::Deserializer::new_from_bytes(&data2);
-
-//         let inner = T::deserialize(&mut deserializer).map_err(D::Error::custom)?;
-
-//         Ok(Self(inner))
-//     }
-// }
-
 impl<T: ser::Serialize + Debug + PartialEq> ser::Serialize for ApplicationTag0<T> {
     fn serialize<S>(&self, serializer: S) -> Result<<S as ser::Serializer>::Ok, S::Error>
     where
@@ -196,14 +170,15 @@ impl<T: ser::Serialize + Debug + PartialEq> ser::Serialize for ApplicationTag0<T
 pub fn generate_neg_ap_req(ap_req: ApReq) -> ExplicitContextTag1<NegTokenTarg> {
     let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(
-            ObjectIdentifier::try_from("1.2.840.113554.1.2.2.3").unwrap(),
+            ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap(),
         ),
-        krb5_token_id: [0x01, 0x00],
+        krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
     });
 
     ExplicitContextTag1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(vec![
+            // accept incomplete (1)
             0x0a, 0x01, 0x01,
         ])))),
         supported_mech: Optional::from(None),
@@ -217,12 +192,12 @@ pub fn generate_neg_ap_req(ap_req: ApReq) -> ExplicitContextTag1<NegTokenTarg> {
 pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit> {
     let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(
-            ObjectIdentifier::try_from("1.2.840.113554.1.2.2.3").unwrap(),
+            ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap(),
         ),
-        krb5_token_id: [0x04, 0x00],
+        krb5_token_id: TGT_REQ_TOKEN_ID,
         krb_msg: TgtReq {
             pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x10])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
             server_name: ExplicitContextTag2::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
@@ -234,7 +209,7 @@ pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit>
     });
 
     ApplicationTag0(GssApiNegInit {
-        oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.3.6.1.5.5.2").unwrap()),
+        oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from(SPNEGO).unwrap()),
         neg_token_init: ExplicitContextTag0::from(NegTokenInit {
             mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
             req_flags: Optional::from(None),
@@ -248,33 +223,42 @@ pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit>
 
 pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![
-        MechType::from(ObjectIdentifier::try_from("1.2.840.48018.1.2.2").unwrap()),
-        MechType::from(ObjectIdentifier::try_from("1.2.840.113554.1.2.2").unwrap()),
-        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
-        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
+        MechType::from(ObjectIdentifier::try_from(MS_KRB5).unwrap()),
+        MechType::from(ObjectIdentifier::try_from(KRB5).unwrap()),
+        // MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
+        // MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
     ])
 }
 
 pub fn extract_tgt_ticket(data: &[u8]) -> Ticket {
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&data).unwrap();
 
-    let mut resp_token = neg_token_targ.0.response_token.0.unwrap().0 .0;
+    let resp_token = neg_token_targ.0.response_token.0.unwrap().0 .0;
     let mut c = Cursor::new(resp_token);
 
-    let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c).unwrap();
-
-    println!("{:?}", oid);
-    println!("{:?}", c);
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c).unwrap();
 
     let mut t = [0, 0];
 
     c.read_exact(&mut t).unwrap();
-    println!("t: {:?}", t);
 
     let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c).unwrap();
-    // println!("{:?}", tgt_rep);
 
     tgt_rep.ticket.0
+}
+
+pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
+    NegTokenTarg1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(vec![
+            // accept complete (0)
+            0x0a, 0x01, 0x00,
+        ])))),
+        supported_mech: Optional::from(None),
+        response_token: Optional::from(None),
+        mech_list_mic: Optional::from(
+            mech_list_mic.map(|v| ExplicitContextTag3::from(OctetStringAsn1::from(v))),
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -284,7 +268,7 @@ mod tests {
         io::{Cursor, Read},
     };
 
-    use super::{generate_neg_token_init, ApplicationTag0, KrbMessage, NegTokenTarg, TgtRep};
+    use super::{generate_neg_token_init, KrbMessage, TgtRep};
     use crate::sspi::{internal::credssp::TsRequest, kerberos::negotiate::NegTokenTarg1};
     use oid::ObjectIdentifier;
     use picky_asn1::wrapper::ObjectIdentifierAsn1;

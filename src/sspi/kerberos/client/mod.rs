@@ -9,17 +9,15 @@ pub const AES256_CTS_HMAC_SHA1_96: i32 = kerberos_constants::etypes::AES256_CTS_
 mod tests {
     use std::str::FromStr;
 
-    use kerberos_crypto::new_kerberos_cipher;
-    use picky_krb::data_types::EtypeInfo2;
-    use picky_krb::messages::{ApReq, AsRep, EncAsRepPart, EncTgsRepPart, TgsRep};
+    use kerberos_crypto::{checksum_sha_aes, new_kerberos_cipher, AesSizes};
+    use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
+    use picky_krb::data_types::{EncApRepPart, EtypeInfo2};
+    use picky_krb::messages::{ApRep, ApReq, AsRep, EncAsRepPart, EncTgsRepPart, TgsRep};
 
     use super::{
         super::{reqwest_client::ReqwestNetworkClient, NetworkClient},
         extractors::{extract_encryption_params_from_as_rep, extract_session_key_from_as_rep},
-        generators::{
-            generate_ap_req, generate_as_req, generate_authenticator_for_ap_req,
-            generate_authenticator_for_tgs_ap_req, generate_tgs_req,
-        },
+        generators::generate_as_req,
         AES256_CTS_HMAC_SHA1_96,
     };
     use crate::crypto::compute_sha256;
