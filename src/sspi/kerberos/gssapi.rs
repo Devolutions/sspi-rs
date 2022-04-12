@@ -1,8 +1,10 @@
-use std::{io::{Result, Error, ErrorKind, Read, Write}};
+use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use kerberos_crypto::{checksum_sha_aes, AesSizes};
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
+
+use crate::sspi::{Error, ErrorKind, Result};
 
 const MIC_TOKEN_ID: [u8; 2] = [0x04, 0x04];
 const MIC_FILLER: [u8; 5] = [0xff, 0xff, 0xff, 0xff, 0xff];
@@ -33,7 +35,7 @@ impl MicToken {
 
         data.read_exact(&mut buf)?;
         if buf != MIC_TOKEN_ID {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid MIC token id"));
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid MIC token id".into()));
         }
 
         let flags = data.read_u8()?;
@@ -42,7 +44,7 @@ impl MicToken {
 
         data.read_exact(&mut buf)?;
         if buf != MIC_FILLER {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid MIC Filler"));
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid MIC Filler".into()));
         }
 
         let seq_num = data.read_u64::<BigEndian>()?;
@@ -107,17 +109,15 @@ impl WrapToken {
         let mut buf = [0, 0];
 
         data.read_exact(&mut buf)?;
-        if buf != MIC_TOKEN_ID {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid MIC token id"));
+        if buf != WRAP_TOKEN_ID {
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid WRAP token id".into()));
         }
 
         let flags = data.read_u8()?;
 
-        let mut buf = [0, 0, 0, 0, 0];
-
-        data.read_exact(&mut buf)?;
-        if buf != MIC_FILLER {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid MIC Filler"));
+        let filler = data.read_u8()?;
+        if filler != WRAP_FILLER {
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid Wrap Filler".into()));
         }
 
         let ec = data.read_u16::<BigEndian>()?;

@@ -24,7 +24,7 @@ use self::{
         generators::{
             generate_ap_req, generate_as_req, generate_authenticator_for_ap_req,
             generate_authenticator_for_tgs_ap_req, generate_tgs_req,
-        },
+        }, AES256_CTS_HMAC_SHA1_96,
     },
     config::KerberosConfig,
     negotiate::{extract_tgt_ticket, generate_neg_ap_req, generate_neg_token_init},
@@ -57,7 +57,7 @@ pub const SERVICE_NAME: &str = "krbtgt";
 const KDC_TYPE_ENV: &str = "KDC_TYPE";
 const URL_ENV: &str = "URL";
 
-const DEFAULT_ENCRYPTION_TYPE: i32 = kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96;
+const DEFAULT_ENCRYPTION_TYPE: i32 = AES256_CTS_HMAC_SHA1_96;
 
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
@@ -83,19 +83,23 @@ pub enum KerberosState {
     Final,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct EncryptionParams {
+    encryption_type: Option<i32>,
+    session_key: Option<Vec<u8>>,
+    sub_session_key: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Kerberos {
     state: KerberosState,
     config: KerberosConfig,
     auth_identity: Option<AuthIdentityBuffers>,
 
-    // encryption keys
-    client_secret_key: Option<Vec<u8>>,
-    session_key: Option<Vec<u8>>,
-    server_secret_key: Option<Vec<u8>>,
+    encryption_params: EncryptionParams,
 
     key_usage_number: Option<i32>,
-    encryption_type: Option<i32>,
+    seq_number: u32,
 }
 
 impl Kerberos {
@@ -109,12 +113,10 @@ impl Kerberos {
             },
             auth_identity: None,
 
-            client_secret_key: None,
-            session_key: None,
-            server_secret_key: None,
+            encryption_params: EncryptionParams::default(),
 
             key_usage_number: None,
-            encryption_type: None,
+            seq_number: OsRng::new().unwrap().gen::<u32>(),
         }
     }
 
@@ -128,12 +130,10 @@ impl Kerberos {
             },
             auth_identity: None,
 
-            client_secret_key: None,
-            session_key: None,
-            server_secret_key: None,
+            encryption_params: EncryptionParams::default(),
 
             key_usage_number: None,
-            encryption_type: None,
+            seq_number: OsRng::new().unwrap().gen::<u32>(),
         }
     }
 
@@ -163,10 +163,13 @@ impl Sspi for Kerberos {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let cipther =
-            new_kerberos_cipher(self.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
 
-        let key = if let Some(key) = self.session_key.as_ref() {
+        let cipher =
+            new_kerberos_cipher(self.encryption_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
+
+        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
+            key
+        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
             key
         } else if let Some(key) = self.client_secret_key.as_ref() {
             key
@@ -177,8 +180,13 @@ impl Sspi for Kerberos {
             ));
         };
 
+        println!(
+            "encrypt params: {:?} {:?}",
+            self.encryption_params, self.key_usage_number
+        );
+
         *data.buffer.as_mut() =
-            cipther.encrypt(key, self.key_usage_number.unwrap_or(2), &data.buffer);
+            cipher.encrypt(key, self.key_usage_number.unwrap_or(24), &data.buffer);
 
         Ok(SecurityStatus::Ok)
     }
@@ -194,9 +202,11 @@ impl Sspi for Kerberos {
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher =
-            new_kerberos_cipher(self.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
+            new_kerberos_cipher(self.encryption_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
 
-        let key = if let Some(key) = self.session_key.as_ref() {
+        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
+            key
+        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
             key
         } else {
             return Err(Error::new(
@@ -342,7 +352,7 @@ impl SspiImpl for Kerberos {
                 let domain = utf16_bytes_to_string(&credentials.domain);
                 let password = utf16_bytes_to_string(&credentials.password);
 
-                let as_req = generate_as_req(&username, &password, &domain);
+                let as_req = generate_as_req(&username, &password, &domain, &self.encryption_params);
 
                 let response = self
                     .config
@@ -350,7 +360,7 @@ impl SspiImpl for Kerberos {
                     .send(&self.config.url, &serialize_message(&as_req))?;
 
                 let as_rep: AsRep =
-                    // first 4 bytes is message leb. skipping them
+                    // first 4 bytes is message len. skipping them
                     picky_asn1_der::from_bytes(&response[4..]).map_err(|e| Error {
                         error_type: ErrorKind::DecryptFailure,
                         description: format!("{:?}", e),
@@ -358,10 +368,12 @@ impl SspiImpl for Kerberos {
 
                 println!("yes, as_rep parsed");
 
-                let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+                let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+                self.encryption_params.encryption_type = Some(encryption_type as i32);
+ 
                 let authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
 
-                let session_key_1 = extract_session_key_from_as_rep(&as_rep, &salt, &password)?;
+                let session_key_1 = extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
 
                 let tgs_req = generate_tgs_req(
                     &username,
@@ -370,6 +382,7 @@ impl SspiImpl for Kerberos {
                     as_rep.0.ticket.0,
                     &authenticator,
                     Some(vec![tgt_ticket]),
+                    &self.encryption_params
                 );
 
                 let response = self
@@ -383,11 +396,11 @@ impl SspiImpl for Kerberos {
                 let tgs_rep: TgsRep = picky_asn1_der::from_bytes(&response[4..])
                     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
 
-                self.session_key =
-                    Some(extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1)?);
+                self.encryption_params.session_key =
+                    Some(extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &self.encryption_params)?);
 
 
-                println!("{:?}", self.session_key);
+                println!("{:?}", self.encryption_params);
 
                 let authenticator =
                     generate_authenticator_for_ap_req(&tgs_rep.0, self.next_seq_number());
@@ -395,8 +408,9 @@ impl SspiImpl for Kerberos {
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
-                    self.session_key.as_ref().unwrap(),
+                    self.encryption_params.session_key.as_ref().unwrap(),
                     &authenticator,
+                    &self.encryption_params
                 );
 
                 let output_token =
@@ -423,21 +437,19 @@ impl SspiImpl for Kerberos {
 
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&input_token.buffer);
 
-                println!("session_key: {:?}", self.session_key);
-
-                self.session_key = Some(extract_sub_session_key_from_ap_rep(
+                self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
                     &ap_rep,
-                    self.session_key.as_ref().unwrap(),
+                    self.encryption_params.session_key.as_ref().unwrap(),
                 ));
 
-                println!("session_key: {:?}", self.session_key);
+                println!("session_key: {:?}", self.encryption_params);
                 println!("all good in ap_rep");
 
                 let neg_token_targ =
                     generate_final_neg_token_targ(Some(MicToken::generate_initiator_raw(
                         picky_asn1_der::to_vec(&get_mech_list()).unwrap(),
                         self.next_seq_number() as u64,
-                        self.session_key.as_ref().unwrap(),
+                        self.encryption_params.sub_session_key.as_ref().unwrap(),
                     )));
 
                 let output_token =
@@ -509,15 +521,6 @@ impl SspiImpl for Kerberos {
 
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        let cipher =
-            new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
-        let salt = cipher.generate_salt(
-            &identity.domain.clone().unwrap_or_default(),
-            &identity.username,
-        );
-        let key = cipher.generate_key_from_string(&identity.username, &salt);
-
-        self.client_secret_key = Some(key);
         self.auth_identity = Some(identity.into());
     }
 }

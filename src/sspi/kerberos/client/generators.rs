@@ -28,7 +28,7 @@ use picky_krb::{
 };
 use rand::{rngs::OsRng, Rng};
 
-use crate::sspi::kerberos::{KERBEROS_VERSION, SERVICE_NAME};
+use crate::sspi::kerberos::{KERBEROS_VERSION, SERVICE_NAME, EncryptionParams};
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 
@@ -39,9 +39,14 @@ const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
 const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
 const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x00];
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
+
+// AP-REQ toggled options:
+// * mutual required
+// * use session key
+// other options are disabled
 const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
 
-pub fn generate_as_req(username: &str, password: &str, realm: &str) -> AsReq {
+pub fn generate_as_req(username: &str, password: &str, realm: &str, enc_params: &EncryptionParams) -> AsReq {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
@@ -62,7 +67,7 @@ pub fn generate_as_req(username: &str, password: &str, realm: &str) -> AsReq {
     };
     let timestamp_bytes = picky_asn1_der::to_vec(&timestamp).unwrap();
 
-    let cipher = new_kerberos_cipher(kerberos_constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap();
+    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96)).unwrap();
     let salt = cipher.generate_salt(realm, username);
     let key = cipher.generate_key_from_string(password, &salt);
 
@@ -147,6 +152,7 @@ pub fn generate_tgs_req(
     ticket: Ticket,
     authenticator: &Authenticator,
     _additional_tickets: Option<Vec<Ticket>>,
+    enc_params: &EncryptionParams,
 ) -> TgsReq {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
@@ -155,7 +161,7 @@ pub fn generate_tgs_req(
     let pa_tgs_req = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_TGS_REQ_TYPE.to_vec())),
         padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&generate_ap_req(ticket, session_key, authenticator)).unwrap(),
+            picky_asn1_der::to_vec(&generate_ap_req(ticket, session_key, authenticator, enc_params)).unwrap(),
         )),
     };
 
@@ -329,8 +335,8 @@ pub fn _generate_tgs_ap_req(
     })
 }
 
-pub fn generate_ap_req(ticket: Ticket, session_key: &[u8], authenticator: &Authenticator) -> ApReq {
-    let cipher = new_kerberos_cipher(AES256_CTS_HMAC_SHA1_96).unwrap();
+pub fn generate_ap_req(ticket: Ticket, session_key: &[u8], authenticator: &Authenticator, enc_params: &EncryptionParams) -> ApReq {
+    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96)).unwrap();
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
