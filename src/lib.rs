@@ -93,3 +93,4 @@ pub use crate::sspi::{
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
     SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx,
 };
+pub use crate::sspi::kerberos::{KERBEROS_VERSION, Kerberos};

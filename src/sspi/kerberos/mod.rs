@@ -50,7 +50,7 @@ use crate::{
     SecurityStatus, ServerResponseFlags,
 };
 
-pub const PKG_NAME: &str = "Kerberos";
+pub const PKG_NAME: &str = "Kerberos\0";
 pub const KERBEROS_VERSION: u8 = 0x05;
 pub const SERVICE_NAME: &str = "krbtgt";
 
@@ -312,6 +312,8 @@ impl SspiImpl for Kerberos {
         >,
     ) -> Result<crate::InitializeSecurityContextResult> {
         println!("initialize_security_context_impl");
+
+        // let res = crate::enumerate_security_packages().unwrap()[1].capabilities.bits();
 
         let status = match self.state {
             KerberosState::Negotiate => {

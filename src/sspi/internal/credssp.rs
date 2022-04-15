@@ -782,10 +782,7 @@ impl CredSspContext {
                 let mut payload = encrypted_public_key.to_vec();
                 payload.extend_from_slice(&wrap_token.header());
 
-                println!("payload len: {}", payload.len());
-
                 let checksum = self.encrypt_message(&payload)?;
-                println!("check len: {}", checksum.len());
 
                 wrap_token.set_rrc(28);
 
@@ -795,8 +792,6 @@ impl CredSspContext {
 
                 let mut raw_wrap_token = Vec::with_capacity(92);
                 wrap_token.encode(&mut raw_wrap_token)?;
-
-                println!("res token len: {:?}", raw_wrap_token.len());
 
                 Ok(raw_wrap_token)
             }
