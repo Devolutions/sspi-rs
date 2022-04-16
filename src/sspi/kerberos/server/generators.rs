@@ -10,9 +10,8 @@ use crate::sspi::{
     Error, ErrorKind,
 };
 
-pub fn extract_ap_rep_from_neg_token_targ(data: &[u8]) -> ApRep {
-    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data).unwrap();
-    let resp_token = neg_token_targ.0.response_token.0.unwrap().0 .0;
+pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> ApRep {
+    let resp_token = &token.0.response_token.0.as_ref().unwrap().0 .0;
 
     let mut c = Cursor::new(resp_token);
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c).unwrap();

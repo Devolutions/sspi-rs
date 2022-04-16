@@ -8,7 +8,10 @@ use picky_krb::{
     messages::{AsRep, EncAsRepPart, EncTgsRepPart, TgsRep},
 };
 
-use crate::sspi::{Error, ErrorKind, Result, kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE}};
+use crate::sspi::{
+    kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE},
+    Error, ErrorKind, Result,
+};
 
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
@@ -16,7 +19,12 @@ pub fn extract_session_key_from_as_rep(
     password: &str,
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
+    let cipher = new_kerberos_cipher(
+        enc_params
+            .encryption_type
+            .unwrap_or(DEFAULT_ENCRYPTION_TYPE),
+    )
+    .unwrap();
 
     let key = cipher.generate_key_from_string(password, salt.as_bytes());
 
@@ -40,8 +48,17 @@ pub fn extract_session_key_from_as_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
-pub fn extract_session_key_from_tgs_rep(tgs_rep: &TgsRep, session_key: &[u8], enc_params: &EncryptionParams,) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE)).unwrap();
+pub fn extract_session_key_from_tgs_rep(
+    tgs_rep: &TgsRep,
+    session_key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Vec<u8>> {
+    let cipher = new_kerberos_cipher(
+        enc_params
+            .encryption_type
+            .unwrap_or(DEFAULT_ENCRYPTION_TYPE),
+    )
+    .unwrap();
 
     let enc_data = cipher
         .decrypt(

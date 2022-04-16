@@ -23,7 +23,7 @@ use crate::{
 };
 use messages::{client, server};
 
-pub const PKG_NAME: &str = "NTLM";
+pub const PKG_NAME: &str = "NTLM\0";
 pub const NTLM_VERSION_SIZE: usize = 8;
 pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] =
     [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];

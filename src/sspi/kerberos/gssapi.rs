@@ -6,6 +6,8 @@ use picky_krb::constants::key_usages::INITIATOR_SIGN;
 
 use crate::sspi::{Error, ErrorKind, Result};
 
+use super::{negotiate::get_mech_list, EncryptionParams};
+
 const MIC_TOKEN_ID: [u8; 2] = [0x04, 0x04];
 const MIC_FILLER: [u8; 5] = [0xff, 0xff, 0xff, 0xff, 0xff];
 
@@ -35,7 +37,10 @@ impl MicToken {
 
         data.read_exact(&mut buf)?;
         if buf != MIC_TOKEN_ID {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid MIC token id".into()));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "Invalid MIC token id".into(),
+            ));
         }
 
         let flags = data.read_u8()?;
@@ -44,7 +49,10 @@ impl MicToken {
 
         data.read_exact(&mut buf)?;
         if buf != MIC_FILLER {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid MIC Filler".into()));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "Invalid MIC Filler".into(),
+            ));
         }
 
         let seq_num = data.read_u64::<BigEndian>()?;
@@ -83,6 +91,45 @@ impl MicToken {
     }
 }
 
+pub fn validate_mic_token(
+    raw_token: &[u8],
+    key_usage: i32,
+    params: &EncryptionParams,
+) -> Result<()> {
+    let token = MicToken::decode(raw_token)?;
+
+    let mut payload = picky_asn1_der::to_vec(&get_mech_list()).unwrap();
+    payload.extend_from_slice(&token.header());
+
+    let key = if let Some(key) = params.sub_session_key.as_ref() {
+        key
+    } else if let Some(key) = params.sub_session_key.as_ref() {
+        key
+    } else {
+        return Err(Error {
+            error_type: ErrorKind::DecryptFailure,
+            description: "unable to obtain decryption key".into(),
+        });
+    };
+
+    let checksum = checksum_sha_aes(
+        &key,
+        key_usage,
+        &payload,
+        &params.aes_sizes().unwrap_or(AesSizes::Aes256),
+    );
+
+    if checksum != token.checksum {
+        return Err(Error {
+            error_type: ErrorKind::MessageAltered,
+            description: "bad checksum of the mic token".into(),
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
 pub struct WrapToken {
     pub flags: u8,
     pub ec: u16,
@@ -110,14 +157,20 @@ impl WrapToken {
 
         data.read_exact(&mut buf)?;
         if buf != WRAP_TOKEN_ID {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid WRAP token id".into()));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "Invalid WRAP token id".into(),
+            ));
         }
 
         let flags = data.read_u8()?;
 
         let filler = data.read_u8()?;
         if filler != WRAP_FILLER {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid Wrap Filler".into()));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "Invalid Wrap Filler".into(),
+            ));
         }
 
         let ec = data.read_u16::<BigEndian>()?;

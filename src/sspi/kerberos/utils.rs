@@ -3,7 +3,10 @@ use std::{
     io::{Cursor, Write},
 };
 
-use serde::Serialize;
+use picky_krb::data_types::KrbResult;
+use serde::{Deserialize, Serialize};
+
+use crate::{Error, ErrorKind, Result};
 
 pub fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Vec<u8> {
     let mut writer = Cursor::new(Vec::new());
@@ -26,4 +29,38 @@ pub fn utf16_bytes_to_string(data: &[u8]) -> String {
             .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
             .collect::<Vec<u16>>(),
     )
+}
+
+pub fn unwrap_krb_response<'a, T: Deserialize<'a>>(data: &'a [u8]) -> Result<T> {
+    match KrbResult::from_bytes(data).map_err(|e| Error {
+        error_type: ErrorKind::InvalidToken,
+        description: format!("{:?}", e),
+    })? {
+        KrbResult::Ok(as_rep) => Ok(as_rep),
+        KrbResult::Err(krb_error) => Err(Error {
+            error_type: ErrorKind::InvalidToken,
+            description: krb_error.0.to_string(),
+        }),
+    }
+}
+
+pub fn rotate_right(data: Vec<u8>, rrc: usize) -> Vec<u8> {
+    let n_bytes = data.len() % rrc;
+    let left = data.len() - n_bytes;
+
+    let mut res = Vec::new();
+    res.extend_from_slice(&data[left..]);
+    res.extend_from_slice(&data[0..left]);
+
+    res
+}
+
+pub fn unrotate_right(data: Vec<u8>, rrc: usize) -> Vec<u8> {
+    let n_bytes = data.len() % rrc;
+
+    let mut res = Vec::new();
+    res.extend_from_slice(&data[n_bytes..]);
+    res.extend_from_slice(&data[0..n_bytes]);
+
+    res
 }
