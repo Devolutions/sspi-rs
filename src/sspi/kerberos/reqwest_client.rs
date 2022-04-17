@@ -4,6 +4,7 @@ use std::{
 };
 
 use byteorder::{BigEndian, ReadBytesExt};
+use reqwest::blocking::Client;
 use url::Url;
 
 use super::NetworkClient;
@@ -58,8 +59,26 @@ impl NetworkClient for ReqwestNetworkClient {
         }
     }
 
-    fn send_http(&self, _url: &Url, _data: &[u8]) -> Result<Vec<u8>> {
-        todo!()
+    fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
+        let client = Client::new();
+ 
+        Ok(client
+            .post(url.clone())
+            .body(data.to_vec())
+            .send()
+            .map_err(|err| Error {
+                error_type: ErrorKind::InternalError,
+                description: format!("Unable to send the data to the KDC Proxy: {:?}", err),
+            })?
+            .bytes()
+            .map_err(|err| Error {
+                error_type: ErrorKind::InternalError,
+                description: format!(
+                    "Unable to read the response data from the KDC Proxy: {:?}",
+                    err
+                ),
+            })?
+            .to_vec())
     }
 
     fn clone(&self) -> Box<dyn NetworkClient> {

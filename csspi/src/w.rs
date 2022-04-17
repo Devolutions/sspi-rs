@@ -1,14 +1,19 @@
-use std::ptr::null;
+use std::{ptr::null, slice::from_raw_parts};
 
-use libc::{c_ulong, c_ushort, c_void};
-use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
+use libc::{c_ulong, c_ulonglong, c_ushort, c_void};
+use num_traits::{FromPrimitive, ToPrimitive};
+use sspi::{
+    enumerate_security_packages, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation,
+    PackageInfo, SecurityBuffer, SecurityBufferType, Sspi, KERBEROS_VERSION,
+};
 
 use crate::{
     common::{
-        PCredHandle, PCtxtHandle, PSecBufferDesc, PSecurityBuffer, PSecurityString, PTimeStamp,
-        SecurityStatus, SEC_GET_KEY_FN,
+        CredSspCred, PCredHandle, PCtxtHandle, PSecBuffer, PSecBufferDesc, PSecurityString,
+        PTimeStamp, SecBufferDesc, SecurityStatus, SEC_GET_KEY_FN,
     },
-    into_raw_ptr, p_ctxt_handle_to_kerberos,
+    into_raw_ptr, p_ctxt_handle_to_kerberos, p_sec_buffers_to_security_buffers,
+    p_sec_string_to_string, security_buffers_to_raw,
 };
 
 #[repr(C)]
@@ -39,28 +44,43 @@ impl From<PackageInfo> for SecPkgInfoW {
             wRPCID: data.rpc_id,
             cbMaxToken: data.max_token_len,
             Name,
-            // Comment: Box::into_raw(Box::new(data.comment.encode_utf16().collect::<Vec<_>>()))
-            //     as *mut _ as *mut SEC_WCHAR,
             Comment,
         }
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn helper(p_info: PSecPkgInfoW) {
-    let packages = enumerate_security_packages().unwrap();
-
-    *p_info =
-    // into_raw_ptr(
-        SecPkgInfoW::from(packages[0].clone())
-    // )
-    ;
+#[repr(C)]
+pub struct SecWinntAuthIdentityW {
+    User: *const c_ushort,
+    UserLength: c_ulong,
+    Domain: *const c_ushort,
+    DomainLength: c_ulong,
+    Password: *const c_ushort,
+    PasswordLength: c_ulong,
+    Flags: c_ulong,
 }
-pub type HELPER_FN = unsafe extern "C" fn(PSecPkgInfoW);
+pub type PSecWinntAuthIdentityW = *mut SecWinntAuthIdentityW;
 
 pub type LPCWSTR = *const SEC_WCHAR;
 
 pub type SEC_WCHAR = c_ushort;
+
+unsafe fn raw_w_str_to_bytes(raw_buffer: *const c_ushort, len: usize) -> Vec<u8> {
+    from_raw_parts(raw_buffer, len)
+        .iter()
+        .flat_map(|w_char| w_char.to_le_bytes())
+        .collect()
+}
+
+pub(crate) unsafe fn c_w_str_to_string(s: *const SEC_WCHAR) -> String {
+    let mut len = 0;
+
+    while *(s.add(len)) != 0 {
+        len += 1;
+    }
+
+    String::from_utf16_lossy(&from_raw_parts(s, len + 1))
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn EnumerateSecurityPackagesW(
@@ -72,9 +92,9 @@ pub unsafe extern "C" fn EnumerateSecurityPackagesW(
     *pcPackages = packages.len() as c_ulong;
 
     let mut ptrs = packages
-            .into_iter()
-            .map(|package| into_raw_ptr(SecPkgInfoW::from(package)))
-            .collect::<Vec<_>>();
+        .into_iter()
+        .map(|package| into_raw_ptr(SecPkgInfoW::from(package)))
+        .collect::<Vec<_>>();
     let ptr = ptrs.as_mut_ptr();
     into_raw_ptr(ptrs);
 
@@ -91,13 +111,13 @@ pub extern "C" fn QueryCredentialsAttributesW(
     ulAttribute: c_ulong,
     pBuffer: *mut c_void,
 ) -> SecurityStatus {
-    0
+    unimplemented!("QueryCredentialsAttributesW")
 }
 pub type QUERY_CREDENTIALS_ATTRIBUTES_FN_W =
     extern "C" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn AcquireCredentialsHandleW(
+pub unsafe extern "C" fn AcquireCredentialsHandleW(
     pszPrincipal: LPCWSTR,
     pszPackage: LPCWSTR,
     fCredentialUse: c_ulong,
@@ -108,9 +128,19 @@ pub extern "C" fn AcquireCredentialsHandleW(
     phCredential: PCredHandle,
     ptsExpiry: PTimeStamp,
 ) -> SecurityStatus {
+    let auth_data = pAuthData.cast::<SecWinntAuthIdentityW>();
+
+    let creds = AuthIdentityBuffers {
+        user: raw_w_str_to_bytes((*auth_data).User, (*auth_data).UserLength as usize),
+        domain: raw_w_str_to_bytes((*auth_data).Domain, (*auth_data).DomainLength as usize),
+        password: raw_w_str_to_bytes((*auth_data).Password, (*auth_data).PasswordLength as usize),
+    };
+
+    (*phCredential).dwLower = into_raw_ptr(creds) as c_ulonglong;
+
     0
 }
-pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = extern "C" fn(
+pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = unsafe extern "C" fn(
     LPCWSTR,
     LPCWSTR,
     c_ulong,
@@ -123,7 +153,7 @@ pub type ACQUIRE_CREDENTIALS_HANDLE_FN_W = extern "C" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn InitializeSecurityContextW(
+pub unsafe extern "C" fn InitializeSecurityContextW(
     phCredential: PCredHandle,
     phContext: PCtxtHandle,
     pTargetName: PSecurityString,
@@ -137,9 +167,55 @@ pub extern "C" fn InitializeSecurityContextW(
     pfContextAttr: *mut c_ulong,
     ptsExpiry: PTimeStamp,
 ) -> SecurityStatus {
-    0
+    let auth_data = ((*phCredential).dwLower as *mut AuthIdentityBuffers);
+
+    let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
+        None
+    } else {
+        Some(auth_data.as_mut().unwrap().clone())
+    };
+
+    let kerberos_ptr = p_ctxt_handle_to_kerberos(phContext);
+    let kerberos = kerberos_ptr.as_mut().unwrap();
+
+    let mut input_tokens = if pInput == null::<SecBufferDesc>() as *mut _ {
+        Vec::new()
+    } else {
+        p_sec_buffers_to_security_buffers(from_raw_parts(
+            (*pInput).pBuffers,
+            (*pInput).cBuffers as usize,
+        ))
+    };
+
+    let len = (*pOutput).cBuffers as usize;
+    let raw_buffers = from_raw_parts((*pOutput).pBuffers, len);
+    let mut o = p_sec_buffers_to_security_buffers(raw_buffers);
+    o.iter_mut().for_each(|s| s.buffer.clear());
+
+    let result_status = kerberos
+        .initialize_security_context()
+        .with_credentials_handle(&mut auth_data)
+        .with_context_requirements(ClientRequestFlags::from_bits(fContextReq).unwrap())
+        .with_target_data_representation(DataRepresentation::from_u32(TargetDataRep).unwrap())
+        .with_input(&mut input_tokens)
+        .with_output(&mut o)
+        .execute();
+    
+    let res = result_status
+        .unwrap()
+        .status;
+
+    let output_tokens = o;
+
+    (*pOutput).cBuffers = output_tokens.len() as c_ulong;
+
+    (*pOutput).pBuffers = security_buffers_to_raw(output_tokens);
+
+    (*phNewContext).dwLower = kerberos_ptr as c_ulonglong;
+
+    res.to_i32().unwrap()
 }
-pub type INITIALIZE_SECURITY_CONTEXT_FN_W = extern "C" fn(
+pub type INITIALIZE_SECURITY_CONTEXT_FN_W = unsafe extern "C" fn(
     PCredHandle,
     PCtxtHandle,
     PSecurityString,
@@ -160,39 +236,67 @@ pub extern "C" fn QueryContextAttributesW(
     ulAttribute: c_ulong,
     pBuffer: *mut c_void,
 ) -> SecurityStatus {
-    0
+    unimplemented!("QueryContextAttributesW")
 }
 pub type QUERY_CONTEXT_ATTRIBUTES_FN_W =
     extern "C" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn QuerySecurityPackageInfoW(
-    pPackageName: PSecurityString,
+pub unsafe extern "C" fn QuerySecurityPackageInfoW(
+    // pPackageName: PSecurityString,
+    pPackageName: *const SEC_WCHAR,
     ppPackageInfo: *mut PSecPkgInfoW,
 ) -> SecurityStatus {
+    // let pkg_name = p_sec_string_to_string(pPackageName);
+    let pkg_name = c_w_str_to_string(pPackageName);
+
+    *ppPackageInfo = enumerate_security_packages()
+        .unwrap()
+        .into_iter()
+        .find(|pkg| pkg.name.to_string() == pkg_name)
+        .map(|pkg_info| into_raw_ptr(SecPkgInfoW::from(pkg_info)))
+        .unwrap();
+
     0
 }
 pub type QUERY_SECURITY_PACKAGE_INFO_FN_W =
-    extern "C" fn(PSecurityString, *mut PSecPkgInfoW) -> SecurityStatus;
+    unsafe extern "C" fn(*const SEC_WCHAR, *mut PSecPkgInfoW) -> SecurityStatus;
 
 #[no_mangle]
 pub extern "C" fn ImportSecurityContextW(
     pszPackage: PSecurityString,
-    pPackedContext: PSecurityBuffer,
+    pPackedContext: PSecBuffer,
     Token: *mut c_void,
     phContext: PCtxtHandle,
 ) -> SecurityStatus {
-    0
+    unimplemented!("ImportSecurityContextW")
 }
 pub type IMPORT_SECURITY_CONTEXT_FN_W =
-    extern "C" fn(PSecurityString, PSecurityBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
+    extern "C" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
 
-// no docs?
 #[no_mangle]
-pub extern "C" fn AddCredentialsW() -> SecurityStatus {
-    0
+pub extern "C" fn AddCredentialsW(
+    phCredential: PCredHandle,
+    s1: *mut SEC_WCHAR,
+    s2: *mut SEC_WCHAR,
+    n1: c_ulong,
+    p1: *mut c_void,
+    f: SEC_GET_KEY_FN,
+    p2: *mut c_void,
+    t: PTimeStamp,
+) -> SecurityStatus {
+    unimplemented!("AddCredentialsW")
 }
-pub type ADD_CREDENTIALS_FN_W = extern "C" fn() -> SecurityStatus;
+pub type ADD_CREDENTIALS_FN_W = extern "C" fn(
+    PCredHandle,
+    *mut SEC_WCHAR,
+    *mut SEC_WCHAR,
+    c_ulong,
+    *mut c_void,
+    SEC_GET_KEY_FN,
+    *mut c_void,
+    PTimeStamp,
+) -> SecurityStatus;
 
 #[no_mangle]
 pub extern "C" fn SetContextAttributesW(
@@ -201,7 +305,7 @@ pub extern "C" fn SetContextAttributesW(
     pBuffer: *mut c_void,
     cbBuffer: c_ulong,
 ) -> SecurityStatus {
-    0
+    unimplemented!("SetContextAttributesW")
 }
 pub type SET_CONTEXT_ATTRIBUTES_FN_W =
     extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -213,7 +317,7 @@ pub extern "C" fn SetCredentialsAttributesW(
     pBuffer: *mut c_void,
     cbBuffer: c_ulong,
 ) -> SecurityStatus {
-    0
+    unimplemented!("SetCredentialsAttributesW")
 }
 pub type SET_CREDENTIALS_ATTRIBUTES_FN_W =
     extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -229,7 +333,7 @@ pub extern "C" fn ChangeAccountPasswordW(
     dwReserved: c_ulong,
     pOutput: PSecBufferDesc,
 ) -> SecurityStatus {
-    0
+    unimplemented!("ChangeAccountPasswordW")
 }
 pub type CHANGE_PASSWORD_FN_W = extern "C" fn(
     *mut SEC_WCHAR,
@@ -249,7 +353,7 @@ pub extern "C" fn QueryContextAttributesExW(
     pBuffer: *mut c_void,
     cbBuffer: c_ulong,
 ) -> SecurityStatus {
-    0
+    unimplemented!("QueryContextAttributesExW")
 }
 pub type QUERY_CONTEXT_ATTRIBUTES_EX_FN_W =
     extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -261,7 +365,7 @@ pub extern "C" fn QueryCredentialsAttributesExW(
     pBuffer: *mut c_void,
     cBuffers: c_ulong,
 ) -> SecurityStatus {
-    0
+    unimplemented!("QueryCredentialsAttributesExW")
 }
 pub type QUERY_CREDENTIALS_ATTRIBUTES_EX_FN_W =
     extern "C" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;

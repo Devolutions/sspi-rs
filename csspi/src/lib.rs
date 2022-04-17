@@ -2,19 +2,20 @@ pub(crate) mod a;
 pub(crate) mod common;
 pub(crate) mod w;
 
-use std::ptr::null;
+use std::{ptr::null, slice::from_raw_parts};
 
-use libc::{c_ulong, c_void};
-use sspi::{Kerberos, KERBEROS_VERSION};
+use libc::{c_char, c_ulong, c_ulonglong, c_void};
+use num_traits::{FromPrimitive, ToPrimitive};
+use sspi::{Kerberos, SecurityBuffer, SecurityBufferType, KERBEROS_VERSION};
 
 use crate::{
     common::{
         AcceptSecurityContext, ApplyControlToken, CompleteAuthToken, DecryptMessage,
         DeleteSecurityContext, EncryptMessage, ExportSecurityContext, FreeContextBuffer,
-        FreeCredentialsHandle, ImpersonateSecurityContext, MakeSignature, PCtxtHandle,
-        QuerySecurityContextToken, RevertSecurityContext, VerifySignature,
-        ACCEPT_SECURITY_CONTEXT_FN, APPLY_CONTROL_TOKEN_FN, COMPLETE_AUTH_TOKEN_FN,
-        DECRYPT_MESSAGE_FN, DELETE_SECURITY_CONTEXT_FN, ENCRYPT_MESSAGE_FN,
+        FreeCredentialsHandle, ImpersonateSecurityContext, MakeSignature, PCtxtHandle, PSecBuffer,
+        PSecurityString, QuerySecurityContextToken, RevertSecurityContext, SecBuffer, SecHandle,
+        VerifySignature, ACCEPT_SECURITY_CONTEXT_FN, APPLY_CONTROL_TOKEN_FN,
+        COMPLETE_AUTH_TOKEN_FN, DECRYPT_MESSAGE_FN, DELETE_SECURITY_CONTEXT_FN, ENCRYPT_MESSAGE_FN,
         EXPORT_SECURITY_CONTEXT_FN, FREE_CONTEXT_BUFFER_FN, FREE_CREDENTIALS_HANDLE_FN,
         IMPERSONATE_SECURITY_CONTEXT_FN, MAKE_SIGNATURE_FN, QUERY_SECURITY_CONTEXT_TOKEN_FN,
         REVERT_SECURITY_CONTEXT_FN, VERIFY_SIGNATURE_FN,
@@ -29,61 +30,80 @@ use crate::{
         INITIALIZE_SECURITY_CONTEXT_FN_W, QUERY_CONTEXT_ATTRIBUTES_EX_FN_W,
         QUERY_CONTEXT_ATTRIBUTES_FN_W, QUERY_CREDENTIALS_ATTRIBUTES_EX_FN_W,
         QUERY_CREDENTIALS_ATTRIBUTES_FN_W, QUERY_SECURITY_PACKAGE_INFO_FN_W,
-        SET_CONTEXT_ATTRIBUTES_FN_W, SET_CREDENTIALS_ATTRIBUTES_FN_W, HELPER_FN, helper,
+        SET_CONTEXT_ATTRIBUTES_FN_W, SET_CREDENTIALS_ATTRIBUTES_FN_W,
     },
 };
 
-#[no_mangle]
-pub extern "C" fn rust_function() {
-    println!("year, you can call rust functions from C code :)");
-}
-
-#[no_mangle]
-pub extern "C" fn test_2() -> i32 {
-    43
-}
-
-pub type Test2 = extern "C" fn() -> i32;
-
-#[repr(C)]
-pub struct FunctionTable {
-    test: Test2,
-}
-
-#[repr(C)]
-pub struct ConstTable {
-    a: i32,
-    b: i32,
-}
-
-#[no_mangle]
-pub extern "C" fn init() -> FunctionTable {
-    FunctionTable { test: test_2 }
-}
-
-#[no_mangle]
-pub extern "C" fn init_const() -> ConstTable {
-    ConstTable { a: 5, b: 18 }
-}
-
-pub(crate) unsafe fn p_ctxt_handle_to_kerberos(context: PCtxtHandle) -> *mut Kerberos {
-    let ptr = (*context).dwLower as *mut c_void;
-    if (ptr.is_null()) {
-        let ptr = Box::into_raw(Box::new(Kerberos::new_client_from_env())) as c_ulong;
-        (*context).dwLower = ptr;
-        ptr as *mut Kerberos
-    } else {
-        ptr as *mut Kerberos
+pub(crate) unsafe fn p_ctxt_handle_to_kerberos(mut context: PCtxtHandle) -> *mut Kerberos {
+    if context == null::<SecHandle>() as *mut _ {
+        context = into_raw_ptr(SecHandle {
+            dwLower: 0,
+            dwUpper: 0,
+        });
     }
+    if (*context).dwLower == 0 {
+        (*context).dwLower = into_raw_ptr(Kerberos::new_client_from_env()) as c_ulonglong;
+    }
+    (*context).dwLower as *mut Kerberos
 }
 
 pub(crate) fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
+pub(crate) unsafe fn p_sec_buffers_to_security_buffers(
+    raw_buffers: &[SecBuffer],
+) -> Vec<SecurityBuffer> {
+    raw_buffers
+        .iter()
+        .map(|raw_buffer| SecurityBuffer {
+            buffer: from_raw_parts(raw_buffer.pvBuffer, raw_buffer.cbBuffer as usize)
+                .into_iter()
+                .map(|v| *v as u8)
+                .collect(),
+            buffer_type: SecurityBufferType::from_u32(raw_buffer.BufferType).unwrap(),
+        })
+        .collect()
+}
+
+pub(crate) unsafe fn security_buffers_to_raw(buffers: Vec<SecurityBuffer>) -> PSecBuffer {
+    let mut sec_buffers = buffers
+        .into_iter()
+        .map(|mut buffer| {
+            let cbBuffer = buffer.buffer.len() as c_ulong;
+            let BufferType = buffer.buffer_type.to_u32().unwrap();
+
+            let pvBuffer = buffer.buffer.as_mut_ptr() as *mut i8;
+            into_raw_ptr(buffer.buffer);
+
+            SecBuffer {
+                cbBuffer,
+                BufferType,
+                pvBuffer,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let ptr = sec_buffers.as_mut_ptr();
+    into_raw_ptr(sec_buffers);
+
+    ptr
+}
+
+pub(crate) unsafe fn p_sec_string_to_string(s: PSecurityString) -> String {
+    println!("================> ofimrefomerfmeromerfjov");
+    let mut len = (*s).Length as usize;
+    let max_len = (*s).MaximumLength as usize;
+
+    if len > max_len {
+        len = max_len;
+    }
+
+    String::from_utf16_lossy(&from_raw_parts((*s).Buffer, len))
+}
+
 #[repr(C)]
 pub struct SecurityFunctionTableW {
-    helper: HELPER_FN,
     dwVersion: c_ulong,
     EnumerateSecurityPackagesW: ENUMERATE_SECURITY_PACKAGES_FN_W,
     QueryCredentialsAttributesW: QUERY_CREDENTIALS_ATTRIBUTES_FN_W,
@@ -119,10 +139,13 @@ pub struct SecurityFunctionTableW {
     QueryCredentialsAttributesExW: QUERY_CREDENTIALS_ATTRIBUTES_EX_FN_W,
 }
 
+pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
+
 #[no_mangle]
-pub extern "C" fn InitSecurityInterfaceW() -> SecurityFunctionTableW {
-    SecurityFunctionTableW {
-        helper,
+pub extern "C" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
+    println!("init table");
+    into_raw_ptr(SecurityFunctionTableW {
+        // helper,
         dwVersion: KERBEROS_VERSION as c_ulong,
         EnumerateSecurityPackagesW,
         QueryCredentialsAttributesW,
@@ -156,5 +179,5 @@ pub extern "C" fn InitSecurityInterfaceW() -> SecurityFunctionTableW {
         Reserved9: null(),
         QueryContextAttributesExW,
         QueryCredentialsAttributesExW,
-    }
+    })
 }

@@ -12,7 +12,7 @@ pub use self::{
         AcceptSecurityContextResult, AcquireCredentialsHandleResult,
         InitializeSecurityContextResult,
     },
-    ntlm::{AuthIdentity, Ntlm},
+    ntlm::{AuthIdentity, Ntlm, AuthIdentityBuffers},
 };
 
 use std::{error, fmt, io, result, str, string};

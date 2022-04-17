@@ -68,7 +68,7 @@ lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
         capabilities: PackageCapabilities::empty(),
         rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in windows
+        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
         name: SecurityPackageType::Kerberos,
         comment: String::from("Kerberos Security Package\0"),
     };
