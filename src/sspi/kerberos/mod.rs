@@ -7,7 +7,7 @@ pub mod reqwest_client;
 mod server;
 mod utils;
 
-use std::{env, fmt::Debug, io::Write, str::FromStr};
+use std::{env, fmt::Debug, io::Write, str::FromStr, borrow::Borrow};
 
 use kerberos_crypto::{new_kerberos_cipher, AesSizes};
 use lazy_static::lazy_static;
@@ -143,6 +143,10 @@ impl Kerberos {
         }
     }
 
+    pub fn set_key_usage(&mut self, n: i32) {
+        self.key_usage_number = Some(n);
+    }
+
     pub fn new_server_from_env() -> Self {
         Self {
             state: KerberosState::Negotiate,
@@ -222,9 +226,9 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<crate::DecryptionFlags> {
-        println!("decrypt message");
+        println!("decrypt message: {:?}", self.key_usage_number);
 
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
+        // SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = new_kerberos_cipher(
@@ -244,6 +248,9 @@ impl Sspi for Kerberos {
                 "No encryption key provided".into(),
             ));
         };
+
+        println!("key for decryption: {:?}", key);
+        println!("data for decryption: {:?}", &data.buffer);
 
         if let Ok(decrypted_data) =
             cipher.decrypt(key, self.key_usage_number.unwrap_or(24), &data.buffer)
@@ -368,6 +375,7 @@ impl SspiImpl for Kerberos {
                 SecurityStatus::ContinueNeeded
             }
             KerberosState::Preauthentication => {
+                println!("pre");
                 let input = builder.input.ok_or_else(|| {
                     sspi::Error::new(
                         ErrorKind::InvalidToken,

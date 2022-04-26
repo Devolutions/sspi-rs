@@ -82,7 +82,9 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
+pub use crate::sspi::kerberos::{
+    Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO,
+};
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{

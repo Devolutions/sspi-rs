@@ -6,6 +6,7 @@ cfg_if::cfg_if! {
     }
 }
 
+use crypto_mac::generic_array::typenum::private::IsGreaterPrivate;
 pub use ts_request::TsRequest;
 
 use std::io;
@@ -20,7 +21,8 @@ use crate::{
     sspi::{
         self,
         internal::SspiImpl,
-        kerberos::Kerberos,
+        kerberos::utils::rotate_right,
+        kerberos::{gssapi::WrapToken, Kerberos, utils::unrotate_right},
         ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE},
         CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse,
         DataRepresentation, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
@@ -788,7 +790,6 @@ impl CredSspContext {
                 wrap_token.set_rrc(28);
 
                 let checksum = rotate_right(checksum, 48);
-                // let checksum = rotate_right(checksum, 52);
 
                 wrap_token.set_checksum(checksum);
                 // wrap_token.set_checksum(vec![1, 2, 3, 4, 5, 6, 6]);
@@ -829,12 +830,31 @@ impl CredSspContext {
         hash_magic: &[u8],
         client_nonce: &[u8],
     ) -> sspi::Result<()> {
-        let decrypted_public_key = self.decrypt_message(encrypted_public_key)?;
+        println!("encrypted_public_key: {:?}", encrypted_public_key);
+        let decrypted_public_key = match &mut self.sspi_context {
+            SspiContext::Ntlm(_) => self.decrypt_message(encrypted_public_key)?,
+            SspiContext::Kerberos(kerberos) => {
+                kerberos.set_key_usage(22);
+
+                let wrap_token = WrapToken::decode(encrypted_public_key)?;
+                println!("wrap_token: {:?}", wrap_token);
+
+                let checksum = unrotate_right(wrap_token.checksum, 48);
+                println!("checksum: {:?}", checksum);
+                
+                let mut decrypted = self.decrypt_message(&checksum)?;
+                // remove wrap token header
+                decrypted.truncate(decrypted.len() - 16);
+                decrypted
+            },
+        };
 
         let mut data = hash_magic.to_vec();
         data.extend(client_nonce);
         data.extend(public_key);
         let expected_public_key = compute_sha256(&data);
+
+        println!("Decrypted! {:?} === {:?}", &decrypted_public_key, &expected_public_key);
 
         if expected_public_key.as_ref() != decrypted_public_key.as_slice() {
             return Err(sspi::Error::new(
@@ -842,6 +862,8 @@ impl CredSspContext {
                 String::from("Could not verify a public key hash"),
             ));
         }
+
+        println!("verified!");
 
         Ok(())
     }
@@ -851,9 +873,34 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        let ts_credentials = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
+        match &mut self.sspi_context {
+            SspiContext::Ntlm(_) => {
+                self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
+            },
+            SspiContext::Kerberos(kerberos) => {
+                let mut credentials = credentials.clone();
+                credentials.domain.truncate(credentials.domain.len() - 8);
+                let mut payload = ts_request::write_ts_credentials(&credentials, cred_ssp_mode)?;
 
-        self.encrypt_message(&ts_credentials)
+                let mut wrap_token = WrapToken::with_seq_number(kerberos.next_seq_number() as u64);
+
+                payload.extend_from_slice(&wrap_token.header());
+
+                kerberos.set_key_usage(24);
+                let checksum = self.encrypt_message(&payload)?;
+
+                wrap_token.set_rrc(28);
+
+                let checksum = rotate_right(checksum, 83);
+
+                wrap_token.set_checksum(checksum);
+
+                let mut raw_wrap_token = Vec::with_capacity(92);
+                wrap_token.encode(&mut raw_wrap_token)?;
+
+                Ok(raw_wrap_token)
+            },
+        }
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
@@ -890,12 +937,16 @@ impl CredSspContext {
     }
 
     fn decrypt_message(&mut self, input: &[u8]) -> sspi::Result<Vec<u8>> {
-        let (signature, data) = input.split_at(SIGNATURE_SIZE);
-
-        let mut buffers = vec![
-            SecurityBuffer::new(data.to_vec(), SecurityBufferType::Data),
-            SecurityBuffer::new(signature.to_vec(), SecurityBufferType::Token),
-        ];
+        let mut buffers = match &self.sspi_context {
+            SspiContext::Ntlm(_) => {
+                let (signature, data) = input.split_at(SIGNATURE_SIZE);
+                vec![
+                    SecurityBuffer::new(data.to_vec(), SecurityBufferType::Data),
+                    SecurityBuffer::new(signature.to_vec(), SecurityBufferType::Token),
+                ]
+            },
+            SspiContext::Kerberos(_) => vec![SecurityBuffer::new(input.to_vec(), SecurityBufferType::Data)],
+        };
 
         let recv_seq_num = self.recv_seq_num;
 

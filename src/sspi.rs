@@ -12,7 +12,7 @@ pub use self::{
         AcceptSecurityContextResult, AcquireCredentialsHandleResult,
         InitializeSecurityContextResult,
     },
-    ntlm::{AuthIdentity, Ntlm, AuthIdentityBuffers},
+    ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm},
 };
 
 use std::{error, fmt, io, result, str, string};
@@ -88,7 +88,10 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
 ///
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
-    Ok(vec![kerberos::PACKAGE_INFO.clone()])
+    Ok(vec![
+        kerberos::PACKAGE_INFO.clone(),
+        kerberos::NEGO_PACKAGE_INFO.clone(),
+    ])
 }
 
 /// This trait provides interface for all available SSPI functions. The `acquire_credentials_handle`,
