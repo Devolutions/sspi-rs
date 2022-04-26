@@ -61,7 +61,7 @@ impl NetworkClient for ReqwestNetworkClient {
 
     fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
         let client = Client::new();
- 
+
         Ok(client
             .post(url.clone())
             .body(data.to_vec())

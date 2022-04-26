@@ -277,6 +277,7 @@ impl CredSspClient {
                 Ok(ClientState::ReplyNeeded(ts_request))
             }
             CredSspState::AuthInfo => {
+                println!("CredSsp in AuthInfo state. It's very good =======================================>");
                 ts_request.nego_tokens = None;
 
                 let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
@@ -787,8 +788,10 @@ impl CredSspContext {
                 wrap_token.set_rrc(28);
 
                 let checksum = rotate_right(checksum, 48);
+                // let checksum = rotate_right(checksum, 52);
 
                 wrap_token.set_checksum(checksum);
+                // wrap_token.set_checksum(vec![1, 2, 3, 4, 5, 6, 6]);
 
                 let mut raw_wrap_token = Vec::with_capacity(92);
                 wrap_token.encode(&mut raw_wrap_token)?;

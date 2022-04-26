@@ -228,8 +228,8 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![
         MechType::from(ObjectIdentifier::try_from(MS_KRB5).unwrap()),
         MechType::from(ObjectIdentifier::try_from(KRB5).unwrap()),
-        // MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
-        // MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
+        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.30").unwrap()),
+        MechType::from(ObjectIdentifier::try_from("1.3.6.1.4.1.311.2.2.10").unwrap()),
     ])
 }
 

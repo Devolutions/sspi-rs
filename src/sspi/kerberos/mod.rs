@@ -72,6 +72,14 @@ lazy_static! {
         name: SecurityPackageType::Kerberos,
         comment: String::from("Kerberos Security Package\0"),
     };
+
+    pub static ref NEGO_PACKAGE_INFO: PackageInfo = PackageInfo {
+        capabilities: PackageCapabilities::empty(),
+        rpc_id: PACKAGE_ID_NONE,
+        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
+        name: SecurityPackageType::Other("Negotiate\0".into()),
+        comment: String::from("Negotiate Security Package\0"),
+    };
 }
 
 pub trait NetworkClient: Debug {
@@ -153,10 +161,9 @@ impl Kerberos {
     }
 
     pub fn next_seq_number(&mut self) -> u32 {
-        let seq_num = self.seq_number;
-        self.seq_number = seq_num + 1;
+        self.seq_number += 1;
 
-        seq_num
+        self.seq_number
     }
 }
 
@@ -393,7 +400,7 @@ impl SspiImpl for Kerberos {
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
                 self.encryption_params.encryption_type = Some(encryption_type as i32);
 
-                let authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
+                let mut authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
 
                 let session_key_1 = extract_session_key_from_as_rep(
                     &as_rep,
@@ -407,7 +414,7 @@ impl SspiImpl for Kerberos {
                     &as_rep.0.crealm.0.to_string(),
                     &session_key_1,
                     as_rep.0.ticket.0,
-                    &authenticator,
+                    &mut authenticator,
                     Some(vec![tgt_ticket]),
                     &self.encryption_params,
                 );
@@ -419,7 +426,7 @@ impl SspiImpl for Kerberos {
 
                 println!("tgs req here");
 
-                // first 4 bytes is message leb. skipping them
+                // first 4 bytes is message len. skipping them
                 let tgs_rep: TgsRep = unwrap_krb_response(&response[4..])?;
 
                 self.encryption_params.session_key = Some(extract_session_key_from_tgs_rep(
@@ -470,10 +477,6 @@ impl SspiImpl for Kerberos {
                         description: format!("{:?}", err),
                     })?;
 
-                if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
-                    validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
-                }
-
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ);
 
                 self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
@@ -481,15 +484,20 @@ impl SspiImpl for Kerberos {
                     self.encryption_params.session_key.as_ref().unwrap(),
                 ));
 
+                if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
+                    validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
+                }
+
                 println!("session_key: {:?}", self.encryption_params);
                 println!("all good in ap_rep");
 
-                let neg_token_targ =
-                    generate_final_neg_token_targ(Some(MicToken::generate_initiator_raw(
+                let neg_token_targ = generate_final_neg_token_targ(
+                    Some(MicToken::generate_initiator_raw(
                         picky_asn1_der::to_vec(&get_mech_list()).unwrap(),
-                        self.next_seq_number() as u64,
+                        self.seq_number as u64,
                         self.encryption_params.sub_session_key.as_ref().unwrap(),
-                    )));
+                    )), // None
+                );
 
                 let output_token =
                     SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
@@ -571,6 +579,9 @@ mod tests {
     use picky_krb::messages::{AsRep, TgsRep};
     use url::Url;
 
+    use crate::sspi::kerberos::client::AES256_CTS_HMAC_SHA1_96;
+    use crate::sspi::kerberos::EncryptionParams;
+
     use super::reqwest_client::ReqwestNetworkClient;
     use super::NetworkClient;
     use super::{
@@ -592,7 +603,13 @@ mod tests {
         let domain = "QKATION.COM".to_owned();
         let password = "qweQWE123!@#".to_owned();
 
-        let as_req = generate_as_req(&username, &password, &domain);
+        let enc_params = EncryptionParams {
+            encryption_type: Some(AES256_CTS_HMAC_SHA1_96),
+            session_key: None,
+            sub_session_key: None,
+        };
+
+        let as_req = generate_as_req(&username, &password, &domain, &enc_params);
 
         println!("as req: {:?}", as_req);
 
@@ -605,16 +622,18 @@ mod tests {
         let as_rep: AsRep = picky_asn1_der::from_bytes(&response[4..]).unwrap();
 
         let (_encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep).unwrap();
-        let authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
-        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password).unwrap();
+        let mut authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0);
+        let session_key =
+            extract_session_key_from_as_rep(&as_rep, &salt, &password, &enc_params).unwrap();
 
         let tgs_req = generate_tgs_req(
             &username,
             &as_rep.0.crealm.0.to_string(),
             &session_key,
             as_rep.0.ticket.0,
-            &authenticator,
+            &mut authenticator,
             None,
+            &enc_params,
         );
 
         println!("tgs_req: {:?}", tgs_req);
