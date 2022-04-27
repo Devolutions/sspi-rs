@@ -7,7 +7,7 @@ pub mod reqwest_client;
 mod server;
 mod utils;
 
-use std::{env, fmt::Debug, io::Write, str::FromStr, borrow::Borrow};
+use std::{env, fmt::Debug, io::Write, str::FromStr};
 
 use kerberos_crypto::{new_kerberos_cipher, AesSizes};
 use lazy_static::lazy_static;
@@ -40,12 +40,12 @@ use crate::{
     sspi::{
         self,
         kerberos::{
-            gssapi::{validate_mic_token, MicToken},
+            gssapi::{validate_mic_token, MicToken, WrapToken},
             negotiate::{generate_final_neg_token_targ, get_mech_list},
             server::generators::{
                 extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep,
             },
-            utils::unwrap_krb_response,
+            utils::{unwrap_krb_response, rotate_right, unrotate_right},
         },
     },
     sspi::{Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE},
@@ -93,17 +93,41 @@ pub enum KerberosState {
     Negotiate,
     Preauthentication,
     ApExchange,
+    PubKeyAuth,
+    Credentials,
     Final,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EncryptionParams {
     encryption_type: Option<i32>,
     session_key: Option<Vec<u8>>,
     sub_session_key: Option<Vec<u8>>,
+    sspi_encrypt_key_usage: i32,
+    sspi_decrypt_key_usage: i32,
 }
 
 impl EncryptionParams {
+    pub fn default_for_client() -> Self {
+        Self {
+            encryption_type: None,
+            session_key: None,
+            sub_session_key: None,
+            sspi_encrypt_key_usage: 24,
+            sspi_decrypt_key_usage: 22,
+        }
+    }
+
+    pub fn default_for_server() -> Self {
+        Self {
+            encryption_type: None,
+            session_key: None,
+            sub_session_key: None,
+            sspi_encrypt_key_usage: 22,
+            sspi_decrypt_key_usage: 24,
+        }
+    }
+
     pub fn aes_sizes(&self) -> Option<AesSizes> {
         self.encryption_type.map(|e_type| match e_type {
             AES256_CTS_HMAC_SHA1_96 => AesSizes::Aes256,
@@ -136,7 +160,7 @@ impl Kerberos {
             },
             auth_identity: None,
 
-            encryption_params: EncryptionParams::default(),
+            encryption_params: EncryptionParams::default_for_client(),
 
             key_usage_number: None,
             seq_number: OsRng::new().unwrap().gen::<u32>(),
@@ -157,7 +181,7 @@ impl Kerberos {
             },
             auth_identity: None,
 
-            encryption_params: EncryptionParams::default(),
+            encryption_params: EncryptionParams::default_for_server(),
 
             key_usage_number: None,
             seq_number: OsRng::new().unwrap().gen::<u32>(),
@@ -197,6 +221,8 @@ impl Sspi for Kerberos {
         )
         .unwrap();
 
+        let seq_number = self.next_seq_number();
+
         let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
             key
         } else if let Some(key) = self.encryption_params.session_key.as_ref() {
@@ -209,14 +235,60 @@ impl Sspi for Kerberos {
                 "No encryption key provided".into(),
             ));
         };
+        let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         println!(
             "encrypt params: {:?} {:?}",
-            self.encryption_params, self.key_usage_number
+            self.encryption_params, self.encryption_params.sspi_encrypt_key_usage
         );
 
-        *data.buffer.as_mut() =
-            cipher.encrypt(key, self.key_usage_number.unwrap_or(24), &data.buffer);
+        match self.state {
+            KerberosState::PubKeyAuth => {
+                // form wrap token for auth info
+                println!("form wrap token with pub key");
+                let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+
+                let mut payload = data.buffer.to_vec();
+                payload.extend_from_slice(&wrap_token.header());
+
+                let checksum = cipher.encrypt(key, key_usage, &payload);
+
+                wrap_token.set_rrc(28);
+
+                let checksum = rotate_right(checksum, 48);
+
+                wrap_token.set_checksum(checksum);
+
+                let mut raw_wrap_token = Vec::with_capacity(92);
+                wrap_token.encode(&mut raw_wrap_token)?;
+
+                *data.buffer.as_mut() = raw_wrap_token;
+            },
+            KerberosState::Credentials => {
+                // form wrap token for creds
+                let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+
+                let mut payload = data.buffer.to_vec();
+                payload.extend_from_slice(&wrap_token.header());
+
+                let checksum = cipher.encrypt(key, key_usage, &payload);
+
+                wrap_token.set_rrc(28);
+
+                let checksum = rotate_right(checksum, 83);
+
+                wrap_token.set_checksum(checksum);
+
+                let mut raw_wrap_token = Vec::with_capacity(92);
+                wrap_token.encode(&mut raw_wrap_token)?;
+
+                *data.buffer.as_mut() = raw_wrap_token;
+            },
+            _ => {
+                println!("other: {:?}", self.state);
+                *data.buffer.as_mut() = cipher.encrypt(key, key_usage, &data.buffer);
+            },
+        };
 
         Ok(SecurityStatus::Ok)
     }
@@ -248,16 +320,39 @@ impl Sspi for Kerberos {
                 "No encryption key provided".into(),
             ));
         };
+        let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
         println!("key for decryption: {:?}", key);
         println!("data for decryption: {:?}", &data.buffer);
 
-        if let Ok(decrypted_data) =
-            cipher.decrypt(key, self.key_usage_number.unwrap_or(24), &data.buffer)
-        {
-            *data.buffer.as_mut() = decrypted_data;
-            return Ok(DecryptionFlags::empty());
-        }
+        match self.state {
+            KerberosState::PubKeyAuth => {
+                let wrap_token = WrapToken::decode(&*data.buffer)?;
+                println!("wrap_token: {:?}", wrap_token);
+
+                let checksum = unrotate_right(wrap_token.checksum, 48);
+                println!("checksum: {:?}", checksum);
+                
+                let mut decrypted = cipher.decrypt(key, key_usage, &checksum).unwrap();
+                // remove wrap token header
+                decrypted.truncate(decrypted.len() - 16);
+
+                self.state = KerberosState::Credentials;
+
+                *data.buffer.as_mut() = decrypted;
+                return Ok(DecryptionFlags::empty());
+            },
+            // KerberosState::Credentials => {}
+            _ => {
+                if let Ok(decrypted_data) =
+                    cipher.decrypt(key, key_usage, &data.buffer)
+                {
+                    *data.buffer.as_mut() = decrypted_data;
+                    return Ok(DecryptionFlags::empty());
+                }
+            },
+        };
+
 
         Err(Error::new(
             ErrorKind::MessageAltered,
@@ -515,7 +610,7 @@ impl SspiImpl for Kerberos {
 
                 self.key_usage_number = Some(24);
 
-                self.state = KerberosState::Final;
+                self.state = KerberosState::PubKeyAuth;
 
                 SecurityStatus::Ok
             }
