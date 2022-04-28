@@ -47,8 +47,78 @@ const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 // other options are disabled
 const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
 
+pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
+    let expiration_date = Utc::now()
+        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
+        .unwrap();
+
+    let pa_pac_request = PaData {
+        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+            picky_asn1_der::to_vec(&KerbPaPacRequest {
+                include_pac: ExplicitContextTag0::from(true),
+            })
+            .unwrap(),
+        )),
+    };
+
+    AsReq::from(KdcReq {
+        pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
+        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
+            pa_pac_request,
+        ])))),
+        req_body: ExplicitContextTag4::from(KdcReqBody {
+            kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
+                DEFAULT_AS_REQ_OPTIONS.to_vec(),
+            ))),
+            cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(username.into()).unwrap()),
+                ])),
+            }))),
+            realm: ExplicitContextTag2::from(Realm::from(
+                IA5String::from_string(realm.into()).unwrap(),
+            )),
+            sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
+                ])),
+            }))),
+            from: Optional::from(None),
+            till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(
+                expiration_date,
+            ))),
+            rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
+                GeneralizedTime::from(expiration_date),
+            )))),
+            nonce: ExplicitContextTag7::from(IntegerAsn1::from(
+                OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
+            )),
+            etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
+                IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
+                IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
+            ])),
+            addresses: Optional::from(Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![
+                HostAddress {
+                    addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
+                    address: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
+                        68, 69, 83, 75, 84, 79, 80, 45, 70, 82, 67, 67, 86, 68, 80, 32,
+                    ])),
+                },
+            ])))),
+            enc_authorization_data: Optional::from(None),
+            additional_tickets: Optional::from(None),
+        }),
+    })
+}
+
 pub fn generate_as_req(
     username: &str,
+    salt: &[u8],
     password: &str,
     realm: &str,
     enc_params: &EncryptionParams,
@@ -79,8 +149,7 @@ pub fn generate_as_req(
             .unwrap_or(AES256_CTS_HMAC_SHA1_96),
     )
     .unwrap();
-    let salt = cipher.generate_salt(realm, username);
-    let key = cipher.generate_key_from_string(password, &salt);
+    let key = cipher.generate_key_from_string(password, salt);
 
     let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
 

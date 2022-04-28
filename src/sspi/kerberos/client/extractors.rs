@@ -2,16 +2,46 @@ use kerberos_constants::key_usages::{
     KEY_USAGE_AS_REP_ENC_PART, KEY_USAGE_TGS_REP_ENC_PART_SESSION_KEY,
 };
 use kerberos_crypto::new_kerberos_cipher;
+use picky_asn1::wrapper::Asn1SequenceOf;
 use picky_krb::{
     constants::types::PA_ETYPE_INFO2_TYPE,
-    data_types::EtypeInfo2,
-    messages::{AsRep, EncAsRepPart, EncTgsRepPart, TgsRep},
+    data_types::{EtypeInfo2, PaData},
+    messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, TgsRep},
 };
 
 use crate::sspi::{
     kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE},
     Error, ErrorKind, Result,
 };
+
+pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
+    if let Some(e_data) = error.0.e_data.0.as_ref() {
+        let pa_datas: Asn1SequenceOf<PaData> =
+            picky_asn1_der::from_bytes(&e_data.0 .0).map_err(|err| Error {
+                error_type: ErrorKind::InvalidToken,
+                description: format!("{:?}", err),
+            })?;
+
+        if let Some(pa_etype_info_2) = pa_datas
+            .0
+            .into_iter()
+            .find(|pa_data| pa_data.padata_type.0 .0 == PA_ETYPE_INFO2_TYPE)
+        {
+            let etype_info_2: EtypeInfo2 =
+                picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0 .0).map_err(|err| {
+                    Error {
+                        error_type: ErrorKind::InvalidToken,
+                        description: format!("{:?}", err),
+                    }
+                })?;
+            if let Some(params) = etype_info_2.0.get(0) {
+                return Ok(params.salt.0.as_ref().map(|salt| salt.0.to_string()));
+            }
+        }
+    }
+
+    Ok(None)
+}
 
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
@@ -35,13 +65,13 @@ pub fn extract_session_key_from_as_rep(
             &as_rep.0.enc_part.0.cipher.0 .0,
         )
         .map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
+            error_type: ErrorKind::InvalidToken,
             description: format!("{:?}", e),
         })?;
 
     let enc_as_rep_part: EncAsRepPart =
         picky_asn1_der::from_bytes(&enc_data).map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
+            error_type: ErrorKind::InvalidToken,
             description: format!("{:?}", e),
         })?;
 
@@ -101,7 +131,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     description: format!("{:?}", e),
                 })?;
             let pa_etype_into2 = pa_etype_into2.0.get(0).ok_or(Error {
-                error_type: ErrorKind::InvalidParameter,
+                error_type: ErrorKind::InvalidToken,
                 description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
             })?;
 
@@ -113,7 +143,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .as_ref()
                     .map(|salt| salt.0.to_string())
                     .ok_or(Error {
-                        error_type: ErrorKind::InvalidParameter,
+                        error_type: ErrorKind::InvalidToken,
                         description: "Missing salt in EtypeInto2Entry".into(),
                     })?,
             ))

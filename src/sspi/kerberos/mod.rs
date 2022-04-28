@@ -13,7 +13,7 @@ use kerberos_crypto::{new_kerberos_cipher, AesSizes};
 use lazy_static::lazy_static;
 use picky_krb::{
     constants::key_usages::ACCEPTOR_SIGN,
-    messages::{ApReq, AsRep, TgsRep},
+    messages::{ApReq, AsRep, KrbError, TgsRep},
 };
 use rand::{OsRng, Rng};
 use url::Url;
@@ -40,12 +40,16 @@ use crate::{
     sspi::{
         self,
         kerberos::{
+            client::{
+                extractors::extract_salt_from_krb_error,
+                generators::generate_as_req_without_pre_auth,
+            },
             gssapi::{validate_mic_token, MicToken, WrapToken},
             negotiate::{generate_final_neg_token_targ, get_mech_list},
             server::generators::{
                 extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep,
             },
-            utils::{unwrap_krb_response, rotate_right, unrotate_right},
+            utils::{rotate_right, unrotate_right, unwrap_krb_response},
         },
     },
     sspi::{Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE},
@@ -142,6 +146,7 @@ pub struct Kerberos {
     state: KerberosState,
     config: KerberosConfig,
     auth_identity: Option<AuthIdentityBuffers>,
+    realm: Option<String>,
 
     encryption_params: EncryptionParams,
 
@@ -159,6 +164,7 @@ impl Kerberos {
                 network_client: Box::new(ReqwestNetworkClient::new()),
             },
             auth_identity: None,
+            realm: None,
 
             encryption_params: EncryptionParams::default_for_client(),
 
@@ -180,6 +186,7 @@ impl Kerberos {
                 network_client: Box::new(ReqwestNetworkClient::new()),
             },
             auth_identity: None,
+            realm: None,
 
             encryption_params: EncryptionParams::default_for_server(),
 
@@ -212,6 +219,8 @@ impl Sspi for Kerberos {
 
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        println!("data.buffer.len(): {}", data.buffer.len());
+        println!("data to encrypt: {:?}", data.buffer);
 
 
         let cipher = new_kerberos_cipher(
@@ -244,7 +253,7 @@ impl Sspi for Kerberos {
 
         match self.state {
             KerberosState::PubKeyAuth => {
-                // form wrap token for auth info
+                // construct wrap token for auth info
                 println!("form wrap token with pub key");
                 let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
@@ -262,10 +271,13 @@ impl Sspi for Kerberos {
                 let mut raw_wrap_token = Vec::with_capacity(92);
                 wrap_token.encode(&mut raw_wrap_token)?;
 
-                *data.buffer.as_mut() = raw_wrap_token;
-            },
+                *data.buffer.as_mut() = raw_wrap_token[16..].to_vec();
+                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                *header.buffer.as_mut() = raw_wrap_token[0..16].to_vec();
+            }
             KerberosState::Credentials => {
-                // form wrap token for creds
+                println!("construct wrap token with encrypted credentials");
+                // construct wrap token for creds
                 let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
                 let mut payload = data.buffer.to_vec();
@@ -282,12 +294,18 @@ impl Sspi for Kerberos {
                 let mut raw_wrap_token = Vec::with_capacity(92);
                 wrap_token.encode(&mut raw_wrap_token)?;
 
-                *data.buffer.as_mut() = raw_wrap_token;
-            },
+                println!("constructed");
+
+                *data.buffer.as_mut() = raw_wrap_token[60..].to_vec();
+                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                *header.buffer.as_mut() = raw_wrap_token[0..60].to_vec();
+
+                println!("written");
+            }
             _ => {
                 println!("other: {:?}", self.state);
                 *data.buffer.as_mut() = cipher.encrypt(key, key_usage, &data.buffer);
-            },
+            }
         };
 
         Ok(SecurityStatus::Ok)
@@ -300,8 +318,12 @@ impl Sspi for Kerberos {
     ) -> Result<crate::DecryptionFlags> {
         println!("decrypt message: {:?}", self.key_usage_number);
 
-        // SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        let mut encrypted = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?
+            .buffer
+            .clone();
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+
+        encrypted.extend_from_slice(&data.buffer);
 
         let cipher = new_kerberos_cipher(
             self.encryption_params
@@ -323,16 +345,16 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
         println!("key for decryption: {:?}", key);
-        println!("data for decryption: {:?}", &data.buffer);
+        println!("data for decryption: {:?}", &encrypted);
 
         match self.state {
             KerberosState::PubKeyAuth => {
-                let wrap_token = WrapToken::decode(&*data.buffer)?;
+                let wrap_token = WrapToken::decode(&*encrypted)?;
                 println!("wrap_token: {:?}", wrap_token);
 
                 let checksum = unrotate_right(wrap_token.checksum, 48);
                 println!("checksum: {:?}", checksum);
-                
+
                 let mut decrypted = cipher.decrypt(key, key_usage, &checksum).unwrap();
                 // remove wrap token header
                 decrypted.truncate(decrypted.len() - 16);
@@ -341,18 +363,15 @@ impl Sspi for Kerberos {
 
                 *data.buffer.as_mut() = decrypted;
                 return Ok(DecryptionFlags::empty());
-            },
+            }
             // KerberosState::Credentials => {}
             _ => {
-                if let Ok(decrypted_data) =
-                    cipher.decrypt(key, key_usage, &data.buffer)
-                {
+                if let Ok(decrypted_data) = cipher.decrypt(key, key_usage, &data.buffer) {
                     *data.buffer.as_mut() = decrypted_data;
                     return Ok(DecryptionFlags::empty());
                 }
-            },
+            }
         };
-
 
         Err(Error::new(
             ErrorKind::MessageAltered,
@@ -367,7 +386,7 @@ impl Sspi for Kerberos {
             max_token: 2010,
             max_signature: 16,
             block: 0,
-            security_trailer: 16,
+            security_trailer: 60,
         })
     }
 
@@ -445,8 +464,6 @@ impl SspiImpl for Kerberos {
     ) -> Result<crate::InitializeSecurityContextResult> {
         println!("initialize_security_context_impl");
 
-        // let res = crate::enumerate_security_packages().unwrap()[1].capabilities.bits();
-
         let status = match self.state {
             KerberosState::Negotiate => {
                 let credentials = builder.credentials_handle.unwrap().as_ref().unwrap();
@@ -486,9 +503,29 @@ impl SspiImpl for Kerberos {
                 let username = utf16_bytes_to_string(&credentials.user);
                 let domain = utf16_bytes_to_string(&credentials.domain);
                 let password = utf16_bytes_to_string(&credentials.password);
+                let mut salt = format!("{}{}", domain, username);
 
-                let as_req =
-                    generate_as_req(&username, &password, &domain, &self.encryption_params);
+                let as_req = generate_as_req_without_pre_auth(&username, &domain);
+
+                let response = self
+                    .config
+                    .network_client
+                    .send(&self.config.url, &serialize_message(&as_req))?;
+
+                // first 4 bytes is message len. skipping them
+                let as_rep_error: KrbError = unwrap_krb_response(&response[4..])?;
+
+                if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep_error)? {
+                    salt = correct_salt;
+                }
+
+                let as_req = generate_as_req(
+                    &username,
+                    salt.as_bytes(),
+                    &password,
+                    &domain,
+                    &self.encryption_params,
+                );
 
                 let response = self
                     .config
@@ -710,6 +747,8 @@ mod tests {
             encryption_type: Some(AES256_CTS_HMAC_SHA1_96),
             session_key: None,
             sub_session_key: None,
+            sspi_decrypt_key_usage: 0,
+            sspi_encrypt_key_usage: 0,
         };
 
         let as_req = generate_as_req(&username, &password, &domain, &enc_params);
