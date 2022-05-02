@@ -97,13 +97,13 @@ pub fn extract_session_key_from_tgs_rep(
             &tgs_rep.0.enc_part.0.cipher.0 .0,
         )
         .map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
+            error_type: ErrorKind::InternalError,
             description: format!("{:?}", e),
         })?;
 
     let enc_as_rep_part: EncTgsRepPart =
         picky_asn1_der::from_bytes(&enc_data).map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
+            error_type: ErrorKind::InternalError,
             description: format!("{:?}", e),
         })?;
 
@@ -127,11 +127,11 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
         Some(data) => {
             let pa_etype_into2: EtypeInfo2 =
                 picky_asn1_der::from_bytes(&data).map_err(|e| Error {
-                    error_type: ErrorKind::DecryptFailure,
+                    error_type: ErrorKind::InternalError,
                     description: format!("{:?}", e),
                 })?;
             let pa_etype_into2 = pa_etype_into2.0.get(0).ok_or(Error {
-                error_type: ErrorKind::InvalidToken,
+                error_type: ErrorKind::InternalError,
                 description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
             })?;
 
@@ -143,7 +143,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .as_ref()
                     .map(|salt| salt.0.to_string())
                     .ok_or(Error {
-                        error_type: ErrorKind::InvalidToken,
+                        error_type: ErrorKind::InternalError,
                         description: "Missing salt in EtypeInto2Entry".into(),
                     })?,
             ))

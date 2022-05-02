@@ -43,24 +43,3 @@ pub fn unwrap_krb_response<'a, T: Deserialize<'a>>(data: &'a [u8]) -> Result<T> 
         }),
     }
 }
-
-pub fn rotate_right(data: Vec<u8>, rrc: usize) -> Vec<u8> {
-    let n_bytes = data.len() % rrc;
-    let left = data.len() - n_bytes;
-
-    let mut res = Vec::new();
-    res.extend_from_slice(&data[left..]);
-    res.extend_from_slice(&data[0..left]);
-
-    res
-}
-
-pub fn unrotate_right(data: Vec<u8>, rrc: usize) -> Vec<u8> {
-    let n_bytes = data.len() % rrc;
-
-    let mut res = Vec::new();
-    res.extend_from_slice(&data[n_bytes..]);
-    res.extend_from_slice(&data[0..n_bytes]);
-
-    res
-}

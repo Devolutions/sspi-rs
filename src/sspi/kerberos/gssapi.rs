@@ -9,10 +9,13 @@ use crate::sspi::{Error, ErrorKind, Result};
 use super::{negotiate::get_mech_list, EncryptionParams};
 
 const MIC_TOKEN_ID: [u8; 2] = [0x04, 0x04];
+pub const MIC_TOKEN_INITIATOR_DEFAULT_FLAGS: u8 = 0x04;
 const MIC_FILLER: [u8; 5] = [0xff, 0xff, 0xff, 0xff, 0xff];
 
 const WRAP_TOKEN_ID: [u8; 2] = [0x05, 0x04];
-const WRAP_FILLER: [u8; 2] = [0xff, 0xff];
+const WRAP_TOKEN_DEFAULT_FLAGS: u8 = 0x06;
+const WRAP_FILLER: u8 = 0xff;
+const WRAP_HEADER_LEN: usize = 16;
 
 pub struct MicToken {
     pub flags: u8,
@@ -22,6 +25,45 @@ pub struct MicToken {
 }
 
 impl MicToken {
+    pub fn with_initiator_flags() -> Self {
+        Self {
+            flags: MIC_TOKEN_INITIATOR_DEFAULT_FLAGS,
+            seq_num: 0,
+            payload: None,
+            checksum: Vec::new(),
+        }
+    }
+
+    pub fn with_seq_number(self, seq_num: u64) -> Self {
+        let MicToken {
+            flags,
+            payload,
+            checksum,
+            ..
+        } = self;
+        Self {
+            flags,
+            seq_num,
+            payload,
+            checksum,
+        }
+    }
+
+    pub fn header(&self) -> [u8; 16] {
+        let mut header_data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+        header_data[0..2].copy_from_slice(&MIC_TOKEN_ID);
+        header_data[2] = self.flags;
+        header_data[3..8].copy_from_slice(&MIC_FILLER);
+        header_data[8..].copy_from_slice(&self.seq_num.to_be_bytes());
+
+        header_data
+    }
+
+    pub fn set_checksum(&mut self, checksum: Vec<u8>) {
+        self.checksum = checksum;
+    }
+
     pub fn encode(&self, mut data: impl Write) -> Result<()> {
         data.write_all(&MIC_TOKEN_ID)?;
         data.write_u8(self.flags)?;
@@ -140,6 +182,42 @@ pub struct WrapToken {
 }
 
 impl WrapToken {
+    pub fn with_seq_number(seq_num: u64) -> Self {
+        Self {
+            flags: WRAP_TOKEN_DEFAULT_FLAGS,
+            ec: 0,
+            rrc: 0,
+            seq_num,
+            payload: None,
+            checksum: Vec::new(),
+        }
+    }
+
+    pub fn header_len() -> usize {
+        WRAP_HEADER_LEN
+    }
+
+    pub fn header(&self) -> [u8; 16] {
+        let mut header_data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+        header_data[0..2].copy_from_slice(&WRAP_TOKEN_ID);
+        header_data[2] = self.flags;
+        header_data[3] = WRAP_FILLER;
+        header_data[4..6].copy_from_slice(&self.ec.to_be_bytes());
+        header_data[6..8].copy_from_slice(&self.rrc.to_be_bytes());
+        header_data[8..].copy_from_slice(&self.seq_num.to_be_bytes());
+
+        header_data
+    }
+
+    pub fn set_rrc(&mut self, rrc: u16) {
+        self.rrc = rrc;
+    }
+
+    pub fn set_checksum(&mut self, checksum: Vec<u8>) {
+        self.checksum = checksum;
+    }
+
     pub fn encode(&self, mut data: impl Write) -> Result<()> {
         data.write_all(&WRAP_TOKEN_ID)?;
         data.write_u8(self.flags)?;

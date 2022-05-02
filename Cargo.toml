@@ -38,6 +38,7 @@ kerberos_crypto = { path = "../../deleteIt/kerbeiros/kerberos_crypto", version =
 kerberos_constants = "0.0.9"
 thiserror = "1.0"
 oid = "0.2.1"
+sys-info = "0.9"
 
 [dev-dependencies]
 whoami = "0.5"

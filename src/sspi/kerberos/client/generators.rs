@@ -29,7 +29,7 @@ use picky_krb::{
 };
 use rand::{rngs::OsRng, Rng};
 
-use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME};
+use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME, TGT_SERVICE_NAME};
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 
@@ -62,6 +62,13 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
         )),
     };
 
+    let address = sys_info::hostname().ok().map(|hostname| {
+        ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
+            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
+            address: ExplicitContextTag1::from(OctetStringAsn1::from(hostname.as_bytes().to_vec())),
+        }]))
+    });
+
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
@@ -84,7 +91,9 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
             sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
+                    KerberosStringAsn1::from(
+                        IA5String::from_string(TGT_SERVICE_NAME.into()).unwrap(),
+                    ),
                     KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
                 ])),
             }))),
@@ -102,14 +111,7 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
                 IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
                 IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
             ])),
-            addresses: Optional::from(Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![
-                HostAddress {
-                    addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
-                    address: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
-                        68, 69, 83, 75, 84, 79, 80, 45, 70, 82, 67, 67, 86, 68, 80, 32,
-                    ])),
-                },
-            ])))),
+            addresses: Optional::from(address),
             enc_authorization_data: Optional::from(None),
             additional_tickets: Optional::from(None),
         }),
@@ -177,6 +179,13 @@ pub fn generate_as_req(
         )),
     };
 
+    let address = sys_info::hostname().ok().map(|hostname| {
+        ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
+            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
+            address: ExplicitContextTag1::from(OctetStringAsn1::from(hostname.as_bytes().to_vec())),
+        }]))
+    });
+
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
@@ -200,7 +209,9 @@ pub fn generate_as_req(
             sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
+                    KerberosStringAsn1::from(
+                        IA5String::from_string(TGT_SERVICE_NAME.into()).unwrap(),
+                    ),
                     KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
                 ])),
             }))),
@@ -218,14 +229,7 @@ pub fn generate_as_req(
                 IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
                 IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
             ])),
-            addresses: Optional::from(Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![
-                HostAddress {
-                    addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
-                    address: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
-                        68, 69, 83, 75, 84, 79, 80, 45, 70, 82, 67, 67, 86, 68, 80, 32,
-                    ])),
-                },
-            ])))),
+            addresses: Optional::from(address),
             enc_authorization_data: Optional::from(None),
             additional_tickets: Optional::from(None),
         }),
@@ -245,12 +249,10 @@ pub fn generate_tgs_req(
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
-    let cipher = new_kerberos_cipher(
-        enc_params
-            .encryption_type
-            .unwrap_or(AES256_CTS_HMAC_SHA1_96),
-    )
-    .unwrap();
+    let encryption_type = enc_params
+        .encryption_type
+        .unwrap_or(AES256_CTS_HMAC_SHA1_96);
+    let cipher = new_kerberos_cipher(encryption_type).unwrap();
 
     let enc_auth_data_encrypted = cipher.encrypt(
         session_key,
@@ -274,7 +276,7 @@ pub fn generate_tgs_req(
         sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
                 KerberosStringAsn1::from(
                     IA5String::from_string(format!("{}.{}", username, realm.to_lowercase()))
                         .unwrap(),
@@ -294,15 +296,12 @@ pub fn generate_tgs_req(
             IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
         ])),
         addresses: Optional::from(None),
-        enc_authorization_data: Optional::from(
-            Some(ExplicitContextTag10::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x12])),
-                kvno: Optional::from(None),
-                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_auth_data_encrypted)),
-            })), // None
-        ),
+        enc_authorization_data: Optional::from(Some(ExplicitContextTag10::from(EncryptedData {
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
+            kvno: Optional::from(None),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_auth_data_encrypted)),
+        }))),
         additional_tickets: Optional::from(
-            // None
             additional_tickets
                 .map(|tickets| ExplicitContextTag11::from(Asn1SequenceOf::from(tickets))),
         ),
@@ -367,24 +366,13 @@ pub fn generate_authenticator_for_tgs_ap_req(kdc_rep: &KdcRep) -> Authenticator 
         authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
-        cksum: Optional::from(
-            // Some(ExplicitContextTag3::from(Checksum {
-            //     cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x07])),
-            //     checksum: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
-            //         0x55, 0xdc, 0xdc, 0xab, 0x9a, 0x29, 0x99, 0xd1, 0x20, 0x5a, 0xe9, 0x8e, 0xc9,
-            //         0x98, 0x6c, 0x6e,
-            //     ])),
-            // })),
-            None,
-        ),
+        cksum: Optional::from(None),
         cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(None),
-        seq_number: Optional::from(
-            Some(ExplicitContextTag7::from(IntegerAsn1::from(
-                OsRng::new().unwrap().gen::<u32>().to_be_bytes().to_vec(),
-            ))), // None,
-        ),
+        seq_number: Optional::from(Some(ExplicitContextTag7::from(IntegerAsn1::from(
+            OsRng::new().unwrap().gen::<u32>().to_be_bytes().to_vec(),
+        )))),
         authorization_data: Optional::from(None),
     })
 }
@@ -441,12 +429,10 @@ pub fn generate_tgs_ap_req(
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
 ) -> ApReq {
-    let cipher = new_kerberos_cipher(
-        enc_params
-            .encryption_type
-            .unwrap_or(AES256_CTS_HMAC_SHA1_96),
-    )
-    .unwrap();
+    let encryption_type = enc_params
+        .encryption_type
+        .unwrap_or(AES256_CTS_HMAC_SHA1_96);
+    let cipher = new_kerberos_cipher(encryption_type).unwrap();
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
@@ -458,13 +444,12 @@ pub fn generate_tgs_ap_req(
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
         ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(vec![
+            // do not need any options when ap_req uses in tgs_req pa_data
             0x00, 0x00, 0x00, 0x00,
         ]))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![
-                AES256_CTS_HMAC_SHA1_96 as u8,
-            ])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),
@@ -477,12 +462,10 @@ pub fn generate_ap_req(
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
 ) -> ApReq {
-    let cipher = new_kerberos_cipher(
-        enc_params
-            .encryption_type
-            .unwrap_or(AES256_CTS_HMAC_SHA1_96),
-    )
-    .unwrap();
+    let encryption_type = enc_params
+        .encryption_type
+        .unwrap_or(AES256_CTS_HMAC_SHA1_96);
+    let cipher = new_kerberos_cipher(encryption_type).unwrap();
 
     println!(
         "ap_req_auth_raw: {:?}",
@@ -503,9 +486,7 @@ pub fn generate_ap_req(
         ))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![
-                AES256_CTS_HMAC_SHA1_96 as u8,
-            ])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),

@@ -41,7 +41,13 @@ mod tests {
 
         let network_client = ReqwestNetworkClient::new();
 
-        let as_req = generate_as_req("p4", "QKATION.COMp4", "qweQWE123!@#", "QKATION", &enc_params);
+        let as_req = generate_as_req(
+            "p4",
+            "QKATION.COMp4",
+            "qweQWE123!@#",
+            "QKATION",
+            &enc_params,
+        );
 
         let as_req = picky_asn1_der::to_vec(&as_req).unwrap();
 

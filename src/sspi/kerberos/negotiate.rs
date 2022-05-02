@@ -25,7 +25,10 @@ use picky_krb::{
 };
 use serde::{ser, Deserialize, Serialize};
 
-use crate::sspi::kerberos::KERBEROS_VERSION;
+use crate::sspi::{
+    kerberos::{KERBEROS_VERSION, SERVICE_NAME},
+    Error as SspiError, ErrorKind, Result as SspiResult,
+};
 
 const AP_REQ_TOKEN_ID: [u8; 2] = [0x01, 0x00];
 const TGT_REQ_TOKEN_ID: [u8; 2] = [0x04, 0x00];
@@ -98,25 +101,6 @@ impl<T: Serialize> KrbMessage<T> {
         Ok(())
     }
 }
-
-// impl<'a, T: Deserialize<'a>> KrbMessage<T> {
-//     pub fn deserialize(data: &'a [u8]) -> Self {
-//         let mut cursor = Cursor::new(data);
-
-//         let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_reader(data).unwrap();
-
-//         let mut token_id = [0, 0];
-//         cursor.read_exact(&mut token_id).unwrap();
-
-//         let msg: T = picky_asn1_der::from_reader(&data[(cursor.position() as usize)..]).unwrap();
-
-//         Self {
-//             krb5_oid: oid,
-//             krb5_token_id: token_id,
-//             krb_msg: msg,
-//         }
-//     }
-// }
 
 impl<T: ser::Serialize + Debug + PartialEq> ser::Serialize for KrbMessage<T> {
     fn serialize<S>(&self, serializer: S) -> Result<<S as ser::Serializer>::Ok, S::Error>
@@ -204,7 +188,7 @@ pub fn generate_neg_token_init(username: &str) -> ApplicationTag0<GssApiNegInit>
             server_name: ExplicitContextTag2::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
                     KerberosStringAsn1::from(IA5String::from_string(username.into()).unwrap()),
                 ])),
             }),
@@ -233,21 +217,24 @@ pub fn get_mech_list() -> MechTypeList {
     ])
 }
 
-pub fn extract_tgt_ticket(data: &[u8]) -> Ticket {
-    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&data).unwrap();
+pub fn extract_tgt_ticket(data: &[u8]) -> SspiResult<Ticket> {
+    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&data)
+        .map_err(|e| SspiError::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
 
     let resp_token = neg_token_targ.0.response_token.0.unwrap().0 .0;
     let mut c = Cursor::new(resp_token);
 
-    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c).unwrap();
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)
+        .map_err(|e| SspiError::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
 
     let mut t = [0, 0];
 
-    c.read_exact(&mut t).unwrap();
+    c.read_exact(&mut t)?;
 
-    let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c).unwrap();
+    let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c)
+        .map_err(|e| SspiError::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
 
-    tgt_rep.ticket.0
+    Ok(tgt_rep.ticket.0)
 }
 
 pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
