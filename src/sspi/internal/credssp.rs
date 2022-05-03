@@ -29,7 +29,10 @@ use crate::{
     },
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
-use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
+use ts_request::NONCE_SIZE;
+#[cfg(feature = "with_network_client")]
+use ts_request::TS_REQUEST_VERSION;
+use crate::sspi::kerberos::config::KerberosConfig;
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
@@ -154,6 +157,12 @@ enum EndpointType {
     Server,
 }
 
+#[derive(Debug, Clone)]
+pub enum ContextConfig {
+    Kerberos(KerberosConfig),
+    Ntlm,
+}
+
 /// Implements the CredSSP *client*. The client's credentials are to
 /// be securely delegated to the server.
 ///
@@ -170,9 +179,11 @@ pub struct CredSspClient {
     client_nonce: [u8; NONCE_SIZE],
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
+    context_config: ContextConfig,
 }
 
 impl CredSspClient {
+    #[cfg(feature = "with_network_client")]
     pub fn new(
         public_key: Vec<u8>,
         credentials: AuthIdentity,
@@ -187,9 +198,11 @@ impl CredSspClient {
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
+            context_config: ContextConfig::Kerberos(KerberosConfig::from_env()),
         })
     }
 
+    #[cfg(feature = "with_network_client")]
     pub fn new_with_version(
         public_key: Vec<u8>,
         credentials: AuthIdentity,
@@ -205,6 +218,27 @@ impl CredSspClient {
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version,
+            context_config: ContextConfig::Kerberos(KerberosConfig::from_env()),
+        })
+    }
+
+    pub fn new_with_context_config(
+        public_key: Vec<u8>,
+        credentials: AuthIdentity,
+        cred_ssp_mode: CredSspMode,
+        ts_request_version: u32,
+        context_config: ContextConfig,
+    ) -> sspi::Result<Self> {
+        Ok(Self {
+            state: CredSspState::NegoToken,
+            context: None,
+            credentials,
+            public_key,
+            cred_ssp_mode,
+            client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
+            credentials_handle: None,
+            ts_request_version,
+            context_config,
         })
     }
 
@@ -213,9 +247,12 @@ impl CredSspClient {
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
         } else {
-            self.context = Some(CredSspContext::new(SspiContext::Kerberos(
-                Kerberos::new_client_from_env(),
-            )));
+            self.context = match &self.context_config {
+                ContextConfig::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
+                    Kerberos::new_client_from_config(kerberos_config.clone())
+                ))),
+                ContextConfig::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+            };
             let AcquireCredentialsHandleResult {
                 credentials_handle, ..
             } = self
@@ -328,9 +365,11 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     public_key: Vec<u8>,
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
+    context_config: ContextConfig,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
+    #[cfg(feature = "with_network_client")]
     pub fn new(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -339,9 +378,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             public_key,
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
+            context_config: ContextConfig::Kerberos(KerberosConfig::from_env()),
         })
     }
 
+    #[cfg(feature = "with_network_client")]
     pub fn new_with_version(
         public_key: Vec<u8>,
         credentials: C,
@@ -354,14 +395,35 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             public_key,
             credentials_handle: None,
             ts_request_version,
+            context_config: ContextConfig::Kerberos(KerberosConfig::from_env()),
+        })
+    }
+
+    pub fn new_with_context_config(
+        public_key: Vec<u8>,
+        credentials: C,
+        ts_request_version: u32,
+        context_config: ContextConfig,
+    ) -> sspi::Result<Self> {
+        Ok(Self {
+            state: CredSspState::NegoToken,
+            context: None,
+            credentials,
+            public_key,
+            credentials_handle: None,
+            ts_request_version,
+            context_config,
         })
     }
 
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
-            self.context = Some(CredSspContext::new(SspiContext::Kerberos(
-                Kerberos::new_server_from_env(),
-            )));
+            self.context = match &self.context_config {
+                ContextConfig::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
+                    Kerberos::new_client_from_config(kerberos_config.clone())
+                ))),
+                ContextConfig::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+            };
             let AcquireCredentialsHandleResult {
                 credentials_handle, ..
             } = try_cred_ssp_server!(

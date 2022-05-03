@@ -1,13 +1,13 @@
 pub mod config;
-// #[cfg(feature = "with_reqwest")]
 mod client;
 pub mod gssapi;
 mod negotiate;
+#[cfg(feature = "with_network_client")]
 pub mod reqwest_client;
 mod server;
 mod utils;
 
-use std::{env, fmt::Debug, io::Write, str::FromStr};
+use std::{fmt::Debug, io::Write};
 
 use kerberos_crypto::{new_kerberos_cipher, AesSizes};
 use lazy_static::lazy_static;
@@ -31,12 +31,14 @@ use self::{
         },
         AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96,
     },
-    config::KerberosConfig,
+    config::{KerberosConfig, KdcType},
     negotiate::{extract_tgt_ticket, generate_neg_ap_req, generate_neg_token_init, NegTokenTarg1},
-    reqwest_client::ReqwestNetworkClient,
     utils::{serialize_message, utf16_bytes_to_string},
 };
-use super::ntlm::AuthIdentityBuffers;
+
+#[cfg(feature = "with_network_client")]
+use self::reqwest_client::ReqwestNetworkClient;
+
 use crate::{
     sspi::{
         self,
@@ -52,6 +54,7 @@ use crate::{
             },
             utils::unwrap_krb_response,
         },
+        ntlm::AuthIdentityBuffers,
     },
     sspi::{Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE},
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
@@ -65,7 +68,9 @@ pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
 
+#[cfg(feature = "with_network_client")]
 const KDC_TYPE_ENV: &str = "KDC_TYPE";
+#[cfg(feature = "with_network_client")]
 const URL_ENV: &str = "URL";
 
 const DEFAULT_ENCRYPTION_TYPE: i32 = AES256_CTS_HMAC_SHA1_96;
@@ -157,28 +162,42 @@ pub struct Kerberos {
 }
 
 impl Kerberos {
-    pub fn new_client_from_env() -> Self {
+    pub fn new_client_from_config(config: KerberosConfig) -> Self {
         Self {
             state: KerberosState::Negotiate,
-            config: KerberosConfig {
-                url: Url::from_str(&env::var(URL_ENV).unwrap()).unwrap(),
-                kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
-                network_client: Box::new(ReqwestNetworkClient::new()),
-            },
+            config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: OsRng::new().unwrap().gen::<u32>(),
         }
     }
 
+    #[cfg(feature = "with_network_client")]
+    pub fn new_client_from_env() -> Self {
+        Self {
+            state: KerberosState::Negotiate,
+            config: KerberosConfig::from_env(),
+            auth_identity: None,
+            encryption_params: EncryptionParams::default_for_client(),
+            seq_number: OsRng::new().unwrap().gen::<u32>(),
+        }
+    }
+
+    pub fn new_server_from_config(config: KerberosConfig) -> Self {
+        Self {
+            state: KerberosState::Negotiate,
+            config,
+            auth_identity: None,
+            encryption_params: EncryptionParams::default_for_server(),
+            seq_number: OsRng::new().unwrap().gen::<u32>(),
+        }
+    }
+
+    #[cfg(feature = "with_network_client")]
     pub fn new_server_from_env() -> Self {
         Self {
             state: KerberosState::Negotiate,
-            config: KerberosConfig {
-                url: Url::from_str(&env::var(URL_ENV).unwrap()).unwrap(),
-                kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
-                network_client: Box::new(ReqwestNetworkClient::new()),
-            },
+            config: KerberosConfig::from_env(),
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: OsRng::new().unwrap().gen::<u32>(),
@@ -188,6 +207,19 @@ impl Kerberos {
     pub fn next_seq_number(&mut self) -> u32 {
         self.seq_number += 1;
         self.seq_number
+    }
+
+    fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
+        match self.config.kdc_type {
+            KdcType::Kdc => self
+                    .config
+                    .network_client
+                    .send(&self.config.url, data),
+            KdcType::KdcProxy => self
+                    .config
+                    .network_client
+                    .send_http(&self.config.url, data),
+        }
     }
 }
 
@@ -456,10 +488,7 @@ impl SspiImpl for Kerberos {
 
                 let as_req = generate_as_req_without_pre_auth(&username, &domain);
 
-                let response = self
-                    .config
-                    .network_client
-                    .send(&self.config.url, &serialize_message(&as_req))?;
+                let response = self.send(&serialize_message(&as_req))?;
 
                 // first 4 bytes is message len. skipping them
                 let as_rep_error: KrbError = unwrap_krb_response(&response[4..])?;
@@ -476,10 +505,7 @@ impl SspiImpl for Kerberos {
                     &self.encryption_params,
                 );
 
-                let response = self
-                    .config
-                    .network_client
-                    .send(&self.config.url, &serialize_message(&as_req))?;
+                let response = self.send(&serialize_message(&as_req))?;
 
                 // first 4 bytes is message len. skipping them
                 let as_rep: AsRep = unwrap_krb_response(&response[4..])?;
@@ -508,10 +534,7 @@ impl SspiImpl for Kerberos {
                     &self.encryption_params,
                 );
 
-                let response = self
-                    .config
-                    .network_client
-                    .send(&self.config.url, &serialize_message(&tgs_req))?;
+                let response = self.send(&serialize_message(&tgs_req))?;
 
                 println!("tgs req here");
 
@@ -571,7 +594,7 @@ impl SspiImpl for Kerberos {
                 self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
                     &ap_rep,
                     self.encryption_params.session_key.as_ref().unwrap(),
-                    &self.encryption_params
+                    &self.encryption_params,
                 )?);
 
                 if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
@@ -581,13 +604,12 @@ impl SspiImpl for Kerberos {
                 println!("session_key: {:?}", self.encryption_params);
                 println!("all good in ap_rep");
 
-                let neg_token_targ = generate_final_neg_token_targ(
-                    Some(MicToken::generate_initiator_raw(
+                let neg_token_targ =
+                    generate_final_neg_token_targ(Some(MicToken::generate_initiator_raw(
                         picky_asn1_der::to_vec(&get_mech_list()).unwrap(),
                         self.seq_number as u64,
                         self.encryption_params.sub_session_key.as_ref().unwrap(),
-                    )), // None
-                );
+                    )));
 
                 let output_token =
                     SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
@@ -699,7 +721,7 @@ mod tests {
             sspi_encrypt_key_usage: 0,
         };
 
-        let as_req = generate_as_req(&username, "QKATION.COMp3", &password, &domain, &enc_params);
+        let as_req = generate_as_req(&username, "QKATION.COMp3".as_bytes(), &password, &domain, &enc_params);
 
         println!("as req: {:?}", as_req);
 
