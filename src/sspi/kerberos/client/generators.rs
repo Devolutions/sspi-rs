@@ -1,41 +1,56 @@
+use std::convert::TryFrom;
+
 use chrono::{Duration, Utc};
 use kerberos_constants::key_usages::{KEY_USAGE_AP_REQ_AUTHEN, KEY_USAGE_TGS_REQ_AUTHEN};
 use kerberos_crypto::new_kerberos_cipher;
 use md5::{Digest, Md5};
+use oid::ObjectIdentifier;
 use picky_asn1::{
     bit_string::BitString,
     date::GeneralizedTime,
     restricted_string::IA5String,
     wrapper::{
-        Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag10,
-        ExplicitContextTag11, ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4,
-        ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8,
-        ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, OctetStringAsn1, Optional,
+        Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag11,
+        ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5,
+        ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8, ExplicitContextTag9,
+        GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
     },
 };
+use picky_asn1_der::{application_tag::ApplicationTag, Asn1RawDer};
+use picky_asn1_x509::oids::{KRB5, KRB5_USER_TO_USER, MS_KRB5, SPNEGO};
 use picky_krb::{
-    constants::types::{
-        AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP,
-        PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE,
-        TGS_REQ_MSG_TYPE,
+    constants::{
+        gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, TGT_REQ_TOKEN_ID},
+        types::{
+            AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, NET_BIOS_ADDR_TYPE, NT_PRINCIPAL, NT_SRV_INST,
+            PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE,
+            PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
+        },
     },
     data_types::{
-        ApOptions, Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner,
-        Checksum, EncryptedData, EncryptionKey, HostAddress, KerbPaPacRequest, KerberosFlags,
-        KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName, Realm,
-        Ticket,
+        ApOptions, Authenticator, AuthenticatorInner, Checksum, EncryptedData, EncryptionKey,
+        HostAddress, KerbPaPacRequest, KerberosFlags, KerberosStringAsn1, KerberosTime, PaData,
+        PaEncTsEnc, PaPacOptions, PrincipalName, Realm, Ticket,
     },
-    messages::{ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, TgsReq},
+    gss_api::{
+        ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit,
+        NegTokenTarg, NegTokenTarg1,
+    },
+    messages::{ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, TgsReq, TgtReq},
 };
 use rand::{rngs::OsRng, Rng};
 
-use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME, TGT_SERVICE_NAME};
+use crate::sspi::{
+    kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME, TGT_SERVICE_NAME},
+    Result,
+};
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
 const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
+const MD5_CHECSUM_TYPE: [u8; 1] = [0x07];
 
 const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
 const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x08];
@@ -47,29 +62,28 @@ const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 // other options are disabled
 const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
 
-pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
+pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> Result<AsReq> {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
     let pa_pac_request = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&KerbPaPacRequest {
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+            &KerbPaPacRequest {
                 include_pac: ExplicitContextTag0::from(true),
-            })
-            .unwrap(),
-        )),
+            },
+        )?)),
     };
 
     let address = sys_info::hostname().ok().map(|hostname| {
         ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
-            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
+            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
             address: ExplicitContextTag1::from(OctetStringAsn1::from(hostname.as_bytes().to_vec())),
         }]))
     });
 
-    AsReq::from(KdcReq {
+    Ok(AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
         padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
@@ -82,19 +96,15 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
             cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(username.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(username.into())?),
                 ])),
             }))),
-            realm: ExplicitContextTag2::from(Realm::from(
-                IA5String::from_string(realm.into()).unwrap(),
-            )),
+            realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string(realm.into())?)),
             sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(
-                        IA5String::from_string(TGT_SERVICE_NAME.into()).unwrap(),
-                    ),
-                    KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(TGT_SERVICE_NAME.into())?),
+                    KerberosStringAsn1::from(IA5String::from_string(realm.into())?),
                 ])),
             }))),
             from: Optional::from(None),
@@ -105,7 +115,7 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
                 GeneralizedTime::from(expiration_date),
             )))),
             nonce: ExplicitContextTag7::from(IntegerAsn1::from(
-                OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
+                OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec(),
             )),
             etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
                 IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
@@ -115,7 +125,7 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> AsReq {
             enc_authorization_data: Optional::from(None),
             additional_tickets: Optional::from(None),
         }),
-    })
+    }))
 }
 
 pub fn generate_as_req(
@@ -124,7 +134,7 @@ pub fn generate_as_req(
     password: &str,
     realm: &str,
     enc_params: &EncryptionParams,
-) -> AsReq {
+) -> Result<AsReq> {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
@@ -143,50 +153,47 @@ pub fn generate_as_req(
             microseconds.to_be_bytes().to_vec(),
         )))),
     };
-    let timestamp_bytes = picky_asn1_der::to_vec(&timestamp).unwrap();
+    let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
 
     let cipher = new_kerberos_cipher(
         enc_params
             .encryption_type
             .unwrap_or(AES256_CTS_HMAC_SHA1_96),
-    )
-    .unwrap();
+    )?;
     let key = cipher.generate_key_from_string(password, salt);
 
     let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
 
     let pa_enc_timestamp = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&EncryptedData {
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+            &EncryptedData {
                 etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![
                     AES256_CTS_HMAC_SHA1_96 as u8,
                 ])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_timestamp)),
-            })
-            .unwrap(),
-        )),
+            },
+        )?)),
     };
 
     let pa_pac_request = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&KerbPaPacRequest {
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+            &KerbPaPacRequest {
                 include_pac: ExplicitContextTag0::from(true),
-            })
-            .unwrap(),
-        )),
+            },
+        )?)),
     };
 
     let address = sys_info::hostname().ok().map(|hostname| {
         ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
-            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x14])),
+            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
             address: ExplicitContextTag1::from(OctetStringAsn1::from(hostname.as_bytes().to_vec())),
         }]))
     });
 
-    AsReq::from(KdcReq {
+    Ok(AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
         padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
@@ -200,19 +207,15 @@ pub fn generate_as_req(
             cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(username.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(username.into())?),
                 ])),
             }))),
-            realm: ExplicitContextTag2::from(Realm::from(
-                IA5String::from_string(realm.into()).unwrap(),
-            )),
+            realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string(realm.into())?)),
             sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(
-                        IA5String::from_string(TGT_SERVICE_NAME.into()).unwrap(),
-                    ),
-                    KerberosStringAsn1::from(IA5String::from_string(realm.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(TGT_SERVICE_NAME.into())?),
+                    KerberosStringAsn1::from(IA5String::from_string(realm.into())?),
                 ])),
             }))),
             from: Optional::from(None),
@@ -223,7 +226,7 @@ pub fn generate_as_req(
                 GeneralizedTime::from(expiration_date),
             )))),
             nonce: ExplicitContextTag7::from(IntegerAsn1::from(
-                OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
+                OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec(),
             )),
             etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
                 IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
@@ -233,7 +236,7 @@ pub fn generate_as_req(
             enc_authorization_data: Optional::from(None),
             additional_tickets: Optional::from(None),
         }),
-    })
+    }))
 }
 
 pub fn generate_tgs_req(
@@ -244,43 +247,26 @@ pub fn generate_tgs_req(
     mut authenticator: &mut Authenticator,
     additional_tickets: Option<Vec<Ticket>>,
     enc_params: &EncryptionParams,
-) -> TgsReq {
+) -> Result<TgsReq> {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
-
-    let encryption_type = enc_params
-        .encryption_type
-        .unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type).unwrap();
-
-    let enc_auth_data_encrypted = cipher.encrypt(
-        session_key,
-        4,
-        &[
-            48, 78, 48, 76, 160, 3, 2, 1, 1, 161, 69, 4, 67, 48, 65, 48, 63, 160, 4, 2, 2, 0, 141,
-            161, 55, 4, 53, 48, 51, 48, 49, 160, 3, 2, 1, 0, 161, 42, 4, 40, 1, 0, 0, 0, 0, 32, 0,
-            0, 241, 245, 67, 156, 37, 105, 241, 189, 203, 24, 218, 1, 196, 107, 27, 254, 109, 30,
-            74, 117, 113, 162, 117, 172, 65, 141, 10, 17, 37, 233, 179, 154,
-        ],
-    );
 
     let req_body = KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
             DEFAULT_TGS_REQ_OPTIONS.to_vec(),
         ))),
         cname: Optional::from(None),
-        realm: ExplicitContextTag2::from(Realm::from(
-            IA5String::from_string(realm.into()).unwrap(),
-        )),
+        realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string(realm.into())?)),
         sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into()).unwrap()),
-                KerberosStringAsn1::from(
-                    IA5String::from_string(format!("{}.{}", username, realm.to_lowercase()))
-                        .unwrap(),
-                ),
+                KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into())?),
+                KerberosStringAsn1::from(IA5String::from_string(format!(
+                    "{}.{}",
+                    username,
+                    realm.to_lowercase()
+                ))?),
             ])),
         }))),
         from: Optional::from(None),
@@ -289,18 +275,14 @@ pub fn generate_tgs_req(
         ))),
         rtime: Optional::from(None),
         nonce: ExplicitContextTag7::from(IntegerAsn1::from(
-            OsRng::new().unwrap().gen::<[u8; NONCE_LEN]>().to_vec(),
+            OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec(),
         )),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
             IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
             IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
         ])),
         addresses: Optional::from(None),
-        enc_authorization_data: Optional::from(Some(ExplicitContextTag10::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
-            kvno: Optional::from(None),
-            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_auth_data_encrypted)),
-        }))),
+        enc_authorization_data: Optional::from(None),
         additional_tickets: Optional::from(
             additional_tickets
                 .map(|tickets| ExplicitContextTag11::from(Asn1SequenceOf::from(tickets))),
@@ -308,43 +290,33 @@ pub fn generate_tgs_req(
     };
 
     let mut md5 = Md5::new();
-    md5.update(&&picky_asn1_der::to_vec(&req_body).unwrap());
+    md5.update(&picky_asn1_der::to_vec(&req_body)?);
     let checksum = md5.finalize();
 
     authenticator.0.cksum = Optional::from(Some(ExplicitContextTag3::from(Checksum {
-        cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x07])),
+        cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(MD5_CHECSUM_TYPE.to_vec())),
         checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum.to_vec())),
     })));
 
-    let raw_tgt_auth = picky_asn1_der::to_vec(&authenticator).unwrap();
-    println!("raw_tgt_auth: {:?}", raw_tgt_auth);
-
     let pa_tgs_req = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_TGS_REQ_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&generate_tgs_ap_req(
-                ticket,
-                session_key,
-                authenticator,
-                enc_params,
-            ))
-            .unwrap(),
-        )),
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+            &generate_tgs_ap_req(ticket, session_key, authenticator, enc_params)?,
+        )?)),
     };
 
     let pa_pac_options = PaData {
         padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_OPTIONS_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&PaPacOptions {
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+            &PaPacOptions {
                 flags: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
                     DEFAULT_PA_PAC_OPTIONS.to_vec(),
                 ))),
-            })
-            .unwrap(),
-        )),
+            },
+        )?)),
     };
 
-    TgsReq::from(KdcReq {
+    Ok(TgsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![TGS_REQ_MSG_TYPE])),
         padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(vec![
@@ -352,17 +324,17 @@ pub fn generate_tgs_req(
             pa_pac_options,
         ])))),
         req_body: ExplicitContextTag4::from(req_body),
-    })
+    }))
 }
 
-pub fn generate_authenticator_for_tgs_ap_req(kdc_rep: &KdcRep) -> Authenticator {
+pub fn generate_authenticator_for_tgs_ap_req(kdc_rep: &KdcRep) -> Result<Authenticator> {
     let current_date = Utc::now();
     let mut microseconds = current_date.timestamp_subsec_micros();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }
 
-    Authenticator::from(AuthenticatorInner {
+    Ok(Authenticator::from(AuthenticatorInner {
         authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
@@ -371,20 +343,20 @@ pub fn generate_authenticator_for_tgs_ap_req(kdc_rep: &KdcRep) -> Authenticator 
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(None),
         seq_number: Optional::from(Some(ExplicitContextTag7::from(IntegerAsn1::from(
-            OsRng::new().unwrap().gen::<u32>().to_be_bytes().to_vec(),
+            OsRng::new()?.gen::<u32>().to_be_bytes().to_vec(),
         )))),
         authorization_data: Optional::from(None),
-    })
+    }))
 }
 
-pub fn generate_authenticator_for_ap_req(kdc_rep: &KdcRep, seq_num: u32) -> Authenticator {
+pub fn generate_authenticator_for_ap_req(kdc_rep: &KdcRep, seq_num: u32) -> Result<Authenticator> {
     let current_date = Utc::now();
     let mut microseconds = current_date.timestamp_subsec_micros();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }
 
-    Authenticator::from(AuthenticatorInner {
+    Ok(Authenticator::from(AuthenticatorInner {
         authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
@@ -402,25 +374,14 @@ pub fn generate_authenticator_for_ap_req(kdc_rep: &KdcRep, seq_num: u32) -> Auth
                 AES256_CTS_HMAC_SHA1_96 as u8,
             ])),
             key_value: ExplicitContextTag1::from(OctetStringAsn1::from(
-                OsRng::new().unwrap().gen::<[u8; 32]>().to_vec(),
+                OsRng::new()?.gen::<[u8; 32]>().to_vec(),
             )),
         }))),
         seq_number: Optional::from(Some(ExplicitContextTag7::from(
             IntegerAsn1::from_bytes_be_unsigned(seq_num.to_be_bytes().to_vec()),
         ))),
-        authorization_data: Optional::from(Some(ExplicitContextTag8::from(
-            AuthorizationData::from(vec![AuthorizationDataInner {
-                ad_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x01])),
-                ad_data: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
-                    48, 96, 48, 14, 160, 4, 2, 2, 0, 143, 161, 6, 4, 4, 0, 64, 0, 0, 48, 78, 160,
-                    4, 2, 2, 0, 144, 161, 70, 4, 68, 84, 0, 69, 0, 82, 0, 77, 0, 83, 0, 82, 0, 86,
-                    0, 47, 0, 112, 0, 52, 0, 46, 0, 113, 0, 107, 0, 97, 0, 116, 0, 105, 0, 111, 0,
-                    110, 0, 46, 0, 99, 0, 111, 0, 109, 0, 64, 0, 81, 0, 75, 0, 65, 0, 84, 0, 73, 0,
-                    79, 0, 78, 0, 46, 0, 67, 0, 79, 0, 77, 0,
-                ])),
-            }]),
-        ))),
-    })
+        authorization_data: Optional::from(None),
+    }))
 }
 
 pub fn generate_tgs_ap_req(
@@ -428,19 +389,19 @@ pub fn generate_tgs_ap_req(
     session_key: &[u8],
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
-) -> ApReq {
+) -> Result<ApReq> {
     let encryption_type = enc_params
         .encryption_type
         .unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type).unwrap();
+    let cipher = new_kerberos_cipher(encryption_type)?;
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
         KEY_USAGE_TGS_REQ_AUTHEN,
-        &picky_asn1_der::to_vec(&authenticator).unwrap(),
+        &picky_asn1_der::to_vec(&authenticator)?,
     );
 
-    ApReq::from(ApReqInner {
+    Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
         ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(vec![
@@ -453,7 +414,7 @@ pub fn generate_tgs_ap_req(
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),
-    })
+    }))
 }
 
 pub fn generate_ap_req(
@@ -461,24 +422,19 @@ pub fn generate_ap_req(
     session_key: &[u8],
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
-) -> ApReq {
+) -> Result<ApReq> {
     let encryption_type = enc_params
         .encryption_type
         .unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type).unwrap();
-
-    println!(
-        "ap_req_auth_raw: {:?}",
-        picky_asn1_der::to_vec(&authenticator).unwrap()
-    );
+    let cipher = new_kerberos_cipher(encryption_type)?;
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
         KEY_USAGE_AP_REQ_AUTHEN,
-        &picky_asn1_der::to_vec(&authenticator).unwrap(),
+        &picky_asn1_der::to_vec(&authenticator)?,
     );
 
-    ApReq::from(ApReqInner {
+    Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
         ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(
@@ -490,5 +446,79 @@ pub fn generate_ap_req(
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),
+    }))
+}
+
+// returns supported authentication types
+pub fn get_mech_list() -> MechTypeList {
+    MechTypeList::from(vec![
+        MechType::from(ObjectIdentifier::try_from(MS_KRB5).unwrap()),
+        MechType::from(ObjectIdentifier::try_from(KRB5).unwrap()),
+    ])
+}
+
+pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
+    let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
+        krb5_oid: ObjectIdentifierAsn1::from(
+            ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap(),
+        ),
+        krb5_token_id: TGT_REQ_TOKEN_ID,
+        krb_msg: TgtReq {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
+            server_name: ExplicitContextTag2::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into())?),
+                    KerberosStringAsn1::from(IA5String::from_string(username.into())?),
+                ])),
+            }),
+        },
+    });
+
+    Ok(ApplicationTag0(GssApiNegInit {
+        oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from(SPNEGO).unwrap()),
+        neg_token_init: ExplicitContextTag0::from(NegTokenInit {
+            mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
+            req_flags: Optional::from(None),
+            mech_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&krb5_neg_token_init)?,
+            )))),
+            mech_list_mic: Optional::from(None),
+        }),
+    }))
+}
+
+pub fn generate_neg_ap_req(ap_req: ApReq) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+    let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
+        krb5_oid: ObjectIdentifierAsn1::from(
+            ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap(),
+        ),
+        krb5_token_id: AP_REQ_TOKEN_ID,
+        krb_msg: ap_req,
+    });
+
+    Ok(ExplicitContextTag1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(
+            ACCEPT_INCOMPLETE.to_vec(),
+        )))),
+        supported_mech: Optional::from(None),
+        response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
+            picky_asn1_der::to_vec(&krb_blob)?,
+        )))),
+        mech_list_mic: Optional::from(None),
+    }))
+}
+
+pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
+    NegTokenTarg1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(
+            ACCEPT_COMPLETE.to_vec(),
+        )))),
+        supported_mech: Optional::from(None),
+        response_token: Optional::from(None),
+        mech_list_mic: Optional::from(
+            mech_list_mic.map(|v| ExplicitContextTag3::from(OctetStringAsn1::from(v))),
+        ),
     })
 }

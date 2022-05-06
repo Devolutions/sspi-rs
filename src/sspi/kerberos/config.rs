@@ -1,12 +1,12 @@
 use std::fmt::Debug;
-#[cfg(feature = "with_network_client")]
 use std::{env, str::FromStr};
 
 use url::Url;
 
-use super::NetworkClient;
-#[cfg(feature = "with_network_client")]
-use super::{ReqwestNetworkClient, URL_ENV, KDC_TYPE_ENV};
+#[cfg(feature = "with_request_http_client")]
+use super::network_client::reqwest_network_client::ReqwestNetworkClient;
+use super::network_client::NetworkClient;
+use super::{KDC_TYPE_ENV, SSPI_RS_KERBEROS_URL_ENV};
 
 #[derive(Debug, Clone)]
 pub enum KdcType {
@@ -32,12 +32,21 @@ pub struct KerberosConfig {
 }
 
 impl KerberosConfig {
-    #[cfg(feature = "with_network_client")]
+    #[cfg(feature = "with_request_http_client")]
     pub fn from_env() -> Self {
         Self {
-            url: Url::from_str(&env::var(URL_ENV).unwrap()).unwrap(),
+            url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),
             kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
             network_client: Box::new(ReqwestNetworkClient::new()),
+        }
+    }
+
+    #[cfg(not(feature = "with_request_http_client"))]
+    pub fn from_env(network_client: Box<dyn NetworkClient>) -> Self {
+        Self {
+            url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),
+            kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
+            network_client,
         }
     }
 }

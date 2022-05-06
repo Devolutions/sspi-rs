@@ -19,6 +19,10 @@ use std::{error, fmt, io, result, str, string};
 
 use bitflags::bitflags;
 use num_derive::{FromPrimitive, ToPrimitive};
+use picky_asn1::restricted_string::CharSetError;
+use picky_asn1_der::Asn1DerError;
+use picky_krb::gss_api::GssApiMessageError;
+use picky_krb::messages::KrbError;
 
 use self::{
     builders::{
@@ -1426,6 +1430,82 @@ impl error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<Asn1DerError> for Error {
+    fn from(err: Asn1DerError) -> Self {
+        Self::new(
+            ErrorKind::InvalidToken,
+            format!("ASN1 DER error: {:?}", err),
+        )
+    }
+}
+
+impl From<KrbError> for Error {
+    fn from(err: KrbError) -> Self {
+        Self::new(
+            ErrorKind::InternalError,
+            format!("Got the krb error: {}", err.0.to_string()),
+        )
+    }
+}
+
+impl From<kerberos_crypto::Error> for Error {
+    fn from(err: kerberos_crypto::Error) -> Self {
+        use kerberos_crypto::Error;
+
+        match err {
+            Error::DecryptionError(description) => Self {
+                error_type: ErrorKind::DecryptFailure,
+                description,
+            },
+            Error::UnsupportedAlgorithm(alg) => Self {
+                error_type: ErrorKind::InternalError,
+                description: format!("unsupported algorithm: {}", alg),
+            },
+            Error::InvalidKeyCharset => Self {
+                error_type: ErrorKind::InternalError,
+                description: "invalid key charset".to_owned(),
+            },
+            Error::InvalidKeyLength(len) => Self {
+                error_type: ErrorKind::InternalError,
+                description: format!("invalid key len: {}", len),
+            },
+        }
+    }
+}
+
+impl From<CharSetError> for Error {
+    fn from(err: CharSetError) -> Self {
+        Self {
+            error_type: ErrorKind::InternalError,
+            description: err.to_string(),
+        }
+    }
+}
+
+impl From<GssApiMessageError> for Error {
+    fn from(err: GssApiMessageError) -> Self {
+        match err {
+            GssApiMessageError::IoError(err) => Self::from(err),
+            GssApiMessageError::InvalidId(_, _) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::InvalidMicFiller(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::InvalidWrapFiller(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::Asn1Error(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+        }
     }
 }
 

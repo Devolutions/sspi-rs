@@ -56,14 +56,14 @@ pub type LpStr = *const SecChar;
 
 pub type SecChar = c_char;
 
-unsafe fn raw_str_to_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
+unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     from_raw_parts(raw_buffer, len)
         .iter()
         .map(|c| *c as u8)
         .collect()
 }
 
-unsafe fn c_str_to_string(s: *const SecChar) -> String {
+unsafe fn c_str_into_string(s: *const SecChar) -> String {
     let mut len = 0;
 
     while *(s.add(len)) != 0 {
@@ -74,11 +74,10 @@ unsafe fn c_str_to_string(s: *const SecChar) -> String {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn EnumerateSecurityPackagesA(
+pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut c_ulong,
-    pp_package_info: *mut *mut SecPkgInfoA,
+    pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
-    println!("EnumerateSecurityPackagesA");
     let packages = enumerate_security_packages().unwrap();
 
     *pc_packages = packages.len() as c_ulong;
@@ -93,10 +92,10 @@ pub unsafe extern "C" fn EnumerateSecurityPackagesA(
     0
 }
 pub type EnumerateSecurityPackagesFnA =
-    unsafe extern "C" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
+    unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn QueryCredentialsAttributesA(
+pub extern "system" fn QueryCredentialsAttributesA(
     _ph_credential: PCredHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
@@ -104,10 +103,10 @@ pub extern "C" fn QueryCredentialsAttributesA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type QueryCredentialsAttributesFnA =
-    extern "C" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
+    extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "C" fn AcquireCredentialsHandleA(
+pub unsafe extern "system" fn AcquireCredentialsHandleA(
     _psz_principal: LpStr,
     _psz_package: LpStr,
     _f_aredential_use: c_ulong,
@@ -118,26 +117,22 @@ pub unsafe extern "C" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    println!("AcquireCredentialsHandleA");
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
-    println!("auth_data: {:?}", auth_data);
 
     let creds = AuthIdentityBuffers {
-        user: raw_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-        domain: raw_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-        password: raw_str_to_bytes(
+        user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
+        domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
+        password: raw_str_into_bytes(
             (*auth_data).password,
             (*auth_data).password_length as usize * 2,
         ),
     };
 
-    println!("creds: {:?}", creds);
-
     (*ph_credential).dw_lower = into_raw_ptr(creds) as c_ulonglong;
 
     0
 }
-pub type AcquireCredentialsHandleFnA = unsafe extern "C" fn(
+pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     LpStr,
     LpStr,
     c_ulong,
@@ -150,7 +145,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "C" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "C" fn InitializeSecurityContextA(
+pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
     ph_context: PCtxtHandle,
     _p_target_name: PSecurityString,
@@ -164,10 +159,6 @@ pub unsafe extern "C" fn InitializeSecurityContextA(
     _pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    println!(
-        "InitializeSecurityContextA {}",
-        std::mem::size_of::<SecBufferDesc>()
-    );
     let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
 
     let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
@@ -175,8 +166,6 @@ pub unsafe extern "C" fn InitializeSecurityContextA(
     } else {
         Some(auth_data.as_mut().unwrap().clone())
     };
-
-    println!("auth_data: {:?}", auth_data);
 
     let kerberos_ptr = p_ctxt_handle_to_kerberos(ph_context);
     let kerberos = kerberos_ptr.as_mut().unwrap();
@@ -217,7 +206,7 @@ pub unsafe extern "C" fn InitializeSecurityContextA(
         |result| result.status.to_u32().unwrap(),
     )
 }
-pub type InitializeSecurityContextFnA = unsafe extern "C" fn(
+pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     PSecurityString,
@@ -233,15 +222,11 @@ pub type InitializeSecurityContextFnA = unsafe extern "C" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "C" fn QueryContextAttributesA(
+pub unsafe extern "system" fn QueryContextAttributesA(
     ph_context: PCtxtHandle,
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    println!(
-        "QueryContextAttributesA {}",
-        std::mem::size_of::<SecPkgContextSizes>()
-    );
     match ul_attribute {
         0 => {
             let kerberos = p_ctxt_handle_to_kerberos(ph_context).as_mut().unwrap();
@@ -260,15 +245,14 @@ pub unsafe extern "C" fn QueryContextAttributesA(
     }
 }
 pub type QueryContextAttributesFnA =
-    unsafe extern "C" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
+    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "C" fn QuerySecurityPackageInfoA(
+pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
-    println!("QuerySecurityPackageInfoA");
-    let pkg_name = c_str_to_string(p_package_name);
+    let pkg_name = c_str_into_string(p_package_name);
 
     *pp_package_info = enumerate_security_packages()
         .unwrap()
@@ -280,10 +264,10 @@ pub unsafe extern "C" fn QuerySecurityPackageInfoA(
     0
 }
 pub type QuerySecurityPackageInfoFnA =
-    unsafe extern "C" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
+    unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn ImportSecurityContextA(
+pub extern "system" fn ImportSecurityContextA(
     _psz_package: PSecurityString,
     _p_packed_context: PSecBuffer,
     _token: *mut c_void,
@@ -292,10 +276,10 @@ pub extern "C" fn ImportSecurityContextA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type ImportSecurityContextFnA =
-    extern "C" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
+    extern "system" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn AddCredentialsA(
+pub extern "system" fn AddCredentialsA(
     _ph_credential: PCredHandle,
     _s1: *mut SecChar,
     _s2: *mut SecChar,
@@ -307,7 +291,7 @@ pub extern "C" fn AddCredentialsA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-pub type AddCredentialsFnA = extern "C" fn(
+pub type AddCredentialsFnA = extern "system" fn(
     PCredHandle,
     *mut SecChar,
     *mut SecChar,
@@ -319,7 +303,7 @@ pub type AddCredentialsFnA = extern "C" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn SetContextAttributesA(
+pub extern "system" fn SetContextAttributesA(
     _ph_context: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
@@ -328,10 +312,10 @@ pub extern "C" fn SetContextAttributesA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type SetContextAttributesFnA =
-    extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+    extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn SetCredentialsAttributesA(
+pub extern "system" fn SetCredentialsAttributesA(
     _ph_context: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
@@ -340,10 +324,10 @@ pub extern "C" fn SetCredentialsAttributesA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type SetCredentialsAttributesFnA =
-    extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+    extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn ChangeAccountPasswordA(
+pub extern "system" fn ChangeAccountPasswordA(
     _psz_package_name: *mut SecChar,
     _psz_domain_name: *mut SecChar,
     _psz_account_name: *mut SecChar,
@@ -355,7 +339,7 @@ pub extern "C" fn ChangeAccountPasswordA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-pub type ChangeAccountPasswordFnA = extern "C" fn(
+pub type ChangeAccountPasswordFnA = extern "system" fn(
     *mut SecChar,
     *mut SecChar,
     *mut SecChar,
@@ -367,7 +351,7 @@ pub type ChangeAccountPasswordFnA = extern "C" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn QueryContextAttributesExA(
+pub extern "system" fn QueryContextAttributesExA(
     _ph_context: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
@@ -376,10 +360,10 @@ pub extern "C" fn QueryContextAttributesExA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type QueryContextAttributesExFnA =
-    extern "C" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+    extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "C" fn QueryCredentialsAttributesExA(
+pub extern "system" fn QueryCredentialsAttributesExA(
     _ph_credential: PCredHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
@@ -388,4 +372,4 @@ pub extern "C" fn QueryCredentialsAttributesExA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type QueryCredentialsAttributesExFnA =
-    extern "C" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+    extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;

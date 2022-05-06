@@ -178,12 +178,10 @@ impl SspiImpl for Ntlm {
         &mut self,
         builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
-        println!("in initialize_security_context_impl {:?}", self.state);
         let status = match self.state {
             NtlmState::Initial => {
                 let output_token =
                     SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                println!("set nego state");
                 self.state = NtlmState::Negotiate;
 
                 client::write_negotiate(self, &mut output_token.buffer)?

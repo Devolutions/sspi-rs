@@ -11,7 +11,7 @@ use std::{
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
-use sspi::{Kerberos, SecurityBuffer, SecurityBufferType, KERBEROS_VERSION};
+use sspi::{Kerberos, KerberosConfig, SecurityBuffer, SecurityBufferType, KERBEROS_VERSION};
 
 use crate::{
     a::{
@@ -56,7 +56,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_kerberos(mut context: PCtxtHandle) -> *mut
         });
     }
     if (*context).dw_lower == 0 {
-        (*context).dw_lower = into_raw_ptr(Kerberos::new_client_from_env()) as c_ulonglong;
+        (*context).dw_lower = into_raw_ptr(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()) as c_ulonglong;
     }
     (*context).dw_lower as *mut Kerberos
 }
@@ -98,16 +98,13 @@ pub(crate) unsafe fn security_buffers_to_raw(buffers: Vec<SecurityBuffer>) -> PS
     )
 }
 
-pub(crate) unsafe fn copy_to_c_sec_buffer(
-    from_buffers: &Vec<SecurityBuffer>,
-    to_buffers: PSecBuffer,
-) {
+pub(crate) unsafe fn copy_to_c_sec_buffer(from_buffers: &[SecurityBuffer], to_buffers: PSecBuffer) {
     let to_buffers = from_raw_parts_mut(to_buffers as *mut SecBuffer, from_buffers.len());
     for i in 0..from_buffers.len() {
         let buffer = &from_buffers[i];
         let len = buffer.buffer.len();
 
-        to_buffers[i].cb_buffer = buffer.buffer.len().try_into().unwrap();
+        to_buffers[i].cb_buffer = len.try_into().unwrap();
         let to_buffer = from_raw_parts_mut(to_buffers[i].pv_buffer, len);
         to_buffer.copy_from_slice(from_raw_parts(buffer.buffer.as_ptr() as *const i8, len));
     }
@@ -192,7 +189,7 @@ pub struct SecurityFunctionTableW {
 pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
 #[no_mangle]
-pub extern "C" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
+pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     into_raw_ptr(SecurityFunctionTableA {
         dwVersion: KERBEROS_VERSION as c_ulong,
         EnumerateSecurityPackagesA,
@@ -231,7 +228,7 @@ pub extern "C" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
 }
 
 #[no_mangle]
-pub extern "C" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
+pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
     into_raw_ptr(SecurityFunctionTableW {
         dwVersion: KERBEROS_VERSION as c_ulong,
         EnumerateSecurityPackagesW,
@@ -267,26 +264,4 @@ pub extern "C" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
         QueryContextAttributesExW,
         QueryCredentialsAttributesExW,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::vec_into_raw_ptr;
-
-    #[test]
-    fn test_vec() {
-        let v = vec![1, 2, 3, 4];
-
-        println!("v  : {:?}", v);
-
-        unsafe {
-            let ptr = vec_into_raw_ptr(v);
-            *ptr = 5;
-
-            let arr = std::slice::from_raw_parts(ptr, 4);
-            println!("arr: {:?}", arr);
-
-            libc::free(ptr as *mut libc::c_void);
-        }
-    }
 }
