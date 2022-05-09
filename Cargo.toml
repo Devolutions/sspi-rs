@@ -10,7 +10,7 @@ description = "A Rust implementation of the Security Support Provider Interface 
 edition = "2018"
 
 [features]
-with_request_http_client = ["reqwest"]
+with_reqwest_network_client = ["reqwest"]
 
 [dependencies]
 byteorder = "1.2.7"

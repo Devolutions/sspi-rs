@@ -3,7 +3,7 @@ use std::{env, str::FromStr};
 
 use url::Url;
 
-#[cfg(feature = "with_request_http_client")]
+#[cfg(feature = "with_reqwest_network_client")]
 use super::network_client::reqwest_network_client::ReqwestNetworkClient;
 use super::network_client::NetworkClient;
 use super::{KDC_TYPE_ENV, SSPI_RS_KERBEROS_URL_ENV};
@@ -32,7 +32,7 @@ pub struct KerberosConfig {
 }
 
 impl KerberosConfig {
-    #[cfg(feature = "with_request_http_client")]
+    #[cfg(feature = "with_reqwest_network_client")]
     pub fn from_env() -> Self {
         Self {
             url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),
@@ -41,7 +41,7 @@ impl KerberosConfig {
         }
     }
 
-    #[cfg(not(feature = "with_request_http_client"))]
+    #[cfg(not(feature = "with_reqwest_network_client"))]
     pub fn from_env(network_client: Box<dyn NetworkClient>) -> Self {
         Self {
             url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),

@@ -10,7 +10,7 @@ pub trait NetworkClient: Debug {
     fn clone(&self) -> Box<dyn NetworkClient>;
 }
 
-#[cfg(feature = "with_request_http_client")]
+#[cfg(feature = "with_reqwest_network_client")]
 pub mod reqwest_network_client {
     use std::{
         io::{Read, Write},
