@@ -163,7 +163,6 @@ impl Sspi for Kerberos {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-
         let cipher = new_kerberos_cipher(
             self.encryption_params
                 .encryption_type
@@ -597,4 +596,3 @@ impl SspiEx for Kerberos {
         self.auth_identity = Some(identity.into());
     }
 }
-
