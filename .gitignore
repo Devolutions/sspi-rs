@@ -1,5 +1,4 @@
-target/
-csspi/target/
+target
 **/*.rs.bk
 Cargo.lock
 .idea/
