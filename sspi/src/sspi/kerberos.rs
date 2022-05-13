@@ -11,9 +11,9 @@ use std::io::Write;
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::data_types::KrbResult;
+use picky_krb::data_types::{ResultExt, KrbResult};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApRep, ApReq, AsRep, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
 
@@ -379,16 +379,17 @@ impl SspiImpl for Kerberos {
                 let response = self.send(&serialize_message(&as_req)?)?;
 
                 // first 4 bytes is message len. skipping them
-                let as_rep: KrbResult<ApRep> = picky_asn1_der::from_bytes(&response[4..])?;
+                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+                let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
-                if as_rep.0.is_ok() {
+                if as_rep.is_ok() {
                     return Err(Error {
                         error_type: ErrorKind::InternalError,
                         description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
                     });
                 }
 
-                if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.0.unwrap_err())? {
+                if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
                     salt = correct_salt;
                 }
 
@@ -397,8 +398,9 @@ impl SspiImpl for Kerberos {
                 let response = self.send(&serialize_message(&as_req)?)?;
 
                 // first 4 bytes is message len. skipping them
-                let as_rep: KrbResult<AsRep> = picky_asn1_der::from_bytes(&response[4..])?;
-                let as_rep = as_rep.0?;
+                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+                let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+                let as_rep = as_rep?;
 
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
                 self.encryption_params.encryption_type = Some(encryption_type as i32);
@@ -421,8 +423,9 @@ impl SspiImpl for Kerberos {
                 let response = self.send(&serialize_message(&tgs_req)?)?;
 
                 // first 4 bytes is message len. skipping them
-                let tgs_rep: KrbResult<TgsRep> = picky_asn1_der::from_bytes(&response[4..])?;
-                let tgs_rep = tgs_rep.0?;
+                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+                let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
+                let tgs_rep = tgs_rep?;
 
                 self.encryption_params.session_key = Some(extract_session_key_from_tgs_rep(
                     &tgs_rep,
