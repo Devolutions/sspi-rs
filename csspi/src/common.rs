@@ -1,106 +1,18 @@
-use std::{
-    ptr::{drop_in_place, null},
-    slice::from_raw_parts,
-};
+use std::ptr::{drop_in_place, null};
+use std::slice::from_raw_parts;
 
-#[cfg(not(target_os = "windows"))]
-use libc::c_uint;
-use libc::{c_char, c_long, c_ulong, c_ulonglong, c_ushort, c_void};
+use libc::{c_ulong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
-    AuthIdentityBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind,
-    SecurityBuffer, SecurityBufferType, ServerRequestFlags, Sspi,
+    AuthIdentityBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer,
+    SecurityBufferType, ServerRequestFlags, Sspi,
 };
 
-use crate::{
-    copy_to_c_sec_buffer, p_ctxt_handle_to_kerberos, p_sec_buffers_to_security_buffers,
-    security_buffers_to_raw,
+use crate::sec_buffer::{
+    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc,
 };
-
-pub type SecurityStatus = u32;
-
-#[repr(C)]
-pub struct SecHandle {
-    pub dw_lower: c_ulonglong,
-    pub dw_upper: c_ulonglong,
-}
-
-pub type PCredHandle = *mut SecHandle;
-pub type PCtxtHandle = *mut SecHandle;
-
-#[repr(C)]
-pub struct SecurityInteger {
-    pub low_part: c_ulong,
-    pub high_part: c_long,
-}
-
-pub type PTimeStamp = *mut SecurityInteger;
-
-#[repr(C)]
-pub struct SecurityString {
-    pub length: c_ushort,
-    pub maximum_length: c_ushort,
-    pub buffer: *mut c_ushort,
-}
-
-pub type PSecurityString = *mut SecurityString;
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct SecBuffer {
-    pub cb_buffer: c_ulong,
-    pub buffer_type: c_ulong,
-    pub pv_buffer: *mut c_char,
-}
-
-#[cfg(not(target_os = "windows"))]
-#[repr(C)]
-pub struct SecBuffer {
-    pub cb_buffer: c_uint,
-    pub buffer_type: c_uint,
-    pub pv_buffer: *mut c_char,
-}
-
-pub type PSecBuffer = *mut SecBuffer;
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct SecBufferDesc {
-    pub ul_version: c_ulong,
-    pub c_buffers: c_ulong,
-    pub p_buffers: PSecBuffer,
-}
-
-#[cfg(not(target_os = "windows"))]
-#[repr(C)]
-pub struct SecBufferDesc {
-    pub ul_version: c_uint,
-    pub c_buffers: c_uint,
-    pub p_buffers: PSecBuffer,
-}
-
-pub type PSecBufferDesc = *mut SecBufferDesc;
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct SecPkgContextSizes {
-    pub cb_max_token: c_ulong,
-    pub cb_max_signature: c_ulong,
-    pub cb_block_size: c_ulong,
-    pub cb_security_trailer: c_ulong,
-}
-
-#[cfg(not(target_os = "windows"))]
-#[repr(C)]
-pub struct SecPkgContextSizes {
-    pub cb_max_token: c_uint,
-    pub cb_max_signature: c_uint,
-    pub cb_block_size: c_uint,
-    pub cb_security_trailer: c_uint,
-}
-
-pub type SecGetKeyFn =
-    extern "system" fn(*mut c_void, *mut c_void, u32, *mut *mut c_void, *mut i32);
+use crate::sec_handle::{p_ctxt_handle_to_kerberos, PCredHandle, PCtxtHandle};
+use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
 
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
@@ -136,20 +48,13 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let mut output_token = vec![SecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
     let result_status = kerberos
         .accept_security_context()
         .with_credentials_handle(&mut auth_data)
-        .with_context_requirements(
-            ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap(),
-        )
-        .with_target_data_representation(
-            DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap(),
-        )
+        .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
+        .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
         .with_input(&mut input_tokens)
         .with_output(&mut output_token)
         .execute()
@@ -175,10 +80,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "system" fn CompleteAuthToken(
-    ph_context: PCtxtHandle,
-    p_token: PSecBufferDesc,
-) -> SecurityStatus {
+pub unsafe extern "system" fn CompleteAuthToken(ph_context: PCtxtHandle, p_token: PSecBufferDesc) -> SecurityStatus {
     let kerberos = p_ctxt_handle_to_kerberos(ph_context).as_mut().unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
@@ -189,8 +91,7 @@ pub unsafe extern "system" fn CompleteAuthToken(
         |result| result.to_u32().unwrap(),
     )
 }
-pub type CompleteAuthTokenFn =
-    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
+pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(ph_context: PCtxtHandle) -> SecurityStatus {
@@ -202,10 +103,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(ph_context: PCtxtHandle) -> 
 pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "system" fn ApplyControlToken(
-    _ph_context: PCtxtHandle,
-    _p_input: PSecBufferDesc,
-) -> SecurityStatus {
+pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSecBufferDesc) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
@@ -231,8 +129,7 @@ pub extern "system" fn MakeSignature(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-pub type MakeSignatureFn =
-    extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
+pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
 pub extern "system" fn VerifySignature(
@@ -243,8 +140,7 @@ pub extern "system" fn VerifySignature(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-pub type VerifySignatureFn =
-    extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
+pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
 
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
@@ -266,14 +162,10 @@ pub type ExportSecurityContextFn =
     extern "system" fn(PCtxtHandle, c_ulong, PSecBuffer, *mut *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "system" fn QuerySecurityContextToken(
-    _ph_context: PCtxtHandle,
-    _token: *mut *mut c_void,
-) -> SecurityStatus {
+pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _token: *mut *mut c_void) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-pub type QuerySecurityContextTokenFn =
-    extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
+pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
 #[no_mangle]
 pub unsafe extern "system" fn EncryptMessage(
@@ -301,8 +193,7 @@ pub unsafe extern "system" fn EncryptMessage(
 
     result_status
 }
-pub type EncryptMessageFn =
-    unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
+pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
 pub unsafe extern "system" fn DecryptMessage(
@@ -317,11 +208,10 @@ pub unsafe extern "system" fn DecryptMessage(
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
     let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let (decryption_flags, status) =
-        match kerberos.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
-            Ok(flags) => (flags, 0),
-            Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
-        };
+    let (decryption_flags, status) = match kerberos.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
+        Ok(flags) => (flags, 0),
+        Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
+    };
 
     copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
     *pf_qop = decryption_flags.bits().try_into().unwrap();
