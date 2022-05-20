@@ -1,3 +1,5 @@
+#[cfg(not(target_os = "windows"))]
+use libc::c_uint;
 use libc::{c_char, c_long, c_ulong, c_ushort, c_void};
 
 pub type SecChar = c_char;

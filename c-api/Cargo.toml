@@ -1,19 +1,18 @@
 [package]
-name = "csspi"
+name = "sspi-c-api"
 version = "0.1.0"
 license = "MIT/Apache-2.0"
 homepage = "https://github.com/devolutions/sspi-rs"
 repository = "https://github.com/devolutions/sspi-rs"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 edition = "2021"
+publish = false
 
 [lib]
-name = "csspi"
+name = "sspi"
 crate-type = ["cdylib"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-sspi = { path = "../sspi", features = ["network_client"] }
+sspi = { path = "..", features = ["network_client"] }
 libc = "0.2"
 num-traits = "0.2"

@@ -1,8 +1,10 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
+use libc::c_char;
 #[cfg(not(target_os = "windows"))]
 use libc::c_uint;
-use libc::{c_char, c_ulong};
+#[cfg(target_os = "windows")]
+use libc::c_ulong;
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::{SecurityBuffer, SecurityBufferType};
 
