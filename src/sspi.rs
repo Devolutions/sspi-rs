@@ -1,32 +1,31 @@
 /// The builders are required to compose and execute some of the `Sspi` methods.
 pub mod builders;
 pub mod internal;
+pub mod kerberos;
 #[cfg(windows)]
 pub mod winapi;
 
 mod ntlm;
 
-pub use self::{
-    builders::{
-        AcceptSecurityContextResult, AcquireCredentialsHandleResult,
-        InitializeSecurityContextResult,
-    },
-    ntlm::{AuthIdentity, Ntlm},
-};
-
 use std::{error, fmt, io, result, str, string};
 
 use bitflags::bitflags;
 use num_derive::{FromPrimitive, ToPrimitive};
+use picky_asn1::restricted_string::CharSetError;
+use picky_asn1_der::Asn1DerError;
+use picky_krb::gss_api::GssApiMessageError;
+use picky_krb::messages::KrbError;
 
-use self::{
-    builders::{
-        AcceptSecurityContext, AcquireCredentialsHandle, EmptyAcceptSecurityContext,
-        EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
-        FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContext,
-    },
-    internal::SspiImpl,
+use self::builders::{
+    AcceptSecurityContext, AcquireCredentialsHandle, EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle,
+    EmptyInitializeSecurityContext, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, InitializeSecurityContext,
 };
+pub use self::builders::{
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
+};
+use self::internal::SspiImpl;
+pub use self::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm};
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;
@@ -57,6 +56,7 @@ const PACKAGE_ID_NONE: u16 = 0xFFFF;
 pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<PackageInfo> {
     match package_type {
         SecurityPackageType::Ntlm => Ok(ntlm::PACKAGE_INFO.clone()),
+        SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -86,7 +86,10 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
 ///
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
-    Ok(vec![ntlm::PACKAGE_INFO.clone()])
+    Ok(vec![
+        kerberos::PACKAGE_INFO.clone(),
+        kerberos::NEGO_PACKAGE_INFO.clone(),
+    ])
 }
 
 /// This trait provides interface for all available SSPI functions. The `acquire_credentials_handle`,
@@ -142,8 +145,7 @@ where
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
     fn acquire_credentials_handle(
         &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>
-    {
+    ) -> EmptyAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData> {
         AcquireCredentialsHandle::new(self)
     }
 
@@ -204,9 +206,7 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(
-        &mut self,
-    ) -> EmptyInitializeSecurityContext<'_, Self, Self::CredentialsHandle> {
+    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self, Self::CredentialsHandle> {
         InitializeSecurityContext::new(self)
     }
 
@@ -287,9 +287,7 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(
-        &mut self,
-    ) -> EmptyAcceptSecurityContext<'_, Self, Self::CredentialsHandle> {
+    fn accept_security_context(&mut self) -> EmptyAcceptSecurityContext<'_, Self, Self::CredentialsHandle> {
         AcceptSecurityContext::new(self)
     }
 
@@ -587,11 +585,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBuffer],
-        sequence_number: u32,
-    ) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///
@@ -760,16 +754,16 @@ bitflags! {
         /// Support a stream-oriented connection.
         const STREAM = 0x8000;
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
-        const INTEGRITY = 0x10_000;
-        const IDENTIFY = 0x20_000;
-        const NULL_SESSION = 0x40_000;
+        const INTEGRITY = 0x0001_0000;
+        const IDENTIFY = 0x0002_0000;
+        const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
-        const MANUAL_CRED_VALIDATION = 0x80_000;
-        const RESERVED1 = 0x100_000;
-        const FRAGMENT_TO_FIT = 0x200_000;
-        const FORWARD_CREDENTIALS = 0x400_000;
+        const MANUAL_CRED_VALIDATION = 0x0008_0000;
+        const RESERVED1 = 0x0010_0000;
+        const FRAGMENT_TO_FIT = 0x0020_0000;
+        const FORWARD_CREDENTIALS = 0x0040_0000;
         /// If this flag is set, the `Integrity` flag is ignored. This value is supported only by the Negotiate and Kerberos security packages.
-        const NO_INTEGRITY = 0x800_000;
+        const NO_INTEGRITY = 0x0080_0000;
         const USE_HTTP_STYLE = 0x100_0000;
         const UNVERIFIED_TARGET_NAME = 0x2000_0000;
         const CONFIDENTIALITY_ONLY = 0x4000_0000;
@@ -805,13 +799,13 @@ bitflags! {
         /// When errors occur, the remote party will be notified.
         const EXTENDED_ERROR = 0x8000;
         /// Support a stream-oriented connection.
-        const STREAM = 0x10_000;
-        const INTEGRITY = 0x20_000;
-        const LICENSING = 0x40_000;
-        const IDENTIFY = 0x80_000;
-        const ALLOW_NULL_SESSION = 0x100_000;
-        const ALLOW_NON_USER_LOGONS = 0x200_000;
-        const ALLOW_CONTEXT_REPLAY = 0x400_000;
+        const STREAM = 0x0001_0000;
+        const INTEGRITY = 0x0002_0000;
+        const LICENSING = 0x0004_0000;
+        const IDENTIFY = 0x0008_0000;
+        const ALLOW_NULL_SESSION = 0x0010_0000;
+        const ALLOW_NON_USER_LOGONS = 0x0020_0000;
+        const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
         const FRAGMENT_TO_FIT = 0x80_0000;
         const NO_TOKEN = 0x100_0000;
         const PROXY_BINDINGS = 0x400_0000;
@@ -856,14 +850,14 @@ bitflags! {
         /// Support a stream-oriented connection.
         const STREAM = 0x8000;
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
-        const INTEGRITY = 0x10_000;
-        const IDENTIFY = 0x20_000;
-        const NULL_SESSION = 0x40_000;
+        const INTEGRITY = 0x0001_0000;
+        const IDENTIFY = 0x0002_0000;
+        const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
-        const MANUAL_CRED_VALIDATION = 0x80_000;
+        const MANUAL_CRED_VALIDATION = 0x0008_0000;
         const RESERVED1 = 0x10_0000;
-        const FRAGMENT_ONLY = 0x200_000;
-        const FORWARD_CREDENTIALS = 0x400_000;
+        const FRAGMENT_ONLY = 0x0020_0000;
+        const FORWARD_CREDENTIALS = 0x0040_0000;
         const USED_HTTP_STYLE = 0x100_0000;
         const NO_ADDITIONAL_TOKEN = 0x200_0000;
         const REAUTHENTICATION = 0x800_0000;
@@ -900,14 +894,14 @@ bitflags! {
         /// When errors occur, the remote party will be notified.
         const EXTENDED_ERROR = 0x8000;
         /// Support a stream-oriented connection.
-        const STREAM = 0x10_000;
-        const INTEGRITY = 0x20_000;
-        const LICENSING = 0x40_000;
-        const IDENTIFY = 0x80_000;
-        const NULL_SESSION = 0x100_000;
-        const ALLOW_NON_USER_LOGONS = 0x200_000;
-        const ALLOW_CONTEXT_REPLAY = 0x400_000;
-        const FRAGMENT_ONLY = 0x800_000;
+        const STREAM = 0x0001_0000;
+        const INTEGRITY = 0x0002_0000;
+        const LICENSING = 0x0004_0000;
+        const IDENTIFY = 0x0008_0000;
+        const NULL_SESSION = 0x0010_0000;
+        const ALLOW_NON_USER_LOGONS = 0x0020_0000;
+        const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
+        const FRAGMENT_ONLY = 0x0080_0000;
         const NO_TOKEN = 0x100_0000;
         const NO_ADDITIONAL_TOKEN = 0x200_0000;
     }
@@ -937,25 +931,16 @@ pub struct SecurityBuffer {
 
 impl SecurityBuffer {
     pub fn new(buffer: Vec<u8>, buffer_type: SecurityBufferType) -> Self {
-        Self {
-            buffer,
-            buffer_type,
-        }
+        Self { buffer, buffer_type }
     }
 
-    pub fn find_buffer(
-        buffers: &[SecurityBuffer],
-        buffer_type: SecurityBufferType,
-    ) -> Result<&SecurityBuffer> {
-        buffers
-            .iter()
-            .find(|b| b.buffer_type == buffer_type)
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
-                )
-            })
+    pub fn find_buffer(buffers: &[SecurityBuffer], buffer_type: SecurityBufferType) -> Result<&SecurityBuffer> {
+        buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("No buffer was provided with type {:?}", buffer_type),
+            )
+        })
     }
 
     pub fn find_buffer_mut(
@@ -1039,6 +1024,7 @@ pub enum CredentialUse {
 #[derive(Debug, Clone)]
 pub enum SecurityPackageType {
     Ntlm,
+    Kerberos,
     Other(String),
 }
 
@@ -1046,6 +1032,7 @@ impl string::ToString for SecurityPackageType {
     fn to_string(&self) -> String {
         match self {
             SecurityPackageType::Ntlm => ntlm::PKG_NAME.to_string(),
+            SecurityPackageType::Kerberos => kerberos::PKG_NAME.to_string(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1057,6 +1044,7 @@ impl str::FromStr for SecurityPackageType {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
+            kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }
@@ -1224,14 +1212,14 @@ bitflags! {
         /// and one of the name choices in the end certificate is explicitly excluded.
         const HAS_EXCLUDED_NAME_CONSTRAINT = 0x8000;
         /// The certificate chain is not complete.
-        const IS_PARTIAL_CHAIN = 0x10_000;
+        const IS_PARTIAL_CHAIN = 0x0001_0000;
         /// A [certificate trust list](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly)
         /// (CTL) used to create this chain was not time valid.
-        const CTL_IS_NOT_TIME_VALID = 0x20_000;
+        const CTL_IS_NOT_TIME_VALID = 0x0002_0000;
         /// A CTL used to create this chain did not have a valid signature.
-        const CTL_IS_NOT_SIGNATURE_VALID = 0x40_000;
+        const CTL_IS_NOT_SIGNATURE_VALID = 0x0004_0000;
         /// A CTL used to create this chain is not valid for this usage.
-        const CTL_IS_NOT_VALID_FOR_USAGE = 0x80_000;
+        const CTL_IS_NOT_VALID_FOR_USAGE = 0x0008_0000;
         /// The revocation status of the certificate or one of the certificates in the certificate chain is either offline or stale.
         const IS_OFFLINE_REVOCATION = 0x100_0000;
         /// The end certificate does not have any resultant issuance policies, and one of the issuing
@@ -1270,15 +1258,15 @@ bitflags! {
         const IS_PEER_TRUSTED = 0x800;
         /// This certificate's [certificate revocation list](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly)
         /// (CRL) validity has been extended. This status code applies to certificates only.
-        const HAS_CRL_VALIDITY_EXTENDED = 0x1_000;
-        const IS_FROM_EXCLUSIVE_TRUST_STORE = 0x2_000;
-        const IS_CA_TRUSTED = 0x4_000;
-        const HAS_AUTO_UPDATE_WEAK_SIGNATURE = 0x8_000;
-        const SSL_HANDSHAKE_OCSP = 0x40_000;
-        const SSL_TIME_VALID_OCSP = 0x80_000;
-        const SSL_RECONNECT_OCSP = 0x100_000;
-        const IS_COMPLEX_CHAIN = 0x10_000;
-        const HAS_ALLOW_WEAK_SIGNATURE = 0x20_000;
+        const HAS_CRL_VALIDITY_EXTENDED = 0x1000;
+        const IS_FROM_EXCLUSIVE_TRUST_STORE = 0x2000;
+        const IS_CA_TRUSTED = 0x4000;
+        const HAS_AUTO_UPDATE_WEAK_SIGNATURE = 0x8000;
+        const SSL_HANDSHAKE_OCSP = 0x0004_0000;
+        const SSL_TIME_VALID_OCSP = 0x0008_0000;
+        const SSL_RECONNECT_OCSP = 0x0010_0000;
+        const IS_COMPLEX_CHAIN = 0x0001_0000;
+        const HAS_ALLOW_WEAK_SIGNATURE = 0x0002_0000;
         const SSL_TIME_VALID = 0x100_0000;
         const NO_TIME_CHECK = 0x200_0000;
     }
@@ -1418,6 +1406,79 @@ impl error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<Asn1DerError> for Error {
+    fn from(err: Asn1DerError) -> Self {
+        Self::new(ErrorKind::InvalidToken, format!("ASN1 DER error: {:?}", err))
+    }
+}
+
+impl From<KrbError> for Error {
+    fn from(err: KrbError) -> Self {
+        Self::new(
+            ErrorKind::InternalError,
+            format!("Got the krb error: {}", err.0.to_string()),
+        )
+    }
+}
+
+impl From<kerberos_crypto::Error> for Error {
+    fn from(err: kerberos_crypto::Error) -> Self {
+        use kerberos_crypto::Error;
+
+        match err {
+            Error::DecryptionError(description) => Self {
+                error_type: ErrorKind::DecryptFailure,
+                description,
+            },
+            Error::UnsupportedAlgorithm(alg) => Self {
+                error_type: ErrorKind::InternalError,
+                description: format!("unsupported algorithm: {}", alg),
+            },
+            Error::InvalidKeyCharset => Self {
+                error_type: ErrorKind::InternalError,
+                description: "invalid key charset".to_owned(),
+            },
+            Error::InvalidKeyLength(len) => Self {
+                error_type: ErrorKind::InternalError,
+                description: format!("invalid key len: {}", len),
+            },
+        }
+    }
+}
+
+impl From<CharSetError> for Error {
+    fn from(err: CharSetError) -> Self {
+        Self {
+            error_type: ErrorKind::InternalError,
+            description: err.to_string(),
+        }
+    }
+}
+
+impl From<GssApiMessageError> for Error {
+    fn from(err: GssApiMessageError) -> Self {
+        match err {
+            GssApiMessageError::IoError(err) => Self::from(err),
+            GssApiMessageError::InvalidId(_, _) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::InvalidMicFiller(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::InvalidWrapFiller(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+            GssApiMessageError::Asn1Error(_) => Self {
+                error_type: ErrorKind::InvalidToken,
+                description: err.to_string(),
+            },
+        }
     }
 }
 

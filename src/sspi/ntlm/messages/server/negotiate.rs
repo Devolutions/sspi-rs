@@ -2,22 +2,13 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::sspi::{
-    self,
-    ntlm::{
-        messages::try_read_version,
-        messages::{read_ntlm_header, MessageFields, MessageTypes},
-        NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
-    },
-    SecurityStatus,
-};
+use crate::sspi::ntlm::messages::{read_ntlm_header, try_read_version, MessageFields, MessageTypes};
+use crate::sspi::ntlm::{NegotiateFlags, NegotiateMessage, Ntlm, NtlmState};
+use crate::sspi::{self, SecurityStatus};
 
 const HEADER_SIZE: usize = 32;
 
-pub fn read_negotiate(
-    context: &mut Ntlm,
-    mut stream: impl io::Read,
-) -> sspi::Result<SecurityStatus> {
+pub fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
@@ -51,8 +42,8 @@ fn read_header(mut buffer: impl io::Read) -> sspi::Result<NegotiateFlags> {
     let mut domain_name = MessageFields::new();
     let mut workstation = MessageFields::new();
 
-    let negotiate_flags = NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?)
-        .unwrap_or_else(NegotiateFlags::empty);
+    let negotiate_flags =
+        NegotiateFlags::from_bits(buffer.read_u32::<LittleEndian>()?).unwrap_or_else(NegotiateFlags::empty);
 
     if !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET)
         || !negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM)

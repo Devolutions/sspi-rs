@@ -82,14 +82,15 @@ cfg_if::cfg_if! {
     }
 }
 
+pub use crate::sspi::kerberos::config::KerberosConfig;
+pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{
-    builders, enumerate_security_packages, internal, query_security_package_info,
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Ntlm,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx,
+    builders, enumerate_security_packages, internal, kerberos, query_security_package_info,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
+    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames,
+    ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, Ntlm, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
+    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx,
 };

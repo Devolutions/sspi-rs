@@ -3,7 +3,8 @@ use std::io;
 use bitflags::bitflags;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{crypto::HASH_SIZE, sspi::ntlm::messages::computations::SINGLE_HOST_DATA_SIZE};
+use crate::crypto::HASH_SIZE;
+use crate::sspi::ntlm::messages::computations::SINGLE_HOST_DATA_SIZE;
 
 pub const AV_PAIR_ID_BYTES_SIZE: usize = 2;
 pub const AV_PAIR_LEN_BYTES_SIZE: usize = 2;
@@ -25,6 +26,7 @@ const AV_PAIR_FLAGS_SIZE: usize = 4;
 const AV_PAIR_TIMESTAMP_SIZE: usize = 8;
 
 #[derive(Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum AvPair {
     EOL,
     NbComputerName(Vec<u8>),
@@ -78,10 +80,7 @@ impl AvPair {
                 if len != AV_PAIR_FLAGS_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!(
-                            "Got Flags AvPair with len {} != {}",
-                            len, AV_PAIR_FLAGS_SIZE
-                        ),
+                        format!("Got Flags AvPair with len {} != {}", len, AV_PAIR_FLAGS_SIZE),
                     ))
                 } else {
                     Ok(AvPair::Flags(buffer.read_u32::<LittleEndian>()?))
@@ -91,10 +90,7 @@ impl AvPair {
                 if len != AV_PAIR_TIMESTAMP_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!(
-                            "Got Timestamp AvPair with len {} != {}",
-                            len, AV_PAIR_TIMESTAMP_SIZE
-                        ),
+                        format!("Got Timestamp AvPair with len {} != {}", len, AV_PAIR_TIMESTAMP_SIZE),
                     ))
                 } else {
                     Ok(AvPair::Timestamp(buffer.read_u64::<LittleEndian>()?))
@@ -104,10 +100,7 @@ impl AvPair {
                 if len != SINGLE_HOST_DATA_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!(
-                            "Got SingleHost AvPair with len {} != {}",
-                            len, SINGLE_HOST_DATA_SIZE
-                        ),
+                        format!("Got SingleHost AvPair with len {} != {}", len, SINGLE_HOST_DATA_SIZE),
                     ))
                 } else {
                     let mut value = [0x00; SINGLE_HOST_DATA_SIZE];
@@ -120,10 +113,7 @@ impl AvPair {
                 if len != HASH_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!(
-                            "Got ChannelBindings AvPair with len {} != {}",
-                            len, HASH_SIZE
-                        ),
+                        format!("Got ChannelBindings AvPair with len {} != {}", len, HASH_SIZE),
                     ))
                 } else {
                     let mut value = [0x00; HASH_SIZE];
@@ -147,8 +137,7 @@ impl AvPair {
         Ok(av_pairs)
     }
     pub fn list_to_buffer(av_pairs: &[AvPair]) -> io::Result<Vec<u8>> {
-        let mut buffer =
-            Vec::with_capacity(av_pairs.len() * (AV_PAIR_ID_BYTES_SIZE + AV_PAIR_LEN_BYTES_SIZE));
+        let mut buffer = Vec::with_capacity(av_pairs.len() * (AV_PAIR_ID_BYTES_SIZE + AV_PAIR_LEN_BYTES_SIZE));
         for av_pair in av_pairs.iter() {
             av_pair.write_to(&mut buffer)?;
         }

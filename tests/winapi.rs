@@ -6,11 +6,8 @@ use common::{
     check_messages_encryption, create_client_credentials_handle, create_server_credentials_handle,
     process_authentication_without_complete, try_complete_authentication,
 };
-use sspi::{
-    enumerate_security_packages,
-    winapi::{Ntlm, SecurityPackage},
-    AuthIdentity, SecurityPackageType, Sspi,
-};
+use sspi::winapi::{Ntlm, SecurityPackage};
+use sspi::{enumerate_security_packages, AuthIdentity, SecurityPackageType, Sspi};
 
 const NEGOTIATE_SECURITY_PACKAGE_NAME: &str = "Negotiate";
 
@@ -44,8 +41,7 @@ fn ntlm_authentication_fails_with_invalid_client_auth_data() {
     };
 
     let mut client = Ntlm::new();
-    let client_credentials_handle =
-        create_client_credentials_handle(&mut client, Some(&credentials)).unwrap();
+    let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&credentials)).unwrap();
 
     let mut server = Ntlm::new();
     let server_credentials_handle = create_server_credentials_handle(&mut server).unwrap();

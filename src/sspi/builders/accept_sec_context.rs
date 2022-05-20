@@ -3,14 +3,11 @@ use std::marker::PhantomData;
 use chrono::NaiveDateTime;
 
 use super::{
-    ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput,
-    WithTargetDataRepresentation, WithoutContextRequirements, WithoutCredentialsHandle,
-    WithoutOutput, WithoutTargetDataRepresentation,
+    ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
+    WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
-use crate::sspi::{
-    self, internal::SspiImpl, DataRepresentation, SecurityBuffer, SecurityStatus,
-    ServerRequestFlags, ServerResponseFlags,
-};
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::{self, DataRepresentation, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags};
 
 pub type EmptyAcceptSecurityContext<'a, I, C> = AcceptSecurityContext<
     'a,
@@ -255,10 +252,7 @@ impl<'a, Inner: SspiImpl<CredentialsHandle = CredsHandle>, CredsHandle>
         inner.accept_security_context_impl(self)
     }
 
-    pub(crate) fn transform<Inner2>(
-        self,
-        inner: &'a mut Inner2,
-    ) -> FilledAcceptSecurityContext<'a, Inner2, CredsHandle>
+    pub(crate) fn transform<Inner2>(self, inner: &'a mut Inner2) -> FilledAcceptSecurityContext<'a, Inner2, CredsHandle>
     where
         Inner2: SspiImpl,
     {

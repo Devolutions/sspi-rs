@@ -1,34 +1,29 @@
-use std::{convert::TryFrom, ptr};
+use std::convert::TryFrom;
+use std::ptr;
 
 use num_traits::ToPrimitive;
-use winapi::{
-    ctypes::c_void,
-    shared::sspi::{
-        AcceptSecurityContext, AcquireCredentialsHandleW, CompleteAuthToken, CredHandle,
-        CtxtHandle, DecryptMessage, DeleteSecurityContext, EncryptMessage, FreeContextBuffer,
-        InitializeSecurityContextW, QueryContextAttributesW, SecBuffer, SecPkgContext_NamesW,
-        SecPkgContext_PackageInfoW, SecPkgContext_Sizes, TimeStamp, SECPKG_ATTR_NAMES,
-        SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_SIZES,
-    },
-    um::wincrypt::CERT_TRUST_STATUS,
+use winapi::ctypes::c_void;
+use winapi::shared::sspi::{
+    AcceptSecurityContext, AcquireCredentialsHandleW, CompleteAuthToken, CredHandle, CtxtHandle, DecryptMessage,
+    DeleteSecurityContext, EncryptMessage, FreeContextBuffer, InitializeSecurityContextW, QueryContextAttributesW,
+    SecBuffer, SecPkgContext_NamesW, SecPkgContext_PackageInfoW, SecPkgContext_Sizes, TimeStamp, SECPKG_ATTR_NAMES,
+    SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_SIZES,
 };
+use winapi::um::wincrypt::CERT_TRUST_STATUS;
 
 use super::{
-    construct_buffer_desc, convert_winapi_status, file_time_to_system_time, str_to_win_wstring,
-    wide_ptr_to_string, CredentialsGuard,
+    construct_buffer_desc, convert_winapi_status, file_time_to_system_time, str_to_win_wstring, wide_ptr_to_string,
+    CredentialsGuard,
 };
+use crate::sspi::builders::{
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
+};
+use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
-    self,
-    builders::{
-        AcceptSecurityContextResult, AcquireCredentialsHandleResult,
-        InitializeSecurityContextResult,
-    },
-    internal::SspiImpl,
-    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
-    ClientResponseFlags, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerRequestFlags, ServerResponseFlags, Sspi,
+    self, CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags,
+    ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
+    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi,
 };
 
 const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x8000_0084;
@@ -73,11 +68,7 @@ impl SecurityPackage {
     /// # MSDN
     ///
     /// * [QueryContextAttributes function](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--general)
-    fn query_context_attributes<T>(
-        &mut self,
-        attribute: u32,
-        buffer: &mut T,
-    ) -> sspi::Result<SecurityStatus> {
+    fn query_context_attributes<T>(&mut self, attribute: u32, buffer: &mut T) -> sspi::Result<SecurityStatus> {
         let context = self
             .context
             .as_mut()
@@ -99,12 +90,7 @@ impl SspiImpl for SecurityPackage {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        mut builder: FilledAcquireCredentialsHandle<
-            '_,
-            Self,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        mut builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         let principal_name_utf16 = builder.principal_name.map(str_to_win_wstring);
         let principal_name = principal_name_utf16
@@ -157,9 +143,7 @@ impl SspiImpl for SecurityPackage {
 
         let credentials = as_mut_ptr_or_null(builder.credentials_handle.map(|v| v.0).as_mut());
         let target_name_utf16 = builder.target_name.map(str_to_win_wstring);
-        let target_name = target_name_utf16
-            .map(|mut v| v.as_mut_ptr())
-            .unwrap_or(ptr::null_mut());
+        let target_name = target_name_utf16.map(|mut v| v.as_mut_ptr()).unwrap_or(ptr::null_mut());
 
         let (input_buffer_descriptor, _input_buffers) = if let Some(input) = builder.input {
             let mut input_buffers = buffers_as_winapi(input);
@@ -279,10 +263,7 @@ impl SspiImpl for SecurityPackage {
 }
 
 impl Sspi for SecurityPackage {
-    fn complete_auth_token(
-        &mut self,
-        token: &mut [SecurityBuffer],
-    ) -> sspi::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> sspi::Result<SecurityStatus> {
         let context = self
             .context
             .as_mut()
@@ -372,10 +353,7 @@ impl Sspi for SecurityPackage {
         let mut names = username.split('\\').collect::<Vec<_>>();
 
         let (username, domain) = if names.len() > 1 {
-            (
-                names.remove(1).to_string(),
-                Some(names.remove(0).to_string()),
-            )
+            (names.remove(1).to_string(), Some(names.remove(0).to_string()))
         } else {
             (names.remove(0).to_string(), None)
         };
@@ -418,10 +396,7 @@ fn map_output_buffers(with_allocate_memory: bool, output: &mut [SecurityBuffer])
 }
 
 fn buffers_as_winapi(buffers: &mut [SecurityBuffer]) -> Vec<SecBuffer> {
-    buffers
-        .iter_mut()
-        .map(SecBuffer::from)
-        .collect::<Vec<SecBuffer>>()
+    buffers.iter_mut().map(SecBuffer::from).collect::<Vec<SecBuffer>>()
 }
 
 fn from_winapi_buffers(buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBuffer>> {

@@ -1,21 +1,19 @@
-use std::{marker::PhantomData, ptr};
+use std::marker::PhantomData;
+use std::ptr;
 
 use winapi::shared::rpcdce::SEC_WINNT_AUTH_IDENTITY_W;
 
-use super::{
-    str_to_win_wstring, CredentialsGuard, SecurityPackage, SEC_WINNT_AUTH_IDENTITY_UNICODE,
+use super::{str_to_win_wstring, CredentialsGuard, SecurityPackage, SEC_WINNT_AUTH_IDENTITY_UNICODE};
+use crate::sspi::builders::{
+    AcceptSecurityContextResult, AcquireCredentialsHandle, AcquireCredentialsHandleResult,
+    InitializeSecurityContextResult,
 };
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::ntlm::AuthIdentity;
 use crate::sspi::{
-    self,
-    builders::{
-        AcceptSecurityContextResult, AcquireCredentialsHandle, AcquireCredentialsHandleResult,
-        InitializeSecurityContextResult,
-    },
-    internal::SspiImpl,
-    ntlm::AuthIdentity,
-    CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    PackageInfo, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi,
+    self, CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
+    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityPackageType,
+    SecurityStatus, Sspi,
 };
 
 /// Represents a wrapper for Windows-provided NTLM.
@@ -23,9 +21,7 @@ pub struct Ntlm(SecurityPackage);
 
 impl Ntlm {
     pub fn new() -> Self {
-        Self(SecurityPackage::from_package_type(
-            SecurityPackageType::Ntlm,
-        ))
+        Self(SecurityPackage::from_package_type(SecurityPackageType::Ntlm))
     }
 }
 
@@ -41,12 +37,7 @@ impl SspiImpl for Ntlm {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<
-            '_,
-            Self,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         let (identity, _auth_data) = if let Some(auth_data) = builder.auth_data {
             let domain_str = auth_data.domain.clone().unwrap_or_default();
@@ -64,10 +55,7 @@ impl SspiImpl for Ntlm {
                 Flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             };
 
-            (
-                &mut identity as *mut _ as *mut _,
-                Some((user, domain, password)),
-            )
+            (&mut identity as *mut _ as *mut _, Some((user, domain, password)))
         } else {
             (ptr::null_mut(), None)
         };
@@ -103,10 +91,7 @@ impl SspiImpl for Ntlm {
 }
 
 impl Sspi for Ntlm {
-    fn complete_auth_token(
-        &mut self,
-        token: &mut [SecurityBuffer],
-    ) -> sspi::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> sspi::Result<SecurityStatus> {
         self.0.complete_auth_token(token)
     }
 

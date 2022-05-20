@@ -3,21 +3,17 @@
 // This example works with the client example using SSPI.
 // It demonstrates how to connect with a client, establish a secure communication session, and send the client an encrypted message.
 
-use std::{
-    io,
-    net::{TcpListener, TcpStream},
-};
+use std::io;
+use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-
 #[cfg(windows)]
 use sspi::winapi::Ntlm;
 #[cfg(not(windows))]
 use sspi::Ntlm;
-
 use sspi::{
-    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, SecurityBuffer,
-    SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi,
+    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType,
+    SecurityStatus, ServerRequestFlags, Sspi,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -37,8 +33,7 @@ fn main() -> Result<(), io::Error> {
         domain: Some(whoami::hostname()),
     };
 
-    do_authentication(&mut ntlm, &identity, &mut stream)
-        .expect("Failed to authenticate connection");
+    do_authentication(&mut ntlm, &identity, &mut stream).expect("Failed to authenticate connection");
     println!("Authenticated!");
 
     println!("Sending the encrypted message...");
@@ -77,15 +72,11 @@ fn main() -> Result<(), io::Error> {
     Ok(())
 }
 
-fn do_authentication(
-    ntlm: &mut Ntlm,
-    identity: &AuthIdentity,
-    mut stream: &mut TcpStream,
-) -> Result<(), sspi::Error> {
+fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut TcpStream) -> Result<(), sspi::Error> {
     let mut acq_cred_result = ntlm
         .acquire_credentials_handle()
         .with_credential_use(CredentialUse::Inbound)
-        .with_auth_data(&identity)
+        .with_auth_data(identity)
         .execute()?;
 
     let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -103,12 +94,7 @@ fn do_authentication(
             .with_output(&mut output_buffer)
             .execute()?;
 
-        if [
-            SecurityStatus::CompleteAndContinue,
-            SecurityStatus::CompleteNeeded,
-        ]
-        .contains(&result.status)
-        {
+        if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
             println!("Completing the token...");
             ntlm.complete_auth_token(&mut output_buffer)?;
         }
@@ -118,12 +104,7 @@ fn do_authentication(
         output_buffer[0].buffer.clear();
         input_buffer[0].buffer.clear();
 
-        if ![
-            SecurityStatus::CompleteAndContinue,
-            SecurityStatus::ContinueNeeded,
-        ]
-        .contains(&result.status)
-        {
+        if ![SecurityStatus::CompleteAndContinue, SecurityStatus::ContinueNeeded].contains(&result.status) {
             break;
         }
     }
@@ -132,10 +113,7 @@ fn do_authentication(
 }
 
 // By agreement, the message length is read from the first 2 bytes of the message in little-endian order.
-pub fn read_message<T: io::Read, A: io::Write>(
-    stream: &mut T,
-    output_buffer: &mut A,
-) -> Result<(), io::Error> {
+pub fn read_message<T: io::Read, A: io::Write>(stream: &mut T, output_buffer: &mut A) -> Result<(), io::Error> {
     let msg_len = stream.read_u16::<LittleEndian>()?;
 
     let mut buff = vec![0u8; msg_len as usize];
@@ -151,14 +129,10 @@ pub fn read_message<T: io::Read, A: io::Write>(
 // By agreement, the message length is written in the first 2 bytes of the message in little-endian order.
 pub fn write_message<T: io::Write>(stream: &mut T, input_buffer: &[u8]) -> Result<(), io::Error> {
     if !input_buffer.is_empty() {
-        println!(
-            "Sending the buffer [{} bytes]: {:?}",
-            input_buffer.len(),
-            input_buffer
-        );
+        println!("Sending the buffer [{} bytes]: {:?}", input_buffer.len(), input_buffer);
 
         stream.write_u16::<LittleEndian>(input_buffer.len() as u16)?;
-        stream.write_all(&input_buffer)?;
+        stream.write_all(input_buffer)?;
     }
 
     Ok(())

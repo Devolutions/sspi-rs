@@ -1,25 +1,24 @@
 mod ntlm;
 mod security_package;
 
-pub use self::{ntlm::Ntlm, security_package::SecurityPackage};
-
-use std::{convert::TryFrom, io, ptr, slice, str::FromStr};
+use std::convert::TryFrom;
+use std::str::FromStr;
+use std::{io, ptr, slice};
 
 use chrono::{NaiveDate, NaiveDateTime};
 use num_traits::{FromPrimitive, ToPrimitive};
-use winapi::{
-    ctypes::{c_ulong, c_void},
-    shared::sspi::{
-        CredHandle, FreeContextBuffer, FreeCredentialsHandle, PSecPkgInfoW,
-        QuerySecurityPackageInfoW, SecBuffer, SecBufferDesc, SecPkgInfoW, TimeStamp,
-        SECBUFFER_VERSION,
-    },
-    um::{minwinbase::SYSTEMTIME, timezoneapi::FileTimeToSystemTime},
+use winapi::ctypes::{c_ulong, c_void};
+use winapi::shared::sspi::{
+    CredHandle, FreeContextBuffer, FreeCredentialsHandle, PSecPkgInfoW, QuerySecurityPackageInfoW, SecBuffer,
+    SecBufferDesc, SecPkgInfoW, TimeStamp, SECBUFFER_VERSION,
 };
+use winapi::um::minwinbase::SYSTEMTIME;
+use winapi::um::timezoneapi::FileTimeToSystemTime;
 
+pub use self::ntlm::Ntlm;
+pub use self::security_package::SecurityPackage;
 use crate::sspi::{
-    self, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus,
+    self, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
 };
 
 const SEC_WINNT_AUTH_IDENTITY_UNICODE: c_ulong = 0x2;
@@ -73,9 +72,7 @@ pub fn enumerate_security_packages() -> sspi::Result<Vec<PackageInfo>> {
 
     let s = unsafe { std::slice::from_raw_parts(packages_guard.0, size as usize) };
 
-    s.iter()
-        .map(PackageInfo::try_from)
-        .collect::<sspi::Result<Vec<_>>>()
+    s.iter().map(PackageInfo::try_from).collect::<sspi::Result<Vec<_>>>()
 }
 
 pub struct CredentialsGuard(pub CredHandle);
@@ -125,8 +122,7 @@ impl TryFrom<&SecBuffer> for SecurityBuffer {
     type Error = sspi::Error;
 
     fn try_from(b: &SecBuffer) -> sspi::Result<Self> {
-        let buffer =
-            unsafe { slice::from_raw_parts(b.pvBuffer as *const _, b.cbBuffer as usize).to_vec() };
+        let buffer = unsafe { slice::from_raw_parts(b.pvBuffer as *const _, b.cbBuffer as usize).to_vec() };
         unsafe { convert_winapi_status(FreeContextBuffer(b.pvBuffer))? };
 
         Ok(Self {
@@ -227,10 +223,7 @@ fn file_time_to_system_time(timestamp: TimeStamp) -> NaiveDateTime {
     let mut system_time = SYSTEMTIME::default();
 
     unsafe {
-        FileTimeToSystemTime(
-            &timestamp as *const _ as *const _,
-            &mut system_time as *mut _,
-        );
+        FileTimeToSystemTime(&timestamp as *const _ as *const _, &mut system_time as *mut _);
     }
 
     NaiveDate::from_ymd(
@@ -247,8 +240,5 @@ fn file_time_to_system_time(timestamp: TimeStamp) -> NaiveDateTime {
 }
 
 fn str_to_win_wstring(value: &str) -> Vec<u16> {
-    value
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>()
+    value.encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>()
 }

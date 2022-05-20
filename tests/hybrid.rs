@@ -4,8 +4,8 @@ pub mod common;
 
 use common::{
     check_messages_encryption, create_client_credentials_handle, create_server_credentials_handle,
-    process_authentication_without_complete, set_identity_and_try_complete_authentication,
-    try_complete_authentication, CredentialsProxyImpl, CREDENTIALS,
+    process_authentication_without_complete, set_identity_and_try_complete_authentication, try_complete_authentication,
+    CredentialsProxyImpl, CREDENTIALS,
 };
 use sspi::{winapi, Ntlm};
 
@@ -14,8 +14,7 @@ fn successful_ntlm_authentication_with_winapi_client_and_non_winapi_server() {
     let mut credentials_proxy = CredentialsProxyImpl::new(&*CREDENTIALS);
 
     let mut client = winapi::Ntlm::new();
-    let client_credentials_handle =
-        create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();
+    let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();
 
     let mut server = Ntlm::new();
     let server_credentials_handle = create_server_credentials_handle(&mut server).unwrap();
@@ -28,12 +27,7 @@ fn successful_ntlm_authentication_with_winapi_client_and_non_winapi_server() {
     )
     .unwrap();
     try_complete_authentication(&mut client, client_status).unwrap();
-    set_identity_and_try_complete_authentication(
-        &mut server,
-        server_status,
-        &mut credentials_proxy,
-    )
-    .unwrap();
+    set_identity_and_try_complete_authentication(&mut server, server_status, &mut credentials_proxy).unwrap();
 
     check_messages_encryption(&mut client, &mut server).unwrap();
 }

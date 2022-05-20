@@ -3,14 +3,11 @@ use std::marker::PhantomData;
 use chrono::NaiveDateTime;
 
 use super::{
-    ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput,
-    WithTargetDataRepresentation, WithoutContextRequirements, WithoutCredentialsHandle,
-    WithoutOutput, WithoutTargetDataRepresentation,
+    ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
+    WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
-use crate::sspi::{
-    self, internal::SspiImpl, ClientRequestFlags, ClientResponseFlags, DataRepresentation,
-    SecurityBuffer, SecurityStatus,
-};
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::{self, ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
 
 pub type EmptyInitializeSecurityContext<'a, I, C> = InitializeSecurityContext<
     'a,

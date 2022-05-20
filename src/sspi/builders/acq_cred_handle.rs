@@ -3,12 +3,11 @@ use std::marker::PhantomData;
 use chrono::NaiveDateTime;
 
 use super::{Assigned, NotAssigned, ToAssign};
-use crate::sspi::{self, internal::SspiImpl, CredentialUse, Luid};
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::{self, CredentialUse, Luid};
 
-pub type EmptyAcquireCredentialsHandle<'a, I, C, A> =
-    AcquireCredentialsHandle<'a, I, C, A, WithoutCredentialUse>;
-pub type FilledAcquireCredentialsHandle<'a, I, C, A> =
-    AcquireCredentialsHandle<'a, I, C, A, WithCredentialUse>;
+pub type EmptyAcquireCredentialsHandle<'a, I, C, A> = AcquireCredentialsHandle<'a, I, C, A, WithoutCredentialUse>;
+pub type FilledAcquireCredentialsHandle<'a, I, C, A> = AcquireCredentialsHandle<'a, I, C, A, WithCredentialUse>;
 
 /// Contains data returned by calling the `execute` method of
 /// the `AcquireCredentialsHandleBuilder` structure. The builder is returned by calling
@@ -104,8 +103,7 @@ where
     }
 }
 
-impl<'a, Inner, CredsHandle, AuthData>
-    FilledAcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData>
+impl<'a, Inner, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData>
 where
     Inner: SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>,
 {

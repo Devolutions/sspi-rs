@@ -2,22 +2,19 @@ mod accept_sec_context;
 mod acq_cred_handle;
 mod init_sec_context;
 
-pub use self::{
-    accept_sec_context::{
-        AcceptSecurityContext, AcceptSecurityContextResult, EmptyAcceptSecurityContext,
-        FilledAcceptSecurityContext,
-    },
-    acq_cred_handle::{
-        AcquireCredentialsHandle, AcquireCredentialsHandleResult, EmptyAcquireCredentialsHandle,
-        FilledAcquireCredentialsHandle, WithCredentialUse, WithoutCredentialUse,
-    },
-    init_sec_context::{
-        EmptyInitializeSecurityContext, FilledInitializeSecurityContext, InitializeSecurityContext,
-        InitializeSecurityContextResult,
-    },
-};
-
 use std::fmt;
+
+pub use self::accept_sec_context::{
+    AcceptSecurityContext, AcceptSecurityContextResult, EmptyAcceptSecurityContext, FilledAcceptSecurityContext,
+};
+pub use self::acq_cred_handle::{
+    AcquireCredentialsHandle, AcquireCredentialsHandleResult, EmptyAcquireCredentialsHandle,
+    FilledAcquireCredentialsHandle, WithCredentialUse, WithoutCredentialUse,
+};
+pub use self::init_sec_context::{
+    EmptyInitializeSecurityContext, FilledInitializeSecurityContext, InitializeSecurityContext,
+    InitializeSecurityContextResult,
+};
 
 /// Allows to represent a value of a builder that is mandatory to be specified (during implementation
 /// of the builder).

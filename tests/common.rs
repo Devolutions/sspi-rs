@@ -2,11 +2,10 @@ use std::io;
 
 use chrono::Local;
 use lazy_static::lazy_static;
-
+use sspi::internal::credssp;
 use sspi::{
-    internal::credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
-    ContextNames, CredentialUse, DataRepresentation, EncryptionFlags, SecurityBuffer,
-    SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
+    AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse, DataRepresentation,
+    EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
 };
 
 lazy_static! {
@@ -31,11 +30,7 @@ impl<'a> CredentialsProxyImpl<'a> {
 impl<'a> credssp::CredentialsProxy for CredentialsProxyImpl<'a> {
     type AuthenticationData = AuthIdentity;
 
-    fn auth_data_by_user(
-        &mut self,
-        username: String,
-        _domain: Option<String>,
-    ) -> io::Result<Self::AuthenticationData> {
+    fn auth_data_by_user(&mut self, username: String, _domain: Option<String>) -> io::Result<Self::AuthenticationData> {
         assert_eq!(username, self.credentials.username);
 
         Ok(self.credentials.clone())
@@ -109,18 +104,14 @@ where
         let client_result = client
             .initialize_security_context()
             .with_credentials_handle(&mut client_creds_handle)
-            .with_context_requirements(
-                ClientRequestFlags::ALLOCATE_MEMORY | ClientRequestFlags::CONFIDENTIALITY,
-            )
+            .with_context_requirements(ClientRequestFlags::ALLOCATE_MEMORY | ClientRequestFlags::CONFIDENTIALITY)
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut server_output)
             .with_output(&mut client_output)
             .execute()?;
         client_status = client_result.status;
 
-        if client_status != SecurityStatus::ContinueNeeded
-            && server_status != SecurityStatus::ContinueNeeded
-        {
+        if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {
             return Ok((client_status, server_status));
         }
 
@@ -136,23 +127,17 @@ where
             .execute()?;
         server_status = server_result.status;
 
-        if client_status != SecurityStatus::ContinueNeeded
-            && server_status != SecurityStatus::ContinueNeeded
-        {
+        if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {
             return Ok((client_status, server_status));
         }
     }
 }
 
-pub fn try_complete_authentication<T>(
-    server: &mut T,
-    auth_server_status: SecurityStatus,
-) -> sspi::Result<()>
+pub fn try_complete_authentication<T>(server: &mut T, auth_server_status: SecurityStatus) -> sspi::Result<()>
 where
     T: Sspi,
 {
-    if auth_server_status == SecurityStatus::CompleteNeeded
-        || auth_server_status == SecurityStatus::CompleteAndContinue
+    if auth_server_status == SecurityStatus::CompleteNeeded || auth_server_status == SecurityStatus::CompleteAndContinue
     {
         let mut token = Vec::new();
         server.complete_auth_token(&mut token)?;
@@ -170,8 +155,7 @@ where
     T: Sspi + SspiEx,
     C: credssp::CredentialsProxy<AuthenticationData = T::AuthenticationData>,
 {
-    if auth_server_status == SecurityStatus::CompleteNeeded
-        || auth_server_status == SecurityStatus::CompleteAndContinue
+    if auth_server_status == SecurityStatus::CompleteNeeded || auth_server_status == SecurityStatus::CompleteAndContinue
     {
         let ContextNames { username, domain } = server.query_context_names()?;
         let auth_data = credentials_proxy.auth_data_by_user(username, domain)?;
@@ -184,10 +168,7 @@ where
     Ok(())
 }
 
-pub fn check_messages_encryption(
-    client: &mut impl Sspi,
-    server: &mut impl Sspi,
-) -> sspi::Result<()> {
+pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi) -> sspi::Result<()> {
     let server_sizes = server.query_context_sizes()?;
     let sequence_number = 0;
 

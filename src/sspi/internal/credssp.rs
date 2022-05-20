@@ -6,30 +6,28 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use ts_request::TsRequest;
-
 use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
-use rand::{rngs::OsRng, Rng};
-
-use crate::{
-    crypto::compute_sha256,
-    sspi::{
-        self,
-        internal::SspiImpl,
-        ntlm::{AuthIdentity, AuthIdentityBuffers},
-        ntlm::{Ntlm, SIGNATURE_SIZE},
-        CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse,
-        DataRepresentation, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
-        FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo,
-        SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
-    },
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
-};
+use rand::rngs::OsRng;
+use rand::Rng;
+pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
+
+use crate::crypto::compute_sha256;
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::kerberos::config::KerberosConfig;
+use crate::sspi::kerberos::Kerberos;
+use crate::sspi::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::sspi::{
+    self, CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
+    DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
+    ServerRequestFlags, Sspi, SspiEx,
+};
+use crate::{AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult};
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
@@ -48,11 +46,7 @@ pub trait CredentialsProxy {
     ///
     /// * `username` - the username string
     /// * `domain` - the domain string (optional)
-    fn auth_data_by_user(
-        &mut self,
-        username: String,
-        domain: Option<String>,
-    ) -> io::Result<Self::AuthenticationData>;
+    fn auth_data_by_user(&mut self, username: String, domain: Option<String>) -> io::Result<Self::AuthenticationData>;
 }
 
 macro_rules! try_cred_ssp_server {
@@ -154,6 +148,12 @@ enum EndpointType {
     Server,
 }
 
+#[derive(Debug, Clone)]
+pub enum ClientMode {
+    Kerberos(KerberosConfig),
+    Ntlm,
+}
+
 /// Implements the CredSSP *client*. The client's credentials are to
 /// be securely delegated to the server.
 ///
@@ -170,6 +170,7 @@ pub struct CredSspClient {
     client_nonce: [u8; NONCE_SIZE],
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
+    client_mode: ClientMode,
 }
 
 impl CredSspClient {
@@ -177,6 +178,7 @@ impl CredSspClient {
         public_key: Vec<u8>,
         credentials: AuthIdentity,
         cred_ssp_mode: CredSspMode,
+        client_mode: ClientMode,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -187,13 +189,16 @@ impl CredSspClient {
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
+            client_mode,
         })
     }
+
     pub fn new_with_version(
         public_key: Vec<u8>,
         credentials: AuthIdentity,
         cred_ssp_mode: CredSspMode,
         ts_request_version: u32,
+        client_mode: ClientMode,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -203,7 +208,8 @@ impl CredSspClient {
             cred_ssp_mode,
             client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
-            ts_request_version: ts_request_version,
+            ts_request_version,
+            client_mode,
         })
     }
 
@@ -212,10 +218,13 @@ impl CredSspClient {
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
         } else {
-            self.context = Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new())));
-            let AcquireCredentialsHandleResult {
-                credentials_handle, ..
-            } = self
+            self.context = match &self.client_mode {
+                ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
+                    Kerberos::new_client_from_config(kerberos_config.clone())?,
+                ))),
+                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+            };
+            let AcquireCredentialsHandleResult { credentials_handle, .. } = self
                 .context
                 .as_mut()
                 .unwrap()
@@ -235,10 +244,7 @@ impl CredSspClient {
                     ts_request.nego_tokens.take().unwrap_or_default(),
                     SecurityBufferType::Token,
                 );
-                let mut output_token = vec![SecurityBuffer::new(
-                    Vec::with_capacity(1024),
-                    SecurityBufferType::Token,
-                )];
+                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let result = self
@@ -257,16 +263,16 @@ impl CredSspClient {
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
-                    let peer_version = self.context.as_ref().unwrap().peer_version.expect(
+                    let peer_version =
+                        self.context.as_ref().unwrap().peer_version.expect(
                             "An encrypt public key client function cannot be fired without any incoming TSRequest",
                         );
-                    ts_request.pub_key_auth =
-                        Some(self.context.as_mut().unwrap().encrypt_public_key(
-                            self.public_key.as_ref(),
-                            EndpointType::Client,
-                            &Some(self.client_nonce),
-                            peer_version,
-                        )?);
+                    ts_request.pub_key_auth = Some(self.context.as_mut().unwrap().encrypt_public_key(
+                        self.public_key.as_ref(),
+                        EndpointType::Client,
+                        &Some(self.client_nonce),
+                        peer_version,
+                    )?);
                     ts_request.client_nonce = Some(self.client_nonce);
                     self.state = CredSspState::AuthInfo;
                 }
@@ -282,10 +288,12 @@ impl CredSspClient {
                         String::from("Expected an encrypted public key"),
                     )
                 })?;
-                let peer_version =
-                        self.context.as_ref().unwrap().peer_version.expect(
-                            "An decrypt public key client function cannot be fired without any incoming TSRequest",
-                        );
+                let peer_version = self
+                    .context
+                    .as_ref()
+                    .unwrap()
+                    .peer_version
+                    .expect("An decrypt public key client function cannot be fired without any incoming TSRequest");
                 self.context.as_mut().unwrap().decrypt_public_key(
                     self.public_key.as_ref(),
                     pub_key_auth.as_ref(),
@@ -294,19 +302,20 @@ impl CredSspClient {
                     peer_version,
                 )?;
 
-                ts_request.auth_info =
-                    Some(self.context.as_mut().unwrap().encrypt_ts_credentials(
-                        &self.credentials.clone().into(),
-                        self.cred_ssp_mode,
-                    )?);
+                ts_request.auth_info = Some(
+                    self.context
+                        .as_mut()
+                        .unwrap()
+                        .encrypt_ts_credentials(&self.credentials.clone().into(), self.cred_ssp_mode)?,
+                );
 
                 self.state = CredSspState::Final;
 
                 Ok(ClientState::FinalMessage(ts_request))
             }
-            CredSspState::Final => panic!(
-                "CredSSP client's 'process' method must not be fired after the 'Finished' state"
-            ),
+            CredSspState::Final => {
+                panic!("CredSSP client's 'process' method must not be fired after the 'Finished' state")
+            }
         }
     }
 }
@@ -325,10 +334,11 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     public_key: Vec<u8>,
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
+    context_config: ClientMode,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
-    pub fn new(public_key: Vec<u8>, credentials: C) -> sspi::Result<Self> {
+    pub fn new(public_key: Vec<u8>, credentials: C, client_mode: ClientMode) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
@@ -336,6 +346,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             public_key,
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
+            context_config: client_mode,
         })
     }
 
@@ -343,6 +354,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
         public_key: Vec<u8>,
         credentials: C,
         ts_request_version: u32,
+        client_mode: ClientMode,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -350,16 +362,20 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             credentials,
             public_key,
             credentials_handle: None,
-            ts_request_version: ts_request_version,
+            ts_request_version,
+            context_config: client_mode,
         })
     }
 
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
-            self.context = Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new())));
-            let AcquireCredentialsHandleResult {
-                credentials_handle, ..
-            } = try_cred_ssp_server!(
+            self.context = match &self.context_config {
+                ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
+                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
+                ))),
+                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+            };
+            let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
                 self.context
                     .as_mut()
                     .unwrap()
@@ -372,10 +388,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             self.credentials_handle = credentials_handle;
         }
         try_cred_ssp_server!(
-            self.context
-                .as_mut()
-                .unwrap()
-                .check_peer_version(ts_request.version),
+            self.context.as_mut().unwrap().check_peer_version(ts_request.version),
             ts_request
         );
 
@@ -394,10 +407,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 );
 
                 let read_credentials = try_cred_ssp_server!(
-                    self.context
-                        .as_mut()
-                        .unwrap()
-                        .decrypt_ts_credentials(&auth_info),
+                    self.context.as_mut().unwrap().decrypt_ts_credentials(&auth_info),
                     ts_request
                 );
                 self.state = CredSspState::Final;
@@ -415,10 +425,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     ts_request
                 );
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
-                let mut output_token = vec![SecurityBuffer::new(
-                    Vec::with_capacity(1024),
-                    SecurityBufferType::Token,
-                )];
+                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 match try_cred_ssp_server!(
@@ -435,29 +442,18 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         .execute(),
                     ts_request
                 ) {
-                    AcceptSecurityContextResult { status, .. }
-                        if status == SecurityStatus::ContinueNeeded =>
-                    {
+                    AcceptSecurityContextResult { status, .. } if status == SecurityStatus::ContinueNeeded => {
                         ts_request.nego_tokens = Some(output_token.remove(0).buffer);
                     }
-                    AcceptSecurityContextResult { status, .. }
-                        if status == SecurityStatus::CompleteNeeded =>
-                    {
+                    AcceptSecurityContextResult { status, .. } if status == SecurityStatus::CompleteNeeded => {
                         let ContextNames { username, domain } = try_cred_ssp_server!(
-                            self.context
-                                .as_mut()
-                                .unwrap()
-                                .sspi_context
-                                .query_context_names(),
+                            self.context.as_mut().unwrap().sspi_context.query_context_names(),
                             ts_request
                         );
                         let auth_data = try_cred_ssp_server!(
                             self.credentials
                                 .auth_data_by_user(username, domain)
-                                .map_err(|e| sspi::Error::new(
-                                    sspi::ErrorKind::LogonDenied,
-                                    e.to_string()
-                                )),
+                                .map_err(|e| sspi::Error::new(sspi::ErrorKind::LogonDenied, e.to_string())),
                             ts_request
                         );
                         self.context
@@ -467,11 +463,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             .custom_set_auth_identity(auth_data);
 
                         try_cred_ssp_server!(
-                            self.context
-                                .as_mut()
-                                .unwrap()
-                                .sspi_context
-                                .complete_auth_token(&mut []),
+                            self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
                             ts_request
                         );
                         ts_request.nego_tokens = None;
@@ -517,16 +509,18 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
-            CredSspState::Final => panic!(
-                "CredSSP server's 'process' method must not be fired after the 'Finished' state"
-            ),
+            CredSspState::Final => {
+                panic!("CredSSP server's 'process' method must not be fired after the 'Finished' state")
+            }
         }
     }
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum SspiContext {
     Ntlm(Ntlm),
+    Kerberos(Kerberos),
 }
 
 impl SspiImpl for SspiContext {
@@ -535,15 +529,11 @@ impl SspiImpl for SspiContext {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<
-            '_,
-            Self,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         match self {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
         }
     }
 
@@ -553,6 +543,7 @@ impl SspiImpl for SspiContext {
     ) -> sspi::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
         }
     }
 
@@ -562,17 +553,16 @@ impl SspiImpl for SspiContext {
     ) -> sspi::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
         }
     }
 }
 
 impl Sspi for SspiContext {
-    fn complete_auth_token(
-        &mut self,
-        token: &mut [SecurityBuffer],
-    ) -> sspi::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> sspi::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
+            SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),
         }
     }
 
@@ -584,6 +574,7 @@ impl Sspi for SspiContext {
     ) -> sspi::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
+            SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
         }
     }
 
@@ -594,27 +585,32 @@ impl Sspi for SspiContext {
     ) -> sspi::Result<DecryptionFlags> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
+            SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
         }
     }
 
     fn query_context_sizes(&mut self) -> sspi::Result<ContextSizes> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_sizes(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_sizes(),
         }
     }
     fn query_context_names(&mut self) -> sspi::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_names(),
         }
     }
     fn query_context_package_info(&mut self) -> sspi::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_package_info(),
         }
     }
     fn query_context_cert_trust_status(&mut self) -> sspi::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_cert_trust_status(),
         }
     }
 }
@@ -623,6 +619,7 @@ impl SspiEx for SspiContext {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
+            SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
         }
     }
 }
@@ -685,9 +682,7 @@ impl CredSspContext {
                 hash_magic,
                 &client_nonce.ok_or(sspi::Error::new(
                     sspi::ErrorKind::InvalidToken,
-                    String::from(
-                        "client nonce from the TSRequest is empty, but a peer version is >= 5",
-                    ),
+                    String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
                 ))?,
             )
         }
@@ -715,19 +710,13 @@ impl CredSspContext {
                 hash_magic,
                 &client_nonce.ok_or(sspi::Error::new(
                     sspi::ErrorKind::InvalidToken,
-                    String::from(
-                        "client nonce from the TSRequest is empty, but a peer version is >= 5",
-                    ),
+                    String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
                 ))?,
             )
         }
     }
 
-    fn encrypt_public_key_echo(
-        &mut self,
-        public_key: &[u8],
-        endpoint: EndpointType,
-    ) -> sspi::Result<Vec<u8>> {
+    fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> sspi::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
         match self.sspi_context {
@@ -736,6 +725,7 @@ impl CredSspContext {
                     integer_increment_le(&mut public_key);
                 }
             }
+            SspiContext::Kerberos(_) => {}
         };
 
         self.encrypt_message(&public_key)
@@ -750,9 +740,8 @@ impl CredSspContext {
         let mut data = hash_magic.to_vec();
         data.extend(client_nonce);
         data.extend(public_key);
-        let encrypted_public_key = compute_sha256(&data);
 
-        self.encrypt_message(&encrypted_public_key)
+        self.encrypt_message(&compute_sha256(&data))
     }
 
     fn decrypt_public_key_echo(
@@ -805,17 +794,13 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        let ts_credentials = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
-
-        self.encrypt_message(&ts_credentials)
+        self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
-        let ts_credentials_buffer = self.decrypt_message(&auth_info)?;
+        let ts_credentials_buffer = self.decrypt_message(auth_info)?;
 
-        Ok(ts_request::read_ts_credentials(
-            ts_credentials_buffer.as_slice(),
-        )?)
+        Ok(ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())?)
     }
 
     fn encrypt_message(&mut self, input: &[u8]) -> sspi::Result<Vec<u8>> {
@@ -832,9 +817,7 @@ impl CredSspContext {
         let mut output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token)?
             .buffer
             .clone();
-        output.append(
-            &mut SecurityBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.buffer,
-        );
+        output.append(&mut SecurityBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.buffer);
 
         self.send_seq_num += 1;
 
@@ -845,7 +828,6 @@ impl CredSspContext {
 
     fn decrypt_message(&mut self, input: &[u8]) -> sspi::Result<Vec<u8>> {
         let (signature, data) = input.split_at(SIGNATURE_SIZE);
-
         let mut buffers = vec![
             SecurityBuffer::new(data.to_vec(), SecurityBufferType::Data),
             SecurityBuffer::new(signature.to_vec(), SecurityBufferType::Token),
@@ -853,8 +835,7 @@ impl CredSspContext {
 
         let recv_seq_num = self.recv_seq_num;
 
-        self.sspi_context
-            .decrypt_message(&mut buffers, recv_seq_num)?;
+        self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 
         let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
             .buffer

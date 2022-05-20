@@ -2,14 +2,9 @@ use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::sspi::{
-    self,
-    ntlm::{
-        messages::{MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE},
-        NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
-    },
-    SecurityStatus,
-};
+use crate::sspi::ntlm::messages::{MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE};
+use crate::sspi::ntlm::{NegotiateFlags, NegotiateMessage, Ntlm, NtlmState};
+use crate::sspi::{self, SecurityStatus};
 
 const HEADER_SIZE: usize = 32;
 const NEGO_MESSAGE_OFFSET: usize = HEADER_SIZE + NTLM_VERSION_SIZE;
@@ -49,10 +44,7 @@ fn check_state(state: NtlmState) -> sspi::Result<()> {
     }
 }
 
-pub fn write_negotiate(
-    context: &mut Ntlm,
-    mut transport: impl io::Write,
-) -> sspi::Result<SecurityStatus> {
+pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_flags = get_flags();
@@ -60,12 +52,7 @@ pub fn write_negotiate(
 
     let mut buffer = Vec::with_capacity(message_fields.data_len());
 
-    write_header(
-        negotiate_flags,
-        context.version.as_ref(),
-        &message_fields,
-        &mut buffer,
-    )?;
+    write_header(negotiate_flags, context.version.as_ref(), &message_fields, &mut buffer)?;
     write_payload(&message_fields, &mut buffer)?;
     context.flags = negotiate_flags;
 
@@ -115,10 +102,7 @@ fn write_header(
     Ok(())
 }
 
-fn write_payload(
-    message_fields: &NegotiateMessageFields,
-    mut buffer: impl io::Write,
-) -> io::Result<()> {
+fn write_payload(message_fields: &NegotiateMessageFields, mut buffer: impl io::Write) -> io::Result<()> {
     message_fields.domain_name.write_buffer_to(&mut buffer)?;
     message_fields.workstation.write_buffer_to(&mut buffer)?;
 

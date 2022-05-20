@@ -25,20 +25,14 @@ fn read_sequence_tag_returns_error_on_invalid_tag() {
 #[test]
 fn write_contextual_tag_constuct_is_correct() {
     let mut buf = Vec::new();
-    assert_eq!(
-        write_contextual_tag(&mut buf, 0x3, 0x100, Pc::Construct).unwrap(),
-        4
-    );
+    assert_eq!(write_contextual_tag(&mut buf, 0x3, 0x100, Pc::Construct).unwrap(), 4);
     assert_eq!(buf, vec![0xA3, 0x82, 0x01, 0x00]);
 }
 
 #[test]
 fn write_contextual_tag_primitive_is_correct() {
     let mut buf = Vec::new();
-    assert_eq!(
-        write_contextual_tag(&mut buf, 0x4, 0xF0, Pc::Primitive).unwrap(),
-        3
-    );
+    assert_eq!(write_contextual_tag(&mut buf, 0x4, 0xF0, Pc::Primitive).unwrap(), 3);
     assert_eq!(buf, vec![0x84, 0x81, 0xF0]);
 }
 
@@ -79,9 +73,7 @@ fn read_octet_string_tag_is_correct() {
 fn read_octet_string_tag_returns_error_on_wrong_tag() {
     let buf = vec![0x05, 0x0F];
     assert_eq!(
-        read_octet_string_tag(&mut buf.as_slice())
-            .unwrap_err()
-            .kind(),
+        read_octet_string_tag(&mut buf.as_slice()).unwrap_err().kind(),
         io::ErrorKind::InvalidData
     );
 }
@@ -99,15 +91,8 @@ fn write_octet_string_is_correct() {
 fn write_sequence_octet_string_is_correct() {
     let mut buf = Vec::new();
     let string = [0x68, 0x65, 0x6c, 0x6c, 0x6f];
-    let expected: Vec<_> = [0xA3, 0x07, 0x04, 0x05]
-        .iter()
-        .chain(string.iter())
-        .cloned()
-        .collect();
-    assert_eq!(
-        write_sequence_octet_string(&mut buf, 0x03, &string).unwrap(),
-        9
-    );
+    let expected: Vec<_> = [0xA3, 0x07, 0x04, 0x05].iter().chain(string.iter()).cloned().collect();
+    assert_eq!(write_sequence_octet_string(&mut buf, 0x03, &string).unwrap(), 9);
     assert_eq!(buf, expected);
 }
 
@@ -190,10 +175,7 @@ fn write_integer_is_correct_with_1_byte_integer() {
 #[test]
 fn read_integer_is_correct_with_8_byte_integer() {
     let buf = vec![0x02, 0x08, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-    assert_eq!(
-        read_integer(&mut buf.as_slice()).unwrap(),
-        0x0080_0000_0000_0000
-    );
+    assert_eq!(read_integer(&mut buf.as_slice()).unwrap(), 0x0080_0000_0000_0000);
 }
 
 #[test]
@@ -232,10 +214,7 @@ fn read_integer_returns_error_on_incorrect_len() {
 #[test]
 fn write_universal_tag_primitive_integer_is_correct() {
     let mut buf = Vec::new();
-    assert_eq!(
-        write_universal_tag(&mut buf, Tag::Integer, Pc::Primitive).unwrap(),
-        1
-    );
+    assert_eq!(write_universal_tag(&mut buf, Tag::Integer, Pc::Primitive).unwrap(), 1);
     assert_eq!(buf, vec![0x02]);
 }
 

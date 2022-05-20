@@ -7,30 +7,25 @@ use std::io;
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
 use lazy_static::lazy_static;
+use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{
-    crypto::{compute_hmac_md5, Rc4, HASH_SIZE},
-    sspi::{
-        self, internal::SspiImpl, CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes,
-        CredentialUse, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
-        FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageCapabilities,
-        PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-        ServerResponseFlags, Sspi, SspiEx, PACKAGE_ID_NONE,
-    },
-    utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult,
-    InitializeSecurityContextResult,
+use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
+use crate::sspi::internal::SspiImpl;
+use crate::sspi::{
+    self, CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
+    EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    ServerResponseFlags, Sspi, SspiEx, PACKAGE_ID_NONE,
 };
-use messages::{client, server};
+use crate::{utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult};
 
-pub const PKG_NAME: &str = "NTLM";
+pub const PKG_NAME: &str = "NTLM\0";
 pub const NTLM_VERSION_SIZE: usize = 8;
-pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] =
-    [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];
+pub const DEFAULT_NTLM_VERSION: [u8; NTLM_VERSION_SIZE] = [0x0a, 0x00, 0x63, 0x45, 0x00, 0x00, 0x00, 0x0f];
 
 pub const ENCRYPTED_RANDOM_SESSION_KEY_SIZE: usize = 16;
-pub const SIGNATURE_SIZE: usize =
-    SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE + SIGNATURE_SEQ_NUM_SIZE;
+pub const SIGNATURE_SIZE: usize = SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE + SIGNATURE_SEQ_NUM_SIZE;
 
 const CHALLENGE_SIZE: usize = 8;
 const SESSION_KEY_SIZE: usize = 16;
@@ -152,12 +147,7 @@ impl SspiImpl for Ntlm {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<
-            '_,
-            Self,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(sspi::Error::new(
@@ -180,8 +170,7 @@ impl SspiImpl for Ntlm {
     ) -> sspi::Result<InitializeSecurityContextResult> {
         let status = match self.state {
             NtlmState::Initial => {
-                let output_token =
-                    SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
                 client::write_negotiate(self, &mut output_token.buffer)?
@@ -194,8 +183,7 @@ impl SspiImpl for Ntlm {
                     )
                 })?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token =
-                    SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
@@ -238,8 +226,7 @@ impl SspiImpl for Ntlm {
         let status = match self.state {
             NtlmState::Initial => {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token =
-                    SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
@@ -268,10 +255,7 @@ impl SspiImpl for Ntlm {
 }
 
 impl Sspi for Ntlm {
-    fn complete_auth_token(
-        &mut self,
-        _token: &mut [SecurityBuffer],
-    ) -> sspi::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> sspi::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 
@@ -284,17 +268,9 @@ impl Sspi for Ntlm {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let digest = compute_digest(
-            &self.send_signing_key,
-            sequence_number,
-            data.buffer.as_slice(),
-        )?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, data.buffer.as_slice())?;
 
-        *data.buffer.as_mut() = self
-            .send_sealing_key
-            .as_mut()
-            .unwrap()
-            .process(data.buffer.as_slice());
+        *data.buffer.as_mut() = self.send_sealing_key.as_mut().unwrap().process(data.buffer.as_slice());
 
         let checksum = self
             .send_sealing_key
@@ -315,17 +291,10 @@ impl Sspi for Ntlm {
     ) -> sspi::Result<DecryptionFlags> {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        *data.buffer.as_mut() = self
-            .recv_sealing_key
-            .as_mut()
-            .unwrap()
-            .process(data.buffer.as_slice());
 
-        let digest = compute_digest(
-            &self.recv_signing_key,
-            sequence_number,
-            data.buffer.as_slice(),
-        )?;
+        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(data.buffer.as_slice());
+
+        let digest = compute_digest(&self.recv_signing_key, sequence_number, data.buffer.as_slice())?;
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -393,12 +362,7 @@ impl NegotiateMessage {
 }
 
 impl ChallengeMessage {
-    fn new(
-        message: Vec<u8>,
-        target_info: Vec<u8>,
-        server_challenge: [u8; CHALLENGE_SIZE],
-        timestamp: u64,
-    ) -> Self {
+    fn new(message: Vec<u8>, target_info: Vec<u8>, server_challenge: [u8; CHALLENGE_SIZE], timestamp: u64) -> Self {
         Self {
             message,
             target_info,
@@ -453,11 +417,7 @@ pub struct AuthIdentityBuffers {
 
 impl AuthIdentityBuffers {
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
-        Self {
-            user,
-            domain,
-            password,
-        }
+        Self { user, domain, password }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -486,9 +446,7 @@ impl From<AuthIdentityBuffers> for AuthIdentity {
             domain: if credentials_buffers.domain.is_empty() {
                 None
             } else {
-                Some(utils::bytes_to_utf16_string(
-                    credentials_buffers.domain.as_ref(),
-                ))
+                Some(utils::bytes_to_utf16_string(credentials_buffers.domain.as_ref()))
             },
         }
     }
@@ -613,10 +571,8 @@ fn compute_digest(key: &[u8], seq_num: u32, data: &[u8]) -> io::Result<[u8; 16]>
 fn compute_signature(checksum: &[u8], seq_num: u32) -> [u8; SIGNATURE_SIZE] {
     let mut signature = [0x00; SIGNATURE_SIZE];
     signature[..SIGNATURE_VERSION_SIZE].clone_from_slice(&MESSAGES_VERSION.to_le_bytes());
-    signature[SIGNATURE_VERSION_SIZE..SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE]
-        .clone_from_slice(&checksum);
-    signature[SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE..]
-        .clone_from_slice(&seq_num.to_le_bytes());
+    signature[SIGNATURE_VERSION_SIZE..SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE].clone_from_slice(checksum);
+    signature[SIGNATURE_VERSION_SIZE + SIGNATURE_CHECKSUM_SIZE..].clone_from_slice(&seq_num.to_le_bytes());
 
     signature
 }

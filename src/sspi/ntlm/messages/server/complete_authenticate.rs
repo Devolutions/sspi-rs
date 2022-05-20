@@ -1,17 +1,8 @@
-use crate::{
-    crypto::{Rc4, HASH_SIZE},
-    sspi::{
-        self,
-        ntlm::{
-            messages::{
-                computations::*, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC,
-                SERVER_SIGN_MAGIC,
-            },
-            Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
-        },
-        SecurityStatus,
-    },
-};
+use crate::crypto::{Rc4, HASH_SIZE};
+use crate::sspi::ntlm::messages::computations::*;
+use crate::sspi::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
+use crate::sspi::ntlm::{Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE};
+use crate::sspi::{self, SecurityStatus};
 
 pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
@@ -49,14 +40,8 @@ pub fn complete_authenticate(mut context: &mut Ntlm) -> sspi::Result<SecuritySta
     )?;
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(
-        session_key.as_ref(),
-        SERVER_SEAL_MAGIC,
-    )));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(
-        session_key.as_ref(),
-        CLIENT_SEAL_MAGIC,
-    )));
+    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
+    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
 
     check_mic_correctness(
         negotiate_message.message.as_ref(),
@@ -96,8 +81,7 @@ fn check_mic_correctness(
         // we need empty the MIC part of auth. message and then will come back the MIC.
         let mic = mic.as_ref().unwrap();
         let mut authenticate_message = authenticate_message.to_vec();
-        authenticate_message
-            [mic.offset as usize..mic.offset as usize + MESSAGE_INTEGRITY_CHECK_SIZE]
+        authenticate_message[mic.offset as usize..mic.offset as usize + MESSAGE_INTEGRITY_CHECK_SIZE]
             .clone_from_slice(&[0x00; MESSAGE_INTEGRITY_CHECK_SIZE]);
         let calculated_mic = compute_message_integrity_check(
             negotiate_message,

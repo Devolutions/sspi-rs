@@ -1,13 +1,9 @@
 pub mod credssp;
 
-use crate::sspi::{
-    self,
-    builders::{
-        AcceptSecurityContextResult, AcquireCredentialsHandleResult,
-        InitializeSecurityContextResult,
-    },
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+use crate::sspi::builders::{
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
+use crate::sspi::{self, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext};
 
 pub trait SspiImpl
 where
@@ -18,12 +14,7 @@ where
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<
-            '_,
-            Self,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
     fn initialize_security_context_impl(

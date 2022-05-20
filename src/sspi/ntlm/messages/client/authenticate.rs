@@ -1,23 +1,20 @@
 use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
+use rand::Rng;
 
-use crate::{
-    crypto::Rc4,
-    sspi::{
-        self,
-        ntlm::{
-            messages::{
-                computations::*, MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC,
-                NTLM_SIGNATURE, NTLM_VERSION_SIZE, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC,
-            },
-            AuthIdentityBuffers, AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState,
-            ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
-        },
-        SecurityStatus,
-    },
+use crate::crypto::Rc4;
+use crate::sspi::ntlm::messages::computations::*;
+use crate::sspi::ntlm::messages::{
+    MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, NTLM_SIGNATURE, NTLM_VERSION_SIZE,
+    SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC,
 };
+use crate::sspi::ntlm::{
+    AuthIdentityBuffers, AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState, ENCRYPTED_RANDOM_SESSION_KEY_SIZE,
+    MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
+};
+use crate::sspi::{self, SecurityStatus};
 
 const MIC_SIZE: usize = 16;
 const BASE_OFFSET: usize = 64;
@@ -60,8 +57,7 @@ impl AuthenticateMessageFields {
 
         workstation.buffer_offset = user_name.buffer_offset + user_name.buffer.len() as u32;
 
-        lm_challenge_response.buffer_offset =
-            workstation.buffer_offset + workstation.buffer.len() as u32;
+        lm_challenge_response.buffer_offset = workstation.buffer_offset + workstation.buffer.len() as u32;
 
         nt_challenge_response.buffer_offset =
             lm_challenge_response.buffer_offset + lm_challenge_response.buffer.len() as u32;
@@ -80,8 +76,7 @@ impl AuthenticateMessageFields {
     }
 
     pub fn data_len(&self) -> usize {
-        self.encrypted_random_session_key.buffer_offset as usize
-            + self.encrypted_random_session_key.buffer.len()
+        self.encrypted_random_session_key.buffer_offset as usize + self.encrypted_random_session_key.buffer.len()
     }
 }
 
@@ -103,10 +98,8 @@ pub fn write_authenticate(
 
     // calculate needed fields
     // NTLMv2
-    let target_info = get_authenticate_target_info(
-        challenge_message.target_info.as_ref(),
-        context.send_single_host_data,
-    )?;
+    let target_info =
+        get_authenticate_target_info(challenge_message.target_info.as_ref(), context.send_single_host_data)?;
 
     let client_challenge = generate_challenge()?;
     let ntlm_v2_hash = compute_ntlm_v2_hash(credentials)?;
@@ -139,12 +132,7 @@ pub fn write_authenticate(
 
     let mut buffer = Vec::with_capacity(message_fields.data_len());
 
-    write_header(
-        context.flags,
-        context.version.as_ref(),
-        &message_fields,
-        &mut buffer,
-    )?;
+    write_header(context.flags, context.version.as_ref(), &message_fields, &mut buffer)?;
     write_payload(&message_fields, &mut buffer)?;
 
     let message = buffer.clone();
@@ -164,14 +152,8 @@ pub fn write_authenticate(
 
     context.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(
-        session_key.as_ref(),
-        CLIENT_SEAL_MAGIC,
-    )));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(
-        session_key.as_ref(),
-        SERVER_SEAL_MAGIC,
-    )));
+    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
 
     context.authenticate_message = Some(AuthenticateMessage::new(
         message,
@@ -236,9 +218,7 @@ fn write_header(
     message_fields.domain_name.write_to(&mut buffer)?; // DomainNameFields (8 bytes)
     message_fields.user_name.write_to(&mut buffer)?; // UserNameFields (8 bytes)
     message_fields.workstation.write_to(&mut buffer)?; // WorkstationFields (8 bytes)
-    message_fields
-        .encrypted_random_session_key
-        .write_to(&mut buffer)?; // EncryptedRandomSessionKeyFields (8 bytes)
+    message_fields.encrypted_random_session_key.write_to(&mut buffer)?; // EncryptedRandomSessionKeyFields (8 bytes)
     buffer.write_u32::<LittleEndian>(negotiate_flags.bits())?; // NegotiateFlags (4 bytes)
     buffer.write_all(version)?;
 
@@ -251,19 +231,12 @@ fn write_header(
     Ok(())
 }
 
-fn write_payload(
-    message_fields: &AuthenticateMessageFields,
-    mut buffer: impl io::Write,
-) -> io::Result<()> {
+fn write_payload(message_fields: &AuthenticateMessageFields, mut buffer: impl io::Write) -> io::Result<()> {
     message_fields.domain_name.write_buffer_to(&mut buffer)?;
     message_fields.user_name.write_buffer_to(&mut buffer)?;
     message_fields.workstation.write_buffer_to(&mut buffer)?;
-    message_fields
-        .lm_challenge_response
-        .write_buffer_to(&mut buffer)?;
-    message_fields
-        .nt_challenge_response
-        .write_buffer_to(&mut buffer)?;
+    message_fields.lm_challenge_response.write_buffer_to(&mut buffer)?;
+    message_fields.nt_challenge_response.write_buffer_to(&mut buffer)?;
     message_fields
         .encrypted_random_session_key
         .write_buffer_to(&mut buffer)?;

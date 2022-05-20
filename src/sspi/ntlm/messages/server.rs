@@ -5,7 +5,7 @@ mod negotiate;
 #[cfg(test)]
 mod test;
 
-pub use self::{
-    authenticate::read_authenticate, challenge::write_challenge,
-    complete_authenticate::complete_authenticate, negotiate::read_negotiate,
-};
+pub use self::authenticate::read_authenticate;
+pub use self::challenge::write_challenge;
+pub use self::complete_authenticate::complete_authenticate;
+pub use self::negotiate::read_negotiate;

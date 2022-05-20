@@ -2,16 +2,10 @@ use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::sspi::{
-    self,
-    ntlm::{
-        messages::{
-            computations::*, MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE,
-        },
-        ChallengeMessage, NegotiateFlags, Ntlm, NtlmState,
-    },
-    SecurityStatus,
-};
+use crate::sspi::ntlm::messages::computations::*;
+use crate::sspi::ntlm::messages::{MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE};
+use crate::sspi::ntlm::{ChallengeMessage, NegotiateFlags, Ntlm, NtlmState};
+use crate::sspi::{self, SecurityStatus};
 
 const BASE_OFFSET: usize = 48;
 const CHALLENGE_MESSAGE_OFFSET: usize = BASE_OFFSET + NTLM_VERSION_SIZE;
@@ -42,10 +36,7 @@ impl ChallengeMessageFields {
     }
 }
 
-pub fn write_challenge(
-    mut context: &mut Ntlm,
-    mut transport: impl io::Write,
-) -> sspi::Result<SecurityStatus> {
+pub fn write_challenge(mut context: &mut Ntlm, mut transport: impl io::Write) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let server_challenge = generate_challenge()?;
@@ -53,8 +44,7 @@ pub fn write_challenge(
     let target_info = get_challenge_target_info(timestamp)?;
 
     context.flags = get_flags(context.flags);
-    let message_fields =
-        ChallengeMessageFields::new(target_info.as_ref(), CHALLENGE_MESSAGE_OFFSET as u32);
+    let message_fields = ChallengeMessageFields::new(target_info.as_ref(), CHALLENGE_MESSAGE_OFFSET as u32);
 
     let mut buffer = io::Cursor::new(Vec::with_capacity(message_fields.data_len()));
 
@@ -67,17 +57,12 @@ pub fn write_challenge(
     )?;
     write_payload(&message_fields, &mut buffer)?;
 
-    let message = buffer.into_inner().clone();
+    let message = buffer.into_inner();
 
     transport.write_all(message.as_slice())?;
     transport.flush()?;
 
-    context.challenge_message = Some(ChallengeMessage::new(
-        message,
-        target_info,
-        server_challenge,
-        timestamp,
-    ));
+    context.challenge_message = Some(ChallengeMessage::new(message, target_info, server_challenge, timestamp));
     context.state = NtlmState::Authenticate;
 
     Ok(sspi::SecurityStatus::ContinueNeeded)
@@ -117,10 +102,7 @@ fn write_header(
     Ok(())
 }
 
-fn write_payload(
-    message_fields: &ChallengeMessageFields,
-    mut buffer: impl io::Write,
-) -> io::Result<()> {
+fn write_payload(message_fields: &ChallengeMessageFields, mut buffer: impl io::Write) -> io::Result<()> {
     message_fields.target_name.write_buffer_to(&mut buffer)?;
     message_fields.target_info.write_buffer_to(&mut buffer)?;
 
