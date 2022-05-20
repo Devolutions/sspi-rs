@@ -36,10 +36,10 @@ serde_derive = "1.0"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking"], optional = true }
-picky-krb = { git = "https://github.com/Devolutions/picky-rs", version = "0.1.0" }
-picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", version = "0.5.0", features = ["chrono_conversion"] }
-picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", version = "0.3.1" }
-picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", version = "0.7.0" }
+picky-krb = "0.1.0"
+picky-asn1 = { version = "0.5.0", features = ["chrono_conversion"] }
+picky-asn1-der = "0.3.1"
+picky-asn1-x509 = "0.7.0"
 kerberos_crypto = "0.3.6"
 kerberos_constants = "0.0.9"
 oid = "0.2.1"
