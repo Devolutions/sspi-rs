@@ -9,7 +9,8 @@
 //!
 //! Here is a quick example how to start working with the crate. This is the first stage of the client-server authentication performed on the client side.
 //! It includes calling several SSPI functions and choosing between our own and WinAPI implementations of NTLM SSP depending on the system:
-//! ```
+//!
+//! ```rust
 //! use sspi::Sspi;
 //!
 //! #[cfg(windows)]
@@ -17,41 +18,38 @@
 //! #[cfg(not(windows))]
 //! use sspi::Ntlm;
 //!
-//! fn main() {
-//!     let mut ntlm = Ntlm::new();
+//! let mut ntlm = Ntlm::new();
 //!
-//!     let identity = sspi::AuthIdentity {
-//!         username: "user".to_string(),
-//!         password: "password".to_string(),
-//!         domain: None,
-//!     };
+//! let identity = sspi::AuthIdentity {
+//!     username: "user".to_string(),
+//!     password: "password".to_string(),
+//!     domain: None,
+//! };
 //!
-//!     let mut acq_creds_handle_result = ntlm
-//!         .acquire_credentials_handle()
-//!         .with_credential_use(sspi::CredentialUse::Outbound)
-//!         .with_auth_data(&identity)
-//!         .execute()
-//!         .expect("AcquireCredentialsHandle resulted in error");
+//! let mut acq_creds_handle_result = ntlm
+//!     .acquire_credentials_handle()
+//!     .with_credential_use(sspi::CredentialUse::Outbound)
+//!     .with_auth_data(&identity)
+//!     .execute()
+//!     .expect("AcquireCredentialsHandle resulted in error");
 //!
-//!     let mut output = vec![sspi::SecurityBuffer::new(
-//!         Vec::new(),
-//!         sspi::SecurityBufferType::Token,
-//!     )];
+//! let mut output = vec![sspi::SecurityBuffer::new(
+//!     Vec::new(),
+//!     sspi::SecurityBufferType::Token,
+//! )];
 //!
-//!     let result = ntlm
-//!         .initialize_security_context()
-//!         .with_credentials_handle(&mut acq_creds_handle_result.credentials_handle)
-//!         .with_context_requirements(
-//!             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY
-//!         )
-//!         .with_target_data_representation(sspi::DataRepresentation::Native)
-//!         .with_output(&mut output)
-//!         .execute()
-//!         .expect("InitializeSecurityContext resulted in error");
+//! let result = ntlm
+//!     .initialize_security_context()
+//!     .with_credentials_handle(&mut acq_creds_handle_result.credentials_handle)
+//!     .with_context_requirements(
+//!         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY
+//!     )
+//!     .with_target_data_representation(sspi::DataRepresentation::Native)
+//!     .with_output(&mut output)
+//!     .execute()
+//!     .expect("InitializeSecurityContext resulted in error");
 //!
-//!     println!("Initialized security context with result status: {:?}", result.status);
-//! }
-//!
+//! println!("Initialized security context with result status: {:?}", result.status);
 //! ```
 //! It is also possible to use any of the Windows SSPs that we do not implement. Here is an example of querying all
 //! available SSPs and acquiring Negotiate SSP on Windows:
