@@ -13,7 +13,7 @@ use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentity
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
-use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes};
+use crate::utils::{c_str_into_string, c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes};
 
 #[repr(C)]
 pub struct SecHandle {
@@ -134,7 +134,7 @@ pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, c_ulong
 pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
     ph_context: PCtxtHandle,
-    _p_target_name: PSecurityString,
+    p_target_name: *const SecChar,
     f_context_req: c_ulong,
     _reserved1: c_ulong,
     target_data_rep: c_ulong,
@@ -146,6 +146,8 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
+
+    let service_principal = c_str_into_string(p_target_name);
 
     let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
         None
@@ -172,6 +174,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
+        .with_target_name(&service_principal)
         .with_input(&mut input_tokens)
         .with_output(&mut output_tokens)
         .execute();
@@ -188,7 +191,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
-    PSecurityString,
+    *const SecChar,
     c_ulong,
     c_ulong,
     c_ulong,
