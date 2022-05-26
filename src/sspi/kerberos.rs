@@ -184,12 +184,7 @@ impl Sspi for Kerberos {
         wrap_token.encode(&mut raw_wrap_token)?;
 
         match self.state {
-            KerberosState::PubKeyAuth => {
-                *data.buffer.as_mut() = raw_wrap_token[MAX_SIGNATURE..].to_vec();
-                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-                *header.buffer.as_mut() = raw_wrap_token[0..MAX_SIGNATURE].to_vec();
-            }
-            KerberosState::Credentials => {
+            KerberosState::PubKeyAuth | KerberosState::Credentials => {
                 *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
                 let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
                 *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
