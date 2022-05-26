@@ -410,9 +410,14 @@ impl SspiImpl for Kerberos {
                 let session_key_1 =
                     extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
 
+                let service_principal = builder.target_name.ok_or_else(|| Error {
+                    error_type: ErrorKind::NoCredentials,
+                    description: "Service target name (service principal name) is not provided".into(),
+                })?;
+
                 let tgs_req = generate_tgs_req(
-                    &username,
                     &as_rep.0.crealm.0.to_string(),
+                    service_principal,
                     &session_key_1,
                     as_rep.0.ticket.0,
                     &mut authenticator,
