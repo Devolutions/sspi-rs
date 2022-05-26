@@ -36,6 +36,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
+use crate::{ErrorKind, Error};
 use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME, TGT_SERVICE_NAME};
 use crate::sspi::Result;
 
@@ -210,14 +211,31 @@ pub fn generate_as_req(
 }
 
 pub fn generate_tgs_req(
-    username: &str,
     realm: &str,
+    service_principal: &str,
     session_key: &[u8],
     ticket: Ticket,
     mut authenticator: &mut Authenticator,
     additional_tickets: Option<Vec<Ticket>>,
     enc_params: &EncryptionParams,
 ) -> Result<TgsReq> {
+    let divider = service_principal.find('/').ok_or_else(|| Error {
+        error_type: ErrorKind::InvalidParameter,
+        description: "Invalid service principal name: missing '/'".into(),
+    })?;
+
+    if divider == 0 || divider == service_principal.len() - 2 {
+        return Err(Error {
+            error_type: ErrorKind::InvalidParameter,
+            description: "Invalid service principal name".into(),
+        });
+    }
+
+    let service_name = &service_principal[0..divider];
+    // `divider + 1` - do not include '/' char
+    // `service_principal.len() - 1` - do not include NULL char
+    let service_principal_name = &service_principal[(divider + 1)..(service_principal.len() - 1)];
+
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
@@ -231,12 +249,8 @@ pub fn generate_tgs_req(
         sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into())?),
-                KerberosStringAsn1::from(IA5String::from_string(format!(
-                    "{}.{}",
-                    username,
-                    realm.to_lowercase()
-                ))?),
+                KerberosStringAsn1::from(IA5String::from_string(service_name.into())?),
+                KerberosStringAsn1::from(IA5String::from_string(service_principal_name.into())?),
             ])),
         }))),
         from: Optional::from(None),
