@@ -7,22 +7,12 @@ use url::Url;
 #[cfg(feature = "network_client")]
 use super::network_client::reqwest_network_client::ReqwestNetworkClient;
 use super::network_client::NetworkClient;
-use super::{KDC_TYPE_ENV, SSPI_RS_KERBEROS_URL_ENV};
+use super::SSPI_KDC_URL_ENV;
 
 #[derive(Debug, Clone)]
 pub enum KdcType {
     Kdc,
     KdcProxy,
-}
-
-impl From<String> for KdcType {
-    fn from(data: String) -> Self {
-        match data.as_str() {
-            "KDC" => KdcType::Kdc,
-            "KDC_PROXY" => KdcType::KdcProxy,
-            kdc_type => panic!("Invalid kdc type {}. Expected KDC or KDC_PROCY", kdc_type),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -33,22 +23,43 @@ pub struct KerberosConfig {
 }
 
 impl KerberosConfig {
+    pub fn get_kdc_env() -> Option<(Url, KdcType)> {
+        let mut kdc_url_env = env::var(SSPI_KDC_URL_ENV).expect("SSPI_KDC_URL environment variable must be set!");
+        if !kdc_url_env.contains("://") {
+            kdc_url_env = format!("tcp://{}", kdc_url_env);
+        }
+        let kdc_url = Url::from_str(&kdc_url_env).unwrap();
+        let kdc_type = match kdc_url.scheme() {
+            "tcp" => KdcType::Kdc,
+            "udp" => KdcType::Kdc,
+            "http" => KdcType::KdcProxy,
+            "https" => KdcType::KdcProxy,
+            _ => KdcType::Kdc,
+        };
+        Some((kdc_url, kdc_type))
+    }
+
+    pub fn new_with_network_client(network_client: Box<dyn NetworkClient>) -> Self {
+        if let Some((kdc_url, kdc_type)) = Self::get_kdc_env() {
+            Self {
+                url: kdc_url,
+                kdc_type: kdc_type,
+                network_client: network_client,
+            }
+        } else {
+            panic!("{} environment variable is not set properly!", SSPI_KDC_URL_ENV);
+        }
+    }
+
     #[cfg(feature = "network_client")]
     pub fn from_env() -> Self {
-        Self {
-            url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),
-            kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
-            network_client: Box::new(ReqwestNetworkClient::new()),
-        }
+        let network_client = Box::new(ReqwestNetworkClient::new());
+        Self::new_with_network_client(network_client)
     }
 
     #[cfg(not(feature = "network_client"))]
     pub fn from_env(network_client: Box<dyn NetworkClient>) -> Self {
-        Self {
-            url: Url::from_str(&env::var(SSPI_RS_KERBEROS_URL_ENV).unwrap()).unwrap(),
-            kdc_type: env::var(KDC_TYPE_ENV).unwrap().into(),
-            network_client,
-        }
+        Self::new_with_network_client(network_client)
     }
 }
 
