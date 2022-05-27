@@ -20,7 +20,7 @@ use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids::{KRB5, KRB5_USER_TO_USER, MS_KRB5, SPNEGO};
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::{
-    AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, NET_BIOS_ADDR_TYPE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP,
+    AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, NET_BIOS_ADDR_TYPE, NT_PRINCIPAL, NT_ENTERPRISE, NT_SRV_INST, PA_ENC_TIMESTAMP,
     PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE,
     TGT_REQ_MSG_TYPE,
 };
@@ -56,7 +56,26 @@ const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 // other options are disabled
 const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
 
-pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> Result<AsReq> {
+// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
+// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
+fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
+    if username.contains("@") {
+        NT_ENTERPRISE
+    } else {
+        NT_PRINCIPAL
+    }
+}
+
+fn get_client_principal_realm(username: &str, domain: &str) -> String {
+    if domain.is_empty() {
+        if let Some((_left, right)) = username.split_once("@") {
+            return right.to_string();
+        }
+    }
+    return domain.to_string();
+}
+
+pub fn generate_as_req_without_pre_auth(username: &str, domain: &str) -> Result<AsReq> {
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
@@ -75,6 +94,9 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> Result<A
         }]))
     });
 
+    let name_type = get_client_principal_name_type(username, domain);
+    let realm = &get_client_principal_realm(username, domain);
+
     Ok(AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
@@ -86,7 +108,7 @@ pub fn generate_as_req_without_pre_auth(username: &str, realm: &str) -> Result<A
                 DEFAULT_AS_REQ_OPTIONS.to_vec(),
             ))),
             cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
                     IA5String::from_string(username.into())?,
                 )])),
@@ -120,7 +142,7 @@ pub fn generate_as_req(
     username: &str,
     salt: &[u8],
     password: &str,
-    realm: &str,
+    domain: &str,
     enc_params: &EncryptionParams,
 ) -> Result<AsReq> {
     let expiration_date = Utc::now()
@@ -169,6 +191,9 @@ pub fn generate_as_req(
         }]))
     });
 
+    let name_type = get_client_principal_name_type(username, domain);
+    let realm = &get_client_principal_realm(username, domain);
+
     Ok(AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
@@ -181,7 +206,7 @@ pub fn generate_as_req(
                 DEFAULT_AS_REQ_OPTIONS.to_vec(),
             ))),
             cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
                     IA5String::from_string(username.into())?,
                 )])),
