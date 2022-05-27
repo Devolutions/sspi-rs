@@ -50,8 +50,7 @@ pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
 
-const KDC_TYPE_ENV: &str = "KDC_TYPE";
-const SSPI_RS_KERBEROS_URL_ENV: &str = "SSPI_RS_KERBEROS_URL";
+const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
 const DEFAULT_ENCRYPTION_TYPE: i32 = AES256_CTS_HMAC_SHA1_96;
 
