@@ -171,6 +171,7 @@ pub struct CredSspClient {
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
     client_mode: ClientMode,
+    service_principal_name: String,
 }
 
 impl CredSspClient {
@@ -179,6 +180,7 @@ impl CredSspClient {
         credentials: AuthIdentity,
         cred_ssp_mode: CredSspMode,
         client_mode: ClientMode,
+        service_principal_name: String,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -190,6 +192,7 @@ impl CredSspClient {
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
             client_mode,
+            service_principal_name,
         })
     }
 
@@ -199,6 +202,7 @@ impl CredSspClient {
         cred_ssp_mode: CredSspMode,
         ts_request_version: u32,
         client_mode: ClientMode,
+        service_principal_name: String,
     ) -> sspi::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -210,6 +214,7 @@ impl CredSspClient {
             credentials_handle: None,
             ts_request_version,
             client_mode,
+            service_principal_name,
         })
     }
 
@@ -256,6 +261,7 @@ impl CredSspClient {
                     .with_credentials_handle(&mut credentials_handle)
                     .with_context_requirements(ClientRequestFlags::empty())
                     .with_target_data_representation(DataRepresentation::Native)
+                    .with_target_name(&self.service_principal_name)
                     .with_input(&mut [input_token])
                     .with_output(&mut output_token)
                     .execute()?;
