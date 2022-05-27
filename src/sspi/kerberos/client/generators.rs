@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use chrono::{Duration, Utc};
 use kerberos_constants::key_usages::{KEY_USAGE_AP_REQ_AUTHEN, KEY_USAGE_TGS_REQ_AUTHEN};
@@ -36,9 +37,9 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
-use crate::{ErrorKind, Error};
 use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME, TGT_SERVICE_NAME};
 use crate::sspi::Result;
+use crate::{Error, ErrorKind};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
@@ -245,7 +246,7 @@ pub fn generate_tgs_req(
             DEFAULT_TGS_REQ_OPTIONS.to_vec(),
         ))),
         cname: Optional::from(None),
-        realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string(realm.into())?)),
+        realm: ExplicitContextTag2::from(Realm::from(IA5String::from_str(realm)?)),
         sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![

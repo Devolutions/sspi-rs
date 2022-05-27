@@ -11,7 +11,7 @@ use std::io::Write;
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::data_types::{ResultExt, KrbResult};
+use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, TgsRep};
 use rand::rngs::OsRng;
@@ -98,6 +98,7 @@ pub struct Kerberos {
     auth_identity: Option<AuthIdentityBuffers>,
     encryption_params: EncryptionParams,
     seq_number: u32,
+    realm: Option<String>,
 }
 
 impl Kerberos {
@@ -108,6 +109,7 @@ impl Kerberos {
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: OsRng::new()?.gen::<u32>(),
+            realm: None,
         })
     }
 
@@ -118,6 +120,7 @@ impl Kerberos {
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: OsRng::new()?.gen::<u32>(),
+            realm: None,
         })
     }
 
@@ -129,7 +132,10 @@ impl Kerberos {
     fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
         match self.config.kdc_type {
             KdcType::Kdc => self.config.network_client.send(&self.config.url, data),
-            KdcType::KdcProxy => self.config.network_client.send_http(&self.config.url, data),
+            KdcType::KdcProxy => self
+                .config
+                .network_client
+                .send_http(&self.config.url, data, self.realm.clone()),
         }
     }
 }
@@ -369,6 +375,8 @@ impl SspiImpl for Kerberos {
                 let password = utf16_bytes_to_utf8_string(&credentials.password);
                 let mut salt = format!("{}{}", domain, username);
 
+                self.realm = Some(domain.clone());
+
                 let as_req = generate_as_req_without_pre_auth(&username, &domain)?;
 
                 let response = self.send(&serialize_message(&as_req)?)?;
@@ -396,6 +404,8 @@ impl SspiImpl for Kerberos {
                 let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
                 let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
                 let as_rep = as_rep?;
+
+                self.realm = Some(as_rep.0.crealm.0.to_string());
 
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
                 self.encryption_params.encryption_type = Some(encryption_type as i32);
