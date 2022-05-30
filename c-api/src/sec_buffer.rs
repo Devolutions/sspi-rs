@@ -46,6 +46,7 @@ pub struct SecBufferDesc {
 
 pub type PSecBufferDesc = *mut SecBufferDesc;
 
+#[allow(clippy::useless_conversion)]
 pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<SecurityBuffer> {
     raw_buffers
         .iter()

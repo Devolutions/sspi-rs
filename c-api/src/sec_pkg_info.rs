@@ -22,7 +22,7 @@ impl From<PackageInfo> for SecPkgInfoW {
             f_capabilities: data.capabilities.bits() as c_ulong,
             w_version: KERBEROS_VERSION as c_ushort,
             w_rpc_id: data.rpc_id,
-            cb_max_token: data.max_token_len.try_into().unwrap(),
+            cb_max_token: data.max_token_len,
             name: vec_into_raw_ptr(data.name.to_string().encode_utf16().collect::<Vec<_>>()),
             comment: vec_into_raw_ptr(data.comment.encode_utf16().collect::<Vec<_>>()),
         }
