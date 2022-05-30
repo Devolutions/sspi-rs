@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::ptr::null;
 use std::slice::from_raw_parts;
 
@@ -13,7 +14,7 @@ use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentity
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
-use crate::utils::{c_str_into_string, c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes};
 
 #[repr(C)]
 pub struct SecHandle {
@@ -147,7 +148,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 ) -> SecurityStatus {
     let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
 
-    let service_principal = c_str_into_string(p_target_name);
+    let service_principal = CStr::from_ptr(p_target_name).to_str().unwrap();
 
     let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
         None
@@ -174,7 +175,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
-        .with_target_name(&service_principal)
+        .with_target_name(service_principal)
         .with_input(&mut input_tokens)
         .with_output(&mut output_tokens)
         .execute();
@@ -220,7 +221,9 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 ) -> SecurityStatus {
     let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
 
-    let service_principal = c_w_str_to_string(p_target_name);
+    let mut service_principal = c_w_str_to_string(p_target_name);
+    // remove NULL char
+    service_principal.pop();
 
     let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
         None

@@ -250,7 +250,7 @@ pub fn generate_tgs_req(
         description: "Invalid service principal name: missing '/'".into(),
     })?;
 
-    if divider == 0 || divider == service_principal.len() - 2 {
+    if divider == 0 || divider == service_principal.len() - 1 {
         return Err(Error {
             error_type: ErrorKind::InvalidParameter,
             description: "Invalid service principal name".into(),
@@ -259,8 +259,7 @@ pub fn generate_tgs_req(
 
     let service_name = &service_principal[0..divider];
     // `divider + 1` - do not include '/' char
-    // `service_principal.len() - 1` - do not include NULL char
-    let service_principal_name = &service_principal[(divider + 1)..(service_principal.len() - 1)];
+    let service_principal_name = &service_principal[(divider + 1)..];
 
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
