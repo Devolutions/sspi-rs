@@ -26,7 +26,7 @@ pub unsafe fn c_w_str_to_string(s: *const SecWChar) -> String {
         len += 1;
     }
 
-    String::from_utf16_lossy(from_raw_parts(s, len + 1))
+    String::from_utf16_lossy(from_raw_parts(s, len))
 }
 
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
@@ -40,5 +40,5 @@ pub unsafe fn c_str_into_string(s: *const SecChar) -> String {
         len += 1;
     }
 
-    String::from_utf8(from_raw_parts(s as *const u8, len + 1).to_vec()).unwrap()
+    String::from_utf8(from_raw_parts(s as *const u8, len).to_vec()).unwrap()
 }

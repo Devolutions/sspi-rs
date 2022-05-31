@@ -18,13 +18,19 @@ pub type PSecPkgInfoW = *mut SecPkgInfoW;
 
 impl From<PackageInfo> for SecPkgInfoW {
     fn from(data: PackageInfo) -> Self {
+        let mut name = data.name.to_string().encode_utf16().collect::<Vec<_>>();
+        name.push(0);
+
+        let mut comment = data.comment.encode_utf16().collect::<Vec<_>>();
+        comment.push(0);
+
         SecPkgInfoW {
             f_capabilities: data.capabilities.bits() as c_ulong,
             w_version: KERBEROS_VERSION as c_ushort,
             w_rpc_id: data.rpc_id,
             cb_max_token: data.max_token_len.try_into().unwrap(),
-            name: vec_into_raw_ptr(data.name.to_string().encode_utf16().collect::<Vec<_>>()),
-            comment: vec_into_raw_ptr(data.comment.encode_utf16().collect::<Vec<_>>()),
+            name: vec_into_raw_ptr(name),
+            comment: vec_into_raw_ptr(comment),
         }
     }
 }
@@ -43,13 +49,19 @@ pub type PSecPkgInfoA = *mut SecPkgInfoA;
 
 impl From<PackageInfo> for SecPkgInfoA {
     fn from(data: PackageInfo) -> Self {
+        let mut name = data.name.to_string().as_bytes().to_vec();
+        name.push(0);
+
+        let mut comment = data.comment.as_bytes().to_vec();
+        comment.push(0);
+
         SecPkgInfoA {
             f_capabilities: data.capabilities.bits() as c_uint,
             w_version: KERBEROS_VERSION as c_ushort,
             w_rpc_id: data.rpc_id,
             cb_max_token: data.max_token_len,
-            name: vec_into_raw_ptr(data.name.to_string().as_bytes().to_vec()) as *mut i8,
-            comment: vec_into_raw_ptr(data.comment.as_bytes().to_vec()) as *mut i8,
+            name: vec_into_raw_ptr(name) as *mut i8,
+            comment: vec_into_raw_ptr(comment) as *mut i8,
         }
     }
 }

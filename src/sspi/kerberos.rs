@@ -45,7 +45,7 @@ use crate::{
     SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
 };
 
-pub const PKG_NAME: &str = "Kerberos\0";
+pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
@@ -68,15 +68,15 @@ lazy_static! {
         rpc_id: PACKAGE_ID_NONE,
         max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
         name: SecurityPackageType::Kerberos,
-        comment: String::from("Kerberos Security Package\0"),
+        comment: String::from("Kerberos Security Package"),
     };
 
     pub static ref NEGO_PACKAGE_INFO: PackageInfo = PackageInfo {
         capabilities: PackageCapabilities::empty(),
         rpc_id: PACKAGE_ID_NONE,
         max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
-        name: SecurityPackageType::Other("Negotiate\0".into()),
-        comment: String::from("Negotiate Security Package\0"),
+        name: SecurityPackageType::Other("Negotiate".into()),
+        comment: String::from("Negotiate Security Package"),
     };
 }
 

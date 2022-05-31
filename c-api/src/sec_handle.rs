@@ -221,9 +221,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 ) -> SecurityStatus {
     let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
 
-    let mut service_principal = c_w_str_to_string(p_target_name);
-    // remove NULL char
-    service_principal.pop();
+    let service_principal = c_w_str_to_string(p_target_name);
 
     let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
         None
