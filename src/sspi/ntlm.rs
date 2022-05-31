@@ -47,7 +47,7 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum NtlmState {
     Initial,
     Negotiate,
@@ -401,14 +401,14 @@ impl Mic {
 /// # MSDN
 ///
 /// * [SEC_WINNT_AUTH_IDENTITY_W structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_w)
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct AuthIdentity {
     pub username: String,
     pub password: String,
     pub domain: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
     pub user: Vec<u8>,
     pub domain: Vec<u8>,

@@ -43,8 +43,8 @@ impl KerberosConfig {
         if let Some((kdc_url, kdc_type)) = Self::get_kdc_env() {
             Self {
                 url: kdc_url,
-                kdc_type: kdc_type,
-                network_client: network_client,
+                kdc_type,
+                network_client,
             }
         } else {
             panic!("{} environment variable is not set properly!", SSPI_KDC_URL_ENV);

@@ -23,6 +23,7 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 }
 pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn AcceptSecurityContext(
     ph_credential: PCredHandle,
@@ -167,6 +168,7 @@ pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _toke
 }
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn EncryptMessage(
     ph_context: PCtxtHandle,
@@ -195,6 +197,7 @@ pub unsafe extern "system" fn EncryptMessage(
 }
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn DecryptMessage(
     ph_context: PCtxtHandle,

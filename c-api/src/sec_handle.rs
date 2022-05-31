@@ -131,6 +131,7 @@ pub extern "system" fn QueryCredentialsAttributesW(
 }
 pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
@@ -204,6 +205,7 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn InitializeSecurityContextW(
     ph_credential: PCredHandle,

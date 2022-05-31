@@ -59,7 +59,7 @@ const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
 // [MS-KILE] 3.3.5.6.1 Client Principal Lookup
 // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
 fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
-    if username.contains("@") {
+    if username.contains('@') {
         NT_ENTERPRISE
     } else {
         NT_PRINCIPAL
@@ -68,11 +68,11 @@ fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
 
 fn get_client_principal_realm(username: &str, domain: &str) -> String {
     if domain.is_empty() {
-        if let Some((_left, right)) = username.split_once("@") {
+        if let Some((_left, right)) = username.split_once('@') {
             return right.to_string();
         }
     }
-    return domain.to_string();
+    domain.to_string()
 }
 
 pub fn generate_as_req_without_pre_auth(username: &str, domain: &str) -> Result<AsReq> {

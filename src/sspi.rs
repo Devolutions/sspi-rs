@@ -912,7 +912,7 @@ bitflags! {
 /// # MSDN
 ///
 /// * [AcceptSecurityContext function (TargetDataRep parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum DataRepresentation {
     Network = 0,
     Native = 0x10,
@@ -965,7 +965,7 @@ impl SecurityBuffer {
 ///
 /// * [SecBuffer structure (BufferType parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum SecurityBufferType {
     Empty = 0,
     /// The buffer contains common data. The security package can read and write this data, for example, to encrypt some or all of it.
@@ -1012,7 +1012,7 @@ pub enum SecurityBufferType {
 /// # MSDN
 ///
 /// * [AcquireCredentialsHandleW function (fCredentialUse parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum CredentialUse {
     Inbound = 1,
     Outbound = 2,
@@ -1286,7 +1286,7 @@ pub struct ContextNames {
 
 /// The kind of an SSPI related error. Enables to specify an error based on its type.
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum ErrorKind {
     Unknown = 0,
     InsufficientMemory = 0x8009_0300,
@@ -1378,7 +1378,7 @@ pub struct Error {
 }
 
 /// The success status of SSPI-related operation.
-#[derive(Debug, Copy, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum SecurityStatus {
     Ok = 0,
     ContinueNeeded = 0x0009_0312,

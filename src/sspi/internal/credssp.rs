@@ -68,7 +68,7 @@ macro_rules! try_cred_ssp_server {
 
 /// Indicates to the `CredSspClient` whether or not to transfer
 /// the credentials in the auth_info `TsRequest` field.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CredSspMode {
     WithCredentials,
     /// Indicates that the client requires credential-less logon over CredSSP (also known as "restricted admin mode").
@@ -135,14 +135,14 @@ impl EarlyUserAuthResult {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum CredSspState {
     NegoToken,
     AuthInfo,
     Final,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum EndpointType {
     Client,
     Server,

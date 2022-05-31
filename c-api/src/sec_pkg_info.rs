@@ -16,6 +16,7 @@ pub struct SecPkgInfoW {
 
 pub type PSecPkgInfoW = *mut SecPkgInfoW;
 
+#[allow(clippy::useless_conversion)]
 impl From<PackageInfo> for SecPkgInfoW {
     fn from(data: PackageInfo) -> Self {
         let mut name = data.name.to_string().encode_utf16().collect::<Vec<_>>();
