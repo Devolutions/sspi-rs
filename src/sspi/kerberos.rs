@@ -309,7 +309,6 @@ impl SspiImpl for Kerberos {
         &mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<
             '_,
-            Self,
             Self::CredentialsHandle,
             Self::AuthenticationData,
         >,
@@ -331,11 +330,11 @@ impl SspiImpl for Kerberos {
 
     fn initialize_security_context_impl(
         &mut self,
-        builder: crate::builders::FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         let status = match self.state {
             KerberosState::Negotiate => {
-                let credentials = builder.credentials_handle.unwrap().as_ref().ok_or_else(|| Error {
+                let credentials = builder.credentials_handle.as_ref().unwrap().as_ref().ok_or_else(|| Error {
                     error_type: ErrorKind::NoCredentials,
                     description: "No credentials provided".to_owned(),
                 })?;
@@ -357,14 +356,14 @@ impl SspiImpl for Kerberos {
                 SecurityStatus::ContinueNeeded
             }
             KerberosState::Preauthentication => {
-                let input = builder.input.ok_or_else(|| {
+                let input = builder.input.as_ref().ok_or_else(|| {
                     sspi::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into())
                 })?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
-                let credentials = builder.credentials_handle.unwrap().as_ref().ok_or_else(|| Error {
+                let credentials = builder.credentials_handle.as_ref().unwrap().as_ref().ok_or_else(|| Error {
                     error_type: ErrorKind::NoCredentials,
                     description: "No credentials provided".to_owned(),
                 })?;
@@ -463,6 +462,7 @@ impl SspiImpl for Kerberos {
             KerberosState::ApExchange => {
                 let input = builder
                     .input
+                    .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
@@ -516,7 +516,7 @@ impl SspiImpl for Kerberos {
 
     fn accept_security_context_impl(
         &mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         let input = builder
             .input

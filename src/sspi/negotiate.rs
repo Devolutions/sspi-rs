@@ -1,7 +1,13 @@
-
 use lazy_static::lazy_static;
 
-use crate::{PackageInfo, PackageCapabilities, sspi::{PACKAGE_ID_NONE, Result}, SecurityPackageType, KerberosConfig, Sspi, internal::SspiImpl, AuthIdentityBuffers, AuthIdentity, SecurityBuffer, SecurityStatus, ContextSizes, ContextNames, DecryptionFlags, CertTrustStatus, AcquireCredentialsHandleResult, builders, InitializeSecurityContextResult, AcceptSecurityContextResult, Kerberos, Ntlm, Error, ErrorKind};
+use crate::internal::SspiImpl;
+use crate::sspi::{Result, PACKAGE_ID_NONE};
+use crate::{
+    builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
+    CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
+    Kerberos, KerberosConfig, Ntlm, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityPackageType,
+    SecurityStatus, Sspi,
+};
 
 pub const PKG_NAME: &str = "Negotiate";
 
@@ -101,44 +107,42 @@ impl SspiImpl for Negotiate {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: builders::FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+        builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         todo!()
     }
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: builders::FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut builders::FilledInitializeSecurityContext<'a, Self::AuthenticationData,  Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
-        // match &mut self.protocol {
-        //     NegotiatedProtocol::Kerberos(kerberos) => {
-        //         let result = kerberos.initialize_security_context_impl();
-        //         let builder = builder.transform(kerberos);
-        //         if result.is_err() {
-        //             match result.as_ref().unwrap_err().error_type {
-        //                 ErrorKind::NoCredentials => {
-        //                     let mut ntlm = Ntlm::new();
-        //                     // ?acquire_credentials_handle_impl? 
-        //                     self.protocol = NegotiatedProtocol::Ntlm(ntlm);
-        //                 },
-        //                 _ => return result,
-        //             }
-        //         } else {
-        //             return result
-        //         }
-        //     },
-        //     _ => {},
-        // }
+        match &mut self.protocol {
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                // builder.inner(Box::new(kerberos));
+                let result = kerberos.initialize_security_context_impl(builder);
+                match result {
+                    Result::Err(Error { error_type: ErrorKind::NoCredentials, description: _ }) => {
+                        self.protocol = NegotiatedProtocol::Ntlm(Ntlm::new());
+                    },
+                    _ => return result,
+                };
+            }
+            _ => {},
+        };
 
         match &mut self.protocol {
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder.transform(kerberos)),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder.transform(ntlm)),
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                kerberos.initialize_security_context_impl(builder)
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                ntlm.initialize_security_context_impl(builder)
+            },
         }
     }
 
     fn accept_security_context_impl(
         &mut self,
-        builder: builders::FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+        _builder: builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         Err(Error {
             error_type: ErrorKind::UnsupportedFunction,

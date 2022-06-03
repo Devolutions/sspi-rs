@@ -90,7 +90,7 @@ impl SspiImpl for SecurityPackage {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        mut builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+        mut builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         let principal_name_utf16 = builder.principal_name.map(str_to_win_wstring);
         let principal_name = principal_name_utf16
@@ -128,9 +128,9 @@ impl SspiImpl for SecurityPackage {
         })
     }
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         let mut context_to_set = None;
         let (context, context_new) = if let Some(ref mut context) = self.context {
@@ -141,11 +141,11 @@ impl SspiImpl for SecurityPackage {
             (ptr::null_mut(), context_to_set.as_mut().unwrap() as *mut _)
         };
 
-        let credentials = as_mut_ptr_or_null(builder.credentials_handle.map(|v| v.0).as_mut());
+        let credentials = as_mut_ptr_or_null(builder.credentials_handle.as_ref().map(|v| v.0).as_mut());
         let target_name_utf16 = builder.target_name.map(str_to_win_wstring);
         let target_name = target_name_utf16.map(|mut v| v.as_mut_ptr()).unwrap_or(ptr::null_mut());
 
-        let (input_buffer_descriptor, _input_buffers) = if let Some(input) = builder.input {
+        let (input_buffer_descriptor, _input_buffers) = if let Some(input) = builder.input.as_mut() {
             let mut input_buffers = buffers_as_winapi(input);
             let mut input_buffer_descriptor = construct_buffer_desc(input_buffers.as_mut());
 
@@ -199,7 +199,7 @@ impl SspiImpl for SecurityPackage {
 
     fn accept_security_context_impl(
         &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         let mut context_to_set = None;
         let (context, context_new) = if let Some(ref mut context) = self.context {

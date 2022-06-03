@@ -6,8 +6,8 @@ use super::{Assigned, NotAssigned, ToAssign};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{self, CredentialUse, Luid};
 
-pub type EmptyAcquireCredentialsHandle<'a, I, C, A> = AcquireCredentialsHandle<'a, I, C, A, WithoutCredentialUse>;
-pub type FilledAcquireCredentialsHandle<'a, I, C, A> = AcquireCredentialsHandle<'a, I, C, A, WithCredentialUse>;
+pub type EmptyAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithoutCredentialUse>;
+pub type FilledAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithCredentialUse>;
 
 /// Contains data returned by calling the `execute` method of
 /// the `AcquireCredentialsHandleBuilder` structure. The builder is returned by calling
@@ -24,13 +24,12 @@ pub struct AcquireCredentialsHandleResult<C> {
 ///
 /// These methods are required to be called before calling the `execute` method
 /// * [`with_credential_use`](struct.AcquireCredentialsHandle.html#method.with_credential_use)
-#[derive(Debug)]
-pub struct AcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData, CredentialUseSet>
+// #[derive(Debug)]
+pub struct AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
-    Inner: SspiImpl,
     CredentialUseSet: ToAssign,
 {
-    pub(crate) inner: Option<&'a mut Inner>,
+    pub(crate) inner: Option<Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>>,
     pub(crate) phantom_cred_handle: PhantomData<CredsHandle>,
     pub(crate) phantom_cred_use_set: PhantomData<CredentialUseSet>,
 
@@ -41,13 +40,12 @@ where
     pub auth_data: Option<&'a AuthData>,
 }
 
-impl<'a, Inner, CredsHandle, AuthData, CredentialUseSet>
-    AcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData, CredentialUseSet>
+impl<'a, CredsHandle, AuthData, CredentialUseSet>
+    AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
-    Inner: SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>,
     CredentialUseSet: ToAssign,
 {
-    pub(crate) fn new(inner: &'a mut Inner) -> Self {
+    pub(crate) fn new(inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> Self {
         Self {
             inner: Some(inner),
             phantom_cred_handle: PhantomData,
@@ -64,7 +62,7 @@ where
     pub fn with_credential_use(
         self,
         credential_use: CredentialUse,
-    ) -> AcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData, WithCredentialUse> {
+    ) -> AcquireCredentialsHandle<'a, CredsHandle, AuthData, WithCredentialUse> {
         AcquireCredentialsHandle {
             inner: self.inner,
             phantom_cred_handle: PhantomData,
@@ -103,9 +101,7 @@ where
     }
 }
 
-impl<'a, Inner, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, Inner, CredsHandle, AuthData>
-where
-    Inner: SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>,
+impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData>
 {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<AcquireCredentialsHandleResult<CredsHandle>> {
@@ -113,12 +109,10 @@ where
         inner.acquire_credentials_handle_impl(self)
     }
 
-    pub(crate) fn transform<Inner2>(
+    pub(crate) fn transform(
         self,
-        inner: &'a mut Inner2,
-    ) -> FilledAcquireCredentialsHandle<'a, Inner2, CredsHandle, AuthData>
-    where
-        Inner2: SspiImpl,
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) -> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData>
     {
         AcquireCredentialsHandle {
             inner: Some(inner),

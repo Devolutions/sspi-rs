@@ -533,33 +533,40 @@ impl SspiImpl for SspiContext {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
-    fn acquire_credentials_handle_impl(
-        &mut self,
-        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl<'a>(
+        &'a mut self,
+        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Ntlm(ntlm) => builder.transform(Box::new(ntlm)).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(Box::new(kerberos)).execute(),
         }
     }
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Ntlm(ntlm) => {
+                // builder.inner(Box::new(ntlm));
+                ntlm.initialize_security_context_impl(builder)
+            },
+            SspiContext::Kerberos(kerberos) => {
+                // builder.inner(Box::new(kerberos));
+                kerberos.initialize_security_context_impl(builder)
+            },
         }
+        // builder.simple_execute()
     }
 
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Ntlm(ntlm) => builder.transform(Box::new(ntlm)).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(Box::new(kerberos)).execute(),
         }
     }
 }

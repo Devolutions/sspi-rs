@@ -147,7 +147,7 @@ impl SspiImpl for Ntlm {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(sspi::Error::new(
@@ -166,7 +166,7 @@ impl SspiImpl for Ntlm {
 
     fn initialize_security_context_impl(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         let status = match self.state {
             NtlmState::Initial => {
@@ -176,7 +176,7 @@ impl SspiImpl for Ntlm {
                 client::write_negotiate(self, &mut output_token.buffer)?
             }
             NtlmState::Challenge => {
-                let input = builder.input.ok_or_else(|| {
+                let input = builder.input.as_ref().ok_or_else(|| {
                     sspi::Error::new(
                         sspi::ErrorKind::InvalidToken,
                         String::from("Input buffers must be specified on subsequent calls"),
@@ -215,7 +215,7 @@ impl SspiImpl for Ntlm {
 
     fn accept_security_context_impl(
         &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         let input = builder.input.ok_or_else(|| {
             sspi::Error::new(

@@ -9,18 +9,23 @@ use super::{
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{self, ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
 
-pub type EmptyInitializeSecurityContext<'a, I, C> = InitializeSecurityContext<
+pub type EmptyInitializeSecurityContext<'a, AuthData, C> = InitializeSecurityContext<
     'a,
-    I,
+    // I,
+    AuthData,
     C,
     WithoutCredentialsHandle,
     WithoutContextRequirements,
     WithoutTargetDataRepresentation,
     WithoutOutput,
 >;
-pub type FilledInitializeSecurityContext<'a, I, C> = InitializeSecurityContext<
+pub type FilledInitializeSecurityContext<'a,
+AuthData,
+// I,
+C> = InitializeSecurityContext<
     'a,
-    I,
+    // I,
+    AuthData,
     C,
     WithCredentialsHandle,
     WithContextRequirements,
@@ -49,20 +54,22 @@ pub struct InitializeSecurityContextResult {
 /// * [`with_output`](struct.InitializeSecurityContext.html#method.with_output)
 pub struct InitializeSecurityContext<
     'a,
-    Inner,
+    // Inner,
+    AuthData,
     CredsHandle,
     CredsHandleSet,
     ContextRequirementsSet,
     TargetDataRepresentationSet,
     OutputSet,
 > where
-    Inner: SspiImpl,
+    // Inner: SspiImpl,
+    // AuthData,
     CredsHandleSet: ToAssign,
     ContextRequirementsSet: ToAssign,
     TargetDataRepresentationSet: ToAssign,
     OutputSet: ToAssign,
 {
-    inner: Option<&'a mut Inner>,
+    inner: Option<Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>>,
     phantom_creds_use_set: PhantomData<CredsHandleSet>,
     phantom_context_req_set: PhantomData<ContextRequirementsSet>,
     phantom_data_repr_set: PhantomData<TargetDataRepresentationSet>,
@@ -79,7 +86,8 @@ pub struct InitializeSecurityContext<
 
 impl<
         'a,
-        Inner: SspiImpl,
+        // Inner: SspiImpl,
+        AuthData,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -88,7 +96,8 @@ impl<
     >
     InitializeSecurityContext<
         'a,
-        Inner,
+        // Inner,
+        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -96,7 +105,7 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(inner: &'a mut Inner) -> Self {
+    pub(crate) fn new(inner:Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> Self {
         Self {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,
@@ -121,7 +130,8 @@ impl<
         credentials_handle: &'a mut CredsHandle,
     ) -> InitializeSecurityContext<
         'a,
-        Inner,
+        // Inner,
+        AuthData,
         CredsHandle,
         WithCredentialsHandle,
         ContextRequirementsSet,
@@ -151,7 +161,8 @@ impl<
         context_requirements: ClientRequestFlags,
     ) -> InitializeSecurityContext<
         'a,
-        Inner,
+        // Inner,
+        AuthData,
         CredsHandle,
         CredsHandleSet,
         WithContextRequirements,
@@ -181,7 +192,8 @@ impl<
         target_data_representation: DataRepresentation,
     ) -> InitializeSecurityContext<
         'a,
-        Inner,
+        // Inner,
+        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -211,7 +223,8 @@ impl<
         output: &'a mut [SecurityBuffer],
     ) -> InitializeSecurityContext<
         'a,
-        Inner,
+        // Inner,
+        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -253,22 +266,30 @@ impl<
     }
 }
 
-impl<'a, Inner: SspiImpl<CredentialsHandle = CredsHandle>, CredsHandle>
-    FilledInitializeSecurityContext<'a, Inner, CredsHandle>
+impl<'a, AuthData, CredsHandle>
+    FilledInitializeSecurityContext<'a, AuthData, CredsHandle>
 {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<InitializeSecurityContextResult> {
         let inner = self.inner.take().unwrap();
 
+        inner.initialize_security_context_impl(&mut self)
+    }
+
+    pub fn simple_execute(&mut self) -> sspi::Result<InitializeSecurityContextResult> {
+        let inner = self.inner.take().unwrap();
+
         inner.initialize_security_context_impl(self)
     }
 
-    pub(crate) fn transform<Inner2>(
+    pub(crate) fn inner(&mut self, inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) {
+        self.inner = Some(inner);
+    }
+
+    pub(crate) fn transform(
         self,
-        inner: &'a mut Inner2,
-    ) -> FilledInitializeSecurityContext<'a, Inner2, CredsHandle>
-    where
-        Inner2: SspiImpl,
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) -> FilledInitializeSecurityContext<'a, AuthData, CredsHandle>
     {
         InitializeSecurityContext {
             inner: Some(inner),

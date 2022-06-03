@@ -6,6 +6,8 @@ pub mod negotiate;
 #[cfg(windows)]
 pub mod winapi;
 
+use std::fmt::Debug;
+
 mod ntlm;
 
 use std::{error, fmt, io, result, str, string};
@@ -103,7 +105,9 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
 /// * [SSPI.h](https://docs.microsoft.com/en-us/windows/win32/api/sspi/)
 pub trait Sspi
 where
-    Self: Sized + SspiImpl,
+    Self:
+    //   Sized +
+      SspiImpl,
 {
     /// Acquires a handle to preexisting credentials of a security principal. The preexisting credentials are
     /// available only for `sspi::winapi` module. This handle is required by the `initialize_security_context`
@@ -147,8 +151,8 @@ where
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
     fn acquire_credentials_handle(
         &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData> {
-        AcquireCredentialsHandle::new(self)
+    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> where Self: Sized {
+        AcquireCredentialsHandle::new(Box::new(self))
     }
 
     /// Initiates the client side, outbound security context from a credential handle.
@@ -208,8 +212,8 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self, Self::CredentialsHandle> {
-        InitializeSecurityContext::new(self)
+    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> where Self: Sized {
+        InitializeSecurityContext::new(Box::new(self))
     }
 
     /// Lets the server component of a transport application establish a security context between the server and a remote client.
@@ -289,8 +293,8 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(&mut self) -> EmptyAcceptSecurityContext<'_, Self, Self::CredentialsHandle> {
-        AcceptSecurityContext::new(self)
+    fn accept_security_context(&mut self) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> where Self: Sized {
+        AcceptSecurityContext::new(Box::new(self))
     }
 
     /// Completes an authentication token. This function is used by protocols, such as DCE,
@@ -690,7 +694,9 @@ where
 
 pub trait SspiEx
 where
-    Self: Sized + SspiImpl,
+    Self:
+    // Sized +
+    SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
 }
