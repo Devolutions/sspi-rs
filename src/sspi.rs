@@ -2,6 +2,7 @@
 pub mod builders;
 pub mod internal;
 pub mod kerberos;
+pub mod negotiate;
 #[cfg(windows)]
 pub mod winapi;
 
@@ -57,6 +58,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
     match package_type {
         SecurityPackageType::Ntlm => Ok(ntlm::PACKAGE_INFO.clone()),
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
+        SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -1025,14 +1027,16 @@ pub enum CredentialUse {
 pub enum SecurityPackageType {
     Ntlm,
     Kerberos,
+    Negotiate,
     Other(String),
 }
 
 impl string::ToString for SecurityPackageType {
     fn to_string(&self) -> String {
         match self {
-            SecurityPackageType::Ntlm => ntlm::PKG_NAME.to_string(),
-            SecurityPackageType::Kerberos => kerberos::PKG_NAME.to_string(),
+            SecurityPackageType::Ntlm => ntlm::PKG_NAME.into(),
+            SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
+            SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1045,6 +1049,7 @@ impl str::FromStr for SecurityPackageType {
         match s {
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
+            negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }
