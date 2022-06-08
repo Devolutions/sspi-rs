@@ -5,9 +5,9 @@ use lazy_static::lazy_static;
 use url::Url;
 
 use crate::internal::SspiImpl;
-use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::kerberos::config::KdcType;
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 use crate::utils::get_domain_from_fqdm;
 use crate::{
@@ -29,8 +29,15 @@ lazy_static! {
     };
 }
 
+#[derive(Debug, Clone)]
 pub struct NegotiateConfig {
     pub krb_config: Option<KerberosConfig>,
+}
+
+impl NegotiateConfig {
+    pub fn new(krb_config: Option<KerberosConfig>) -> Self {
+        Self { krb_config }
+    }
 }
 
 #[derive(Debug, Clone)]
