@@ -96,7 +96,9 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> Self {
+    pub(crate) fn new(
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) -> Self {
         Self {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,
@@ -243,17 +245,17 @@ impl<
     }
 }
 
-impl<'a, AuthData, CredsHandle>
-    FilledAcceptSecurityContext<'a, AuthData, CredsHandle>
-{
+impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<AcceptSecurityContextResult> {
         let inner = self.inner.take().unwrap();
         inner.accept_security_context_impl(self)
     }
 
-    pub(crate) fn transform(self, inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> FilledAcceptSecurityContext<'a, AuthData, CredsHandle>
-    {
+    pub(crate) fn transform<AuthData2>(
+        self,
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData2>>,
+    ) -> FilledAcceptSecurityContext<'a, AuthData2, CredsHandle> {
         AcceptSecurityContext {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,

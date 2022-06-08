@@ -551,11 +551,11 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 // builder.inner(Box::new(ntlm));
                 ntlm.initialize_security_context_impl(builder)
-            },
+            }
             SspiContext::Kerberos(kerberos) => {
                 // builder.inner(Box::new(kerberos));
                 kerberos.initialize_security_context_impl(builder)
-            },
+            }
         }
         // builder.simple_execute()
     }

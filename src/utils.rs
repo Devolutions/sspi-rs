@@ -15,3 +15,31 @@ pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
 
     String::from_utf16_lossy(value_u16.as_ref())
 }
+
+pub fn get_domain_from_fqdm(fqdm: &[u8]) -> Option<String> {
+    let mut fqdm = bytes_to_utf16_string(fqdm);
+
+    if let Some(index) = fqdm.find('@') {
+        Some(fqdm.split_off(index + 1))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_domain_from_fqdm;
+
+    #[test]
+    fn test_get_domain_from_fqdm() {
+        // user1@example.com
+        let fqdm = [
+            117, 0, 115, 0, 101, 0, 114, 0, 49, 0, 64, 0, 101, 0, 120, 0, 97, 0, 109, 0, 112, 0, 108, 0, 101, 0, 46, 0,
+            99, 0, 111, 0, 109, 0,
+        ];
+
+        let domain = get_domain_from_fqdm(&fqdm).unwrap();
+
+        assert_eq!(&domain, "example.com");
+    }
+}

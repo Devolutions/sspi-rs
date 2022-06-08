@@ -50,7 +50,7 @@ pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
 
-const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
+pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
 const DEFAULT_ENCRYPTION_TYPE: i32 = AES256_CTS_HMAC_SHA1_96;
 
@@ -307,15 +307,11 @@ impl SspiImpl for Kerberos {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: crate::builders::FilledAcquireCredentialsHandle<
-            '_,
-            Self::CredentialsHandle,
-            Self::AuthenticationData,
-        >,
+        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
-            return Err(sspi::Error::new(
-                sspi::ErrorKind::NoCredentials,
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
                 String::from("The client must specify the auth data"),
             ));
         }
@@ -330,14 +326,23 @@ impl SspiImpl for Kerberos {
 
     fn initialize_security_context_impl(
         &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<
+            '_,
+            Self::AuthenticationData,
+            Self::CredentialsHandle,
+        >,
     ) -> Result<crate::InitializeSecurityContextResult> {
         let status = match self.state {
             KerberosState::Negotiate => {
-                let credentials = builder.credentials_handle.as_ref().unwrap().as_ref().ok_or_else(|| Error {
-                    error_type: ErrorKind::NoCredentials,
-                    description: "No credentials provided".to_owned(),
-                })?;
+                let credentials = builder
+                    .credentials_handle
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .ok_or_else(|| Error {
+                        error_type: ErrorKind::NoCredentials,
+                        description: "No credentials provided".to_owned(),
+                    })?;
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
@@ -363,10 +368,15 @@ impl SspiImpl for Kerberos {
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
-                let credentials = builder.credentials_handle.as_ref().unwrap().as_ref().ok_or_else(|| Error {
-                    error_type: ErrorKind::NoCredentials,
-                    description: "No credentials provided".to_owned(),
-                })?;
+                let credentials = builder
+                    .credentials_handle
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .ok_or_else(|| Error {
+                        error_type: ErrorKind::NoCredentials,
+                        description: "No credentials provided".to_owned(),
+                    })?;
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);

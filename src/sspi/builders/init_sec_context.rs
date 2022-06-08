@@ -19,10 +19,12 @@ pub type EmptyInitializeSecurityContext<'a, AuthData, C> = InitializeSecurityCon
     WithoutTargetDataRepresentation,
     WithoutOutput,
 >;
-pub type FilledInitializeSecurityContext<'a,
-AuthData,
-// I,
-C> = InitializeSecurityContext<
+pub type FilledInitializeSecurityContext<
+    'a,
+    AuthData,
+    // I,
+    C,
+> = InitializeSecurityContext<
     'a,
     // I,
     AuthData,
@@ -105,7 +107,9 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(inner:Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> Self {
+    pub(crate) fn new(
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) -> Self {
         Self {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,
@@ -266,9 +270,7 @@ impl<
     }
 }
 
-impl<'a, AuthData, CredsHandle>
-    FilledInitializeSecurityContext<'a, AuthData, CredsHandle>
-{
+impl<'a, AuthData, CredsHandle> FilledInitializeSecurityContext<'a, AuthData, CredsHandle> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<InitializeSecurityContextResult> {
         let inner = self.inner.take().unwrap();
@@ -282,15 +284,17 @@ impl<'a, AuthData, CredsHandle>
         inner.initialize_security_context_impl(self)
     }
 
-    pub(crate) fn inner(&mut self, inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) {
+    pub(crate) fn inner(
+        &mut self,
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) {
         self.inner = Some(inner);
     }
 
-    pub(crate) fn transform(
+    pub(crate) fn transform<AuthData2>(
         self,
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) -> FilledInitializeSecurityContext<'a, AuthData, CredsHandle>
-    {
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData2>>,
+    ) -> FilledInitializeSecurityContext<'a, AuthData2, CredsHandle> {
         InitializeSecurityContext {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,

@@ -79,16 +79,16 @@ impl SspiImpl for Ntlm {
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
-        // builder.transform(Box::new(&mut self.0)).execute()
         todo!()
+        // builder.transform(Box::new(&mut self.0)).execute()
+        // self.0.initialize_security_context_impl(builder)
     }
 
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
-        // builder.transform(Box::new(&mut self.0)).execute()
-        todo!()
+        builder.transform(Box::new(&mut self.0)).execute()
     }
 }
 

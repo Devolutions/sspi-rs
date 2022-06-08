@@ -40,12 +40,13 @@ where
     pub auth_data: Option<&'a AuthData>,
 }
 
-impl<'a, CredsHandle, AuthData, CredentialUseSet>
-    AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+impl<'a, CredsHandle, AuthData, CredentialUseSet> AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) fn new(inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>) -> Self {
+    pub(crate) fn new(
+        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+    ) -> Self {
         Self {
             inner: Some(inner),
             phantom_cred_handle: PhantomData,
@@ -101,8 +102,7 @@ where
     }
 }
 
-impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData>
-{
+impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> sspi::Result<AcquireCredentialsHandleResult<CredsHandle>> {
         let inner = self.inner.take().unwrap();
@@ -112,8 +112,7 @@ impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, 
     pub(crate) fn transform(
         self,
         inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) -> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData>
-    {
+    ) -> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
         AcquireCredentialsHandle {
             inner: Some(inner),
             phantom_cred_handle: PhantomData,

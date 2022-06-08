@@ -105,9 +105,7 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
 /// * [SSPI.h](https://docs.microsoft.com/en-us/windows/win32/api/sspi/)
 pub trait Sspi
 where
-    Self:
-    //   Sized +
-      SspiImpl,
+    Self: SspiImpl,
 {
     /// Acquires a handle to preexisting credentials of a security principal. The preexisting credentials are
     /// available only for `sspi::winapi` module. This handle is required by the `initialize_security_context`
@@ -151,7 +149,10 @@ where
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
     fn acquire_credentials_handle(
         &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> where Self: Sized {
+    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>
+    where
+        Self: Sized,
+    {
         AcquireCredentialsHandle::new(Box::new(self))
     }
 
@@ -212,7 +213,12 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> where Self: Sized {
+    fn initialize_security_context(
+        &mut self,
+    ) -> EmptyInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>
+    where
+        Self: Sized,
+    {
         InitializeSecurityContext::new(Box::new(self))
     }
 
@@ -293,7 +299,12 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(&mut self) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> where Self: Sized {
+    fn accept_security_context(
+        &mut self,
+    ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>
+    where
+        Self: Sized,
+    {
         AcceptSecurityContext::new(Box::new(self))
     }
 
@@ -694,9 +705,7 @@ where
 
 pub trait SspiEx
 where
-    Self:
-    // Sized +
-    SspiImpl,
+    Self: SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
 }

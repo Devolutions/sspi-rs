@@ -130,6 +130,27 @@ impl Ntlm {
             recv_sealing_key: None,
         }
     }
+
+    pub fn with_auth_identity(identity: Option<AuthIdentityBuffers>) -> Self {
+        Self {
+            negotiate_message: None,
+            challenge_message: None,
+            authenticate_message: None,
+
+            state: NtlmState::Initial,
+            flags: NegotiateFlags::empty(),
+            identity,
+            version: DEFAULT_NTLM_VERSION,
+
+            send_single_host_data: false,
+
+            send_signing_key: [0x00; HASH_SIZE],
+            recv_signing_key: [0x00; HASH_SIZE],
+            send_sealing_key: None,
+            recv_sealing_key: None,
+        }
+    }
+
     pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
         self.version = version;
     }

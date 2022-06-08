@@ -5,8 +5,7 @@ use crate::sspi::builders::{
 };
 use crate::sspi::{self, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext};
 
-pub trait SspiImpl
-{
+pub trait SspiImpl {
     type CredentialsHandle;
     type AuthenticationData;
 
