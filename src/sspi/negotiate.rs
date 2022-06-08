@@ -14,7 +14,7 @@ use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities, PackageInfo, SecurityBuffer,
-    SecurityPackageType, SecurityStatus, Sspi,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -33,11 +33,13 @@ pub struct NegotiateConfig {
     pub krb_config: Option<KerberosConfig>,
 }
 
+#[derive(Debug, Clone)]
 pub enum NegotiatedProtocol {
     Kerberos(Kerberos),
     Ntlm(Ntlm),
 }
 
+#[derive(Debug, Clone)]
 pub struct Negotiate {
     // config: NegotiateConfig,
     protocol: NegotiatedProtocol,
@@ -68,6 +70,12 @@ impl Negotiate {
             protocol,
             auth_identity: None,
         })
+    }
+}
+
+impl SspiEx for Negotiate {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+        self.auth_identity = Some(identity.into());
     }
 }
 
