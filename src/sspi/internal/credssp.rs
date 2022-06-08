@@ -540,7 +540,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-enum SspiContext {
+pub enum SspiContext {
     Ntlm(Ntlm),
     Kerberos(Kerberos),
     Negotiate(Negotiate),
