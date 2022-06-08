@@ -189,8 +189,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         Some(auth_data.as_mut().unwrap().clone())
     };
 
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
-    // let kerberos = kerberos_ptr.as_mut().unwrap();
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let mut input_tokens = if p_input == null::<SecBufferDesc>() as *mut _ {
         Vec::new()
@@ -263,7 +262,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         Some(auth_data.as_mut().unwrap().clone())
     };
 
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let mut input_tokens = if p_input == null::<SecBufferDesc>() as *mut _ {
         Vec::new()
@@ -317,7 +316,7 @@ pub unsafe extern "system" fn QueryContextAttributesA(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let kerberos = p_ctxt_handle_to_security_package(ph_context);
+            let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = kerberos.query_context_sizes().unwrap();
@@ -344,7 +343,7 @@ pub unsafe extern "system" fn QueryContextAttributesW(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let kerberos = p_ctxt_handle_to_security_package(ph_context);
+            let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = kerberos.query_context_sizes().unwrap();

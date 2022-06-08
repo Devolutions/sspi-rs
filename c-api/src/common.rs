@@ -45,7 +45,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         Some(auth_data.as_mut().unwrap().clone())
     };
 
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -85,7 +85,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 
 #[no_mangle]
 pub unsafe extern "system" fn CompleteAuthToken(ph_context: PCtxtHandle, p_token: PSecBufferDesc) -> SecurityStatus {
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -183,7 +183,7 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -214,7 +214,7 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    let kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
