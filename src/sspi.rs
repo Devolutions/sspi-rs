@@ -91,8 +91,9 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
     Ok(vec![
+        negotiate::PACKAGE_INFO.clone(),
         kerberos::PACKAGE_INFO.clone(),
-        kerberos::NEGO_PACKAGE_INFO.clone(),
+        ntlm::PACKAGE_INFO.clone(),
     ])
 }
 

@@ -11,9 +11,8 @@ use sspi::{
 use crate::sec_buffer::{
     copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc,
 };
-use crate::sec_handle::{p_ctxt_handle_to_security_package, PCredHandle, PCtxtHandle};
+use crate::sec_handle::{p_ctxt_handle_to_sspi_context, PCredHandle, PCtxtHandle, CredentialsHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
-use crate::utils::into_raw_ptr;
 
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
@@ -37,22 +36,23 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     _pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
+    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
-        None
+    let (mut auth_data, security_package_name) = if credentials_handle == null::<CredentialsHandle>() as *mut _ {
+        (None, None)
     } else {
-        Some(auth_data.as_mut().unwrap().clone())
+        let cred_handle = credentials_handle.as_mut().unwrap();
+        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
     };
 
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, security_package_name).as_mut().unwrap();
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
 
     let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-    let result_status = kerberos
+    let result_status = sspi_context
         .accept_security_context()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
@@ -66,8 +66,6 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     (*p_output).c_buffers = output_token.len().try_into().unwrap();
     (*p_output).p_buffers = security_buffers_to_raw(output_token);
     (*ph_new_context).dw_lower = (*ph_context).dw_lower;
-
-    into_raw_ptr(kerberos);
 
     result_status.to_u32().unwrap()
 }
@@ -85,25 +83,22 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 
 #[no_mangle]
 pub unsafe extern "system" fn CompleteAuthToken(ph_context: PCtxtHandle, p_token: PSecBufferDesc) -> SecurityStatus {
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let result = kerberos.complete_auth_token(&mut buffers).map_or_else(
+    sspi_context.complete_auth_token(&mut buffers).map_or_else(
         |err| err.error_type.to_u32().unwrap(),
         |result| result.to_u32().unwrap(),
-    );
-
-    into_raw_ptr(kerberos);
-
-    result
+    )
 }
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(ph_context: PCtxtHandle) -> SecurityStatus {
-    let _ = p_ctxt_handle_to_security_package(ph_context);
+    drop_in_place(p_ctxt_handle_to_sspi_context(ph_context, None));
+    // drop_in_place((*ph_context).dw_upper as *mut String);
     drop_in_place(ph_context);
 
     0
@@ -183,13 +178,13 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
     let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let result_status = match kerberos.encrypt_message(
+    let result_status = match sspi_context.encrypt_message(
         EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
         &mut message,
         message_seq_no.try_into().unwrap(),
@@ -199,8 +194,6 @@ pub unsafe extern "system" fn EncryptMessage(
     };
 
     copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
-
-    into_raw_ptr(kerberos);
 
     result_status
 }
@@ -214,21 +207,19 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
     let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let (decryption_flags, status) = match kerberos.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
+    let (decryption_flags, status) = match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
         Ok(flags) => (flags, 0),
         Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
     };
 
     copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
     *pf_qop = decryption_flags.bits().try_into().unwrap();
-
-    into_raw_ptr(kerberos);
 
     status
 }

@@ -1,14 +1,14 @@
 use std::ffi::CStr;
-use std::ptr::{null, read};
+use std::ptr::null;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::internal::credssp::SspiContext;
-use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::{
-    AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, ErrorKind, Kerberos, Negotiate, Ntlm, Sspi, SspiEx,
+    AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm,
+    Sspi,
 };
 
 use crate::sec_buffer::{
@@ -29,52 +29,40 @@ pub struct SecHandle {
 pub type PCredHandle = *mut SecHandle;
 pub type PCtxtHandle = *mut SecHandle;
 
-pub(crate) trait SecurityPackage: Sspi + SspiImpl + SspiEx {}
-
-impl SecurityPackage for Kerberos {}
-
-impl SecurityPackage for Negotiate {}
-
-impl SecurityPackage for Ntlm {}
-
-pub(crate) unsafe fn p_ctxt_handle_to_security_package(mut context: PCtxtHandle) -> SspiContext {
-    // if context == null::<SecHandle>() as *mut _ {
-    //     context = into_raw_ptr(SecHandle {
-    //         dw_lower: 0,
-    //         dw_upper: 0,
-    //     });
-    // }
-    // if (*context).dw_lower == 0 {
-    //     (*context).dw_lower =
-    //         into_raw_ptr(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()) as c_ulonglong;
-    // }
-    // (*context).dw_lower as *mut Kerberos
-    match CStr::from_ptr((*context).dw_upper as *const i8).to_str().unwrap() {
-        "Negotiate" => SspiContext::Negotiate(read((*context).dw_lower as *const Negotiate)),
-        "Kerberos" => SspiContext::Kerberos(read((*context).dw_lower as *const Kerberos)),
-        "Ntlm" => SspiContext::Ntlm(read((*context).dw_lower as *const Ntlm)),
-        package_name => panic!("{} security package is not supported", package_name),
-    }
+pub(crate) struct CredentialsHandle {
+    pub credentials: AuthIdentityBuffers,
+    pub security_package_name: String,
 }
 
-// pub(crate) unsafe fn p_ctxt_handle_to_kerberos(mut context: PCtxtHandle) -> *mut Kerberos {
-//     if context == null::<SecHandle>() as *mut _ {
-//         context = into_raw_ptr(SecHandle {
-//             dw_lower: 0,
-//             dw_upper: 0,
-//         });
-//     }
-//     if (*context).dw_lower == 0 {
-//         (*context).dw_lower =
-//             into_raw_ptr(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()) as c_ulonglong;
-//     }
-//     (*context).dw_lower as *mut Kerberos
-// }
+pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
+    mut context: PCtxtHandle,
+    security_package_name: Option<&str>,
+) -> *mut SspiContext {
+    if context == null::<SecHandle>() as *mut _ {
+        context = into_raw_ptr(SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        });
+    }
+    if (*context).dw_lower == 0 {
+        if security_package_name.is_none() {
+            panic!("Security context is not initialized");
+        }
+        (*context).dw_lower = into_raw_ptr(match security_package_name.unwrap() {
+            "Negotiate" => SspiContext::Negotiate(Negotiate::new(NegotiateConfig::new(None)).unwrap()),
+            "Ntlm" => SspiContext::Ntlm(Ntlm::new()),
+            "Kerberos" => SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()),
+            name => panic!("`{}` security package name is not supported", name),
+        }) as c_ulonglong;
+        (*context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+    }
+    (*context).dw_lower as *mut SspiContext
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn AcquireCredentialsHandleA(
     _psz_principal: LpStr,
-    _psz_package: LpStr,
+    psz_package: LpStr,
     _f_aredential_use: c_ulong,
     _pv_logon_id: *const c_void,
     p_auth_data: *const c_void,
@@ -83,15 +71,20 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
+    let security_package_name = CStr::from_ptr(psz_package).to_str().unwrap().to_owned();
+
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
 
-    let creds = AuthIdentityBuffers {
+    let credentials = AuthIdentityBuffers {
         user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
         domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
         password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
     };
 
-    (*ph_credential).dw_lower = into_raw_ptr(creds) as c_ulonglong;
+    (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
+        credentials,
+        security_package_name,
+    }) as c_ulonglong;
 
     0
 }
@@ -110,7 +103,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
 #[no_mangle]
 pub unsafe extern "system" fn AcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
-    _psz_package: LpcWStr,
+    psz_package: LpcWStr,
     _f_credential_use: c_ulong,
     _pv_logon_id: *const c_void,
     p_auth_data: *const c_void,
@@ -119,15 +112,22 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
+    let security_package_name = c_w_str_to_string(psz_package);
+    // println!("{}", pkg);
+
+    // panic!("stop!.");
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
 
-    let creds = AuthIdentityBuffers {
+    let credentials = AuthIdentityBuffers {
         user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
         domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
         password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
     };
 
-    (*ph_credential).dw_lower = into_raw_ptr(creds) as c_ulonglong;
+    (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
+        credentials,
+        security_package_name,
+    }) as c_ulonglong;
 
     0
 }
@@ -179,17 +179,19 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     _pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
-
     let service_principal = CStr::from_ptr(p_target_name).to_str().unwrap();
 
-    let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
-        None
+    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+
+    let (mut auth_data, security_package_name) = if credentials_handle == null::<CredentialsHandle>() as *mut _ {
+        (None, None)
     } else {
-        Some(auth_data.as_mut().unwrap().clone())
+        let cred_handle = credentials_handle.as_mut().unwrap();
+        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
     };
 
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context_ptr = p_ctxt_handle_to_sspi_context(ph_context, security_package_name);
+    let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input == null::<SecBufferDesc>() as *mut _ {
         Vec::new()
@@ -202,7 +204,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let result_status = kerberos
+    let result_status = sspi_context
         .initialize_security_context()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
@@ -214,7 +216,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 
     (*p_output).c_buffers = output_tokens.len() as u32;
     (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
-    (*ph_new_context).dw_lower = into_raw_ptr(kerberos) as c_ulonglong;
+    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
 
     result_status.map_or_else(
         |err| err.error_type.to_u32().unwrap(),
@@ -252,17 +254,19 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     _pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    let auth_data = (*ph_credential).dw_lower as *mut AuthIdentityBuffers;
-
     let service_principal = c_w_str_to_string(p_target_name);
 
-    let mut auth_data = if auth_data == null::<AuthIdentityBuffers>() as *mut _ {
-        None
+    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+
+    let (mut auth_data, security_package_name) = if credentials_handle == null::<CredentialsHandle>() as *mut _ {
+        (None, None)
     } else {
-        Some(auth_data.as_mut().unwrap().clone())
+        let cred_handle = credentials_handle.as_mut().unwrap();
+        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
     };
 
-    let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+    let sspi_context_ptr = p_ctxt_handle_to_sspi_context(ph_context, security_package_name);
+    let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input == null::<SecBufferDesc>() as *mut _ {
         Vec::new()
@@ -274,7 +278,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let result_status = kerberos
+    let result_status = sspi_context
         .initialize_security_context()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
@@ -286,7 +290,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 
     (*p_output).c_buffers = output_tokens.len().try_into().unwrap();
     (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
-    (*ph_new_context).dw_lower = into_raw_ptr(kerberos) as c_ulonglong;
+    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
 
     result_status.map_or_else(
         |err| err.error_type.to_u32().unwrap(),
@@ -316,17 +320,15 @@ pub unsafe extern "system" fn QueryContextAttributesA(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+            let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
-            let pkg_sizes = kerberos.query_context_sizes().unwrap();
+            let pkg_sizes = sspi_context.query_context_sizes().unwrap();
 
             (*sizes).cb_max_token = pkg_sizes.max_token;
             (*sizes).cb_max_signature = pkg_sizes.max_signature;
             (*sizes).cb_block_size = pkg_sizes.block;
             (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
-
-            into_raw_ptr(kerberos);
 
             0
         }
@@ -343,17 +345,15 @@ pub unsafe extern "system" fn QueryContextAttributesW(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let mut kerberos = p_ctxt_handle_to_security_package(ph_context);
+            let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
-            let pkg_sizes = kerberos.query_context_sizes().unwrap();
+            let pkg_sizes = sspi_context.query_context_sizes().unwrap();
 
             (*sizes).cb_max_token = pkg_sizes.max_token;
             (*sizes).cb_max_signature = pkg_sizes.max_signature;
             (*sizes).cb_block_size = pkg_sizes.block;
             (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
-
-            into_raw_ptr(kerberos);
 
             0
         }
