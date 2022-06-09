@@ -7,7 +7,7 @@ repository = "https://github.com/devolutions/sspi-rs"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 authors = ["Vlad Aleksashyn <vlad.al.dp@gmail.com>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
-edition = "2018"
+edition = "2021"
 
 [workspace]
 members = [
