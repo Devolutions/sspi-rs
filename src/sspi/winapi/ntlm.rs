@@ -61,7 +61,7 @@ impl SspiImpl for Ntlm {
         };
 
         let builder = AcquireCredentialsHandle {
-            inner: Some(Box::new(&mut self.0)),
+            inner: Some(&mut self.0),
             phantom_cred_handle: PhantomData,
             phantom_cred_use_set: PhantomData,
 
@@ -86,7 +86,7 @@ impl SspiImpl for Ntlm {
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
-        builder.transform(Box::new(&mut self.0)).execute()
+        builder.transform(&mut self.0).execute()
     }
 }
 

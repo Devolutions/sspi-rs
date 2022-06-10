@@ -16,7 +16,8 @@ pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
     String::from_utf16_lossy(value_u16.as_ref())
 }
 
-pub fn get_domain_from_fqdm(fqdm: &[u8]) -> Option<String> {
+#[cfg(feature = "network_client")]
+pub fn get_domain_from_fqdn(fqdm: &[u8]) -> Option<String> {
     let mut fqdm = bytes_to_utf16_string(fqdm);
 
     if let Some(index) = fqdm.find('@') {
@@ -26,9 +27,10 @@ pub fn get_domain_from_fqdm(fqdm: &[u8]) -> Option<String> {
     }
 }
 
+#[cfg(feature = "network_client")]
 #[cfg(test)]
 mod tests {
-    use super::get_domain_from_fqdm;
+    use super::get_domain_from_fqdn;
 
     #[test]
     fn test_get_domain_from_fqdm() {
@@ -38,7 +40,7 @@ mod tests {
             99, 0, 111, 0, 109, 0,
         ];
 
-        let domain = get_domain_from_fqdm(&fqdm).unwrap();
+        let domain = get_domain_from_fqdn(&fqdm).unwrap();
 
         assert_eq!(&domain, "example.com");
     }

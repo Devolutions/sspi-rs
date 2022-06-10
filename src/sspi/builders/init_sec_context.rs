@@ -16,10 +16,7 @@ pub type EmptyInitializeSecurityContext<'a, C> = InitializeSecurityContext<
     WithoutTargetDataRepresentation,
     WithoutOutput,
 >;
-pub type FilledInitializeSecurityContext<
-    'a,
-    C,
-> = InitializeSecurityContext<
+pub type FilledInitializeSecurityContext<'a, C> = InitializeSecurityContext<
     'a,
     C,
     WithCredentialsHandle,
@@ -238,4 +235,3 @@ impl<
         }
     }
 }
-

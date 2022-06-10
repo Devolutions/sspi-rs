@@ -6,8 +6,9 @@ use super::{
     ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
     WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
-use crate::sspi::internal::SspiImpl;
-use crate::sspi::{self, DataRepresentation, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags};
+use crate::sspi::{
+    self, DataRepresentation, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiPackage,
+};
 
 pub type EmptyAcceptSecurityContext<'a, AuthData, C> = AcceptSecurityContext<
     'a,
@@ -47,7 +48,6 @@ pub struct AcceptSecurityContextResult {
 /// * [`with_context_requirements`](struct.AcceptSecurityContext.html#method.with_context_requirements)
 /// * [`with_target_data_representation`](struct.AcceptSecurityContext.html#method.with_target_data_representation)
 /// * [`with_output`](struct.AcceptSecurityContext.html#method.with_output)
-// #[derive(Debug)]
 pub struct AcceptSecurityContext<
     'a,
     AuthData,
@@ -57,13 +57,12 @@ pub struct AcceptSecurityContext<
     TargetDataRepresentationSet,
     OutputSet,
 > where
-    // AuthData: ToAssign,
     CredsHandleSet: ToAssign,
     ContextRequirementsSet: ToAssign,
     TargetDataRepresentationSet: ToAssign,
     OutputSet: ToAssign,
 {
-    inner: Option<Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>>,
+    inner: Option<SspiPackage<'a, CredsHandle, AuthData>>,
     phantom_creds_use_set: PhantomData<CredsHandleSet>,
     phantom_context_req_set: PhantomData<ContextRequirementsSet>,
     phantom_data_repr_set: PhantomData<TargetDataRepresentationSet>,
@@ -96,9 +95,7 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) -> Self {
+    pub(crate) fn new(inner: SspiPackage<'a, CredsHandle, AuthData>) -> Self {
         Self {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,
@@ -254,7 +251,7 @@ impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsH
 
     pub(crate) fn transform<AuthData2>(
         self,
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData2>>,
+        inner: SspiPackage<'a, CredsHandle, AuthData2>,
     ) -> FilledAcceptSecurityContext<'a, AuthData2, CredsHandle> {
         AcceptSecurityContext {
             inner: Some(inner),

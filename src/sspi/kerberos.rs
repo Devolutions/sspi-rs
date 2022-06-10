@@ -70,14 +70,6 @@ lazy_static! {
         name: SecurityPackageType::Kerberos,
         comment: String::from("Kerberos Security Package"),
     };
-
-    pub static ref NEGO_PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
-        name: SecurityPackageType::Other("Negotiate".into()),
-        comment: String::from("Negotiate Security Package"),
-    };
 }
 
 #[derive(Debug, Clone)]
@@ -326,11 +318,7 @@ impl SspiImpl for Kerberos {
 
     fn initialize_security_context_impl(
         &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<
-            '_,
-            // Self::AuthenticationData,
-            Self::CredentialsHandle,
-        >,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         let status = match self.state {
             KerberosState::Negotiate => {

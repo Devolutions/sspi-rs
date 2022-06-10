@@ -1,4 +1,4 @@
-use std::ptr::{drop_in_place, null};
+use std::ptr::drop_in_place;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_void};
@@ -13,6 +13,7 @@ use crate::sec_buffer::{
 };
 use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
+use crate::utils::transform_credentials_handle;
 
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
@@ -27,7 +28,7 @@ pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> Sec
 #[no_mangle]
 pub unsafe extern "system" fn AcceptSecurityContext(
     ph_credential: PCredHandle,
-    ph_context: PCtxtHandle,
+    mut ph_context: PCtxtHandle,
     p_input: PSecBufferDesc,
     f_context_req: c_ulong,
     target_data_rep: c_ulong,
@@ -38,17 +39,9 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 ) -> SecurityStatus {
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (mut auth_data, security_package_name) = if credentials_handle == null::<CredentialsHandle>() as *mut _ {
-        (None, None)
-    } else {
-        let cred_handle = credentials_handle.as_mut().unwrap();
-        (
-            Some(cred_handle.credentials.clone()),
-            Some(cred_handle.security_package_name.as_str()),
-        )
-    };
+    let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
 
-    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, security_package_name)
+    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name)
         .as_mut()
         .unwrap();
 
@@ -87,8 +80,11 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "system" fn CompleteAuthToken(ph_context: PCtxtHandle, p_token: PSecBufferDesc) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
+pub unsafe extern "system" fn CompleteAuthToken(
+    mut ph_context: PCtxtHandle,
+    p_token: PSecBufferDesc,
+) -> SecurityStatus {
+    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -101,9 +97,9 @@ pub unsafe extern "system" fn CompleteAuthToken(ph_context: PCtxtHandle, p_token
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
 #[no_mangle]
-pub unsafe extern "system" fn DeleteSecurityContext(ph_context: PCtxtHandle) -> SecurityStatus {
-    drop_in_place(p_ctxt_handle_to_sspi_context(ph_context, None));
-    // drop_in_place((*ph_context).dw_upper as *mut String);
+pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
+    drop_in_place(p_ctxt_handle_to_sspi_context(&mut ph_context, None));
+    drop_in_place((*ph_context).dw_upper as *mut String);
     drop_in_place(ph_context);
 
     0
@@ -178,12 +174,12 @@ pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut
 #[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn EncryptMessage(
-    ph_context: PCtxtHandle,
+    mut ph_context: PCtxtHandle,
     f_qop: c_ulong,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
+    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -207,12 +203,12 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSec
 #[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "system" fn DecryptMessage(
-    ph_context: PCtxtHandle,
+    mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, None).as_mut().unwrap();
+    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);

@@ -268,7 +268,9 @@ impl CredSspClient {
                     .with_target_name(&self.service_principal_name)
                     .with_input(&mut input_token)
                     .with_output(&mut output_token);
-                let result = cred_ssp_context.sspi_context.initialize_security_context_impl(&mut builder)?;
+                let result = cred_ssp_context
+                    .sspi_context
+                    .initialize_security_context_impl(&mut builder)?;
                 self.credentials_handle = credentials_handle;
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
@@ -552,9 +554,9 @@ impl SspiImpl for SspiContext {
         builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(Box::new(ntlm)).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(Box::new(kerberos)).execute(),
-            SspiContext::Negotiate(negotiate) => builder.transform(Box::new(negotiate)).execute(),
+            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
         }
     }
 
@@ -574,9 +576,9 @@ impl SspiImpl for SspiContext {
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(Box::new(ntlm)).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(Box::new(kerberos)).execute(),
-            SspiContext::Negotiate(negotiate) => builder.transform(Box::new(negotiate)).execute(),
+            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
         }
     }
 }

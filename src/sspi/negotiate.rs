@@ -1,16 +1,22 @@
+#[cfg(feature = "network_client")]
 use std::env;
+#[cfg(feature = "network_client")]
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
+#[cfg(feature = "network_client")]
 use url::Url;
 
 use crate::internal::SspiImpl;
+#[cfg(feature = "network_client")]
 use crate::kerberos::config::KdcType;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+#[cfg(feature = "network_client")]
 use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
-use crate::utils::get_domain_from_fqdm;
+#[cfg(feature = "network_client")]
+use crate::utils::get_domain_from_fqdn;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
@@ -36,8 +42,20 @@ pub struct NegotiateConfig {
 }
 
 impl NegotiateConfig {
-    pub fn new(krb_config: Option<KerberosConfig>) -> Self {
-        Self { krb_config }
+    pub fn new() -> Self {
+        Self { krb_config: None }
+    }
+
+    pub fn new_with_kerberos(krb_config: KerberosConfig) -> Self {
+        Self {
+            krb_config: Some(krb_config),
+        }
+    }
+}
+
+impl Default for NegotiateConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -49,7 +67,6 @@ pub enum NegotiatedProtocol {
 
 #[derive(Debug, Clone)]
 pub struct Negotiate {
-    // config: NegotiateConfig,
     protocol: NegotiatedProtocol,
     auth_identity: Option<AuthIdentityBuffers>,
 }
@@ -164,7 +181,7 @@ impl SspiImpl for Negotiate {
         #[cfg(feature = "network_client")]
         if let Some(identity) = &self.auth_identity {
             if let NegotiatedProtocol::Ntlm(_) = self.protocol {
-                if let Some(domain) = get_domain_from_fqdm(&identity.user) {
+                if let Some(domain) = get_domain_from_fqdn(&identity.user) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
                         url: Url::from_str(format!("tcp://{}:88", domain).as_str()).unwrap(),
                         kdc_type: KdcType::Kdc,
@@ -192,7 +209,7 @@ impl SspiImpl for Negotiate {
         #[cfg(feature = "network_client")]
         if let NegotiatedProtocol::Ntlm(_) = self.protocol {
             if let Some(Some(auth_data)) = builder.credentials_handle.as_ref() {
-                if let Some(domain) = get_domain_from_fqdm(&auth_data.user) {
+                if let Some(domain) = get_domain_from_fqdn(&auth_data.user) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
                         url: Url::from_str(format!("tcp://{}:88", domain).as_str()).unwrap(),
                         kdc_type: KdcType::Kdc,

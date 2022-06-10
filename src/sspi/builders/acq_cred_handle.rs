@@ -3,8 +3,7 @@ use std::marker::PhantomData;
 use chrono::NaiveDateTime;
 
 use super::{Assigned, NotAssigned, ToAssign};
-use crate::sspi::internal::SspiImpl;
-use crate::sspi::{self, CredentialUse, Luid};
+use crate::sspi::{self, CredentialUse, Luid, SspiPackage};
 
 pub type EmptyAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithoutCredentialUse>;
 pub type FilledAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithCredentialUse>;
@@ -24,12 +23,11 @@ pub struct AcquireCredentialsHandleResult<C> {
 ///
 /// These methods are required to be called before calling the `execute` method
 /// * [`with_credential_use`](struct.AcquireCredentialsHandle.html#method.with_credential_use)
-// #[derive(Debug)]
 pub struct AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) inner: Option<Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>>,
+    pub(crate) inner: Option<SspiPackage<'a, CredsHandle, AuthData>>,
     pub(crate) phantom_cred_handle: PhantomData<CredsHandle>,
     pub(crate) phantom_cred_use_set: PhantomData<CredentialUseSet>,
 
@@ -44,9 +42,7 @@ impl<'a, CredsHandle, AuthData, CredentialUseSet> AcquireCredentialsHandle<'a, C
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) fn new(
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) -> Self {
+    pub(crate) fn new(inner: SspiPackage<'a, CredsHandle, AuthData>) -> Self {
         Self {
             inner: Some(inner),
             phantom_cred_handle: PhantomData,
@@ -111,7 +107,7 @@ impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, 
 
     pub(crate) fn transform(
         self,
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
+        inner: SspiPackage<'a, CredsHandle, AuthData>,
     ) -> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
         AcquireCredentialsHandle {
             inner: Some(inner),
