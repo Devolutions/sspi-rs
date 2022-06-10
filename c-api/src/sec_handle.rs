@@ -4,7 +4,9 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
+use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::internal::credssp::SspiContext;
+use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::{
     AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm,
@@ -187,7 +189,10 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         (None, None)
     } else {
         let cred_handle = credentials_handle.as_mut().unwrap();
-        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
+        (
+            Some(cred_handle.credentials.clone()),
+            Some(cred_handle.security_package_name.as_str()),
+        )
     };
 
     let sspi_context_ptr = p_ctxt_handle_to_sspi_context(ph_context, security_package_name);
@@ -204,15 +209,14 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let result_status = sspi_context
-        .initialize_security_context()
+    let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
         .with_target_name(service_principal)
         .with_input(&mut input_tokens)
-        .with_output(&mut output_tokens)
-        .execute();
+        .with_output(&mut output_tokens);
+    let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
     (*p_output).c_buffers = output_tokens.len() as u32;
     (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
@@ -262,7 +266,10 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         (None, None)
     } else {
         let cred_handle = credentials_handle.as_mut().unwrap();
-        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
+        (
+            Some(cred_handle.credentials.clone()),
+            Some(cred_handle.security_package_name.as_str()),
+        )
     };
 
     let sspi_context_ptr = p_ctxt_handle_to_sspi_context(ph_context, security_package_name);
@@ -278,15 +285,14 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let result_status = sspi_context
-        .initialize_security_context()
+    let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
         .with_target_name(&service_principal)
         .with_input(&mut input_tokens)
-        .with_output(&mut output_tokens)
-        .execute();
+        .with_output(&mut output_tokens);
+    let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
     (*p_output).c_buffers = output_tokens.len().try_into().unwrap();
     (*p_output).p_buffers = security_buffers_to_raw(output_tokens);

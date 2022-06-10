@@ -6,6 +6,7 @@ use url::Url;
 
 use crate::internal::SspiImpl;
 use crate::kerberos::config::KdcType;
+#[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
@@ -186,7 +187,7 @@ impl SspiImpl for Negotiate {
 
     fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: &mut builders::FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         #[cfg(feature = "network_client")]
         if let NegotiatedProtocol::Ntlm(_) = self.protocol {

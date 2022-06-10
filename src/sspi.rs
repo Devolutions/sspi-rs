@@ -216,11 +216,11 @@ where
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
     fn initialize_security_context(
         &mut self,
-    ) -> EmptyInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>
+    ) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle>
     where
         Self: Sized,
     {
-        InitializeSecurityContext::new(Box::new(self))
+        InitializeSecurityContext::new()
     }
 
     /// Lets the server component of a transport application establish a security context between the server and a remote client.

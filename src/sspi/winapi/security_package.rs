@@ -130,7 +130,7 @@ impl SspiImpl for SecurityPackage {
 
     fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         let mut context_to_set = None;
         let (context, context_new) = if let Some(ref mut context) = self.context {

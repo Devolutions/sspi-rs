@@ -6,13 +6,10 @@ use super::{
     ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
     WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
-use crate::sspi::internal::SspiImpl;
-use crate::sspi::{self, ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
+use crate::sspi::{ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
 
-pub type EmptyInitializeSecurityContext<'a, AuthData, C> = InitializeSecurityContext<
+pub type EmptyInitializeSecurityContext<'a, C> = InitializeSecurityContext<
     'a,
-    // I,
-    AuthData,
     C,
     WithoutCredentialsHandle,
     WithoutContextRequirements,
@@ -21,13 +18,9 @@ pub type EmptyInitializeSecurityContext<'a, AuthData, C> = InitializeSecurityCon
 >;
 pub type FilledInitializeSecurityContext<
     'a,
-    AuthData,
-    // I,
     C,
 > = InitializeSecurityContext<
     'a,
-    // I,
-    AuthData,
     C,
     WithCredentialsHandle,
     WithContextRequirements,
@@ -56,22 +49,17 @@ pub struct InitializeSecurityContextResult {
 /// * [`with_output`](struct.InitializeSecurityContext.html#method.with_output)
 pub struct InitializeSecurityContext<
     'a,
-    // Inner,
-    AuthData,
     CredsHandle,
     CredsHandleSet,
     ContextRequirementsSet,
     TargetDataRepresentationSet,
     OutputSet,
 > where
-    // Inner: SspiImpl,
-    // AuthData,
     CredsHandleSet: ToAssign,
     ContextRequirementsSet: ToAssign,
     TargetDataRepresentationSet: ToAssign,
     OutputSet: ToAssign,
 {
-    inner: Option<Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>>,
     phantom_creds_use_set: PhantomData<CredsHandleSet>,
     phantom_context_req_set: PhantomData<ContextRequirementsSet>,
     phantom_data_repr_set: PhantomData<TargetDataRepresentationSet>,
@@ -88,8 +76,6 @@ pub struct InitializeSecurityContext<
 
 impl<
         'a,
-        // Inner: SspiImpl,
-        AuthData,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -98,8 +84,6 @@ impl<
     >
     InitializeSecurityContext<
         'a,
-        // Inner,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -107,11 +91,8 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            inner: Some(inner),
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -134,8 +115,6 @@ impl<
         credentials_handle: &'a mut CredsHandle,
     ) -> InitializeSecurityContext<
         'a,
-        // Inner,
-        AuthData,
         CredsHandle,
         WithCredentialsHandle,
         ContextRequirementsSet,
@@ -143,7 +122,6 @@ impl<
         OutputSet,
     > {
         InitializeSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -165,8 +143,6 @@ impl<
         context_requirements: ClientRequestFlags,
     ) -> InitializeSecurityContext<
         'a,
-        // Inner,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         WithContextRequirements,
@@ -174,7 +150,6 @@ impl<
         OutputSet,
     > {
         InitializeSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -196,8 +171,6 @@ impl<
         target_data_representation: DataRepresentation,
     ) -> InitializeSecurityContext<
         'a,
-        // Inner,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -205,7 +178,6 @@ impl<
         OutputSet,
     > {
         InitializeSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -227,8 +199,6 @@ impl<
         output: &'a mut [SecurityBuffer],
     ) -> InitializeSecurityContext<
         'a,
-        // Inner,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -236,7 +206,6 @@ impl<
         WithOutput,
     > {
         InitializeSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -270,45 +239,3 @@ impl<
     }
 }
 
-impl<'a, AuthData, CredsHandle> FilledInitializeSecurityContext<'a, AuthData, CredsHandle> {
-    /// Executes the SSPI function that the builder represents.
-    pub fn execute(mut self) -> sspi::Result<InitializeSecurityContextResult> {
-        let inner = self.inner.take().unwrap();
-
-        inner.initialize_security_context_impl(&mut self)
-    }
-
-    pub fn simple_execute(&mut self) -> sspi::Result<InitializeSecurityContextResult> {
-        let inner = self.inner.take().unwrap();
-
-        inner.initialize_security_context_impl(self)
-    }
-
-    pub(crate) fn inner(
-        &mut self,
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>>,
-    ) {
-        self.inner = Some(inner);
-    }
-
-    pub(crate) fn transform<AuthData2>(
-        self,
-        inner: Box<&'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData2>>,
-    ) -> FilledInitializeSecurityContext<'a, AuthData2, CredsHandle> {
-        InitializeSecurityContext {
-            inner: Some(inner),
-            phantom_creds_use_set: PhantomData,
-            phantom_context_req_set: PhantomData,
-            phantom_data_repr_set: PhantomData,
-            phantom_output_set: PhantomData,
-
-            credentials_handle: self.credentials_handle,
-            context_requirements: self.context_requirements,
-            target_data_representation: self.target_data_representation,
-            output: self.output,
-
-            target_name: self.target_name,
-            input: self.input,
-        }
-    }
-}

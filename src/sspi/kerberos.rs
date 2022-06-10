@@ -328,7 +328,7 @@ impl SspiImpl for Kerberos {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<
             '_,
-            Self::AuthenticationData,
+            // Self::AuthenticationData,
             Self::CredentialsHandle,
         >,
     ) -> Result<crate::InitializeSecurityContextResult> {

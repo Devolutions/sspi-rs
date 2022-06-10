@@ -187,7 +187,7 @@ impl SspiImpl for Ntlm {
 
     fn initialize_security_context_impl(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         let status = match self.state {
             NtlmState::Initial => {

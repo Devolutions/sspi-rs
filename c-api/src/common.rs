@@ -11,7 +11,7 @@ use sspi::{
 use crate::sec_buffer::{
     copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc,
 };
-use crate::sec_handle::{p_ctxt_handle_to_sspi_context, PCredHandle, PCtxtHandle, CredentialsHandle};
+use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
 
 #[no_mangle]
@@ -42,10 +42,15 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         (None, None)
     } else {
         let cred_handle = credentials_handle.as_mut().unwrap();
-        (Some(cred_handle.credentials.clone()), Some(cred_handle.security_package_name.as_str()))
+        (
+            Some(cred_handle.credentials.clone()),
+            Some(cred_handle.security_package_name.as_str()),
+        )
     };
 
-    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, security_package_name).as_mut().unwrap();
+    let sspi_context = p_ctxt_handle_to_sspi_context(ph_context, security_package_name)
+        .as_mut()
+        .unwrap();
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -213,10 +218,11 @@ pub unsafe extern "system" fn DecryptMessage(
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
     let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let (decryption_flags, status) = match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
-        Ok(flags) => (flags, 0),
-        Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
-    };
+    let (decryption_flags, status) =
+        match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
+            Ok(flags) => (flags, 0),
+            Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
+        };
 
     copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
     *pf_qop = decryption_flags.bits().try_into().unwrap();

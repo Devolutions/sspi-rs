@@ -16,6 +16,7 @@ use rand::Rng;
 pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
+use crate::builders::EmptyInitializeSecurityContext;
 use crate::crypto::compute_sha256;
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::kerberos::config::KerberosConfig;
@@ -252,26 +253,22 @@ impl CredSspClient {
 
         match self.state {
             CredSspState::NegoToken => {
-                let input_token = SecurityBuffer::new(
+                let mut input_token = [SecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
                     SecurityBufferType::Token,
-                );
+                )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
-                let result = self
-                    .context
-                    .as_mut()
-                    .unwrap()
-                    .sspi_context
-                    .initialize_security_context()
+                let cred_ssp_context = self.context.as_mut().unwrap();
+                let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
                     .with_context_requirements(ClientRequestFlags::empty())
                     .with_target_data_representation(DataRepresentation::Native)
                     .with_target_name(&self.service_principal_name)
-                    .with_input(&mut [input_token])
-                    .with_output(&mut output_token)
-                    .execute()?;
+                    .with_input(&mut input_token)
+                    .with_output(&mut output_token);
+                let result = cred_ssp_context.sspi_context.initialize_security_context_impl(&mut builder)?;
                 self.credentials_handle = credentials_handle;
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
@@ -563,7 +560,7 @@ impl SspiImpl for SspiContext {
 
     fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder),

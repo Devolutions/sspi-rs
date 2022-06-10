@@ -16,7 +16,7 @@ pub trait SspiImpl {
 
     fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult>;
 
     fn accept_security_context_impl<'a>(
