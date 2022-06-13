@@ -173,6 +173,8 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
@@ -194,16 +196,15 @@ where
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// # #[allow(unused_variables)]
-    /// let result = ntlm
-    ///     .initialize_security_context()
+    /// let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     ///     .with_credentials_handle(&mut credentials_handle)
     ///     .with_context_requirements(
     ///         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
     ///     )
     ///     .with_target_data_representation(sspi::DataRepresentation::Native)
-    ///     .with_output(&mut output_buffer)
-    ///     .execute()
-    ///     .unwrap();
+    ///     .with_output(&mut output_buffer);
+    /// 
+    /// let result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// ```
     ///
     /// # MSDN
@@ -232,7 +233,9 @@ where
     /// # Example
     ///
     /// ```
-    /// #  use sspi::Sspi;
+    /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// #
@@ -251,17 +254,16 @@ where
     /// #
     /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     /// #
-    /// # let _result = client_ntlm
-    /// #     .initialize_security_context()
+    /// # let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #     .with_context_requirements(
     /// #         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
     /// #     )
     /// #     .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #     .with_target_name("user")
-    /// #     .with_output(&mut client_output_buffer)
-    /// #     .execute()
-    /// #     .unwrap();
+    /// #     .with_output(&mut client_output_buffer);
+    /// #
+    /// # let _result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
@@ -312,6 +314,8 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// # let mut ntlm = sspi::Ntlm::new();
@@ -342,8 +346,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = client_ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -351,9 +354,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = ntlm
     /// #         .accept_security_context()
@@ -397,6 +400,9 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
+    /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
@@ -426,8 +432,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = client_ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -435,9 +440,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = ntlm
     /// #         .accept_security_context()
@@ -505,6 +510,9 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
+    /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// # let mut server_ntlm = sspi::Ntlm::new();
     /// #
@@ -534,8 +542,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -543,9 +550,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = server_ntlm
     /// #         .accept_security_context()

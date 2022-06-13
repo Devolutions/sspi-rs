@@ -17,6 +17,8 @@
 //! use sspi::winapi::Ntlm;
 //! #[cfg(not(windows))]
 //! use sspi::Ntlm;
+//! use sspi::builders::EmptyInitializeSecurityContext;
+//! use crate::sspi::internal::SspiImpl;
 //!
 //! let mut ntlm = Ntlm::new();
 //!
@@ -38,15 +40,15 @@
 //!     sspi::SecurityBufferType::Token,
 //! )];
 //!
-//! let result = ntlm
-//!     .initialize_security_context()
+//! let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
 //!     .with_credentials_handle(&mut acq_creds_handle_result.credentials_handle)
 //!     .with_context_requirements(
 //!         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY
 //!     )
 //!     .with_target_data_representation(sspi::DataRepresentation::Native)
-//!     .with_output(&mut output)
-//!     .execute()
+//!     .with_output(&mut output);
+//! 
+//! let result = ntlm.initialize_security_context_impl(&mut builder)
 //!     .expect("InitializeSecurityContext resulted in error");
 //!
 //! println!("Initialized security context with result status: {:?}", result.status);

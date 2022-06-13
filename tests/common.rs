@@ -2,6 +2,7 @@ use std::io;
 
 use chrono::Local;
 use lazy_static::lazy_static;
+use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::internal::credssp;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse, DataRepresentation,
@@ -101,14 +102,14 @@ where
     loop {
         let mut client_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
-        let client_result = client
-            .initialize_security_context()
+        let mut builder = EmptyInitializeSecurityContext::<ClientSspi::CredentialsHandle>::new()
             .with_credentials_handle(&mut client_creds_handle)
             .with_context_requirements(ClientRequestFlags::ALLOCATE_MEMORY | ClientRequestFlags::CONFIDENTIALITY)
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut server_output)
-            .with_output(&mut client_output)
-            .execute()?;
+            .with_output(&mut client_output);
+
+        let client_result = client.initialize_security_context_impl(&mut builder)?;
         client_status = client_result.status;
 
         if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {
