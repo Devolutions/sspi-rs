@@ -44,6 +44,7 @@ kerberos_crypto = "0.3.6"
 kerberos_constants = "0.0.9"
 oid = "0.2.1"
 sys-info = "0.9"
+trust-dns-resolver = "0.21.2"
 
 [dev-dependencies]
 whoami = "0.5"

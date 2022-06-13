@@ -9,6 +9,8 @@ use url::Url;
 
 use crate::internal::SspiImpl;
 #[cfg(feature = "network_client")]
+use crate::utils::resolve_kdc_host;
+#[cfg(feature = "network_client")]
 use crate::kerberos::config::KdcType;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
@@ -179,11 +181,11 @@ impl SspiImpl for Negotiate {
         self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
 
         #[cfg(feature = "network_client")]
-        if let Some(identity) = &self.auth_identity {
-            if let NegotiatedProtocol::Ntlm(_) = self.protocol {
-                if let Some(domain) = get_domain_from_fqdn(&identity.user) {
+        if let (Some(identity), NegotiatedProtocol::Ntlm(_)) = (&self.auth_identity, &self.protocol) {
+            if let Some(domain) = get_domain_from_fqdn(&identity.user) {
+                if let Some(host) = resolve_kdc_host(&domain) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(format!("tcp://{}:88", domain).as_str()).unwrap(),
+                        url: Url::from_str(&host).unwrap(),
                         kdc_type: KdcType::Kdc,
                         network_client: Box::new(ReqwestNetworkClient::new()),
                     })?)
@@ -207,11 +209,11 @@ impl SspiImpl for Negotiate {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         #[cfg(feature = "network_client")]
-        if let NegotiatedProtocol::Ntlm(_) = self.protocol {
-            if let Some(Some(auth_data)) = builder.credentials_handle.as_ref() {
-                if let Some(domain) = get_domain_from_fqdn(&auth_data.user) {
+        if let (NegotiatedProtocol::Ntlm(_), Some(Some(auth_data))) = (&self.protocol, builder.credentials_handle.as_ref()) {
+            if let Some(domain) = get_domain_from_fqdn(&auth_data.user) {
+                if let Some(host) = resolve_kdc_host(&domain) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(format!("tcp://{}:88", domain).as_str()).unwrap(),
+                        url: Url::from_str(&host).unwrap(),
                         kdc_type: KdcType::Kdc,
                         network_client: Box::new(ReqwestNetworkClient::new()),
                     })?)
