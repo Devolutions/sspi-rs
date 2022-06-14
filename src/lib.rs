@@ -47,7 +47,7 @@
 //!     )
 //!     .with_target_data_representation(sspi::DataRepresentation::Native)
 //!     .with_output(&mut output);
-//! 
+//!
 //! let result = ntlm.initialize_security_context_impl(&mut builder)
 //!     .expect("InitializeSecurityContext resulted in error");
 //!
@@ -84,11 +84,11 @@ cfg_if::cfg_if! {
 
 pub use crate::sspi::kerberos::config::KerberosConfig;
 pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
-pub use crate::sspi::negotiate::*;
+pub use crate::sspi::negotiate::{Negotiate, NegotiateConfig};
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{
-    builders, enumerate_security_packages, internal, kerberos, query_security_package_info,
+    builders, enumerate_security_packages, internal, kerberos, negotiate, ntlm, query_security_package_info,
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,

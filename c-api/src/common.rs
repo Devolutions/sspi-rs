@@ -13,6 +13,7 @@ use crate::sec_buffer::{
 };
 use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
+use crate::try_execute;
 use crate::utils::transform_credentials_handle;
 
 #[no_mangle]
@@ -41,9 +42,9 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
     let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
 
-    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name)
-        .as_mut()
-        .unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name))
+    .as_mut()
+    .unwrap();
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -84,7 +85,9 @@ pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
+    .as_mut()
+    .unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -98,7 +101,7 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
-    drop_in_place(p_ctxt_handle_to_sspi_context(&mut ph_context, None));
+    drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None)));
     drop_in_place((*ph_context).dw_upper as *mut String);
     drop_in_place(ph_context);
 
@@ -179,7 +182,9 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
+    .as_mut()
+    .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -208,7 +213,9 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
+    .as_mut()
+    .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);

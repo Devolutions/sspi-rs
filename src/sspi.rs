@@ -6,7 +6,7 @@ pub mod negotiate;
 #[cfg(windows)]
 pub mod winapi;
 
-mod ntlm;
+pub mod ntlm;
 
 use std::{error, fmt, io, result, str, string};
 
@@ -203,7 +203,7 @@ where
     ///     )
     ///     .with_target_data_representation(sspi::DataRepresentation::Native)
     ///     .with_output(&mut output_buffer);
-    /// 
+    ///
     /// let result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// ```
     ///

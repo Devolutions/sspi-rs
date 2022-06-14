@@ -58,3 +58,16 @@ pub unsafe fn transform_credentials_handle<'a>(
         )
     }
 }
+
+#[macro_export]
+macro_rules! try_execute {
+    ($x:expr) => {{
+        match $x {
+            Ok(value) => value,
+            Err(err) => {
+                return err.error_type.to_u32().unwrap();
+            }
+        }
+    }};
+}
+

@@ -9,8 +9,6 @@ use url::Url;
 
 use crate::internal::SspiImpl;
 #[cfg(feature = "network_client")]
-use crate::utils::resolve_kdc_host;
-#[cfg(feature = "network_client")]
 use crate::kerberos::config::KdcType;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
@@ -19,6 +17,8 @@ use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[cfg(feature = "network_client")]
 use crate::utils::get_domain_from_fqdn;
+#[cfg(feature = "network_client")]
+use crate::utils::resolve_kdc_host;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
@@ -93,7 +93,6 @@ impl Negotiate {
         };
 
         Ok(Negotiate {
-            // config,
             protocol,
             auth_identity: None,
         })
@@ -164,7 +163,6 @@ impl Sspi for Negotiate {
 
 impl SspiImpl for Negotiate {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
-
     type AuthenticationData = AuthIdentity;
 
     fn acquire_credentials_handle_impl<'a>(
@@ -209,7 +207,9 @@ impl SspiImpl for Negotiate {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         #[cfg(feature = "network_client")]
-        if let (NegotiatedProtocol::Ntlm(_), Some(Some(auth_data))) = (&self.protocol, builder.credentials_handle.as_ref()) {
+        if let (NegotiatedProtocol::Ntlm(_), Some(Some(auth_data))) =
+            (&self.protocol, builder.credentials_handle.as_ref())
+        {
             if let Some(domain) = get_domain_from_fqdn(&auth_data.user) {
                 if let Some(host) = resolve_kdc_host(&domain) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
@@ -223,15 +223,14 @@ impl SspiImpl for Negotiate {
 
         match &mut self.protocol {
             NegotiatedProtocol::Kerberos(kerberos) => {
-                let result = kerberos.initialize_security_context_impl(builder);
-                match result {
+                match kerberos.initialize_security_context_impl(builder) {
                     Result::Err(Error {
                         error_type: ErrorKind::NoCredentials,
                         description: _,
                     }) => {
                         self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone()));
                     }
-                    _ => return result,
+                    result => return result,
                 };
             }
             _ => {}

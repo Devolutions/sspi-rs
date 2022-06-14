@@ -29,15 +29,22 @@ pub fn get_domain_from_fqdn(fqdm: &[u8]) -> Option<String> {
 
 #[cfg(feature = "network_client")]
 pub fn resolve_kdc_host(domain: &str) -> Option<String> {
-    use trust_dns_resolver::{system_conf::read_system_conf, Resolver};
+    use trust_dns_resolver::system_conf::read_system_conf;
+    use trust_dns_resolver::Resolver;
 
     let (resolver_config, resolver_options) = read_system_conf().ok()?;
     let resolver = Resolver::new(resolver_config, resolver_options).ok()?;
 
     if let Some(records) = resolver.srv_lookup(&format!("_kerberos._tcp.{}", domain)).ok() {
-        records.into_iter().next().map(|record| format!("tcp://{}:88", record.target()))
+        records
+            .into_iter()
+            .next()
+            .map(|record| format!("tcp://{}:88", record.target()))
     } else if let Some(records) = resolver.srv_lookup(&format!("_kerberos._udp.{}", domain)).ok() {
-        records.into_iter().next().map(|record| format!("udp://{}:88", record.target()))
+        records
+            .into_iter()
+            .next()
+            .map(|record| format!("udp://{}:88", record.target()))
     } else {
         None
     }

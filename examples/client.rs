@@ -8,13 +8,15 @@ use std::io;
 use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use sspi::builders::EmptyInitializeSecurityContext;
+use sspi::internal::SspiImpl;
 #[cfg(windows)]
 use sspi::winapi::Ntlm;
 #[cfg(not(windows))]
 use sspi::Ntlm;
 use sspi::{
     AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, Sspi, internal::SspiImpl, builders::EmptyInitializeSecurityContext,
+    SecurityStatus, Sspi,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -87,7 +89,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_target_data_representation(DataRepresentation::Native)
         .with_target_name(username.as_str())
         .with_output(&mut output_buffer);
-    
+
     let _result = ntlm.initialize_security_context_impl(&mut builder)?;
 
     write_message(&mut stream, &output_buffer[0].buffer)?;

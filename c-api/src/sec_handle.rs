@@ -8,8 +8,8 @@ use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::{
-    AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm,
-    Sspi,
+    kerberos, negotiate, ntlm, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind, Kerberos,
+    Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
 };
 
 use crate::sec_buffer::{p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc};
@@ -17,6 +17,7 @@ use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentity
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
+use crate::try_execute;
 use crate::utils::{
     c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
@@ -38,7 +39,7 @@ pub struct CredentialsHandle {
 pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     context: &mut PCtxtHandle,
     security_package_name: Option<&str>,
-) -> *mut SspiContext {
+) -> Result<*mut SspiContext> {
     if context.is_null() {
         *context = into_raw_ptr(SecHandle {
             dw_lower: 0,
@@ -47,17 +48,27 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     }
     if (*(*context)).dw_lower == 0 {
         if security_package_name.is_none() {
-            panic!("Security context is not initialized");
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "Security package name is not provided".into(),
+            ));
         }
-        (*(*context)).dw_lower = into_raw_ptr(match security_package_name.unwrap() {
-            "Negotiate" => SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default()).unwrap()),
-            "Ntlm" => SspiContext::Ntlm(Ntlm::new()),
-            "Kerberos" => SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()),
-            name => panic!("`{}` security package name is not supported", name),
-        }) as c_ulonglong;
-        (*(*context)).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        let name = security_package_name.unwrap();
+
+        let sspi_context = match name {
+            negotiate::PKG_NAME => SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default()).unwrap()),
+            kerberos::PKG_NAME => SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            _ => return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("security package name `{}` is not supported", name),
+            )),
+        };
+
+        (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
+        (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
     }
-    (*(*context)).dw_lower as *mut SspiContext
+    Ok((*(*context)).dw_lower as *mut SspiContext)
 }
 
 #[no_mangle]
@@ -184,7 +195,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 
     let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
 
-    let sspi_context_ptr = p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name);
+    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name));
     let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input.is_null() {
@@ -254,7 +265,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 
     let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
 
-    let sspi_context_ptr = p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name);
+    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name));
     let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input.is_null() {
@@ -309,7 +320,9 @@ pub unsafe extern "system" fn QueryContextAttributesA(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
+            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
+            .as_mut()
+            .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();
@@ -334,7 +347,9 @@ pub unsafe extern "system" fn QueryContextAttributesW(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let sspi_context = p_ctxt_handle_to_sspi_context(&mut ph_context, None).as_mut().unwrap();
+            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
+            .as_mut()
+            .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();
