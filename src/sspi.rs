@@ -2,10 +2,11 @@
 pub mod builders;
 pub mod internal;
 pub mod kerberos;
+pub mod negotiate;
 #[cfg(windows)]
 pub mod winapi;
 
-mod ntlm;
+pub mod ntlm;
 
 use std::{error, fmt, io, result, str, string};
 
@@ -57,6 +58,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
     match package_type {
         SecurityPackageType::Ntlm => Ok(ntlm::PACKAGE_INFO.clone()),
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
+        SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -87,8 +89,9 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
     Ok(vec![
+        negotiate::PACKAGE_INFO.clone(),
         kerberos::PACKAGE_INFO.clone(),
-        kerberos::NEGO_PACKAGE_INFO.clone(),
+        ntlm::PACKAGE_INFO.clone(),
     ])
 }
 
@@ -145,7 +148,7 @@ where
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
     fn acquire_credentials_handle(
         &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData> {
+    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
         AcquireCredentialsHandle::new(self)
     }
 
@@ -170,6 +173,8 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
@@ -191,23 +196,22 @@ where
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// # #[allow(unused_variables)]
-    /// let result = ntlm
-    ///     .initialize_security_context()
+    /// let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     ///     .with_credentials_handle(&mut credentials_handle)
     ///     .with_context_requirements(
     ///         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
     ///     )
     ///     .with_target_data_representation(sspi::DataRepresentation::Native)
-    ///     .with_output(&mut output_buffer)
-    ///     .execute()
-    ///     .unwrap();
+    ///     .with_output(&mut output_buffer);
+    ///
+    /// let result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// ```
     ///
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self, Self::CredentialsHandle> {
-        InitializeSecurityContext::new(self)
+    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
+        InitializeSecurityContext::new()
     }
 
     /// Lets the server component of a transport application establish a security context between the server and a remote client.
@@ -229,7 +233,9 @@ where
     /// # Example
     ///
     /// ```
-    /// #  use sspi::Sspi;
+    /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// #
@@ -248,17 +254,16 @@ where
     /// #
     /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     /// #
-    /// # let _result = client_ntlm
-    /// #     .initialize_security_context()
+    /// # let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #     .with_context_requirements(
     /// #         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
     /// #     )
     /// #     .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #     .with_target_name("user")
-    /// #     .with_output(&mut client_output_buffer)
-    /// #     .execute()
-    /// #     .unwrap();
+    /// #     .with_output(&mut client_output_buffer);
+    /// #
+    /// # let _result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
@@ -287,7 +292,9 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(&mut self) -> EmptyAcceptSecurityContext<'_, Self, Self::CredentialsHandle> {
+    fn accept_security_context(
+        &mut self,
+    ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
         AcceptSecurityContext::new(self)
     }
 
@@ -307,6 +314,8 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
     /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// # let mut ntlm = sspi::Ntlm::new();
@@ -337,8 +346,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = client_ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -346,9 +354,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = ntlm
     /// #         .accept_security_context()
@@ -392,6 +400,9 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
+    /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
@@ -421,8 +432,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = client_ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -430,9 +440,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = ntlm
     /// #         .accept_security_context()
@@ -500,6 +510,9 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::builders::EmptyInitializeSecurityContext;
+    /// # use crate::sspi::internal::SspiImpl;
+    /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// # let mut server_ntlm = sspi::Ntlm::new();
     /// #
@@ -529,8 +542,7 @@ where
     /// # loop {
     /// #     client_output_buffer[0].buffer.clear();
     /// #
-    /// #     let _client_result = ntlm
-    /// #         .initialize_security_context()
+    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
     /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
     /// #         .with_context_requirements(
     /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -538,9 +550,9 @@ where
     /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
     /// #         .with_target_name("user")
     /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
+    /// #         .with_output(&mut client_output_buffer);
+    /// #
+    /// #     let _client_result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
     /// #
     /// #     let server_result = server_ntlm
     /// #         .accept_security_context()
@@ -692,6 +704,9 @@ where
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
 }
+
+pub type SspiPackage<'a, CredsHandle, AuthData> =
+    &'a mut dyn SspiImpl<CredentialsHandle = CredsHandle, AuthenticationData = AuthData>;
 
 bitflags! {
     /// Indicate the quality of protection. Used in the `encrypt_message` method.
@@ -1025,14 +1040,16 @@ pub enum CredentialUse {
 pub enum SecurityPackageType {
     Ntlm,
     Kerberos,
+    Negotiate,
     Other(String),
 }
 
 impl string::ToString for SecurityPackageType {
     fn to_string(&self) -> String {
         match self {
-            SecurityPackageType::Ntlm => ntlm::PKG_NAME.to_string(),
-            SecurityPackageType::Kerberos => kerberos::PKG_NAME.to_string(),
+            SecurityPackageType::Ntlm => ntlm::PKG_NAME.into(),
+            SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
+            SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1045,6 +1062,7 @@ impl str::FromStr for SecurityPackageType {
         match s {
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
+            negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }

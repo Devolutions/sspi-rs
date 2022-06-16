@@ -13,7 +13,7 @@ pub trait NetworkClient: Debug {
 #[cfg(feature = "network_client")]
 pub mod reqwest_network_client {
     use std::io::{Read, Write};
-    use std::net::TcpStream;
+    use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 
     use byteorder::{BigEndian, ReadBytesExt};
     use picky_asn1::restricted_string::IA5String;
@@ -64,6 +64,33 @@ pub mod reqwest_network_client {
                     })?;
 
                     Ok(buf)
+                }
+                "udp" => {
+                    let port = portpicker::pick_unused_port().ok_or_else(|| Error {
+                        error_type: ErrorKind::InternalError,
+                        description: "No free ports".into(),
+                    })?;
+                    let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port))?;
+
+                    if data.len() < 4 {
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            format!("kerb message has invalid length. expected >= 4 but got {}", data.len()),
+                        ));
+                    }
+                    // first 4 bytes contains message length. we don't need it for UDP
+                    udp_socket.send_to(&data[4..], url.as_str())?;
+
+                    // 48 000 bytes: default maximum token len in Windows
+                    let mut buff = vec![0; 0xbb80];
+
+                    let n = udp_socket.recv(&mut buff)?;
+
+                    let mut reply_buf = Vec::with_capacity(n + 4);
+                    reply_buf.extend_from_slice(&(n as u32).to_be_bytes());
+                    reply_buf.extend_from_slice(&buff[0..n]);
+
+                    Ok(reply_buf)
                 }
                 scheme => Err(Error {
                     error_type: ErrorKind::InternalError,

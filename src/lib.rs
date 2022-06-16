@@ -17,6 +17,8 @@
 //! use sspi::winapi::Ntlm;
 //! #[cfg(not(windows))]
 //! use sspi::Ntlm;
+//! use sspi::builders::EmptyInitializeSecurityContext;
+//! use crate::sspi::internal::SspiImpl;
 //!
 //! let mut ntlm = Ntlm::new();
 //!
@@ -38,15 +40,15 @@
 //!     sspi::SecurityBufferType::Token,
 //! )];
 //!
-//! let result = ntlm
-//!     .initialize_security_context()
+//! let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
 //!     .with_credentials_handle(&mut acq_creds_handle_result.credentials_handle)
 //!     .with_context_requirements(
 //!         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY
 //!     )
 //!     .with_target_data_representation(sspi::DataRepresentation::Native)
-//!     .with_output(&mut output)
-//!     .execute()
+//!     .with_output(&mut output);
+//!
+//! let result = ntlm.initialize_security_context_impl(&mut builder)
 //!     .expect("InitializeSecurityContext resulted in error");
 //!
 //! println!("Initialized security context with result status: {:?}", result.status);
@@ -82,10 +84,11 @@ cfg_if::cfg_if! {
 
 pub use crate::sspi::kerberos::config::KerberosConfig;
 pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
+pub use crate::sspi::negotiate::{Negotiate, NegotiateConfig};
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{
-    builders, enumerate_security_packages, internal, kerberos, query_security_package_info,
+    builders, enumerate_security_packages, internal, kerberos, negotiate, ntlm, query_security_package_info,
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,

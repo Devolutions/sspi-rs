@@ -1,7 +1,9 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_ushort};
+use sspi::AuthIdentityBuffers;
 
+use crate::sec_handle::CredentialsHandle;
 use crate::sspi_data_types::{SecChar, SecWChar};
 
 pub fn into_raw_ptr<T>(value: T) -> *mut T {
@@ -42,3 +44,30 @@ pub unsafe fn c_str_into_string(s: *const SecChar) -> String {
 
     String::from_utf8(from_raw_parts(s as *const u8, len).to_vec()).unwrap()
 }
+
+pub unsafe fn transform_credentials_handle<'a>(
+    credentials_handle: *mut CredentialsHandle,
+) -> (Option<AuthIdentityBuffers>, Option<&'a str>) {
+    if credentials_handle.is_null() {
+        (None, None)
+    } else {
+        let cred_handle = credentials_handle.as_mut().unwrap();
+        (
+            Some(cred_handle.credentials.clone()),
+            Some(cred_handle.security_package_name.as_str()),
+        )
+    }
+}
+
+#[macro_export]
+macro_rules! try_execute {
+    ($x:expr) => {{
+        match $x {
+            Ok(value) => value,
+            Err(err) => {
+                return err.error_type.to_u32().unwrap();
+            }
+        }
+    }};
+}
+

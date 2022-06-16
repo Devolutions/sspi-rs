@@ -15,7 +15,7 @@ members = [
 ]
 
 [features]
-network_client = ["reqwest"]
+network_client = ["reqwest", "trust-dns-resolver", "portpicker"]
 
 [dependencies]
 byteorder = "1.2.7"
@@ -44,6 +44,8 @@ kerberos_crypto = "0.3.6"
 kerberos_constants = "0.0.9"
 oid = "0.2.1"
 sys-info = "0.9"
+trust-dns-resolver = { version = "0.21.2", optional = true }
+portpicker = { version = "0.1.1", optional = true }
 
 [dev-dependencies]
 whoami = "0.5"

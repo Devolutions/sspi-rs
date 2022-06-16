@@ -8,6 +8,8 @@ use std::io;
 use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use sspi::builders::EmptyInitializeSecurityContext;
+use sspi::internal::SspiImpl;
 #[cfg(windows)]
 use sspi::winapi::Ntlm;
 #[cfg(not(windows))]
@@ -79,15 +81,16 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .execute()?;
 
     let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let username = whoami::username();
 
-    let _result = ntlm
-        .initialize_security_context()
+    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(&mut acq_cred_result.credentials_handle)
         .with_context_requirements(ClientRequestFlags::CONFIDENTIALITY | ClientRequestFlags::ALLOCATE_MEMORY)
         .with_target_data_representation(DataRepresentation::Native)
-        .with_target_name(whoami::username().as_str())
-        .with_output(&mut output_buffer)
-        .execute()?;
+        .with_target_name(username.as_str())
+        .with_output(&mut output_buffer);
+
+    let _result = ntlm.initialize_security_context_impl(&mut builder)?;
 
     write_message(&mut stream, &output_buffer[0].buffer)?;
 
@@ -98,15 +101,15 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
 
         read_message(&mut stream, &mut input_buffer[0].buffer)?;
 
-        let result = ntlm
-            .initialize_security_context()
+        let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
             .with_credentials_handle(&mut acq_cred_result.credentials_handle)
             .with_context_requirements(ClientRequestFlags::CONFIDENTIALITY | ClientRequestFlags::ALLOCATE_MEMORY)
             .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(whoami::username().as_str())
+            .with_target_name(username.as_str())
             .with_input(&mut input_buffer)
-            .with_output(&mut output_buffer)
-            .execute()?;
+            .with_output(&mut output_buffer);
+
+        let result = ntlm.initialize_security_context_impl(&mut builder)?;
 
         if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
             println!("Completing the token...");

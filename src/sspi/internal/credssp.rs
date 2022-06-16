@@ -16,6 +16,7 @@ use rand::Rng;
 pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
+use crate::builders::EmptyInitializeSecurityContext;
 use crate::crypto::compute_sha256;
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::kerberos::config::KerberosConfig;
@@ -27,7 +28,10 @@ use crate::sspi::{
     FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
     ServerRequestFlags, Sspi, SspiEx,
 };
-use crate::{AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult};
+use crate::{
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, ErrorKind, InitializeSecurityContextResult, Negotiate,
+    NegotiateConfig,
+};
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
@@ -150,6 +154,7 @@ enum EndpointType {
 
 #[derive(Debug, Clone)]
 pub enum ClientMode {
+    Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),
     Ntlm,
 }
@@ -224,6 +229,9 @@ impl CredSspClient {
             context.check_peer_version(ts_request.version)?;
         } else {
             self.context = match &self.client_mode {
+                ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
+                    Negotiate::new(negotiate_config.clone())?,
+                ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     Kerberos::new_client_from_config(kerberos_config.clone())?,
                 ))),
@@ -245,26 +253,24 @@ impl CredSspClient {
 
         match self.state {
             CredSspState::NegoToken => {
-                let input_token = SecurityBuffer::new(
+                let mut input_token = [SecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
                     SecurityBufferType::Token,
-                );
+                )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
-                let result = self
-                    .context
-                    .as_mut()
-                    .unwrap()
-                    .sspi_context
-                    .initialize_security_context()
+                let cred_ssp_context = self.context.as_mut().unwrap();
+                let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
                     .with_context_requirements(ClientRequestFlags::empty())
                     .with_target_data_representation(DataRepresentation::Native)
                     .with_target_name(&self.service_principal_name)
-                    .with_input(&mut [input_token])
-                    .with_output(&mut output_token)
-                    .execute()?;
+                    .with_input(&mut input_token)
+                    .with_output(&mut output_token);
+                let result = cred_ssp_context
+                    .sspi_context
+                    .initialize_security_context_impl(&mut builder)?;
                 self.credentials_handle = credentials_handle;
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
@@ -376,6 +382,15 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
             self.context = match &self.context_config {
+                ClientMode::Negotiate(_) => {
+                    return Err(ServerError {
+                        ts_request,
+                        error: sspi::Error::new(
+                            ErrorKind::UnsupportedFunction,
+                            "Negotiate module is not supported for the CredSsp server".into(),
+                        ),
+                    })
+                }
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
                 ))),
@@ -524,42 +539,46 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-enum SspiContext {
+pub enum SspiContext {
     Ntlm(Ntlm),
     Kerberos(Kerberos),
+    Negotiate(Negotiate),
 }
 
 impl SspiImpl for SspiContext {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
-    fn acquire_credentials_handle_impl(
-        &mut self,
-        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl<'a>(
+        &'a mut self,
+        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         match self {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
         }
     }
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder),
+            SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
+            SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
         }
     }
 
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
+            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
         }
     }
 }
@@ -569,6 +588,7 @@ impl Sspi for SspiContext {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
             SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),
+            SspiContext::Negotiate(negotiate) => negotiate.complete_auth_token(token),
         }
     }
 
@@ -581,6 +601,7 @@ impl Sspi for SspiContext {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
+            SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message, sequence_number),
         }
     }
 
@@ -592,6 +613,7 @@ impl Sspi for SspiContext {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
+            SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message, sequence_number),
         }
     }
 
@@ -599,24 +621,28 @@ impl Sspi for SspiContext {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_sizes(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_sizes(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_sizes(),
         }
     }
     fn query_context_names(&mut self) -> sspi::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_names(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_names(),
         }
     }
     fn query_context_package_info(&mut self) -> sspi::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_package_info(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_package_info(),
         }
     }
     fn query_context_cert_trust_status(&mut self) -> sspi::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_cert_trust_status(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_cert_trust_status(),
         }
     }
 }
@@ -626,6 +652,7 @@ impl SspiEx for SspiContext {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
+            SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identity(identity),
         }
     }
 }
@@ -732,6 +759,7 @@ impl CredSspContext {
                 }
             }
             SspiContext::Kerberos(_) => {}
+            SspiContext::Negotiate(_) => {}
         };
 
         self.encrypt_message(&public_key)

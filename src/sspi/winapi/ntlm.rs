@@ -37,7 +37,7 @@ impl SspiImpl for Ntlm {
 
     fn acquire_credentials_handle_impl(
         &mut self,
-        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         let (identity, _auth_data) = if let Some(auth_data) = builder.auth_data {
             let domain_str = auth_data.domain.clone().unwrap_or_default();
@@ -75,16 +75,16 @@ impl SspiImpl for Ntlm {
         builder.execute()
     }
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult> {
-        builder.transform(&mut self.0).execute()
+        self.0.initialize_security_context_impl(builder)
     }
 
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult> {
         builder.transform(&mut self.0).execute()
     }

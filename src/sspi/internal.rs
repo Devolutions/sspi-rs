@@ -5,25 +5,22 @@ use crate::sspi::builders::{
 };
 use crate::sspi::{self, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext};
 
-pub trait SspiImpl
-where
-    Self: Sized,
-{
+pub trait SspiImpl {
     type CredentialsHandle;
     type AuthenticationData;
 
-    fn acquire_credentials_handle_impl(
-        &mut self,
-        builder: FilledAcquireCredentialsHandle<'_, Self, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl<'a>(
+        &'a mut self,
+        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> sspi::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
-    fn initialize_security_context_impl(
+    fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: FilledInitializeSecurityContext<'_, Self, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::Result<InitializeSecurityContextResult>;
 
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self, Self::CredentialsHandle>,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> sspi::Result<AcceptSecurityContextResult>;
 }
