@@ -235,3 +235,25 @@ impl<
         }
     }
 }
+
+impl<
+        'a,
+        CredsHandle,
+        CredsHandleSet: ToAssign,
+        ContextRequirementsSet: ToAssign,
+        TargetDataRepresentationSet: ToAssign,
+        OutputSet: ToAssign,
+    > Default
+    for InitializeSecurityContext<
+        'a,
+        CredsHandle,
+        CredsHandleSet,
+        ContextRequirementsSet,
+        TargetDataRepresentationSet,
+        OutputSet,
+    >
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
