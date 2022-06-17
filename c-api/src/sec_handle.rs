@@ -57,12 +57,16 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         let sspi_context = match name {
             negotiate::PKG_NAME => SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default()).unwrap()),
-            kerberos::PKG_NAME => SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap()),
+            kerberos::PKG_NAME => {
+                SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap())
+            }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
-            _ => return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!("security package name `{}` is not supported", name),
-            )),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("security package name `{}` is not supported", name),
+                ))
+            }
         };
 
         (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
@@ -321,8 +325,8 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     match ul_attribute {
         0 => {
             let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-            .as_mut()
-            .unwrap();
+                .as_mut()
+                .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();
@@ -348,8 +352,8 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     match ul_attribute {
         0 => {
             let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-            .as_mut()
-            .unwrap();
+                .as_mut()
+                .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();

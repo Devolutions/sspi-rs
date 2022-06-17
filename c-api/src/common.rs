@@ -43,8 +43,8 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
 
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name))
-    .as_mut()
-    .unwrap();
+        .as_mut()
+        .unwrap();
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -86,8 +86,8 @@ pub unsafe extern "system" fn CompleteAuthToken(
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-    .as_mut()
-    .unwrap();
+        .as_mut()
+        .unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -183,8 +183,8 @@ pub unsafe extern "system" fn EncryptMessage(
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-    .as_mut()
-    .unwrap();
+        .as_mut()
+        .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -214,8 +214,8 @@ pub unsafe extern "system" fn DecryptMessage(
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-    .as_mut()
-    .unwrap();
+        .as_mut()
+        .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);

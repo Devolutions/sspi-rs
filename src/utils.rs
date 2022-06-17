@@ -20,11 +20,7 @@ pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
 pub fn get_domain_from_fqdn(fqdm: &[u8]) -> Option<String> {
     let mut fqdm = bytes_to_utf16_string(fqdm);
 
-    if let Some(index) = fqdm.find('@') {
-        Some(fqdm.split_off(index + 1))
-    } else {
-        None
-    }
+    fqdm.find('@').map(|index| fqdm.split_off(index + 1))
 }
 
 #[cfg(feature = "network_client")]
@@ -35,12 +31,12 @@ pub fn resolve_kdc_host(domain: &str) -> Option<String> {
     let (resolver_config, resolver_options) = read_system_conf().ok()?;
     let resolver = Resolver::new(resolver_config, resolver_options).ok()?;
 
-    if let Some(records) = resolver.srv_lookup(&format!("_kerberos._tcp.{}", domain)).ok() {
+    if let Ok(records) = resolver.srv_lookup(&format!("_kerberos._tcp.{}", domain)) {
         records
             .into_iter()
             .next()
             .map(|record| format!("tcp://{}:88", record.target()))
-    } else if let Some(records) = resolver.srv_lookup(&format!("_kerberos._udp.{}", domain)).ok() {
+    } else if let Ok(records) = resolver.srv_lookup(&format!("_kerberos._udp.{}", domain)) {
         records
             .into_iter()
             .next()

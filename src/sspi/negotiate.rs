@@ -61,6 +61,7 @@ impl Default for NegotiateConfig {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum NegotiatedProtocol {
     Kerberos(Kerberos),
@@ -77,13 +78,13 @@ impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
         let protocol = if let Some(krb_config) = config.krb_config {
             Kerberos::new_client_from_config(krb_config)
-                .map(|kerberos| NegotiatedProtocol::Kerberos(kerberos))
+                .map(NegotiatedProtocol::Kerberos)
                 .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
         } else {
             #[cfg(feature = "network_client")]
             if env::var(SSPI_KDC_URL_ENV).is_ok() {
                 Kerberos::new_client_from_config(KerberosConfig::from_env())
-                    .map(|kerberos| NegotiatedProtocol::Kerberos(kerberos))
+                    .map(NegotiatedProtocol::Kerberos)
                     .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
             } else {
                 NegotiatedProtocol::Ntlm(Ntlm::new())
@@ -221,20 +222,17 @@ impl SspiImpl for Negotiate {
             }
         }
 
-        match &mut self.protocol {
-            NegotiatedProtocol::Kerberos(kerberos) => {
-                match kerberos.initialize_security_context_impl(builder) {
-                    Result::Err(Error {
-                        error_type: ErrorKind::NoCredentials,
-                        description: _,
-                    }) => {
-                        self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone()));
-                    }
-                    result => return result,
-                };
-            }
-            _ => {}
-        };
+        if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {
+            match kerberos.initialize_security_context_impl(builder) {
+                Result::Err(Error {
+                    error_type: ErrorKind::NoCredentials,
+                    description: _,
+                }) => {
+                    self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone()));
+                }
+                result => return result,
+            };
+        }
 
         match &mut self.protocol {
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
