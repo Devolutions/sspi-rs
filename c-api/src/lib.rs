@@ -1,5 +1,6 @@
 #[allow(clippy::missing_safety_doc)]
 pub mod common;
+pub mod credentials_attributes;
 pub mod sec_buffer;
 #[allow(clippy::missing_safety_doc)]
 pub mod sec_handle;

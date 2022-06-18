@@ -8,6 +8,7 @@ use sspi::{
     SecurityBufferType, ServerRequestFlags, Sspi,
 };
 
+use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_buffer::{
     copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc,
 };
@@ -40,11 +41,18 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 ) -> SecurityStatus {
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
+    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+        Some(data) => data,
+        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+    };
 
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name))
-        .as_mut()
-        .unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        Some(security_package_name),
+        attributes,
+    ))
+    .as_mut()
+    .unwrap();
 
     let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
     let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -53,7 +61,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
     let result_status = sspi_context
         .accept_security_context()
-        .with_credentials_handle(&mut auth_data)
+        .with_credentials_handle(&mut Some(auth_data))
         .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
         .with_input(&mut input_tokens)
@@ -85,9 +93,13 @@ pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-        .as_mut()
-        .unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    ))
+    .as_mut()
+    .unwrap();
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -101,7 +113,11 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
-    drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None)));
+    drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    )));
     drop_in_place((*ph_context).dw_upper as *mut String);
     drop_in_place(ph_context);
 
@@ -182,9 +198,13 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-        .as_mut()
-        .unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    ))
+    .as_mut()
+    .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -213,9 +233,13 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-        .as_mut()
-        .unwrap();
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    ))
+    .as_mut()
+    .unwrap();
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
