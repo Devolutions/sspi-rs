@@ -3,6 +3,7 @@ use std::slice::from_raw_parts;
 use libc::{c_char, c_ushort};
 use sspi::AuthIdentityBuffers;
 
+use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_handle::CredentialsHandle;
 use crate::sspi_data_types::{SecChar, SecWChar};
 
@@ -47,15 +48,16 @@ pub unsafe fn c_str_into_string(s: *const SecChar) -> String {
 
 pub unsafe fn transform_credentials_handle<'a>(
     credentials_handle: *mut CredentialsHandle,
-) -> (Option<AuthIdentityBuffers>, Option<&'a str>) {
+) -> Option<(AuthIdentityBuffers, &'a str, &'a CredentialsAttributes)> {
     if credentials_handle.is_null() {
-        (None, None)
+        None
     } else {
         let cred_handle = credentials_handle.as_mut().unwrap();
-        (
-            Some(cred_handle.credentials.clone()),
-            Some(cred_handle.security_package_name.as_str()),
-        )
+        Some((
+            cred_handle.credentials.clone(),
+            cred_handle.security_package_name.as_str(),
+            &cred_handle.attributes,
+        ))
     }
 }
 

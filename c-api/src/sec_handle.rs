@@ -1,4 +1,5 @@
 use std::ffi::CStr;
+use std::mem::size_of;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
@@ -7,11 +8,15 @@ use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
+use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 use sspi::{
     kerberos, negotiate, ntlm, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind, Kerberos,
     Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
 };
 
+use crate::credentials_attributes::{
+    CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
+};
 use crate::sec_buffer::{p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc};
 use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentityW};
 use crate::sspi_data_types::{
@@ -21,6 +26,8 @@ use crate::try_execute;
 use crate::utils::{
     c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
+
+const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
 
 #[repr(C)]
 pub struct SecHandle {
@@ -34,11 +41,13 @@ pub type PCtxtHandle = *mut SecHandle;
 pub struct CredentialsHandle {
     pub credentials: AuthIdentityBuffers,
     pub security_package_name: String,
+    pub attributes: CredentialsAttributes,
 }
 
 pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     context: &mut PCtxtHandle,
     security_package_name: Option<&str>,
+    attributes: &CredentialsAttributes,
 ) -> Result<*mut SspiContext> {
     if context.is_null() {
         *context = into_raw_ptr(SecHandle {
@@ -46,6 +55,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             dw_upper: 0,
         });
     }
+
     if (*(*context)).dw_lower == 0 {
         if security_package_name.is_none() {
             return Err(Error::new(
@@ -56,9 +66,24 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         let name = security_package_name.unwrap();
 
         let sspi_context = match name {
-            negotiate::PKG_NAME => SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default()).unwrap()),
+            negotiate::PKG_NAME => {
+                if let Some(settings) = &attributes.kdc_proxy_settings {
+                    SspiContext::Negotiate(Negotiate::new(NegotiateConfig::new_with_kerberos(
+                        KerberosConfig::from_kdc_url(&settings.proxy_server, Box::new(ReqwestNetworkClient::new())),
+                    ))?)
+                } else {
+                    SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default())?)
+                }
+            }
             kerberos::PKG_NAME => {
-                SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap())
+                if let Some(settings) = &attributes.kdc_proxy_settings {
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_kdc_url(
+                        &settings.proxy_server,
+                        Box::new(ReqwestNetworkClient::new()),
+                    ))?)
+                } else {
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env())?)
+                }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
             _ => {
@@ -100,6 +125,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
         credentials,
         security_package_name,
+        attributes: CredentialsAttributes::default(),
     }) as c_ulonglong;
 
     0
@@ -141,6 +167,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
         credentials,
         security_package_name,
+        attributes: CredentialsAttributes::default(),
     }) as c_ulonglong;
 
     0
@@ -197,9 +224,16 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
+    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+        Some(creds_handle) => creds_handle,
+        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+    };
 
-    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name));
+    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        Some(security_package_name),
+        attributes
+    ));
     let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input.is_null() {
@@ -213,6 +247,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
+    let mut auth_data = Some(auth_data);
     let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
@@ -267,9 +302,16 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (mut auth_data, security_package_name) = transform_credentials_handle(credentials_handle);
+    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+        Some(creds_handle) => creds_handle,
+        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+    };
 
-    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, security_package_name));
+    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        Some(security_package_name),
+        attributes,
+    ));
     let sspi_context = sspi_context_ptr.as_mut().unwrap();
 
     let mut input_tokens = if p_input.is_null() {
@@ -282,6 +324,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
+    let mut auth_data = Some(auth_data);
     let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(&mut auth_data)
         .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
@@ -294,7 +337,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     (*p_output).c_buffers = output_tokens.len().try_into().unwrap();
     (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
     (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.unwrap().to_owned()) as c_ulonglong;
+    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
     result_status.map_or_else(
         |err| err.error_type.to_u32().unwrap(),
@@ -324,9 +367,13 @@ pub unsafe extern "system" fn QueryContextAttributesA(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-                .as_mut()
-                .unwrap();
+            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+                &mut ph_context,
+                None,
+                &CredentialsAttributes::default()
+            ))
+            .as_mut()
+            .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();
@@ -351,9 +398,13 @@ pub unsafe extern "system" fn QueryContextAttributesW(
 ) -> SecurityStatus {
     match ul_attribute {
         0 => {
-            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None))
-                .as_mut()
-                .unwrap();
+            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+                &mut ph_context,
+                None,
+                &CredentialsAttributes::default()
+            ))
+            .as_mut()
+            .unwrap();
             let sizes = p_buffer as *mut SecPkgContextSizes;
 
             let pkg_sizes = sspi_context.query_context_sizes().unwrap();
@@ -455,7 +506,7 @@ pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut
 
 #[no_mangle]
 pub extern "system" fn SetContextAttributesW(
-    _ph_context: PCtxtHandle,
+    _ph_credential: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
@@ -465,26 +516,90 @@ pub extern "system" fn SetContextAttributesW(
 pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "system" fn SetCredentialsAttributesA(
-    _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
-    _p_buffer: *mut c_void,
+pub unsafe extern "system" fn SetCredentialsAttributesA(
+    ph_credential: PCtxtHandle,
+    ul_attribute: c_ulong,
+    p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
+
+        let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
+
+        let proxy_server = String::from_utf8_unchecked(
+            from_raw_parts(
+                p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u8,
+                (*kdc_proxy_settings).proxy_server_length as usize,
+            )
+            .to_vec(),
+        );
+
+        let client_tls_cred =
+            if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+                Some(String::from_utf8_unchecked(
+                    from_raw_parts(
+                        p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u8,
+                        (*kdc_proxy_settings).client_tls_cred_length as usize,
+                    )
+                    .to_vec(),
+                ))
+            } else {
+                None
+            };
+
+        credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
+            proxy_server,
+            client_tls_cred,
+        });
+
+        0
+    } else {
+        ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    }
 }
-pub type SetCredentialsAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetCredentialsAttributesFnA =
+    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
-pub extern "system" fn SetCredentialsAttributesW(
-    _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
-    _p_buffer: *mut c_void,
+pub unsafe extern "system" fn SetCredentialsAttributesW(
+    ph_credential: PCtxtHandle,
+    ul_attribute: c_ulong,
+    p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
+
+        let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
+
+        let proxy_server = String::from_utf16_lossy(from_raw_parts(
+            p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
+            (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
+        ));
+
+        let client_tls_cred =
+            if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+                Some(String::from_utf16_lossy(from_raw_parts(
+                    p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
+                    (*kdc_proxy_settings).client_tls_cred_length as usize,
+                )))
+            } else {
+                None
+            };
+
+        credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
+            proxy_server,
+            client_tls_cred,
+        });
+
+        0
+    } else {
+        ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    }
 }
-pub type SetCredentialsAttributesFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetCredentialsAttributesFnW =
+    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[no_mangle]
 pub extern "system" fn ChangeAccountPasswordA(
