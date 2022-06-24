@@ -142,3 +142,48 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     0
 }
 pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar, *mut PSecPkgInfoW) -> SecurityStatus;
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::null;
+
+    use crate::sec_pkg_info::EnumerateSecurityPackagesW;
+
+    use super::{SecPkgInfoA, EnumerateSecurityPackagesA, SecPkgInfoW};
+
+    #[test]
+    fn enumerate_security_packages_a() {
+        let mut packages_amount = 0;
+        let mut packages = null::<SecPkgInfoA>() as *mut _;
+
+        unsafe {
+            let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
+
+            assert_eq!(status, 0);
+            assert_eq!(packages_amount, 3);
+            assert!(!packages.is_null());
+
+            for i in 0..(packages_amount as usize) {
+                let _ = packages.add(i).as_mut().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn enumerate_security_packages_w() {
+        let mut packages_amount = 0;
+        let mut packages = null::<SecPkgInfoW>() as *mut _;
+
+        unsafe {
+            let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
+
+            assert_eq!(status, 0);
+            assert_eq!(packages_amount, 3);
+            assert!(!packages.is_null());
+
+            for i in 0..(packages_amount as usize) {
+                let _ = packages.add(i).as_mut().unwrap();
+            }
+        }
+    }
+}
