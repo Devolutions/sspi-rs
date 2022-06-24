@@ -76,12 +76,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = *vec_into_raw_ptr(
-        packages
-            .into_iter()
-            .map(|package| into_raw_ptr(SecPkgInfoA::from(package)))
-            .collect::<Vec<_>>(),
-    );
+    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
 
     0
 }
@@ -96,12 +91,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = *vec_into_raw_ptr(
-        packages
-            .into_iter()
-            .map(|package| into_raw_ptr(SecPkgInfoW::from(package)))
-            .collect::<Vec<_>>(),
-    );
+    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
 
     0
 }
@@ -142,3 +132,46 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     0
 }
 pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar, *mut PSecPkgInfoW) -> SecurityStatus;
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::null;
+
+    use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
+
+    #[test]
+    fn enumerate_security_packages_a() {
+        let mut packages_amount = 0;
+        let mut packages = null::<SecPkgInfoA>() as *mut _;
+
+        unsafe {
+            let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
+
+            assert_eq!(status, 0);
+            assert_eq!(packages_amount, 3);
+            assert!(!packages.is_null());
+
+            for i in 0..(packages_amount as usize) {
+                let _ = packages.add(i).as_mut().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn enumerate_security_packages_w() {
+        let mut packages_amount = 0;
+        let mut packages = null::<SecPkgInfoW>() as *mut _;
+
+        unsafe {
+            let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
+
+            assert_eq!(status, 0);
+            assert_eq!(packages_amount, 3);
+            assert!(!packages.is_null());
+
+            for i in 0..(packages_amount as usize) {
+                let _ = packages.add(i).as_mut().unwrap();
+            }
+        }
+    }
+}
