@@ -76,10 +76,10 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = *vec_into_raw_ptr(
+    *pp_package_info = vec_into_raw_ptr(
         packages
             .into_iter()
-            .map(|package| into_raw_ptr(SecPkgInfoA::from(package)))
+            .map(|package| SecPkgInfoA::from(package))
             .collect::<Vec<_>>(),
     );
 
@@ -96,10 +96,10 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = *vec_into_raw_ptr(
+    *pp_package_info = vec_into_raw_ptr(
         packages
             .into_iter()
-            .map(|package| into_raw_ptr(SecPkgInfoW::from(package)))
+            .map(|package| SecPkgInfoW::from(package))
             .collect::<Vec<_>>(),
     );
 
