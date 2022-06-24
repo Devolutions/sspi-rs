@@ -76,12 +76,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = vec_into_raw_ptr(
-        packages
-            .into_iter()
-            .map(|package| SecPkgInfoA::from(package))
-            .collect::<Vec<_>>(),
-    );
+    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
 
     0
 }
@@ -96,12 +91,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
     *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = vec_into_raw_ptr(
-        packages
-            .into_iter()
-            .map(|package| SecPkgInfoW::from(package))
-            .collect::<Vec<_>>(),
-    );
+    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
 
     0
 }
@@ -147,9 +137,7 @@ pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar
 mod tests {
     use std::ptr::null;
 
-    use crate::sec_pkg_info::EnumerateSecurityPackagesW;
-
-    use super::{SecPkgInfoA, EnumerateSecurityPackagesA, SecPkgInfoW};
+    use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
 
     #[test]
     fn enumerate_security_packages_a() {
