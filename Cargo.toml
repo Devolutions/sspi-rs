@@ -12,6 +12,7 @@ edition = "2021"
 [workspace]
 members = [
   "c-api",
+  "c-api/symbol-rename-macro",
 ]
 
 [features]
