@@ -4,6 +4,8 @@ use std::ptr::null;
 
 use libc::{c_ulong, c_void};
 use sspi::KERBEROS_VERSION;
+#[cfg(windows)]
+use symbol_rename_macro::rename_symbol;
 
 use crate::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,
@@ -111,6 +113,7 @@ pub struct SecurityFunctionTableW {
 
 pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     into_raw_ptr(SecurityFunctionTableA {
@@ -150,6 +153,7 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     })
 }
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
     into_raw_ptr(SecurityFunctionTableW {

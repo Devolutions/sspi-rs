@@ -16,3 +16,6 @@ crate-type = ["cdylib"]
 sspi = { path = "..", features = ["network_client"] }
 libc = "0.2"
 num-traits = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+symbol-rename-macro = { path = "./symbol-rename-macro" }

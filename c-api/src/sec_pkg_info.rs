@@ -1,5 +1,7 @@
 use libc::{c_uint, c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
+#[cfg(windows)]
+use symbol_rename_macro::rename_symbol;
 
 use crate::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
 use crate::utils::{c_str_into_string, c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
@@ -67,6 +69,7 @@ impl From<PackageInfo> for SecPkgInfoA {
     }
 }
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut c_ulong,
@@ -82,6 +85,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 }
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     pc_packages: *mut c_ulong,
@@ -97,6 +101,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 }
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SecurityStatus;
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
@@ -115,6 +120,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 }
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     p_package_name: *const SecWChar,
