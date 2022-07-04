@@ -42,3 +42,5 @@ EXPORTS
     QueryContextAttributesExW=Rust_QueryContextAttributesExW
     QueryCredentialsAttributesExA=Rust_QueryCredentialsAttributesExA
     QueryCredentialsAttributesExW=Rust_QueryCredentialsAttributesExW
+    SspiEncodeStringsAsAuthIdentity=Rust_SspiEncodeStringsAsAuthIdentity
+    SspiFreeAuthIdentity=Rust_SspiFreeAuthIdentity

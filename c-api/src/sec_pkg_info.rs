@@ -3,6 +3,7 @@ use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
+use crate::check_null;
 use crate::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
 use crate::utils::{c_str_into_string, c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
 
@@ -50,6 +51,20 @@ pub struct SecPkgInfoA {
 
 pub type PSecPkgInfoA = *mut SecPkgInfoA;
 
+#[derive(Debug)]
+#[repr(C)]
+pub struct SecNegoInfoW {
+    pub package_info: *mut SecPkgInfoW,
+    pub nego_state: c_ulong,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct SecNegoInfoA {
+    pub package_info: *mut SecPkgInfoA,
+    pub nego_state: c_uint,
+}
+
 impl From<PackageInfo> for SecPkgInfoA {
     fn from(data: PackageInfo) -> Self {
         let mut name = data.name.to_string().as_bytes().to_vec();
@@ -75,6 +90,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
+    check_null!(pc_packages);
+    check_null!(pp_package_info);
+
     let packages = enumerate_security_packages().unwrap();
 
     *pc_packages = packages.len() as c_ulong;
@@ -91,6 +109,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut *mut SecPkgInfoW,
 ) -> SecurityStatus {
+    check_null!(pc_packages);
+    check_null!(pp_package_info);
+
     let packages = enumerate_security_packages().unwrap();
 
     *pc_packages = packages.len() as c_ulong;
@@ -107,6 +128,9 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
+    check_null!(p_package_name);
+    check_null!(pp_package_info);
+
     let pkg_name = c_str_into_string(p_package_name);
 
     *pp_package_info = enumerate_security_packages()
@@ -126,6 +150,9 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     p_package_name: *const SecWChar,
     pp_package_info: *mut PSecPkgInfoW,
 ) -> SecurityStatus {
+    check_null!(p_package_name);
+    check_null!(pp_package_info);
+
     let pkg_name = c_w_str_to_string(p_package_name);
 
     *pp_package_info = enumerate_security_packages()

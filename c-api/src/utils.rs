@@ -72,3 +72,15 @@ macro_rules! try_execute {
         }
     }};
 }
+
+#[macro_export]
+macro_rules! check_null {
+    ($x:expr) => {{
+        use num_traits::ToPrimitive;
+        use sspi::ErrorKind;
+
+        if $x.is_null() {
+            return ErrorKind::InvalidParameter.to_u32().unwrap();
+        }
+    }};
+}

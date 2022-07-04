@@ -5,12 +5,11 @@ use libc::c_char;
 use libc::c_uint;
 #[cfg(target_os = "windows")]
 use libc::c_ulong;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 use sspi::{SecurityBuffer, SecurityBufferType};
 
-use crate::utils::vec_into_raw_ptr;
-
 #[cfg(target_os = "windows")]
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecBuffer {
     pub cb_buffer: c_ulong,
@@ -28,6 +27,7 @@ pub struct SecBuffer {
 
 pub type PSecBuffer = *mut SecBuffer;
 
+#[derive(Debug)]
 #[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct SecBufferDesc {
@@ -60,20 +60,7 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
         .collect()
 }
 
-pub(crate) unsafe fn security_buffers_to_raw(buffers: Vec<SecurityBuffer>) -> PSecBuffer {
-    vec_into_raw_ptr(
-        buffers
-            .into_iter()
-            .map(|buffer| SecBuffer {
-                cb_buffer: buffer.buffer.len().try_into().unwrap(),
-                buffer_type: buffer.buffer_type.to_u32().unwrap(),
-                pv_buffer: vec_into_raw_ptr(buffer.buffer) as *mut i8,
-            })
-            .collect::<Vec<_>>(),
-    )
-}
-
-pub(crate) unsafe fn copy_to_c_sec_buffer(from_buffers: &[SecurityBuffer], to_buffers: PSecBuffer) {
+pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: &[SecurityBuffer]) {
     let to_buffers = from_raw_parts_mut(to_buffers as *mut SecBuffer, from_buffers.len());
     for i in 0..from_buffers.len() {
         let buffer = &from_buffers[i];

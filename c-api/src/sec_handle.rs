@@ -16,18 +16,26 @@ use sspi::{
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
+use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::credentials_attributes::{
     CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
 };
-use crate::sec_buffer::{p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc};
 use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentityW};
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
-use crate::try_execute;
 use crate::utils::{
     c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
+use crate::{check_null, try_execute};
+
+pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
+pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;
+pub const SECPKG_NEGOTIATION_IN_PROGRESS: u32 = 2;
+
+pub const SECPKG_ATTR_SIZES: u32 = 0;
+pub const SECPKG_ATTR_NEGOTIATION_INFO: u32 = 12;
 
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
 
@@ -65,7 +73,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 "Security package name is not provided".into(),
             ));
         }
-        let name = security_package_name.unwrap();
+        let name = security_package_name.expect("security package name must be provided");
 
         let sspi_context = match name {
             negotiate::PKG_NAME => {
@@ -115,6 +123,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
+    check_null!(psz_package);
+    check_null!(p_auth_data);
+    check_null!(ph_credential);
+
     let security_package_name = CStr::from_ptr(psz_package).to_str().unwrap().to_owned();
 
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
@@ -158,6 +170,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
+    check_null!(psz_package);
+    check_null!(p_auth_data);
+    check_null!(ph_credential);
+
     let security_package_name = c_w_str_to_string(psz_package);
 
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
@@ -224,10 +240,21 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    _pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    let service_principal = CStr::from_ptr(p_target_name).to_str().unwrap();
+    // ph_context can be null on the first call
+    check_null!(ph_new_context);
+    check_null!(ph_credential);
+    check_null!(p_input);
+    check_null!(p_output);
+    check_null!(pf_context_attr);
+
+    let service_principal = if p_target_name.is_null() {
+        ""
+    } else {
+        CStr::from_ptr(p_target_name).to_str().unwrap()
+    };
 
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
@@ -241,7 +268,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         Some(security_package_name),
         attributes
     ));
-    let sspi_context = sspi_context_ptr.as_mut().unwrap();
+    let sspi_context = sspi_context_ptr.as_mut().expect("security context pointer cannot be null");
 
     let mut input_tokens = if p_input.is_null() {
         Vec::new()
@@ -264,10 +291,12 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         .with_output(&mut output_tokens);
     let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-    (*p_output).c_buffers = output_tokens.len() as u32;
-    (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
-    (*ph_new_context).dw_lower = (*ph_context).dw_lower;
-    (*ph_new_context).dw_upper = (*ph_context).dw_upper;
+    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+
+    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+
+    *pf_context_attr = f_context_req;
 
     result_status.map_or_else(
         |err| err.error_type.to_u32().unwrap(),
@@ -303,10 +332,21 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    _pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    let service_principal = c_w_str_to_string(p_target_name);
+    // ph_context can be null on the first call
+    check_null!(ph_new_context);
+    check_null!(ph_credential);
+    check_null!(p_input);
+    check_null!(p_output);
+    check_null!(pf_context_attr);
+
+    let service_principal = if p_target_name.is_null() {
+        String::new()
+    } else {
+        c_w_str_to_string(p_target_name)
+    };
 
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
@@ -320,7 +360,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         Some(security_package_name),
         attributes,
     ));
-    let sspi_context = sspi_context_ptr.as_mut().unwrap();
+    let sspi_context = sspi_context_ptr.as_mut().expect("security context pointer cannot be null");
 
     let mut input_tokens = if p_input.is_null() {
         Vec::new()
@@ -342,8 +382,10 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         .with_output(&mut output_tokens);
     let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-    (*p_output).c_buffers = output_tokens.len().try_into().unwrap();
-    (*p_output).p_buffers = security_buffers_to_raw(output_tokens);
+    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+
+    *pf_context_attr = f_context_req;
+
     (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
     (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
@@ -367,6 +409,7 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesA(
@@ -374,18 +417,17 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    match ul_attribute {
-        0 => {
-            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            ))
-            .as_mut()
-            .unwrap();
-            let sizes = p_buffer as *mut SecPkgContextSizes;
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None,  &CredentialsAttributes::default()))
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-            let pkg_sizes = sspi_context.query_context_sizes().unwrap();
+    check_null!(p_buffer);
+
+    match ul_attribute.try_into().unwrap() {
+        SECPKG_ATTR_SIZES => {
+            let sizes = p_buffer.cast::<SecPkgContextSizes>();
+
+            let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
 
             (*sizes).cb_max_token = pkg_sizes.max_token;
             (*sizes).cb_max_signature = pkg_sizes.max_signature;
@@ -394,11 +436,22 @@ pub unsafe extern "system" fn QueryContextAttributesA(
 
             0
         }
+        SECPKG_ATTR_NEGOTIATION_INFO => {
+            let nego_info = p_buffer.cast::<SecNegoInfoA>();
+
+            (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
+            (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
+                sspi_context.query_context_package_info()
+            )));
+
+            0
+        }
         _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
     }
 }
 pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
+#[allow(clippy::useless_conversion)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesW(
@@ -406,23 +459,32 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    match ul_attribute {
-        0 => {
-            let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            ))
-            .as_mut()
-            .unwrap();
-            let sizes = p_buffer as *mut SecPkgContextSizes;
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None,  &CredentialsAttributes::default()))
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-            let pkg_sizes = sspi_context.query_context_sizes().unwrap();
+    check_null!(p_buffer);
+
+    match ul_attribute.try_into().unwrap() {
+        SECPKG_ATTR_SIZES => {
+            let sizes = p_buffer.cast::<SecPkgContextSizes>();
+
+            let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
 
             (*sizes).cb_max_token = pkg_sizes.max_token;
             (*sizes).cb_max_signature = pkg_sizes.max_signature;
             (*sizes).cb_block_size = pkg_sizes.block;
             (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
+
+            0
+        }
+        SECPKG_ATTR_NEGOTIATION_INFO => {
+            let nego_info = p_buffer.cast::<SecNegoInfoW>();
+
+            (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+            (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(try_execute!(
+                sspi_context.query_context_package_info()
+            )));
 
             0
         }
@@ -540,6 +602,9 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
     if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        check_null!(ph_credential);
+        check_null!(p_buffer);
+
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
         let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
@@ -587,6 +652,9 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
     if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        check_null!(ph_credential);
+        check_null!(p_buffer);
+
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
         let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();

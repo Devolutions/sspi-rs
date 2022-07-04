@@ -102,7 +102,12 @@ impl Negotiate {
 
 impl SspiEx for Negotiate {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.into());
+        self.auth_identity = Some(identity.clone().into());
+
+        match &mut self.protocol {
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
+        }
     }
 }
 
@@ -240,13 +245,13 @@ impl SspiImpl for Negotiate {
         }
     }
 
-    fn accept_security_context_impl(
-        &mut self,
-        _builder: builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
-        Err(Error {
-            error_type: ErrorKind::UnsupportedFunction,
-            description: "Negotiate module is not supported for server".into(),
-        })
+        match &mut self.protocol {
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.accept_security_context_impl(builder),
+        }
     }
 }

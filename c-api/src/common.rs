@@ -1,7 +1,7 @@
 use std::ptr::drop_in_place;
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_void};
+use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
     AuthIdentityBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer,
@@ -10,14 +10,12 @@ use sspi::{
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
+use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::credentials_attributes::CredentialsAttributes;
-use crate::sec_buffer::{
-    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, security_buffers_to_raw, PSecBuffer, PSecBufferDesc,
-};
 use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
-use crate::try_execute;
-use crate::utils::transform_credentials_handle;
+use crate::utils::{into_raw_ptr, transform_credentials_handle};
+use crate::{check_null, try_execute};
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
@@ -40,9 +38,16 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     target_data_rep: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    _pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
+    // ph_context can be null on the first call
+    check_null!(ph_new_context);
+    check_null!(ph_credential);
+    check_null!(p_input);
+    check_null!(p_output);
+    check_null!(pf_context_attr);
+
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
     let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
@@ -50,18 +55,20 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
     };
 
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
         &mut ph_context,
         Some(security_package_name),
         attributes,
-    ))
-    .as_mut()
-    .unwrap();
+    ));
 
-    let raw_buffers = from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize);
-    let mut input_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
+    let sspi_context = sspi_context_ptr
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-    let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+    let mut input_tokens =
+        p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
+
+    let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
     let result_status = sspi_context
         .accept_security_context()
@@ -69,16 +76,20 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
         .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
         .with_input(&mut input_tokens)
-        .with_output(&mut output_token)
-        .execute()
-        .unwrap()
-        .status;
+        .with_output(&mut output_tokens)
+        .execute();
 
-    (*p_output).c_buffers = output_token.len().try_into().unwrap();
-    (*p_output).p_buffers = security_buffers_to_raw(output_token);
-    (*ph_new_context).dw_lower = (*ph_context).dw_lower;
+    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    result_status.to_u32().unwrap()
+    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+
+    *pf_context_attr = f_context_req;
+
+    result_status.map_or_else(
+        |err| err.error_type.to_u32().unwrap(),
+        |result| result.status.to_u32().unwrap(),
+    )
 }
 pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PCredHandle,
@@ -98,13 +109,16 @@ pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
+    check_null!(ph_context);
+    check_null!(p_token);
+
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
         &mut ph_context,
         None,
         &CredentialsAttributes::default()
     ))
     .as_mut()
-    .unwrap();
+    .expect("security context pointer cannot be null");
 
     let raw_buffers = from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize);
     let mut buffers = p_sec_buffers_to_security_buffers(raw_buffers);
@@ -119,6 +133,10 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
+    if ph_context.is_null() {
+        return 0;
+    }
+
     drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(
         &mut ph_context,
         None,
@@ -213,13 +231,16 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
+    check_null!(ph_context);
+    check_null!(p_message);
+
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
         &mut ph_context,
         None,
         &CredentialsAttributes::default()
     ))
     .as_mut()
-    .unwrap();
+    .expect("security context pointer cannot be null");
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -234,7 +255,7 @@ pub unsafe extern "system" fn EncryptMessage(
         Err(error) => error.error_type.to_u32().unwrap(),
     };
 
-    copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
+    copy_to_c_sec_buffer((*p_message).p_buffers, &message);
 
     result_status
 }
@@ -249,13 +270,17 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
+    check_null!(ph_context);
+    check_null!(p_message);
+    check_null!(pf_qop);
+
     let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
         &mut ph_context,
         None,
         &CredentialsAttributes::default()
     ))
     .as_mut()
-    .unwrap();
+    .expect("security context pointer cannot be null");
 
     let len = (*p_message).c_buffers as usize;
     let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
@@ -267,7 +292,7 @@ pub unsafe extern "system" fn DecryptMessage(
             Err(error) => (DecryptionFlags::empty(), error.error_type.to_u32().unwrap()),
         };
 
-    copy_to_c_sec_buffer(&message, (*p_message).p_buffers);
+    copy_to_c_sec_buffer((*p_message).p_buffers, &message);
     *pf_qop = decryption_flags.bits().try_into().unwrap();
 
     status
