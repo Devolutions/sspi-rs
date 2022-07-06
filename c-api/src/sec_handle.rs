@@ -16,11 +16,11 @@ use sspi::{
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
-use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
-use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::credentials_attributes::{
     CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
 };
+use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentityW};
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
@@ -268,7 +268,9 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         Some(security_package_name),
         attributes
     ));
-    let sspi_context = sspi_context_ptr.as_mut().expect("security context pointer cannot be null");
+    let sspi_context = sspi_context_ptr
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
     let mut input_tokens = if p_input.is_null() {
         Vec::new()
@@ -360,7 +362,9 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         Some(security_package_name),
         attributes,
     ));
-    let sspi_context = sspi_context_ptr.as_mut().expect("security context pointer cannot be null");
+    let sspi_context = sspi_context_ptr
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
     let mut input_tokens = if p_input.is_null() {
         Vec::new()
@@ -417,9 +421,13 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None,  &CredentialsAttributes::default()))
-        .as_mut()
-        .expect("security context pointer cannot be null");
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    ))
+    .as_mut()
+    .expect("security context pointer cannot be null");
 
     check_null!(p_buffer);
 
@@ -459,9 +467,13 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(&mut ph_context, None,  &CredentialsAttributes::default()))
-        .as_mut()
-        .expect("security context pointer cannot be null");
+    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+        &mut ph_context,
+        None,
+        &CredentialsAttributes::default()
+    ))
+    .as_mut()
+    .expect("security context pointer cannot be null");
 
     check_null!(p_buffer);
 
