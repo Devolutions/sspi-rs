@@ -4,7 +4,6 @@ use libc::{c_char, c_uint, c_ulong, c_ushort, c_void};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
-use crate::check_null;
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 

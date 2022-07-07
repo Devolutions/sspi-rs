@@ -15,7 +15,6 @@ use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
 use crate::utils::{into_raw_ptr, transform_credentials_handle};
-use crate::{check_null, try_execute};
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]

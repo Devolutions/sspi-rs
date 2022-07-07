@@ -257,9 +257,7 @@ impl SspiImpl for Ntlm {
             NtlmState::Authenticate => {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
-                if let Some(identity) = builder.credentials_handle {
-                    self.identity = identity.clone();
-                }
+                self.identity = builder.credentials_handle.and_then(|creds| creds.clone());
 
                 server::read_authenticate(self, input_token.buffer.as_slice())?
             }

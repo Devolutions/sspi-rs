@@ -28,7 +28,6 @@ use crate::sspi_data_types::{
 use crate::utils::{
     c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
-use crate::{check_null, try_execute};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;

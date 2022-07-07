@@ -1,3 +1,5 @@
+#[macro_use]
+mod macros;
 #[allow(clippy::missing_safety_doc)]
 pub mod common;
 pub mod credentials_attributes;
