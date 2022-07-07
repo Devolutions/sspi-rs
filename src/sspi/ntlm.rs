@@ -257,6 +257,8 @@ impl SspiImpl for Ntlm {
             NtlmState::Authenticate => {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
+                self.identity = builder.credentials_handle.cloned().flatten();
+
                 server::read_authenticate(self, input_token.buffer.as_slice())?
             }
             _ => {
@@ -286,6 +288,10 @@ impl Sspi for Ntlm {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> sspi::Result<SecurityStatus> {
+        if self.send_sealing_key.is_none() || self.recv_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
@@ -310,6 +316,10 @@ impl Sspi for Ntlm {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> sspi::Result<DecryptionFlags> {
+        if self.send_sealing_key.is_none() || self.recv_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
