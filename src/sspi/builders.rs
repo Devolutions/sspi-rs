@@ -1,5 +1,6 @@
 mod accept_sec_context;
 mod acq_cred_handle;
+mod change_password;
 mod init_sec_context;
 
 use std::fmt;
