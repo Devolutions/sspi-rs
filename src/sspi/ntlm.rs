@@ -378,6 +378,10 @@ impl Sspi for Ntlm {
             String::from("Certificate trust status is not supported"),
         ))
     }
+
+    fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
+        todo!()
+    }
 }
 
 impl SspiEx for Ntlm {

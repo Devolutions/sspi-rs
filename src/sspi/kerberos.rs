@@ -22,13 +22,14 @@ use self::client::extractors::{
 };
 use self::client::generators::{
     generate_ap_req, generate_as_req, generate_authenticator_for_ap_req, generate_authenticator_for_tgs_ap_req,
-    generate_neg_ap_req, generate_neg_token_init, generate_tgs_req,
+    generate_neg_ap_req, generate_neg_token_init, generate_passwd_as_req, generate_tgs_req, DEFAULT_AP_REQ_OPTIONS, generate_krb_priv_request, generate_authenticator_for_krb_priv,
 };
 use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
 use self::encryption_params::EncryptionParams;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
+use crate::builders::ChangePassword;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{
     generate_as_req_without_pre_auth, generate_final_neg_token_targ, get_mech_list,
@@ -49,6 +50,8 @@ pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
+pub const KADMIN: &str = "kadmin";
+pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
 pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
@@ -290,6 +293,61 @@ impl Sspi for Kerberos {
             "Certificate trust status is not supported".to_owned(),
         ))
     }
+
+    fn change_password(&mut self, change_password: ChangePassword) -> Result<()> {
+        // as ex error
+        let username = &change_password.account_name;
+        let domain = &change_password.domain_name;
+        let password = &change_password.old_password;
+
+        let mut salt = format!("{}{}", domain, username);
+
+        let as_req = generate_as_req_without_pre_auth(username, domain)?;
+
+        let response = self.send(&serialize_message(&as_req)?)?;
+
+        // first 4 bytes is message len. skipping them
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+
+        if as_rep.is_ok() {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
+            });
+        }
+
+        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+            salt = correct_salt;
+        }
+
+        let as_req = generate_passwd_as_req(&username, salt.as_bytes(), password, domain, &self.encryption_params)?;
+
+        let response = self.send(&serialize_message(&as_req)?)?;
+
+        // first 4 bytes is message len. skipping them
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+        let as_rep = as_rep?;
+
+        self.realm = Some(as_rep.0.crealm.0.to_string());
+
+        let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+        self.encryption_params.encryption_type = Some(encryption_type as i32);
+
+        let session_key =
+            extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
+
+        // chng pass
+        let seq_num = self.next_seq_number();
+        let authenticator = generate_authenticator_for_krb_priv(&as_rep.0, seq_num)?;
+        let krb_priv = generate_krb_priv_request(as_rep.0.ticket.0, &session_key, change_password.new_password.as_bytes(), &authenticator, &self.encryption_params, seq_num)?;
+
+        // send krb priv
+        let response = self.send(&serialize_message(&krb_priv)?)?;
+
+        Ok(())
+    }
 }
 
 impl SspiImpl for Kerberos {
@@ -446,6 +504,7 @@ impl SspiImpl for Kerberos {
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &authenticator,
                     &self.encryption_params,
+                    &DEFAULT_AP_REQ_OPTIONS,
                 )?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;

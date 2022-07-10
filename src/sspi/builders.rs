@@ -12,6 +12,7 @@ pub use self::acq_cred_handle::{
     AcquireCredentialsHandle, AcquireCredentialsHandleResult, EmptyAcquireCredentialsHandle,
     FilledAcquireCredentialsHandle, WithCredentialUse, WithoutCredentialUse,
 };
+pub use self::change_password::{ChangePassword, ChangePasswordBuilder};
 pub use self::init_sec_context::{
     EmptyInitializeSecurityContext, FilledInitializeSecurityContext, InitializeSecurityContext,
     InitializeSecurityContextResult,

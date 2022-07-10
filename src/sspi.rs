@@ -18,9 +18,9 @@ use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 
 use self::builders::{
-    AcceptSecurityContext, AcquireCredentialsHandle, EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle,
-    EmptyInitializeSecurityContext, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContext,
+    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
+    EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
+    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContext,
 };
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
@@ -696,6 +696,8 @@ where
     ///
     /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
+
+    fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
 }
 
 pub trait SspiEx

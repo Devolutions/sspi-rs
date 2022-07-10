@@ -126,4 +126,8 @@ impl Sspi for Ntlm {
     fn query_context_cert_trust_status(&mut self) -> sspi::Result<CertTrustStatus> {
         self.0.query_context_cert_trust_status()
     }
+
+    fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
+        todo!()
+    }
 }

@@ -377,6 +377,10 @@ impl Sspi for SecurityPackage {
             info_status: CertTrustInfoStatus::from_bits_truncate(buffer.dwInfoStatus),
         })
     }
+
+    fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
+        todo!()
+    }
 }
 
 fn as_mut_ptr_or_null<T>(value: Option<&mut T>) -> *mut T {

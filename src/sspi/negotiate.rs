@@ -165,6 +165,10 @@ impl Sspi for Negotiate {
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
         }
     }
+
+    fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
+        todo!()
+    }
 }
 
 impl SspiImpl for Negotiate {
