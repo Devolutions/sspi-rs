@@ -7,6 +7,7 @@ mod utils;
 
 use std::fmt::Debug;
 use std::io::Write;
+use std::str::FromStr;
 
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
@@ -16,6 +17,7 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
+use reqwest::Url;
 
 use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
@@ -27,6 +29,7 @@ use self::client::generators::{
 use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
 use self::encryption_params::EncryptionParams;
+use self::network_client::reqwest_network_client::ReqwestNetworkClient;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use crate::builders::ChangePassword;
@@ -338,13 +341,16 @@ impl Sspi for Kerberos {
         let session_key =
             extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
 
-        // chng pass
+        println!("session key: {:?}", session_key);
+
         let seq_num = self.next_seq_number();
         let authenticator = generate_authenticator_for_krb_priv(&as_rep.0, seq_num)?;
+        println!("authenticator key: {:?}", authenticator.0.subkey);
         let krb_priv = generate_krb_priv_request(as_rep.0.ticket.0, &session_key, change_password.new_password.as_bytes(), &authenticator, &self.encryption_params, seq_num)?;
 
-        // send krb priv
+        self.config.url = Url::from_str("tcp://192.168.0.108:464").unwrap();
         let response = self.send(&serialize_message(&krb_priv)?)?;
+        println!("response: {:?}", response);
 
         Ok(())
     }

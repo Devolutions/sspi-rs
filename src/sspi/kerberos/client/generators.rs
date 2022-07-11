@@ -169,6 +169,8 @@ pub fn generate_passwd_as_req(
     let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96))?;
     let key = cipher.generate_key_from_string(password, salt);
 
+    println!("passwd key: {:?}", key);
+
     let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
 
     let pa_enc_timestamp = PaData {
@@ -643,8 +645,6 @@ pub fn generate_krb_priv_request(
 ) -> Result<KrbPrivRequest> {
     let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, &[0, 0, 0, 0])?;
 
-    let encryption_type = enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96);
-
     let enc_part = EncKrbPrivPart::from(EncKrbPrivPartInner {
         user_data: ExplicitContextTag0::from(OctetStringAsn1::from(new_password.to_vec())),
         timestamp: Optional::from(None),
@@ -659,13 +659,22 @@ pub fn generate_krb_priv_request(
         r_address: Optional::from(None),
     });
 
+    let encryption_type = enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96);
+    let cipher = new_kerberos_cipher(encryption_type)?;
+
+    let enc_part = cipher.encrypt(
+        &authenticator.0.subkey.0.as_ref().unwrap().key_value.0,
+        KEY_USAGE_AP_REQ_AUTHEN,
+        &picky_asn1_der::to_vec(&enc_part)?,
+    );
+
     let krb_priv = KrbPriv::from(KrbPrivInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![KRB_PRIV])),
         enc_part: ExplicitContextTag3::from(EncryptedData {
             etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
             kvno: Optional::from(None),
-            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&enc_part)?)),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_part)),
         }),
     });
 
@@ -678,7 +687,7 @@ mod tests {
     use kerberos_crypto::new_kerberos_cipher;
     use picky_krb::{messages::EncAsRepPart, data_types::Authenticator};
 
-    use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
+    use crate::{kerberos::{DEFAULT_ENCRYPTION_TYPE, config::KdcType}, Kerberos, KerberosConfig};
 
     #[test]
     fn decrypt_priv_enc_part() {
@@ -735,5 +744,61 @@ mod tests {
         println!("13 - {:?}", cipher.decrypt(&auth_key, 13, &enc_data));
 
         // println!("{:?}", enc_data);
+    }
+
+    #[cfg(feature = "network_client")]
+    #[test]
+    fn test_password_changing() {
+        use std::str::FromStr;
+
+        use reqwest::Url;
+
+        use crate::{kerberos::network_client::reqwest_network_client::ReqwestNetworkClient, builders::ChangePasswordBuilder, Sspi};
+
+        let domain = "QKATION";
+        let username = "p5";
+        let password = "qweQWE123!@#";
+
+        let mut kerberos = Kerberos::new_client_from_config(KerberosConfig {
+            url: Url::from_str("tcp://192.168.0.108:88").unwrap(),
+            kdc_type: KdcType::Kdc,
+            network_client: Box::new(ReqwestNetworkClient::new()),
+        }).unwrap();
+
+        let mut output = [];
+
+        let change_password = ChangePasswordBuilder::new()
+            .with_account_name(username.into())
+            .with_domain_name(domain.into())
+            .with_old_password(password.into())
+            .with_new_password("asdASD456$%^".into())
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+        
+        kerberos.change_password(change_password).unwrap();
+    }
+
+    #[test]
+    fn decrypt_response() {
+        let ap_rep_enc = [27, 166, 4, 252, 25, 171, 28, 84, 135, 203, 53, 34, 40, 71, 174, 171, 157, 110, 74, 243, 201, 133, 30, 42, 100, 20, 23, 56, 123, 154, 4, 58, 111, 51, 50, 156, 145, 218, 213, 108, 197, 8, 156, 17, 194, 131, 155, 70, 248, 66, 184, 163, 149, 105, 210, 152, 85, 178];
+        let priv_enc = [110, 40, 113, 196, 83, 43, 253, 168, 106, 14, 53, 2, 83, 112, 168, 175, 90, 217, 35, 202, 96, 32, 187, 154, 90, 53, 144, 233, 229, 3, 171, 161, 112, 240, 205, 158, 170, 103, 56, 38, 4, 184, 39, 94, 144, 219, 1, 65, 178, 152, 58, 214, 223, 222, 58];
+
+        let pass_key = [77, 226, 183, 212, 227, 37, 14, 222, 50, 88, 104, 176, 56, 96, 55, 91, 56, 255, 46, 97, 3, 197, 52, 219, 64, 114, 174, 178, 56, 189, 67, 51];
+        let session_key = [51, 173, 150, 217, 175, 85, 199, 80, 157, 106, 229, 1, 146, 158, 251, 237, 33, 197, 214, 220, 132, 221, 13, 105, 244, 87, 161, 247, 82, 14, 109, 248];
+        let auth_key = [167, 142, 140, 175, 47, 205, 76, 238, 179, 110, 23, 99, 9, 24, 82, 11, 69, 57, 251, 18, 228, 5, 172, 0, 82, 214, 78, 6, 144, 222, 138, 26];
+    
+        let cipher = new_kerberos_cipher(18).unwrap();
+        
+        let data = cipher.decrypt(&session_key, 12, &ap_rep_enc).unwrap();
+        println!("data: {:?}", data);
+
+        let data = cipher.decrypt(&auth_key, 13, &priv_enc).unwrap();
+        println!("data: {:?}", data);
+
+        // for i in 0..50 {
+        //     println!("{} {:?}", i, cipher.decrypt(&auth_key, i, &priv_enc));
+        //     println!("{} {:?}", i, cipher.decrypt(&session_key, i, &priv_enc));
+        // }
     }
 }
