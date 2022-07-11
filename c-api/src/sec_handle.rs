@@ -4,7 +4,7 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
-use sspi::builders::EmptyInitializeSecurityContext;
+use sspi::builders::{EmptyInitializeSecurityContext, ChangePasswordBuilder};
 use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
@@ -700,19 +700,66 @@ pub type SetCredentialsAttributesFnW =
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordA"))]
 #[no_mangle]
-pub extern "system" fn ChangeAccountPasswordA(
-    _psz_package_name: *mut SecChar,
-    _psz_domain_name: *mut SecChar,
-    _psz_account_name: *mut SecChar,
-    _psz_old_password: *mut SecChar,
-    _psz_new_password: *mut SecChar,
+pub unsafe extern "system" fn ChangeAccountPasswordA(
+    psz_package_name: *mut SecChar,
+    psz_domain_name: *mut SecChar,
+    psz_account_name: *mut SecChar,
+    psz_old_password: *mut SecChar,
+    psz_new_password: *mut SecChar,
     _b_impersonating: bool,
     _dw_reserved: c_ulong,
-    _p_output: PSecBufferDesc,
+    p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    check_null!(psz_package_name);
+    check_null!(psz_domain_name);
+    check_null!(psz_account_name);
+    check_null!(psz_old_password);
+    check_null!(psz_new_password);
+    check_null!(p_output);
+
+    let security_package_name = CStr::from_ptr(psz_package_name).to_str().unwrap();
+
+    let domain = CStr::from_ptr(psz_domain_name).to_str().unwrap();
+    let username = CStr::from_ptr(psz_account_name).to_str().unwrap();
+    let password = CStr::from_ptr(psz_old_password).to_str().unwrap();
+    let new_password = CStr::from_ptr(psz_new_password).to_str().unwrap();
+
+    let len = (*p_output).c_buffers as usize;
+    let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
+    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
+
+    let change_password = ChangePasswordBuilder::new()
+        .with_domain_name(domain.into())
+        .with_account_name(username.into())
+        .with_old_password(password.into())
+        .with_new_password(new_password.into())
+        .with_output(&mut output_tokens)
+        .build()
+        .expect("change password builder should never fail");
+
+    let mut sspi_context = match security_package_name {
+        negotiate::PKG_NAME => {
+            SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default())))
+        }
+        kerberos::PKG_NAME => {
+            SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(KerberosConfig::from_env())))
+        }
+        ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+        _ => {
+            return ErrorKind::InvalidParameter.to_u32().unwrap();
+        }
+    };
+
+    let result_status = sspi_context.change_password(change_password);
+
+    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+
+    result_status.map_or_else(
+        |err| err.error_type.to_u32().unwrap(),
+        |_| 0,
+    )
 }
-pub type ChangeAccountPasswordFnA = extern "system" fn(
+pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     *mut SecChar,
     *mut SecChar,
     *mut SecChar,
@@ -725,19 +772,66 @@ pub type ChangeAccountPasswordFnA = extern "system" fn(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordW"))]
 #[no_mangle]
-pub extern "system" fn ChangeAccountPasswordW(
-    _psz_package_name: *mut SecWChar,
-    _psz_domain_name: *mut SecWChar,
-    _psz_account_name: *mut SecWChar,
-    _psz_old_password: *mut SecWChar,
-    _psz_new_password: *mut SecWChar,
+pub unsafe extern "system" fn ChangeAccountPasswordW(
+    psz_package_name: *mut SecWChar,
+    psz_domain_name: *mut SecWChar,
+    psz_account_name: *mut SecWChar,
+    psz_old_password: *mut SecWChar,
+    psz_new_password: *mut SecWChar,
     _b_impersonating: bool,
     _dw_reserved: c_ulong,
-    _p_output: PSecBufferDesc,
+    p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    ErrorKind::UnsupportedFunction.to_u32().unwrap()
+    check_null!(psz_package_name);
+    check_null!(psz_domain_name);
+    check_null!(psz_account_name);
+    check_null!(psz_old_password);
+    check_null!(psz_new_password);
+    check_null!(p_output);
+
+    let security_package_name = c_w_str_to_string(psz_package_name);
+
+    let domain = c_w_str_to_string(psz_domain_name);
+    let username = c_w_str_to_string(psz_account_name);
+    let password = c_w_str_to_string(psz_old_password);
+    let new_password = c_w_str_to_string(psz_new_password);
+
+    let len = (*p_output).c_buffers as usize;
+    let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
+    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
+
+    let change_password = ChangePasswordBuilder::new()
+        .with_domain_name(domain)
+        .with_account_name(username)
+        .with_old_password(password)
+        .with_new_password(new_password)
+        .with_output(&mut output_tokens)
+        .build()
+        .expect("change password builder should never fail");
+
+    let mut sspi_context = match security_package_name.as_str() {
+        negotiate::PKG_NAME => {
+            SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default())))
+        }
+        kerberos::PKG_NAME => {
+            SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(KerberosConfig::from_env())))
+        }
+        ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+        _ => {
+            return ErrorKind::InvalidParameter.to_u32().unwrap();
+        }
+    };
+
+    let result_status = sspi_context.change_password(change_password);
+
+    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+
+    result_status.map_or_else(
+        |err| err.error_type.to_u32().unwrap(),
+        |_| 0,
+    )
 }
-pub type ChangeAccountPasswordFnW = extern "system" fn(
+pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     *mut SecWChar,
     *mut SecWChar,
     *mut SecWChar,
