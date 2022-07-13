@@ -7,32 +7,31 @@ mod utils;
 
 use std::fmt::Debug;
 use std::io::Write;
-use std::str::FromStr;
 
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApReq, AsRep, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, KrbPrivResponse, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
-use reqwest::Url;
 
 use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_authenticator_for_ap_req, generate_authenticator_for_tgs_ap_req,
-    generate_neg_ap_req, generate_neg_token_init, generate_passwd_as_req, generate_tgs_req, DEFAULT_AP_REQ_OPTIONS, generate_krb_priv_request, generate_authenticator_for_krb_priv,
+    generate_ap_req, generate_as_req, generate_authenticator_for_ap_req, generate_authenticator_for_krb_priv,
+    generate_authenticator_for_tgs_ap_req, generate_krb_priv_request, generate_neg_ap_req, generate_neg_token_init,
+    generate_passwd_as_req, generate_tgs_req, DEFAULT_AP_REQ_OPTIONS,
 };
 use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
 use self::encryption_params::EncryptionParams;
-use self::network_client::reqwest_network_client::ReqwestNetworkClient;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use crate::builders::ChangePassword;
+use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{
     generate_as_req_without_pre_auth, generate_final_neg_token_targ, get_mech_list,
@@ -134,6 +133,40 @@ impl Kerberos {
                 .network_client
                 .send_http(&self.config.url, data, self.realm.clone()),
         }
+    }
+
+    pub fn as_exchange(&mut self, domain: &str, username: &str, password: &str) -> Result<AsRep> {
+        let mut salt = format!("{}{}", domain, username);
+
+        let as_req = generate_as_req_without_pre_auth(username, domain)?;
+
+        let response = self.send(&serialize_message(&as_req)?)?;
+
+        // first 4 bytes is message len. skipping them
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+
+        if as_rep.is_ok() {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
+            });
+        }
+
+        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+            salt = correct_salt;
+        }
+
+        let as_req = generate_passwd_as_req(&username, salt.as_bytes(), password, domain, &self.encryption_params)?;
+
+        let response = self.send(&serialize_message(&as_req)?)?;
+
+        // first 4 bytes is message len. skipping them
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+        let as_rep = as_rep?;
+
+        Ok(as_rep)
     }
 }
 
@@ -338,19 +371,50 @@ impl Sspi for Kerberos {
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
         self.encryption_params.encryption_type = Some(encryption_type as i32);
 
-        let session_key =
-            extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
+        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
 
         println!("session key: {:?}", session_key);
 
         let seq_num = self.next_seq_number();
+
         let authenticator = generate_authenticator_for_krb_priv(&as_rep.0, seq_num)?;
         println!("authenticator key: {:?}", authenticator.0.subkey);
-        let krb_priv = generate_krb_priv_request(as_rep.0.ticket.0, &session_key, change_password.new_password.as_bytes(), &authenticator, &self.encryption_params, seq_num)?;
+        let krb_priv = generate_krb_priv_request(
+            as_rep.0.ticket.0,
+            &session_key,
+            change_password.new_password.as_bytes(),
+            &authenticator,
+            &self.encryption_params,
+            seq_num,
+        )?;
 
-        self.config.url = Url::from_str("tcp://192.168.0.108:464").unwrap();
+        self.config
+            .url
+            .set_port(Some(464))
+            .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
         let response = self.send(&serialize_message(&krb_priv)?)?;
+
         println!("response: {:?}", response);
+        let krb_priv_response = KrbPrivResponse::deserialize(&response[4..]).map_err(|err| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("Cannot deserialize krb_priv_response: {:?}", err),
+            )
+        })?;
+
+        let result_status = extract_status_code_from_krb_priv_response(
+            &krb_priv_response.krb_priv,
+            &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
+            &&self.encryption_params,
+        )?;
+        println!("status: {}", result_status);
+
+        if result_status != 0 {
+            return Err(Error::new(
+                ErrorKind::WrongCredentialHandle,
+                format!("unsuccessful krb result code: {}. expected 0", result_status),
+            ));
+        }
 
         Ok(())
     }

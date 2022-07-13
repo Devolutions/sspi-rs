@@ -82,6 +82,9 @@ cfg_if::cfg_if! {
     }
 }
 
+#[cfg(feature = "network_client")]
+pub use utils::resolve_kdc_host;
+
 pub use crate::sspi::kerberos::config::KerberosConfig;
 pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
 pub use crate::sspi::negotiate::{Negotiate, NegotiateConfig};

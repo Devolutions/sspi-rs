@@ -4,7 +4,7 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
-use sspi::builders::{EmptyInitializeSecurityContext, ChangePasswordBuilder};
+use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
@@ -738,12 +738,10 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
         .expect("change password builder should never fail");
 
     let mut sspi_context = match security_package_name {
-        negotiate::PKG_NAME => {
-            SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default())))
-        }
-        kerberos::PKG_NAME => {
-            SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(KerberosConfig::from_env())))
-        }
+        negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
+        kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
+            KerberosConfig::from_env()
+        ))),
         ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
         _ => {
             return ErrorKind::InvalidParameter.to_u32().unwrap();
@@ -754,10 +752,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
     copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    result_status.map_or_else(
-        |err| err.error_type.to_u32().unwrap(),
-        |_| 0,
-    )
+    result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
 }
 pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     *mut SecChar,
@@ -810,12 +805,10 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
         .expect("change password builder should never fail");
 
     let mut sspi_context = match security_package_name.as_str() {
-        negotiate::PKG_NAME => {
-            SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default())))
-        }
-        kerberos::PKG_NAME => {
-            SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(KerberosConfig::from_env())))
-        }
+        negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
+        kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
+            KerberosConfig::from_env()
+        ))),
         ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
         _ => {
             return ErrorKind::InvalidParameter.to_u32().unwrap();
@@ -826,10 +819,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
 
     copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    result_status.map_or_else(
-        |err| err.error_type.to_u32().unwrap(),
-        |_| 0,
-    )
+    result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
 }
 pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     *mut SecWChar,
