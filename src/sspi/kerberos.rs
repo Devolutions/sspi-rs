@@ -23,7 +23,8 @@ use self::client::extractors::{
 use self::client::generators::{
     generate_ap_req, generate_as_req, generate_authenticator_for_ap_req, generate_authenticator_for_krb_priv,
     generate_authenticator_for_tgs_ap_req, generate_krb_priv_request, generate_neg_ap_req, generate_neg_token_init,
-    generate_passwd_as_req, generate_tgs_req, DEFAULT_AP_REQ_OPTIONS,
+    generate_tgs_req, get_client_principal_name_type, get_client_principal_realm, GenerateApReqOptions,
+    DEFAULT_AP_REQ_OPTIONS,
 };
 use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
@@ -33,9 +34,7 @@ use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
-use crate::sspi::kerberos::client::generators::{
-    generate_as_req_without_pre_auth, generate_final_neg_token_targ, get_mech_list,
-};
+use crate::sspi::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
 use crate::sspi::kerberos::server::extractors::{
     extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep,
 };
@@ -135,10 +134,9 @@ impl Kerberos {
         }
     }
 
-    pub fn as_exchange(&mut self, domain: &str, username: &str, password: &str) -> Result<AsRep> {
-        let mut salt = format!("{}{}", domain, username);
-
-        let as_req = generate_as_req_without_pre_auth(username, domain)?;
+    pub fn as_exchange(&mut self, mut options: GenerateApReqOptions) -> Result<AsRep> {
+        options.with_pre_auth = false;
+        let as_req = generate_as_req(&options)?;
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -154,10 +152,11 @@ impl Kerberos {
         }
 
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-            salt = correct_salt;
+            options.salt = correct_salt.as_bytes().to_vec()
         }
 
-        let as_req = generate_passwd_as_req(&username, salt.as_bytes(), password, domain, &self.encryption_params)?;
+        options.with_pre_auth = true;
+        let as_req = generate_as_req(&options)?;
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -336,35 +335,21 @@ impl Sspi for Kerberos {
         let domain = &change_password.domain_name;
         let password = &change_password.old_password;
 
-        let mut salt = format!("{}{}", domain, username);
+        let salt = format!("{}{}", domain, username);
 
-        let as_req = generate_as_req_without_pre_auth(username, domain)?;
+        let cname_type = get_client_principal_name_type(&username, &domain);
+        let realm = &get_client_principal_realm(&username, &domain);
 
-        let response = self.send(&serialize_message(&as_req)?)?;
-
-        // first 4 bytes is message len. skipping them
-        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-
-        if as_rep.is_ok() {
-            return Err(Error {
-                error_type: ErrorKind::InternalError,
-                description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
-            });
-        }
-
-        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-            salt = correct_salt;
-        }
-
-        let as_req = generate_passwd_as_req(&username, salt.as_bytes(), password, domain, &self.encryption_params)?;
-
-        let response = self.send(&serialize_message(&as_req)?)?;
-
-        // first 4 bytes is message len. skipping them
-        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-        let as_rep = as_rep?;
+        let as_rep = self.as_exchange(GenerateApReqOptions {
+            realm,
+            username: &username,
+            password: &password,
+            salt: salt.as_bytes().to_vec(),
+            enc_params: self.encryption_params.clone(),
+            cname_type,
+            snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
+            with_pre_auth: false,
+        })?;
 
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -497,37 +482,23 @@ impl SspiImpl for Kerberos {
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
                 let password = utf16_bytes_to_utf8_string(&credentials.password);
-                let mut salt = format!("{}{}", domain, username);
+                let salt = format!("{}{}", domain, username);
 
                 self.realm = Some(domain.clone());
 
-                let as_req = generate_as_req_without_pre_auth(&username, &domain)?;
+                let cname_type = get_client_principal_name_type(&username, &domain);
+                let realm = &get_client_principal_realm(&username, &domain);
 
-                let response = self.send(&serialize_message(&as_req)?)?;
-
-                // first 4 bytes is message len. skipping them
-                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-                let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-
-                if as_rep.is_ok() {
-                    return Err(Error {
-                        error_type: ErrorKind::InternalError,
-                        description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
-                    });
-                }
-
-                if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-                    salt = correct_salt;
-                }
-
-                let as_req = generate_as_req(&username, salt.as_bytes(), &password, &domain, &self.encryption_params)?;
-
-                let response = self.send(&serialize_message(&as_req)?)?;
-
-                // first 4 bytes is message len. skipping them
-                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-                let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-                let as_rep = as_rep?;
+                let as_rep = self.as_exchange(GenerateApReqOptions {
+                    realm,
+                    username: &username,
+                    password: &password,
+                    salt: salt.as_bytes().to_vec(),
+                    enc_params: self.encryption_params.clone(),
+                    cname_type,
+                    snames: &[TGT_SERVICE_NAME, &realm],
+                    with_pre_auth: false,
+                })?;
 
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 
