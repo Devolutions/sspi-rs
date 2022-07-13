@@ -37,9 +37,6 @@ pub mod reqwest_network_client {
 
     impl NetworkClient for ReqwestNetworkClient {
         fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
-            println!("send addr: {:?}", url);
-            println!("message to send: {:0x?}", data);
-
             match url.scheme() {
                 "tcp" => {
                     let mut stream = TcpStream::connect(&format!(
@@ -48,26 +45,15 @@ pub mod reqwest_network_client {
                         url.port().unwrap_or(88)
                     ))?;
 
-                    println!("connected");
-
                     stream.write(data).map_err(|e| Error {
                         error_type: ErrorKind::InternalError,
                         description: format!("{:?}", e),
                     })?;
 
-                    println!("sent");
-
-                    // if url.port().unwrap() == 464 {
-                    //     println!("simple return");
-                    //     return Ok(vec![]);
-                    // }
-
                     let len = stream.read_u32::<BigEndian>().map_err(|e| Error {
                         error_type: ErrorKind::InternalError,
                         description: format!("{:?}", e),
                     })?;
-
-                    println!("len: {:?}", len);
 
                     let mut buf = vec![0; len as usize + 4];
                     buf[0..4].copy_from_slice(&(len.to_be_bytes()));

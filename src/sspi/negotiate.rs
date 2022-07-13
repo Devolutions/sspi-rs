@@ -98,6 +98,23 @@ impl Negotiate {
             auth_identity: None,
         })
     }
+
+    #[cfg(feature = "network_client")]
+    fn negotiate_protocol(&mut self, username: &[u8]) -> Result<()> {
+        if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
+            if let Some(domain) = get_domain_from_fqdn(username) {
+                if let Some(host) = resolve_kdc_host(&domain) {
+                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                        url: Url::from_str(&host).unwrap(),
+                        kdc_type: KdcType::Kdc,
+                        network_client: Box::new(ReqwestNetworkClient::new()),
+                    })?)
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl SspiEx for Negotiate {
@@ -166,8 +183,14 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
-        todo!()
+    fn change_password(&mut self, change_password: builders::ChangePassword) -> Result<()> {
+        #[cfg(feature = "network_client")]
+        self.negotiate_protocol(change_password.account_name.as_bytes())?;
+
+        match &mut self.protocol {
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.change_password(change_password),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.change_password(change_password),
+        }
     }
 }
 
@@ -186,20 +209,12 @@ impl SspiImpl for Negotiate {
             ));
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
-
         #[cfg(feature = "network_client")]
-        if let (Some(identity), NegotiatedProtocol::Ntlm(_)) = (&self.auth_identity, &self.protocol) {
-            if let Some(domain) = get_domain_from_fqdn(&identity.user) {
-                if let Some(host) = resolve_kdc_host(&domain) {
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(&host).unwrap(),
-                        kdc_type: KdcType::Kdc,
-                        network_client: Box::new(ReqwestNetworkClient::new()),
-                    })?)
-                }
-            }
+        if let Some(identity) = builder.auth_data {
+            self.negotiate_protocol(identity.username.as_bytes())?;
         }
+
+        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
 
         match &mut self.protocol {
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.acquire_credentials_handle_impl(builder)?,
@@ -217,18 +232,8 @@ impl SspiImpl for Negotiate {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         #[cfg(feature = "network_client")]
-        if let (NegotiatedProtocol::Ntlm(_), Some(Some(auth_data))) =
-            (&self.protocol, builder.credentials_handle.as_ref())
-        {
-            if let Some(domain) = get_domain_from_fqdn(&auth_data.user) {
-                if let Some(host) = resolve_kdc_host(&domain) {
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(&host).unwrap(),
-                        kdc_type: KdcType::Kdc,
-                        network_client: Box::new(ReqwestNetworkClient::new()),
-                    })?)
-                }
-            }
+        if let Some(Some(identity)) = builder.credentials_handle {
+            self.negotiate_protocol(&identity.user)?;
         }
 
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {

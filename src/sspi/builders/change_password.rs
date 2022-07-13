@@ -57,6 +57,7 @@ impl<'a> ChangePasswordBuilder<'a> {
         self
     }
 
+    /// Optional(default to false if not set)
     pub fn with_impersonating(&self, impersonating: bool) -> &Self {
         self.inner.borrow_mut().impersonating = impersonating;
         self
@@ -98,5 +99,11 @@ impl<'a> ChangePasswordBuilder<'a> {
                 .take()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing output parameter".into()))?,
         })
+    }
+}
+
+impl<'a> Default for ChangePasswordBuilder<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }

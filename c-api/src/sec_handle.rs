@@ -773,8 +773,8 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     psz_account_name: *mut SecWChar,
     psz_old_password: *mut SecWChar,
     psz_new_password: *mut SecWChar,
-    _b_impersonating: bool,
-    _dw_reserved: c_ulong,
+    b_impersonating: bool,
+    dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
     check_null!(psz_package_name);
@@ -791,35 +791,16 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     let password = c_w_str_to_string(psz_old_password);
     let new_password = c_w_str_to_string(psz_new_password);
 
-    let len = (*p_output).c_buffers as usize;
-    let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
-    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
-
-    let change_password = ChangePasswordBuilder::new()
-        .with_domain_name(domain)
-        .with_account_name(username)
-        .with_old_password(password)
-        .with_new_password(new_password)
-        .with_output(&mut output_tokens)
-        .build()
-        .expect("change password builder should never fail");
-
-    let mut sspi_context = match security_package_name.as_str() {
-        negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
-        kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
-            KerberosConfig::from_env()
-        ))),
-        ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
-        _ => {
-            return ErrorKind::InvalidParameter.to_u32().unwrap();
-        }
-    };
-
-    let result_status = sspi_context.change_password(change_password);
-
-    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
-
-    result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
+    ChangeAccountPasswordA(
+        security_package_name.as_ptr() as *mut _,
+        domain.as_ptr() as *mut _,
+        username.as_ptr() as *mut _,
+        password.as_ptr() as *mut _,
+        new_password.as_ptr() as *mut _,
+        b_impersonating,
+        dw_reserved,
+        p_output,
+    )
 }
 pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     *mut SecWChar,

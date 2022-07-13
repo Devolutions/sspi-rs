@@ -133,10 +133,11 @@ pub fn extract_status_code_from_krb_priv_response(
 
     let cipher = new_kerberos_cipher(encryption_type)?;
 
-    let d = cipher.decrypt(auth_key, KRB_PRIV_ENC_PART, &krb_priv.0.enc_part.0.cipher.0 .0)?;
-    println!("{:?}", d);
-    let enc_part: EncKrbPrivPart = picky_asn1_der::from_bytes(&d)?;
-
+    let enc_part: EncKrbPrivPart = picky_asn1_der::from_bytes(&cipher.decrypt(
+        auth_key,
+        KRB_PRIV_ENC_PART,
+        &krb_priv.0.enc_part.0.cipher.0 .0,
+    )?)?;
     let user_data = enc_part.0.user_data.0 .0;
 
     if user_data.len() < 2 {

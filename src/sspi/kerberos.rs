@@ -1,4 +1,4 @@
-mod client;
+pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod network_client;
@@ -8,12 +8,14 @@ mod utils;
 use std::fmt::Debug;
 use std::io::Write;
 
+pub use encryption_params::EncryptionParams;
 use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
+use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApReq, AsRep, KrbPrivResponse, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
 
@@ -21,14 +23,13 @@ use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_authenticator_for_ap_req, generate_authenticator_for_krb_priv,
-    generate_authenticator_for_tgs_ap_req, generate_krb_priv_request, generate_neg_ap_req, generate_neg_token_init,
-    generate_tgs_req, get_client_principal_name_type, get_client_principal_realm, GenerateApReqOptions,
+    generate_ap_req, generate_as_req, generate_authenticator, generate_krb_priv_request, generate_neg_ap_req,
+    generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
+    ChecksumOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
     DEFAULT_AP_REQ_OPTIONS,
 };
 use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
-use self::encryption_params::EncryptionParams;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use crate::builders::ChangePassword;
@@ -65,6 +66,9 @@ const RRC: u16 = 28;
 const MAX_SIGNATURE: usize = 16;
 // minimal len to fit encrypted public key in wrap token
 const SECURITY_TRAILER: usize = 60;
+/// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
+/// "The service accepts requests on UDP port 464 and TCP port 464 as well."
+const KPASSWD_PORT: u16 = 464;
 
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
@@ -134,7 +138,7 @@ impl Kerberos {
         }
     }
 
-    pub fn as_exchange(&mut self, mut options: GenerateApReqOptions) -> Result<AsRep> {
+    pub fn as_exchange(&mut self, mut options: GenerateAsReqOptions) -> Result<AsRep> {
         options.with_pre_auth = false;
         let as_req = generate_as_req(&options)?;
 
@@ -163,9 +167,8 @@ impl Kerberos {
         // first 4 bytes is message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-        let as_rep = as_rep?;
 
-        Ok(as_rep)
+        Ok(as_rep?)
     }
 }
 
@@ -330,20 +333,19 @@ impl Sspi for Kerberos {
     }
 
     fn change_password(&mut self, change_password: ChangePassword) -> Result<()> {
-        // as ex error
         let username = &change_password.account_name;
         let domain = &change_password.domain_name;
         let password = &change_password.old_password;
 
         let salt = format!("{}{}", domain, username);
 
-        let cname_type = get_client_principal_name_type(&username, &domain);
-        let realm = &get_client_principal_realm(&username, &domain);
+        let cname_type = get_client_principal_name_type(username, domain);
+        let realm = &get_client_principal_realm(username, domain);
 
-        let as_rep = self.as_exchange(GenerateApReqOptions {
+        let as_rep = self.as_exchange(GenerateAsReqOptions {
             realm,
-            username: &username,
-            password: &password,
+            username,
+            password,
             salt: salt.as_bytes().to_vec(),
             enc_params: self.encryption_params.clone(),
             cname_type,
@@ -356,14 +358,17 @@ impl Sspi for Kerberos {
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
         self.encryption_params.encryption_type = Some(encryption_type as i32);
 
-        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
-
-        println!("session key: {:?}", session_key);
+        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password, &self.encryption_params)?;
 
         let seq_num = self.next_seq_number();
 
-        let authenticator = generate_authenticator_for_krb_priv(&as_rep.0, seq_num)?;
-        println!("authenticator key: {:?}", authenticator.0.subkey);
+        let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
+            kdc_rep: &as_rep.0,
+            seq_num: Some(seq_num),
+            sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+            checksum: None,
+        })?;
+
         let krb_priv = generate_krb_priv_request(
             as_rep.0.ticket.0,
             &session_key,
@@ -375,12 +380,11 @@ impl Sspi for Kerberos {
 
         self.config
             .url
-            .set_port(Some(464))
+            .set_port(Some(KPASSWD_PORT))
             .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
         let response = self.send(&serialize_message(&krb_priv)?)?;
 
-        println!("response: {:?}", response);
-        let krb_priv_response = KrbPrivResponse::deserialize(&response[4..]).map_err(|err| {
+        let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
             Error::new(
                 ErrorKind::InvalidToken,
                 format!("Cannot deserialize krb_priv_response: {:?}", err),
@@ -390,9 +394,8 @@ impl Sspi for Kerberos {
         let result_status = extract_status_code_from_krb_priv_response(
             &krb_priv_response.krb_priv,
             &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
-            &&self.encryption_params,
+            &self.encryption_params,
         )?;
-        println!("status: {}", result_status);
 
         if result_status != 0 {
             return Err(Error::new(
@@ -489,14 +492,14 @@ impl SspiImpl for Kerberos {
                 let cname_type = get_client_principal_name_type(&username, &domain);
                 let realm = &get_client_principal_realm(&username, &domain);
 
-                let as_rep = self.as_exchange(GenerateApReqOptions {
+                let as_rep = self.as_exchange(GenerateAsReqOptions {
                     realm,
                     username: &username,
                     password: &password,
                     salt: salt.as_bytes().to_vec(),
                     enc_params: self.encryption_params.clone(),
                     cname_type,
-                    snames: &[TGT_SERVICE_NAME, &realm],
+                    snames: &[TGT_SERVICE_NAME, realm],
                     with_pre_auth: false,
                 })?;
 
@@ -505,7 +508,12 @@ impl SspiImpl for Kerberos {
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
                 self.encryption_params.encryption_type = Some(encryption_type as i32);
 
-                let mut authenticator = generate_authenticator_for_tgs_ap_req(&as_rep.0)?;
+                let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
+                    kdc_rep: &as_rep.0,
+                    seq_num: Some(OsRng::new()?.gen::<u32>()),
+                    sub_key: None,
+                    checksum: None,
+                })?;
 
                 let session_key_1 =
                     extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
@@ -538,7 +546,15 @@ impl SspiImpl for Kerberos {
                     &self.encryption_params,
                 )?);
 
-                let authenticator = generate_authenticator_for_ap_req(&tgs_rep.0, self.next_seq_number())?;
+                let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
+                    kdc_rep: &tgs_rep.0,
+                    seq_num: Some(self.next_seq_number()),
+                    sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+                    checksum: Some(ChecksumOptions {
+                        checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
+                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                    }),
+                })?;
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,

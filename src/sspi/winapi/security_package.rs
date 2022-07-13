@@ -4,10 +4,10 @@ use std::ptr;
 use num_traits::ToPrimitive;
 use winapi::ctypes::c_void;
 use winapi::shared::sspi::{
-    AcceptSecurityContext, AcquireCredentialsHandleW, CompleteAuthToken, CredHandle, CtxtHandle, DecryptMessage,
-    DeleteSecurityContext, EncryptMessage, FreeContextBuffer, InitializeSecurityContextW, QueryContextAttributesW,
-    SecBuffer, SecPkgContext_NamesW, SecPkgContext_PackageInfoW, SecPkgContext_Sizes, TimeStamp, SECPKG_ATTR_NAMES,
-    SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_SIZES,
+    AcceptSecurityContext, AcquireCredentialsHandleW, ChangeAccountPasswordW, CompleteAuthToken, CredHandle,
+    CtxtHandle, DecryptMessage, DeleteSecurityContext, EncryptMessage, FreeContextBuffer, InitializeSecurityContextW,
+    QueryContextAttributesW, SecBuffer, SecPkgContext_NamesW, SecPkgContext_PackageInfoW, SecPkgContext_Sizes,
+    TimeStamp, SECPKG_ATTR_NAMES, SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_SIZES,
 };
 use winapi::um::wincrypt::CERT_TRUST_STATUS;
 
@@ -378,8 +378,30 @@ impl Sspi for SecurityPackage {
         })
     }
 
-    fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
-        todo!()
+    fn change_password(&mut self, change_password: crate::builders::ChangePassword) -> crate::Result<()> {
+        let mut package_name = str_to_win_wstring(self.package_type.as_ref());
+        let mut domain_name = str_to_win_wstring(&change_password.domain_name);
+        let mut account_name = str_to_win_wstring(&change_password.account_name);
+        let mut old_password = str_to_win_wstring(&change_password.old_password);
+        let mut new_password = str_to_win_wstring(&change_password.new_password);
+
+        let mut output_buffers = buffers_as_winapi(change_password.output);
+        let mut output_buffer_descriptor = construct_buffer_desc(&mut output_buffers);
+
+        unsafe {
+            convert_winapi_status(ChangeAccountPasswordW(
+                package_name.as_mut_ptr(),
+                domain_name.as_mut_ptr(),
+                account_name.as_mut_ptr(),
+                old_password.as_mut_ptr(),
+                new_password.as_mut_ptr(),
+                change_password.impersonating.into(),
+                0,
+                &mut output_buffer_descriptor as *mut _,
+            ))?;
+        }
+
+        Ok(())
     }
 }
 
