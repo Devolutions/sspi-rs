@@ -37,9 +37,9 @@ serde_derive = "1.0"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
-picky-krb = { version = "0.2.0", path = "../picky-rs/picky-krb" }
-picky-asn1 = { version = "0.5.0", features = ["chrono_conversion"] }
-picky-asn1-der = "0.3.1"
+picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "79e8186c798876c77e67cdcdb02a1c6f58030c6e" }
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "79e8186c798876c77e67cdcdb02a1c6f58030c6e" , features = ["chrono_conversion"] }
+picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", rev = "79e8186c798876c77e67cdcdb02a1c6f58030c6e" }
 picky-asn1-x509 = "0.7.0"
 kerberos_crypto = "0.3.6"
 kerberos_constants = "0.0.9"
