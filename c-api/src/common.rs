@@ -40,54 +40,56 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    // ph_context can be null on the first call
-    check_null!(ph_new_context);
-    check_null!(ph_credential);
-    check_null!(p_input);
-    check_null!(p_output);
-    check_null!(pf_context_attr);
+    catch_panic!(
+        // ph_context can be null on the first call
+        check_null!(ph_new_context);
+        check_null!(ph_credential);
+        check_null!(p_input);
+        check_null!(p_output);
+        check_null!(pf_context_attr);
 
-    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+        let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
-        Some(data) => data,
-        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
-    };
+        let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+            Some(data) => data,
+            None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+        };
 
-    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        Some(security_package_name),
-        attributes,
-    ));
+        let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            Some(security_package_name),
+            attributes,
+        ));
 
-    let sspi_context = sspi_context_ptr
-        .as_mut()
-        .expect("security context pointer cannot be null");
+        let sspi_context = sspi_context_ptr
+            .as_mut()
+            .expect("security context pointer cannot be null");
 
-    let mut input_tokens =
-        p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
+        let mut input_tokens =
+            p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
 
-    let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+        let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-    let result_status = sspi_context
-        .accept_security_context()
-        .with_credentials_handle(&mut Some(auth_data))
-        .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
-        .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
-        .with_input(&mut input_tokens)
-        .with_output(&mut output_tokens)
-        .execute();
+        let result_status = sspi_context
+            .accept_security_context()
+            .with_credentials_handle(&mut Some(auth_data))
+            .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
+            .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
+            .with_input(&mut input_tokens)
+            .with_output(&mut output_tokens)
+            .execute();
 
-    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
-    *pf_context_attr = f_context_req;
+        *pf_context_attr = f_context_req;
 
-    result_status.map_or_else(
-        |err| err.error_type.to_u32().unwrap(),
-        |result| result.status.to_u32().unwrap(),
+        result_status.map_or_else(
+            |err| err.error_type.to_u32().unwrap(),
+            |result| result.status.to_u32().unwrap(),
+        )
     )
 }
 pub type AcceptSecurityContextFn = unsafe extern "system" fn(
@@ -108,6 +110,7 @@ pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(ph_context);
     check_null!(p_token);
 
@@ -126,25 +129,28 @@ pub unsafe extern "system" fn CompleteAuthToken(
         |err| err.error_type.to_u32().unwrap(),
         |result| result.to_u32().unwrap(),
     )
+    )
 }
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
-    if ph_context.is_null() {
-        return 0;
-    }
+    catch_panic!(
+        if ph_context.is_null() {
+            return 0;
+        }
 
-    drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        None,
-        &CredentialsAttributes::default()
-    )));
-    drop_in_place((*ph_context).dw_upper as *mut String);
-    drop_in_place(ph_context);
+        drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        )));
+        drop_in_place((*ph_context).dw_upper as *mut String);
+        drop_in_place(ph_context);
 
-    0
+        0
+    )
 }
 pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
@@ -230,33 +236,35 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    check_null!(ph_context);
-    check_null!(p_message);
+    catch_panic!(
+        check_null!(ph_context);
+        check_null!(p_message);
 
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        None,
-        &CredentialsAttributes::default()
-    ))
-    .as_mut()
-    .expect("security context pointer cannot be null");
+        let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        ))
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-    let len = (*p_message).c_buffers as usize;
-    let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
-    let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
+        let len = (*p_message).c_buffers as usize;
+        let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
+        let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
-    let result_status = match sspi_context.encrypt_message(
-        EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
-        &mut message,
-        message_seq_no.try_into().unwrap(),
-    ) {
-        Ok(status) => status.to_u32().unwrap(),
-        Err(error) => error.error_type.to_u32().unwrap(),
-    };
+        let result_status = match sspi_context.encrypt_message(
+            EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
+            &mut message,
+            message_seq_no.try_into().unwrap(),
+        ) {
+            Ok(status) => status.to_u32().unwrap(),
+            Err(error) => error.error_type.to_u32().unwrap(),
+        };
 
-    copy_to_c_sec_buffer((*p_message).p_buffers, &message);
+        copy_to_c_sec_buffer((*p_message).p_buffers, &message);
 
-    result_status
+        result_status
+    )
 }
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
@@ -269,6 +277,7 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(ph_context);
     check_null!(p_message);
     check_null!(pf_qop);
@@ -295,6 +304,7 @@ pub unsafe extern "system" fn DecryptMessage(
     *pf_qop = decryption_flags.bits().try_into().unwrap();
 
     status
+    )
 }
 pub type DecryptMessageFn =
     unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;

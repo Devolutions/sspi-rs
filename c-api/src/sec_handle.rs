@@ -122,28 +122,30 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    check_null!(psz_package);
-    check_null!(p_auth_data);
-    check_null!(ph_credential);
+    catch_panic!(
+        check_null!(psz_package);
+        check_null!(p_auth_data);
+        check_null!(ph_credential);
 
-    let security_package_name =
-        try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
+        let security_package_name =
+            try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
 
-    let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
 
-    let credentials = AuthIdentityBuffers {
-        user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-        domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-        password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
-    };
+        let credentials = AuthIdentityBuffers {
+            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
+            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
+        };
 
-    (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
-        credentials,
-        security_package_name,
-        attributes: CredentialsAttributes::default(),
-    }) as c_ulonglong;
+        (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
+            credentials,
+            security_package_name,
+            attributes: CredentialsAttributes::default(),
+        }) as c_ulonglong;
 
-    0
+        0
+    )
 }
 pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     LpStr,
@@ -170,27 +172,29 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    check_null!(psz_package);
-    check_null!(p_auth_data);
-    check_null!(ph_credential);
+    catch_panic!(
+        check_null!(psz_package);
+        check_null!(p_auth_data);
+        check_null!(ph_credential);
 
-    let security_package_name = c_w_str_to_string(psz_package);
+        let security_package_name = c_w_str_to_string(psz_package);
 
-    let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
 
-    let credentials = AuthIdentityBuffers {
-        user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
-        domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-        password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
-    };
+        let credentials = AuthIdentityBuffers {
+            user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
+            domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
+            password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
+        };
 
-    (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
-        credentials,
-        security_package_name,
-        attributes: CredentialsAttributes::default(),
-    }) as c_ulonglong;
+        (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
+            credentials,
+            security_package_name,
+            attributes: CredentialsAttributes::default(),
+        }) as c_ulonglong;
 
-    0
+        0
+    )
 }
 pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
     LpcWStr,
@@ -243,66 +247,68 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    // ph_context can be null on the first call
-    check_null!(ph_new_context);
-    check_null!(ph_credential);
-    check_null!(p_input);
-    check_null!(p_output);
-    check_null!(pf_context_attr);
+    catch_panic!(
+        // ph_context can be null on the first call
+        check_null!(ph_new_context);
+        check_null!(ph_credential);
+        check_null!(p_input);
+        check_null!(p_output);
+        check_null!(pf_context_attr);
 
-    let service_principal = if p_target_name.is_null() {
-        ""
-    } else {
-        try_execute!(CStr::from_ptr(p_target_name).to_str(), ErrorKind::InvalidParameter)
-    };
+        let service_principal = if p_target_name.is_null() {
+            ""
+        } else {
+            try_execute!(CStr::from_ptr(p_target_name).to_str(), ErrorKind::InvalidParameter)
+        };
 
-    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+        let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
-        Some(creds_handle) => creds_handle,
-        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
-    };
+        let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+            Some(creds_handle) => creds_handle,
+            None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+        };
 
-    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        Some(security_package_name),
-        attributes
-    ));
-    let sspi_context = sspi_context_ptr
-        .as_mut()
-        .expect("security context pointer cannot be null");
+        let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            Some(security_package_name),
+            attributes
+        ));
+        let sspi_context = sspi_context_ptr
+            .as_mut()
+            .expect("security context pointer cannot be null");
 
-    let mut input_tokens = if p_input.is_null() {
-        Vec::new()
-    } else {
-        p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize))
-    };
+        let mut input_tokens = if p_input.is_null() {
+            Vec::new()
+        } else {
+            p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize))
+        };
 
-    let len = (*p_output).c_buffers as usize;
-    let raw_buffers = from_raw_parts((*p_output).p_buffers, len);
-    let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
-    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
+        let len = (*p_output).c_buffers as usize;
+        let raw_buffers = from_raw_parts((*p_output).p_buffers, len);
+        let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
+        output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let mut auth_data = Some(auth_data);
-    let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
-        .with_credentials_handle(&mut auth_data)
-        .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
-        .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
-        .with_target_name(service_principal)
-        .with_input(&mut input_tokens)
-        .with_output(&mut output_tokens);
-    let result_status = sspi_context.initialize_security_context_impl(&mut builder);
+        let mut auth_data = Some(auth_data);
+        let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
+            .with_credentials_handle(&mut auth_data)
+            .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
+            .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
+            .with_target_name(service_principal)
+            .with_input(&mut input_tokens)
+            .with_output(&mut output_tokens);
+        let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
-    *pf_context_attr = f_context_req;
+        *pf_context_attr = f_context_req;
 
-    result_status.map_or_else(
-        |err| err.error_type.to_u32().unwrap(),
-        |result| result.status.to_u32().unwrap(),
+        result_status.map_or_else(
+            |err| err.error_type.to_u32().unwrap(),
+            |result| result.status.to_u32().unwrap(),
+        )
     )
 }
 pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
@@ -337,65 +343,67 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    // ph_context can be null on the first call
-    check_null!(ph_new_context);
-    check_null!(ph_credential);
-    check_null!(p_input);
-    check_null!(p_output);
-    check_null!(pf_context_attr);
+    catch_panic!(
+        // ph_context can be null on the first call
+        check_null!(ph_new_context);
+        check_null!(ph_credential);
+        check_null!(p_input);
+        check_null!(p_output);
+        check_null!(pf_context_attr);
 
-    let service_principal = if p_target_name.is_null() {
-        String::new()
-    } else {
-        c_w_str_to_string(p_target_name)
-    };
+        let service_principal = if p_target_name.is_null() {
+            String::new()
+        } else {
+            c_w_str_to_string(p_target_name)
+        };
 
-    let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+        let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
-    let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
-        Some(creds_handle) => creds_handle,
-        None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
-    };
+        let (auth_data, security_package_name, attributes) = match transform_credentials_handle(credentials_handle) {
+            Some(creds_handle) => creds_handle,
+            None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
+        };
 
-    let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        Some(security_package_name),
-        attributes,
-    ));
-    let sspi_context = sspi_context_ptr
-        .as_mut()
-        .expect("security context pointer cannot be null");
+        let sspi_context_ptr = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            Some(security_package_name),
+            attributes,
+        ));
+        let sspi_context = sspi_context_ptr
+            .as_mut()
+            .expect("security context pointer cannot be null");
 
-    let mut input_tokens = if p_input.is_null() {
-        Vec::new()
-    } else {
-        p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize))
-    };
+        let mut input_tokens = if p_input.is_null() {
+            Vec::new()
+        } else {
+            p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize))
+        };
 
-    let raw_buffers = from_raw_parts((*p_output).p_buffers, (*p_output).c_buffers as usize);
-    let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
-    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
+        let raw_buffers = from_raw_parts((*p_output).p_buffers, (*p_output).c_buffers as usize);
+        let mut output_tokens = p_sec_buffers_to_security_buffers(raw_buffers);
+        output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let mut auth_data = Some(auth_data);
-    let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
-        .with_credentials_handle(&mut auth_data)
-        .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
-        .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
-        .with_target_name(&service_principal)
-        .with_input(&mut input_tokens)
-        .with_output(&mut output_tokens);
-    let result_status = sspi_context.initialize_security_context_impl(&mut builder);
+        let mut auth_data = Some(auth_data);
+        let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
+            .with_credentials_handle(&mut auth_data)
+            .with_context_requirements(ClientRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
+            .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
+            .with_target_name(&service_principal)
+            .with_input(&mut input_tokens)
+            .with_output(&mut output_tokens);
+        let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    *pf_context_attr = f_context_req;
+        *pf_context_attr = f_context_req;
 
-    (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-    (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
-    result_status.map_or_else(
-        |err| err.error_type.to_u32().unwrap(),
-        |result| result.status.to_u32().unwrap(),
+        result_status.map_or_else(
+            |err| err.error_type.to_u32().unwrap(),
+            |result| result.status.to_u32().unwrap(),
+        )
     )
 }
 pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
@@ -421,41 +429,43 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        None,
-        &CredentialsAttributes::default()
-    ))
-    .as_mut()
-    .expect("security context pointer cannot be null");
+    catch_panic!(
+        let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        ))
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-    check_null!(p_buffer);
+        check_null!(p_buffer);
 
-    match ul_attribute.try_into().unwrap() {
-        SECPKG_ATTR_SIZES => {
-            let sizes = p_buffer.cast::<SecPkgContextSizes>();
+        match ul_attribute.try_into().unwrap() {
+            SECPKG_ATTR_SIZES => {
+                let sizes = p_buffer.cast::<SecPkgContextSizes>();
 
-            let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
+                let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
 
-            (*sizes).cb_max_token = pkg_sizes.max_token;
-            (*sizes).cb_max_signature = pkg_sizes.max_signature;
-            (*sizes).cb_block_size = pkg_sizes.block;
-            (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
+                (*sizes).cb_max_token = pkg_sizes.max_token;
+                (*sizes).cb_max_signature = pkg_sizes.max_signature;
+                (*sizes).cb_block_size = pkg_sizes.block;
+                (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
 
-            0
+                0
+            }
+            SECPKG_ATTR_NEGOTIATION_INFO => {
+                let nego_info = p_buffer.cast::<SecNegoInfoA>();
+
+                (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
+                (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
+                    sspi_context.query_context_package_info()
+                )));
+
+                0
+            }
+            _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
         }
-        SECPKG_ATTR_NEGOTIATION_INFO => {
-            let nego_info = p_buffer.cast::<SecNegoInfoA>();
-
-            (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
-            (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
-                sspi_context.query_context_package_info()
-            )));
-
-            0
-        }
-        _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
-    }
+    )
 }
 pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
@@ -467,41 +477,43 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-        &mut ph_context,
-        None,
-        &CredentialsAttributes::default()
-    ))
-    .as_mut()
-    .expect("security context pointer cannot be null");
+    catch_panic!(
+        let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        ))
+        .as_mut()
+        .expect("security context pointer cannot be null");
 
-    check_null!(p_buffer);
+        check_null!(p_buffer);
 
-    match ul_attribute.try_into().unwrap() {
-        SECPKG_ATTR_SIZES => {
-            let sizes = p_buffer.cast::<SecPkgContextSizes>();
+        match ul_attribute.try_into().unwrap() {
+            SECPKG_ATTR_SIZES => {
+                let sizes = p_buffer.cast::<SecPkgContextSizes>();
 
-            let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
+                let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
 
-            (*sizes).cb_max_token = pkg_sizes.max_token;
-            (*sizes).cb_max_signature = pkg_sizes.max_signature;
-            (*sizes).cb_block_size = pkg_sizes.block;
-            (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
+                (*sizes).cb_max_token = pkg_sizes.max_token;
+                (*sizes).cb_max_signature = pkg_sizes.max_signature;
+                (*sizes).cb_block_size = pkg_sizes.block;
+                (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
 
-            0
+                0
+            }
+            SECPKG_ATTR_NEGOTIATION_INFO => {
+                let nego_info = p_buffer.cast::<SecNegoInfoW>();
+
+                (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+                (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(try_execute!(
+                    sspi_context.query_context_package_info()
+                )));
+
+                0
+            }
+            _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
         }
-        SECPKG_ATTR_NEGOTIATION_INFO => {
-            let nego_info = p_buffer.cast::<SecNegoInfoW>();
-
-            (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-            (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(try_execute!(
-                sspi_context.query_context_package_info()
-            )));
-
-            0
-        }
-        _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
-    }
+    )
 }
 pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
@@ -613,7 +625,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+    catch_panic!(if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
         check_null!(ph_credential);
         check_null!(p_buffer);
 
@@ -650,7 +662,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         0
     } else {
         ErrorKind::UnsupportedFunction.to_u32().unwrap()
-    }
+    })
 }
 pub type SetCredentialsAttributesFnA =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -663,7 +675,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+    catch_panic!(if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
         check_null!(ph_credential);
         check_null!(p_buffer);
 
@@ -694,7 +706,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         0
     } else {
         ErrorKind::UnsupportedFunction.to_u32().unwrap()
-    }
+    })
 }
 pub type SetCredentialsAttributesFnW =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -711,49 +723,51 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     _dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    check_null!(psz_package_name);
-    check_null!(psz_domain_name);
-    check_null!(psz_account_name);
-    check_null!(psz_old_password);
-    check_null!(psz_new_password);
-    check_null!(p_output);
+    catch_panic!(
+        check_null!(psz_package_name);
+        check_null!(psz_domain_name);
+        check_null!(psz_account_name);
+        check_null!(psz_old_password);
+        check_null!(psz_new_password);
+        check_null!(p_output);
 
-    let security_package_name = try_execute!(CStr::from_ptr(psz_package_name).to_str(), ErrorKind::InvalidParameter);
+        let security_package_name = try_execute!(CStr::from_ptr(psz_package_name).to_str(), ErrorKind::InvalidParameter);
 
-    let domain = try_execute!(CStr::from_ptr(psz_domain_name).to_str(), ErrorKind::InvalidParameter);
-    let username = try_execute!(CStr::from_ptr(psz_account_name).to_str(), ErrorKind::InvalidParameter);
-    let password = try_execute!(CStr::from_ptr(psz_old_password).to_str(), ErrorKind::InvalidParameter);
-    let new_password = try_execute!(CStr::from_ptr(psz_new_password).to_str(), ErrorKind::InvalidParameter);
+        let domain = try_execute!(CStr::from_ptr(psz_domain_name).to_str(), ErrorKind::InvalidParameter);
+        let username = try_execute!(CStr::from_ptr(psz_account_name).to_str(), ErrorKind::InvalidParameter);
+        let password = try_execute!(CStr::from_ptr(psz_old_password).to_str(), ErrorKind::InvalidParameter);
+        let new_password = try_execute!(CStr::from_ptr(psz_new_password).to_str(), ErrorKind::InvalidParameter);
 
-    let len = (*p_output).c_buffers as usize;
-    let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
-    output_tokens.iter_mut().for_each(|s| s.buffer.clear());
+        let len = (*p_output).c_buffers as usize;
+        let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
+        output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
-    let change_password = ChangePasswordBuilder::new()
-        .with_domain_name(domain)
-        .with_account_name(username)
-        .with_old_password(password)
-        .with_new_password(new_password)
-        .with_output(&mut output_tokens)
-        .build()
-        .expect("change password builder should never fail");
+        let change_password = ChangePasswordBuilder::new()
+            .with_domain_name(domain)
+            .with_account_name(username)
+            .with_old_password(password)
+            .with_new_password(new_password)
+            .with_output(&mut output_tokens)
+            .build()
+            .expect("change password builder should never fail");
 
-    let mut sspi_context = match security_package_name {
-        negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
-        kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
-            KerberosConfig::from_env()
-        ))),
-        ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
-        _ => {
-            return ErrorKind::InvalidParameter.to_u32().unwrap();
-        }
-    };
+        let mut sspi_context = match security_package_name {
+            negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
+            kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
+                KerberosConfig::from_env()
+            ))),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            _ => {
+                return ErrorKind::InvalidParameter.to_u32().unwrap();
+            }
+        };
 
-    let result_status = sspi_context.change_password(change_password);
+        let result_status = sspi_context.change_password(change_password);
 
-    copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-    result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
+        result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
+    )
 }
 pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     *mut SecChar,
@@ -778,29 +792,31 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    check_null!(psz_package_name);
-    check_null!(psz_domain_name);
-    check_null!(psz_account_name);
-    check_null!(psz_old_password);
-    check_null!(psz_new_password);
-    check_null!(p_output);
+    catch_panic!(
+        check_null!(psz_package_name);
+        check_null!(psz_domain_name);
+        check_null!(psz_account_name);
+        check_null!(psz_old_password);
+        check_null!(psz_new_password);
+        check_null!(p_output);
 
-    let security_package_name = c_w_str_to_string(psz_package_name);
+        let security_package_name = c_w_str_to_string(psz_package_name);
 
-    let domain = c_w_str_to_string(psz_domain_name);
-    let username = c_w_str_to_string(psz_account_name);
-    let password = c_w_str_to_string(psz_old_password);
-    let new_password = c_w_str_to_string(psz_new_password);
+        let domain = c_w_str_to_string(psz_domain_name);
+        let username = c_w_str_to_string(psz_account_name);
+        let password = c_w_str_to_string(psz_old_password);
+        let new_password = c_w_str_to_string(psz_new_password);
 
-    ChangeAccountPasswordA(
-        security_package_name.as_ptr() as *mut _,
-        domain.as_ptr() as *mut _,
-        username.as_ptr() as *mut _,
-        password.as_ptr() as *mut _,
-        new_password.as_ptr() as *mut _,
-        b_impersonating,
-        dw_reserved,
-        p_output,
+        ChangeAccountPasswordA(
+            security_package_name.as_ptr() as *mut _,
+            domain.as_ptr() as *mut _,
+            username.as_ptr() as *mut _,
+            password.as_ptr() as *mut _,
+            new_password.as_ptr() as *mut _,
+            b_impersonating,
+            dw_reserved,
+            p_output,
+        )
     )
 }
 pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(

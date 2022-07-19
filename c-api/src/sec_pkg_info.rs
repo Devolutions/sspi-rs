@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 
 use libc::{c_uint, c_ulong, c_ushort};
-use sspi::{enumerate_security_packages, ErrorKind, PackageInfo, KERBEROS_VERSION};
+use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -91,6 +91,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(pc_packages);
     check_null!(pp_package_info);
 
@@ -101,6 +102,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
 
     0
+    )
 }
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
 
@@ -110,6 +112,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut *mut SecPkgInfoW,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(pc_packages);
     check_null!(pp_package_info);
 
@@ -120,6 +123,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
 
     0
+    )
 }
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SecurityStatus;
 
@@ -129,6 +133,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(p_package_name);
     check_null!(pp_package_info);
 
@@ -141,6 +146,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
         .unwrap();
 
     0
+    )
 }
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
@@ -150,6 +156,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     p_package_name: *const SecWChar,
     pp_package_info: *mut PSecPkgInfoW,
 ) -> SecurityStatus {
+    catch_panic!(
     check_null!(p_package_name);
     check_null!(pp_package_info);
 
@@ -162,6 +169,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         .unwrap();
 
     0
+    )
 }
 pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar, *mut PSecPkgInfoW) -> SecurityStatus;
 

@@ -31,3 +31,11 @@ macro_rules! check_null {
         }
     }};
 }
+
+macro_rules! catch_panic {
+    ($($tokens:tt)*) => {{
+        use sspi::ErrorKind;
+
+        try_execute!(std::panic::catch_unwind(move || { $($tokens)* }), ErrorKind::InternalError)
+    }};
+}
