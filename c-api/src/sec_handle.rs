@@ -126,7 +126,8 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     check_null!(p_auth_data);
     check_null!(ph_credential);
 
-    let security_package_name = CStr::from_ptr(psz_package).to_str().unwrap().to_owned();
+    let security_package_name =
+        try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
 
     let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
 
@@ -252,7 +253,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     let service_principal = if p_target_name.is_null() {
         ""
     } else {
-        CStr::from_ptr(p_target_name).to_str().unwrap()
+        try_execute!(CStr::from_ptr(p_target_name).to_str(), ErrorKind::InvalidParameter)
     };
 
     let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
@@ -717,22 +718,22 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     check_null!(psz_new_password);
     check_null!(p_output);
 
-    let security_package_name = CStr::from_ptr(psz_package_name).to_str().unwrap();
+    let security_package_name = try_execute!(CStr::from_ptr(psz_package_name).to_str(), ErrorKind::InvalidParameter);
 
-    let domain = CStr::from_ptr(psz_domain_name).to_str().unwrap();
-    let username = CStr::from_ptr(psz_account_name).to_str().unwrap();
-    let password = CStr::from_ptr(psz_old_password).to_str().unwrap();
-    let new_password = CStr::from_ptr(psz_new_password).to_str().unwrap();
+    let domain = try_execute!(CStr::from_ptr(psz_domain_name).to_str(), ErrorKind::InvalidParameter);
+    let username = try_execute!(CStr::from_ptr(psz_account_name).to_str(), ErrorKind::InvalidParameter);
+    let password = try_execute!(CStr::from_ptr(psz_old_password).to_str(), ErrorKind::InvalidParameter);
+    let new_password = try_execute!(CStr::from_ptr(psz_new_password).to_str(), ErrorKind::InvalidParameter);
 
     let len = (*p_output).c_buffers as usize;
     let mut output_tokens = p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len));
     output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
     let change_password = ChangePasswordBuilder::new()
-        .with_domain_name(domain.into())
-        .with_account_name(username.into())
-        .with_old_password(password.into())
-        .with_new_password(new_password.into())
+        .with_domain_name(domain)
+        .with_account_name(username)
+        .with_old_password(password)
+        .with_new_password(new_password)
         .with_output(&mut output_tokens)
         .build()
         .expect("change password builder should never fail");

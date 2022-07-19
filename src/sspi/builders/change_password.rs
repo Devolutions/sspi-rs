@@ -34,26 +34,26 @@ impl<'a> ChangePasswordBuilder<'a> {
     }
 
     /// Required
-    pub fn with_domain_name(&self, domain_name: String) -> &Self {
-        self.inner.borrow_mut().domain_name = Some(domain_name);
+    pub fn with_domain_name(&self, domain_name: impl Into<String>) -> &Self {
+        self.inner.borrow_mut().domain_name = Some(domain_name.into());
         self
     }
 
     /// Required
-    pub fn with_account_name(&self, account_name: String) -> &Self {
-        self.inner.borrow_mut().account_name = Some(account_name);
+    pub fn with_account_name(&self, account_name: impl Into<String>) -> &Self {
+        self.inner.borrow_mut().account_name = Some(account_name.into());
         self
     }
 
     /// Required
-    pub fn with_old_password(&self, old_password: String) -> &Self {
-        self.inner.borrow_mut().old_password = Some(old_password);
+    pub fn with_old_password(&self, old_password: impl Into<String>) -> &Self {
+        self.inner.borrow_mut().old_password = Some(old_password.into());
         self
     }
 
     /// Required
-    pub fn with_new_password(&self, new_password: String) -> &Self {
-        self.inner.borrow_mut().new_password = Some(new_password);
+    pub fn with_new_password(&self, new_password: impl Into<String>) -> &Self {
+        self.inner.borrow_mut().new_password = Some(new_password.into());
         self
     }
 
