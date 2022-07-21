@@ -1,9 +1,10 @@
 use kerberos_constants::key_usages::{KEY_USAGE_AS_REP_ENC_PART, KEY_USAGE_TGS_REP_ENC_PART_SESSION_KEY};
 use kerberos_crypto::new_kerberos_cipher;
 use picky_asn1::wrapper::Asn1SequenceOf;
+use picky_krb::constants::key_usages::KRB_PRIV_ENC_PART;
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
-use picky_krb::data_types::{EtypeInfo2, PaData};
-use picky_krb::messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, TgsRep};
+use picky_krb::data_types::{EncKrbPrivPart, EtypeInfo2, PaData};
+use picky_krb::messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep};
 
 use crate::sspi::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::sspi::{Error, ErrorKind, Result};
@@ -111,4 +112,40 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
             description: format!("Missing PaData: PA_ETYPE_INFO2 ({:0x?})", PA_ETYPE_INFO2_TYPE),
         }),
     }
+}
+
+pub fn extract_status_code_from_krb_priv_response(
+    krb_priv: &KrbPriv,
+    auth_key: &[u8],
+    encryption_params: &EncryptionParams,
+) -> Result<u16> {
+    let encryption_type = encryption_params.encryption_type.unwrap_or(
+        *krb_priv
+            .0
+            .enc_part
+            .0
+            .etype
+            .0
+             .0
+            .get(0)
+            .unwrap_or(&(DEFAULT_ENCRYPTION_TYPE as u8)) as i32,
+    );
+
+    let cipher = new_kerberos_cipher(encryption_type)?;
+
+    let enc_part: EncKrbPrivPart = picky_asn1_der::from_bytes(&cipher.decrypt(
+        auth_key,
+        KRB_PRIV_ENC_PART,
+        &krb_priv.0.enc_part.0.cipher.0 .0,
+    )?)?;
+    let user_data = enc_part.0.user_data.0 .0;
+
+    if user_data.len() < 2 {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "Invalid KRB_PRIV message: user-data first is too short (expected at least 2 bytes)".into(),
+        ));
+    }
+
+    Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }

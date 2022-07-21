@@ -18,9 +18,9 @@ use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 
 use self::builders::{
-    AcceptSecurityContext, AcquireCredentialsHandle, EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle,
-    EmptyInitializeSecurityContext, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContext,
+    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
+    EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
+    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContext,
 };
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
@@ -696,6 +696,35 @@ where
     ///
     /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
+
+    /// Changes the password for a Windows domain account.
+    ///
+    /// # Returns
+    ///
+    /// * `()` on success
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use sspi::{Sspi, ChangePasswordBuilder};
+    /// # let mut ntlm = sspi::Ntlm::new();
+    /// let mut output = [];
+    /// let cert_info = ntlm.query_context_package_info().unwrap();
+    /// let change_password = ChangePasswordBuilder::new()
+    ///     .with_domain_name("domain".into())
+    ///     .with_account_name("username".into())
+    ///     .with_old_password("old_password".into())
+    ///     .with_old_password("new_password".into())
+    ///     .with_output(&mut output)
+    ///     .build()
+    ///     .unwrap();
+    /// ntlm.change_password(change_password).unwrap();
+    /// ```
+    ///
+    /// # MSDN
+    ///
+    /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
+    fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
 }
 
 pub trait SspiEx
@@ -1042,6 +1071,17 @@ pub enum SecurityPackageType {
     Kerberos,
     Negotiate,
     Other(String),
+}
+
+impl AsRef<str> for SecurityPackageType {
+    fn as_ref(&self) -> &str {
+        match self {
+            SecurityPackageType::Ntlm => ntlm::PKG_NAME,
+            SecurityPackageType::Kerberos => kerberos::PKG_NAME,
+            SecurityPackageType::Negotiate => negotiate::PKG_NAME,
+            SecurityPackageType::Other(name) => name.as_str(),
+        }
+    }
 }
 
 impl string::ToString for SecurityPackageType {

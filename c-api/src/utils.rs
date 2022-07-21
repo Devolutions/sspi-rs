@@ -5,7 +5,7 @@ use sspi::AuthIdentityBuffers;
 
 use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_handle::CredentialsHandle;
-use crate::sspi_data_types::{SecChar, SecWChar};
+use crate::sspi_data_types::SecWChar;
 
 pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
@@ -34,16 +34,6 @@ pub unsafe fn c_w_str_to_string(s: *const SecWChar) -> String {
 
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     from_raw_parts(raw_buffer, len).iter().map(|c| *c as u8).collect()
-}
-
-pub unsafe fn c_str_into_string(s: *const SecChar) -> String {
-    let mut len = 0;
-
-    while *(s.add(len)) != 0 {
-        len += 1;
-    }
-
-    String::from_utf8(from_raw_parts(s as *const u8, len).to_vec()).unwrap()
 }
 
 pub unsafe fn transform_credentials_handle<'a>(

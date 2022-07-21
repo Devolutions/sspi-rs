@@ -1,5 +1,6 @@
 mod accept_sec_context;
 mod acq_cred_handle;
+mod change_password;
 mod init_sec_context;
 
 use std::fmt;
@@ -11,6 +12,7 @@ pub use self::acq_cred_handle::{
     AcquireCredentialsHandle, AcquireCredentialsHandleResult, EmptyAcquireCredentialsHandle,
     FilledAcquireCredentialsHandle, WithCredentialUse, WithoutCredentialUse,
 };
+pub use self::change_password::{ChangePassword, ChangePasswordBuilder};
 pub use self::init_sec_context::{
     EmptyInitializeSecurityContext, FilledInitializeSecurityContext, InitializeSecurityContext,
     InitializeSecurityContextResult,

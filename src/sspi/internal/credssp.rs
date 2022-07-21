@@ -16,7 +16,7 @@ use rand::Rng;
 pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
-use crate::builders::EmptyInitializeSecurityContext;
+use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::kerberos::config::KerberosConfig;
@@ -643,6 +643,14 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_cert_trust_status(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_cert_trust_status(),
+        }
+    }
+
+    fn change_password(&mut self, change_password: ChangePassword) -> crate::Result<()> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
+            SspiContext::Kerberos(kerberos) => kerberos.change_password(change_password),
+            SspiContext::Negotiate(negotiate) => negotiate.change_password(change_password),
         }
     }
 }

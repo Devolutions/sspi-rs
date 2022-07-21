@@ -38,47 +38,51 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
     psz_packed_credentials_string: *const SecWChar,
     pp_auth_identity: *mut *mut c_void,
 ) -> SecurityStatus {
-    check_null!(pp_auth_identity);
-    check_null!(psz_user_name);
-    check_null!(psz_domain_name);
-    check_null!(psz_packed_credentials_string);
+    catch_panic!(
+        check_null!(pp_auth_identity);
+        check_null!(psz_user_name);
+        check_null!(psz_domain_name);
+        check_null!(psz_packed_credentials_string);
 
-    let user = c_w_str_to_string(psz_user_name);
-    let domain = c_w_str_to_string(psz_domain_name);
-    let password = c_w_str_to_string(psz_packed_credentials_string);
+        let user = c_w_str_to_string(psz_user_name);
+        let domain = c_w_str_to_string(psz_domain_name);
+        let password = c_w_str_to_string(psz_packed_credentials_string);
 
-    let auth_identity = SecWinntAuthIdentityW {
-        user: psz_user_name,
-        user_length: user.len().try_into().unwrap(),
-        domain: psz_domain_name,
-        domain_length: domain.len().try_into().unwrap(),
-        password: psz_packed_credentials_string,
-        password_length: password.len().try_into().unwrap(),
-        flags: 0,
-    };
+        let auth_identity = SecWinntAuthIdentityW {
+            user: psz_user_name,
+            user_length: user.len().try_into().unwrap(),
+            domain: psz_domain_name,
+            domain_length: domain.len().try_into().unwrap(),
+            password: psz_packed_credentials_string,
+            password_length: password.len().try_into().unwrap(),
+            flags: 0,
+        };
 
-    *pp_auth_identity = into_raw_ptr(auth_identity) as *mut c_void;
+        *pp_auth_identity = into_raw_ptr(auth_identity) as *mut c_void;
 
-    0
+        0
+    )
 }
 
 #[allow(clippy::missing_safety_doc)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiFreeAuthIdentity"))]
 #[no_mangle]
 pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> SecurityStatus {
-    if auth_data.is_null() {
-        return 0;
-    }
+    catch_panic!(
+        if auth_data.is_null() {
+            return 0;
+        }
 
-    let auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
+        let auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
 
-    drop_in_place((*auth_data).user as *mut c_ushort);
-    drop_in_place((*auth_data).domain as *mut c_ushort);
-    drop_in_place((*auth_data).password as *mut c_ushort);
+        drop_in_place((*auth_data).user as *mut c_ushort);
+        drop_in_place((*auth_data).domain as *mut c_ushort);
+        drop_in_place((*auth_data).password as *mut c_ushort);
 
-    drop_in_place(auth_data);
+        drop_in_place(auth_data);
 
-    0
+        0
+    )
 }
 
 #[cfg(test)]
