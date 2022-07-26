@@ -6,10 +6,12 @@ use std::io::{self, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use chrono::{DateTime, TimeZone, Utc};
 use lazy_static::lazy_static;
+use md5::{Digest, Md5};
 use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::crypto::{compute_hmac_md5, compute_md4, compute_md5, HASH_SIZE};
+use crate::ntlm::ChannelBindings;
 use crate::sspi::ntlm::messages::av_pair::*;
 use crate::sspi::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
@@ -78,7 +80,29 @@ pub fn get_challenge_target_info(timestamp: u64) -> sspi::Result<Vec<u8>> {
     Ok(AvPair::list_to_buffer(&av_pairs)?)
 }
 
-pub fn get_authenticate_target_info(target_info: &[u8], send_single_host_data: bool) -> sspi::Result<Vec<u8>> {
+pub fn calculate_channel_bindings_hash(channel_bindings: &ChannelBindings) -> [u8; HASH_SIZE] {
+    let mut context = Md5::new();
+    let mut result = [0x00; HASH_SIZE];
+
+    context.update(&channel_bindings.initiator_addr_type.to_be_bytes());
+    context.update(&channel_bindings.initiator.len().to_be_bytes());
+
+    context.update(&channel_bindings.acceptor_addr_type.to_be_bytes());
+    context.update(&channel_bindings.acceptor.len().to_be_bytes());
+
+    context.update(&channel_bindings.application_data.len().to_be_bytes());
+    context.update(&channel_bindings.application_data);
+
+    result.clone_from_slice(&context.finalize());
+
+    result
+}
+
+pub fn get_authenticate_target_info(
+    target_info: &[u8],
+    channel_bindings: &Option<ChannelBindings>,
+    send_single_host_data: bool,
+) -> sspi::Result<Vec<u8>> {
     let mut av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
 
     av_pairs.retain(|av_pair| av_pair.as_u16() != AV_PAIR_EOL);
@@ -95,6 +119,12 @@ pub fn get_authenticate_target_info(target_info: &[u8], send_single_host_data: b
     // will not check suppress_extended_protection and
     // will not add channel bindings and service principal name
     // because it is not used anywhere
+
+    if let Some(channel_bindings) = channel_bindings {
+        av_pairs.push(AvPair::ChannelBindings(calculate_channel_bindings_hash(
+            channel_bindings,
+        )));
+    }
 
     let mut authenticate_target_info = AvPair::list_to_buffer(&av_pairs)?;
 
@@ -246,9 +276,7 @@ pub fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u
     Ok((av_pairs, client_challenge))
 }
 
-pub fn get_av_flags_from_response(target_info: &[u8]) -> io::Result<MsvAvFlags> {
-    let av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
-
+pub fn get_av_flags_from_response(av_pairs: &[AvPair]) -> io::Result<MsvAvFlags> {
     if let Some(AvPair::Flags(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_FLAGS) {
         Ok(MsvAvFlags::from_bits(*value).unwrap_or_else(MsvAvFlags::empty))
     } else {
