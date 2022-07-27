@@ -18,16 +18,18 @@ use picky_asn1::wrapper::{
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids::{KRB5, KRB5_USER_TO_USER, MS_KRB5, SPNEGO};
-use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, TGT_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::{
+    ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
+};
 use picky_krb::constants::types::{
-    AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KRB_PRIV, NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST,
-    PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE,
-    TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
+    AD_AUTH_DATA_AP_OPTION_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV, NET_BIOS_ADDR_TYPE,
+    NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE,
+    PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
 };
 use picky_krb::data_types::{
-    ApOptions, Authenticator, AuthenticatorInner, Checksum, EncKrbPrivPart, EncKrbPrivPartInner, EncryptedData,
-    EncryptionKey, HostAddress, KerbPaPacRequest, KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc,
-    PaPacOptions, PrincipalName, Realm, Ticket,
+    ApOptions, Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncKrbPrivPart,
+    EncKrbPrivPartInner, EncryptedData, EncryptionKey, HostAddress, KerbPaPacRequest, KerberosFlags,
+    KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName, Realm, Ticket,
 };
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
@@ -40,8 +42,9 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
+use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME};
-use crate::sspi::Result;
+use crate::sspi::{ChannelBindings, Result};
 use crate::{Error, ErrorKind};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
@@ -303,6 +306,7 @@ pub struct GenerateAuthenticatorOptions<'a> {
     pub seq_num: Option<u32>,
     pub sub_key: Option<Vec<u8>>,
     pub checksum: Option<ChecksumOptions>,
+    pub channel_bindings: &'a Option<ChannelBindings>,
 }
 
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
@@ -311,6 +315,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         seq_num,
         sub_key,
         checksum,
+        channel_bindings,
     } = options;
 
     let current_date = Utc::now();
@@ -319,6 +324,13 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }
 
+    let authorization_data = Optional::from(channel_bindings.as_ref().map(|_| {
+        ExplicitContextTag8::from(AuthorizationData::from(vec![AuthorizationDataInner {
+            ad_type: ExplicitContextTag0::from(IntegerAsn1::from(AD_AUTH_DATA_AP_OPTION_TYPE.to_vec())),
+            ad_data: ExplicitContextTag1::from(OctetStringAsn1::from(KERB_AP_OPTIONS_CBT.to_vec())),
+        }]))
+    }));
+
     Ok(Authenticator::from(AuthenticatorInner {
         authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
@@ -326,8 +338,12 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         cksum: Optional::from(checksum.map(
             |ChecksumOptions {
                  checksum_type,
-                 checksum_value,
+                 mut checksum_value,
              }| {
+                if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
+                    checksum_value[4..20]
+                        .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
+                }
                 ExplicitContextTag3::from(Checksum {
                     cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
                     checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),
@@ -345,7 +361,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         seq_number: Optional::from(seq_num.map(|seq_num| {
             ExplicitContextTag7::from(IntegerAsn1::from_bytes_be_unsigned(seq_num.to_be_bytes().to_vec()))
         })),
-        authorization_data: Optional::from(None),
+        authorization_data,
     }))
 }
 

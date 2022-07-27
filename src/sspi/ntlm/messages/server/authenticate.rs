@@ -2,6 +2,7 @@ use std::io::{self, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
+use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::ntlm::messages::av_pair::{AvPair, AV_PAIR_CHANNEL_BINDINGS};
 use crate::ntlm::ChannelBindings;
 use crate::sspi::ntlm::messages::av_pair::MsvAvFlags;
@@ -176,7 +177,7 @@ fn process_message_fields(
         .find(|av_pair| av_pair.as_u16() == AV_PAIR_CHANNEL_BINDINGS)
     {
         if let Some(channel_bindings) = channel_bindings.as_ref() {
-            if calculate_channel_bindings_hash(channel_bindings) != *hash {
+            if compute_md5_channel_bindings_hash(channel_bindings) != *hash {
                 return Err(sspi::Error::new(
                     sspi::ErrorKind::BadBindings,
                     "Channel bindings hash mismatch".into(),

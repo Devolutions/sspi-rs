@@ -8,8 +8,10 @@ pub mod winapi;
 
 pub mod ntlm;
 
+use std::mem::size_of;
 use std::{error, fmt, io, result, str, string};
 
+use ::winapi::shared::sspi::{PSEC_CHANNEL_BINDINGS, SEC_CHANNEL_BINDINGS};
 use bitflags::bitflags;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
@@ -1570,5 +1572,88 @@ impl From<Error> for io::Error {
             io::ErrorKind::Other,
             format!("{:?}: {}", err.error_type, err.description),
         )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelBindings {
+    pub initiator_addr_type: u32,
+    pub initiator: Vec<u8>,
+    pub acceptor_addr_type: u32,
+    pub acceptor: Vec<u8>,
+    pub application_data: Vec<u8>,
+}
+
+impl ChannelBindings {
+    pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> Result<Self> {
+        let data = data.as_ref();
+
+        if data.len() < size_of::<SEC_CHANNEL_BINDINGS>() {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
+            ));
+        }
+
+        unsafe {
+            let sec_channel_bindings: PSEC_CHANNEL_BINDINGS = data.as_ptr() as *mut _;
+
+            let initiator_addr_type = (*sec_channel_bindings).dwInitiatorAddrType;
+
+            let len = (*sec_channel_bindings).cbInitiatorLength as usize;
+            let offset = (*sec_channel_bindings).dwInitiatorOffset as usize;
+            if offset + len > data.len() {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
+                ));
+            }
+
+            let initiator = if len > 0 {
+                data[offset..(offset + len)].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            let acceptor_addr_type = (*sec_channel_bindings).dwAcceptorAddrType;
+
+            let len = (*sec_channel_bindings).cbAcceptorLength as usize;
+            let offset = (*sec_channel_bindings).dwAcceptorOffset as usize;
+            if offset + len > data.len() {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
+                ));
+            }
+
+            let acceptor = if len > 0 {
+                data[offset..(offset + len)].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            let len = (*sec_channel_bindings).cbApplicationDataLength as usize;
+            let offset = (*sec_channel_bindings).dwApplicationDataOffset as usize;
+            if offset + len > data.len() {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
+                ));
+            }
+
+            let application_data = if len > 0 {
+                data[offset..(offset + len)].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            Ok(Self {
+                initiator_addr_type,
+                initiator,
+                acceptor_addr_type,
+                acceptor,
+                application_data,
+            })
+        }
     }
 }

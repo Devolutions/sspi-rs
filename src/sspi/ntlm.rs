@@ -3,15 +3,14 @@ mod messages;
 mod test;
 
 use std::io;
-use std::mem::size_of;
 
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
 use lazy_static::lazy_static;
 use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
-use winapi::shared::sspi::{PSEC_CHANNEL_BINDINGS, SEC_CHANNEL_BINDINGS};
 
+use super::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
@@ -57,89 +56,6 @@ enum NtlmState {
     Authenticate,
     Completion,
     Final,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChannelBindings {
-    pub initiator_addr_type: u32,
-    pub initiator: Vec<u8>,
-    pub acceptor_addr_type: u32,
-    pub acceptor: Vec<u8>,
-    pub application_data: Vec<u8>,
-}
-
-impl ChannelBindings {
-    pub fn from_bytes<T: AsRef<[u8]>>(data: T) -> sspi::Result<Self> {
-        let data = data.as_ref();
-
-        if data.len() < size_of::<SEC_CHANNEL_BINDINGS>() {
-            return Err(sspi::Error::new(
-                sspi::ErrorKind::InvalidParameter,
-                "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
-            ));
-        }
-
-        unsafe {
-            let sec_channel_bindings: PSEC_CHANNEL_BINDINGS = data.as_ptr() as *mut _;
-
-            let initiator_addr_type = (*sec_channel_bindings).dwInitiatorAddrType;
-
-            let len = (*sec_channel_bindings).cbInitiatorLength as usize;
-            let offset = (*sec_channel_bindings).dwInitiatorOffset as usize;
-            if offset + len > data.len() {
-                return Err(sspi::Error::new(
-                    sspi::ErrorKind::InvalidParameter,
-                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
-                ));
-            }
-
-            let initiator = if len > 0 {
-                data[offset..(offset + len)].to_vec()
-            } else {
-                Vec::new()
-            };
-
-            let acceptor_addr_type = (*sec_channel_bindings).dwAcceptorAddrType;
-
-            let len = (*sec_channel_bindings).cbAcceptorLength as usize;
-            let offset = (*sec_channel_bindings).dwAcceptorOffset as usize;
-            if offset + len > data.len() {
-                return Err(sspi::Error::new(
-                    sspi::ErrorKind::InvalidParameter,
-                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
-                ));
-            }
-
-            let acceptor = if len > 0 {
-                data[offset..(offset + len)].to_vec()
-            } else {
-                Vec::new()
-            };
-
-            let len = (*sec_channel_bindings).cbApplicationDataLength as usize;
-            let offset = (*sec_channel_bindings).dwApplicationDataOffset as usize;
-            if offset + len > data.len() {
-                return Err(sspi::Error::new(
-                    sspi::ErrorKind::InvalidParameter,
-                    "Invalid SEC_CHANNEL_BINDINGS buffer".into(),
-                ));
-            }
-
-            let application_data = if len > 0 {
-                data[offset..(offset + len)].to_vec()
-            } else {
-                Vec::new()
-            };
-
-            Ok(Self {
-                initiator_addr_type,
-                initiator,
-                acceptor_addr_type,
-                acceptor,
-                application_data,
-            })
-        }
-    }
 }
 
 /// Specifies the NT LAN Manager (NTLM) Authentication Protocol, used for authentication between clients and servers.

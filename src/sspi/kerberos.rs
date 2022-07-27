@@ -32,6 +32,7 @@ use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
+use super::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
@@ -98,6 +99,7 @@ pub struct Kerberos {
     encryption_params: EncryptionParams,
     seq_number: u32,
     realm: Option<String>,
+    channel_bindings: Option<ChannelBindings>,
 }
 
 impl Kerberos {
@@ -109,6 +111,7 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: OsRng::new()?.gen::<u32>(),
             realm: None,
+            channel_bindings: None,
         })
     }
 
@@ -120,6 +123,7 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: OsRng::new()?.gen::<u32>(),
             realm: None,
+            channel_bindings: None,
         })
     }
 
@@ -367,6 +371,7 @@ impl Sspi for Kerberos {
             seq_num: Some(seq_num),
             sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
             checksum: None,
+            channel_bindings: &self.channel_bindings,
         })?;
 
         let krb_priv = generate_krb_priv_request(
@@ -465,6 +470,12 @@ impl SspiImpl for Kerberos {
                 SecurityStatus::ContinueNeeded
             }
             KerberosState::Preauthentication => {
+                if let Ok(sec_buffer) =
+                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
+                {
+                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
+                }
+
                 let input = builder.input.as_ref().ok_or_else(|| {
                     sspi::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into())
                 })?;
@@ -513,6 +524,7 @@ impl SspiImpl for Kerberos {
                     seq_num: Some(OsRng::new()?.gen::<u32>()),
                     sub_key: None,
                     checksum: None,
+                    channel_bindings: &self.channel_bindings,
                 })?;
 
                 let session_key_1 =
@@ -554,6 +566,7 @@ impl SspiImpl for Kerberos {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                     }),
+                    channel_bindings: &self.channel_bindings,
                 })?;
 
                 let ap_req = generate_ap_req(
