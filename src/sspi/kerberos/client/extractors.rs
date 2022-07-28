@@ -88,15 +88,15 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
         .unwrap_or_default()
     {
         Some(data) => {
-            let pa_etype_into2: EtypeInfo2 = picky_asn1_der::from_bytes(&data)?;
-            let pa_etype_into2 = pa_etype_into2.0.get(0).ok_or(Error {
+            let pa_etype_info2: EtypeInfo2 = picky_asn1_der::from_bytes(&data)?;
+            let pa_etype_info2 = pa_etype_info2.0.get(0).ok_or(Error {
                 error_type: ErrorKind::InternalError,
                 description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
             })?;
 
             Ok((
-                pa_etype_into2.etype.0 .0.get(0).copied().unwrap(),
-                pa_etype_into2
+                pa_etype_info2.etype.0 .0.first().copied().unwrap(),
+                pa_etype_info2
                     .salt
                     .0
                     .as_ref()
@@ -127,7 +127,7 @@ pub fn extract_status_code_from_krb_priv_response(
             .etype
             .0
              .0
-            .get(0)
+            .first()
             .unwrap_or(&(DEFAULT_ENCRYPTION_TYPE as u8)) as i32,
     );
 

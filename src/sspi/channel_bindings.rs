@@ -4,7 +4,7 @@ use crate::{Error, ErrorKind, Result};
 const SEC_CHANNEL_BINDINGS_SIZE: usize = 32;
 
 /// [SEC_CHANNEL_BINDINGS](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_channel_bindings)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelBindings {
     pub initiator_addr_type: u32,
     pub initiator: Vec<u8>,
