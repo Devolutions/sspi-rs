@@ -8,7 +8,7 @@ use md5::Md5;
 pub use rc4::Rc4;
 use sha2::Sha256;
 
-use crate::sspi::ChannelBindings;
+use crate::sspi::channel_bindings::ChannelBindings;
 
 pub const HASH_SIZE: usize = 16;
 

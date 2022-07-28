@@ -102,7 +102,7 @@ fn get_authenticate_target_info_correct_returns_with_use_mic() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), &None, send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],
@@ -143,7 +143,7 @@ fn get_authenticate_target_info_correct_returns_with_send_single_host_data() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), &None, send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],
@@ -185,7 +185,7 @@ fn get_authenticate_target_info_returns_without_principal_name() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), &None, send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],

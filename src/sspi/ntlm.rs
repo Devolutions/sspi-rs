@@ -10,7 +10,7 @@ use lazy_static::lazy_static;
 use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
 
-use super::ChannelBindings;
+use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{

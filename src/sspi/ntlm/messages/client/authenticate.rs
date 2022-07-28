@@ -100,7 +100,7 @@ pub fn write_authenticate(
     // NTLMv2
     let target_info = get_authenticate_target_info(
         challenge_message.target_info.as_ref(),
-        &context.channel_bindings,
+        context.channel_bindings.as_ref(),
         context.send_single_host_data,
     )?;
 

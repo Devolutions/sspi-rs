@@ -43,8 +43,9 @@ use rand::Rng;
 
 use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use crate::crypto::compute_md5_channel_bindings_hash;
+use crate::sspi::channel_bindings::ChannelBindings;
 use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME};
-use crate::sspi::{ChannelBindings, Result};
+use crate::sspi::Result;
 use crate::{Error, ErrorKind};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
@@ -306,7 +307,7 @@ pub struct GenerateAuthenticatorOptions<'a> {
     pub seq_num: Option<u32>,
     pub sub_key: Option<Vec<u8>>,
     pub checksum: Option<ChecksumOptions>,
-    pub channel_bindings: &'a Option<ChannelBindings>,
+    pub channel_bindings: Option<&'a ChannelBindings>,
 }
 
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
@@ -331,25 +332,39 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         }]))
     }));
 
+    let cksum = if let Some(ChecksumOptions {
+        checksum_type,
+        mut checksum_value,
+    }) = checksum
+    {
+        if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
+            if checksum_value.len() < 20 {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    format!(
+                        "Invalid authenticator checksum length: expected >= 20 but got {}. ",
+                        checksum_value.len()
+                    ),
+                ));
+            }
+            // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
+            // 4..19 - Channel binding information (19 inclusive).
+            checksum_value[4..20]
+                .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
+        }
+        Optional::from(Some(ExplicitContextTag3::from(Checksum {
+            cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
+            checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),
+        })))
+    } else {
+        Optional::from(None)
+    };
+
     Ok(Authenticator::from(AuthenticatorInner {
         authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
-        cksum: Optional::from(checksum.map(
-            |ChecksumOptions {
-                 checksum_type,
-                 mut checksum_value,
-             }| {
-                if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
-                    checksum_value[4..20]
-                        .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
-                }
-                ExplicitContextTag3::from(Checksum {
-                    cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
-                    checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),
-                })
-            },
-        )),
+        cksum,
         cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(sub_key.map(|sub_key| {

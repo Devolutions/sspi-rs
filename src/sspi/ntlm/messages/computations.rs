@@ -10,13 +10,12 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::crypto::{compute_hmac_md5, compute_md4, compute_md5, compute_md5_channel_bindings_hash, HASH_SIZE};
-use crate::ntlm::ChannelBindings;
+use crate::sspi::channel_bindings::ChannelBindings;
 use crate::sspi::ntlm::messages::av_pair::*;
 use crate::sspi::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
 };
-use crate::sspi::{self};
-use crate::utils;
+use crate::{sspi, utils};
 
 pub const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub const SINGLE_HOST_DATA_SIZE: usize = 48;
@@ -81,7 +80,7 @@ pub fn get_challenge_target_info(timestamp: u64) -> sspi::Result<Vec<u8>> {
 
 pub fn get_authenticate_target_info(
     target_info: &[u8],
-    channel_bindings: &Option<ChannelBindings>,
+    channel_bindings: Option<&ChannelBindings>,
     send_single_host_data: bool,
 ) -> sspi::Result<Vec<u8>> {
     let mut av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
