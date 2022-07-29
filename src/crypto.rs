@@ -8,6 +8,8 @@ use md5::Md5;
 pub use rc4::Rc4;
 use sha2::Sha256;
 
+use crate::sspi::channel_bindings::ChannelBindings;
+
 pub const HASH_SIZE: usize = 16;
 
 const SHA256_SIZE: usize = 32;
@@ -25,6 +27,24 @@ pub fn compute_md5(data: &[u8]) -> [u8; HASH_SIZE] {
     let mut context = Md5::new();
     let mut result = [0x00; HASH_SIZE];
     context.update(data);
+    result.clone_from_slice(&context.finalize());
+
+    result
+}
+
+pub fn compute_md5_channel_bindings_hash(channel_bindings: &ChannelBindings) -> [u8; HASH_SIZE] {
+    let mut context = Md5::new();
+    let mut result = [0x00; HASH_SIZE];
+
+    context.update(&channel_bindings.initiator_addr_type.to_be_bytes());
+    context.update(&channel_bindings.initiator.len().to_be_bytes());
+
+    context.update(&channel_bindings.acceptor_addr_type.to_be_bytes());
+    context.update(&channel_bindings.acceptor.len().to_be_bytes());
+
+    context.update(&channel_bindings.application_data.len().to_be_bytes());
+    context.update(&channel_bindings.application_data);
+
     result.clone_from_slice(&context.finalize());
 
     result

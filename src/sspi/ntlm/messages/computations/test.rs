@@ -102,7 +102,7 @@ fn get_authenticate_target_info_correct_returns_with_use_mic() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],
@@ -143,7 +143,7 @@ fn get_authenticate_target_info_correct_returns_with_send_single_host_data() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],
@@ -185,7 +185,7 @@ fn get_authenticate_target_info_returns_without_principal_name() {
     let target_info = get_challenge_target_info(TIMESTAMP).unwrap();
 
     let mut authenticate_target_info =
-        get_authenticate_target_info(target_info.as_ref(), send_single_host_data).unwrap();
+        get_authenticate_target_info(target_info.as_ref(), None, send_single_host_data).unwrap();
 
     assert_eq!(
         authenticate_target_info[authenticate_target_info.len() - AUTHENTICATE_TARGET_INFO_PADDING_SIZE..],
@@ -424,7 +424,10 @@ fn get_av_flags_from_response_returns_empty_flags_if_flags_are_absent() {
 
     let expected_flags = MsvAvFlags::empty();
 
-    let flags = get_av_flags_from_response(AvPair::list_to_buffer(input_flags.as_ref()).unwrap().as_ref()).unwrap();
+    let buffer = AvPair::list_to_buffer(input_flags.as_ref()).unwrap();
+    let av_pairs = AvPair::buffer_to_av_pairs(&buffer).unwrap();
+
+    let flags = get_av_flags_from_response(&av_pairs).unwrap();
 
     assert_eq!(expected_flags, flags);
 }

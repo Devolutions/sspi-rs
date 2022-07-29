@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
 
+use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
@@ -69,6 +70,8 @@ pub struct Ntlm {
     challenge_message: Option<ChallengeMessage>,
     authenticate_message: Option<AuthenticateMessage>,
 
+    channel_bindings: Option<ChannelBindings>,
+
     state: NtlmState,
     flags: NegotiateFlags,
     identity: Option<AuthIdentityBuffers>,
@@ -117,6 +120,8 @@ impl Ntlm {
             challenge_message: None,
             authenticate_message: None,
 
+            channel_bindings: None,
+
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
             identity: None,
@@ -136,6 +141,8 @@ impl Ntlm {
             negotiate_message: None,
             challenge_message: None,
             authenticate_message: None,
+
+            channel_bindings: None,
 
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
@@ -206,6 +213,12 @@ impl SspiImpl for Ntlm {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
+                if let Ok(sec_buffer) =
+                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
+                {
+                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
+                }
+
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
                 client::write_authenticate(
@@ -258,6 +271,10 @@ impl SspiImpl for Ntlm {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 self.identity = builder.credentials_handle.cloned().flatten();
+
+                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
+                }
 
                 server::read_authenticate(self, input_token.buffer.as_slice())?
             }

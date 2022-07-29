@@ -98,8 +98,11 @@ pub fn write_authenticate(
 
     // calculate needed fields
     // NTLMv2
-    let target_info =
-        get_authenticate_target_info(challenge_message.target_info.as_ref(), context.send_single_host_data)?;
+    let target_info = get_authenticate_target_info(
+        challenge_message.target_info.as_ref(),
+        context.channel_bindings.as_ref(),
+        context.send_single_host_data,
+    )?;
 
     let client_challenge = generate_challenge()?;
     let ntlm_v2_hash = compute_ntlm_v2_hash(credentials)?;

@@ -2,6 +2,9 @@ use std::io::{self, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
+use crate::crypto::compute_md5_channel_bindings_hash;
+use crate::ntlm::messages::av_pair::{AvPair, AV_PAIR_CHANNEL_BINDINGS};
+use crate::ntlm::ChannelBindings;
 use crate::sspi::ntlm::messages::av_pair::MsvAvFlags;
 use crate::sspi::ntlm::messages::computations::*;
 use crate::sspi::ntlm::messages::{read_ntlm_header, try_read_version, MessageFields, MessageTypes};
@@ -36,8 +39,13 @@ pub fn read_authenticate(mut context: &mut Ntlm, mut stream: impl io::Read) -> s
     let mic = read_payload(flags, &mut message_fields, &mut buffer)?;
     let message = buffer.into_inner();
 
-    let (authenticate_message, updated_identity) =
-        process_message_fields(&context.identity, message_fields, mic, message)?;
+    let (authenticate_message, updated_identity) = process_message_fields(
+        &context.identity,
+        message_fields,
+        mic,
+        message,
+        &context.channel_bindings,
+    )?;
     context.identity = Some(updated_identity);
     context.authenticate_message = Some(authenticate_message);
 
@@ -140,6 +148,7 @@ fn process_message_fields(
     message_fields: AuthenticateMessageFields,
     mic: Option<Mic>,
     authenticate_message: Vec<u8>,
+    channel_bindings: &Option<ChannelBindings>,
 ) -> sspi::Result<(AuthenticateMessage, AuthIdentityBuffers)> {
     if message_fields.nt_challenge_response.buffer.is_empty() {
         return Err(sspi::Error::new(
@@ -147,9 +156,13 @@ fn process_message_fields(
             String::from("NtChallengeResponse cannot be empty"),
         ));
     }
+
     let (target_info, client_challenge) = read_ntlm_v2_response(message_fields.nt_challenge_response.buffer.as_ref())?;
+
+    let av_pairs = AvPair::buffer_to_av_pairs(target_info.as_ref())?;
+
     let mic = if mic.is_some() {
-        let challenge_response_av_flags = get_av_flags_from_response(target_info.as_ref())?;
+        let challenge_response_av_flags = get_av_flags_from_response(&av_pairs)?;
         if challenge_response_av_flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
             mic
         } else {
@@ -158,6 +171,20 @@ fn process_message_fields(
     } else {
         None
     };
+
+    if let Some(AvPair::ChannelBindings(hash)) = av_pairs
+        .iter()
+        .find(|av_pair| av_pair.as_u16() == AV_PAIR_CHANNEL_BINDINGS)
+    {
+        if let Some(channel_bindings) = channel_bindings.as_ref() {
+            if compute_md5_channel_bindings_hash(channel_bindings) != *hash {
+                return Err(sspi::Error::new(
+                    sspi::ErrorKind::BadBindings,
+                    "Channel bindings hash mismatch".into(),
+                ));
+            }
+        }
+    }
 
     // will not set workstation because it is not used anywhere
 

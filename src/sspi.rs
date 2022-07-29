@@ -1,5 +1,6 @@
 /// The builders are required to compose and execute some of the `Sspi` methods.
 pub mod builders;
+pub mod channel_bindings;
 pub mod internal;
 pub mod kerberos;
 pub mod negotiate;
