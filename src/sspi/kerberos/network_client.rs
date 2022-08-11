@@ -1,10 +1,8 @@
-use std::fmt::Debug;
-
 use url::Url;
 
 use crate::sspi::Result;
 
-pub trait NetworkClient: Debug {
+pub trait NetworkClient: Send {
     fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
     fn send_http(&self, url: &Url, data: &[u8], domain: Option<String>) -> Result<Vec<u8>>;
     fn clone(&self) -> Box<dyn NetworkClient>;

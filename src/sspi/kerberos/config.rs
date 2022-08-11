@@ -15,11 +15,19 @@ pub enum KdcType {
     KdcProxy,
 }
 
-#[derive(Debug)]
 pub struct KerberosConfig {
     pub url: Url,
     pub kdc_type: KdcType,
     pub network_client: Box<dyn NetworkClient>,
+}
+
+impl Debug for KerberosConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KerberosConfig")
+            .field("url", &self.url)
+            .field("kdc_type", &self.kdc_type)
+            .finish_non_exhaustive()
+    }
 }
 
 pub fn parse_kdc_url(mut kdc: String) -> (Url, KdcType) {
