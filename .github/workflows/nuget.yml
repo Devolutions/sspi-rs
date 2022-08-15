@@ -1,6 +1,7 @@
 name: Publish NuGet package
 
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       dry-run:
