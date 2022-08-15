@@ -1,7 +1,6 @@
 name: Publish NuGet package
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       dry-run:
@@ -52,6 +51,8 @@ jobs:
           - os: android
             runner: ubuntu-20.04
         exclude:
+          - arch: arm64
+            os: win
           - arch: arm
             os: win
           - arch: arm
@@ -101,8 +102,6 @@ jobs:
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
         shell: pwsh
         run: |
-          Set-PSDebug -Trace 1
-
           $DotNetOs = '${{matrix.os}}'
           $DotNetArch = '${{matrix.arch}}'
           $DotNetRid = '${{matrix.os}}-${{matrix.arch}}'
