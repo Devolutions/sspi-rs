@@ -90,7 +90,9 @@ jobs:
             }
           }
 
-          Get-ChildItem "$AndroidToolchain/bin/*-ar"
+          Get-ChildItem "$AndroidToolchain/bin/*-ar" | ForEach-Object {
+            Write-Host $_.FullName
+          }
 
           echo "[target.i686-linux-android]" >> $CargoConfigFile
           echo "linker=`"$AndroidToolchain/bin/i686-linux-android19-clang`"" >> $CargoConfigFile
