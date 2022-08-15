@@ -49,5 +49,37 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
+    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x86\native\libDevolutionsSspi.so">
+      <Link>runtimes\android-x86\native\libDevolutionsSspi.so</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x64\native\libDevolutionsSspi.so">
+      <Link>runtimes\android-x64\native\libDevolutionsSspi.so</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm\native\libDevolutionsSspi.so">
+      <Link>runtimes\android-arm\native\libDevolutionsSspi.so</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
+    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm64\native\libDevolutionsSspi.so">
+      <Link>runtimes\android-arm64\native\libDevolutionsSspi.so</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
   </ItemGroup>
 </Project>
