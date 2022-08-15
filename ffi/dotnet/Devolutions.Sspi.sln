@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30114.105
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Devolutions.Sspi", "Devolutions.Sspi\Devolutions.Sspi.csproj", "{C26693DD-5BB5-436B-A3B8-2C0CA18E9870}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C26693DD-5BB5-436B-A3B8-2C0CA18E9870}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C26693DD-5BB5-436B-A3B8-2C0CA18E9870}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C26693DD-5BB5-436B-A3B8-2C0CA18E9870}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C26693DD-5BB5-436B-A3B8-2C0CA18E9870}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3721F3C-A0C2-42BB-81AF-2A4781926C3D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3721F3C-A0C2-42BB-81AF-2A4781926C3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3721F3C-A0C2-42BB-81AF-2A4781926C3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3721F3C-A0C2-42BB-81AF-2A4781926C3D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
