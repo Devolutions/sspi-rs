@@ -90,6 +90,8 @@ jobs:
             }
           }
 
+          Get-ChildItem "$AndroidToolchain/bin/*-ar"
+
           echo "[target.i686-linux-android]" >> $CargoConfigFile
           echo "linker=`"$AndroidToolchain/bin/i686-linux-android19-clang`"" >> $CargoConfigFile
           echo "CC_i686-linux-android=$AndroidToolchain/bin/i686-linux-android19-clang" >> $Env:GITHUB_ENV
