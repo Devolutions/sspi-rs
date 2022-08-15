@@ -118,6 +118,8 @@ jobs:
           $DotNetRid = '${{matrix.os}}-${{matrix.arch}}'
           $RustArch = @{'x64'='x86_64';'arm64'='aarch64';
             'x86'='i686';'arm'='armv7'}[$DotNetArch]
+          $AppleArch = @{'x64'='x86_64';'arm64'='arm64';
+            'x86'='i386';'arm'='arm'}[$DotNetArch]
           $RustPlatform = @{'win'='pc-windows-msvc';
             'osx'='apple-darwin';'ios'='apple-ios';
             'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
@@ -129,6 +131,10 @@ jobs:
 
           if (($DotNetOs -eq 'android') -and ($DotNetArch -eq 'arm')) {
             $RustTarget = "armv7-linux-androideabi"
+          }
+
+          if ($DotNetOs -eq 'osx') {
+            Set-Item "Env:CFLAGS_${RustArch}-apple-darwin" "-arch $AppleArch"
           }
 
           rustup target add $RustTarget
