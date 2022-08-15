@@ -102,8 +102,8 @@ jobs:
           
           echo "[target.armv7-linux-androideabi]" >> $CargoConfigFile
           echo "linker=`"$AndroidToolchain/bin/armv7a-linux-androideabi21-clang`"" >> $CargoConfigFile
-          echo "CC_armv7-linux-android=$AndroidToolchain/bin/armv7a-linux-androideabi21-clang" >> $Env:GITHUB_ENV
-          echo "AR_armv7-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
+          echo "CC_armv7-linux-androideabi=$AndroidToolchain/bin/armv7a-linux-androideabi21-clang" >> $Env:GITHUB_ENV
+          echo "AR_armv7-linux-androideabi=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
           
           echo "[target.aarch64-linux-android]" >> $CargoConfigFile
           echo "linker=`"$AndroidToolchain/bin/aarch64-linux-android21-clang`"" >> $CargoConfigFile
