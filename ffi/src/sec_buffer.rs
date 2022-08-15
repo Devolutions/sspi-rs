@@ -68,6 +68,6 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: 
 
         to_buffers[i].cb_buffer = len.try_into().unwrap();
         let to_buffer = from_raw_parts_mut(to_buffers[i].pv_buffer, len);
-        to_buffer.copy_from_slice(from_raw_parts(buffer.buffer.as_ptr() as *const i8, len));
+        to_buffer.copy_from_slice(from_raw_parts(buffer.buffer.as_ptr() as *const c_char, len));
     }
 }
