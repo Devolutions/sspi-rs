@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 
-use libc::{c_uint, c_ulong, c_ushort};
+use libc::{c_uint, c_ulong, c_ushort, c_char};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -79,8 +79,8 @@ impl From<PackageInfo> for SecPkgInfoA {
             w_version: KERBEROS_VERSION as c_ushort,
             w_rpc_id: data.rpc_id,
             cb_max_token: data.max_token_len,
-            name: vec_into_raw_ptr(name) as *mut i8,
-            comment: vec_into_raw_ptr(comment) as *mut i8,
+            name: vec_into_raw_ptr(name) as *mut c_char,
+            comment: vec_into_raw_ptr(comment) as *mut c_char,
         }
     }
 }

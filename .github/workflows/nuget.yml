@@ -1,0 +1,263 @@
+name: Publish NuGet package
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Dry run'
+        required: true
+        type: boolean
+        default: 'true'
+  schedule:
+    - cron: '21 3 * * 1' # 3:21 AM UTC every Monday
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-20.04
+    outputs:
+      dry-run: ${{ steps.get-dry-run.outputs.dry-run }}
+
+    steps:
+      - name: Get dry run
+        id: get-dry-run
+        shell: pwsh
+        run: |
+          $IsDryRun = '${{ github.event.inputs.dry-run }}' -Eq 'true' -Or '${{ github.event_name }}' -Eq 'schedule'
+
+          if ($IsDryRun) {
+            Write-Host '::set-output name=dry-run::true'
+          } else {
+            Write-Host '::set-output name=dry-run::false'
+          }
+
+  build-native:
+    name: Native build
+    runs-on: ${{matrix.runner}}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ win, osx, linux, ios, android ]
+        arch: [ x86, x64, arm, arm64 ]
+        include:
+          - os: win
+            runner: windows-2022
+          - os: osx
+            runner: macos-12
+          - os: linux
+            runner: ubuntu-20.04
+          - os: ios
+            runner: macos-12
+          - os: android
+            runner: ubuntu-20.04
+        exclude:
+          - arch: arm64
+            os: win
+          - arch: arm
+            os: win
+          - arch: arm
+            os: osx
+          - arch: arm
+            os: linux
+          - arch: arm
+            os: ios
+          - arch: x86
+            os: win
+          - arch: x86
+            os: osx
+          - arch: x86
+            os: linux
+          - arch: x86
+            os: ios
+
+    steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v2
+
+      - name: Configure Android NDK
+        if: runner.os == 'linux'
+        shell: pwsh
+        run: |
+          $CargoConfigFile = "~/.cargo/config"
+          $AndroidToolchain="${Env:ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
+
+          Get-ChildItem -Path $AndroidToolchain "libunwind.a" -Recurse | ForEach-Object {
+            $libunwind = $_.FullName
+            $libgcc = Join-Path $_.DirectoryName "libgcc.a"
+            if (-Not (Test-Path $libgcc)) {
+                Write-Host $libgcc
+                Copy-Item $libunwind $libgcc
+            }
+          }
+
+          echo "[target.i686-linux-android]" >> $CargoConfigFile
+          echo "linker=`"$AndroidToolchain/bin/i686-linux-android19-clang`"" >> $CargoConfigFile
+          echo "CC_i686-linux-android=$AndroidToolchain/bin/i686-linux-android19-clang" >> $Env:GITHUB_ENV
+          echo "AR_i686-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
+
+          echo "[target.x86_64-linux-android]" >> $CargoConfigFile
+          echo "linker=`"$AndroidToolchain/bin/x86_64-linux-android21-clang`"" >> $CargoConfigFile
+          echo "CC_x86_64-linux-android=$AndroidToolchain/bin/x86_64-linux-android21-clang" >> $Env:GITHUB_ENV
+          echo "AR_x86_64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
+          
+          echo "[target.armv7-linux-androideabi]" >> $CargoConfigFile
+          echo "linker=`"$AndroidToolchain/bin/armv7a-linux-androideabi21-clang`"" >> $CargoConfigFile
+          echo "CC_armv7-linux-androideabi=$AndroidToolchain/bin/armv7a-linux-androideabi21-clang" >> $Env:GITHUB_ENV
+          echo "AR_armv7-linux-androideabi=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
+          
+          echo "[target.aarch64-linux-android]" >> $CargoConfigFile
+          echo "linker=`"$AndroidToolchain/bin/aarch64-linux-android21-clang`"" >> $CargoConfigFile
+          echo "CC_aarch64-linux-android=$AndroidToolchain/bin/aarch64-linux-android21-clang" >> $Env:GITHUB_ENV
+          echo "AR_aarch64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
+
+      - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
+        shell: pwsh
+        run: |
+          $DotNetOs = '${{matrix.os}}'
+          $DotNetArch = '${{matrix.arch}}'
+          $DotNetRid = '${{matrix.os}}-${{matrix.arch}}'
+          $RustArch = @{'x64'='x86_64';'arm64'='aarch64';
+            'x86'='i686';'arm'='armv7'}[$DotNetArch]
+          $AppleArch = @{'x64'='x86_64';'arm64'='arm64';
+            'x86'='i386';'arm'='arm'}[$DotNetArch]
+          $RustPlatform = @{'win'='pc-windows-msvc';
+            'osx'='apple-darwin';'ios'='apple-ios';
+            'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
+          $LibPrefix = @{'win'='';'osx'='lib';'ios'='lib';
+            'linux'='lib';'android'='lib'}[$DotNetOs]
+          $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.a';
+            'linux'='.so';'android'='.so'}[$DotNetOs]
+          $RustTarget = "$RustArch-$RustPlatform"
+
+          if (($DotNetOs -eq 'android') -and ($DotNetArch -eq 'arm')) {
+            $RustTarget = "armv7-linux-androideabi"
+          }
+
+          if ($DotNetOs -eq 'osx') {
+            Set-Item "Env:CFLAGS_${RustArch}-apple-darwin" "-arch $AppleArch"
+          }
+
+          rustup target add $RustTarget
+
+          if ($DotNetOs -eq 'win') {
+            $Env:RUSTFLAGS="-C target-feature=+crt-static"
+          }
+
+          if ($DotNetOs -eq 'ios') {
+            $CargoToml = Get-Content .\ffi\Cargo.toml
+            $CargoToml = $CargoToml | ForEach-Object {
+              if ($_.StartsWith("crate-type")) { "crate-type = [`"staticlib`"]" } else { $_ }
+            }
+            Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
+          }
+
+          if ($RustTarget -eq 'aarch64-unknown-linux-gnu') {
+            sudo apt install gcc-aarch64-linux-gnu
+            $Env:RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc"
+          }
+
+          $CsprojXml = [Xml] (Get-Content .\ffi\dotnet\Devolutions.Sspi\Devolutions.Sspi.csproj)
+          $ProjectVersion = $CsprojXml.Project.PropertyGroup.Version | Select-Object -First 1
+          $PackageVersion = $ProjectVersion -Replace "^(\d+)\.(\d+)\.(\d+)(\.0)$", "`$1.`$2.`$3"
+
+          $CargoToml = Get-Content .\ffi\Cargo.toml
+          $CargoToml = $CargoToml | ForEach-Object {
+            if ($_.StartsWith("version =")) { "version = `"$PackageVersion`"" } else { $_ }
+          }
+          Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
+
+          cargo build -p sspi-ffi --release --target $RustTarget
+
+          $OutputLibraryName = "${LibPrefix}sspi$LibSuffix"
+          $RenamedLibraryName = "${LibPrefix}DevolutionsSspi$LibSuffix"
+          $OutputLibrary = Join-Path "target" $RustTarget 'release' $OutputLibraryName
+          $OutputPath = Join-Path "dependencies" "runtimes" $DotNetRid "native"
+          New-Item -ItemType Directory -Path $OutputPath | Out-Null
+          Copy-Item $OutputLibrary $(Join-Path $OutputPath $RenamedLibraryName)
+
+      - name: Upload native components
+        uses: actions/upload-artifact@v2
+        with:
+          name: sspi-${{matrix.os}}-${{matrix.arch}}
+          path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
+
+  build-managed:
+    name: Managed build
+    runs-on: windows-2022
+    needs: build-native
+
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v3
+
+      - name: Prepare dependencies
+        run: |
+          New-Item -ItemType Directory -Path "dependencies/runtimes" | Out-Null
+
+      - name: Download native components
+        uses: actions/download-artifact@v2
+        with:
+          path: dependencies/runtimes
+
+      - name: Rename dependencies
+        run: |
+          Set-Location "dependencies/runtimes"
+          $(Get-Item ".\sspi-*") | ForEach-Object { Rename-Item $_ $_.Name.Replace("sspi-", "") }
+          Get-ChildItem * -Recurse
+
+      - name: Build sspi (managed)
+        shell: pwsh
+        run: |
+          dotnet build .\ffi\dotnet\Devolutions.Sspi.sln -o package
+
+      - name: Upload managed components
+        uses: actions/upload-artifact@v2
+        with:
+          name: sspi-nupkg
+          path: package/*.nupkg
+
+  publish:
+    name: Publish package
+    runs-on: ubuntu-20.04
+    needs:
+      - preflight
+      - build-managed
+    if: needs.preflight.outputs.dry-run == 'false'
+  
+    steps:
+      - name: Configure runner
+        run: |
+          curl -fL https://getcli.jfrog.io/v2 | sh
+          echo "$PWD" >> $GITHUB_PATH
+
+      - name: Download NuGet package artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: sspi-nupkg
+          path: package
+
+      - name: Publish to artifactory
+        shell: pwsh
+        env:
+          ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+          ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+        run: |
+          $Files = Get-ChildItem -Recurse package/*.nupkg
+    
+          foreach ($File in $Files) {
+            $UploadCmd = @(
+              'jfrog', 
+              'rt', 
+              'upload', 
+              "$File",
+              'nuget',
+              '--fail-no-op',
+              '--url=https://devolutions.jfrog.io/artifactory/',
+              "--user=$Env:ARTIFACTORY_USERNAME",
+              "--password=$Env:ARTIFACTORY_PASSWORD"
+            )
+
+            Write-Host "Publishing $($File.Name)..."
+            $UploadCmd = $UploadCmd -Join ' '
+            Invoke-Expression $UploadCmd
+          }
