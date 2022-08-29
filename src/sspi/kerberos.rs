@@ -9,10 +9,10 @@ use std::fmt::Debug;
 use std::io::Write;
 
 pub use encryption_params::EncryptionParams;
-use kerberos_crypto::new_kerberos_cipher;
 use lazy_static::lazy_static;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, TgsRep};
@@ -28,7 +28,6 @@ use self::client::generators::{
     ChecksumOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
     DEFAULT_AP_REQ_OPTIONS,
 };
-use self::client::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use self::config::{KdcType, KerberosConfig};
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
@@ -58,7 +57,7 @@ pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
 pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
-const DEFAULT_ENCRYPTION_TYPE: i32 = AES256_CTS_HMAC_SHA1_96;
+const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
 /// [MS-KILE](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
@@ -190,11 +189,12 @@ impl Sspi for Kerberos {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let cipher = new_kerberos_cipher(
-            self.encryption_params
-                .encryption_type
-                .unwrap_or(DEFAULT_ENCRYPTION_TYPE),
-        )?;
+        let cipher = self
+            .encryption_params
+            .encryption_type
+            .as_ref()
+            .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+            .cipher();
 
         let seq_number = self.next_seq_number();
 
@@ -216,7 +216,7 @@ impl Sspi for Kerberos {
         let mut payload = data.buffer.to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
-        let mut checksum = cipher.encrypt(key, key_usage, &payload);
+        let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
         checksum.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
@@ -254,11 +254,12 @@ impl Sspi for Kerberos {
 
         encrypted.extend_from_slice(&data.buffer);
 
-        let cipher = new_kerberos_cipher(
-            self.encryption_params
-                .encryption_type
-                .unwrap_or(DEFAULT_ENCRYPTION_TYPE),
-        )?;
+        let cipher = self
+            .encryption_params
+            .encryption_type
+            .as_ref()
+            .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+            .cipher();
 
         // the sub-session key is always preferred over the session key
         let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
@@ -360,7 +361,7 @@ impl Sspi for Kerberos {
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-        self.encryption_params.encryption_type = Some(encryption_type as i32);
+        self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
 
         let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password, &self.encryption_params)?;
 
@@ -517,7 +518,7 @@ impl SspiImpl for Kerberos {
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-                self.encryption_params.encryption_type = Some(encryption_type as i32);
+                self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,

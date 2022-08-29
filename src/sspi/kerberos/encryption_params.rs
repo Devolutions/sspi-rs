@@ -1,11 +1,10 @@
-use kerberos_crypto::AesSizes;
 use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
-
-use crate::sspi::kerberos::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
+use picky_krb::crypto::aes::AesSize;
+use picky_krb::crypto::CipherSuite;
 
 #[derive(Debug, Clone)]
 pub struct EncryptionParams {
-    pub encryption_type: Option<i32>,
+    pub encryption_type: Option<CipherSuite>,
     pub session_key: Option<Vec<u8>>,
     pub sub_session_key: Option<Vec<u8>>,
     pub sspi_encrypt_key_usage: i32,
@@ -33,11 +32,11 @@ impl EncryptionParams {
         }
     }
 
-    pub fn aes_sizes(&self) -> Option<AesSizes> {
-        self.encryption_type.map(|e_type| match e_type {
-            AES256_CTS_HMAC_SHA1_96 => AesSizes::Aes256,
-            AES128_CTS_HMAC_SHA1_96 => AesSizes::Aes128,
-            _ => AesSizes::Aes256,
+    pub fn aes_size(&self) -> Option<AesSize> {
+        self.encryption_type.as_ref().and_then(|e_type| match e_type {
+            CipherSuite::Aes256CtsHmacSha196 => Some(AesSize::Aes256),
+            CipherSuite::Aes128CtsHmacSha196 => Some(AesSize::Aes128),
+            CipherSuite::Des3CbcSha1Kd => None,
         })
     }
 }

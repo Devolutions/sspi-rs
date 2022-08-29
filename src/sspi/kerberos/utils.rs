@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 use std::io::Write;
 
-use kerberos_crypto::{checksum_sha_aes, AesSizes};
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
+use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
 use picky_krb::gss_api::MicToken;
 use serde::Serialize;
 
@@ -51,12 +51,7 @@ pub fn validate_mic_token(raw_token: &[u8], key_usage: i32, params: &EncryptionP
         });
     };
 
-    let checksum = checksum_sha_aes(
-        key,
-        key_usage,
-        &payload,
-        &params.aes_sizes().unwrap_or(AesSizes::Aes256),
-    );
+    let checksum = checksum_sha_aes(key, key_usage, &payload, &params.aes_size().unwrap_or(AesSize::Aes256))?;
 
     if checksum != token.checksum {
         return Err(Error {
@@ -77,8 +72,8 @@ pub fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key
         session_key,
         INITIATOR_SIGN,
         &payload,
-        &AesSizes::Aes256,
-    ));
+        &AesSize::Aes256,
+    )?);
 
     let mut mic_token_raw = Vec::new();
     mic_token.encode(&mut mic_token_raw)?;
