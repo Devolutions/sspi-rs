@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 
-use libc::{c_uint, c_ulong, c_ushort, c_char};
+use libc::{c_char, c_uint, c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;

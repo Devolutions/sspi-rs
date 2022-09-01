@@ -2,8 +2,6 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 
 use chrono::{Duration, Utc};
-use kerberos_constants::key_usages::{KEY_USAGE_AP_REQ_AUTHEN, KEY_USAGE_TGS_REQ_AUTHEN};
-use kerberos_crypto::new_kerberos_cipher;
 use md5::{Digest, Md5};
 use oid::ObjectIdentifier;
 use picky_asn1::bit_string::BitString;
@@ -21,11 +19,13 @@ use picky_asn1_x509::oids::{KRB5, KRB5_USER_TO_USER, MS_KRB5, SPNEGO};
 use picky_krb::constants::gss_api::{
     ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
 };
+use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR};
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV, NET_BIOS_ADDR_TYPE,
     NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE,
     PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
 };
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
     ApOptions, Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncKrbPrivPart,
     EncKrbPrivPartInner, EncryptedData, EncryptionKey, HostAddress, KerbPaPacRequest, KerberosFlags,
@@ -41,8 +41,8 @@ use picky_krb::messages::{
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use super::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use crate::crypto::compute_md5_channel_bindings_hash;
+use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::sspi::channel_bindings::ChannelBindings;
 use crate::sspi::kerberos::{EncryptionParams, KERBEROS_VERSION, SERVICE_NAME};
 use crate::sspi::Result;
@@ -116,30 +116,30 @@ pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
-    }
-
-    let timestamp = PaEncTsEnc {
-        patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
-            microseconds.to_be_bytes().to_vec(),
-        )))),
-    };
-    let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
-
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96))?;
-    let key = cipher.generate_key_from_string(password, salt);
-
-    let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes);
-
     let mut pa_datas = if *with_pre_auth {
+        let current_date = Utc::now();
+        let mut microseconds = current_date.timestamp_subsec_micros();
+        if microseconds > MAX_MICROSECONDS_IN_SECOND {
+            microseconds = MAX_MICROSECONDS_IN_SECOND;
+        }
+
+        let timestamp = PaEncTsEnc {
+            patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
+            pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
+                microseconds.to_be_bytes().to_vec(),
+            )))),
+        };
+        let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
+
+        let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+        let cipher = encryption_type.cipher();
+        let key = cipher.generate_key_from_password(password.as_bytes(), salt)?;
+        let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes)?;
+
         vec![PaData {
             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_timestamp)),
             })?)),
@@ -193,8 +193,8 @@ pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
             )))),
             nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec())),
             etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
-                IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
-                IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
+                IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
+                IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
             ])),
             addresses: Optional::from(address),
             enc_authorization_data: Optional::from(None),
@@ -250,8 +250,8 @@ pub fn generate_tgs_req(
         rtime: Optional::from(None),
         nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec())),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
-            IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8]),
-            IntegerAsn1::from(vec![AES128_CTS_HMAC_SHA1_96 as u8]),
+            IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
+            IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
         ])),
         addresses: Optional::from(None),
         enc_authorization_data: Optional::from(None),
@@ -369,7 +369,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(sub_key.map(|sub_key| {
             ExplicitContextTag6::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key)),
             })
         })),
@@ -386,14 +386,14 @@ pub fn generate_tgs_ap_req(
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
 ) -> Result<ApReq> {
-    let encryption_type = enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type)?;
+    let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+    let cipher = encryption_type.cipher();
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
-        KEY_USAGE_TGS_REQ_AUTHEN,
+        TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
         &picky_asn1_der::to_vec(&authenticator)?,
-    );
+    )?;
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -404,7 +404,7 @@ pub fn generate_tgs_ap_req(
         ]))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),
@@ -418,14 +418,14 @@ pub fn generate_ap_req(
     enc_params: &EncryptionParams,
     options: &[u8; 4],
 ) -> Result<ApReq> {
-    let encryption_type = enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type)?;
+    let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+    let cipher = encryption_type.cipher();
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
-        KEY_USAGE_AP_REQ_AUTHEN,
+        AP_REQ_AUTHENTICATOR,
         &picky_asn1_der::to_vec(&authenticator)?,
-    );
+    )?;
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -433,7 +433,7 @@ pub fn generate_ap_req(
         ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(options.to_vec()))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_authenticator)),
         }),
@@ -530,20 +530,20 @@ pub fn generate_krb_priv_request(
         r_address: Optional::from(None),
     });
 
-    let encryption_type = enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96);
-    let cipher = new_kerberos_cipher(encryption_type)?;
+    let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+    let cipher = encryption_type.cipher();
 
     let enc_part = cipher.encrypt(
         &authenticator.0.subkey.0.as_ref().unwrap().key_value.0,
         13,
         &picky_asn1_der::to_vec(&enc_part)?,
-    );
+    )?;
 
     let krb_priv = KrbPriv::from(KrbPrivInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![KRB_PRIV])),
         enc_part: ExplicitContextTag3::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type as u8])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_part)),
         }),

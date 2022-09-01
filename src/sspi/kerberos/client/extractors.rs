@@ -1,8 +1,7 @@
-use kerberos_constants::key_usages::{KEY_USAGE_AS_REP_ENC_PART, KEY_USAGE_TGS_REP_ENC_PART_SESSION_KEY};
-use kerberos_crypto::new_kerberos_cipher;
 use picky_asn1::wrapper::Asn1SequenceOf;
-use picky_krb::constants::key_usages::KRB_PRIV_ENC_PART;
+use picky_krb::constants::key_usages::{AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{EncKrbPrivPart, EtypeInfo2, PaData};
 use picky_krb::messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep};
 
@@ -34,12 +33,16 @@ pub fn extract_session_key_from_as_rep(
     password: &str,
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE))?;
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
 
-    let key = cipher.generate_key_from_string(password, salt.as_bytes());
+    let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
 
     let enc_data = cipher
-        .decrypt(&key, KEY_USAGE_AS_REP_ENC_PART, &as_rep.0.enc_part.0.cipher.0 .0)
+        .decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)
         .map_err(|e| Error {
             error_type: ErrorKind::DecryptFailure,
             description: format!("Cannot decrypt as_rep.enc_part: {:?}", e),
@@ -55,14 +58,14 @@ pub fn extract_session_key_from_tgs_rep(
     session_key: &[u8],
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(DEFAULT_ENCRYPTION_TYPE))?;
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
 
     let enc_data = cipher
-        .decrypt(
-            session_key,
-            KEY_USAGE_TGS_REP_ENC_PART_SESSION_KEY,
-            &tgs_rep.0.enc_part.0.cipher.0 .0,
-        )
+        .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
         .map_err(|e| Error {
             error_type: ErrorKind::InternalError,
             description: format!("{:?}", e),
@@ -119,19 +122,22 @@ pub fn extract_status_code_from_krb_priv_response(
     auth_key: &[u8],
     encryption_params: &EncryptionParams,
 ) -> Result<u16> {
-    let encryption_type = encryption_params.encryption_type.unwrap_or(
-        *krb_priv
-            .0
-            .enc_part
-            .0
-            .etype
-            .0
-             .0
-            .first()
-            .unwrap_or(&(DEFAULT_ENCRYPTION_TYPE as u8)) as i32,
-    );
+    let encryption_type = encryption_params
+        .encryption_type
+        .clone()
+        .unwrap_or(CipherSuite::try_from(
+            *krb_priv
+                .0
+                .enc_part
+                .0
+                .etype
+                .0
+                 .0
+                .first()
+                .unwrap_or(&((&DEFAULT_ENCRYPTION_TYPE).into())) as usize,
+        )?);
 
-    let cipher = new_kerberos_cipher(encryption_type)?;
+    let cipher = encryption_type.cipher();
 
     let enc_part: EncKrbPrivPart = picky_asn1_der::from_bytes(&cipher.decrypt(
         auth_key,

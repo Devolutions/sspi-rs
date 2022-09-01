@@ -1483,26 +1483,35 @@ impl From<KrbError> for Error {
     }
 }
 
-impl From<kerberos_crypto::Error> for Error {
-    fn from(err: kerberos_crypto::Error) -> Self {
-        use kerberos_crypto::Error;
+impl From<picky_krb::crypto::KerberosCryptoError> for Error {
+    fn from(err: picky_krb::crypto::KerberosCryptoError) -> Self {
+        use picky_krb::crypto::KerberosCryptoError;
 
         match err {
-            Error::DecryptionError(description) => Self {
-                error_type: ErrorKind::DecryptFailure,
+            KerberosCryptoError::KeyLength(actual, expected) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description: format!("invalid key length. actual: {}. expected: {}", actual, expected),
+            },
+            KerberosCryptoError::CipherLength(_, _) => todo!(),
+            KerberosCryptoError::AlgorithmIdentifier(identifier) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description: format!("unknown algorithm identifier: {}", identifier),
+            },
+            KerberosCryptoError::IntegrityCheck => Self {
+                error_type: ErrorKind::MessageAltered,
+                description: err.to_string(),
+            },
+            KerberosCryptoError::CipherError(description) => Self {
+                error_type: ErrorKind::InvalidParameter,
                 description,
             },
-            Error::UnsupportedAlgorithm(alg) => Self {
-                error_type: ErrorKind::InternalError,
-                description: format!("unsupported algorithm: {}", alg),
+            KerberosCryptoError::CipherPad(description) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description: description.to_string(),
             },
-            Error::InvalidKeyCharset => Self {
-                error_type: ErrorKind::InternalError,
-                description: "invalid key charset".to_owned(),
-            },
-            Error::InvalidKeyLength(len) => Self {
-                error_type: ErrorKind::InternalError,
-                description: format!("invalid key len: {}", len),
+            KerberosCryptoError::CipherUnpad(description) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description: description.to_string(),
             },
         }
     }

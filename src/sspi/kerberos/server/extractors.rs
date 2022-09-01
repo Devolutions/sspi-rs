@@ -1,14 +1,13 @@
 use std::io::Read;
 
-use kerberos_constants::key_usages::KEY_USAGE_AP_REP_ENC_PART;
-use kerberos_crypto::new_kerberos_cipher;
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
+use picky_krb::constants::key_usages::AP_REP_ENC;
 use picky_krb::data_types::{EncApRepPart, Ticket};
 use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::{ApRep, TgtRep};
 
-use crate::sspi::kerberos::client::AES256_CTS_HMAC_SHA1_96;
+use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::sspi::kerberos::EncryptionParams;
 use crate::sspi::{Error, ErrorKind, Result};
 
@@ -40,10 +39,14 @@ pub fn extract_sub_session_key_from_ap_rep(
     session_key: &[u8],
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
-    let cipher = new_kerberos_cipher(enc_params.encryption_type.unwrap_or(AES256_CTS_HMAC_SHA1_96))?;
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
 
     let res = cipher
-        .decrypt(session_key, KEY_USAGE_AP_REP_ENC_PART, &ap_rep.0.enc_part.cipher.0 .0)
+        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
         .map_err(|err| Error {
             error_type: ErrorKind::DecryptFailure,
             description: format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
