@@ -249,9 +249,9 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 ) -> SecurityStatus {
     catch_panic!(
         // ph_context can be null on the first call
+        // p_input can be null on the first call
         check_null!(ph_new_context);
         check_null!(ph_credential);
-        check_null!(p_input);
         check_null!(p_output);
         check_null!(pf_context_attr);
 
@@ -345,9 +345,9 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
 ) -> SecurityStatus {
     catch_panic!(
         // ph_context can be null on the first call
+        // p_input can be null on the first call
         check_null!(ph_new_context);
         check_null!(ph_credential);
-        check_null!(p_input);
         check_null!(p_output);
         check_null!(pf_context_attr);
 
