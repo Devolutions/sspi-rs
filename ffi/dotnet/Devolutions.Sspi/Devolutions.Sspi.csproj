@@ -5,7 +5,7 @@
     <Description>Portable Rust SSPI library</Description>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
-    <Version>2022.8.15.0</Version>
+    <Version>2022.9.8.0</Version>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -76,6 +76,42 @@
     <Content Include="$(NativeLibPath_linux_arm64)">
       <Link>%(Filename)%(Extension)</Link>
       <PackagePath>runtimes/linux-arm64/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_android_x86)')">
+    <Content Include="$(NativeLibPath_android_x86)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/android-x86/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_android_x64)')">
+    <Content Include="$(NativeLibPath_android_x64)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/android-x64/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_android_arm)')">
+    <Content Include="$(NativeLibPath_android_arm)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/android-arm/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_android_arm64)')">
+    <Content Include="$(NativeLibPath_android_arm64)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/android-arm64/native/%(Filename)%(Extension)</PackagePath>
       <Pack>true</Pack>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

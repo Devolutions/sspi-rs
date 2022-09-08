@@ -1,16 +1,11 @@
 <?xml version="1.0"?>
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <IsPowerShell Condition="$(DefineConstants.Contains('__POWERSHELL__'))">true</IsPowerShell>
+  </PropertyGroup>
   <ItemGroup>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\win-x64\native\DevolutionsSspi.dll">
+    <Content Condition="$([MSBuild]::IsOSPlatform('Windows')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\win-x64\native\DevolutionsSspi.dll">
       <Link>runtimes\win-x64\native\DevolutionsSspi.dll</Link>
-      <PublishState>Included</PublishState>
-      <Visible>False</Visible>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <IncludeInVsix>true</IncludeInVsix>
-      <Pack>false</Pack>
-    </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\win-arm64\native\DevolutionsSspi.dll">
-      <Link>runtimes\win-arm64\native\DevolutionsSspi.dll</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -33,7 +28,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\linux-x64\native\libDevolutionsSspi.so">
+    <Content Condition="$([MSBuild]::IsOSPlatform('Linux')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\linux-x64\native\libDevolutionsSspi.so">
       <Link>runtimes\linux-x64\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -41,7 +36,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\linux-arm64\native\libDevolutionsSspi.so">
+    <Content Condition="$([MSBuild]::IsOSPlatform('Linux')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\linux-arm64\native\libDevolutionsSspi.so">
       <Link>runtimes\linux-arm64\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
