@@ -155,12 +155,10 @@ pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
         })?)),
     });
 
-    let address = sys_info::hostname().ok().map(|hostname| {
-        ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
-            addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-            address: ExplicitContextTag1::from(OctetStringAsn1::from(hostname.as_bytes().to_vec())),
-        }]))
-    });
+    let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
+        addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
+        address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
+    }])));
 
     let mut service_names = Vec::with_capacity(snames.len());
     for sname in *snames {
@@ -524,7 +522,7 @@ pub fn generate_krb_priv_request(
         s_address: ExplicitContextTag4::from(HostAddress {
             addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
             address: ExplicitContextTag1::from(OctetStringAsn1::from(
-                sys_info::hostname().unwrap().as_bytes().to_vec(),
+                whoami::hostname().as_bytes().to_vec(),
             )),
         }),
         r_address: Optional::from(None),
