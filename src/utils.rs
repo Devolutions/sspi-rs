@@ -23,6 +23,16 @@ pub fn get_domain_from_fqdn(fqdm: &[u8]) -> Option<String> {
     fqdm.find('@').map(|index| fqdm.split_off(index + 1))
 }
 
+pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
+    debug_assert_eq!(data.len() % 2, 0);
+    String::from_utf16_lossy(
+        &data
+            .chunks(2)
+            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+            .collect::<Vec<u16>>(),
+    )
+}
+
 #[cfg(feature = "network_client")]
 pub fn resolve_kdc_host(domain: &str) -> Option<String> {
     use trust_dns_resolver::system_conf::read_system_conf;

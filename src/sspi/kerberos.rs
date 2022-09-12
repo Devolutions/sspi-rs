@@ -30,7 +30,7 @@ use self::client::generators::{
 };
 use self::config::{KdcType, KerberosConfig};
 use self::server::extractors::extract_tgt_ticket;
-use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
+use self::utils::serialize_message;
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
@@ -42,6 +42,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
+use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities, PackageInfo,
@@ -63,9 +64,9 @@ const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
 const RRC: u16 = 28;
 // wrap token header len
-const MAX_SIGNATURE: usize = 16;
+pub const MAX_SIGNATURE: usize = 16;
 // minimal len to fit encrypted public key in wrap token
-const SECURITY_TRAILER: usize = 60;
+pub const SECURITY_TRAILER: usize = 60;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;

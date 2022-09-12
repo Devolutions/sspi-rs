@@ -37,11 +37,12 @@ serde_derive = "1.0"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
-picky-krb = "0.4.0"
-picky-asn1 = { version = "0.5.0", features = ["chrono_conversion"] }
-picky-asn1-der = "0.3.1"
-picky-asn1-x509 = "0.7.0"
+picky-krb = { path = "../picky-rs/picky-krb" }
+picky-asn1 = { path = "../picky-rs/picky-asn1", features = ["chrono_conversion"] }
+picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
+picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
 oid = "0.2.1"
+uuid = "1.1"
 whoami = "0.5"
 trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
