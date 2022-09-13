@@ -9,6 +9,8 @@ use url::Url;
 
 use crate::internal::SspiImpl;
 #[cfg(feature = "network_client")]
+use crate::kdc::detect_kdc_host;
+#[cfg(feature = "network_client")]
 use crate::kerberos::config::KdcType;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
@@ -17,8 +19,6 @@ use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[cfg(feature = "network_client")]
 use crate::utils::get_domain_from_fqdn;
-#[cfg(feature = "network_client")]
-use crate::utils::resolve_kdc_host;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
@@ -103,7 +103,7 @@ impl Negotiate {
     fn negotiate_protocol(&mut self, username: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             if let Some(domain) = get_domain_from_fqdn(username) {
-                if let Some(host) = resolve_kdc_host(&domain) {
+                if let Some(host) = detect_kdc_host(&domain) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
                         url: Url::from_str(&host).unwrap(),
                         kdc_type: KdcType::Kdc,

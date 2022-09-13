@@ -521,9 +521,7 @@ pub fn generate_krb_priv_request(
         )))),
         s_address: ExplicitContextTag4::from(HostAddress {
             addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-            address: ExplicitContextTag1::from(OctetStringAsn1::from(
-                whoami::hostname().as_bytes().to_vec(),
-            )),
+            address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
         }),
         r_address: Optional::from(None),
     });
