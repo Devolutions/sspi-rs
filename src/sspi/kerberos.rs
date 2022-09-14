@@ -23,10 +23,10 @@ use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_authenticator, generate_krb_priv_request, generate_neg_ap_req,
-    generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
-    ChecksumOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
-    DEFAULT_AP_REQ_OPTIONS,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request,
+    generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
+    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, GenerateAsPaDataOptions,
+    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM, DEFAULT_AP_REQ_OPTIONS,
 };
 use self::config::{KdcType, KerberosConfig};
 use self::server::extractors::extract_tgt_ticket;
@@ -142,9 +142,15 @@ impl Kerberos {
         }
     }
 
-    pub fn as_exchange(&mut self, mut options: GenerateAsReqOptions) -> Result<AsRep> {
-        options.with_pre_auth = false;
-        let as_req = generate_as_req(&options)?;
+    pub fn as_exchange(
+        &mut self,
+        options: GenerateAsReqOptions,
+        mut pa_data_options: GenerateAsPaDataOptions,
+    ) -> Result<AsRep> {
+        pa_data_options.with_pre_auth = false;
+        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
+        let kdc_req_body = generate_as_req_kdc_body(&options)?;
+        let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -160,11 +166,14 @@ impl Kerberos {
         }
 
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-            options.salt = correct_salt.as_bytes().to_vec()
+            pa_data_options.salt = correct_salt.as_bytes().to_vec()
         }
 
-        options.with_pre_auth = true;
-        let as_req = generate_as_req(&options)?;
+        pa_data_options.with_pre_auth = false;
+        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
+
+        let kdc_req_body = generate_as_req_kdc_body(&options)?;
+        let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -348,16 +357,20 @@ impl Sspi for Kerberos {
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
 
-        let as_rep = self.as_exchange(GenerateAsReqOptions {
-            realm,
-            username,
-            password,
-            salt: salt.as_bytes().to_vec(),
-            enc_params: self.encryption_params.clone(),
-            cname_type,
-            snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
-            with_pre_auth: false,
-        })?;
+        let as_rep = self.as_exchange(
+            GenerateAsReqOptions {
+                realm,
+                username,
+                cname_type,
+                snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
+            },
+            GenerateAsPaDataOptions {
+                password,
+                salt: salt.as_bytes().to_vec(),
+                enc_params: self.encryption_params.clone(),
+                with_pre_auth: false,
+            },
+        )?;
 
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -505,16 +518,20 @@ impl SspiImpl for Kerberos {
                 let cname_type = get_client_principal_name_type(&username, &domain);
                 let realm = &get_client_principal_realm(&username, &domain);
 
-                let as_rep = self.as_exchange(GenerateAsReqOptions {
-                    realm,
-                    username: &username,
-                    password: &password,
-                    salt: salt.as_bytes().to_vec(),
-                    enc_params: self.encryption_params.clone(),
-                    cname_type,
-                    snames: &[TGT_SERVICE_NAME, realm],
-                    with_pre_auth: false,
-                })?;
+                let as_rep = self.as_exchange(
+                    GenerateAsReqOptions {
+                        realm,
+                        username: &&username,
+                        cname_type,
+                        snames: &[TGT_SERVICE_NAME, realm],
+                    },
+                    GenerateAsPaDataOptions {
+                        password: &password,
+                        salt: salt.as_bytes().to_vec(),
+                        enc_params: self.encryption_params.clone(),
+                        with_pre_auth: false,
+                    },
+                )?;
 
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 

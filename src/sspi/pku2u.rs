@@ -12,10 +12,14 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::Uuid;
 
-use self::generators::{generate_neg_token_init, generate_pku2u_nego_req};
+use self::generators::{
+    generate_neg_as_req, generate_neg_token_init, generate_neg_token_targ, generate_pa_datas_for_as_req,
+    generate_pku2u_nego_req, DH_NONCE_LEN, WELLKNOWN_REALM,
+};
 use crate::builders::ChangePassword;
 use crate::internal::SspiImpl;
-use crate::kerberos::{EncryptionParams, MAX_SIGNATURE, SECURITY_TRAILER};
+use crate::kerberos::client::generators::{generate_as_req, generate_as_req_kdc_body, GenerateAsReqOptions};
+use crate::kerberos::{EncryptionParams, MAX_SIGNATURE, SECURITY_TRAILER, SERVICE_NAME};
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{
@@ -65,6 +69,9 @@ pub struct Pku2u {
     conversation_id: Uuid,
     seq_number: u32,
     realm: Option<String>,
+    auth_nonce: u32,
+    dh_nonce: [u8; DH_NONCE_LEN],
+    opposite_dh_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
 impl Pku2u {
@@ -77,6 +84,9 @@ impl Pku2u {
             conversation_id: Uuid::new_v4(),
             seq_number: 0,
             realm: None,
+            auth_nonce: OsRng::new()?.gen::<u32>(),
+            dh_nonce: OsRng::new()?.gen::<[u8; DH_NONCE_LEN]>(),
+            opposite_dh_nonce: None,
         })
     }
 
@@ -177,6 +187,8 @@ impl SspiImpl for Pku2u {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> super::Result<InitializeSecurityContextResult> {
+        let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
+
         let status = match self.state {
             Pku2uState::Negotiate => {
                 let credentials = builder
@@ -192,8 +204,6 @@ impl SspiImpl for Pku2u {
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
 
                 let mut mech_token = Vec::new();
-
-                let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
 
                 let nego = Nego::new(
                     MessageType::InitiatorNego,
@@ -223,7 +233,54 @@ impl SspiImpl for Pku2u {
 
                 SecurityStatus::ContinueNeeded
             }
-            Pku2uState::Preauthentication => todo!(),
+            Pku2uState::Preauthentication => {
+                let credentials = builder
+                    .credentials_handle
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .ok_or_else(|| Error {
+                        error_type: ErrorKind::NoCredentials,
+                        description: "No credentials provided".to_owned(),
+                    })?;
+
+                let username = utf16_bytes_to_utf8_string(&credentials.user);
+                // todo: parse response. do not extract any data. just parse and make sure it valid
+
+                let mut mech_token = Vec::new();
+
+                let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
+                    realm: WELLKNOWN_REALM,
+                    username: &username,
+                    cname_type: 0x80,
+                    snames: &[SERVICE_NAME, &username],
+                })?;
+                let pa_datas = generate_pa_datas_for_as_req(
+                    &self.config.p2p_certificate,
+                    &self.config.p2p_ca_certificate,
+                    &kdc_req_body,
+                    self.auth_nonce,
+                    Some(&self.dh_nonce),
+                )?;
+
+                let exchange = Exchange::new(
+                    MessageType::InitiatorMetaData,
+                    self.conversation_id,
+                    self.next_seq_number(),
+                    auth_scheme,
+                    picky_asn1_der::to_vec(&generate_neg_as_req(generate_as_req(&pa_datas, kdc_req_body)))?,
+                );
+                exchange.encode(&mut mech_token)?;
+
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                output_token
+                    .buffer
+                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?)?;
+
+                self.state = Pku2uState::ApExchange;
+
+                SecurityStatus::ContinueNeeded
+            }
             Pku2uState::ApExchange => todo!(),
             _ => {
                 return Err(Error::new(

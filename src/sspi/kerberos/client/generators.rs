@@ -50,7 +50,7 @@ use crate::{Error, ErrorKind};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
-const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
+pub const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
 const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
 pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
@@ -89,32 +89,20 @@ pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
     domain.to_string()
 }
 
-pub struct GenerateAsReqOptions<'a> {
-    pub realm: &'a str,
-    pub username: &'a str,
+pub struct GenerateAsPaDataOptions<'a> {
     pub password: &'a str,
     pub salt: Vec<u8>,
     pub enc_params: EncryptionParams,
-    pub cname_type: u8,
-    pub snames: &'a [&'a str],
     pub with_pre_auth: bool,
 }
 
-pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
-    let GenerateAsReqOptions {
-        realm,
-        username,
+pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result<Vec<PaData>> {
+    let GenerateAsPaDataOptions {
         password,
         salt,
         enc_params,
-        cname_type,
-        snames,
         with_pre_auth,
     } = options;
-
-    let expiration_date = Utc::now()
-        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
-        .unwrap();
 
     let mut pa_datas = if *with_pre_auth {
         let current_date = Utc::now();
@@ -155,6 +143,28 @@ pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
         })?)),
     });
 
+    Ok(pa_datas)
+}
+
+pub struct GenerateAsReqOptions<'a> {
+    pub realm: &'a str,
+    pub username: &'a str,
+    pub cname_type: u8,
+    pub snames: &'a [&'a str],
+}
+
+pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
+    let GenerateAsReqOptions {
+        realm,
+        username,
+        cname_type,
+        snames,
+    } = options;
+
+    let expiration_date = Utc::now()
+        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
+        .unwrap();
+
     let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
         addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
         address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
@@ -165,40 +175,44 @@ pub fn generate_as_req(options: &GenerateAsReqOptions) -> Result<AsReq> {
         service_names.push(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?));
     }
 
-    Ok(AsReq::from(KdcReq {
+    Ok(KdcReqBody {
+        kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
+            DEFAULT_AS_REQ_OPTIONS.to_vec(),
+        ))),
+        cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![*cname_type])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
+                IA5String::from_string((*username).into())?,
+            )])),
+        }))),
+        realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string((*realm).into())?)),
+        sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(service_names)),
+        }))),
+        from: Optional::from(None),
+        till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(expiration_date))),
+        rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
+            GeneralizedTime::from(expiration_date),
+        )))),
+        nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec())),
+        etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
+            IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
+            IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
+        ])),
+        addresses: Optional::from(address),
+        enc_authorization_data: Optional::from(None),
+        additional_tickets: Optional::from(None),
+    })
+}
+
+pub fn generate_as_req(pa_datas: &Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq {
+    AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
-        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(pa_datas)))),
-        req_body: ExplicitContextTag4::from(KdcReqBody {
-            kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-                DEFAULT_AS_REQ_OPTIONS.to_vec(),
-            ))),
-            cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![*cname_type])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
-                    IA5String::from_string((*username).into())?,
-                )])),
-            }))),
-            realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string((*realm).into())?)),
-            sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(service_names)),
-            }))),
-            from: Optional::from(None),
-            till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(expiration_date))),
-            rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
-                GeneralizedTime::from(expiration_date),
-            )))),
-            nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::new()?.gen::<[u8; NONCE_LEN]>().to_vec())),
-            etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
-                IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
-                IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
-            ])),
-            addresses: Optional::from(address),
-            enc_authorization_data: Optional::from(None),
-            additional_tickets: Optional::from(None),
-        }),
-    }))
+        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(pa_datas.clone())))),
+        req_body: ExplicitContextTag4::from(kdc_req_body),
+    })
 }
 
 pub fn generate_tgs_req(
