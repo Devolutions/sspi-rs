@@ -84,7 +84,7 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use kdc::detect_kdc_host;
+pub use kdc::{detect_kdc_host, detect_kdc_url};
 
 pub use crate::sspi::kerberos::config::KerberosConfig;
 pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};

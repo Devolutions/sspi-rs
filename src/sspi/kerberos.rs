@@ -28,11 +28,12 @@ use self::client::generators::{
     ChecksumOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
     DEFAULT_AP_REQ_OPTIONS,
 };
-use self::config::{KdcType, KerberosConfig};
+use self::config::KerberosConfig;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
+use crate::detect_kdc_url;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
@@ -54,8 +55,6 @@ pub const TGT_SERVICE_NAME: &str = "krbtgt";
 pub const SERVICE_NAME: &str = "TERMSRV";
 pub const KADMIN: &str = "kadmin";
 pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
-
-pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
 const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
@@ -132,13 +131,26 @@ impl Kerberos {
     }
 
     fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
-        match self.config.kdc_type {
-            KdcType::Kdc => self.config.network_client.send(&self.config.url, data),
-            KdcType::KdcProxy => self
-                .config
-                .network_client
-                .send_http(&self.config.url, data, self.realm.clone()),
+        if let Some(krb_realm) = &self.realm.to_owned() {
+            if let Some(kdc_url) = detect_kdc_url(krb_realm) {
+                return match kdc_url.scheme() {
+                    "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
+                    "http" | "https" => {
+                        self.config
+                            .network_client
+                            .send_http(&kdc_url, data, Some(krb_realm.to_string()))
+                    }
+                    _ => Err(Error {
+                        error_type: ErrorKind::InternalError,
+                        description: "Invalid KDC server URL protocol scheme".to_owned(),
+                    }),
+                };
+            }
         }
+        Err(Error {
+            error_type: ErrorKind::NoAuthenticatingAuthority,
+            description: "No KDC server found!".to_owned(),
+        })
     }
 
     pub fn as_exchange(&mut self, mut options: GenerateAsReqOptions) -> Result<AsRep> {
@@ -384,29 +396,36 @@ impl Sspi for Kerberos {
             seq_num,
         )?;
 
-        self.config
-            .url
-            .set_port(Some(KPASSWD_PORT))
-            .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
-        let response = self.send(&serialize_message(&krb_priv)?)?;
+        if let Some(mut kdc_url) = detect_kdc_url(domain) {
+            kdc_url
+                .set_port(Some(KPASSWD_PORT))
+                .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
 
-        let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                format!("Cannot deserialize krb_priv_response: {:?}", err),
-            )
-        })?;
+            let response = self.send(&serialize_message(&krb_priv)?)?;
 
-        let result_status = extract_status_code_from_krb_priv_response(
-            &krb_priv_response.krb_priv,
-            &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
-            &self.encryption_params,
-        )?;
+            let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
+                Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("Cannot deserialize krb_priv_response: {:?}", err),
+                )
+            })?;
 
-        if result_status != 0 {
+            let result_status = extract_status_code_from_krb_priv_response(
+                &krb_priv_response.krb_priv,
+                &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
+                &self.encryption_params,
+            )?;
+
+            if result_status != 0 {
+                return Err(Error::new(
+                    ErrorKind::WrongCredentialHandle,
+                    format!("unsuccessful krb result code: {}. expected 0", result_status),
+                ));
+            }
+        } else {
             return Err(Error::new(
-                ErrorKind::WrongCredentialHandle,
-                format!("unsuccessful krb result code: {}. expected 0", result_status),
+                ErrorKind::NoAuthenticatingAuthority,
+                "No KDC server found!".to_owned(),
             ));
         }
 
@@ -499,7 +518,7 @@ impl SspiImpl for Kerberos {
                 let password = utf16_bytes_to_utf8_string(&credentials.password);
                 let salt = format!("{}{}", domain, username);
 
-                self.realm = Some(domain.clone());
+                self.realm = Some(get_client_principal_realm(&username, &domain));
 
                 let cname_type = get_client_principal_name_type(&username, &domain);
                 let realm = &get_client_principal_realm(&username, &domain);

@@ -1,24 +1,11 @@
-#[cfg(feature = "network_client")]
-use std::env;
-#[cfg(feature = "network_client")]
-use std::str::FromStr;
-
 use lazy_static::lazy_static;
-#[cfg(feature = "network_client")]
-use url::Url;
 
 use crate::internal::SspiImpl;
-#[cfg(feature = "network_client")]
-use crate::kdc::detect_kdc_host;
-#[cfg(feature = "network_client")]
-use crate::kerberos::config::KdcType;
+use crate::kdc::detect_kdc_url;
+use crate::kerberos::client::generators::get_client_principal_realm;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
-#[cfg(feature = "network_client")]
-use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
-#[cfg(feature = "network_client")]
-use crate::utils::get_domain_from_fqdn;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
@@ -81,15 +68,6 @@ impl Negotiate {
                 .map(NegotiatedProtocol::Kerberos)
                 .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
         } else {
-            #[cfg(feature = "network_client")]
-            if env::var(SSPI_KDC_URL_ENV).is_ok() {
-                Kerberos::new_client_from_config(KerberosConfig::from_env())
-                    .map(NegotiatedProtocol::Kerberos)
-                    .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
-            } else {
-                NegotiatedProtocol::Ntlm(Ntlm::new())
-            }
-            #[cfg(not(feature = "network_client"))]
             NegotiatedProtocol::Ntlm(Ntlm::new())
         };
 
@@ -100,16 +78,14 @@ impl Negotiate {
     }
 
     #[cfg(feature = "network_client")]
-    fn negotiate_protocol(&mut self, username: &[u8]) -> Result<()> {
+    fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
-            if let Some(domain) = get_domain_from_fqdn(username) {
-                if let Some(host) = detect_kdc_host(&domain) {
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(&host).unwrap(),
-                        kdc_type: KdcType::Kdc,
-                        network_client: Box::new(ReqwestNetworkClient::new()),
-                    })?)
-                }
+            let realm = get_client_principal_realm(username, domain);
+            if let Some(kdc_url) = detect_kdc_url(&realm) {
+                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                    url: Some(kdc_url),
+                    network_client: Box::new(ReqwestNetworkClient::new()),
+                })?)
             }
         }
 
@@ -185,7 +161,7 @@ impl Sspi for Negotiate {
 
     fn change_password(&mut self, change_password: builders::ChangePassword) -> Result<()> {
         #[cfg(feature = "network_client")]
-        self.negotiate_protocol(change_password.account_name.as_bytes())?;
+        self.negotiate_protocol(&change_password.account_name, &change_password.domain_name)?;
 
         match &mut self.protocol {
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.change_password(change_password),
@@ -211,7 +187,11 @@ impl SspiImpl for Negotiate {
 
         #[cfg(feature = "network_client")]
         if let Some(identity) = builder.auth_data {
-            self.negotiate_protocol(identity.username.as_bytes())?;
+            if let Some(domain) = &identity.domain {
+                self.negotiate_protocol(&identity.username, &domain)?;
+            } else {
+                self.negotiate_protocol(&identity.username, "")?;
+            }
         }
 
         self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
@@ -233,7 +213,13 @@ impl SspiImpl for Negotiate {
     ) -> Result<InitializeSecurityContextResult> {
         #[cfg(feature = "network_client")]
         if let Some(Some(identity)) = builder.credentials_handle {
-            self.negotiate_protocol(&identity.user)?;
+            let auth_identity: AuthIdentity = (*identity).clone().into();
+            let username = auth_identity.username.to_owned();
+            if let Some(domain) = &auth_identity.domain {
+                self.negotiate_protocol(&username, &domain)?;
+            } else {
+                self.negotiate_protocol(&username, "")?;
+            }
         }
 
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {
