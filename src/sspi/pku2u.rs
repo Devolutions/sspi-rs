@@ -1,6 +1,8 @@
 mod generators;
+#[macro_use]
+mod macros;
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
@@ -48,6 +50,7 @@ lazy_static! {
 pub enum Pku2uState {
     Negotiate,
     Preauthentication,
+    AsExchange,
     ApExchange,
     PubKeyAuth,
     Credentials,
@@ -67,6 +70,7 @@ pub struct Pku2u {
     encryption_params: EncryptionParams,
     auth_identity: Option<AuthIdentityBuffers>,
     conversation_id: Uuid,
+    auth_scheme: Option<Uuid>,
     seq_number: u32,
     realm: Option<String>,
     auth_nonce: u32,
@@ -82,6 +86,7 @@ impl Pku2u {
             encryption_params: EncryptionParams::default_for_client(),
             auth_identity: None,
             conversation_id: Uuid::new_v4(),
+            auth_scheme: None,
             seq_number: 0,
             realm: None,
             auth_nonce: OsRng::new()?.gen::<u32>(),
@@ -187,10 +192,10 @@ impl SspiImpl for Pku2u {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> super::Result<InitializeSecurityContextResult> {
-        let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
-
         let status = match self.state {
             Pku2uState::Negotiate => {
+                let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
+
                 let credentials = builder
                     .credentials_handle
                     .as_ref()
@@ -234,6 +239,46 @@ impl SspiImpl for Pku2u {
                 SecurityStatus::ContinueNeeded
             }
             Pku2uState::Preauthentication => {
+                let input = builder
+                    .input
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+
+                let mut reader: Box<dyn Read> = Box::new(input_token.buffer.as_slice());
+
+                let acceptor_nego = Nego::decode(&mut reader, &input_token.buffer)?;
+
+                check_conversation_id!(acceptor_nego.header.conversation_id.0, self.conversation_id);
+
+                // We support only one auth scheme. So the server must choose it otherwise it's an invalid behaviour
+                if let Some(auth_scheme) = acceptor_nego.auth_schemes.get(0) {
+                    if auth_scheme.0 == Uuid::from_str(AUTH_SCHEME).unwrap() {
+                        self.auth_scheme = Some(auth_scheme.0);
+                    } else {
+                        return
+                        Err(Error::new(
+                            ErrorKind::InvalidToken,
+                            format!(
+                                "The server selected unsupported auth scheme {:?}. The only one supported auth scheme: {}",
+                                auth_scheme.0, AUTH_SCHEME)
+                        ));
+                    }
+                } else {
+                    return Err(Error::new(
+                        ErrorKind::InvalidToken,
+                        "Server didn't send any auth scheme".into(),
+                    ));
+                }
+
+                let acceptor_exchange = Exchange::decode(
+                    &mut reader,
+                    &input_token.buffer[(acceptor_nego.header.message_len as usize)..],
+                )?;
+
+                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+
                 let credentials = builder
                     .credentials_handle
                     .as_ref()
@@ -246,6 +291,7 @@ impl SspiImpl for Pku2u {
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 // todo: parse response. do not extract any data. just parse and make sure it valid
+                // todo: validate auth scheme, etc
 
                 let mut mech_token = Vec::new();
 
@@ -267,7 +313,7 @@ impl SspiImpl for Pku2u {
                     MessageType::InitiatorMetaData,
                     self.conversation_id,
                     self.next_seq_number(),
-                    auth_scheme,
+                    self.auth_scheme.unwrap(),
                     picky_asn1_der::to_vec(&generate_neg_as_req(generate_as_req(&pa_datas, kdc_req_body)))?,
                 );
                 exchange.encode(&mut mech_token)?;
@@ -277,11 +323,41 @@ impl SspiImpl for Pku2u {
                     .buffer
                     .write_all(&picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?)?;
 
+                self.state = Pku2uState::AsExchange;
+
+                SecurityStatus::ContinueNeeded
+            }
+            Pku2uState::AsExchange => {
+                let input = builder
+                    .input
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+
+                let acceptor_exchange = Exchange::decode(input_token.buffer.as_slice(), &input_token.buffer)?;
+
+                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+
+                // parse as_rep
+
+                // extract key parameters, and other info. validate them
+
+                // generate key (how? idk)
+
+                // generate ap_req
+
                 self.state = Pku2uState::ApExchange;
 
                 SecurityStatus::ContinueNeeded
             }
-            Pku2uState::ApExchange => todo!(),
+            Pku2uState::ApExchange => {
+                // todo!();
+
+                self.state = Pku2uState::PubKeyAuth;
+
+                SecurityStatus::ContinueNeeded
+            }
             _ => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
