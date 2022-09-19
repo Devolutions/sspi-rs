@@ -9,11 +9,12 @@ use std::str::FromStr;
 use lazy_static::lazy_static;
 use picky_asn1_x509::signed_data::SignedData;
 use picky_asn1_x509::Certificate;
-use picky_krb::constants::gss_api::{AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, AP_REQ_TOKEN_ID};
-use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::crypto::{CipherSuite, ChecksumSuite, Checksum};
+use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
+use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
+use picky_krb::crypto::{ChecksumSuite, CipherSuite};
 use picky_krb::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::gss_api::WrapToken;
+use picky_krb::messages::{ApRep, AsRep};
 use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
@@ -32,9 +33,10 @@ use crate::kerberos::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, ChecksumOptions,
     GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
+use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER, SERVICE_NAME};
 use crate::sspi::pku2u::extractors::{
-    extract_as_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
+    extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
 };
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::utf16_bytes_to_utf8_string;
@@ -102,7 +104,7 @@ pub struct Pku2u {
     conversation_id: Uuid,
     auth_scheme: Option<Uuid>,
     seq_number: u32,
-    realm: Option<String>,
+    // realm: Option<String>,
     auth_nonce: u32,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages in one vector
@@ -122,7 +124,7 @@ impl Pku2u {
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
-            realm: None,
+            // realm: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -391,7 +393,6 @@ impl SspiImpl for Pku2u {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let buffer = input_token.buffer.as_slice();
-
                 self.negoex_messages.extend_from_slice(buffer);
 
                 let mut reader: Box<dyn Read> = Box::new(buffer);
@@ -493,7 +494,7 @@ impl SspiImpl for Pku2u {
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
 
-                let as_rep = extract_as_rep(&acceptor_exchange.exchange)?;
+                let (as_rep, _): (AsRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 
                 // todo: validate server's certificate
 
@@ -565,7 +566,8 @@ impl SspiImpl for Pku2u {
                     self.conversation_id,
                     self.next_seq_number(),
                     self.auth_scheme.unwrap(),
-                    self.encryption_params.encryption_type
+                    self.encryption_params
+                        .encryption_type
                         .as_ref()
                         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
                         .into(),
@@ -589,7 +591,49 @@ impl SspiImpl for Pku2u {
                 SecurityStatus::ContinueNeeded
             }
             Pku2uState::ApExchange => {
-                // todo!();
+                let input = builder
+                    .input
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+
+                let buffer = input_token.buffer.as_slice();
+                self.negoex_messages.extend_from_slice(buffer);
+
+                let mut reader: Box<dyn Read> = Box::new(buffer);
+
+                let acceptor_exchange = Exchange::decode(&mut reader, &buffer)?;
+
+                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+
+                let acceptor_verify =
+                    Verify::decode(&mut reader, &buffer[(acceptor_exchange.header.message_len as usize)..])?;
+
+                check_conversation_id!(acceptor_verify.header.conversation_id.0, self.conversation_id);
+                check_auth_scheme!(acceptor_verify.auth_scheme.0, self.auth_scheme);
+
+                let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
+
+                self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
+                    &ap_rep,
+                    self.encryption_params.session_key.as_ref().unwrap(),
+                    &self.encryption_params,
+                )?);
+
+                let checksum = ChecksumSuite::try_from(acceptor_verify.checksum.checksum_type as usize)?
+                    .hasher()
+                    .checksum(
+                        self.encryption_params.session_key.as_ref().unwrap(),
+                        INITIATOR_SIGN,
+                        &self.negoex_messages,
+                    )?;
+                if acceptor_verify.checksum.checksum_value != checksum {
+                    return Err(Error::new(
+                        ErrorKind::MessageAltered,
+                        "bad Verify message signature".into(),
+                    ));
+                }
 
                 self.state = Pku2uState::PubKeyAuth;
 

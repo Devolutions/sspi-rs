@@ -10,11 +10,12 @@ use picky_asn1_x509::signed_data::SignedData;
 use picky_krb::constants::types::PA_PK_AS_REP;
 use picky_krb::messages::AsRep;
 use picky_krb::pkinit::{DhRepInfo, KdcDhKeyInfo, PaPkAsRep};
+use serde::Deserialize;
 
 use super::generators::DH_NONCE_LEN;
 use crate::{Error, ErrorKind, Result};
 
-pub fn extract_as_rep(mut data: &[u8]) -> Result<AsRep> {
+pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
     let _oid: ApplicationTag<Asn1RawDer, 0> =
         picky_asn1_der::from_reader(&mut data).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
 
@@ -30,7 +31,7 @@ pub fn extract_as_rep(mut data: &[u8]) -> Result<AsRep> {
     //     ));
     // }
 
-    Ok(picky_asn1_der::from_reader(&mut data)?)
+    Ok((picky_asn1_der::from_bytes(data)?, data))
 }
 
 pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
@@ -116,7 +117,9 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
 
 #[cfg(test)]
 mod tests {
-    use super::extract_as_rep;
+    use picky_krb::messages::AsRep;
+
+    use super::extract_krb_rep;
 
     #[test]
     fn as_rep_extraction() {
@@ -249,6 +252,7 @@ mod tests {
             187, 142, 204, 99,
         ];
 
-        println!("{:?}", extract_as_rep(&raw_message).unwrap());
+        let (as_rep, _): (AsRep, _) = extract_krb_rep(&raw_message).unwrap();
+        println!("{:?}", as_rep)
     }
 }

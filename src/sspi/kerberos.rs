@@ -2,7 +2,7 @@ pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod network_client;
-mod server;
+pub mod server;
 mod utils;
 
 use std::fmt::Debug;

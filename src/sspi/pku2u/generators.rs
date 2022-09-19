@@ -29,7 +29,7 @@ use picky_krb::data_types::{KerberosStringAsn1, KerberosTime, PaData, PrincipalN
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg,
 };
-use picky_krb::messages::{AsReq, KdcReqBody};
+use picky_krb::messages::KdcReqBody;
 use picky_krb::pkinit::{
     AuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, PaPkAsReq, PkAuthenticator, Pku2uNegoBody, Pku2uNegoReq,
     Pku2uNegoReqMetadata, Pku2uValue, Pku2uValueInner,
