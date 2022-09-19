@@ -49,3 +49,8 @@ portpicker = { version = "0.1.1", optional = true }
 winreg = "0.10"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 windows = { version = "0.39.0", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+async-dnssd = "0.5.0"
+futures = "0.3.1"
+tokio = { version = "1.1", features = ["time", "rt"] }

@@ -126,6 +126,102 @@ cfg_if::cfg_if! {
 }
 
 cfg_if::cfg_if! {
+    if #[cfg(target_os="macos")] {
+        use std::time::Duration;
+        use tokio::time::timeout;
+        use tokio::runtime;
+        use futures::stream::{StreamExt};
+        use async_dnssd::{query_record,QueryRecordResult,QueriedRecordFlags,Type};
+
+        #[derive(Clone)]
+        pub struct DnsSrvRecord {
+            priority: u16,
+            weight: u16,
+            port: u16,
+            target: String
+        }
+
+        impl From<&QueryRecordResult> for DnsSrvRecord {
+            fn from(record: &QueryRecordResult) -> Self {    
+                let rdata = record.rdata.as_slice();
+                let priority = u16::from_be_bytes(rdata[0..2].try_into().unwrap());
+                let weight = u16::from_be_bytes(rdata[2..4].try_into().unwrap());
+                let port = u16::from_be_bytes(rdata[4..6].try_into().unwrap());
+                let target_data = &rdata[6..rdata.len()];
+                DnsSrvRecord {
+                    priority: priority,
+                    weight: weight,
+                    port: port,
+                    target: dns_decode_target_data_to_string(target_data)
+                }
+            }
+        }
+
+        pub fn dns_decode_target_data_to_string(v: &[u8]) -> String {
+            let mut names = Vec::new();
+        
+            let mut i = 0;
+            while i < v.len() {
+                let size = v[i] as usize;
+                if size == 0 || i + 1 + size > v.len() {
+                    break;
+                }
+                names.push(String::from_utf8_lossy(&v[i+1..i+1+size]));
+                i = i + 1 + size;
+            }
+        
+            names.join(".")
+        }
+
+        pub fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
+            let query_timeout = 1000;
+            let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
+        
+            let rt = runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        
+            rt.block_on(async {
+                let mut query = query_record(name, Type::SRV);
+        
+                loop {
+                    match timeout(Duration::from_millis(query_timeout), query.next()).await {
+                        Ok(Some(Ok(dns_record))) => {
+                            let srv_record: DnsSrvRecord = (&dns_record).into();
+                            dns_records.push(srv_record.to_owned());
+                            if !dns_record.flags.contains(QueriedRecordFlags::MORE_COMING) {
+                                break;
+                            }
+                        }
+                        _ => {
+                            break;
+                        }
+                    }
+                }
+            });
+        
+            dns_records
+        }
+
+        pub fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
+            let krb_tcp_name = &format!("_kerberos._tcp.{}", domain);
+            let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
+
+            if !krb_tcp_srv.is_empty() {
+                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", &x.target, x.port).to_owned()).collect()
+            }
+
+            let krb_udp_name = &format!("_kerberos._udp.{}", domain);
+            let krb_udp_srv = dns_query_srv_records(krb_udp_name);
+
+            if !krb_udp_srv.is_empty() {
+                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", &x.target, x.port).to_owned()).collect()
+            }
+
+            Vec::new()
+        }
+    }
+}
+
+cfg_if::cfg_if! {
     if #[cfg(feature="network_client")] {
         use trust_dns_resolver::Resolver;
         use trust_dns_resolver::system_conf::read_system_conf;
@@ -230,6 +326,8 @@ pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             detect_kdc_hosts_from_dns_windows(domain)
+        } else if #[cfg(target_os="macos")] {
+            detect_kdc_hosts_from_dns_apple(domain)
         } else if #[cfg(feature="network_client")] {
             detect_kdc_hosts_from_dns_trust(domain)
         } else {
