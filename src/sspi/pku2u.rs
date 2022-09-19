@@ -1,14 +1,16 @@
 mod extractors;
+mod config;
 mod generators;
 #[macro_use]
 mod macros;
+
+pub use config::Pku2uConfig;
 
 use std::io::{Read, Write};
 use std::str::FromStr;
 
 use lazy_static::lazy_static;
 use picky_asn1_x509::signed_data::SignedData;
-use picky_asn1_x509::Certificate;
 use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
@@ -44,10 +46,12 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, Sspi,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
+
+pub const AZURE_AD_PREFIX: &str = "AzureAD\\";
 
 /// Default NEGOEX authentication scheme
 pub const AUTH_SCHEME: &str = "0d53335c-f9ea-4d0d-b2ec-4ae3786ec308";
@@ -71,12 +75,6 @@ pub enum Pku2uState {
     PubKeyAuth,
     Credentials,
     Final,
-}
-
-#[derive(Debug, Clone)]
-pub struct Pku2uConfig {
-    p2p_certificate: Certificate,
-    p2p_ca_certificate: Certificate,
 }
 
 #[derive(Debug, Clone)]
@@ -662,5 +660,11 @@ impl SspiImpl for Pku2u {
             ErrorKind::UnsupportedFunction,
             "accept_security_context is not implemented in PKU2U".into(),
         ))
+    }
+}
+
+impl SspiEx for Pku2u {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+        self.auth_identity = Some(identity.into());
     }
 }

@@ -1,5 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 
+use crate::sspi::pku2u::AZURE_AD_PREFIX;
+
 pub fn string_to_utf16(value: &str) -> Vec<u8> {
     value
         .encode_utf16()
@@ -21,6 +23,12 @@ pub fn get_domain_from_fqdn(fqdm: &[u8]) -> Option<String> {
     let mut fqdm = bytes_to_utf16_string(fqdm);
 
     fqdm.find('@').map(|index| fqdm.split_off(index + 1))
+}
+
+pub fn is_azure_ad_username(username: &[u8]) -> bool {
+    let username = bytes_to_utf16_string(username);
+
+    username.starts_with(AZURE_AD_PREFIX) && username.contains('@')
 }
 
 pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
