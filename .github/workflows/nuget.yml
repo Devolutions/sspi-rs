@@ -187,10 +187,45 @@ jobs:
           name: sspi-${{matrix.os}}-${{matrix.arch}}
           path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
 
+  build-universal:
+    name: Universal Build
+    runs-on: ubuntu-20.04
+    needs: build-native
+
+    steps:
+      - name: Configure runner
+        run: |
+          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2021.2.4/cctools-x86_64-ubuntu-20.04.tar.xz
+          tar -xf cctools-x86_64-ubuntu-20.04.tar.xz -C /tmp
+          sudo mv /tmp/cctools-x86_64-ubuntu-20.04/bin/lipo /usr/local/bin
+
+      - name: Download native components
+        uses: actions/download-artifact@v3
+        with:
+          path: dependencies/runtimes
+
+      - name: Lipo
+        shell: pwsh
+        run: |
+          Set-Location "dependencies/runtimes"
+          # No RID for osx-universal, see: https://github.com/dotnet/runtime/issues/53156
+          $OutputPath = Join-Path "osx-universal" "native"
+          New-Item -ItemType Directory -Path $OutputPath | Out-Null
+          $Libraries = Get-ChildItem -Recurse -Path "sspi-osx-*" -Filter "*.dylib" | Foreach-Object { $_.FullName } | Select -Unique
+          $LipoCmd = $(@('lipo', '-create', '-output', (Join-Path -Path $OutputPath -ChildPath "libDevolutionsSspi.dylib")) + $Libraries) -Join ' '
+          Write-Host $LipoCmd
+          Invoke-Expression $LipoCmd
+
+      - name: Upload native components
+        uses: actions/upload-artifact@v3
+        with:
+          name: sspi-osx-universal
+          path: dependencies/runtimes/osx-universal
+
   build-managed:
     name: Managed build
     runs-on: windows-2022
-    needs: build-native
+    needs: [build-native, build-universal]
 
     steps:
       - name: Check out ${{ github.repository }}
@@ -234,6 +269,7 @@ jobs:
     needs:
       - preflight
       - build-managed
+      - build-universal
 
     steps:
       - name: Download NuGet package artifact

@@ -12,7 +12,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-x64\native\libDevolutionsSspi.dylib">
+    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-x64\native\libDevolutionsSspi.dylib">
       <Link>runtimes\osx-x64\native\libDevolutionsSspi.dylib</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -20,7 +20,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-arm64\native\libDevolutionsSspi.dylib">
+    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-arm64\native\libDevolutionsSspi.dylib">
       <Link>runtimes\osx-arm64\native\libDevolutionsSspi.dylib</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -44,7 +44,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x86\native\libDevolutionsSspi.so">
+    <Content Condition="$(AndroidSupportedAbis.Contains('x86'))" Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x86\native\libDevolutionsSspi.so">
       <Link>runtimes\android-x86\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -52,7 +52,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x64\native\libDevolutionsSspi.so">
+    <Content Condition="$(AndroidSupportedAbis.Contains('x86_64'))" Include="$(MSBuildThisFileDirectory)\..\runtimes\android-x64\native\libDevolutionsSspi.so">
       <Link>runtimes\android-x64\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -60,7 +60,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm\native\libDevolutionsSspi.so">
+    <Content Condition="$(AndroidSupportedAbis.Contains('armeabi-v7a'))" Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm\native\libDevolutionsSspi.so">
       <Link>runtimes\android-arm\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -68,7 +68,7 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm64\native\libDevolutionsSspi.so">
+    <Content Condition="$(AndroidSupportedAbis.Contains('arm64-v8a'))" Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm64\native\libDevolutionsSspi.so">
       <Link>runtimes\android-arm64\native\libDevolutionsSspi.so</Link>
       <PublishState>Included</PublishState>
       <Visible>False</Visible>
@@ -76,5 +76,11 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-universal\native\libDevolutionsSspi.dylib">
+      <Kind>Dynamic</Kind>
+      <SmartLink>False</SmartLink>
+    </NativeReference>
   </ItemGroup>
 </Project>
