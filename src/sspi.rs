@@ -1518,6 +1518,14 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
                 error_type: ErrorKind::InvalidParameter,
                 description: description.to_string(),
             },
+            KerberosCryptoError::SeedBitLen(description) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description,
+            },
+            KerberosCryptoError::AlgorithmIdentifierData(identifier) => Self {
+                error_type: ErrorKind::InvalidParameter,
+                description: format!("unknown algorithm identifier: {:?}", identifier),
+            },
         }
     }
 }

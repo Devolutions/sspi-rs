@@ -58,11 +58,11 @@ pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
 pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 
-const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
+pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
 /// [MS-KILE](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
-const RRC: u16 = 28;
+pub const RRC: u16 = 28;
 // wrap token header len
 pub const MAX_SIGNATURE: usize = 16;
 // minimal len to fit encrypted public key in wrap token
