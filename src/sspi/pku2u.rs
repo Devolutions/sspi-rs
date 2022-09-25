@@ -1,20 +1,19 @@
-mod extractors;
 mod config;
+mod extractors;
 mod generators;
 #[macro_use]
 mod macros;
 
-pub use config::Pku2uConfig;
-
 use std::io::{Read, Write};
 use std::str::FromStr;
 
+pub use config::Pku2uConfig;
 use lazy_static::lazy_static;
 use picky_asn1_x509::signed_data::SignedData;
 use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
+use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
-use picky_krb::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::{ApRep, AsRep};
 use picky_krb::negoex::data_types::MessageType;
@@ -80,7 +79,7 @@ pub enum Pku2uState {
 #[derive(Debug, Clone)]
 pub struct DhParameters {
     // g
-    base: usize,
+    base: Vec<u8>,
     // p
     modulus: Vec<u8>,
     //
@@ -110,6 +109,7 @@ pub struct Pku2u {
     // https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-NEGOEX/%5bMS-NEGOEX%5d.pdf
     // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     negoex_messages: Vec<u8>,
+    negoex_random: [u8; RANDOM_ARRAY_SIZE],
 }
 
 impl Pku2u {
@@ -119,7 +119,9 @@ impl Pku2u {
             state: Pku2uState::Negotiate,
             encryption_params: EncryptionParams::default_for_client(),
             auth_identity: None,
-            conversation_id: Uuid::new_v4(),
+            // conversation_id: Uuid::new_v4(),
+            // for the debugging
+            conversation_id: Uuid::from_str("883f9d5e-1555-2de8-cc32-506de34031ae").unwrap(),
             auth_scheme: None,
             seq_number: 0,
             // realm: None,
@@ -128,8 +130,14 @@ impl Pku2u {
             // 0 otherwise.
             auth_nonce: 0,
             // generate dh parameters at the start in order to not waste time during authorization
-            dh_parameters: generate_client_dh_parameters(),
+            dh_parameters: generate_client_dh_parameters()?,
             negoex_messages: Vec::new(),
+            // negoex_random: OsRng::default().gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+            // for the debugging
+            negoex_random: [
+                10, 209, 111, 101, 206, 151, 53, 222, 225, 32, 241, 24, 15, 201, 210, 38, 133, 175, 97, 251, 27, 195,
+                152, 39, 9, 97, 115, 227, 194, 196, 54, 245,
+            ],
         })
     }
 
@@ -357,7 +365,7 @@ impl SspiImpl for Pku2u {
                     MessageType::InitiatorNego,
                     self.conversation_id,
                     self.next_seq_number(),
-                    OsRng::new()?.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+                    self.negoex_random.clone(),
                     vec![auth_scheme],
                     vec![],
                 );
@@ -368,7 +376,7 @@ impl SspiImpl for Pku2u {
                     self.conversation_id,
                     self.next_seq_number(),
                     auth_scheme,
-                    picky_asn1_der::to_vec(&generate_pku2u_nego_req(&username)?)?,
+                    picky_asn1_der::to_vec(&generate_pku2u_nego_req(&username, &self.config)?)?,
                 );
                 exchange.encode(&mut mech_token)?;
 
@@ -391,6 +399,7 @@ impl SspiImpl for Pku2u {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let buffer = input_token.buffer.as_slice();
+                println!("buffer: {:?}", buffer);
                 self.negoex_messages.extend_from_slice(buffer);
 
                 let mut reader: Box<dyn Read> = Box::new(buffer);
@@ -533,7 +542,7 @@ impl SspiImpl for Pku2u {
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
                     seq_num: Some(self.next_seq_number()),
-                    sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+                    sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),

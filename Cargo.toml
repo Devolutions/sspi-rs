@@ -21,7 +21,7 @@ network_client = ["reqwest", "trust-dns-resolver", "portpicker"]
 [dependencies]
 byteorder = "1.2.7"
 bitflags = "1.0"
-rand = "0.6"
+rand = "0.8.5"
 cfg-if = "0.1"
 chrono = "0.4"
 md-5 = "0.9"

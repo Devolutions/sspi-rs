@@ -116,7 +116,7 @@ pub fn get_authenticate_target_info(
 }
 
 pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], rand::Error> {
-    Ok(OsRng::new()?.gen::<[u8; CHALLENGE_SIZE]>())
+    Ok(OsRng::default().gen::<[u8; CHALLENGE_SIZE]>())
 }
 
 pub fn generate_timestamp() -> sspi::Result<u64> {

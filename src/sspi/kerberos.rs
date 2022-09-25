@@ -109,7 +109,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng::new()?.gen::<u32>(),
+            seq_number: OsRng::default().gen::<u32>(),
             realm: None,
             channel_bindings: None,
         })
@@ -121,7 +121,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng::new()?.gen::<u32>(),
+            seq_number: OsRng::default().gen::<u32>(),
             realm: None,
             channel_bindings: None,
         })
@@ -384,7 +384,7 @@ impl Sspi for Kerberos {
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
             seq_num: Some(seq_num),
-            sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+            sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
             checksum: None,
             channel_bindings: self.channel_bindings.as_ref(),
         })?;
@@ -540,7 +540,7 @@ impl SspiImpl for Kerberos {
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
-                    seq_num: Some(OsRng::new()?.gen::<u32>()),
+                    seq_num: Some(OsRng::default().gen::<u32>()),
                     sub_key: None,
                     checksum: None,
                     channel_bindings: self.channel_bindings.as_ref(),
@@ -580,7 +580,7 @@ impl SspiImpl for Kerberos {
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
                     seq_num: Some(self.next_seq_number()),
-                    sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+                    sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
