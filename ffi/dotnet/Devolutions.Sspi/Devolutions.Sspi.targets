@@ -76,6 +76,22 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
+    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\ios-x64\native\libDevolutionsSspi.dylib">
+      <Link>runtimes\ios-x64\native\libDevolutionsSspi.dylib</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
+    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\ios-arm64\native\libDevolutionsSspi.dylib">
+      <Link>runtimes\ios-arm64\native\libDevolutionsSspi.dylib</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true'">
     <NativeReference Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-universal\native\libDevolutionsSspi.dylib">
