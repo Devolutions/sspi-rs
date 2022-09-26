@@ -12,6 +12,14 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
+    <Content Condition="$([MSBuild]::IsOSPlatform('Windows')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\win-arm64\native\DevolutionsSspi.dll">
+      <Link>runtimes\win-arm64\native\DevolutionsSspi.dll</Link>
+      <PublishState>Included</PublishState>
+      <Visible>False</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <IncludeInVsix>true</IncludeInVsix>
+      <Pack>false</Pack>
+    </Content>
     <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-x64\native\libDevolutionsSspi.dylib">
       <Link>runtimes\osx-x64\native\libDevolutionsSspi.dylib</Link>
       <PublishState>Included</PublishState>

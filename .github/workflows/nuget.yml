@@ -53,8 +53,6 @@ jobs:
           - os: android
             runner: ubuntu-20.04
         exclude:
-          - arch: arm64
-            os: win
           - arch: arm
             os: win
           - arch: arm
@@ -156,6 +154,19 @@ jobs:
 
           rustup default prebuilt
 
+      - name: Fix ring dependency for Windows ARM64
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          @('', '[patch.crates-io]',
+          'ring = { git = "https://github.com/awakecoding/ring", branch = "0.16.20_alpha" }') | % {
+            Add-Content -Path "Cargo.toml" -Value $_
+          }
+          $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
+          $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
+          $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
+          echo "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
+
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
         shell: pwsh
         run: |
@@ -229,7 +240,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
-          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2021.2.4/cctools-x86_64-ubuntu-20.04.tar.xz
+          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2022.2.0/cctools-x86_64-ubuntu-20.04.tar.xz
           tar -xf cctools-x86_64-ubuntu-20.04.tar.xz -C /tmp
           sudo mv /tmp/cctools-x86_64-ubuntu-20.04/bin/lipo /usr/local/bin
 
