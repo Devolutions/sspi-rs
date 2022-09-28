@@ -99,8 +99,8 @@
       <SmartLink>False</SmartLink>
     </NativeReference>
   </ItemGroup>
-  <ItemGroup Condition="(('$(Platform)' == 'iPhone'))">
-    <NativeReference Include="$(MSBuildThisFileDirectory)..\native\ios-universal\native\libDevolutionsSspi.framework">
+  <ItemGroup Condition="(('$(Platform)' == 'iPhone')) or (('$(Platform)' == 'iPhoneSimulator'))">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\ios-universal\native\libDevolutionsSspi.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
