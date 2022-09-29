@@ -18,6 +18,7 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
+use url::Url;
 
 use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
@@ -33,7 +34,7 @@ use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
-use crate::detect_kdc_url;
+use crate::{detect_kdc_url};
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
@@ -97,11 +98,13 @@ pub struct Kerberos {
     encryption_params: EncryptionParams,
     seq_number: u32,
     realm: Option<String>,
+    kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
 }
 
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
+        let kdc_url = config.url.clone();
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
@@ -109,11 +112,13 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: OsRng::new()?.gen::<u32>(),
             realm: None,
+            kdc_url: kdc_url,
             channel_bindings: None,
         })
     }
 
     pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
+        let kdc_url = config.url.clone();
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
@@ -121,6 +126,7 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: OsRng::new()?.gen::<u32>(),
             realm: None,
+            kdc_url: kdc_url,
             channel_bindings: None,
         })
     }
@@ -130,22 +136,30 @@ impl Kerberos {
         self.seq_number
     }
 
+    pub fn get_kdc(&self) -> Option<(String, Url)> {
+        let realm = self.realm.to_owned()?;
+        if let Some(kdc_url) = &self.kdc_url {
+            Some((realm, kdc_url.to_owned()))
+        } else {
+            let kdc_url = detect_kdc_url(&realm)?;
+            Some((realm, kdc_url))
+        }
+    }
+
     fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if let Some(krb_realm) = &self.realm.to_owned() {
-            if let Some(kdc_url) = detect_kdc_url(krb_realm) {
-                return match kdc_url.scheme() {
-                    "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
-                    "http" | "https" => {
-                        self.config
-                            .network_client
-                            .send_http(&kdc_url, data, Some(krb_realm.to_string()))
-                    }
-                    _ => Err(Error {
-                        error_type: ErrorKind::InternalError,
-                        description: "Invalid KDC server URL protocol scheme".to_owned(),
-                    }),
-                };
-            }
+        if let Some((realm, kdc_url)) = self.get_kdc() {
+            return match kdc_url.scheme() {
+                "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
+                "http" | "https" => {
+                    self.config
+                        .network_client
+                        .send_http(&kdc_url, data, Some(realm.to_string()))
+                }
+                _ => Err(Error {
+                    error_type: ErrorKind::InternalError,
+                    description: "Invalid KDC server URL protocol scheme".to_owned(),
+                }),
+            };
         }
         Err(Error {
             error_type: ErrorKind::NoAuthenticatingAuthority,
@@ -396,7 +410,7 @@ impl Sspi for Kerberos {
             seq_num,
         )?;
 
-        if let Some(mut kdc_url) = detect_kdc_url(domain) {
+        if let Some((_realm, mut kdc_url)) = self.get_kdc() {
             kdc_url
                 .set_port(Some(KPASSWD_PORT))
                 .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;

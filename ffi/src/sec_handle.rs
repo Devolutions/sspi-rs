@@ -18,6 +18,7 @@ use symbol_rename_macro::rename_symbol;
 
 use crate::credentials_attributes::{
     CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
+    SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW
 };
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
@@ -37,6 +38,8 @@ pub const SECPKG_ATTR_SIZES: u32 = 0;
 pub const SECPKG_ATTR_NEGOTIATION_INFO: u32 = 12;
 
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
+
+const SECPKG_CRED_ATTR_KDC_URL: c_ulong = 501;
 
 #[repr(C)]
 pub struct SecHandle {
@@ -76,19 +79,18 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         let sspi_context = match name {
             negotiate::PKG_NAME => {
-                if let Some(settings) = &attributes.kdc_proxy_settings {
+                if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Negotiate(Negotiate::new(NegotiateConfig::new_with_kerberos(
-                        KerberosConfig::from_kdc_url(&settings.proxy_server, Box::new(ReqwestNetworkClient::new())),
+                        KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new())),
                     ))?)
                 } else {
                     SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default())?)
                 }
             }
             kerberos::PKG_NAME => {
-                if let Some(settings) = &attributes.kdc_proxy_settings {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_kdc_url(
-                        &settings.proxy_server,
-                        Box::new(ReqwestNetworkClient::new()),
+                if let Some(kdc_url) = attributes.kdc_url() {
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(
+                        KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new()),
                     ))?)
                 } else {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env())?)
@@ -625,44 +627,51 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    catch_panic!(if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+    catch_panic!(
         check_null!(ph_credential);
         check_null!(p_buffer);
 
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
-        let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
+        if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+            let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
 
-        let proxy_server = String::from_utf8_unchecked(
-            from_raw_parts(
-                p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u8,
-                (*kdc_proxy_settings).proxy_server_length as usize,
-            )
-            .to_vec(),
-        );
+            let proxy_server = String::from_utf8_unchecked(
+                from_raw_parts(
+                    p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u8,
+                    (*kdc_proxy_settings).proxy_server_length as usize,
+                )
+                .to_vec(),
+            );
 
-        let client_tls_cred =
-            if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
-                Some(String::from_utf8_unchecked(
-                    from_raw_parts(
-                        p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u8,
-                        (*kdc_proxy_settings).client_tls_cred_length as usize,
-                    )
-                    .to_vec(),
-                ))
-            } else {
-                None
-            };
+            let client_tls_cred =
+                if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+                    Some(String::from_utf8_unchecked(
+                        from_raw_parts(
+                            p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u8,
+                            (*kdc_proxy_settings).client_tls_cred_length as usize,
+                        )
+                        .to_vec(),
+                    ))
+                } else {
+                    None
+                };
 
-        credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
-            proxy_server,
-            client_tls_cred,
-        });
+            credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
+                proxy_server,
+                client_tls_cred,
+            });
 
-        0
-    } else {
-        ErrorKind::UnsupportedFunction.to_u32().unwrap()
-    })
+            0
+        } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
+            let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlA>();
+            let kdc_url = try_execute!(CStr::from_ptr((*cred_attr).kdc_url).to_str(), ErrorKind::InvalidParameter);
+            credentials_handle.attributes.kdc_url = Some(kdc_url.to_string());
+            0
+        } else {
+            ErrorKind::UnsupportedFunction.to_u32().unwrap()
+        }
+    )
 }
 pub type SetCredentialsAttributesFnA =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
@@ -675,38 +684,45 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    catch_panic!(if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+    catch_panic!(
         check_null!(ph_credential);
         check_null!(p_buffer);
 
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
-        let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
+        if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+            let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
 
-        let proxy_server = String::from_utf16_lossy(from_raw_parts(
-            p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
-            (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
-        ));
+            let proxy_server = String::from_utf16_lossy(from_raw_parts(
+                p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
+                (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
+            ));
 
-        let client_tls_cred =
-            if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
-                Some(String::from_utf16_lossy(from_raw_parts(
-                    p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
-                    (*kdc_proxy_settings).client_tls_cred_length as usize,
-                )))
-            } else {
-                None
-            };
+            let client_tls_cred =
+                if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+                    Some(String::from_utf16_lossy(from_raw_parts(
+                        p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
+                        (*kdc_proxy_settings).client_tls_cred_length as usize,
+                    )))
+                } else {
+                    None
+                };
 
-        credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
-            proxy_server,
-            client_tls_cred,
-        });
+            credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
+                proxy_server,
+                client_tls_cred,
+            });
 
-        0
-    } else {
-        ErrorKind::UnsupportedFunction.to_u32().unwrap()
-    })
+            0
+        } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
+            let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlW>();
+            let kdc_url = c_w_str_to_string((*cred_attr).kdc_url as *const u16);
+            credentials_handle.attributes.kdc_url = Some(kdc_url);
+            0
+        } else {
+            ErrorKind::UnsupportedFunction.to_u32().unwrap()
+        }
+    )
 }
 pub type SetCredentialsAttributesFnW =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
