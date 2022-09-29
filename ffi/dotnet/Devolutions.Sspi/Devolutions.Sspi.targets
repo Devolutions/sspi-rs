@@ -93,7 +93,7 @@
           <Abi>x86_64</Abi>
       </AndroidNativeLibrary>
   </ItemGroup> 
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true'">
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true' AND '$(Platform)' != 'iPhone' AND '$(Platform)' != 'iPhoneSimulator'">
     <NativeReference Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-universal\native\libDevolutionsSspi.dylib">
       <Kind>Dynamic</Kind>
       <SmartLink>False</SmartLink>
