@@ -48,3 +48,4 @@ uuid = "1.1"
 whoami = "0.5"
 trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
+rsa = "0.6.1"

@@ -14,7 +14,7 @@ use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICA
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
 use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
-use picky_krb::gss_api::WrapToken;
+use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApRep, AsRep};
 use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
@@ -398,15 +398,29 @@ impl SspiImpl for Pku2u {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
-                let buffer = input_token.buffer.as_slice();
+                let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                let buffer = neg_token_targ
+                    .0
+                    .response_token
+                    .0
+                    .ok_or_else(|| {
+                        Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg".into())
+                    })?
+                    .0
+                     .0;
+
                 println!("buffer: {:?}", buffer);
-                self.negoex_messages.extend_from_slice(buffer);
 
-                let mut reader: Box<dyn Read> = Box::new(buffer);
+                self.negoex_messages.extend_from_slice(&buffer);
 
-                let acceptor_nego = Nego::decode(&mut reader, &input_token.buffer)?;
+                let mut reader: Box<dyn Read> = Box::new(buffer.as_slice());
+
+                let acceptor_nego = Nego::decode(&mut reader, &buffer)?;
+
+                println!("acceptor_nego: {:?}", acceptor_nego);
 
                 check_conversation_id!(acceptor_nego.header.conversation_id.0, self.conversation_id);
+                check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
 
                 // We support only one auth scheme. So the server must choose it otherwise it's an invalid behaviour
                 if let Some(auth_scheme) = acceptor_nego.auth_schemes.get(0) {
@@ -428,13 +442,19 @@ impl SspiImpl for Pku2u {
                     ));
                 }
 
-                let acceptor_exchange = Exchange::decode(
-                    &mut reader,
-                    &input_token.buffer[(acceptor_nego.header.message_len as usize)..],
-                )?;
+                let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
+                println!("acceptor_exchage data: {:?}", acceptor_exchange_data);
+                let mut reader: Box<dyn Read> = Box::new(acceptor_exchange_data);
+
+                let acceptor_exchange = Exchange::decode(&mut reader, acceptor_exchange_data)?;
+
+                println!("acceptor_exchange: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+
+                println!("all parsed and verified");
 
                 let credentials = builder
                     .credentials_handle
@@ -446,16 +466,19 @@ impl SspiImpl for Pku2u {
                         description: "No credentials provided".to_owned(),
                     })?;
 
-                let username = utf16_bytes_to_utf8_string(&credentials.user);
-                // todo: parse response. do not extract any data. just parse and make sure it valid
+                let _username = utf16_bytes_to_utf8_string(&credentials.user);
 
                 let mut mech_token = Vec::new();
 
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
-                    username: &username,
+                    username: "AzureAD\\MS-Organization-P2P-Access [2022]\\S-1-12-1-3653211022-1339006422-2627573900-1560734919",
                     cname_type: 0x80,
-                    snames: &[SERVICE_NAME, &username],
+                    snames: &[
+                        SERVICE_NAME,
+                        // &username,
+                        "192.168.0.117",
+                    ],
                 })?;
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,
@@ -463,23 +486,29 @@ impl SspiImpl for Pku2u {
                     &kdc_req_body,
                     self.auth_nonce,
                     &self.dh_parameters,
+                    &self.config.device_private_key,
                 )?;
 
+                let exchange_data =
+                    picky_asn1_der::to_vec(&generate_neg(generate_as_req(&pa_datas, kdc_req_body), AS_REQ_TOKEN_ID))?;
+                println!("exchange_data: {:?}", exchange_data);
+
                 let exchange = Exchange::new(
-                    MessageType::InitiatorMetaData,
+                    MessageType::ApRequest,
                     self.conversation_id,
                     self.next_seq_number(),
                     self.auth_scheme.unwrap(),
-                    picky_asn1_der::to_vec(&generate_neg(generate_as_req(&pa_datas, kdc_req_body), AS_REQ_TOKEN_ID))?,
+                    exchange_data,
                 );
                 exchange.encode(&mut mech_token)?;
 
                 self.negoex_messages.extend_from_slice(&mech_token);
 
+                let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
+                // println!("response_token: {:?}", response_token);
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?)?;
+                output_token.buffer.write_all(&response_token)?;
 
                 self.state = Pku2uState::AsExchange;
 
@@ -494,11 +523,14 @@ impl SspiImpl for Pku2u {
 
                 let buffer = input_token.buffer.as_slice();
 
+                println!("AsExchange buffer: {:?}", buffer);
+
                 self.negoex_messages.extend_from_slice(buffer);
 
                 let acceptor_exchange = Exchange::decode(buffer, &input_token.buffer)?;
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
 
                 let (as_rep, _): (AsRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
@@ -605,6 +637,7 @@ impl SspiImpl for Pku2u {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let buffer = input_token.buffer.as_slice();
+                println!("ap_exchange buffer: {:?}", buffer);
                 self.negoex_messages.extend_from_slice(buffer);
 
                 let mut reader: Box<dyn Read> = Box::new(buffer);
@@ -612,12 +645,14 @@ impl SspiImpl for Pku2u {
                 let acceptor_exchange = Exchange::decode(&mut reader, &buffer)?;
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
 
                 let acceptor_verify =
                     Verify::decode(&mut reader, &buffer[(acceptor_exchange.header.message_len as usize)..])?;
 
                 check_conversation_id!(acceptor_verify.header.conversation_id.0, self.conversation_id);
+                check_sequence_number!(acceptor_verify.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_verify.auth_scheme.0, self.auth_scheme);
 
                 let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;

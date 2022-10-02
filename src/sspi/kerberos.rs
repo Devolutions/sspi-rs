@@ -488,6 +488,7 @@ impl SspiImpl for Kerberos {
                 let input = builder.input.as_ref().ok_or_else(|| {
                     sspi::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into())
                 })?;
+
                 if let Ok(sec_buffer) =
                     SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
                 {

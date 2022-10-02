@@ -67,21 +67,18 @@ pub fn extract_sub_session_key_from_ap_rep(
 }
 
 pub fn extract_tgt_ticket(data: &[u8]) -> Result<Option<Ticket>> {
-    let neg_token_targ: NegTokenTarg1 =
-        picky_asn1_der::from_bytes(data).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
+    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
 
     if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0 .0) {
         let mut c = resp_token.as_slice();
 
-        let _oid: ApplicationTag<Asn1RawDer, 0> =
-            picky_asn1_der::from_reader(&mut c).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
+        let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)?;
 
         let mut t = [0, 0];
 
         c.read_exact(&mut t)?;
 
-        let tgt_rep: TgtRep =
-            picky_asn1_der::from_reader(&mut c).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
+        let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c)?;
 
         Ok(Some(tgt_rep.ticket.0))
     } else {

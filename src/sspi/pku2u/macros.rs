@@ -30,3 +30,17 @@ macro_rules! check_auth_scheme {
         }
     };
 }
+
+macro_rules! check_sequence_number {
+    ($actual:expr, $expected:expr) => {
+        if $actual != $expected {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                format!(
+                    "Server sent invalid sequence number. Got {:?} but expected {:?}.",
+                    $actual, $expected
+                ),
+            ));
+        }
+    };
+}

@@ -167,7 +167,8 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
 
     let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
         addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-        address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
+        // address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
+        address: ExplicitContextTag1::from(OctetStringAsn1::from("DESKTOP-8F33RFH\x20".as_bytes().to_vec())),
     }])));
 
     let mut service_names = Vec::with_capacity(snames.len());
@@ -195,10 +196,15 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
             GeneralizedTime::from(expiration_date),
         )))),
-        nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::default().gen::<[u8; NONCE_LEN]>().to_vec())),
+        // nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::default().gen::<[u8; NONCE_LEN]>().to_vec())),
+        // we don't need a nonce in pku2u
+        nonce: ExplicitContextTag7::from(IntegerAsn1::from(vec![0])),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
             IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
             IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
+            IntegerAsn1::from(vec![0x17]),
+            IntegerAsn1::from(vec![0x18]),
+            IntegerAsn1::from(vec![0xff, 0x79]),
         ])),
         addresses: Optional::from(address),
         enc_authorization_data: Optional::from(None),
