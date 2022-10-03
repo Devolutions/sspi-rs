@@ -42,7 +42,7 @@ use picky_krb::pkinit::{
     Pku2uNegoReqMetadata, Pku2uValue, Pku2uValueInner,
 };
 use rand::rngs::OsRng;
-use rsa::{RsaPrivateKey, PaddingScheme};
+use rsa::{Hash, PaddingScheme, RsaPrivateKey};
 use sha1::{Digest, Sha1};
 
 use super::{DhParameters, Pku2uConfig};
@@ -118,57 +118,58 @@ pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<Neg
 //     }
 // }
 
-pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, encrypted: Vec<u8>) -> SignerInfo {
-    // SignerInfo {
-    //     version: version_to_cms_version(p2p_ca_cert.tbs_certificate.version.0),
-    //     sid: SignerIdentifier::SubjectKeyIdentifier(ImplicitContextTag0::from(SubjectKeyIdentifier::from(
-    //         p2p_ca_cert.subject_key_identifier().unwrap().to_vec(),
-    //     ))),
-    //     digest_algorithm: DigestAlgorithmIdentifier(
-    //         p2p_ca_cert.tbs_certificate.subject_public_key_info.algorithm.clone(),
-    //     ),
-    //     signed_attrs: Optional::from(Attributes(Asn1SequenceOf::from(vec![]))),
-    //     signature_algorithm: SignatureAlgorithmIdentifier(p2p_ca_cert.signature_algorithm.clone()),
-    //     signature: SignatureValue(OctetStringAsn1::from(p2p_ca_cert.signature_value.0.inner())),
-    //     unsigned_attrs: Optional::from(UnsignedAttributes(vec![])),
-    // }
+pub fn generate_signer_info(
+    p2p_cert: &Certificate,
+    digest: Vec<u8>,
+    private_key: &RsaPrivateKey,
+) -> Result<SignerInfo> {
     println!("{:x?}", p2p_cert.tbs_certificate.serial_number);
-    println!("{:?}", picky_asn1_der::to_vec(&p2p_cert.tbs_certificate.serial_number).unwrap());
-    SignerInfo {
+    println!(
+        "{:?}",
+        picky_asn1_der::to_vec(&p2p_cert.tbs_certificate.serial_number).unwrap()
+    );
+
+    let signed_attributes = Asn1SetOf::from(vec![
+        Attribute {
+            ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.2.840.113549.1.9.3").unwrap()),
+            value: AttributeValues::ContentType(Asn1SetOf::from(vec![ObjectIdentifierAsn1::from(
+                ObjectIdentifier::try_from("1.3.6.1.5.2.3.1").unwrap(),
+            )])),
+        },
+        Attribute {
+            ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.2.840.113549.1.9.4").unwrap()),
+            value: AttributeValues::MessageDigest(Asn1SetOf::from(vec![OctetStringAsn1::from(digest)])),
+        },
+    ]);
+
+    let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes)?;
+
+    let mut sha1 = Sha1::new();
+    sha1.update(&encoded_signed_attributes);
+
+    let hashed_signed_attributes = sha1.finalize().to_vec();
+
+    let signature = private_key
+        .sign(
+            PaddingScheme::new_pkcs1v15_sign(Some(Hash::SHA1)),
+            &hashed_signed_attributes,
+        )
+        .unwrap();
+
+    println!("signature: {} {:?}", signature.len(), signature);
+
+    Ok(SignerInfo {
         version: CmsVersion::V1,
         sid: SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber {
-            // issuer: Name(RdnSequence::from(vec![
-            //     RelativeDistinguishedName::from(vec![
-            //         AttributeTypeAndValue {
-            //             ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("2.5.4.3").unwrap()),
-            //             value: AttributeTypeAndValueParameters::CommonName(DirectoryString::BmpString(BMPStringAsn1(BMPString::from_str("\0M\0S\0-\0O\0r\0g\0a\0n\0i\0z\0a\0t\0i\0o\0n\0-\0P\02\0P\0-\0A\0c\0c\0e\0s\0s\0 \0[\02\00\02\02\0]").unwrap()))),
-            //         },
-            //     ]),
-            // ])),
             issuer: p2p_cert.tbs_certificate.issuer.clone(),
             serial_number: CertificateSerialNumber(p2p_cert.tbs_certificate.serial_number.clone()),
         }),
-        digest_algorithm: DigestAlgorithmIdentifier(
-            AlgorithmIdentifier::new_sha(ShaVariant::SHA1)
-        ),
-        signed_attrs: Optional::from(Attributes(Asn1SequenceOf::from(vec![
-            Attribute {
-                ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.2.840.113549.1.9.3").unwrap()),
-                value: AttributeValues::ContentType(Asn1SetOf::from(vec![
-                    ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.3.6.1.5.2.3.1").unwrap()),
-                ])),
-            },
-            Attribute {
-                ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.2.840.113549.1.9.4").unwrap()),
-                value: AttributeValues::MessageDigest(Asn1SetOf::from(vec![
-                    OctetStringAsn1::from(digest),
-                ])),
-            },
-        ]))),
+        digest_algorithm: DigestAlgorithmIdentifier(AlgorithmIdentifier::new_sha(ShaVariant::SHA1)),
+        signed_attrs: Optional::from(Attributes(Asn1SequenceOf::from(signed_attributes.0))),
         signature_algorithm: SignatureAlgorithmIdentifier(AlgorithmIdentifier::new_rsa_encryption()),
-        signature: SignatureValue(OctetStringAsn1::from(encrypted)),
+        signature: SignatureValue(OctetStringAsn1::from(signature)),
         unsigned_attrs: Optional::from(UnsignedAttributes(Vec::new())),
-    }
+    })
 }
 
 pub fn generate_client_dh_parameters() -> Result<DhParameters> {
@@ -177,6 +178,8 @@ pub fn generate_client_dh_parameters() -> Result<DhParameters> {
     let mut rng = OsRng::default();
 
     let private_key = generate_private_key(&q, &mut rng);
+
+    println!("dh private_key: {:?}", private_key);
 
     Ok(DhParameters {
         base: g,
@@ -215,15 +218,7 @@ pub fn generate_pa_datas_for_as_req(
 
     let kdc_req_body_sha1_hash = sha1.finalize().to_vec();
 
-    // let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base);
-    let public_value = vec![
-        2, 129, 129, 0, 249, 88, 64, 57, 194, 169, 38, 81, 23, 108, 110, 192, 241, 51, 44, 113, 50, 16, 179, 173, 72,
-        57, 1, 65, 37, 199, 206, 229, 194, 186, 223, 122, 110, 117, 97, 237, 76, 86, 102, 153, 66, 47, 52, 176, 243,
-        60, 14, 170, 4, 193, 138, 1, 193, 17, 154, 245, 113, 70, 182, 157, 112, 20, 178, 250, 176, 201, 248, 194, 226,
-        23, 111, 177, 147, 141, 23, 77, 151, 226, 57, 213, 242, 172, 56, 40, 47, 191, 10, 135, 217, 26, 111, 24, 45,
-        196, 40, 228, 106, 72, 173, 249, 255, 19, 254, 97, 184, 175, 205, 84, 209, 200, 11, 137, 117, 233, 218, 62,
-        190, 76, 27, 110, 224, 185, 213, 207, 159, 52, 106, 94,
-    ];
+    let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base);
 
     println!("public key value len: {:?} bytes", public_value);
 
@@ -250,18 +245,18 @@ pub fn generate_pa_datas_for_as_req(
                 },
             },
             key_value: BitStringAsn1::from(BitString::with_bytes(
-                // picky_asn1_der::to_vec(&IntegerAsn1::from(
-                //     public_value,
-                // ))?
-                vec![
-                    2, 129, 129, 0, 249, 88, 64, 57, 194, 169, 38, 81, 23, 108, 110, 192, 241, 51, 44, 113, 50, 16,
-                    179, 173, 72, 57, 1, 65, 37, 199, 206, 229, 194, 186, 223, 122, 110, 117, 97, 237, 76, 86, 102,
-                    153, 66, 47, 52, 176, 243, 60, 14, 170, 4, 193, 138, 1, 193, 17, 154, 245, 113, 70, 182, 157, 112,
-                    20, 178, 250, 176, 201, 248, 194, 226, 23, 111, 177, 147, 141, 23, 77, 151, 226, 57, 213, 242, 172,
-                    56, 40, 47, 191, 10, 135, 217, 26, 111, 24, 45, 196, 40, 228, 106, 72, 173, 249, 255, 19, 254, 97,
-                    184, 175, 205, 84, 209, 200, 11, 137, 117, 233, 218, 62, 190, 76, 27, 110, 224, 185, 213, 207, 159,
-                    52, 106, 94,
-                ],
+                picky_asn1_der::to_vec(&IntegerAsn1::from(
+                    public_value,
+                ))?
+                // vec![
+                //     2, 129, 129, 0, 249, 88, 64, 57, 194, 169, 38, 81, 23, 108, 110, 192, 241, 51, 44, 113, 50, 16,
+                //     179, 173, 72, 57, 1, 65, 37, 199, 206, 229, 194, 186, 223, 122, 110, 117, 97, 237, 76, 86, 102,
+                //     153, 66, 47, 52, 176, 243, 60, 14, 170, 4, 193, 138, 1, 193, 17, 154, 245, 113, 70, 182, 157, 112,
+                //     20, 178, 250, 176, 201, 248, 194, 226, 23, 111, 177, 147, 141, 23, 77, 151, 226, 57, 213, 242, 172,
+                //     56, 40, 47, 191, 10, 135, 217, 26, 111, 24, 45, 196, 40, 228, 106, 72, 173, 249, 255, 19, 254, 97,
+                //     184, 175, 205, 84, 209, 200, 11, 137, 117, 233, 218, 62, 190, 76, 27, 110, 224, 185, 213, 207, 159,
+                //     52, 106, 94,
+                // ],
             )),
         }))),
         supported_cms_types: Optional::from(None),
@@ -281,23 +276,6 @@ pub fn generate_pa_datas_for_as_req(
     let digest = sha1.finalize().to_vec();
     println!("digest: {:?}", digest);
 
-    let mut new_digest = b"AzureAD\\MS-Organization-P2P-Access [2022]\\faadc5d3-fb45-4d03-902e-9965a96c463e".to_vec();
-    new_digest.extend_from_slice(&[0x00]);
-    // new_digest.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    new_digest.extend_from_slice(&digest);
-
-    let mut sha1 = Sha1::new();
-    sha1.update(&new_digest);
-
-    let h = sha1.finalize().to_vec();
-
-    let rsa_signature = private_key.sign(
-        // PaddingScheme::new_pkcs1v15_sign(None),
-        PaddingScheme::new_pkcs1v15_sign(Some(rsa::Hash::SHA1)),
-        &h,
-    ).unwrap();
-    println!("rsa_signature: {} {:?}", rsa_signature.len(), rsa_signature);
-
     let signed_data = SignedData {
         version: CmsVersion::V3,
         digest_algorithms: DigestAlgorithmIdentifiers(Asn1SetOf::from(vec![AlgorithmIdentifier::new_sha1()])),
@@ -309,7 +287,11 @@ pub fn generate_pa_datas_for_as_req(
             picky_asn1_der::to_vec(p2p_cert)?,
         ))])),
         crls: None,
-        signers_infos: SignersInfos(Asn1SetOf::from(vec![generate_signer_info(p2p_cert, digest, rsa_signature)])),
+        signers_infos: SignersInfos(Asn1SetOf::from(vec![generate_signer_info(
+            p2p_cert,
+            digest,
+            private_key,
+        )?])),
     };
 
     let pa_pk_as_req = PaPkAsReq {
@@ -391,7 +373,11 @@ mod tests {
 
     #[test]
     fn s1() {
-        let data = [48, 130, 1, 12, 160, 7, 3, 5, 0, 64, 129, 0, 16, 161, 107, 48, 105, 160, 3, 2, 1, 128, 161, 98, 48, 96, 27, 94, 65, 122, 117, 114, 101, 65, 68, 92, 77, 83, 45, 79, 114, 103, 97, 110, 105, 122, 97, 116, 105, 111, 110, 45, 80, 50, 80, 45, 65, 99, 99, 101, 115, 115, 32, 91, 50, 48, 50, 50, 93, 92, 83, 45, 49, 45, 49, 50, 45, 49, 45, 51, 54, 53, 51, 50, 49, 49, 48, 50, 50, 45, 49, 51, 51, 57, 48, 48, 54, 52, 50, 50, 45, 50, 54, 50, 55, 53, 55, 51, 57, 48, 48, 45, 49, 53, 54, 48, 55, 51, 52, 57, 49, 57, 162, 17, 27, 15, 87, 69, 76, 76, 75, 78, 79, 87, 78, 58, 80, 75, 85, 50, 85, 163, 35, 48, 33, 160, 3, 2, 1, 2, 161, 26, 48, 24, 27, 7, 84, 69, 82, 77, 83, 82, 86, 27, 13, 49, 57, 50, 46, 49, 54, 56, 46, 48, 46, 49, 49, 55, 165, 17, 24, 15, 50, 48, 50, 50, 49, 48, 48, 53, 48, 56, 51, 54, 51, 50, 90, 166, 17, 24, 15, 50, 48, 50, 50, 49, 48, 48, 53, 48, 56, 51, 54, 51, 50, 90, 167, 3, 2, 1, 0, 168, 18, 48, 16, 2, 1, 18, 2, 1, 17, 2, 1, 23, 2, 1, 24, 2, 2, 255, 121, 169, 29, 48, 27, 48, 25, 160, 3, 2, 1, 20, 161, 18, 4, 16, 68, 69, 83, 75, 84, 79, 80, 45, 56, 70, 51, 51, 82, 70, 72, 32];
+        let data = [
+            48, 22, 6, 9, 42, 134, 72, 134, 247, 13, 1, 9, 3, 49, 9, 6, 7, 43, 6, 1, 5, 2, 3, 1, 48, 35, 6, 9, 42, 134,
+            72, 134, 247, 13, 1, 9, 4, 49, 22, 4, 20, 37, 144, 68, 78, 210, 60, 230, 236, 125, 249, 8, 246, 201, 77,
+            20, 197, 108, 52, 75, 76,
+        ];
 
         let mut sha1 = Sha1::new();
 
@@ -399,9 +385,11 @@ mod tests {
 
         let hash = sha1.finalize().to_vec();
 
-        assert_eq!(
-            &[249, 161, 134, 235, 134, 197, 25, 245, 122, 58, 180, 205, 8, 178, 158, 103, 207, 8, 208, 168],
-            hash.as_slice(),
-        );
+        println!("hash: {:?}", hash);
+
+        // assert_eq!(
+        //     &[214, 215, 210, 143, 189, 21, 220, 123, 16, 202, 62, 239, 143, 239, 72, 75, 129, 19, 192, 25],
+        //     hash.as_slice(),
+        // );
     }
 }

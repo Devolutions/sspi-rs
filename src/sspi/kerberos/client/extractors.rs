@@ -42,11 +42,7 @@ pub fn extract_session_key_from_as_rep(
     let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
 
     let enc_data = cipher
-        .decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)
-        .map_err(|e| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("Cannot decrypt as_rep.enc_part: {:?}", e),
-        })?;
+        .decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)?;
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 

@@ -38,6 +38,7 @@ use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER, SERVICE_NAME};
 use crate::sspi::pku2u::extractors::{
     extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
+    extract_session_key_from_as_rep,
 };
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::utf16_bytes_to_utf8_string;
@@ -521,17 +522,28 @@ impl SspiImpl for Pku2u {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
-                let buffer = input_token.buffer.as_slice();
+                let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                let buffer = neg_token_targ
+                    .0
+                    .response_token
+                    .0
+                    .ok_or_else(|| {
+                        Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg".into())
+                    })?
+                    .0
+                     .0;
 
-                println!("AsExchange buffer: {:?}", buffer);
+                // println!("AsExchange buffer: {:?}", buffer);
 
-                self.negoex_messages.extend_from_slice(buffer);
+                self.negoex_messages.extend_from_slice(&buffer);
 
-                let acceptor_exchange = Exchange::decode(buffer, &input_token.buffer)?;
+                let acceptor_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+
+                println!("as. after checks. exchange: {:?}", acceptor_exchange.exchange);
 
                 let (as_rep, _): (AsRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 
@@ -547,11 +559,20 @@ impl SspiImpl for Pku2u {
                     }
                 };
 
-                self.dh_parameters.server_nonce = Some(extract_server_nonce(&dh_rep_info)?);
+                println!("dh_rep_info: {:?}", dh_rep_info);
+
+                let server_nonce = extract_server_nonce(&dh_rep_info)?;
+                println!("server_nonce: {:?}", server_nonce);
+
+                self.dh_parameters.server_nonce = Some(server_nonce);
 
                 let signed_data: SignedData = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
 
-                self.dh_parameters.other_public_key = Some(extract_server_dh_public_key(&signed_data)?);
+                // validate server's signature
+
+                let public_key = extract_server_dh_public_key(&signed_data)?;
+                println!("public key: {:?}", public_key);
+                self.dh_parameters.other_public_key = Some(public_key);
 
                 self.encryption_params.encryption_type =
                     Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
@@ -570,6 +591,14 @@ impl SspiImpl for Pku2u {
                         .cipher()
                         .as_ref(),
                 )?);
+                println!("session key: {:?}", self.encryption_params.session_key);
+
+                self.encryption_params.session_key = Some(extract_session_key_from_as_rep(
+                    &as_rep,
+                    self.encryption_params.session_key.as_ref().unwrap(),
+                    &self.encryption_params,
+                )?);
+                println!("session key: {:?}", self.encryption_params.session_key);
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
