@@ -600,9 +600,12 @@ impl SspiImpl for Pku2u {
                 )?);
                 println!("session key: {:?}", self.encryption_params.session_key);
 
+                let exchange_seq_number = self.next_seq_number();
+                let verify_seq_number = self.next_seq_number();
+
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
-                    seq_num: Some(self.next_seq_number()),
+                    seq_num: Some(exchange_seq_number),
                     sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
@@ -615,30 +618,33 @@ impl SspiImpl for Pku2u {
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &authenticator,
                     &self.encryption_params,
-                    &[2, 0, 0, 0],
+                    &[0x20, 0x00, 0x00, 0x00],
                 )?;
 
                 let mut mech_token = Vec::new();
 
                 let exchange = Exchange::new(
-                    MessageType::InitiatorMetaData,
+                    MessageType::ApRequest,
                     self.conversation_id,
-                    self.next_seq_number(),
+                    exchange_seq_number,
                     self.auth_scheme.unwrap(),
                     picky_asn1_der::to_vec(&generate_neg(ap_req, AP_REQ_TOKEN_ID))?,
                 );
                 exchange.encode(&mut mech_token)?;
 
+                // exchange.encode(&mut self.negoex_messages)?;
+
                 let verify = Verify::new(
                     MessageType::Verify,
                     self.conversation_id,
-                    self.next_seq_number(),
+                    verify_seq_number,
                     self.auth_scheme.unwrap(),
-                    self.encryption_params
-                        .encryption_type
-                        .as_ref()
-                        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-                        .into(),
+                    16,
+                    // self.encryption_params
+                    //     .encryption_type
+                    //     .as_ref()
+                    //     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+                    //     .into(),
                     ChecksumSuite::HmacSha196Aes256.hasher().checksum(
                         self.encryption_params.session_key.as_ref().unwrap(),
                         ACCEPTOR_SIGN,
@@ -647,6 +653,7 @@ impl SspiImpl for Pku2u {
                 );
                 verify.encode(&mut mech_token)?;
 
+                // verify.encode(&mut self.negoex_messages)?;
                 self.negoex_messages.extend_from_slice(&mech_token);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;

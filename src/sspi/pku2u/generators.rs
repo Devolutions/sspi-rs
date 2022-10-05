@@ -25,13 +25,12 @@ use picky_asn1_x509::signer_info::{
     SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
 };
 use picky_asn1_x509::{
-    AlgorithmIdentifier, Attribute, AttributeTypeAndValue, AttributeTypeAndValueParameters, AttributeValues,
-    Certificate, DirectoryString, Name, RdnSequence, RelativeDistinguishedName, ShaVariant, SubjectKeyIdentifier,
-    Version,
+    AlgorithmIdentifier, Attribute, AttributeValues,
+    Certificate, ShaVariant,
 };
 use picky_krb::constants::gss_api::ACCEPT_INCOMPLETE;
 use picky_krb::constants::types::{NT_SRV_INST, PA_PK_AS_REQ};
-use picky_krb::crypto::diffie_hellman::{compute_public_key, generate_private_key, get_default_parameters};
+use picky_krb::crypto::diffie_hellman::{compute_public_key, generate_private_key};
 use picky_krb::data_types::{KerberosStringAsn1, KerberosTime, PaData, PrincipalName, Realm};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg,
@@ -39,7 +38,7 @@ use picky_krb::gss_api::{
 use picky_krb::messages::KdcReqBody;
 use picky_krb::pkinit::{
     AuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, PaPkAsReq, PkAuthenticator, Pku2uNegoBody, Pku2uNegoReq,
-    Pku2uNegoReqMetadata, Pku2uValue, Pku2uValueInner,
+    Pku2uNegoReqMetadata,
 };
 use rand::rngs::OsRng;
 use rsa::{Hash, PaddingScheme, RsaPrivateKey};
@@ -170,6 +169,19 @@ pub fn generate_signer_info(
         signature: SignatureValue(OctetStringAsn1::from(signature)),
         unsigned_attrs: Optional::from(UnsignedAttributes(Vec::new())),
     })
+}
+
+/// returns (p, g, q)
+pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    (
+        vec![
+            0, 255, 255, 255, 255, 255, 255, 255, 255, 201, 15, 218, 162, 33, 104, 194, 52, 196, 198, 98, 139, 128, 220, 28, 209, 41, 2, 78, 8, 138, 103, 204, 116, 2, 11, 190, 166, 59, 19, 155, 34, 81, 74, 8, 121, 142, 52, 4, 221, 239, 149, 25, 179, 205, 58, 67, 27, 48, 43, 10, 109, 242, 95, 20, 55, 79, 225, 53, 109, 109, 81, 194, 69, 228, 133, 181, 118, 98, 94, 126, 198, 244, 76, 66, 233, 166, 55, 237, 107, 11, 255, 92, 182, 244, 6, 183, 237, 238, 56, 107, 251, 90, 137, 159, 165, 174, 159, 36, 17, 124, 75, 31, 230, 73, 40, 102, 81, 236, 230, 83, 129, 255, 255, 255, 255, 255, 255, 255, 255
+        ],
+        vec![2],
+        vec![
+            127, 255, 255, 255, 255, 255, 255, 255, 228, 135, 237, 81, 16, 180, 97, 26, 98, 99, 49, 69, 192, 110, 14, 104, 148, 129, 39, 4, 69, 51, 230, 58, 1, 5, 223, 83, 29, 137, 205, 145, 40, 165, 4, 60, 199, 26, 2, 110, 247, 202, 140, 217, 230, 157, 33, 141, 152, 21, 133, 54, 249, 47, 138, 27, 167, 240, 154, 182, 182, 168, 225, 34, 242, 66, 218, 187, 49, 47, 63, 99, 122, 38, 33, 116, 211, 27, 246, 181, 133, 255, 174, 91, 122, 3, 91, 246, 247, 28, 53, 253, 173, 68, 207, 210, 215, 79, 146, 8, 190, 37, 143, 243, 36, 148, 51, 40, 246, 115, 41, 192, 255, 255, 255, 255, 255, 255, 255, 255
+        ],
+    )
 }
 
 pub fn generate_client_dh_parameters() -> Result<DhParameters> {
