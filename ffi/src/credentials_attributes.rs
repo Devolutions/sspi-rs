@@ -9,11 +9,22 @@ pub struct KdcProxySettings {
 
 #[derive(Default)]
 pub struct CredentialsAttributes {
-    pub kdc_proxy_settings: Option<KdcProxySettings>,
+    pub package_list: Option<String>,
     pub kdc_url: Option<String>,
+    pub kdc_proxy_settings: Option<KdcProxySettings>,
 }
 
 impl CredentialsAttributes {
+    pub fn new() -> Self {
+        CredentialsAttributes::default()
+    }
+
+    pub fn new_with_package_list(package_list: Option<String>) -> Self {
+        let mut attributes = CredentialsAttributes::default();
+        attributes.package_list = package_list;
+        attributes
+    }
+
     pub fn kdc_url(&self) -> Option<String> {
         if let Some(kdc_url) = &self.kdc_url {
             Some(kdc_url.to_string())
