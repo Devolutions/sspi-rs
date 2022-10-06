@@ -1,32 +1,85 @@
 use std::ptr::drop_in_place;
 
-use libc::{c_char, c_uint, c_ulong, c_ushort, c_void};
+use libc::{c_char, c_ushort, c_void};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
+pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
+pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
+
 #[repr(C)]
 pub struct SecWinntAuthIdentityW {
     pub user: *const c_ushort,
-    pub user_length: c_ulong,
+    pub user_length: u32,
     pub domain: *const c_ushort,
-    pub domain_length: c_ulong,
+    pub domain_length: u32,
     pub password: *const c_ushort,
-    pub password_length: c_ulong,
-    pub flags: c_ulong,
+    pub password_length: u32,
+    pub flags: u32,
 }
 
 #[repr(C)]
 pub struct SecWinntAuthIdentityA {
     pub user: *const c_char,
-    pub user_length: c_uint,
+    pub user_length: u32,
     pub domain: *const c_char,
-    pub domain_length: c_uint,
+    pub domain_length: u32,
     pub password: *const c_char,
-    pub password_length: c_uint,
-    pub flags: c_uint,
+    pub password_length: u32,
+    pub flags: u32,
+}
+
+pub const SEC_WINNT_AUTH_IDENTITY_VERSION: u32 = 0x200;
+
+#[repr(C)]
+pub struct SecWinntAuthIdentityExW {
+    pub version: u32,
+    pub length: u32,
+    pub user: *const c_ushort,
+    pub user_length: u32,
+    pub domain: *const c_ushort,
+    pub domain_length: u32,
+    pub password: *const c_ushort,
+    pub password_length: u32,
+    pub flags: u32,
+    pub package_list: *const c_ushort,
+    pub package_list_length: u32,
+}
+
+#[repr(C)]
+pub struct SecWinntAuthIdentityExA {
+    pub version: u32,
+    pub length: u32,
+    pub user: *const c_char,
+    pub user_length: u32,
+    pub domain: *const c_char,
+    pub domain_length: u32,
+    pub password: *const c_char,
+    pub password_length: u32,
+    pub flags: u32,
+    pub package_list: *const c_char,
+    pub package_list_length: u32,
+}
+
+pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
+
+#[repr(C)]
+pub struct SecWinntAuthIdentityEx2 {
+    pub version: u32,
+    pub cb_header_length: u16,
+    pub cb_structure_length: u32,
+    pub user_offset: u32,
+    pub user_length: u16,
+    pub domain_offset: u32,
+    pub domain_length: u16,
+    pub packed_credentials_offset: u32,
+    pub packed_credentials_length: u16,
+    pub flags: u32,
+    pub package_list_offset: u32,
+    pub package_list_length: u16,
 }
 
 #[allow(clippy::missing_safety_doc)]

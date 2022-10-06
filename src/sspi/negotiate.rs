@@ -27,16 +27,21 @@ lazy_static! {
 
 #[derive(Debug, Clone)]
 pub struct NegotiateConfig {
+    pub package_list: Option<String>,
     pub krb_config: Option<KerberosConfig>,
 }
 
 impl NegotiateConfig {
     pub fn new() -> Self {
-        Self { krb_config: None }
+        Self {
+            package_list: None,
+            krb_config: None,
+        }
     }
 
     pub fn new_with_kerberos(krb_config: KerberosConfig) -> Self {
         Self {
+            package_list: None,
             krb_config: Some(krb_config),
         }
     }
@@ -63,13 +68,28 @@ pub struct Negotiate {
 
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
-        let protocol = if let Some(krb_config) = config.krb_config {
+        let (ntlm_package, kerberos_package) = Self::get_package_list_config(&config.package_list);
+
+        let mut protocol = if let Some(krb_config) = config.krb_config {
             Kerberos::new_client_from_config(krb_config)
                 .map(NegotiatedProtocol::Kerberos)
                 .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
         } else {
             NegotiatedProtocol::Ntlm(Ntlm::new())
         };
+
+        match &protocol {
+            NegotiatedProtocol::Kerberos(_) => {
+                if !kerberos_package {
+                    protocol = NegotiatedProtocol::Ntlm(Ntlm::new());
+                }
+            },
+            NegotiatedProtocol::Ntlm(_) => {
+                if !ntlm_package {
+                    protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap());
+                }
+            }
+        }
 
         Ok(Negotiate {
             protocol,
@@ -90,6 +110,31 @@ impl Negotiate {
         }
 
         Ok(())
+    }
+
+    fn get_package_list_config(package_list: &Option<String>) -> (bool, bool) {
+        let mut ntlm_package: bool = true;
+        let mut kerberos_package: bool = true;
+
+        if let Some(package_list) = &package_list {
+            for package in package_list.split(",") {
+                let (package_name, enabled) = if package.starts_with("!") {
+                    let package_name = package[1..].to_lowercase();
+                    (package_name, false)
+                } else {
+                    let package_name = package.to_lowercase();
+                    (package_name, true)
+                };
+
+                match package_name.as_str() {
+                    "ntlm" => { ntlm_package = enabled; }
+                    "kerberos" => { kerberos_package = enabled; }
+                    _ => { eprintln!("unexpected package name: {}", &package_name); }
+                }
+            }
+        }
+
+        (ntlm_package, kerberos_package)
     }
 }
 
