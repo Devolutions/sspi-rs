@@ -63,13 +63,12 @@ pub enum NegotiatedProtocol {
 #[derive(Debug, Clone)]
 pub struct Negotiate {
     protocol: NegotiatedProtocol,
+    package_list: Option<String>,
     auth_identity: Option<AuthIdentityBuffers>,
 }
 
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
-        let (ntlm_package, kerberos_package) = Self::get_package_list_config(&config.package_list);
-
         let mut protocol = if let Some(krb_config) = config.krb_config {
             Kerberos::new_client_from_config(krb_config)
                 .map(NegotiatedProtocol::Kerberos)
@@ -78,21 +77,13 @@ impl Negotiate {
             NegotiatedProtocol::Ntlm(Ntlm::new())
         };
 
-        match &protocol {
-            NegotiatedProtocol::Kerberos(_) => {
-                if !kerberos_package {
-                    protocol = NegotiatedProtocol::Ntlm(Ntlm::new());
-                }
-            },
-            NegotiatedProtocol::Ntlm(_) => {
-                if !ntlm_package {
-                    protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap());
-                }
-            }
+        if let Some(filtered_protocol) = Self::filter_protocol(&protocol, &config.package_list) {
+            protocol = filtered_protocol;
         }
 
         Ok(Negotiate {
-            protocol,
+            protocol: protocol,
+            package_list: config.package_list.clone(),
             auth_identity: None,
         })
     }
@@ -107,6 +98,10 @@ impl Negotiate {
                     network_client: Box::new(ReqwestNetworkClient::new()),
                 })?)
             }
+        }
+
+        if let Some(filtered_protocol) = Self::filter_protocol(&self.protocol, &self.package_list) {
+            self.protocol = filtered_protocol;
         }
 
         Ok(())
@@ -135,6 +130,27 @@ impl Negotiate {
         }
 
         (ntlm_package, kerberos_package)
+    }
+
+    fn filter_protocol(negotiated_protocol: &NegotiatedProtocol, package_list: &Option<String>) -> Option<NegotiatedProtocol> {
+        let mut filtered_protocol = None;
+        let (ntlm_package, kerberos_package) = Self::get_package_list_config(package_list);
+        
+        match &negotiated_protocol {
+            NegotiatedProtocol::Kerberos(_) => {
+                if !kerberos_package {
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
+                }
+            },
+            NegotiatedProtocol::Ntlm(_) => {
+                if !ntlm_package {
+                    let kerberos_client = Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap();
+                    filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
+                }
+            }
+        }
+
+        filtered_protocol
     }
 }
 
