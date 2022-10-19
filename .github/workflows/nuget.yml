@@ -185,6 +185,9 @@ jobs:
 
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
         shell: pwsh
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.10'
+          IPHONEOS_DEPLOYMENT_TARGET: '12.1'
         run: |
           Set-PSDebug -Trace 1
 
