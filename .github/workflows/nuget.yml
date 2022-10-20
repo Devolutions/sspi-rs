@@ -183,11 +183,17 @@ jobs:
           $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
           echo "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
 
+      - name: Setup build environment
+        shell: pwsh
+        run: |
+          if ('${{ matrix.os }}' -Eq 'osx') {
+            echo "MACOSX_DEPLOYMENT_TARGET=10.10" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ('${{ matrix.os }}' -Eq 'ios') {
+            echo "IPHONEOS_DEPLOYMENT_TARGET=12.1" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
         shell: pwsh
-        env:
-          MACOSX_DEPLOYMENT_TARGET: '10.10'
-          IPHONEOS_DEPLOYMENT_TARGET: '12.1'
         run: |
           Set-PSDebug -Trace 1
 
