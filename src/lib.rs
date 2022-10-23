@@ -88,7 +88,7 @@ pub use utils::resolve_kdc_host;
 pub use crate::sspi::kerberos::config::KerberosConfig;
 pub use crate::sspi::kerberos::{Kerberos, KERBEROS_VERSION, PACKAGE_INFO as KERBEROS_PACKAGE_INFO};
 pub use crate::sspi::negotiate::{Negotiate, NegotiateConfig};
-pub use crate::sspi::pku2u::{Pku2u, PACKAGE_INFO as PKU2U_PACKAGE_INFO};
+pub use crate::sspi::pku2u::{Pku2u, PACKAGE_INFO as PKU2U_PACKAGE_INFO, Pku2uConfig};
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{

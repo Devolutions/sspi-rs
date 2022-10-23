@@ -52,8 +52,12 @@ pub fn extract_sub_session_key_from_ap_rep(
             description: format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
         })?;
 
+    println!("ap_rep_enc_part: {:?}", res);
+
     let ap_rep_enc_part: EncApRepPart =
         picky_asn1_der::from_bytes(&res).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
+
+    println!("ap_rep_enc_part: {:?}", ap_rep_enc_part);
 
     Ok(ap_rep_enc_part
         .0

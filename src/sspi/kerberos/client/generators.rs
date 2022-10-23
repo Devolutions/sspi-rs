@@ -326,6 +326,7 @@ pub struct GenerateAuthenticatorOptions<'a> {
     pub sub_key: Option<Vec<u8>>,
     pub checksum: Option<ChecksumOptions>,
     pub channel_bindings: Option<&'a ChannelBindings>,
+    pub extension: Vec<u8>,
 }
 
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
@@ -335,6 +336,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         sub_key,
         checksum,
         channel_bindings,
+        extension,
     } = options;
 
     let current_date = Utc::now();
@@ -440,7 +442,7 @@ pub fn generate_ap_req(
     let cipher = encryption_type.cipher();
 
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
-    println!("encoded authenticator: {:?}", encoded_authenticator);
+    println!("encoded authenticator: {:?} {}", encoded_authenticator, encoded_authenticator.len());
 
     let encrypted_authenticator = cipher.encrypt(
         session_key,
