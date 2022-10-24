@@ -44,3 +44,9 @@ macro_rules! check_sequence_number {
         }
     };
 }
+
+macro_rules! check_if_empty {
+    ($actual:expr, $msg:expr) => {
+        $actual.ok_or_else(|| Error::new(ErrorKind::InternalError, $msg.into()))?
+    };
+}

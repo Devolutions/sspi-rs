@@ -12,40 +12,45 @@ use std::str::FromStr;
 pub use config::Pku2uConfig;
 use lazy_static::lazy_static;
 use picky_asn1_x509::signed_data::SignedData;
-use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, AS_REP_TOKEN_ID, AP_REP_TOKEN_ID};
+use picky_krb::constants::gss_api::{
+    AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AS_REP_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE,
+};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
 use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
-use picky_krb::gss_api::{NegTokenTarg1, WrapToken, ApplicationTag0, GssApiNegInit, NegTokenInit};
-use picky_krb::messages::{ApRep, AsRep, AsReq, ApReq};
+use picky_krb::gss_api::{NegTokenInit, NegTokenTarg1, WrapToken};
+use picky_krb::messages::{ApRep, ApReq, AsRep, AsReq};
 use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rsa::{RsaPublicKey, PublicKey, PaddingScheme, Hash};
-use sha1::{Sha1, Digest};
 use uuid::Uuid;
 
 use self::generators::{
     generate_client_dh_parameters, generate_neg, generate_neg_token_init, generate_neg_token_targ,
-    generate_pa_datas_for_as_req, generate_pku2u_nego_req, DH_NONCE_LEN, WELLKNOWN_REALM, generate_server_dh_parameters,
+    generate_pa_datas_for_as_req, generate_pku2u_nego_req, generate_server_dh_parameters, DH_NONCE_LEN,
+    WELLKNOWN_REALM,
 };
 use crate::builders::ChangePassword;
 use crate::internal::SspiImpl;
 use crate::kerberos::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions,
-    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, GenerateAsReqOptions,
+    GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER, SERVICE_NAME};
 use crate::sspi::pku2u::cert_utils::validate_server_p2p_certificate;
 use crate::sspi::pku2u::extractors::{
-    extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
-    extract_session_key_from_as_rep, extract_pa_pk_as_req, compute_session_key_from_pa_pk_as_req, extract_sub_session_key_from_ap_req,
+    compute_session_key_from_pa_pk_as_req, extract_krb_rep, extract_pa_pk_as_rep, extract_pa_pk_as_req,
+    extract_server_dh_public_key, extract_server_nonce, extract_session_key_from_as_rep,
+    extract_sub_session_key_from_ap_req,
 };
-use crate::sspi::pku2u::generators::{generate_authenticator, generate_neg_token_init_s, generate_pa_datas_for_as_rep, generate_as_rep, generate_ap_rep, generate_neg_token_completed};
+use crate::sspi::pku2u::generators::{
+    generate_ap_rep, generate_as_rep, generate_authenticator, generate_neg_token_completed, generate_neg_token_init_s,
+    generate_pa_datas_for_as_rep,
+};
 use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::utf16_bytes_to_utf8_string;
@@ -53,7 +58,7 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx, ServerResponseFlags,
+    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
@@ -62,6 +67,14 @@ pub const AZURE_AD_PREFIX: &str = "AzureAD\\";
 
 /// Default NEGOEX authentication scheme
 pub const AUTH_SCHEME: &str = "0d53335c-f9ea-4d0d-b2ec-4ae3786ec308";
+
+/// sealed = true
+/// other flags = false
+pub const CLIENT_WRAP_TOKEN_FLAGS: u8 = 2;
+/// sealed = true
+/// send by acceptor = true
+/// acceptor subkey = false
+pub const SERVER_WRAP_TOKEN_FLAGS: u8 = 3;
 
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
@@ -85,6 +98,12 @@ pub enum Pku2uState {
 }
 
 #[derive(Debug, Clone)]
+enum Pku2uMode {
+    Client,
+    Server,
+}
+
+#[derive(Debug, Clone)]
 pub struct DhParameters {
     // g
     base: Vec<u8>,
@@ -102,6 +121,7 @@ pub struct DhParameters {
 
 #[derive(Debug, Clone)]
 pub struct Pku2u {
+    mode: Pku2uMode,
     config: Pku2uConfig,
     state: Pku2uState,
     encryption_params: EncryptionParams,
@@ -109,52 +129,45 @@ pub struct Pku2u {
     conversation_id: Uuid,
     auth_scheme: Option<Uuid>,
     seq_number: u32,
-    // realm: Option<String>,
-    auth_nonce: u32,
     dh_parameters: DhParameters,
-    // all sent and received NEGOEX messages in one vector
+    // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
     // https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-NEGOEX/%5bMS-NEGOEX%5d.pdf
     // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     negoex_messages: Vec<u8>,
+    // all sent and received GSS-API messages concatenated in one vector
+    // we need it for the further checksum calculation
+    // https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6
+    // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     gss_api_messages: Vec<u8>,
-    exchange_data: Vec<u8>,
     negoex_random: [u8; RANDOM_ARRAY_SIZE],
 }
 
 impl Pku2u {
     pub fn new_server_from_config(config: Pku2uConfig) -> Result<Self> {
         Ok(Self {
+            mode: Pku2uMode::Server,
             config,
             state: Pku2uState::Preauthentication,
             encryption_params: EncryptionParams::default_for_server(),
             auth_identity: None,
-            // conversation_id: Uuid::new_v4(),
-            // for the debugging
-            conversation_id: Uuid::from_str("e2506b43-4f8f-3534-f0e4-5ddf02b7f7c4").unwrap(),
-            auth_scheme: Some(Uuid::from_str("0d53335c-f9ea-4d0d-b2ec-4ae3786ec308").unwrap()),
+            conversation_id: Uuid::default(),
+            auth_scheme: Some(Uuid::from_str(AUTH_SCHEME).unwrap()),
             seq_number: 2,
-            // realm: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
-            auth_nonce: 0,
             // generate dh parameters at the start in order to not waste time during authorization
             dh_parameters: generate_server_dh_parameters()?,
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            exchange_data: Vec::new(),
-            // negoex_random: OsRng::default().gen::<[u8; RANDOM_ARRAY_SIZE]>(),
-            // for the debugging
-            negoex_random: [
-                10, 209, 111, 101, 206, 151, 53, 222, 225, 32, 241, 24, 15, 201, 210, 38, 133, 175, 97, 251, 27, 195,
-                152, 39, 9, 97, 115, 227, 194, 196, 54, 245,
-            ],
+            negoex_random: OsRng::default().gen::<[u8; RANDOM_ARRAY_SIZE]>(),
         })
     }
 
     pub fn new_client_from_config(config: Pku2uConfig) -> Result<Self> {
         Ok(Self {
+            mode: Pku2uMode::Client,
             config,
             state: Pku2uState::Negotiate,
             encryption_params: EncryptionParams::default_for_client(),
@@ -162,22 +175,14 @@ impl Pku2u {
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
-            // realm: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
-            auth_nonce: 0,
             // generate dh parameters at the start in order to not waste time during authorization
             dh_parameters: generate_client_dh_parameters()?,
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            exchange_data: Vec::new(),
-            // negoex_random: OsRng::default().gen::<[u8; RANDOM_ARRAY_SIZE]>(),
-            // for the debugging
-            negoex_random: [
-                10, 209, 111, 101, 206, 151, 53, 222, 225, 32, 241, 24, 15, 201, 210, 38, 133, 175, 97, 251, 27, 195,
-                152, 39, 9, 97, 115, 227, 194, 196, 54, 245,
-            ],
+            negoex_random: OsRng::default().gen::<[u8; RANDOM_ARRAY_SIZE]>(),
         })
     }
 
@@ -222,20 +227,17 @@ impl Sspi for Pku2u {
             ));
         };
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
-        println!("encrypt key {:?} usage: {}", key, key_usage);
 
-        // sequence number is always 0 in Pku2u
         let mut wrap_token = WrapToken::with_seq_number(sequence_number as u64);
-        wrap_token.flags = 2;
-        // wrap_token.flags = 3;
+        wrap_token.flags = match self.mode {
+            Pku2uMode::Client => CLIENT_WRAP_TOKEN_FLAGS,
+            Pku2uMode::Server => SERVER_WRAP_TOKEN_FLAGS,
+        };
 
         let mut payload = data.buffer.to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
-        println!("data to encrypt: {:?} {}", payload, sequence_number);
-
         let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
-        // let mut checksum = cipher.encrypt(key, 22, &payload)?;
         checksum.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
@@ -269,9 +271,6 @@ impl Sspi for Pku2u {
 
         encrypted.extend_from_slice(&data.buffer);
 
-        println!("message to decrypt: encrypted mic: {:?}", encrypted);
-        // panic!("{:?}", encrypted);
-
         let cipher = self
             .encryption_params
             .encryption_type
@@ -291,15 +290,12 @@ impl Sspi for Pku2u {
             ));
         };
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
-        println!("decrypt key {:?} usage: {}", key, key_usage);
 
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
-
         wrap_token.checksum.rotate_left(RRC.into());
 
         let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
-        // let mut decrypted = cipher.decrypt(key, 24, &wrap_token.checksum)?;
-        println!("decrypted: {:?}", decrypted);
+
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
@@ -402,10 +398,10 @@ impl SspiImpl for Pku2u {
             Pku2uState::Negotiate => {
                 let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
 
-                let credentials = builder
+                let credentials = check_if_empty!(builder
                     .credentials_handle
-                    .as_ref()
-                    .unwrap()
+                    .as_ref(),
+                    "credentials are not set")
                     .as_ref()
                     .ok_or_else(|| Error {
                         error_type: ErrorKind::NoCredentials,
@@ -517,7 +513,6 @@ impl SspiImpl for Pku2u {
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,
                     &kdc_req_body,
-                    self.auth_nonce,
                     &self.dh_parameters,
                     &self.config.device_private_key,
                 )?;
@@ -530,7 +525,7 @@ impl SspiImpl for Pku2u {
                     MessageType::ApRequest,
                     self.conversation_id,
                     self.next_seq_number(),
-                    self.auth_scheme.unwrap(),
+                    check_if_empty!(self.auth_scheme, "auth scheme is not set"),
                     exchange_data,
                 );
                 exchange.encode(&mut mech_token)?;
@@ -602,31 +597,33 @@ impl SspiImpl for Pku2u {
                 self.encryption_params.encryption_type =
                     Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
                 self.encryption_params.session_key = Some(generate_key(
-                    self.dh_parameters.other_public_key.as_ref().unwrap(),
+                    check_if_empty!(self.dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
                     &self.dh_parameters.private_key,
                     &self.dh_parameters.modulus,
                     Some(DhNonce {
-                        client_nonce: self.dh_parameters.client_nonce.as_ref().unwrap(),
-                        server_nonce: self.dh_parameters.server_nonce.as_ref().unwrap(),
+                        client_nonce: check_if_empty!(self.dh_parameters.client_nonce.as_ref(), "dh client none is not set"),
+                        server_nonce: check_if_empty!(self.dh_parameters.server_nonce.as_ref(), "dh server nonce is not set"),
                     }),
-                    self.encryption_params
+                    check_if_empty!(self.encryption_params
                         .encryption_type
-                        .as_ref()
-                        .unwrap()
+                        .as_ref(),
+                        "encryption type is not set")
                         .cipher()
                         .as_ref(),
                 )?);
 
                 self.encryption_params.session_key = Some(extract_session_key_from_as_rep(
                     &as_rep,
-                    self.encryption_params.session_key.as_ref().unwrap(),
+                    check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &self.encryption_params,
                 )?);
 
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
 
-                let test_session_key = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2];
+                let test_session_key = [
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2,
+                ];
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
@@ -638,11 +635,13 @@ impl SspiImpl for Pku2u {
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                     }),
                     channel_bindings: None,
-                    extension: ChecksumSuite::HmacSha196Aes256.hasher().checksum(&test_session_key, 41, &self.gss_api_messages).unwrap(),
+                    extension: ChecksumSuite::HmacSha196Aes256
+                        .hasher()
+                        .checksum(&test_session_key, 41, &self.gss_api_messages)?,
                 })?;
                 let ap_req = generate_ap_req(
                     as_rep.0.ticket.0,
-                    self.encryption_params.session_key.as_ref().unwrap(),
+                    check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &authenticator,
                     &self.encryption_params,
                     &[0x20, 0x00, 0x00, 0x00],
@@ -654,41 +653,26 @@ impl SspiImpl for Pku2u {
                     MessageType::ApRequest,
                     self.conversation_id,
                     exchange_seq_number,
-                    self.auth_scheme.unwrap(),
+                    check_if_empty!(self.auth_scheme, "auth_scheme is not set"),
                     picky_asn1_der::to_vec(&generate_neg(ap_req, AP_REQ_TOKEN_ID))?,
                 );
                 exchange.encode(&mut mech_token)?;
 
                 exchange.encode(&mut self.negoex_messages)?;
 
-                let c2 = ChecksumSuite::HmacSha196Aes256.hasher().checksum(
-                    &test_session_key,
-                    25,
-                    &self.negoex_messages,
-                )?;
-
                 let verify = Verify::new(
                     MessageType::Verify,
                     self.conversation_id,
                     verify_seq_number,
-                    self.auth_scheme.unwrap(),
-                    16,
-                    // self.encryption_params
-                    //     .encryption_type
-                    //     .as_ref()
-                    //     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-                    //     .into(),
-                    // ChecksumSuite::HmacSha196Aes256.hasher().checksum(
-                    //     self.encryption_params.session_key.as_ref().unwrap(),
-                    //     ACCEPTOR_SIGN,
-                    //     &self.negoex_messages,
-                    // )?,
-                    c2,
+                    check_if_empty!(self.auth_scheme, "auth_scheme is not set"),
+                    ChecksumSuite::HmacSha196Aes256.into(),
+                    ChecksumSuite::HmacSha196Aes256
+                        .hasher()
+                        .checksum(&test_session_key, INITIATOR_SIGN, &self.negoex_messages)?,
                 );
                 verify.encode(&mut mech_token)?;
 
                 verify.encode(&mut self.negoex_messages)?;
-                // self.negoex_messages.extend_from_slice(&mech_token);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token
@@ -709,7 +693,7 @@ impl SspiImpl for Pku2u {
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
                 // todo: check negResult (should be accept completed: 0)
-                
+
                 let buffer = neg_token_targ
                     .0
                     .response_token
@@ -720,48 +704,36 @@ impl SspiImpl for Pku2u {
                     .0
                      .0;
 
-                println!("ap_exchange buffer: {:?}", buffer);
-                // self.negoex_messages.extend_from_slice(&buffer);
-
                 let mut reader: Box<dyn Read> = Box::new(buffer.as_slice());
-
                 let acceptor_exchange = Exchange::decode(&mut reader, &buffer)?;
-                println!("acceptor exchange: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
 
-                self.negoex_messages.extend_from_slice(&buffer[0..(acceptor_exchange.header.message_len as usize)]);
+                self.negoex_messages
+                    .extend_from_slice(&buffer[0..(acceptor_exchange.header.message_len as usize)]);
 
                 let acceptor_verify_data = &buffer[(acceptor_exchange.header.message_len as usize)..];
-                println!("buffer for verify: {:?}", acceptor_verify_data);
-
-                let acceptor_verify =
-                    Verify::decode(acceptor_verify_data, acceptor_verify_data)?;
-                println!("acceptor verify: {:?}", acceptor_verify);
+                let acceptor_verify = Verify::decode(acceptor_verify_data, acceptor_verify_data)?;
 
                 check_conversation_id!(acceptor_verify.header.conversation_id.0, self.conversation_id);
                 check_sequence_number!(acceptor_verify.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_verify.auth_scheme.0, self.auth_scheme);
 
-                println!("all verified");
-
                 let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
-                println!("ap_rep: {:?}", ap_rep);
 
                 self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
                     &ap_rep,
-                    self.encryption_params.session_key.as_ref().unwrap(),
+                    check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &self.encryption_params,
                 )?);
-                println!("ap_rep sub session key: {:?}", self.encryption_params.sub_session_key);
 
                 let acceptor_checksum = ChecksumSuite::try_from(acceptor_verify.checksum.checksum_type as usize)?
                     .hasher()
                     .checksum(
-                        self.encryption_params.sub_session_key.as_ref().unwrap(),
-                        23,
+                        check_if_empty!(self.encryption_params.sub_session_key.as_ref(), "sub session key is not set"),
+                        ACCEPTOR_SIGN,
                         &self.negoex_messages,
                     )?;
                 if acceptor_verify.checksum.checksum_value != acceptor_checksum {
@@ -811,7 +783,7 @@ impl SspiImpl for Pku2u {
 
                 println!("server: neg init parsed: {:?}", neg_token_init);
 
-                let data = neg_token_init.mech_token.0.unwrap().0.0;
+                let data = neg_token_init.mech_token.0.unwrap().0 .0;
 
                 let mut reader: Box<dyn Read> = Box::new(data.as_slice());
 
@@ -827,7 +799,6 @@ impl SspiImpl for Pku2u {
                 let initiator_exchange = Exchange::decode(&mut reader, initiator_exchange_data)?;
 
                 println!("server: acceptor_exchange: {:?}", initiator_exchange);
-                self.exchange_data.extend_from_slice(&initiator_exchange.exchange);
 
                 self.conversation_id = initiator_nego.header.conversation_id.0;
 
@@ -850,20 +821,22 @@ impl SspiImpl for Pku2u {
                     self.conversation_id,
                     self.next_seq_number(),
                     auth_scheme,
-                    vec![48, 87, 160, 85, 48, 83, 48, 81, 128, 79, 48, 77, 49, 75, 48, 73, 6, 3, 85, 4, 3, 30, 66, 0, 77, 0, 83, 0, 45, 0, 79, 0, 114, 0, 103, 0, 97, 0, 110, 0, 105, 0, 122, 0, 97, 0, 116, 0, 105, 0, 111, 0, 110, 0, 45, 0, 80, 0, 50, 0, 80, 0, 45, 0, 65, 0, 99, 0, 99, 0, 101, 0, 115, 0, 115, 0, 32, 0, 91, 0, 50, 0, 48, 0, 50, 0, 50, 0, 93],
+                    vec![
+                        48, 87, 160, 85, 48, 83, 48, 81, 128, 79, 48, 77, 49, 75, 48, 73, 6, 3, 85, 4, 3, 30, 66, 0,
+                        77, 0, 83, 0, 45, 0, 79, 0, 114, 0, 103, 0, 97, 0, 110, 0, 105, 0, 122, 0, 97, 0, 116, 0, 105,
+                        0, 111, 0, 110, 0, 45, 0, 80, 0, 50, 0, 80, 0, 45, 0, 65, 0, 99, 0, 99, 0, 101, 0, 115, 0, 115,
+                        0, 32, 0, 91, 0, 50, 0, 48, 0, 50, 0, 50, 0, 93,
+                    ],
                 );
                 exchange.encode(&mut mech_token)?;
 
                 self.negoex_messages.extend_from_slice(&mech_token);
-                self.exchange_data.extend_from_slice(&exchange.exchange);
 
                 let result_token = picky_asn1_der::to_vec(&generate_neg_token_init_s(mech_token)?)?;
                 self.gss_api_messages.extend_from_slice(&result_token);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&result_token)?;
+                output_token.buffer.write_all(&result_token)?;
 
                 self.state = Pku2uState::AsExchange;
 
@@ -877,12 +850,11 @@ impl SspiImpl for Pku2u {
 
                 let nego_token: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
-                let buffer = nego_token.0.response_token.0.unwrap().0.0;
-                
+                let buffer = nego_token.0.response_token.0.unwrap().0 .0;
+
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
-                self.exchange_data.extend_from_slice(&acceptor_exchange.exchange);
 
                 self.next_seq_number();
 
@@ -902,22 +874,24 @@ impl SspiImpl for Pku2u {
 
                 self.encryption_params.session_key = Some(session_key);
 
-                let new_key = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2];
+                let new_key = vec![
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2,
+                ];
                 println!("server's session key: {:?}", new_key);
 
                 let pa_datas = generate_pa_datas_for_as_rep(
                     &self.config.p2p_certificate,
                     self.dh_parameters.server_nonce.as_ref().unwrap(),
-                    &dh_server_public, &self.config.device_private_key,
+                    &dh_server_public,
+                    &self.config.device_private_key,
                 )?;
                 let as_rep = generate_as_rep(
                     pa_datas,
                     self.encryption_params.session_key.as_ref().unwrap(),
-                    new_key.clone()
+                    new_key.clone(),
                 )?;
 
-                let exchange_data =
-                    picky_asn1_der::to_vec(&generate_neg(as_rep, AS_REP_TOKEN_ID))?;
+                let exchange_data = picky_asn1_der::to_vec(&generate_neg(as_rep, AS_REP_TOKEN_ID))?;
                 println!("exchange_data: {:?}", exchange_data);
 
                 let mut mech_token = Vec::new();
@@ -932,7 +906,6 @@ impl SspiImpl for Pku2u {
                 exchange.encode(&mut mech_token)?;
 
                 self.negoex_messages.extend_from_slice(&mech_token);
-                self.exchange_data.extend_from_slice(&exchange.exchange);
 
                 let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
                 self.gss_api_messages.extend_from_slice(&response_token);
@@ -956,9 +929,6 @@ impl SspiImpl for Pku2u {
                 let mut f = std::fs::File::create("gss_api_messages.txt").unwrap();
                 f.write_all(format!("{:?}", self.gss_api_messages).as_bytes()).unwrap();
 
-                let mut f = std::fs::File::create("exchange_data.txt").unwrap();
-                f.write_all(format!("{:?}", self.exchange_data).as_bytes()).unwrap();
-
                 // let new_key = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2];
                 // println!("checksum: {:?}", ChecksumSuite::HmacSha196Aes256.hasher().checksum(&new_key, 41, &self.gss_api_messages));
 
@@ -971,38 +941,44 @@ impl SspiImpl for Pku2u {
 
                 let nego_token: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
-                let buffer = nego_token.0.response_token.0.unwrap().0.0;
-                
+                let buffer = nego_token.0.response_token.0.unwrap().0 .0;
 
                 let initiator_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
-                self.exchange_data.extend_from_slice(&initiator_exchange.exchange);
 
                 self.next_seq_number();
 
                 let initiator_verify_data = &buffer[(initiator_exchange.header.message_len as usize)..];
                 println!("buffer for verify: {:?}", initiator_verify_data);
 
-                let initiator_verify =
-                    Verify::decode(initiator_verify_data, initiator_verify_data)?;
+                let initiator_verify = Verify::decode(initiator_verify_data, initiator_verify_data)?;
                 println!("initiator verify: {:?}", initiator_verify);
 
-                self.negoex_messages.extend_from_slice(&buffer[0..(initiator_exchange.header.message_len as usize)]);
+                self.negoex_messages
+                    .extend_from_slice(&buffer[0..(initiator_exchange.header.message_len as usize)]);
 
                 let (ap_req, _): (ApReq, _) = extract_krb_rep(&initiator_exchange.exchange)?;
                 println!("ap_req: {:?}", ap_req);
-                let sub_session_key = extract_sub_session_key_from_ap_req(&ap_req, self.encryption_params.session_key.as_ref().unwrap())?;
+                let sub_session_key =
+                    extract_sub_session_key_from_ap_req(&ap_req, self.encryption_params.session_key.as_ref().unwrap())?;
                 println!("ap_req authenticator key: {:?}", sub_session_key);
-                if initiator_verify.checksum.checksum_value != ChecksumSuite::HmacSha196Aes256.hasher().checksum(&sub_session_key, 25, &self.negoex_messages)? {
+                if initiator_verify.checksum.checksum_value
+                    != ChecksumSuite::HmacSha196Aes256
+                        .hasher()
+                        .checksum(&sub_session_key, 25, &self.negoex_messages)?
+                {
                     println!("bad initiator checksum");
                 } else {
                     println!("good initiator checksum");
                 }
 
-                self.negoex_messages.extend_from_slice(&buffer[(initiator_exchange.header.message_len as usize)..]);
-                
+                self.negoex_messages
+                    .extend_from_slice(&buffer[(initiator_exchange.header.message_len as usize)..]);
+
                 self.next_seq_number();
 
-                let test_sub_session_key = [2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+                let test_sub_session_key = [
+                    2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                ];
                 self.encryption_params.sub_session_key = Some(test_sub_session_key.to_vec());
                 println!("ap_rep enc part key: {:?}", test_sub_session_key);
 
@@ -1051,9 +1027,7 @@ impl SspiImpl for Pku2u {
                 println!("resp_token: {:?}", resp_token);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&resp_token)?;
+                output_token.buffer.write_all(&resp_token)?;
 
                 self.state = Pku2uState::PubKeyAuth;
 
