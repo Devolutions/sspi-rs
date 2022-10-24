@@ -135,12 +135,6 @@ pub fn generate_signer_info(
     digest: Vec<u8>,
     private_key: &RsaPrivateKey,
 ) -> Result<SignerInfo> {
-    println!("{:x?}", p2p_cert.tbs_certificate.serial_number);
-    println!(
-        "{:?}",
-        picky_asn1_der::to_vec(&p2p_cert.tbs_certificate.serial_number).unwrap()
-    );
-
     let signed_attributes = Asn1SetOf::from(vec![
         Attribute {
             ty: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from("1.2.840.113549.1.9.3").unwrap()),
@@ -167,8 +161,6 @@ pub fn generate_signer_info(
             &hashed_signed_attributes,
         )
         .unwrap();
-
-    println!("signature: {} {:?}", signature.len(), signature);
 
     Ok(SignerInfo {
         version: CmsVersion::V1,
@@ -216,10 +208,7 @@ pub fn generate_client_dh_parameters() -> Result<DhParameters> {
     let (p, g, q) = get_default_parameters();
 
     let mut rng = OsRng::default();
-
     let private_key = generate_private_key(&q, &mut rng);
-
-    println!("dh private_key: {:?}", private_key);
 
     Ok(DhParameters {
         base: g,
@@ -259,12 +248,9 @@ pub fn generate_pa_datas_for_as_req(
 
     let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base);
 
-    println!("public key value len: {:?} bytes", public_value);
-
     let auth_pack = AuthPack {
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
-            // cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-            cusec: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x04, 0x4e, 0x14])),
+            cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
             ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
             // nonce: ExplicitContextTag2::from(IntegerAsn1::from(auth_nonce.to_be_bytes().to_vec())),
             nonce: ExplicitContextTag2::from(IntegerAsn1::from(vec![0])),

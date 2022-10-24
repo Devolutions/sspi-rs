@@ -1,8 +1,10 @@
+mod cert_utils;
 mod config;
 mod extractors;
 mod generators;
 #[macro_use]
 mod macros;
+mod validate;
 
 use std::io::{Read, Write};
 use std::str::FromStr;
@@ -22,6 +24,8 @@ use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
+use rsa::{RsaPublicKey, PublicKey, PaddingScheme, Hash};
+use sha1::{Sha1, Digest};
 use uuid::Uuid;
 
 use self::generators::{
@@ -36,11 +40,13 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER, SERVICE_NAME};
+use crate::sspi::pku2u::cert_utils::validate_server_p2p_certificate;
 use crate::sspi::pku2u::extractors::{
     extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
     extract_session_key_from_as_rep, extract_pa_pk_as_req, compute_session_key_from_pa_pk_as_req, extract_sub_session_key_from_ap_req,
 };
 use crate::sspi::pku2u::generators::{generate_authenticator, generate_neg_token_init_s, generate_pa_datas_for_as_rep, generate_as_rep, generate_ap_rep, generate_neg_token_completed};
+use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{
@@ -121,7 +127,7 @@ impl Pku2u {
         Ok(Self {
             config,
             state: Pku2uState::Preauthentication,
-            encryption_params: EncryptionParams::default_for_client(),
+            encryption_params: EncryptionParams::default_for_server(),
             auth_identity: None,
             // conversation_id: Uuid::new_v4(),
             // for the debugging
@@ -153,9 +159,7 @@ impl Pku2u {
             state: Pku2uState::Negotiate,
             encryption_params: EncryptionParams::default_for_client(),
             auth_identity: None,
-            // conversation_id: Uuid::new_v4(),
-            // for the debugging
-            conversation_id: Uuid::from_str("e2506b43-4f8f-3534-f0e4-5ddf02b7f7c4").unwrap(),
+            conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
             // realm: None,
@@ -422,8 +426,6 @@ impl SspiImpl for Pku2u {
                 );
                 nego.encode(&mut mech_token)?;
 
-                // nego.encode(&mut self.negoex_messages)?;
-
                 let exchange = Exchange::new(
                     MessageType::InitiatorMetaData,
                     self.conversation_id,
@@ -434,7 +436,6 @@ impl SspiImpl for Pku2u {
                 exchange.encode(&mut mech_token)?;
 
                 self.negoex_messages.extend_from_slice(&mech_token);
-                // exchange.encode(&mut self.negoex_messages)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token
@@ -463,15 +464,11 @@ impl SspiImpl for Pku2u {
                     .0
                      .0;
 
-                println!("buffer: {:?}", buffer);
-
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let mut reader: Box<dyn Read> = Box::new(buffer.as_slice());
 
                 let acceptor_nego = Nego::decode(&mut reader, &buffer)?;
-
-                println!("acceptor_nego: {:?}", acceptor_nego);
 
                 check_conversation_id!(acceptor_nego.header.conversation_id.0, self.conversation_id);
                 check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
@@ -497,30 +494,12 @@ impl SspiImpl for Pku2u {
                 }
 
                 let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
-                println!("acceptor_exchage data: {:?}", acceptor_exchange_data);
                 let mut reader: Box<dyn Read> = Box::new(acceptor_exchange_data);
-
                 let acceptor_exchange = Exchange::decode(&mut reader, acceptor_exchange_data)?;
-
-                println!("acceptor_exchange: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
-
-                println!("all parsed and verified");
-
-                let credentials = builder
-                    .credentials_handle
-                    .as_ref()
-                    .unwrap()
-                    .as_ref()
-                    .ok_or_else(|| Error {
-                        error_type: ErrorKind::NoCredentials,
-                        description: "No credentials provided".to_owned(),
-                    })?;
-
-                let _username = utf16_bytes_to_utf8_string(&credentials.user);
 
                 let mut mech_token = Vec::new();
 
@@ -545,7 +524,6 @@ impl SspiImpl for Pku2u {
 
                 let exchange_data =
                     picky_asn1_der::to_vec(&generate_neg(generate_as_req(&pa_datas, kdc_req_body), AS_REQ_TOKEN_ID))?;
-                println!("exchange_data: {:?}", exchange_data);
                 self.gss_api_messages.extend_from_slice(&exchange_data);
 
                 let exchange = Exchange::new(
@@ -560,7 +538,6 @@ impl SspiImpl for Pku2u {
                 self.negoex_messages.extend_from_slice(&mech_token);
 
                 let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
-                // println!("response_token: {:?}", response_token);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&response_token)?;
@@ -587,8 +564,6 @@ impl SspiImpl for Pku2u {
                     .0
                      .0;
 
-                // println!("AsExchange buffer: {:?}", buffer);
-
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
@@ -602,8 +577,6 @@ impl SspiImpl for Pku2u {
 
                 let (as_rep, _): (AsRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 
-                // todo: validate server's certificate
-
                 let dh_rep_info = match extract_pa_pk_as_rep(&as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
                     PaPkAsRep::EncKeyPack(_) => {
@@ -614,19 +587,16 @@ impl SspiImpl for Pku2u {
                     }
                 };
 
-                println!("dh_rep_info: {:?}", dh_rep_info);
-
                 let server_nonce = extract_server_nonce(&dh_rep_info)?;
-                println!("server_nonce: {:?}", server_nonce);
-
                 self.dh_parameters.server_nonce = Some(server_nonce);
 
                 let signed_data: SignedData = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
 
-                // validate server's signature
+                // todo: validate server's certificate
+                let rsa_public_key = validate_server_p2p_certificate(&signed_data, &self.config.p2p_ca_certificate)?;
+                validate_signed_data(&signed_data, &rsa_public_key)?;
 
                 let public_key = extract_server_dh_public_key(&signed_data)?;
-                println!("public key: {:?}", public_key);
                 self.dh_parameters.other_public_key = Some(public_key);
 
                 self.encryption_params.encryption_type =
@@ -646,14 +616,12 @@ impl SspiImpl for Pku2u {
                         .cipher()
                         .as_ref(),
                 )?);
-                println!("session key: {:?}", self.encryption_params.session_key);
 
                 self.encryption_params.session_key = Some(extract_session_key_from_as_rep(
                     &as_rep,
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &self.encryption_params,
                 )?);
-                println!("session key: {:?}", self.encryption_params.session_key);
 
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
@@ -689,16 +657,12 @@ impl SspiImpl for Pku2u {
                     self.auth_scheme.unwrap(),
                     picky_asn1_der::to_vec(&generate_neg(ap_req, AP_REQ_TOKEN_ID))?,
                 );
-                println!("exchange: {:?}", exchange);
                 exchange.encode(&mut mech_token)?;
 
                 exchange.encode(&mut self.negoex_messages)?;
 
-                // println!("negoex messages: {:?}", self.negoex_messages);
-
                 let c2 = ChecksumSuite::HmacSha196Aes256.hasher().checksum(
                     &test_session_key,
-                    // self.encryption_params.session_key.as_ref().unwrap(),
                     25,
                     &self.negoex_messages,
                 )?;

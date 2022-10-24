@@ -22,20 +22,7 @@ use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Error, ErrorKind, Result};
 
 pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
-    let _oid: ApplicationTag<Asn1RawDer, 0> =
-        picky_asn1_der::from_reader(&mut data).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
-
-    // let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0.0)?;
-
-    // let mut token_id = [0, 0];
-    // data.read_exact(&mut token_id)?;
-
-    // if token_id != AS_REP_TOKEN_ID {
-    //     return Err(Error::new(
-    //         ErrorKind::InvalidToken,
-    //         format!("Invalid token id: {:?}. Expected: {:?}", token_id, AS_REP_TOKEN_ID),
-    //     ));
-    // }
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
     Ok((picky_asn1_der::from_bytes(data)?, data))
 }
@@ -47,13 +34,13 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
             .padata
             .0
             .as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "pa-datas is not present in as rep".into()))?
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "pa-datas is not present in as-rep".into()))?
             .iter()
             .find(|pa_data| &pa_data.padata_type.0 .0 == &PA_PK_AS_REP)
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    "PA_PK_AS_REP is not present in pa-datas of the as rep".into(),
+                    "PA_PK_AS_REP is not present in pa-datas of the as-rep".into(),
                 )
             })?
             .padata_data
@@ -130,10 +117,8 @@ pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &
 
     let enc_data = cipher
         .decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)?;
-    println!("as rep decrypted!");
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
-    println!("{:?}", enc_as_rep_part);
 
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
@@ -168,20 +153,13 @@ pub fn compute_session_key_from_pa_pk_as_req(pa_pk_as_req: &PaPkAsReq, dh_server
         c => unimplemented!("wrong content value: {:?}", c),
     })?;
 
-    println!("server: auth pack decoded: {:?}", auth_pack);
-
     let dh_client_public_info = &auth_pack.client_public_value.0.as_ref().unwrap().0;
-
-    println!("dh_client_public_info: {:?}", dh_client_public_info);
 
     let g = dh_client_public_info.key_info.key_info.g.0.clone();
     let p = dh_client_public_info.key_info.key_info.p.0.clone();
     let q = dh_client_public_info.key_info.key_info.q.0.clone();
 
-    println!("try to parse client public: {:?}", dh_client_public_info.key_value.0.inner());
-    println!("to decode as int: {:?}", &dh_client_public_info.key_value.0.inner()[1..]);
     let dh_client_public: IntegerAsn1 = picky_asn1_der::from_bytes(&dh_client_public_info.key_value.0.inner()[1..])?;
-    println!("client public parsed");
     let dh_client_public = dh_client_public.0;
 
     let mut rng = OsRng::default();
@@ -207,9 +185,9 @@ pub fn compute_session_key_from_pa_pk_as_req(pa_pk_as_req: &PaPkAsReq, dh_server
 pub fn extract_sub_session_key_from_ap_req(ap_req: &ApReq, session_key: &[u8]) -> Result<Vec<u8>> {
     let encrypted = &ap_req.0.authenticator.0.cipher.0.0;
     let decrypted = CipherSuite::Aes256CtsHmacSha196.cipher().decrypt(session_key, AP_REQ_AUTHENTICATOR, encrypted)?;
-    println!("sub decrypted");
+    
     let auth: Authenticator = picky_asn1_der::from_bytes(&decrypted)?;
-    println!("sub parsed");
+    
     Ok(auth.0.subkey.0.unwrap().0.key_value.0.0)
 }
 

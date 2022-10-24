@@ -36,6 +36,8 @@ lazy_static = "1.2"
 serde = "1.0"
 serde_derive = "1.0"
 schannel = "0.1.20"
+windows-sys = { version = "0.42.0", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+num-bigint = "0.4.3"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
