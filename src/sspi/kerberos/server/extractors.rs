@@ -25,8 +25,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
          .0;
 
     let mut data = resp_token.as_slice();
-    let _oid: ApplicationTag<Asn1RawDer, 0> =
-        picky_asn1_der::from_reader(&mut data).map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
     let mut t = [0, 0];
     data.read_exact(&mut t)?;
@@ -52,12 +51,7 @@ pub fn extract_sub_session_key_from_ap_rep(
             description: format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
         })?;
 
-    println!("ap_rep_enc_part: {:?}", res);
-
-    let ap_rep_enc_part: EncApRepPart =
-        picky_asn1_der::from_bytes(&res).map_err(|e| Error::new(ErrorKind::InvalidToken, format!("{:?}", e)))?;
-
-    println!("ap_rep_enc_part: {:?}", ap_rep_enc_part);
+    let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
 
     Ok(ap_rep_enc_part
         .0

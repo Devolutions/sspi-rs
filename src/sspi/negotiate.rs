@@ -18,7 +18,7 @@ use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[cfg(feature = "network_client")]
 use crate::utils::get_domain_from_fqdn;
-use crate::utils::is_azure_ad_username;
+use crate::utils::is_azure_ad_domain;
 #[cfg(feature = "network_client")]
 use crate::utils::resolve_kdc_host;
 use crate::{
@@ -118,9 +118,9 @@ impl Negotiate {
         })
     }
 
-    fn negotiate_protocol(&mut self, username: &[u8]) -> Result<()> {
+    fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
-            if is_azure_ad_username(username) {
+            if is_azure_ad_domain(domain) {
                 self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default())?);
                 return Ok(());
             }
@@ -216,7 +216,10 @@ impl Sspi for Negotiate {
     }
 
     fn change_password(&mut self, change_password: builders::ChangePassword) -> Result<()> {
-        self.negotiate_protocol(change_password.account_name.as_bytes())?;
+        self.negotiate_protocol(
+            change_password.account_name.as_bytes(),
+            change_password.domain_name.as_bytes(),
+        )?;
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.change_password(change_password),
@@ -242,7 +245,10 @@ impl SspiImpl for Negotiate {
         }
 
         if let Some(identity) = builder.auth_data {
-            self.negotiate_protocol(identity.username.as_bytes())?;
+            self.negotiate_protocol(
+                identity.username.as_bytes(),
+                identity.domain.as_ref().map(|d| d.as_str()).unwrap_or("").as_bytes(),
+            )?;
         }
 
         self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
@@ -264,7 +270,7 @@ impl SspiImpl for Negotiate {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         if let Some(Some(identity)) = builder.credentials_handle {
-            self.negotiate_protocol(&identity.user)?;
+            self.negotiate_protocol(&identity.user, &identity.domain)?;
         }
 
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {

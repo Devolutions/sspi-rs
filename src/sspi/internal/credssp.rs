@@ -193,7 +193,6 @@ impl CredSspClient {
             state: CredSspState::NegoToken,
             context: None,
             credentials,
-            // public_key: vec![48, 130, 1, 10, 2, 130, 1, 1, 0, 205, 145, 202, 14, 211, 90, 9, 57, 201, 82, 174, 149, 31, 144, 56, 21, 255, 170, 18, 31, 144, 135, 109, 251, 163, 28, 59, 223, 208, 158, 196, 250, 235, 72, 119, 207, 27, 111, 174, 26, 191, 111, 119, 254, 246, 121, 105, 241, 139, 246, 224, 36, 79, 243, 64, 59, 121, 255, 77, 254, 198, 138, 194, 237, 252, 149, 123, 7, 230, 18, 178, 118, 194, 47, 128, 5, 199, 153, 59, 90, 147, 77, 117, 0, 254, 85, 14, 197, 132, 169, 142, 94, 250, 217, 89, 82, 175, 157, 44, 174, 96, 169, 202, 110, 170, 184, 128, 245, 14, 74, 254, 10, 132, 168, 46, 43, 48, 162, 113, 66, 120, 53, 83, 219, 172, 67, 28, 175, 176, 38, 97, 154, 53, 210, 137, 170, 241, 184, 156, 124, 175, 142, 172, 19, 0, 16, 77, 121, 115, 59, 31, 42, 84, 105, 121, 113, 199, 177, 124, 100, 73, 151, 42, 96, 229, 100, 158, 250, 34, 18, 125, 245, 73, 180, 154, 236, 64, 109, 130, 187, 83, 115, 15, 251, 21, 235, 147, 15, 96, 61, 6, 248, 7, 83, 60, 123, 178, 187, 116, 102, 99, 121, 134, 233, 14, 142, 1, 28, 214, 57, 144, 104, 15, 159, 157, 235, 241, 240, 145, 131, 145, 109, 35, 203, 21, 245, 176, 130, 140, 121, 77, 230, 215, 176, 176, 107, 190, 173, 87, 116, 34, 184, 136, 214, 44, 153, 173, 67, 113, 219, 216, 128, 121, 25, 244, 141, 2, 3, 1, 0, 1],
             public_key,
             cred_ssp_mode,
             client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
@@ -216,7 +215,6 @@ impl CredSspClient {
             state: CredSspState::NegoToken,
             context: None,
             credentials,
-            // public_key: vec![48, 130, 1, 10, 2, 130, 1, 1, 0, 205, 145, 202, 14, 211, 90, 9, 57, 201, 82, 174, 149, 31, 144, 56, 21, 255, 170, 18, 31, 144, 135, 109, 251, 163, 28, 59, 223, 208, 158, 196, 250, 235, 72, 119, 207, 27, 111, 174, 26, 191, 111, 119, 254, 246, 121, 105, 241, 139, 246, 224, 36, 79, 243, 64, 59, 121, 255, 77, 254, 198, 138, 194, 237, 252, 149, 123, 7, 230, 18, 178, 118, 194, 47, 128, 5, 199, 153, 59, 90, 147, 77, 117, 0, 254, 85, 14, 197, 132, 169, 142, 94, 250, 217, 89, 82, 175, 157, 44, 174, 96, 169, 202, 110, 170, 184, 128, 245, 14, 74, 254, 10, 132, 168, 46, 43, 48, 162, 113, 66, 120, 53, 83, 219, 172, 67, 28, 175, 176, 38, 97, 154, 53, 210, 137, 170, 241, 184, 156, 124, 175, 142, 172, 19, 0, 16, 77, 121, 115, 59, 31, 42, 84, 105, 121, 113, 199, 177, 124, 100, 73, 151, 42, 96, 229, 100, 158, 250, 34, 18, 125, 245, 73, 180, 154, 236, 64, 109, 130, 187, 83, 115, 15, 251, 21, 235, 147, 15, 96, 61, 6, 248, 7, 83, 60, 123, 178, 187, 116, 102, 99, 121, 134, 233, 14, 142, 1, 28, 214, 57, 144, 104, 15, 159, 157, 235, 241, 240, 145, 131, 145, 109, 35, 203, 21, 245, 176, 130, 140, 121, 77, 230, 215, 176, 176, 107, 190, 173, 87, 116, 34, 184, 136, 214, 44, 153, 173, 67, 113, 219, 216, 128, 121, 25, 244, 141, 2, 3, 1, 0, 1],
             public_key,
             cred_ssp_mode,
             client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
@@ -282,8 +280,6 @@ impl CredSspClient {
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
-                    println!("start auth info");
-                    println!("public key: {:?}", self.public_key);
                     let peer_version =
                         self.context.as_ref().unwrap().peer_version.expect(
                             "An encrypt public key client function cannot be fired without any incoming TSRequest",
@@ -302,7 +298,6 @@ impl CredSspClient {
                 Ok(ClientState::ReplyNeeded(ts_request))
             }
             CredSspState::AuthInfo => {
-                println!("got pub key auth reply. start credentials transferring");
                 ts_request.nego_tokens = None;
 
                 let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
@@ -368,12 +363,11 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
     pub fn new(public_key: Vec<u8>, credentials: C, client_mode: ClientMode) -> sspi::Result<Self> {
-        println!("server's public key: {:?}", public_key);
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
             credentials,
-            public_key: vec![48, 130, 1, 10, 2, 130, 1, 1, 0, 205, 145, 202, 14, 211, 90, 9, 57, 201, 82, 174, 149, 31, 144, 56, 21, 255, 170, 18, 31, 144, 135, 109, 251, 163, 28, 59, 223, 208, 158, 196, 250, 235, 72, 119, 207, 27, 111, 174, 26, 191, 111, 119, 254, 246, 121, 105, 241, 139, 246, 224, 36, 79, 243, 64, 59, 121, 255, 77, 254, 198, 138, 194, 237, 252, 149, 123, 7, 230, 18, 178, 118, 194, 47, 128, 5, 199, 153, 59, 90, 147, 77, 117, 0, 254, 85, 14, 197, 132, 169, 142, 94, 250, 217, 89, 82, 175, 157, 44, 174, 96, 169, 202, 110, 170, 184, 128, 245, 14, 74, 254, 10, 132, 168, 46, 43, 48, 162, 113, 66, 120, 53, 83, 219, 172, 67, 28, 175, 176, 38, 97, 154, 53, 210, 137, 170, 241, 184, 156, 124, 175, 142, 172, 19, 0, 16, 77, 121, 115, 59, 31, 42, 84, 105, 121, 113, 199, 177, 124, 100, 73, 151, 42, 96, 229, 100, 158, 250, 34, 18, 125, 245, 73, 180, 154, 236, 64, 109, 130, 187, 83, 115, 15, 251, 21, 235, 147, 15, 96, 61, 6, 248, 7, 83, 60, 123, 178, 187, 116, 102, 99, 121, 134, 233, 14, 142, 1, 28, 214, 57, 144, 104, 15, 159, 157, 235, 241, 240, 145, 131, 145, 109, 35, 203, 21, 245, 176, 130, 140, 121, 77, 230, 215, 176, 176, 107, 190, 173, 87, 116, 34, 184, 136, 214, 44, 153, 173, 67, 113, 219, 216, 128, 121, 25, 244, 141, 2, 3, 1, 0, 1],
+            public_key,
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
             context_config: client_mode,
@@ -448,19 +442,16 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     ts_request
                 );
 
-                println!("auth_info: {:?}", auth_info);
-
                 let read_credentials = try_cred_ssp_server!(
                     self.context.as_mut().unwrap().decrypt_ts_credentials(&auth_info),
                     ts_request
                 );
-                panic!("creds: {:?}", read_credentials);
+                
                 self.state = CredSspState::Final;
 
                 Ok(ServerState::Finished(read_credentials.into()))
             }
             CredSspState::NegoToken => {
-                println!("public key: {:?}", self.public_key);
                 // let input = try_cred_ssp_server!(
                 //     ts_request
                 //         .nego_tokens
@@ -476,8 +467,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let input = ts_request.nego_tokens.take().unwrap_or(Vec::new());
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
-
-                println!("ts_request: {:?}", ts_request);
 
                 let mut credentials_handle = self.credentials_handle.take();
                 match try_cred_ssp_server!(
@@ -498,14 +487,10 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         ts_request.nego_tokens = Some(output_token.remove(0).buffer);
                     }
                     AcceptSecurityContextResult { status, .. } if status == SecurityStatus::CompleteNeeded => {
-                        println!("I'M HERE: TS_REQUEST: {:?}", ts_request);
-                        println!("--------------------------------");
-
                         let ContextNames { username, domain } = try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.query_context_names(),
                             ts_request
                         );
-                        println!("context names here");
                         let auth_data = try_cred_ssp_server!(
                             self.credentials
                                 .auth_data_by_user(username, domain)
@@ -517,7 +502,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             .unwrap()
                             .sspi_context
                             .custom_set_auth_identity(auth_data);
-                        println!("custom auth identity are set");
 
                         try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
@@ -864,9 +848,7 @@ impl CredSspContext {
         hash_magic: &[u8],
         client_nonce: &[u8],
     ) -> sspi::Result<()> {
-        println!("start decrypt");
         let decrypted_public_key = self.decrypt_message(encrypted_public_key)?;
-        println!("finish decrypt");
 
         let mut data = hash_magic.to_vec();
         data.extend(client_nonce);
@@ -874,13 +856,10 @@ impl CredSspContext {
         let expected_public_key = compute_sha256(&data);
 
         if expected_public_key.as_ref() != decrypted_public_key.as_slice() {
-            println!("hashes are not the same");
             return Err(sspi::Error::new(
                 sspi::ErrorKind::MessageAltered,
                 String::from("Could not verify a public key hash"),
             ));
-        } else {
-            println!("yes, they are the same");
         }
 
         Ok(())
@@ -891,14 +870,11 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        let encoded_ts_creds = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
-        println!("encoded_ts_creds: {:?}", encoded_ts_creds);
-        self.encrypt_message(&encoded_ts_creds)
+        self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
         let ts_credentials_buffer = self.decrypt_message(auth_info)?;
-        println!("decrypted creds: {:?}", ts_credentials_buffer);
 
         Ok(ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())?)
     }

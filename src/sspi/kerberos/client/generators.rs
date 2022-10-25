@@ -320,13 +320,18 @@ pub struct ChecksumOptions {
     pub checksum_value: Vec<u8>,
 }
 
+pub struct AuthenticatorChecksumExtension {
+    pub extension_type: u32,
+    pub extension_value: Vec<u8>,
+}
+
 pub struct GenerateAuthenticatorOptions<'a> {
     pub kdc_rep: &'a KdcRep,
     pub seq_num: Option<u32>,
     pub sub_key: Option<Vec<u8>>,
     pub checksum: Option<ChecksumOptions>,
     pub channel_bindings: Option<&'a ChannelBindings>,
-    pub extension: Vec<u8>,
+    pub extensions: Vec<AuthenticatorChecksumExtension>,
 }
 
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
@@ -336,7 +341,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         sub_key,
         checksum,
         channel_bindings,
-        extension,
+        ..
     } = options;
 
     let current_date = Utc::now();

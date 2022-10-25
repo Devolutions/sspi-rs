@@ -1,59 +1,110 @@
+use std::{ptr::{null, null_mut}, ffi::OsStr, os::windows::prelude::OsStrExt, slice::from_raw_parts};
+
 use picky_asn1_x509::{
     signed_data::{CertificateChoices, SignedData},
     Certificate, PublicKey,
 };
 use rsa::{BigUint, RsaPublicKey};
-use schannel::cert_store::CertStore;
-use winapi::um::wincrypt::CryptExportKey;
+use winapi::{um::wincrypt::{
+    CertOpenStore, CryptExportKey, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_LOCAL_MACHINE_ID,
+    CERT_SYSTEM_STORE_LOCATION_SHIFT, CertEnumCertificatesInStore, CryptAcquireCertificatePrivateKey, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, CERT_NCRYPT_KEY_SPEC,
+}, shared::bcrypt::BCRYPT_RSAFULLPRIVATE_BLOB};
+use windows_sys::Win32::{Security::Cryptography::{CERT_KEY_SPEC, NCryptExportKey}, Foundation};
 
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, utils::string_to_utf16};
 
 /// Tries to find the device certificate and its private key
 /// Requirements for the device certificate:
 /// 1. Issuer CN = MS-Organization-Access
 /// 2. Issuer OU = 82dbaca4-3e81-46ca-9c73-0950c1eaca97
 pub fn extract_device_certificate() -> Result<()> {
-    let cert_store = CertStore::open_local_machine("My").unwrap();
-    let certs = cert_store.certs();
+    unsafe {
+        let which = "My";
+        let data = OsStr::new(which)
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<_>>();
+        let cert_store = CertOpenStore(
+            CERT_STORE_PROV_SYSTEM_W,
+            0,
+            0,
+            CERT_SYSTEM_STORE_LOCAL_MACHINE_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
+            data.as_ptr() as *mut _,
+        );
 
-    for cert in certs {
-        let certificate: Certificate = picky_asn1_der::from_bytes(cert.to_der())?;
-        let mut cn = false;
-        let mut ou = false;
-
-        for issuer_info in certificate.tbs_certificate.issuer.0 .0 {
-            for is in issuer_info.0 {
-                println!("is: {:?}", is);
-            }
+        if cert_store.is_null() {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "Cannot initialize certificate store: permission denied".into(),
+            ));
         }
 
-        if cn && ou {
-            println!("found");
-            let private_key = cert.private_key().acquire().unwrap();
-            // let p = cert.
+        println!("cert_store: {:?}", cert_store);
+        
+        let mut certificate = CertEnumCertificatesInStore(
+            cert_store,
+            null_mut(),
+        );
 
-            use schannel::key_handle::KeyHandle;
+        println!("cert: {:?}", certificate);
 
-            let mut v1 = vec![0; 5000];
-            let mut len = 0;
+        while !certificate.is_null() {
+            println!("loop: {:?}", certificate);
 
-            match private_key {
-                KeyHandle::CryptProv(key_handle) => {
-                    // key_handle.
-                    unsafe {
-                        //
-                        let result = CryptExportKey(0, 0, 0, 0, v1.as_mut_ptr(), &mut len);
-                    }
-                }
-                KeyHandle::NcryptKey(ncrypt) => {
-                    // let r = ncrypt.borrow_mut();
+            println!("{:?}", (*certificate).pbCertEncoded);
+            println!("{:?}", (*certificate).cbCertEncoded);
+
+            let cert_der = from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize);
+            let cert: Certificate = picky_asn1_der::from_bytes(cert_der)?;
+
+            let mut private_key_handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
+            let mut spec = CERT_KEY_SPEC::default();
+            let mut free = Foundation::BOOL::default();
+            
+            // extract private key
+            let status = CryptAcquireCertificatePrivateKey(
+                certificate,
+                CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG,
+                null_mut(),
+                &mut private_key_handle,
+                &mut spec,
+                &mut free,
+            );
+
+            println!("status: {}, free: {:?}, handle: {}", status, free, private_key_handle);
+
+            if status != 0 && private_key_handle != 0 {
+                println!("try export private key");
+
+                let mut key_blob = null_mut();
+                let mut result_len = 0;
+
+                let blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
+                
+                if spec & CERT_NCRYPT_KEY_SPEC != 0 {
+                    println!("ncrypt");
+                    let status = NCryptExportKey(
+                        private_key_handle as _,
+                        0,
+                        blob_type_wide.as_ptr() as *const _,
+                        null(),
+                        key_blob,
+                        0,
+                        &mut result_len,
+                        0,
+                    );
+
+                    println!("status: {}, key_blob: {:?}, result_len: {}", status, key_blob, result_len);
+                } else {
+                    println!("crypt");
                 }
             }
+
+            certificate = CertEnumCertificatesInStore(cert_store, certificate);
         }
-        println!("===============");
     }
 
-    Ok(())
+    Err(Error::new(ErrorKind::InternalError, "Cannot find appropriate device certificate".into()))
 }
 
 /// validates server's p2p certificate.

@@ -29,31 +29,34 @@ use picky_asn1_x509::signer_info::{
 };
 use picky_asn1_x509::{AlgorithmIdentifier, Attribute, AttributeValues, Certificate, ShaVariant};
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AUTHENTICATOR_CHECKSUM_TYPE};
-use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC};
+use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KEY_USAGE_FINISHED};
 use picky_krb::constants::types::{NT_SRV_INST, PA_PK_AS_REP, PA_PK_AS_REQ};
 use picky_krb::crypto::diffie_hellman::{compute_public_key, generate_private_key};
-use picky_krb::crypto::CipherSuite;
+use picky_krb::crypto::{ChecksumSuite, CipherSuite};
 use picky_krb::data_types::{
     Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncApRepPart,
-    EncApRepPartInner, EncryptedData, EncryptionKey, KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime, LastReq,
+    EncApRepPartInner, EncryptedData, EncryptionKey, KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime,
     LastReqInner, LsapTokenInfoIntegrity, PaData, PrincipalName, Realm, Ticket, TicketInner,
 };
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
 use picky_krb::messages::{ApRep, ApRepInner, AsRep, EncAsRepPart, EncKdcRepPart, KdcRep, KdcReqBody};
+use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{
-    AuthPack, DhDomainParameters, DhRepInfo, DhReqInfo, DhReqKeyInfo, KdcDhKeyInfo, PaPkAsRep, PaPkAsReq,
+    AuthPack, DhDomainParameters, DhRepInfo, DhReqInfo, DhReqKeyInfo, KdcDhKeyInfo, KrbFinished, PaPkAsRep, PaPkAsReq,
     PkAuthenticator, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata,
 };
 use rand::rngs::OsRng;
+use rand::Rng;
 use rsa::{Hash, PaddingScheme, RsaPrivateKey};
 use sha1::{Digest, Sha1};
 
 use super::{DhParameters, Pku2uConfig};
 use crate::crypto::compute_md5_channel_bindings_hash;
-use crate::kerberos::client::generators::{ChecksumOptions, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND};
-use crate::kerberos::SERVICE_NAME;
+use crate::kerberos::client::generators::{
+    AuthenticatorChecksumExtension, ChecksumOptions, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
+};
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// [The PKU2U Realm Name](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-09#section-3)
@@ -65,6 +68,26 @@ pub const WELLKNOWN_REALM: &str = "WELLKNOWN:PKU2U";
 /// Key length of Aes256 is equal to 32
 pub const DH_NONCE_LEN: usize = 32;
 
+/// [The GSS-API Binding for PKU2U](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6)
+/// The type for the checksum extension.
+/// GSS_EXTS_FINISHED 2
+const GSS_EXTS_FINISHED: u32 = 2;
+
+/// [2.2.5 LSAP_TOKEN_INFO_INTEGRITY](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
+/// indicating the token information type
+/// 0x00000001 = User Account Control (UAC) restricted token
+const LSAP_TOKEN_INFO_INTEGRITY_FLAG: u32 = 1;
+/// [2.2.5 LSAP_TOKEN_INFO_INTEGRITY](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
+/// indicating the integrity level of the calling process
+/// 0x00002000 = Medium.
+const LSAP_TOKEN_INFO_INTEGRITY_TOKEN_IL: u32 = 0x00002000;
+/// [3.1.1.4 Machine ID](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
+/// KILE implements a 32-byte binary random string machine ID.
+const MACHINE_ID: [u8; 32] = [
+    92, 95, 64, 72, 191, 160, 228, 23, 98, 35, 78, 151, 207, 227, 96, 126, 97, 180, 15, 98, 127, 211, 90, 177, 119,
+    132, 45, 113, 206, 90, 169, 124,
+];
+
 // returns supported authentication types
 pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![
@@ -73,7 +96,12 @@ pub fn get_mech_list() -> MechTypeList {
     ])
 }
 
-pub fn generate_pku2u_nego_req(service_name: &str, config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
+pub fn generate_pku2u_nego_req(service_names: Vec<&str>, config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
+    let mut snames = Vec::with_capacity(service_names.len());
+    for sname in service_names {
+        snames.push(KerberosStringAsn1::from(IA5String::from_str(sname)?));
+    }
+
     Ok(Pku2uNegoReq {
         metadata: ExplicitContextTag0::from(Asn1SequenceOf::from(vec![Pku2uNegoReqMetadata {
             inner: ImplicitContextTag0::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
@@ -84,12 +112,7 @@ pub fn generate_pku2u_nego_req(service_name: &str, config: &Pku2uConfig) -> Resu
             realm: ExplicitContextTag0::from(Realm::from(IA5String::from_str(WELLKNOWN_REALM)?)),
             sname: ExplicitContextTag1::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_str(SERVICE_NAME)?),
-                    // KerberosStringAsn1::from(IA5String::from_str(username).unwrap()),
-                    // for the debugging
-                    KerberosStringAsn1::from(IA5String::from_str("dest.dataans.com")?),
-                ])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(snames)),
             }),
         }),
     })
@@ -205,26 +228,22 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     )
 }
 
-pub fn generate_server_dh_parameters() -> Result<DhParameters> {
+pub fn generate_server_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
     Ok(DhParameters {
         base: Vec::new(),
         modulus: Vec::new(),
         q: Vec::new(),
         private_key: Vec::new(),
         other_public_key: None,
-        server_nonce: Some([
-            142, 91, 149, 4, 44, 55, 103, 6, 75, 168, 207, 165, 162, 197, 172, 27, 2, 108, 166, 10, 240, 52, 179, 24,
-            56, 73, 137, 103, 160, 81, 236, 230,
-        ]),
+        server_nonce: Some(rng.gen::<[u8; RANDOM_ARRAY_SIZE]>()),
         client_nonce: None,
     })
 }
 
-pub fn generate_client_dh_parameters() -> Result<DhParameters> {
+pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
     let (p, g, q) = get_default_parameters();
 
-    let mut rng = OsRng::default();
-    let private_key = generate_private_key(&q, &mut rng);
+    let private_key = generate_private_key(&q, rng);
 
     Ok(DhParameters {
         base: g,
@@ -232,10 +251,7 @@ pub fn generate_client_dh_parameters() -> Result<DhParameters> {
         q,
         private_key,
         other_public_key: None,
-        client_nonce: Some([
-            142, 91, 149, 4, 44, 55, 103, 6, 75, 168, 207, 165, 162, 197, 172, 27, 2, 108, 166, 10, 240, 52, 179, 24,
-            56, 73, 137, 103, 160, 81, 236, 230,
-        ]),
+        client_nonce: Some(rng.gen::<[u8; RANDOM_ARRAY_SIZE]>()),
         server_nonce: None,
     })
 }
@@ -345,6 +361,26 @@ pub fn generate_neg<T: Debug + PartialEq + Clone>(
     })
 }
 
+pub fn generate_authenticator_extension(key: &[u8], payload: &[u8]) -> Result<AuthenticatorChecksumExtension> {
+    let hasher = ChecksumSuite::HmacSha196Aes256.hasher();
+
+    let krb_finished = KrbFinished {
+        gss_mic: ExplicitContextTag1::from(Checksum {
+            cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![ChecksumSuite::HmacSha196Aes256.into()])),
+            checksum: ExplicitContextTag1::from(OctetStringAsn1::from(hasher.checksum(
+                &key,
+                KEY_USAGE_FINISHED,
+                &payload,
+            )?)),
+        }),
+    };
+
+    Ok(AuthenticatorChecksumExtension {
+        extension_type: GSS_EXTS_FINISHED,
+        extension_value: picky_asn1_der::to_vec(&krb_finished)?,
+    })
+}
+
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,
@@ -352,7 +388,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         sub_key,
         checksum,
         channel_bindings,
-        extension,
+        extensions,
     } = options;
 
     let current_date = Utc::now();
@@ -362,12 +398,9 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
     }
 
     let lsap_token = LsapTokenInfoIntegrity {
-        flags: 1,
-        token_il: 0x00002000,
-        machine_id: [
-            92, 95, 64, 72, 191, 160, 228, 23, 98, 35, 78, 151, 207, 227, 96, 126, 97, 180, 15, 98, 127, 211, 90, 177,
-            119, 132, 45, 113, 206, 90, 169, 124,
-        ],
+        flags: LSAP_TOKEN_INFO_INTEGRITY_FLAG,
+        token_il: LSAP_TOKEN_INFO_INTEGRITY_TOKEN_IL,
+        machine_id: MACHINE_ID,
     };
 
     let mut encoded_lsap_token = Vec::with_capacity(40);
@@ -412,12 +445,14 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
             checksum_value[4..20]
                 .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
         }
-        checksum_value = vec![
-            16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 64, 0, 0, 0, 0, 0, 2, 0, 0, 0, 27, 48, 25,
-            161, 23, 48, 21, 160, 3, 2, 1, 16, 161, 14, 4, 12,
-        ];
-        checksum_value.extend_from_slice(&extension);
-        println!("checksum_value: {:?} {:?}", checksum_value, checksum_value.len());
+        checksum_value = vec![16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 64, 0, 0];
+
+        for extension in extensions {
+            checksum_value.extend_from_slice(&extension.extension_type.to_be_bytes());
+            checksum_value.extend_from_slice(&(extension.extension_value.len() as u32).to_be_bytes());
+            checksum_value.extend_from_slice(&extension.extension_value);
+        }
+
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
             checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),
@@ -431,8 +466,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
-        // cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-        cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0x08])),
+        cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(sub_key.map(|sub_key| {
             ExplicitContextTag6::from(EncryptionKey {
@@ -442,8 +476,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         })),
         seq_number: Optional::from(seq_num.map(|seq_num| {
             ExplicitContextTag7::from(IntegerAsn1::from_bytes_be_unsigned(
-                // seq_num.to_be_bytes().to_vec()
-                vec![0x1e, 0xcb, 0x01, 0x27], // vec![0x00]
+                seq_num.to_be_bytes().to_vec()
             ))
         })),
         authorization_data,
@@ -470,7 +503,6 @@ pub fn generate_pa_datas_for_as_rep(
     sha1.update(&encoded_auth_pack);
 
     let digest = sha1.finalize().to_vec();
-    println!("digest: {:?}", digest);
 
     let signed_data = SignedData {
         version: CmsVersion::V3,
@@ -507,7 +539,7 @@ pub fn get_bad_ticket() -> Ticket {
     ApplicationTag::from(TicketInner {
         tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
         realm: ExplicitContextTag1::from(KerberosStringAsn1::from(
-            IA5String::from_str("WELLKNOWN:PKU2U").unwrap(),
+            IA5String::from_str(WELLKNOWN_REALM).unwrap(),
         )),
         sname: ExplicitContextTag2::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
@@ -644,7 +676,7 @@ pub fn generate_ap_rep(session_key: &[u8], new_key: &[u8]) -> ApRep {
         ])))),
     });
     let encoded_ap_rep_enc_part = picky_asn1_der::to_vec(&ap_rep_enc_part).unwrap();
-    println!("encoded_ap_rep_enc_part: {:?}", encoded_ap_rep_enc_part);
+    
     let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
     let cipher_data = cipher
         .encrypt(session_key, AP_REP_ENC, &encoded_ap_rep_enc_part)
@@ -667,7 +699,6 @@ mod tests {
     use picky_asn1::bit_string::BitString;
     use picky_asn1::wrapper::{BitStringAsn1, ObjectIdentifierAsn1};
     use picky_asn1_x509::oids::NEGOEX;
-    use picky_krb::crypto::CipherSuite;
     use sha1::{Digest, Sha1};
 
     use super::generate_pku2u_nego_req;
@@ -676,7 +707,7 @@ mod tests {
 
     #[test]
     fn _neg_token_init_generation() {
-        let token = generate_pku2u_nego_req("", &Pku2uConfig::default()).unwrap();
+        let token = generate_pku2u_nego_req(vec![""], &Pku2uConfig::default()).unwrap();
 
         println!("{:?}", picky_asn1_der::to_vec(&token).unwrap());
     }

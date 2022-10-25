@@ -387,7 +387,7 @@ impl Sspi for Kerberos {
             sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
             checksum: None,
             channel_bindings: self.channel_bindings.as_ref(),
-            extension: vec![],
+            extensions: Vec::new(),
         })?;
 
         let krb_priv = generate_krb_priv_request(
@@ -546,7 +546,7 @@ impl SspiImpl for Kerberos {
                     sub_key: None,
                     checksum: None,
                     channel_bindings: self.channel_bindings.as_ref(),
-                    extension: vec![],
+                    extensions: Vec::new(),
                 })?;
 
                 let session_key_1 =
@@ -589,7 +589,7 @@ impl SspiImpl for Kerberos {
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                     }),
                     channel_bindings: self.channel_bindings.as_ref(),
-                    extension: vec![],
+                    extensions: Vec::new(),
                 })?;
 
                 let ap_req = generate_ap_req(
