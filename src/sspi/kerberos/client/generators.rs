@@ -149,6 +149,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub username: &'a str,
     pub cname_type: u8,
     pub snames: &'a [&'a str],
+    pub nonce: &'a [u8],
 }
 
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
@@ -157,6 +158,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         username,
         cname_type,
         snames,
+        nonce,
     } = options;
 
     let expiration_date = Utc::now()
@@ -194,15 +196,10 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
             GeneralizedTime::from(expiration_date),
         )))),
-        // nonce: ExplicitContextTag7::from(IntegerAsn1::from(OsRng::default().gen::<[u8; NONCE_LEN]>().to_vec())),
-        // we don't need a nonce in pku2u
-        nonce: ExplicitContextTag7::from(IntegerAsn1::from(vec![0])),
+        nonce: ExplicitContextTag7::from(IntegerAsn1::from(nonce.to_vec())),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
             IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
             IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
-            IntegerAsn1::from(vec![0x17]),
-            IntegerAsn1::from(vec![0x18]),
-            IntegerAsn1::from(vec![0xff, 0x79]),
         ])),
         addresses: Optional::from(address),
         enc_authorization_data: Optional::from(None),
@@ -449,7 +446,6 @@ pub fn generate_ap_req(
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
 
     let encrypted_authenticator = cipher.encrypt(session_key, AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
-    // let encrypted_authenticator = vec![80, 58, 178, 30, 181, 48, 100, 50, 91, 8, 248, 83, 53, 188, 200, 102, 243, 158, 83, 177, 114, 25, 52, 239, 62, 75, 30, 27, 36, 28, 89, 25, 245, 73, 139, 74, 148, 218, 247, 99, 184, 143, 51, 70, 243, 20, 101, 219, 128, 55, 188, 223, 241, 26, 161, 134, 42, 224, 42, 71, 37, 6, 8, 126, 244, 71, 108, 57, 43, 198, 18, 79, 134, 236, 3, 44, 47, 126, 8, 31, 138, 167, 110, 190, 74, 2, 67, 240, 102, 227, 87, 148, 113, 230, 206, 156, 133, 116, 179, 151, 234, 27, 46, 3, 156, 89, 138, 49, 9, 191, 81, 78, 20, 229, 204, 148, 29, 246, 108, 161, 126, 173, 237, 116, 50, 189, 133, 89, 161, 156, 144, 228, 215, 254, 152, 133, 240, 154, 17, 242, 0, 5, 77, 249, 61, 171, 226, 114, 6, 220, 162, 247, 108, 14, 249, 30, 46, 81, 226, 239, 2, 131, 64, 220, 63, 44, 119, 17, 55, 197, 60, 83, 218, 165, 66, 185, 96, 154, 144, 37, 155, 243, 48, 104, 170, 28, 198, 61, 210, 91, 110, 19, 32, 7, 211, 1, 29, 40, 222, 231, 246, 102, 131, 90, 174, 60, 104, 87, 185, 216, 160, 250, 147, 206, 185, 140, 222, 162, 79, 249, 249, 206, 171, 15, 181, 200, 161, 10, 82, 52, 253, 242, 14, 85, 96, 198, 20, 105, 241, 1, 231, 132, 92, 240, 125, 25, 70, 159, 183, 181, 232, 135, 144, 112, 177, 168, 192, 205, 8, 123, 94, 139, 75, 12, 182, 20, 197, 235, 109, 41, 254, 14, 109, 118, 84, 178, 27, 134, 164, 121, 81, 126, 167, 5, 61, 223, 187, 149, 210, 146, 44, 96, 144, 224, 239, 55, 28, 247, 29, 159, 36, 235, 107, 213, 24, 79, 212, 193, 139, 187, 35, 157, 160, 135, 102, 181, 156, 123, 23, 203, 70, 184, 59, 20, 67, 253, 105, 147, 213, 54];
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),

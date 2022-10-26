@@ -363,6 +363,8 @@ impl Sspi for Kerberos {
                 username,
                 cname_type,
                 snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
+                // 4 = size of u32
+                nonce: &OsRng::default().gen::<[u8; 4]>(),
             },
             GenerateAsPaDataOptions {
                 password,
@@ -526,6 +528,8 @@ impl SspiImpl for Kerberos {
                         username: &username,
                         cname_type,
                         snames: &[TGT_SERVICE_NAME, realm],
+                        // 4 = size of u32
+                        nonce: &OsRng::default().gen::<[u8; 4]>(),
                     },
                     GenerateAsPaDataOptions {
                         password: &password,

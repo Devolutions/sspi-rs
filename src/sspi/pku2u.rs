@@ -499,6 +499,8 @@ impl SspiImpl for Pku2u {
                     username: "AzureAD\\MS-Organization-P2P-Access [2022]\\S-1-12-1-3653211022-1339006422-2627573900-1560734919",
                     cname_type: 0x80,
                     snames: &snames,
+                    // we don't need the nonce in Pku2u
+                    nonce: &[0],
                 })?;
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,

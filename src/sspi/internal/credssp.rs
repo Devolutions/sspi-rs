@@ -37,8 +37,8 @@ use crate::{
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
 
 const HASH_MAGIC_LEN: usize = 38;
-pub const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
-pub const CLIENT_SERVER_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Client-To-Server Binding Hash\0";
+const SERVER_CLIENT_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Server-To-Client Binding Hash\0";
+const CLIENT_SERVER_HASH_MAGIC: &[u8; HASH_MAGIC_LEN] = b"CredSSP Client-To-Server Binding Hash\0";
 
 /// Provides an interface for implementing proxy credentials structures.
 pub trait CredentialsProxy {
@@ -291,7 +291,7 @@ impl CredSspClient {
                         peer_version,
                     )?);
                     ts_request.client_nonce = Some(self.client_nonce);
-                    ts_request.nego_tokens = None;
+
                     self.state = CredSspState::AuthInfo;
                 }
 
@@ -527,7 +527,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                         self.state = CredSspState::AuthInfo;
                     }
-                    q => unreachable!("AcceptSecurityContextResult: {:?}", q),
+                    _ => unreachable!(),
                 };
                 self.credentials_handle = credentials_handle;
 
