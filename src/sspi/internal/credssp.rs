@@ -320,12 +320,6 @@ impl CredSspClient {
                     peer_version,
                 )?;
 
-                self.credentials = AuthIdentity {
-                    username: "s7@dataans.com".into(),
-                    password: "wwwWWW222@@@".into(),
-                    domain: Some("AzureAD".into()),
-                };
-
                 ts_request.auth_info = Some(
                     self.context
                         .as_mut()
@@ -452,18 +446,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 Ok(ServerState::Finished(read_credentials.into()))
             }
             CredSspState::NegoToken => {
-                // let input = try_cred_ssp_server!(
-                //     ts_request
-                //         .nego_tokens
-                //         .take()
-                //         .ok_or_else(|| {
-                //             sspi::Error::new(
-                //                 sspi::ErrorKind::InvalidToken,
-                //                 String::from("Got empty nego_tokens field"),
-                //             )
-                //         }),
-                //     ts_request
-                // );
                 let input = ts_request.nego_tokens.take().unwrap_or(Vec::new());
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];

@@ -12,7 +12,6 @@ use serde_derive::{Deserialize, Serialize};
 
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
-use crate::internal::credssp::CredentialsProxy;
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
     self, CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
@@ -462,14 +461,6 @@ pub struct AuthIdentity {
     pub username: String,
     pub password: String,
     pub domain: Option<String>,
-}
-
-impl CredentialsProxy for AuthIdentity {
-    type AuthenticationData = AuthIdentity;
-
-    fn auth_data_by_user(&mut self, username: String, domain: Option<String>) -> io::Result<Self::AuthenticationData> {
-        Ok(self.clone())
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]

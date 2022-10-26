@@ -707,7 +707,7 @@ mod tests {
 
     #[test]
     fn _neg_token_init_generation() {
-        let token = generate_pku2u_nego_req(vec![""], &Pku2uConfig::default()).unwrap();
+        let token = generate_pku2u_nego_req(vec![""], &Pku2uConfig::default_client_config().unwrap()).unwrap();
 
         println!("{:?}", picky_asn1_der::to_vec(&token).unwrap());
     }

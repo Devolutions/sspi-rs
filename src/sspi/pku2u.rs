@@ -582,7 +582,7 @@ impl SspiImpl for Pku2u {
 
                 let signed_data: SignedData = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
 
-                let rsa_public_key = validate_server_p2p_certificate(&signed_data, &self.config.p2p_ca_certificate)?;
+                let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
 
                 let public_key = extract_server_dh_public_key(&signed_data)?;

@@ -121,7 +121,7 @@ impl Negotiate {
     fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             if is_azure_ad_domain(domain) {
-                self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default())?);
+                self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
                 return Ok(());
             }
 

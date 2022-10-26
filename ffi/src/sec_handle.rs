@@ -9,6 +9,7 @@ use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+use sspi::{pku2u, Pku2u, Pku2uConfig};
 use sspi::{
     kerberos, negotiate, ntlm, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind, Kerberos,
     Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
@@ -83,6 +84,9 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 } else {
                     SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default())?)
                 }
+            }
+            pku2u::PKG_NAME => {
+                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?)
             }
             kerberos::PKG_NAME => {
                 if let Some(settings) = &attributes.kdc_proxy_settings {
