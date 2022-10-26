@@ -401,9 +401,10 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
                 ))),
                 ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
-                ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
-                    try_cred_ssp_server!(Pku2u::new_server_from_config(pku2u.clone()), ts_request)
-                ))),
+                ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
+                    Pku2u::new_server_from_config(pku2u.clone()),
+                    ts_request
+                )))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
                 self.context
@@ -440,13 +441,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     self.context.as_mut().unwrap().decrypt_ts_credentials(&auth_info),
                     ts_request
                 );
-                
+
                 self.state = CredSspState::Final;
 
                 Ok(ServerState::Finished(read_credentials.into()))
             }
             CredSspState::NegoToken => {
-                let input = ts_request.nego_tokens.take().unwrap_or(Vec::new());
+                let input = ts_request.nego_tokens.take().unwrap_or_default();
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 

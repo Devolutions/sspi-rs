@@ -1,35 +1,25 @@
-use std::{
-    ffi::{c_void, OsStr},
-    io::Read,
-    os::windows::prelude::OsStrExt,
-    ptr::{null, null_mut},
-    slice::from_raw_parts,
-};
+use std::ffi::{c_void, OsStr};
+use std::io::Read;
+use std::os::windows::prelude::OsStrExt;
+use std::ptr::{null, null_mut};
+use std::slice::from_raw_parts;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use oid::ObjectIdentifier;
-use picky_asn1_x509::{
-    signed_data::{CertificateChoices, SignedData},
-    AttributeTypeAndValueParameters, Certificate, ExtensionView, PublicKey,
-};
+use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
+use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView, PublicKey};
 use rsa::{BigUint, RsaPrivateKey, RsaPublicKey};
-use winapi::{
-    shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC},
-    um::{
-        ncrypt::NCryptFreeObject,
-        wincrypt::{
-            CertEnumCertificatesInStore, CertOpenStore, CryptAcquireCertificatePrivateKey, CERT_CONTEXT,
-            CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_LOCAL_MACHINE_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT,
-            CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
-        },
-    },
+use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC};
+use winapi::um::ncrypt::NCryptFreeObject;
+use winapi::um::wincrypt::{
+    CertEnumCertificatesInStore, CertOpenStore, CryptAcquireCertificatePrivateKey, CERT_CONTEXT,
+    CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_LOCAL_MACHINE_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT,
+    CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
 };
-use windows_sys::Win32::{
-    Foundation,
-    Security::Cryptography::{NCryptExportKey, CERT_KEY_SPEC},
-};
+use windows_sys::Win32::Foundation;
+use windows_sys::Win32::Security::Cryptography::{NCryptExportKey, CERT_KEY_SPEC};
 
-use crate::{utils::string_to_utf16, Error, ErrorKind, Result};
+use crate::utils::string_to_utf16;
+use crate::{Error, ErrorKind, Result};
 
 /// [BCRYPT_RSAKEY_BLOB](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob)
 /// ```not_rust
@@ -118,7 +108,7 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
 
     for attr_type_and_value in certificate.tbs_certificate.issuer.0 .0.iter() {
         for v in attr_type_and_value.0.iter() {
-            if v.ty.0 == ObjectIdentifier::try_from("2.5.4.3").unwrap() {
+            if v.ty.0 == oids::at_common_name() {
                 if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
                     if name.to_utf8_lossy().starts_with("MS-Organization-P2P-Access") {
                         cn = true;
@@ -131,9 +121,9 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
     let mut client_auth = false;
 
     for extension in &certificate.tbs_certificate.extensions.0 .0 {
-        if extension.extn_id().0 == ObjectIdentifier::try_from("2.5.29.37").unwrap() {
+        if extension.extn_id().0 == oids::extended_key_usage() {
             if let ExtensionView::ExtendedKeyUsage(ext_key_usage) = extension.extn_value() {
-                if ext_key_usage.contains(ObjectIdentifier::try_from("1.3.6.1.5.5.7.3.2").unwrap()) {
+                if ext_key_usage.contains(oids::kp_client_auth()) {
                     client_auth = true;
                 }
             }
@@ -164,7 +154,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
         ));
     }
 
-    let mut key_blob = vec![0; 5000];
+    let mut key_blob = vec![0; 3000];
     let mut result_len = 0;
 
     let blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
@@ -191,7 +181,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
 
     NCryptFreeObject(private_key_handle);
 
-    return Ok(private_key);
+    Ok(private_key)
 }
 
 unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Certificate, RsaPrivateKey)> {
@@ -206,8 +196,6 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
             continue;
         }
-
-        println!("found suitable");
 
         let private_key = export_certificate_private_key(certificate)?;
 
@@ -248,7 +236,7 @@ pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, RsaPrivateKey)>
 pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPublicKey> {
     let certificates = &signed_data.certificates.0 .0;
 
-    for certificate in certificates {
+    if let Some(certificate) = certificates.iter().next() {
         let cert: Certificate = match certificate {
             CertificateChoices::Certificate(cert) => picky_asn1_der::from_bytes(&cert.0)?,
             _ => {
@@ -270,7 +258,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
         }
         .0;
 
-        return Ok(RsaPublicKey::new(
+        return RsaPublicKey::new(
             BigUint::from_bytes_be(&public_key.modulus.0),
             BigUint::from_bytes_be(&public_key.public_exponent.0),
         )
@@ -279,7 +267,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
                 ErrorKind::InvalidToken,
                 format!("Invalid certificate public key: {:?}", err),
             )
-        })?);
+        });
     }
 
     Err(Error::new(

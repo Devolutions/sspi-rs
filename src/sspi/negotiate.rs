@@ -121,7 +121,8 @@ impl Negotiate {
     fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             if is_azure_ad_domain(domain) {
-                self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
+                self.protocol =
+                    NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
                 return Ok(());
             }
 
@@ -129,7 +130,8 @@ impl Negotiate {
             if let Some(domain) = get_domain_from_fqdn(username) {
                 if let Some(host) = resolve_kdc_host(&domain) {
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        url: Url::from_str(&host).unwrap(),
+                        url: Url::from_str(&host)
+                            .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
                         kdc_type: KdcType::Kdc,
                         network_client: Box::new(ReqwestNetworkClient::new()),
                     })?)
@@ -247,7 +249,7 @@ impl SspiImpl for Negotiate {
         if let Some(identity) = builder.auth_data {
             self.negotiate_protocol(
                 identity.username.as_bytes(),
-                identity.domain.as_ref().map(|d| d.as_str()).unwrap_or("").as_bytes(),
+                identity.domain.as_deref().unwrap_or_default().as_bytes(),
             )?;
         }
 

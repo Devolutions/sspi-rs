@@ -523,7 +523,7 @@ impl SspiImpl for Kerberos {
                 let as_rep = self.as_exchange(
                     GenerateAsReqOptions {
                         realm,
-                        username: &&username,
+                        username: &username,
                         cname_type,
                         snames: &[TGT_SERVICE_NAME, realm],
                     },

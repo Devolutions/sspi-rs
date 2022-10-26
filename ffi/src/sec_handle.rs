@@ -9,10 +9,9 @@ use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
-use sspi::{pku2u, Pku2u, Pku2uConfig};
 use sspi::{
-    kerberos, negotiate, ntlm, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind, Kerberos,
-    Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
+    kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Pku2u, Pku2uConfig, Result, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;

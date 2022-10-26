@@ -12,14 +12,12 @@ use std::str::FromStr;
 pub use config::Pku2uConfig;
 use lazy_static::lazy_static;
 use picky_asn1_x509::signed_data::SignedData;
-use picky_krb::constants::gss_api::{
-    AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AS_REP_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE,
-};
+use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
 use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
-use picky_krb::gss_api::{NegTokenInit, NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApRep, ApReq, AsRep, AsReq};
+use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
+use picky_krb::messages::{ApRep, AsRep};
 use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
@@ -43,21 +41,17 @@ use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
 use crate::sspi::pku2u::cert_utils::validate_server_p2p_certificate;
 use crate::sspi::pku2u::extractors::{
-    compute_session_key_from_pa_pk_as_req, extract_krb_rep, extract_pa_pk_as_rep, extract_pa_pk_as_req,
-    extract_server_dh_public_key, extract_server_nonce, extract_session_key_from_as_rep,
-    extract_sub_session_key_from_ap_req,
+    extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
+    extract_session_key_from_as_rep,
 };
-use crate::sspi::pku2u::generators::{
-    generate_ap_rep, generate_as_rep, generate_authenticator, generate_authenticator_extension,
-    generate_neg_token_completed, generate_neg_token_init_s, generate_pa_datas_for_as_rep,
-};
+use crate::sspi::pku2u::generators::{generate_authenticator, generate_authenticator_extension};
 use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
@@ -379,7 +373,7 @@ impl SspiImpl for Pku2u {
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
-    ) -> super::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+    ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
@@ -398,7 +392,7 @@ impl SspiImpl for Pku2u {
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> super::Result<InitializeSecurityContextResult> {
+    ) -> Result<InitializeSecurityContextResult> {
         let status = match self.state {
             Pku2uState::Negotiate => {
                 let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
@@ -413,7 +407,7 @@ impl SspiImpl for Pku2u {
                     MessageType::InitiatorNego,
                     self.conversation_id,
                     self.next_seq_number(),
-                    self.negoex_random.clone(),
+                    self.negoex_random,
                     vec![auth_scheme],
                     vec![],
                 );
@@ -692,8 +686,6 @@ impl SspiImpl for Pku2u {
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
-                // todo: check negResult (should be accept completed: 0)
-
                 let buffer = neg_token_targ
                     .0
                     .response_token
@@ -767,287 +759,12 @@ impl SspiImpl for Pku2u {
 
     fn accept_security_context_impl<'a>(
         &'a mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
-    ) -> super::Result<AcceptSecurityContextResult> {
-        println!("accept_security_context_impl");
-        let input = builder
-            .input
-            .ok_or_else(|| sspi::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
-
-        let status = match &self.state {
-            Pku2uState::Preauthentication => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                println!("server: nego buffer: {:?}", input_token);
-
-                self.gss_api_messages.extend_from_slice(&input_token.buffer);
-
-                println!("server: neg init token: {:?}", &input_token.buffer[16..]);
-                let neg_token_init: NegTokenInit = picky_asn1_der::from_bytes(&input_token.buffer[16..]).unwrap();
-
-                println!("server: neg init parsed: {:?}", neg_token_init);
-
-                let data = neg_token_init.mech_token.0.unwrap().0 .0;
-
-                let mut reader: Box<dyn Read> = Box::new(data.as_slice());
-
-                self.negoex_messages.extend_from_slice(&data);
-
-                let initiator_nego = Nego::decode(&mut reader, &data)?;
-
-                let initiator_exchange_data = &data[(initiator_nego.header.message_len as usize)..];
-                println!("server: acceptor_exchage data: {:?}", initiator_exchange_data);
-
-                let mut reader: Box<dyn Read> = Box::new(initiator_exchange_data);
-
-                let initiator_exchange = Exchange::decode(&mut reader, initiator_exchange_data)?;
-
-                println!("server: acceptor_exchange: {:?}", initiator_exchange);
-
-                self.conversation_id = initiator_nego.header.conversation_id.0;
-
-                let mut mech_token = Vec::new();
-
-                let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
-
-                let nego = Nego::new(
-                    MessageType::AcceptorNego,
-                    self.conversation_id,
-                    self.next_seq_number(),
-                    self.negoex_random.clone(),
-                    vec![auth_scheme],
-                    vec![],
-                );
-                nego.encode(&mut mech_token)?;
-
-                let exchange = Exchange::new(
-                    MessageType::AcceptorMetaData,
-                    self.conversation_id,
-                    self.next_seq_number(),
-                    auth_scheme,
-                    vec![
-                        48, 87, 160, 85, 48, 83, 48, 81, 128, 79, 48, 77, 49, 75, 48, 73, 6, 3, 85, 4, 3, 30, 66, 0,
-                        77, 0, 83, 0, 45, 0, 79, 0, 114, 0, 103, 0, 97, 0, 110, 0, 105, 0, 122, 0, 97, 0, 116, 0, 105,
-                        0, 111, 0, 110, 0, 45, 0, 80, 0, 50, 0, 80, 0, 45, 0, 65, 0, 99, 0, 99, 0, 101, 0, 115, 0, 115,
-                        0, 32, 0, 91, 0, 50, 0, 48, 0, 50, 0, 50, 0, 93,
-                    ],
-                );
-                exchange.encode(&mut mech_token)?;
-
-                self.negoex_messages.extend_from_slice(&mech_token);
-
-                let result_token = picky_asn1_der::to_vec(&generate_neg_token_init_s(mech_token)?)?;
-                self.gss_api_messages.extend_from_slice(&result_token);
-
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token.buffer.write_all(&result_token)?;
-
-                self.state = Pku2uState::AsExchange;
-
-                SecurityStatus::ContinueNeeded
-            }
-            Pku2uState::AsExchange => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                println!("server: as exchange buffer:: {:?}", input_token);
-
-                self.gss_api_messages.extend_from_slice(&input_token.buffer);
-
-                let nego_token: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
-
-                let buffer = nego_token.0.response_token.0.unwrap().0 .0;
-
-                self.negoex_messages.extend_from_slice(&buffer);
-
-                let acceptor_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
-
-                self.next_seq_number();
-
-                let (as_req, _): (AsReq, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
-                println!("server: as_req parsed");
-                let pa_pk_as_req = extract_pa_pk_as_req(&as_req)?;
-
-                let mut f = std::fs::File::create("as_req_cert").unwrap();
-                f.write_all(&acceptor_exchange.exchange).unwrap();
-
-                let (session_key, dh_server_public) = compute_session_key_from_pa_pk_as_req(
-                    &pa_pk_as_req,
-                    self.dh_parameters.server_nonce.as_ref().unwrap(),
-                )?;
-
-                println!("dh session key: {:?}", session_key);
-
-                self.encryption_params.session_key = Some(session_key);
-
-                let new_key = vec![
-                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2,
-                ];
-                println!("server's session key: {:?}", new_key);
-
-                let pa_datas = generate_pa_datas_for_as_rep(
-                    &self.config.p2p_certificate,
-                    self.dh_parameters.server_nonce.as_ref().unwrap(),
-                    &dh_server_public,
-                    &self.config.device_private_key,
-                )?;
-                let as_rep = generate_as_rep(
-                    pa_datas,
-                    self.encryption_params.session_key.as_ref().unwrap(),
-                    new_key.clone(),
-                )?;
-
-                let exchange_data = picky_asn1_der::to_vec(&generate_neg(as_rep, AS_REP_TOKEN_ID))?;
-                println!("exchange_data: {:?}", exchange_data);
-
-                let mut mech_token = Vec::new();
-
-                let exchange = Exchange::new(
-                    MessageType::Challenge,
-                    self.conversation_id,
-                    self.next_seq_number(),
-                    self.auth_scheme.unwrap(),
-                    exchange_data,
-                );
-                exchange.encode(&mut mech_token)?;
-
-                self.negoex_messages.extend_from_slice(&mech_token);
-
-                let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
-                self.gss_api_messages.extend_from_slice(&response_token);
-                // println!("response_token: {:?}", response_token);
-
-                self.encryption_params.session_key = Some(new_key);
-
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token.buffer.write_all(&response_token)?;
-
-                self.state = Pku2uState::ApExchange;
-
-                SecurityStatus::ContinueNeeded
-            }
-            Pku2uState::ApExchange => {
-                println!("server: ap exchange: {:?}", input);
-                // println!("negoexmessages: {:?}", self.negoex_messages);
-                let mut f = std::fs::File::create("negoex_messages.txt").unwrap();
-                f.write_all(format!("{:?}", self.negoex_messages).as_bytes()).unwrap();
-
-                let mut f = std::fs::File::create("gss_api_messages.txt").unwrap();
-                f.write_all(format!("{:?}", self.gss_api_messages).as_bytes()).unwrap();
-
-                // let new_key = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2];
-                // println!("checksum: {:?}", ChecksumSuite::HmacSha196Aes256.hasher().checksum(&new_key, 41, &self.gss_api_messages));
-
-                println!("ap_req: {:?}", input);
-
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                println!("server: ap_req exchange buffer:: {:?}", input_token);
-
-                // self.gss_api_messages.extend_from_slice(&input_token.buffer);
-
-                let nego_token: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
-
-                let buffer = nego_token.0.response_token.0.unwrap().0 .0;
-
-                let initiator_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
-
-                self.next_seq_number();
-
-                let initiator_verify_data = &buffer[(initiator_exchange.header.message_len as usize)..];
-                println!("buffer for verify: {:?}", initiator_verify_data);
-
-                let initiator_verify = Verify::decode(initiator_verify_data, initiator_verify_data)?;
-                println!("initiator verify: {:?}", initiator_verify);
-
-                self.negoex_messages
-                    .extend_from_slice(&buffer[0..(initiator_exchange.header.message_len as usize)]);
-
-                let (ap_req, _): (ApReq, _) = extract_krb_rep(&initiator_exchange.exchange)?;
-                println!("ap_req: {:?}", ap_req);
-                let sub_session_key =
-                    extract_sub_session_key_from_ap_req(&ap_req, self.encryption_params.session_key.as_ref().unwrap())?;
-                println!("ap_req authenticator key: {:?}", sub_session_key);
-                if initiator_verify.checksum.checksum_value
-                    != ChecksumSuite::HmacSha196Aes256
-                        .hasher()
-                        .checksum(&sub_session_key, 25, &self.negoex_messages)?
-                {
-                    println!("bad initiator checksum");
-                } else {
-                    println!("good initiator checksum");
-                }
-
-                self.negoex_messages
-                    .extend_from_slice(&buffer[(initiator_exchange.header.message_len as usize)..]);
-
-                self.next_seq_number();
-
-                let test_sub_session_key = [
-                    2, 3, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                ];
-                self.encryption_params.sub_session_key = Some(test_sub_session_key.to_vec());
-                println!("ap_rep enc part key: {:?}", test_sub_session_key);
-
-                let ap_rep = generate_ap_rep(
-                    self.encryption_params.session_key.as_ref().unwrap(),
-                    // &sub_session_key,
-                    &test_sub_session_key,
-                );
-
-                let mut mech_token = Vec::new();
-
-                let exchange = Exchange::new(
-                    MessageType::Challenge,
-                    self.conversation_id,
-                    self.next_seq_number(),
-                    self.auth_scheme.unwrap(),
-                    picky_asn1_der::to_vec(&generate_neg(ap_rep, AP_REP_TOKEN_ID))?,
-                );
-                println!("exchange ap_rep: {:?}", exchange);
-                exchange.encode(&mut mech_token)?;
-
-                exchange.encode(&mut self.negoex_messages)?;
-
-                // println!("negoex messages: {:?}", self.negoex_messages);
-
-                let c2 = ChecksumSuite::HmacSha196Aes256.hasher().checksum(
-                    &test_sub_session_key,
-                    // self.encryption_params.session_key.as_ref().unwrap(),
-                    23,
-                    &self.negoex_messages,
-                )?;
-
-                let verify = Verify::new(
-                    MessageType::Verify,
-                    self.conversation_id,
-                    self.next_seq_number(),
-                    self.auth_scheme.unwrap(),
-                    16,
-                    c2,
-                );
-                verify.encode(&mut mech_token)?;
-
-                verify.encode(&mut self.negoex_messages)?;
-
-                let resp_token = picky_asn1_der::to_vec(&generate_neg_token_completed(mech_token)?)?;
-                println!("resp_token: {:?}", resp_token);
-
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token.buffer.write_all(&resp_token)?;
-
-                self.state = Pku2uState::PubKeyAuth;
-
-                SecurityStatus::ContinueNeeded
-            }
-            state => {
-                println!("wow, I'm here: {:?}", state);
-
-                SecurityStatus::CompleteNeeded
-            }
-        };
-
-        Ok(AcceptSecurityContextResult {
-            status,
-            flags: ServerResponseFlags::empty(),
-            expiry: None,
-        })
+        _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "accept_security_context_impl is not implemented yet".into(),
+        ))
     }
 }
 

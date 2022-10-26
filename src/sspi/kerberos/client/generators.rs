@@ -1,9 +1,7 @@
-use std::convert::TryFrom;
 use std::str::FromStr;
 
 use chrono::{Duration, Utc};
 use md5::{Digest, Md5};
-use oid::ObjectIdentifier;
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -15,7 +13,7 @@ use picky_asn1::wrapper::{
 };
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
-use picky_asn1_x509::oids::{KRB5, KRB5_USER_TO_USER, MS_KRB5, SPNEGO};
+use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
     ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
 };
@@ -212,11 +210,13 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
     })
 }
 
-pub fn generate_as_req(pa_datas: &Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq {
+pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
-        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(pa_datas.clone())))),
+        padata: Optional::from(Some(ExplicitContextTag3::from(Asn1SequenceOf::from(
+            pa_datas.to_owned(),
+        )))),
         req_body: ExplicitContextTag4::from(kdc_req_body),
     })
 }
@@ -447,13 +447,8 @@ pub fn generate_ap_req(
     let cipher = encryption_type.cipher();
 
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
-    println!("encoded authenticator: {:?} {}", encoded_authenticator, encoded_authenticator.len());
 
-    let encrypted_authenticator = cipher.encrypt(
-        session_key,
-        AP_REQ_AUTHENTICATOR,
-        &encoded_authenticator,
-    )?;
+    let encrypted_authenticator = cipher.encrypt(session_key, AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
     // let encrypted_authenticator = vec![80, 58, 178, 30, 181, 48, 100, 50, 91, 8, 248, 83, 53, 188, 200, 102, 243, 158, 83, 177, 114, 25, 52, 239, 62, 75, 30, 27, 36, 28, 89, 25, 245, 73, 139, 74, 148, 218, 247, 99, 184, 143, 51, 70, 243, 20, 101, 219, 128, 55, 188, 223, 241, 26, 161, 134, 42, 224, 42, 71, 37, 6, 8, 126, 244, 71, 108, 57, 43, 198, 18, 79, 134, 236, 3, 44, 47, 126, 8, 31, 138, 167, 110, 190, 74, 2, 67, 240, 102, 227, 87, 148, 113, 230, 206, 156, 133, 116, 179, 151, 234, 27, 46, 3, 156, 89, 138, 49, 9, 191, 81, 78, 20, 229, 204, 148, 29, 246, 108, 161, 126, 173, 237, 116, 50, 189, 133, 89, 161, 156, 144, 228, 215, 254, 152, 133, 240, 154, 17, 242, 0, 5, 77, 249, 61, 171, 226, 114, 6, 220, 162, 247, 108, 14, 249, 30, 46, 81, 226, 239, 2, 131, 64, 220, 63, 44, 119, 17, 55, 197, 60, 83, 218, 165, 66, 185, 96, 154, 144, 37, 155, 243, 48, 104, 170, 28, 198, 61, 210, 91, 110, 19, 32, 7, 211, 1, 29, 40, 222, 231, 246, 102, 131, 90, 174, 60, 104, 87, 185, 216, 160, 250, 147, 206, 185, 140, 222, 162, 79, 249, 249, 206, 171, 15, 181, 200, 161, 10, 82, 52, 253, 242, 14, 85, 96, 198, 20, 105, 241, 1, 231, 132, 92, 240, 125, 25, 70, 159, 183, 181, 232, 135, 144, 112, 177, 168, 192, 205, 8, 123, 94, 139, 75, 12, 182, 20, 197, 235, 109, 41, 254, 14, 109, 118, 84, 178, 27, 134, 164, 121, 81, 126, 167, 5, 61, 223, 187, 149, 210, 146, 44, 96, 144, 224, 239, 55, 28, 247, 29, 159, 36, 235, 107, 213, 24, 79, 212, 193, 139, 187, 35, 157, 160, 135, 102, 181, 156, 123, 23, 203, 70, 184, 59, 20, 67, 253, 105, 147, 213, 54];
 
     Ok(ApReq::from(ApReqInner {
@@ -471,15 +466,12 @@ pub fn generate_ap_req(
 
 // returns supported authentication types
 pub fn get_mech_list() -> MechTypeList {
-    MechTypeList::from(vec![
-        MechType::from(ObjectIdentifier::try_from(MS_KRB5).unwrap()),
-        MechType::from(ObjectIdentifier::try_from(KRB5).unwrap()),
-    ])
+    MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
 pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
     let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap()),
+        krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: TGT_REQ_TOKEN_ID,
         krb_msg: TgtReq {
             pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -495,7 +487,7 @@ pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiN
     });
 
     Ok(ApplicationTag0(GssApiNegInit {
-        oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from(SPNEGO).unwrap()),
+        oid: ObjectIdentifierAsn1::from(oids::spnego()),
         neg_token_init: ExplicitContextTag0::from(NegTokenInit {
             mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
             req_flags: Optional::from(None),
@@ -509,7 +501,7 @@ pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiN
 
 pub fn generate_neg_ap_req(ap_req: ApReq) -> Result<ExplicitContextTag1<NegTokenTarg>> {
     let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(ObjectIdentifier::try_from(KRB5_USER_TO_USER).unwrap()),
+        krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
     });
