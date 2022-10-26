@@ -6,8 +6,10 @@ cfg_if::cfg_if! {
 }
 
 use crate::dns::detect_kdc_hosts_from_dns;
+use crate::krb::Krb5Conf;
 
 use std::env;
+use std::path::Path;
 use std::str::FromStr;
 use url::Url;
 
@@ -26,8 +28,24 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn detect_kdc_hosts_from_system(_domain: &str) -> Vec<String> {
-    Vec::new() // TODO: parse krb5.conf file
+pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
+    // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
+
+    let krb5_config = env::var("KRB5_CONFIG").unwrap_or("/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
+    let krb5_conf_paths = krb5_config.split(':').map(|x| Path::new(x)).collect::<Vec<&Path>>();
+
+    for krb5_conf_path in krb5_conf_paths {
+        if krb5_conf_path.exists() {
+            if let Some(krb5_conf)  = Krb5Conf::new_from_file(krb5_conf_path) {
+                if let Some(kdc) = krb5_conf.get_value(vec!["realms", domain, "kdc"]) {
+                    let kdc_url = format!("tcp://{}", kdc.as_str());
+                    return vec![kdc_url];
+                }
+            }
+        }
+    }
+
+    Vec::new()
 }
 
 pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
