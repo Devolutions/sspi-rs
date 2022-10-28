@@ -21,7 +21,9 @@ use picky_asn1_x509::signer_info::{
     Attributes, CertificateSerialNumber, DigestAlgorithmIdentifier, IssuerAndSerialNumber,
     SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
 };
-use picky_asn1_x509::{oids, AlgorithmIdentifier, Attribute, AttributeValues, Certificate, ShaVariant};
+use picky_asn1_x509::{
+    oids, AlgorithmIdentifier, Attribute, AttributeTypeAndValueParameters, AttributeValues, Certificate, ShaVariant,
+};
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::KEY_USAGE_FINISHED;
 use picky_krb::constants::types::{NT_SRV_INST, PA_PK_AS_REQ};
@@ -417,9 +419,6 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
             checksum_value[4..20]
                 .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
         }
-        checksum_value = vec![
-            16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 64, 0, 0,
-        ];
 
         for extension in extensions {
             checksum_value.extend_from_slice(&extension.extension_type.to_be_bytes());
@@ -453,4 +452,52 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         })),
         authorization_data,
     }))
+}
+
+pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> Result<String> {
+    let mut username = "AzureAD\\".to_owned();
+
+    // extract issuer
+    let mut issuer = false;
+    for attr_type_and_value in certificate.tbs_certificate.issuer.0 .0.iter() {
+        for v in attr_type_and_value.0.iter() {
+            if v.ty.0 == oids::at_common_name() {
+                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
+                    issuer = true;
+                    username.push_str(&name.to_utf8_lossy());
+                }
+            }
+        }
+    }
+
+    if !issuer {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "Bad client certificate: cannot find common name of the issuer".into(),
+        ));
+    }
+
+    username.push('\\');
+
+    // extract long S-id
+    let mut subject = false;
+    for attr_type_and_value in certificate.tbs_certificate.subject.0 .0.iter() {
+        for v in attr_type_and_value.0.iter() {
+            if v.ty.0 == oids::at_common_name() {
+                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
+                    subject = true;
+                    username.push_str(&name.to_utf8_lossy());
+                }
+            }
+        }
+    }
+
+    if !subject {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "Bad client certificate: cannot find appropriate common name of the subject".into(),
+        ));
+    }
+
+    Ok(username)
 }

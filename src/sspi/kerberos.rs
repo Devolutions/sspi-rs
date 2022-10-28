@@ -42,7 +42,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
-use crate::utils::{utf16_bytes_to_utf8_string, generate_random_key};
+use crate::utils::{generate_random_key, utf16_bytes_to_utf8_string};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities, PackageInfo,
@@ -383,7 +383,11 @@ impl Sspi for Kerberos {
 
         let seq_num = self.next_seq_number();
 
-        let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+        let enc_type = self
+            .encryption_params
+            .encryption_type
+            .as_ref()
+            .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
         let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
 
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
@@ -589,7 +593,11 @@ impl SspiImpl for Kerberos {
 
                 let seq_num = self.next_seq_number();
 
-                let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+                let enc_type = self
+                    .encryption_params
+                    .encryption_type
+                    .as_ref()
+                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {

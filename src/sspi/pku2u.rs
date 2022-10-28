@@ -36,10 +36,11 @@ use crate::builders::ChangePassword;
 use crate::internal::SspiImpl;
 use crate::kerberos::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
+    GenerateAuthenticatorOptions,
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
+use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::sspi::pku2u::cert_utils::validate_server_p2p_certificate;
 use crate::sspi::pku2u::extractors::{
     extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
@@ -59,6 +60,11 @@ use crate::{
 pub const PKG_NAME: &str = "Pku2u";
 
 pub const AZURE_AD_DOMAIN: &str = "AzureAD";
+
+/// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
+const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
+    16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 64, 0, 0,
+];
 
 /// Default NEGOEX authentication scheme
 pub const DEFAULT_NEGOEX_AUTH_SCHEME: &str = "0d53335c-f9ea-4d0d-b2ec-4ae3786ec308";
@@ -499,7 +505,7 @@ impl SspiImpl for Pku2u {
 
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
-                    username: "AzureAD\\MS-Organization-P2P-Access [2022]\\S-1-12-1-3653211022-1339006422-2627573900-1560734919",
+                    username: &generate_as_req_username_from_certificate(&self.config.p2p_certificate)?,
                     cname_type: 0x80,
                     snames: &snames,
                     // we don't need the nonce in Pku2u
@@ -620,7 +626,11 @@ impl SspiImpl for Pku2u {
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
 
-                let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+                let enc_type = self
+                    .encryption_params
+                    .encryption_type
+                    .as_ref()
+                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {

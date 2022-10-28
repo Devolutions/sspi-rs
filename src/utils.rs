@@ -1,6 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use picky_krb::crypto::CipherSuite;
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
+use rand::Rng;
 
 use crate::sspi::pku2u::AZURE_AD_DOMAIN;
 
