@@ -26,7 +26,7 @@ use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AUTHENTICATOR_CHECKSUM_TY
 use picky_krb::constants::key_usages::KEY_USAGE_FINISHED;
 use picky_krb::constants::types::{NT_SRV_INST, PA_PK_AS_REQ};
 use picky_krb::crypto::diffie_hellman::{compute_public_key, generate_private_key};
-use picky_krb::crypto::{ChecksumSuite, CipherSuite};
+use picky_krb::crypto::ChecksumSuite;
 use picky_krb::data_types::{
     Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncryptionKey,
     KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime, LsapTokenInfoIntegrity, PaData, PrincipalName, Realm,
@@ -442,9 +442,9 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         cksum,
         cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        subkey: Optional::from(sub_key.map(|sub_key| {
+        subkey: Optional::from(sub_key.map(|(cipher, sub_key)| {
             ExplicitContextTag6::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![cipher.into()])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key)),
             })
         })),

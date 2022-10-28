@@ -42,7 +42,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
-use crate::utils::utf16_bytes_to_utf8_string;
+use crate::utils::{utf16_bytes_to_utf8_string, generate_random_key};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities, PackageInfo,
@@ -383,10 +383,13 @@ impl Sspi for Kerberos {
 
         let seq_num = self.next_seq_number();
 
+        let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+        let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
+
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
             seq_num: Some(seq_num),
-            sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
+            sub_key: Some((enc_type.clone(), authenticator_seb_key.clone())),
             checksum: None,
             channel_bindings: self.channel_bindings.as_ref(),
             extensions: Vec::new(),
@@ -584,10 +587,15 @@ impl SspiImpl for Kerberos {
                     &self.encryption_params,
                 )?);
 
+                let seq_num = self.next_seq_number();
+
+                let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+                let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
+
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
-                    seq_num: Some(self.next_seq_number()),
-                    sub_key: Some(OsRng::default().gen::<[u8; 32]>().to_vec()),
+                    seq_num: Some(seq_num),
+                    sub_key: Some((enc_type.clone(), authenticator_seb_key)),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),

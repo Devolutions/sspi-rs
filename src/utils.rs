@@ -1,4 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt};
+use picky_krb::crypto::CipherSuite;
+use rand::{rngs::OsRng, Rng};
 
 use crate::sspi::pku2u::AZURE_AD_DOMAIN;
 
@@ -60,6 +62,17 @@ pub fn resolve_kdc_host(domain: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+pub fn generate_random_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Vec<u8> {
+    let key_size = cipher.cipher().key_size();
+    let mut key = Vec::with_capacity(key_size);
+
+    for _ in 0..key_size {
+        key.push(rnd.gen());
+    }
+
+    key
 }
 
 #[cfg(feature = "network_client")]

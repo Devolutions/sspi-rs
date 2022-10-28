@@ -1530,6 +1530,23 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
     }
 }
 
+impl From<picky_krb::crypto::diffie_hellman::DiffieHellmanError> for Error {
+    fn from(error: picky_krb::crypto::diffie_hellman::DiffieHellmanError) -> Self {
+        use picky_krb::crypto::diffie_hellman::DiffieHellmanError;
+
+        match error {
+            DiffieHellmanError::BitLen(description) => Self {
+                error_type: ErrorKind::InternalError,
+                description,
+            },
+            error => Self {
+                error_type: ErrorKind::InternalError,
+                description: error.to_string(),
+            },
+        }
+    }
+}
+
 impl From<CharSetError> for Error {
     fn from(err: CharSetError) -> Self {
         Self {

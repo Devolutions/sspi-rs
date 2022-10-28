@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 mod cert_utils;
 mod config;
 mod extractors;
@@ -6,7 +7,7 @@ mod generators;
 mod macros;
 mod validate;
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::str::FromStr;
 
 pub use config::Pku2uConfig;
@@ -47,6 +48,7 @@ use crate::sspi::pku2u::extractors::{
 use crate::sspi::pku2u::generators::{generate_authenticator, generate_authenticator_extension};
 use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
+use crate::utils::generate_random_key;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
@@ -59,7 +61,7 @@ pub const PKG_NAME: &str = "Pku2u";
 pub const AZURE_AD_DOMAIN: &str = "AzureAD";
 
 /// Default NEGOEX authentication scheme
-pub const AUTH_SCHEME: &str = "0d53335c-f9ea-4d0d-b2ec-4ae3786ec308";
+pub const DEFAULT_NEGOEX_AUTH_SCHEME: &str = "0d53335c-f9ea-4d0d-b2ec-4ae3786ec308";
 
 /// sealed = true
 /// other flags = false
@@ -127,11 +129,11 @@ pub struct Pku2u {
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
-    // https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-NEGOEX/%5bMS-NEGOEX%5d.pdf
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-negoex/9de2cde2-bd98-40a4-9efa-0f5a1d6cc88e
     // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     negoex_messages: Vec<u8>,
-    // all sent and received GSS-API messages concatenated in one vector
-    // we need it for the further checksum calculation
+    // two last GSS-API messages concatenated in one vector
+    // we need it for the further authenticator checksum calculation
     // https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6
     // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     gss_api_messages: Vec<u8>,
@@ -149,7 +151,7 @@ impl Pku2u {
             encryption_params: EncryptionParams::default_for_server(),
             auth_identity: None,
             conversation_id: Uuid::default(),
-            auth_scheme: Some(Uuid::from_str(AUTH_SCHEME).unwrap()),
+            auth_scheme: Some(Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap()),
             seq_number: 2,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
@@ -247,6 +249,10 @@ impl Sspi for Pku2u {
 
         match self.state {
             Pku2uState::PubKeyAuth | Pku2uState::Credentials => {
+                if raw_wrap_token.len() < SECURITY_TRAILER {
+                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data".into()));
+                }
+
                 *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
                 let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
                 *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
@@ -335,14 +341,10 @@ impl Sspi for Pku2u {
                 domain: identity.domain,
             })
         } else {
-            Ok(ContextNames {
-                username: "s7@dataans.com".into(),
-                domain: Some("AzureAD".into()),
-            })
-            // Err(sspi::Error::new(
-            //     sspi::ErrorKind::NoCredentials,
-            //     String::from("Requested Names, but no credentials were provided"),
-            // ))
+            Err(sspi::Error::new(
+                sspi::ErrorKind::NoCredentials,
+                String::from("Requested Names, but no credentials were provided"),
+            ))
         }
     }
 
@@ -395,7 +397,7 @@ impl SspiImpl for Pku2u {
     ) -> Result<InitializeSecurityContextResult> {
         let status = match self.state {
             Pku2uState::Negotiate => {
-                let auth_scheme = Uuid::from_str(AUTH_SCHEME).unwrap();
+                let auth_scheme = Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap();
 
                 let mut mech_token = Vec::new();
 
@@ -453,24 +455,22 @@ impl SspiImpl for Pku2u {
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
-                let mut reader: Box<dyn Read> = Box::new(buffer.as_slice());
+                let acceptor_nego = Nego::decode(&buffer)?;
 
-                let acceptor_nego = Nego::decode(&mut reader, &buffer)?;
-
-                check_conversation_id!(acceptor_nego.header.conversation_id.0, self.conversation_id);
+                check_conversation_id!(acceptor_nego.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
 
                 // We support only one auth scheme. So the server must choose it otherwise it's an invalid behaviour
                 if let Some(auth_scheme) = acceptor_nego.auth_schemes.get(0) {
-                    if auth_scheme.0 == Uuid::from_str(AUTH_SCHEME).unwrap() {
-                        self.auth_scheme = Some(auth_scheme.0);
+                    if *auth_scheme == Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap() {
+                        self.auth_scheme = Some(*auth_scheme);
                     } else {
                         return
                         Err(Error::new(
                             ErrorKind::InvalidToken,
                             format!(
                                 "The server selected unsupported auth scheme {:?}. The only one supported auth scheme: {}",
-                                auth_scheme.0, AUTH_SCHEME)
+                                auth_scheme, DEFAULT_NEGOEX_AUTH_SCHEME)
                         ));
                     }
                 } else {
@@ -480,13 +480,16 @@ impl SspiImpl for Pku2u {
                     ));
                 }
 
-                let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
-                let mut reader: Box<dyn Read> = Box::new(acceptor_exchange_data);
-                let acceptor_exchange = Exchange::decode(&mut reader, acceptor_exchange_data)?;
+                if buffer.len() < acceptor_nego.header.header_len as usize {
+                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short".into()));
+                }
 
-                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
+                let acceptor_exchange = Exchange::decode(acceptor_exchange_data)?;
+
+                check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
-                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+                check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
                 let mut mech_token = Vec::new();
 
@@ -506,7 +509,7 @@ impl SspiImpl for Pku2u {
                     &self.config.p2p_certificate,
                     &kdc_req_body,
                     &self.dh_parameters,
-                    &self.config.device_private_key,
+                    &self.config.private_key,
                 )?;
 
                 let exchange_data =
@@ -553,11 +556,11 @@ impl SspiImpl for Pku2u {
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
-                let acceptor_exchange = Exchange::decode(buffer.as_slice(), &buffer)?;
+                let acceptor_exchange = Exchange::decode(&buffer)?;
 
-                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
-                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+                check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
                 self.gss_api_messages.extend_from_slice(&acceptor_exchange.exchange);
 
@@ -617,12 +620,13 @@ impl SspiImpl for Pku2u {
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
 
-                let authenticator_seb_key = OsRng::default().gen::<[u8; 32]>().to_vec();
+                let enc_type = self.encryption_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+                let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
                     seq_num: Some(exchange_seq_number),
-                    sub_key: Some(authenticator_seb_key.clone()),
+                    sub_key: Some((enc_type.clone(), authenticator_seb_key.clone())),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
@@ -698,22 +702,25 @@ impl SspiImpl for Pku2u {
                     .0
                      .0;
 
-                let mut reader: Box<dyn Read> = Box::new(buffer.as_slice());
-                let acceptor_exchange = Exchange::decode(&mut reader, &buffer)?;
+                let acceptor_exchange = Exchange::decode(&buffer)?;
 
-                check_conversation_id!(acceptor_exchange.header.conversation_id.0, self.conversation_id);
+                check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
-                check_auth_scheme!(acceptor_exchange.auth_scheme.0, self.auth_scheme);
+                check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
+
+                if buffer.len() < acceptor_exchange.header.header_len as usize {
+                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short".into()));
+                }
 
                 self.negoex_messages
                     .extend_from_slice(&buffer[0..(acceptor_exchange.header.message_len as usize)]);
 
                 let acceptor_verify_data = &buffer[(acceptor_exchange.header.message_len as usize)..];
-                let acceptor_verify = Verify::decode(acceptor_verify_data, acceptor_verify_data)?;
+                let acceptor_verify = Verify::decode(acceptor_verify_data)?;
 
-                check_conversation_id!(acceptor_verify.header.conversation_id.0, self.conversation_id);
+                check_conversation_id!(acceptor_verify.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_verify.header.sequence_num, self.next_seq_number());
-                check_auth_scheme!(acceptor_verify.auth_scheme.0, self.auth_scheme);
+                check_auth_scheme!(acceptor_verify.auth_scheme, self.auth_scheme);
 
                 let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 

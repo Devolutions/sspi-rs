@@ -41,38 +41,11 @@ lazy_static! {
 }
 
 #[derive(Debug, Clone)]
-pub struct NegotiateConfig {
-    pub krb_config: Option<KerberosConfig>,
-    pub pku2u_config: Option<Pku2uConfig>,
-}
-
-impl NegotiateConfig {
-    pub fn new() -> Self {
-        Self {
-            krb_config: None,
-            pku2u_config: None,
-        }
-    }
-
-    pub fn new_with_kerberos(krb_config: KerberosConfig) -> Self {
-        Self {
-            krb_config: Some(krb_config),
-            pku2u_config: None,
-        }
-    }
-
-    pub fn new_with_pku2u(pku2u_config: Pku2uConfig) -> Self {
-        Self {
-            krb_config: None,
-            pku2u_config: Some(pku2u_config),
-        }
-    }
-}
-
-impl Default for NegotiateConfig {
-    fn default() -> Self {
-        Self::new()
-    }
+pub enum NegotiateConfig {
+    Pku2u(Pku2uConfig),
+    Kerberos(KerberosConfig),
+    Ntlm,
+    Empty,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -91,25 +64,34 @@ pub struct Negotiate {
 
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
-        let protocol = if let Some(krb_config) = config.krb_config {
-            Kerberos::new_client_from_config(krb_config)
-                .map(NegotiatedProtocol::Kerberos)
-                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
-        } else if let Some(pku2u_config) = config.pku2u_config {
-            Pku2u::new_client_from_config(pku2u_config)
+        let protocol = match config {
+            NegotiateConfig::Pku2u(config) => Pku2u::new_client_from_config(config)
                 .map(NegotiatedProtocol::Pku2u)
-                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
-        } else {
-            #[cfg(feature = "network_client")]
-            if env::var(SSPI_KDC_URL_ENV).is_ok() {
-                Kerberos::new_client_from_config(KerberosConfig::from_env())
-                    .map(NegotiatedProtocol::Kerberos)
-                    .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
-            } else {
-                NegotiatedProtocol::Ntlm(Ntlm::new())
+                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new())),
+            NegotiateConfig::Kerberos(config) => Kerberos::new_client_from_config(config)
+                .map(NegotiatedProtocol::Kerberos)
+                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new())),
+            NegotiateConfig::Ntlm => NegotiatedProtocol::Ntlm(Ntlm::new()),
+            NegotiateConfig::Empty => {
+                if let Some(pku2u) = Pku2uConfig::default_client_config()
+                    .ok()
+                    .map(|config| Pku2u::new_client_from_config(config).ok())
+                    .flatten()
+                {
+                    NegotiatedProtocol::Pku2u(pku2u)
+                } else {
+                    #[cfg(feature = "network_client")]
+                    if env::var(SSPI_KDC_URL_ENV).is_ok() {
+                        Kerberos::new_client_from_config(KerberosConfig::from_env())
+                            .map(NegotiatedProtocol::Kerberos)
+                            .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
+                    } else {
+                        NegotiatedProtocol::Ntlm(Ntlm::new())
+                    }
+                    #[cfg(not(feature = "network_client"))]
+                    NegotiatedProtocol::Ntlm(Ntlm::new())
+                }
             }
-            #[cfg(not(feature = "network_client"))]
-            NegotiatedProtocol::Ntlm(Ntlm::new())
         };
 
         Ok(Negotiate {

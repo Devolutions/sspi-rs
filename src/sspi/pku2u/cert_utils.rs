@@ -118,6 +118,10 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
         }
     }
 
+    if !cn {
+        return false;
+    }
+
     let mut client_auth = false;
 
     for extension in &certificate.tbs_certificate.extensions.0 .0 {
@@ -130,7 +134,7 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
         }
     }
 
-    cn && client_auth
+    client_auth
 }
 
 unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<RsaPrivateKey> {
