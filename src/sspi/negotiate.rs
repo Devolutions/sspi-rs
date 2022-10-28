@@ -92,6 +92,13 @@ impl Negotiate {
         })
     }
 
+    // negotiates the authorization protocol based on the username and the domain
+    // Decision rules:
+    // 1) if `self.protocol` is not NTLM then we've already negotiated a suitable protocol. Nothing to do.
+    // 2) if the provided domain is Azure AD domain then it'll use Pku2u
+    // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
+    // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
+    // 5) in any other cases, it'll use NTLM
     fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             if is_azure_ad_domain(domain) {
@@ -103,7 +110,7 @@ impl Negotiate {
             #[cfg(feature = "network_client")]
             if let Some(domain) = get_domain_from_fqdn(username) {
                 if let Some(host) = resolve_kdc_host(&domain) {
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
                         url: Url::from_str(&host)
                             .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
                         kdc_type: KdcType::Kdc,
@@ -117,7 +124,7 @@ impl Negotiate {
             #[cfg(feature = "network_client")]
             if env::var(SSPI_KDC_URL_ENV).is_ok() {
                 self.protocol =
-                    Kerberos::new_client_from_config(KerberosConfig::from_env()).map(NegotiatedProtocol::Kerberos)?;
+                    Kerberos::new_client_from_config(crate::KerberosConfig::from_env()).map(NegotiatedProtocol::Kerberos)?;
             }
         }
 
