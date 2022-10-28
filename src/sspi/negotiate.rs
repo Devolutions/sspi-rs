@@ -49,7 +49,6 @@ pub trait ProtocolConfig: Debug {
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub struct NegotiateConfig(Box<dyn ProtocolConfig>);
 
 impl NegotiateConfig {
