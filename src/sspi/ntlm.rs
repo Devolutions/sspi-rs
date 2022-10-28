@@ -12,7 +12,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
-use crate::negotiate::{NegotiatedProtocol, PoolConfig};
+use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
     self, CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
@@ -54,12 +54,12 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct NtlmConfig;
 
-impl PoolConfig for NtlmConfig {
+impl ProtocolConfig for NtlmConfig {
     fn new_client(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Ntlm(Ntlm::new()))
     }
 
-    fn clone(&self) -> Box<dyn PoolConfig> {
+    fn clone(&self) -> Box<dyn ProtocolConfig> {
         Box::new(Clone::clone(self))
     }
 }

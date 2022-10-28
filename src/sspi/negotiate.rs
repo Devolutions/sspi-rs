@@ -43,17 +43,17 @@ lazy_static! {
 
 use std::fmt::Debug;
 
-pub trait PoolConfig: Debug {
+pub trait ProtocolConfig: Debug {
     fn new_client(&self) -> Result<NegotiatedProtocol>;
-    fn clone(&self) -> Box<dyn PoolConfig>;
+    fn clone(&self) -> Box<dyn ProtocolConfig>;
 }
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub struct NegotiateConfig(Box<dyn PoolConfig>);
+pub struct NegotiateConfig(Box<dyn ProtocolConfig>);
 
 impl NegotiateConfig {
-    pub fn new(config: Box<dyn PoolConfig>) -> Self {
+    pub fn new(config: Box<dyn ProtocolConfig>) -> Self {
         Self(config)
     }
 }
@@ -110,12 +110,13 @@ impl Negotiate {
             #[cfg(feature = "network_client")]
             if let Some(domain) = get_domain_from_fqdn(username) {
                 if let Some(host) = resolve_kdc_host(&domain) {
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
-                        url: Url::from_str(&host)
-                            .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
-                        kdc_type: KdcType::Kdc,
-                        network_client: Box::new(ReqwestNetworkClient::new()),
-                    })?);
+                    self.protocol =
+                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
+                            url: Url::from_str(&host)
+                                .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
+                            kdc_type: KdcType::Kdc,
+                            network_client: Box::new(ReqwestNetworkClient::new()),
+                        })?);
 
                     return Ok(());
                 }
@@ -123,8 +124,8 @@ impl Negotiate {
 
             #[cfg(feature = "network_client")]
             if env::var(SSPI_KDC_URL_ENV).is_ok() {
-                self.protocol =
-                    Kerberos::new_client_from_config(crate::KerberosConfig::from_env()).map(NegotiatedProtocol::Kerberos)?;
+                self.protocol = Kerberos::new_client_from_config(crate::KerberosConfig::from_env())
+                    .map(NegotiatedProtocol::Kerberos)?;
             }
         }
 
