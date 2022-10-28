@@ -154,6 +154,7 @@ enum EndpointType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum ClientMode {
     Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),

@@ -1,7 +1,8 @@
 use picky_asn1_x509::Certificate;
 use rsa::RsaPrivateKey;
 
-use crate::Result;
+use crate::negotiate::{NegotiatedProtocol, PoolConfig};
+use crate::{Pku2u, Result};
 
 #[derive(Debug, Clone)]
 pub struct Pku2uConfig {
@@ -27,5 +28,17 @@ impl Pku2uConfig {
             p2p_certificate,
             private_key,
         })
+    }
+}
+
+impl PoolConfig for Pku2uConfig {
+    fn new_client(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Clone::clone(
+            self,
+        ))?))
+    }
+
+    fn clone(&self) -> Box<dyn PoolConfig> {
+        Box::new(Clone::clone(self))
     }
 }

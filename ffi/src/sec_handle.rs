@@ -77,9 +77,9 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         let sspi_context = match name {
             negotiate::PKG_NAME => {
                 if let Some(settings) = &attributes.kdc_proxy_settings {
-                    SspiContext::Negotiate(Negotiate::new(NegotiateConfig::new_with_kerberos(
+                    SspiContext::Negotiate(Negotiate::new(NegotiateConfig::new(Box::new(
                         KerberosConfig::from_kdc_url(&settings.proxy_server, Box::new(ReqwestNetworkClient::new())),
-                    ))?)
+                    )))?)
                 } else {
                     SspiContext::Negotiate(Negotiate::new(NegotiateConfig::default())?)
                 }

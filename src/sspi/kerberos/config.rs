@@ -8,6 +8,8 @@ use url::Url;
 use super::network_client::reqwest_network_client::ReqwestNetworkClient;
 use super::network_client::NetworkClient;
 use super::SSPI_KDC_URL_ENV;
+use crate::negotiate::{NegotiatedProtocol, PoolConfig};
+use crate::{Kerberos, Result};
 
 #[derive(Debug, Clone)]
 pub enum KdcType {
@@ -27,6 +29,18 @@ impl Debug for KerberosConfig {
             .field("url", &self.url)
             .field("kdc_type", &self.kdc_type)
             .finish_non_exhaustive()
+    }
+}
+
+impl PoolConfig for KerberosConfig {
+    fn new_client(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
+            Clone::clone(self),
+        )?))
+    }
+
+    fn clone(&self) -> Box<dyn PoolConfig> {
+        Box::new(Clone::clone(self))
     }
 }
 

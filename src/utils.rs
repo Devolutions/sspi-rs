@@ -65,7 +65,7 @@ pub fn resolve_kdc_host(domain: &str) -> Option<String> {
     }
 }
 
-pub fn generate_random_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Vec<u8> {
+pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Vec<u8> {
     let key_size = cipher.cipher().key_size();
     let mut key = Vec::with_capacity(key_size);
 

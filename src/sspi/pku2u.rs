@@ -49,7 +49,7 @@ use crate::sspi::pku2u::extractors::{
 use crate::sspi::pku2u::generators::{generate_authenticator, generate_authenticator_extension};
 use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
-use crate::utils::generate_random_key;
+use crate::utils::generate_random_symmetric_key;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
@@ -631,7 +631,7 @@ impl SspiImpl for Pku2u {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,

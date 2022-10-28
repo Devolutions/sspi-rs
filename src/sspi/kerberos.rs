@@ -42,7 +42,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
-use crate::utils::{generate_random_key, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags, ContextNames,
     ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities, PackageInfo,
@@ -388,7 +388,7 @@ impl Sspi for Kerberos {
             .encryption_type
             .as_ref()
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
+        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
 
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
@@ -601,7 +601,7 @@ impl SspiImpl for Kerberos {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,

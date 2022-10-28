@@ -15,6 +15,7 @@ use crate::kerberos::config::KdcType;
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 #[cfg(feature = "network_client")]
 use crate::kerberos::SSPI_KDC_URL_ENV;
+use crate::ntlm::NtlmConfig;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[cfg(feature = "network_client")]
 use crate::utils::get_domain_from_fqdn;
@@ -24,8 +25,8 @@ use crate::utils::resolve_kdc_host;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities, PackageInfo, Pku2u,
-    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    InitializeSecurityContextResult, Kerberos, Ntlm, PackageCapabilities, PackageInfo, Pku2u, SecurityBuffer,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -40,13 +41,33 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Clone)]
+use std::fmt::Debug;
+
+pub trait PoolConfig: Debug {
+    fn new_client(&self) -> Result<NegotiatedProtocol>;
+    fn clone(&self) -> Box<dyn PoolConfig>;
+}
+
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum NegotiateConfig {
-    Pku2u(Pku2uConfig),
-    Kerberos(KerberosConfig),
-    Ntlm,
-    Empty,
+pub struct NegotiateConfig(Box<dyn PoolConfig>);
+
+impl NegotiateConfig {
+    pub fn new(config: Box<dyn PoolConfig>) -> Self {
+        Self(config)
+    }
+}
+
+impl Default for NegotiateConfig {
+    fn default() -> Self {
+        Self(Box::new(NtlmConfig))
+    }
+}
+
+impl Clone for NegotiateConfig {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -65,37 +86,8 @@ pub struct Negotiate {
 
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
-        let protocol = match config {
-            NegotiateConfig::Pku2u(config) => Pku2u::new_client_from_config(config)
-                .map(NegotiatedProtocol::Pku2u)
-                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new())),
-            NegotiateConfig::Kerberos(config) => Kerberos::new_client_from_config(config)
-                .map(NegotiatedProtocol::Kerberos)
-                .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new())),
-            NegotiateConfig::Ntlm => NegotiatedProtocol::Ntlm(Ntlm::new()),
-            NegotiateConfig::Empty => {
-                if let Some(pku2u) = Pku2uConfig::default_client_config()
-                    .ok()
-                    .and_then(|config| Pku2u::new_client_from_config(config).ok())
-                {
-                    NegotiatedProtocol::Pku2u(pku2u)
-                } else {
-                    #[cfg(feature = "network_client")]
-                    if env::var(SSPI_KDC_URL_ENV).is_ok() {
-                        Kerberos::new_client_from_config(KerberosConfig::from_env())
-                            .map(NegotiatedProtocol::Kerberos)
-                            .unwrap_or_else(|_| NegotiatedProtocol::Ntlm(Ntlm::new()))
-                    } else {
-                        NegotiatedProtocol::Ntlm(Ntlm::new())
-                    }
-                    #[cfg(not(feature = "network_client"))]
-                    NegotiatedProtocol::Ntlm(Ntlm::new())
-                }
-            }
-        };
-
         Ok(Negotiate {
-            protocol,
+            protocol: config.0.new_client()?,
             auth_identity: None,
         })
     }
@@ -116,8 +108,16 @@ impl Negotiate {
                             .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
                         kdc_type: KdcType::Kdc,
                         network_client: Box::new(ReqwestNetworkClient::new()),
-                    })?)
+                    })?);
+
+                    return Ok(());
                 }
+            }
+
+            #[cfg(feature = "network_client")]
+            if env::var(SSPI_KDC_URL_ENV).is_ok() {
+                self.protocol =
+                    Kerberos::new_client_from_config(KerberosConfig::from_env()).map(NegotiatedProtocol::Kerberos)?;
             }
         }
 
