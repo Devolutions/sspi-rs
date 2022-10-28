@@ -25,7 +25,7 @@ use self::client::extractors::{
 use self::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request,
     generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
-    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, GenerateAsPaDataOptions,
+    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions,
     GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM, DEFAULT_AP_REQ_OPTIONS,
 };
 use self::config::{KdcType, KerberosConfig};
@@ -393,7 +393,10 @@ impl Sspi for Kerberos {
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
             seq_num: Some(seq_num),
-            sub_key: Some((enc_type.clone(), authenticator_seb_key.clone())),
+            sub_key: Some(EncKey {
+                key_type: enc_type.clone(),
+                key_value: authenticator_seb_key,
+            }),
             checksum: None,
             channel_bindings: self.channel_bindings.as_ref(),
             extensions: Vec::new(),
@@ -598,12 +601,15 @@ impl SspiImpl for Kerberos {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
                     seq_num: Some(seq_num),
-                    sub_key: Some((enc_type.clone(), authenticator_seb_key)),
+                    sub_key: Some(EncKey {
+                        key_type: enc_type.clone(),
+                        key_value: authenticator_sub_key,
+                    }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),

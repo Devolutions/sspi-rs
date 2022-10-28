@@ -35,7 +35,7 @@ use self::generators::{
 use crate::builders::ChangePassword;
 use crate::internal::SspiImpl;
 use crate::kerberos::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, GenerateAsReqOptions,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, EncKey, GenerateAsReqOptions,
     GenerateAuthenticatorOptions,
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
@@ -631,19 +631,22 @@ impl SspiImpl for Pku2u {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_seb_key = generate_random_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_key(enc_type, &mut OsRng::default());
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
                     seq_num: Some(exchange_seq_number),
-                    sub_key: Some((enc_type.clone(), authenticator_seb_key.clone())),
+                    sub_key: Some(EncKey {
+                        key_type: enc_type.clone(),
+                        key_value: authenticator_sub_key.clone(),
+                    }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                     }),
                     channel_bindings: None,
                     extensions: vec![generate_authenticator_extension(
-                        &authenticator_seb_key,
+                        &authenticator_sub_key,
                         &self.gss_api_messages,
                     )?],
                 })?;
@@ -675,7 +678,7 @@ impl SspiImpl for Pku2u {
                     check_if_empty!(self.auth_scheme, "auth_scheme is not set"),
                     ChecksumSuite::HmacSha196Aes256.into(),
                     ChecksumSuite::HmacSha196Aes256.hasher().checksum(
-                        &authenticator_seb_key,
+                        &authenticator_sub_key,
                         INITIATOR_SIGN,
                         &self.negoex_messages,
                     )?,

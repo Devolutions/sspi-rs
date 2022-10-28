@@ -41,6 +41,7 @@ lazy_static! {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum NegotiateConfig {
     Pku2u(Pku2uConfig),
     Kerberos(KerberosConfig),
@@ -75,8 +76,7 @@ impl Negotiate {
             NegotiateConfig::Empty => {
                 if let Some(pku2u) = Pku2uConfig::default_client_config()
                     .ok()
-                    .map(|config| Pku2u::new_client_from_config(config).ok())
-                    .flatten()
+                    .and_then(|config| Pku2u::new_client_from_config(config).ok())
                 {
                     NegotiatedProtocol::Pku2u(pku2u)
                 } else {

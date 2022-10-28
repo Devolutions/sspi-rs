@@ -50,7 +50,7 @@ use sha1::{Digest, Sha1};
 use super::{DhParameters, Pku2uConfig};
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::client::generators::{
-    AuthenticatorChecksumExtension, ChecksumOptions, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
+    AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
 };
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
@@ -441,10 +441,10 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         cksum,
         cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        subkey: Optional::from(sub_key.map(|(cipher, sub_key)| {
+        subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![cipher.into()])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key)),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value)),
             })
         })),
         seq_number: Optional::from(seq_num.map(|seq_num| {
@@ -457,7 +457,6 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> Result<String> {
     let mut username = "AzureAD\\".to_owned();
 
-    // extract issuer
     let mut issuer = false;
     for attr_type_and_value in certificate.tbs_certificate.issuer.0 .0.iter() {
         for v in attr_type_and_value.0.iter() {
@@ -479,7 +478,6 @@ pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> R
 
     username.push('\\');
 
-    // extract long S-id
     let mut subject = false;
     for attr_type_and_value in certificate.tbs_certificate.subject.0 .0.iter() {
         for v in attr_type_and_value.0.iter() {

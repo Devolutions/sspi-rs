@@ -322,10 +322,15 @@ pub struct AuthenticatorChecksumExtension {
     pub extension_value: Vec<u8>,
 }
 
+pub struct EncKey {
+    pub key_type: CipherSuite,
+    pub key_value: Vec<u8>,
+}
+
 pub struct GenerateAuthenticatorOptions<'a> {
     pub kdc_rep: &'a KdcRep,
     pub seq_num: Option<u32>,
-    pub sub_key: Option<(CipherSuite, Vec<u8>)>,
+    pub sub_key: Option<EncKey>,
     pub checksum: Option<ChecksumOptions>,
     pub channel_bindings: Option<&'a ChannelBindings>,
     pub extensions: Vec<AuthenticatorChecksumExtension>,
@@ -389,10 +394,10 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         cksum,
         cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        subkey: Optional::from(sub_key.map(|(cipher, sub_key)| {
+        subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![cipher.into()])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key)),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value)),
             })
         })),
         seq_number: Optional::from(seq_num.map(|seq_num| {
