@@ -20,7 +20,7 @@ impl Pku2uConfig {
 
     #[cfg(target_os = "windows")]
     pub fn default_client_config() -> Result<Self> {
-        use super::cert_utils::extract_client_p2p_cert_and_key;
+        use super::cert_utils::extraction::extract_client_p2p_cert_and_key;
 
         let (p2p_certificate, private_key) = extract_client_p2p_cert_and_key()?;
 

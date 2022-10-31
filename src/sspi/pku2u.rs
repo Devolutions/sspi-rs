@@ -41,7 +41,7 @@ use crate::kerberos::client::generators::{
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
-use crate::sspi::pku2u::cert_utils::validate_server_p2p_certificate;
+use crate::sspi::pku2u::cert_utils::validation::validate_server_p2p_certificate;
 use crate::sspi::pku2u::extractors::{
     extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
     extract_session_key_from_as_rep,

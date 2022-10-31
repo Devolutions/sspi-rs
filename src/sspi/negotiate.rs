@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 #[cfg(feature = "network_client")]
 use url::Url;
 
-use super::pku2u::Pku2uConfig;
 use crate::internal::SspiImpl;
 #[cfg(feature = "network_client")]
 use crate::kerberos::config::KdcType;
@@ -100,7 +99,10 @@ impl Negotiate {
     // 5) in any other cases, it'll use NTLM
     fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
+            #[cfg(target_os = "windows")]
             if is_azure_ad_domain(domain) {
+                use super::pku2u::Pku2uConfig;
+
                 self.protocol =
                     NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
                 return Ok(());

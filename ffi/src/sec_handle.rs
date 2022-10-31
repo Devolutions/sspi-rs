@@ -85,6 +85,12 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             pku2u::PKG_NAME => {
+                #[cfg(not(target_os = "windows"))]
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "PKU2U is not supported on non-Windows OS yet".into(),
+                ));
+                #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?)
             }
             kerberos::PKG_NAME => {
