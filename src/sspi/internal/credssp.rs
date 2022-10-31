@@ -293,6 +293,12 @@ impl CredSspClient {
                     )?);
                     ts_request.client_nonce = Some(self.client_nonce);
 
+                    if let Some(nego_tokens) = &ts_request.nego_tokens {
+                        if nego_tokens.is_empty() {
+                            ts_request.nego_tokens = None;
+                        }
+                    }
+
                     self.state = CredSspState::AuthInfo;
                 }
 
