@@ -8,12 +8,14 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView, PublicKey};
 use rsa::{BigUint, RsaPrivateKey, RsaPublicKey};
-use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC};
+use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC};
 use winapi::um::ncrypt::NCryptFreeObject;
 use winapi::um::wincrypt::{
-    CertEnumCertificatesInStore, CertOpenStore, CryptAcquireCertificatePrivateKey, CERT_CONTEXT,
-    CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_LOCAL_MACHINE_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT,
-    CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
+    CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
+    CryptAcquireCertificatePrivateKey, CryptExportKey, CryptReleaseContext, CERT_CONTEXT, CERT_NCRYPT_KEY_SPEC,
+    CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_CURRENT_USER_ID,
+    CERT_SYSTEM_STORE_LOCAL_MACHINE_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG,
+    CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, PRIVATEKEYBLOB,
 };
 use windows_sys::Win32::Foundation;
 use windows_sys::Win32::Security::Cryptography::{NCryptExportKey, CERT_KEY_SPEC};
@@ -101,7 +103,7 @@ fn decode_private_key(mut buffer: impl Read) -> Result<RsaPrivateKey> {
 
 /// Validates the device certificate
 /// Requirements for the device certificate:
-/// 1. Subject CN starts with 'MS-Organization-P2P-Access'
+/// 1. Issuer CN starts with 'MS-Organization-P2P-Access'
 /// 2. ClientAuth extended key usage present
 fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
     let mut cn = false;
@@ -144,7 +146,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
 
     let status = CryptAcquireCertificatePrivateKey(
         cert,
-        CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
+        CRYPT_ACQUIRE_ALLOW_NCRYPT_KEY_FLAG,
         null_mut(),
         &mut private_key_handle,
         &mut spec,
@@ -154,36 +156,64 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
     if status == 0 || private_key_handle == 0 {
         return Err(Error::new(
             ErrorKind::InternalError,
-            "Cannot extract certificate private key".into(),
+            "Cannot extract certificate private key: invalid handle".into(),
         ));
     }
 
-    let mut key_blob = vec![0; 3000];
+    let mut key_blob = vec![0; 5000];
     let mut result_len = 0;
 
-    let blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
+    if spec & CERT_NCRYPT_KEY_SPEC != 0 {
+        let blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
 
-    let status = NCryptExportKey(
-        private_key_handle as _,
-        0,
-        blob_type_wide.as_ptr() as *const _,
-        null(),
-        key_blob.as_mut_ptr(),
-        key_blob.len() as _,
-        &mut result_len,
-        0,
-    );
+        let status = NCryptExportKey(
+            private_key_handle as _,
+            0,
+            blob_type_wide.as_ptr() as *const _,
+            null(),
+            key_blob.as_mut_ptr(),
+            key_blob.len() as _,
+            &mut result_len,
+            0,
+        );
 
-    if status != 0 {
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            "Cannot extract certificate private key".into(),
-        ));
+        NCryptFreeObject(private_key_handle);
+
+        if status != 0 {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "Cannot extract certificate private key: unsuccessful extraction n: {:x?}",
+                    status
+                ),
+            ));
+        }
+    } else {
+        println!("IN CRYPT");
+
+        let status = CryptExportKey(
+            private_key_handle as _,
+            0,
+            PRIVATEKEYBLOB,
+            0,
+            key_blob.as_mut_ptr(),
+            &mut result_len,
+        );
+
+        CryptReleaseContext(private_key_handle, 0);
+
+        if status != 0 {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "Cannot extract certificate private key: unsuccessful extraction c: {:x?}",
+                    status
+                ),
+            ));
+        }
     }
 
     let private_key = decode_private_key(&key_blob[0..result_len as usize])?;
-
-    NCryptFreeObject(private_key_handle);
 
     Ok(private_key)
 }
@@ -191,19 +221,33 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
 unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Certificate, RsaPrivateKey)> {
     let mut certificate = CertEnumCertificatesInStore(cert_store, null_mut());
 
+    let mut i = 1;
+
     while !certificate.is_null() {
+        println!("i: {}", i);
+
         let cert_der = from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize);
         let cert: Certificate = picky_asn1_der::from_bytes(cert_der)?;
 
         if !validate_client_p2p_certificate(&cert) {
-            certificate = CertEnumCertificatesInStore(cert_store, certificate);
+            let next_certificate = CertEnumCertificatesInStore(cert_store, certificate);
+
+            // CertFreeCertificateContext(certificate);
+
+            certificate = next_certificate;
+
+            i += 1;
 
             continue;
         }
 
-        let private_key = export_certificate_private_key(certificate)?;
+        println!("cert der: {:?}", cert_der);
 
-        return Ok((cert, private_key));
+        let private_key = export_certificate_private_key(certificate);
+
+        CertFreeCertificateContext(certificate);
+
+        return Ok((cert, private_key?));
     }
 
     Err(Error::new(
@@ -214,14 +258,14 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
 pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, RsaPrivateKey)> {
     unsafe {
-        let which = "My";
-        let data = OsStr::new(which).encode_wide().chain(Some(0)).collect::<Vec<_>>();
+        let my: [u16; 3] = [77, 121, 0];
         let cert_store = CertOpenStore(
             CERT_STORE_PROV_SYSTEM_W,
             0,
             0,
             CERT_SYSTEM_STORE_LOCAL_MACHINE_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
-            data.as_ptr() as *mut _,
+            // CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
+            my.as_ptr() as *const _,
         );
 
         if cert_store.is_null() {
@@ -231,7 +275,11 @@ pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, RsaPrivateKey)>
             ));
         }
 
-        extract_client_p2p_certificate(cert_store)
+        let cert_and_key = extract_client_p2p_certificate(cert_store);
+
+        CertCloseStore(cert_store, 0);
+
+        cert_and_key
     }
 }
 
@@ -284,7 +332,13 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
 mod tests {
     use picky_asn1_x509::Certificate;
 
+    use super::extract_client_p2p_cert_and_key;
     use crate::pku2u::cert_utils::validate_client_p2p_certificate;
+
+    #[test]
+    fn test_e() {
+        extract_client_p2p_cert_and_key().unwrap();
+    }
 
     #[test]
     fn test_client_p2p_certificate_validation() {
