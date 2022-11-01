@@ -180,7 +180,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
         return Err(Error::new(
             ErrorKind::InternalError,
             format!(
-                "Cannot extract certificate private key: unsuccessful extraction n: {:x?}",
+                "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
                 status
             ),
         ));
@@ -205,7 +205,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
         return Err(Error::new(
             ErrorKind::InternalError,
             format!(
-                "Cannot extract certificate private key: unsuccessful extraction n: {:x?}",
+                "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
                 status
             ),
         ));
