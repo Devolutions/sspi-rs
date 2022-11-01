@@ -45,11 +45,9 @@ pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
 impl KerberosConfig {
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
         if let Some(kdc_url) = self.url {
-            Some(kdc_url).clone()
-        } else if let Some(kdc_url) = detect_kdc_url(&domain) {
-            Some(kdc_url).clone()
+            Some(kdc_url)
         } else {
-            None
+            detect_kdc_url(domain)
         }
     }
 

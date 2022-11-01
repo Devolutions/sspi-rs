@@ -98,7 +98,7 @@ impl Negotiate {
 
         Ok(Negotiate {
             protocol,
-            package_list: config.package_list.clone(),
+            package_list: config.package_list,
             auth_identity: None,
         })
     }
@@ -143,10 +143,9 @@ impl Negotiate {
         let mut pku2u_package: bool = true;
 
         if let Some(package_list) = &package_list {
-            for package in package_list.split(",") {
-                let (package_name, enabled) = if package.starts_with("!") {
-                    let package_name = package[1..].to_lowercase();
-                    (package_name, false)
+            for package in package_list.split(',') {
+                let (package_name, enabled) = if let Some(package_name) = package.strip_prefix('!') {
+                    (package_name.to_lowercase(), false)
                 } else {
                     let package_name = package.to_lowercase();
                     (package_name, true)
@@ -328,7 +327,7 @@ impl SspiImpl for Negotiate {
             let auth_identity: AuthIdentity = identity.clone().into();
 
             if let Some(domain) = &auth_identity.domain {
-                self.negotiate_protocol(&auth_identity.username, &domain)?;
+                self.negotiate_protocol(&auth_identity.username, domain)?;
             } else {
                 self.negotiate_protocol(&auth_identity.username, "")?;
             }

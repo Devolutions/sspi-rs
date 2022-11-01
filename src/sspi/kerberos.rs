@@ -106,6 +106,7 @@ pub struct Kerberos {
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.url.clone();
+
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
@@ -113,13 +114,14 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: OsRng::default().gen::<u32>(),
             realm: None,
-            kdc_url: kdc_url,
+            kdc_url,
             channel_bindings: None,
         })
     }
 
     pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.url.clone();
+
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
@@ -127,7 +129,7 @@ impl Kerberos {
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: OsRng::default().gen::<u32>(),
             realm: None,
-            kdc_url: kdc_url,
+            kdc_url,
             channel_bindings: None,
         })
     }
@@ -151,10 +153,7 @@ impl Kerberos {
         if let Some((realm, kdc_url)) = self.get_kdc() {
             return match kdc_url.scheme() {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
-                "http" | "https" => self
-                    .config
-                    .network_client
-                    .send_http(&kdc_url, data, Some(realm.to_string())),
+                "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
                 _ => Err(Error {
                     error_type: ErrorKind::InternalError,
                     description: "Invalid KDC server URL protocol scheme".to_owned(),
