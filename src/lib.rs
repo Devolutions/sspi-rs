@@ -74,6 +74,7 @@ mod ber;
 mod crypto;
 mod dns;
 mod kdc;
+mod krb;
 mod utils;
 
 cfg_if::cfg_if! {
