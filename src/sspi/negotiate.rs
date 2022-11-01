@@ -1,31 +1,20 @@
-#[cfg(feature = "network_client")]
-use std::env;
-#[cfg(feature = "network_client")]
-use std::str::FromStr;
+use std::fmt::Debug;
 
 use lazy_static::lazy_static;
-#[cfg(feature = "network_client")]
-use url::Url;
 
 use crate::internal::SspiImpl;
-#[cfg(feature = "network_client")]
-use crate::kerberos::config::KdcType;
+use crate::kdc::detect_kdc_url;
+use crate::kerberos::client::generators::get_client_principal_realm;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
-#[cfg(feature = "network_client")]
-use crate::kerberos::SSPI_KDC_URL_ENV;
 use crate::ntlm::NtlmConfig;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
-#[cfg(feature = "network_client")]
-use crate::utils::get_domain_from_fqdn;
 use crate::utils::is_azure_ad_domain;
-#[cfg(feature = "network_client")]
-use crate::utils::resolve_kdc_host;
 use crate::{
     builders, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, Ntlm, PackageCapabilities, PackageInfo, Pku2u, SecurityBuffer,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities, PackageInfo, Pku2u,
+    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -40,31 +29,48 @@ lazy_static! {
     };
 }
 
-use std::fmt::Debug;
-
 pub trait ProtocolConfig: Debug {
     fn new_client(&self) -> Result<NegotiatedProtocol>;
     fn clone(&self) -> Box<dyn ProtocolConfig>;
 }
 
 #[derive(Debug)]
-pub struct NegotiateConfig(Box<dyn ProtocolConfig>);
+pub struct NegotiateConfig {
+    pub protocol_config: Box<dyn ProtocolConfig>,
+    pub package_list: Option<String>,
+}
 
 impl NegotiateConfig {
-    pub fn new(config: Box<dyn ProtocolConfig>) -> Self {
-        Self(config)
+    pub fn new(protocol_config: Box<dyn ProtocolConfig>, package_list: Option<String>) -> Self {
+        Self {
+            protocol_config,
+            package_list,
+        }
+    }
+
+    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig>) -> Self {
+        Self {
+            protocol_config,
+            package_list: None,
+        }
     }
 }
 
 impl Default for NegotiateConfig {
     fn default() -> Self {
-        Self(Box::new(NtlmConfig))
+        Self {
+            protocol_config: Box::new(NtlmConfig),
+            package_list: None,
+        }
     }
 }
 
 impl Clone for NegotiateConfig {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            protocol_config: self.protocol_config.clone(),
+            package_list: None,
+        }
     }
 }
 
@@ -79,13 +85,20 @@ pub enum NegotiatedProtocol {
 #[derive(Debug, Clone)]
 pub struct Negotiate {
     protocol: NegotiatedProtocol,
+    package_list: Option<String>,
     auth_identity: Option<AuthIdentityBuffers>,
 }
 
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
+        let mut protocol = config.protocol_config.new_client()?;
+        if let Some(filtered_protocol) = Self::filter_protocol(&protocol, &config.package_list)? {
+            protocol = filtered_protocol;
+        }
+
         Ok(Negotiate {
-            protocol: config.0.new_client()?,
+            protocol,
+            package_list: config.package_list.clone(),
             auth_identity: None,
         })
     }
@@ -97,7 +110,7 @@ impl Negotiate {
     // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
     // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
     // 5) in any other cases, it'll use NTLM
-    fn negotiate_protocol(&mut self, username: &[u8], domain: &[u8]) -> Result<()> {
+    fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
             if is_azure_ad_domain(domain) {
@@ -105,32 +118,87 @@ impl Negotiate {
 
                 self.protocol =
                     NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
-                return Ok(());
             }
 
             #[cfg(feature = "network_client")]
-            if let Some(domain) = get_domain_from_fqdn(username) {
-                if let Some(host) = resolve_kdc_host(&domain) {
-                    self.protocol =
-                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
-                            url: Url::from_str(&host)
-                                .map_err(|err| Error::new(ErrorKind::InternalError, format!("{:?}", err)))?,
-                            kdc_type: KdcType::Kdc,
-                            network_client: Box::new(ReqwestNetworkClient::new()),
-                        })?);
-
-                    return Ok(());
-                }
-            }
-
-            #[cfg(feature = "network_client")]
-            if env::var(SSPI_KDC_URL_ENV).is_ok() {
-                self.protocol = Kerberos::new_client_from_config(crate::KerberosConfig::from_env())
-                    .map(NegotiatedProtocol::Kerberos)?;
+            if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
+                self.protocol =
+                    NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
+                        url: Some(host),
+                        network_client: Box::new(ReqwestNetworkClient::new()),
+                    })?);
             }
         }
 
+        if let Some(filtered_protocol) = Self::filter_protocol(&self.protocol, &self.package_list)? {
+            self.protocol = filtered_protocol;
+        }
+
         Ok(())
+    }
+
+    fn get_package_list_config(package_list: &Option<String>) -> (bool, bool, bool) {
+        let mut ntlm_package: bool = true;
+        let mut kerberos_package: bool = true;
+        let mut pku2u_package: bool = true;
+
+        if let Some(package_list) = &package_list {
+            for package in package_list.split(",") {
+                let (package_name, enabled) = if package.starts_with("!") {
+                    let package_name = package[1..].to_lowercase();
+                    (package_name, false)
+                } else {
+                    let package_name = package.to_lowercase();
+                    (package_name, true)
+                };
+
+                match package_name.as_str() {
+                    "ntlm" => ntlm_package = enabled,
+                    "kerberos" => kerberos_package = enabled,
+                    "pku2u" => pku2u_package = enabled,
+                    _ => eprintln!("unexpected package name: {}", &package_name),
+                }
+            }
+        }
+
+        (ntlm_package, kerberos_package, pku2u_package)
+    }
+
+    fn filter_protocol(
+        negotiated_protocol: &NegotiatedProtocol,
+        package_list: &Option<String>,
+    ) -> Result<Option<NegotiatedProtocol>> {
+        let mut filtered_protocol = None;
+        let (ntlm_package, kerberos_package, pku2u_package) = Self::get_package_list_config(package_list);
+
+        match &negotiated_protocol {
+            NegotiatedProtocol::Pku2u(_) => {
+                if !pku2u_package {
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
+                }
+            }
+            NegotiatedProtocol::Kerberos(_) => {
+                if !kerberos_package {
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
+                }
+            }
+            NegotiatedProtocol::Ntlm(_) => {
+                #[cfg(not(feature = "network_client"))]
+                if !ntlm_package {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        "Can not initialize Kerberos: network client is not provided".into(),
+                    ));
+                }
+                #[cfg(feature = "network_client")]
+                if !ntlm_package {
+                    let kerberos_client = Kerberos::new_client_from_config(KerberosConfig::from_env())?;
+                    filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
+                }
+            }
+        }
+
+        Ok(filtered_protocol)
     }
 }
 
@@ -209,10 +277,7 @@ impl Sspi for Negotiate {
     }
 
     fn change_password(&mut self, change_password: builders::ChangePassword) -> Result<()> {
-        self.negotiate_protocol(
-            change_password.account_name.as_bytes(),
-            change_password.domain_name.as_bytes(),
-        )?;
+        self.negotiate_protocol(&change_password.account_name, &change_password.domain_name)?;
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.change_password(change_password),
@@ -238,10 +303,7 @@ impl SspiImpl for Negotiate {
         }
 
         if let Some(identity) = builder.auth_data {
-            self.negotiate_protocol(
-                identity.username.as_bytes(),
-                identity.domain.as_deref().unwrap_or_default().as_bytes(),
-            )?;
+            self.negotiate_protocol(&identity.username, identity.domain.as_deref().unwrap_or_default())?;
         }
 
         self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
@@ -263,7 +325,13 @@ impl SspiImpl for Negotiate {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         if let Some(Some(identity)) = builder.credentials_handle {
-            self.negotiate_protocol(&identity.user, &identity.domain)?;
+            let auth_identity: AuthIdentity = identity.clone().into();
+
+            if let Some(domain) = &auth_identity.domain {
+                self.negotiate_protocol(&auth_identity.username, &domain)?;
+            } else {
+                self.negotiate_protocol(&auth_identity.username, "")?;
+            }
         }
 
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {

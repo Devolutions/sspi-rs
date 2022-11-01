@@ -1109,6 +1109,7 @@ impl str::FromStr for SecurityPackageType {
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
+            pku2u::PKG_NAME => Ok(SecurityPackageType::Pku2u),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }

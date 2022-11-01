@@ -17,8 +17,13 @@ jobs:
     runs-on: ubuntu-20.04
     outputs:
       dry-run: ${{ steps.get-dry-run.outputs.dry-run }}
+      project-version: ${{ steps.get-version.outputs.project-version }}
+      package-version: ${{ steps.get-version.outputs.package-version }}
 
     steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v3
+
       - name: Get dry run
         id: get-dry-run
         shell: pwsh
@@ -33,9 +38,20 @@ jobs:
             Write-Host '::set-output name=dry-run::false'
           }
 
+      - name: Get version
+        id: get-version
+        shell: pwsh
+        run: |
+          $CsprojXml = [Xml] (Get-Content .\ffi\dotnet\Devolutions.Sspi\Devolutions.Sspi.csproj)
+          $ProjectVersion = $CsprojXml.Project.PropertyGroup.Version | Select-Object -First 1
+          $PackageVersion = $ProjectVersion -Replace "^(\d+)\.(\d+)\.(\d+).(\d+)$", "`$1.`$2.`$3"
+          Write-Host "::set-output name=project-version::$ProjectVersion"
+          Write-Host "::set-output name=package-version::$PackageVersion"
+
   build-native:
     name: Native build
-    runs-on: ${{matrix.runner}}
+    runs-on: ${{ matrix.runner }}
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -53,8 +69,6 @@ jobs:
           - os: android
             runner: ubuntu-20.04
         exclude:
-          - arch: arm64
-            os: win
           - arch: arm
             os: win
           - arch: arm
@@ -77,11 +91,9 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Configure Android NDK
-        if: runner.os == 'linux'
+        if: matrix.os == 'android'
         shell: pwsh
         run: |
-          Set-PSDebug -Trace 1
-
           $CargoConfigFile = "~/.cargo/config"
           $AndroidToolchain="${Env:ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
 
@@ -114,6 +126,72 @@ jobs:
           echo "CC_aarch64-linux-android=$AndroidToolchain/bin/aarch64-linux-android21-clang" >> $Env:GITHUB_ENV
           echo "AR_aarch64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
 
+      - name: Setup Apple Rust toolchain
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: |
+          $RustupToolchains = Resolve-Path "~/.rustup/toolchains"
+          $ToolchainPrefix = Join-Path $RustupToolchains "prebuilt"
+          New-Item -ItemType Directory -Path $ToolchainPrefix | Out-Null
+
+          $DownloadPath = "/tmp/rust-download"
+          New-Item -ItemType Directory -Path $DownloadPath | Out-Null
+          Push-Location
+          Set-Location $DownloadPath
+
+          @(
+            "rustc-1.64.0-x86_64-apple-darwin.tar.xz",
+            "rustc-dev-1.64.0-x86_64-apple-darwin.tar.xz",
+            "rust-dev-1.64.0-x86_64-apple-darwin.tar.xz",
+            "rust-std-1.64.0-x86_64-apple-darwin.tar.xz"
+          ) | % {
+            Write-Host "Downloading $_"
+            wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2022.2.0/$_
+          }
+
+          @(
+            "rust-std-1.64.0-aarch64-apple-darwin.tar.xz",
+            "rust-std-1.64.0-x86_64-apple-ios.tar.xz",
+            "rust-std-1.64.0-aarch64-apple-ios.tar.xz"
+          ) | % {
+            Write-Host "Downloading $_"
+            wget -q https://static.rust-lang.org/dist/2022-09-22/$_
+          }
+
+          Get-Item *.tar.xz | % {
+            $FileName = $_.Name
+            $DirName = $FileName -Replace ".tar.xz",""
+            Write-Host "Extracting $FileName"
+            tar -xf $_
+            & "./${DirName}/install.sh" "--prefix=$ToolchainPrefix"
+          }
+
+          Pop-Location
+
+          rustup default prebuilt
+
+      - name: Fix ring dependency for Windows ARM64
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          @('', '[patch.crates-io]',
+          'ring = { git = "https://github.com/awakecoding/ring", branch = "0.16.20_alpha" }') | % {
+            Add-Content -Path "Cargo.toml" -Value $_
+          }
+          $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
+          $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
+          $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
+          echo "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
+
+      - name: Setup build environment
+        shell: pwsh
+        run: |
+          if ('${{ matrix.os }}' -Eq 'osx') {
+            echo "MACOSX_DEPLOYMENT_TARGET=10.10" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ('${{ matrix.os }}' -Eq 'ios') {
+            echo "IPHONEOS_DEPLOYMENT_TARGET=12.1" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          }
+
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}})
         shell: pwsh
         run: |
@@ -131,7 +209,7 @@ jobs:
             'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
           $LibPrefix = @{'win'='';'osx'='lib';'ios'='lib';
             'linux'='lib';'android'='lib'}[$DotNetOs]
-          $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.a';
+          $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.dylib';
             'linux'='.so';'android'='.so'}[$DotNetOs]
           $RustTarget = "$RustArch-$RustPlatform"
 
@@ -149,22 +227,13 @@ jobs:
             $Env:RUSTFLAGS="-C target-feature=+crt-static"
           }
 
-          if ($DotNetOs -eq 'ios') {
-            $CargoToml = Get-Content .\ffi\Cargo.toml
-            $CargoToml = $CargoToml | ForEach-Object {
-              if ($_.StartsWith("crate-type")) { "crate-type = [`"staticlib`"]" } else { $_ }
-            }
-            Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
-          }
-
           if ($RustTarget -eq 'aarch64-unknown-linux-gnu') {
             sudo apt install gcc-aarch64-linux-gnu
             $Env:RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc"
           }
 
-          $CsprojXml = [Xml] (Get-Content .\ffi\dotnet\Devolutions.Sspi\Devolutions.Sspi.csproj)
-          $ProjectVersion = $CsprojXml.Project.PropertyGroup.Version | Select-Object -First 1
-          $PackageVersion = $ProjectVersion -Replace "^(\d+)\.(\d+)\.(\d+).(\d+)$", "`$1.`$2.`$3"
+          $ProjectVersion = '${{ needs.preflight.outputs.project-version }}'
+          $PackageVersion = '${{ needs.preflight.outputs.package-version }}'
 
           $CargoToml = Get-Content .\ffi\Cargo.toml
           $CargoToml = $CargoToml | ForEach-Object {
@@ -187,10 +256,98 @@ jobs:
           name: sspi-${{matrix.os}}-${{matrix.arch}}
           path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
 
+  build-universal:
+    name: Universal Build
+    runs-on: ubuntu-20.04
+    needs: [preflight, build-native]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ osx, ios ]
+
+    steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v3
+
+      - name: Configure runner
+        run: |
+          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2022.2.0/cctools-x86_64-ubuntu-20.04.tar.xz
+          tar -xf cctools-x86_64-ubuntu-20.04.tar.xz -C /tmp
+          sudo mv /tmp/cctools-x86_64-ubuntu-20.04/bin/lipo /usr/local/bin
+          sudo mv /tmp/cctools-x86_64-ubuntu-20.04/bin/install_name_tool /usr/local/bin
+
+      - name: Download native components
+        uses: actions/download-artifact@v3
+        with:
+          path: dependencies/runtimes
+
+      - name: Lipo
+        shell: pwsh
+        run: |
+          Set-Location "dependencies/runtimes"
+          # No RID for universal binaries, see: https://github.com/dotnet/runtime/issues/53156
+          $OutputPath = Join-Path "${{ matrix.os }}-universal" "native"
+          New-Item -ItemType Directory -Path $OutputPath | Out-Null
+          $Libraries = Get-ChildItem -Recurse -Path "sspi-${{ matrix.os }}-*" -Filter "*.dylib" | Foreach-Object { $_.FullName } | Select -Unique
+          $LipoCmd = $(@('lipo', '-create', '-output', (Join-Path -Path $OutputPath -ChildPath "libDevolutionsSspi.dylib")) + $Libraries) -Join ' '
+          Write-Host $LipoCmd
+          Invoke-Expression $LipoCmd
+
+      - name: Framework
+        shell: pwsh
+        if: ${{ matrix.os == 'ios' }}
+        run: |
+          $Version = '${{ needs.preflight.outputs.project-version }}'
+          $ShortVersion = '${{ needs.preflight.outputs.package-version }}'
+          $BundleName = "libDevolutionsSspi"
+          $RuntimesDir = Join-Path "dependencies" "runtimes" "ios-universal" "native"
+          $FrameworkDir = Join-Path "$RuntimesDir" "$BundleName.framework"
+          New-Item -Path $FrameworkDir -ItemType "directory" -Force
+          $FrameworkExecutable = Join-Path $FrameworkDir $BundleName
+          Copy-Item -Path (Join-Path "$RuntimesDir" "$BundleName.dylib") -Destination $FrameworkExecutable -Force
+
+          $RPathCmd = $(@('install_name_tool', '-id', "@rpath/$BundleName.framework/$BundleName", "$FrameworkExecutable")) -Join ' '
+          Write-Host $RPathCmd
+          Invoke-Expression $RPathCmd
+
+          [xml] $InfoPlistXml = Get-Content "Info.plist"
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleIdentifier']/following-sibling::string[1]" |
+          %{ 	
+          $_.Node.InnerXml = "com.devolutions.sspi"
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleExecutable']/following-sibling::string[1]" |
+          %{ 	
+          $_.Node.InnerXml = $BundleName
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleVersion']/following-sibling::string[1]" |
+          %{ 	
+          $_.Node.InnerXml = $Version
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleShortVersionString']/following-sibling::string[1]" |
+          %{ 	
+          $_.Node.InnerXml = $ShortVersion
+          }
+
+          # Write the plist *without* a BOM
+          $Encoding = New-Object System.Text.UTF8Encoding($false)
+          $Writer = New-Object System.IO.StreamWriter((Join-Path $FrameworkDir "Info.plist"), $false, $Encoding)
+          $InfoPlistXml.Save($Writer)
+          $Writer.Close()
+
+          # .NET XML document inserts two square brackets at the end of the DOCTYPE tag
+          # It's perfectly valid XML, but we're dealing with plists here and dyld will not be able to read the file
+          ((Get-Content -Path (Join-Path $FrameworkDir "Info.plist") -Raw) -Replace 'PropertyList-1.0.dtd"\[\]', 'PropertyList-1.0.dtd"') | Set-Content -Path (Join-Path $FrameworkDir "Info.plist")
+
+      - name: Upload native components
+        uses: actions/upload-artifact@v3
+        with:
+          name: sspi-${{ matrix.os }}-universal
+          path: dependencies/runtimes/${{ matrix.os }}-universal
+
   build-managed:
     name: Managed build
     runs-on: windows-2022
-    needs: build-native
+    needs: [build-native, build-universal]
 
     steps:
       - name: Check out ${{ github.repository }}
@@ -234,6 +391,7 @@ jobs:
     needs:
       - preflight
       - build-managed
+      - build-universal
 
     steps:
       - name: Download NuGet package artifact
