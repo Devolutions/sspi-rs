@@ -226,6 +226,7 @@ cfg_if::cfg_if! {
         use trust_dns_resolver::Resolver;
         use trust_dns_resolver::system_conf::read_system_conf;
         use trust_dns_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
+        use std::env;
         use std::net::{IpAddr,SocketAddr};
         use std::str::FromStr;
         use url::Url;
@@ -286,6 +287,10 @@ cfg_if::cfg_if! {
         fn get_trust_dns_resolver(_domain: &str) -> Option<Resolver> {
             if let Ok((resolver_config, resolver_options)) = read_system_conf() {
                 Resolver::new(resolver_config, resolver_options).ok()
+            } else if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
+                let name_servers: Vec<String> = name_server_list
+                    .split(',').map(|c|c.trim().to_string()).filter(|x: &String| !x.is_empty()).collect();
+                get_trust_dns_resolver_from_name_servers(name_servers)
             } else {
                 None
             }
