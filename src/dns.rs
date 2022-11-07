@@ -126,7 +126,7 @@ cfg_if::cfg_if! {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(target_os="macos")] {
+    if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
         use tokio::time::timeout;
         use tokio::runtime;
@@ -326,7 +326,7 @@ pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             detect_kdc_hosts_from_dns_windows(domain)
-        } else if #[cfg(target_os="macos")] {
+        } else if #[cfg(any(target_os="macos", target_os="ios"))] {
             detect_kdc_hosts_from_dns_apple(domain)
         } else if #[cfg(feature="network_client")] {
             detect_kdc_hosts_from_dns_trust(domain)
