@@ -251,6 +251,8 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
     ))
 }
 
+// The P2P certificates always are placed in the Personal folder.
+// It uses the "My" certificates store that has access to the Personal folder in order to extract those certificates.
 pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
     unsafe {
         // "My\0" encoded as a wide string.
