@@ -1,6 +1,8 @@
+use picky::hash::HashAlgorithm;
+use picky::key::PublicKey as RsaPublicKey;
+use picky::signature::SignatureAlgorithm;
 use picky_asn1::wrapper::Asn1SetOf;
 use picky_asn1_x509::signed_data::SignedData;
-use rsa::{Hash, PaddingScheme, PublicKey, RsaPublicKey};
 use sha1::{Digest, Sha1};
 
 use crate::{Error, ErrorKind, Result};
@@ -19,11 +21,7 @@ pub fn validate_signed_data(signed_data: &SignedData, rsa_public_key: &RsaPublic
     sha1.update(&picky_asn1_der::to_vec(&signed_attributes)?);
     let hashed_signed_attributes = sha1.finalize().to_vec();
 
-    rsa_public_key
-        .verify(
-            PaddingScheme::PKCS1v15Sign { hash: Some(Hash::SHA1) },
-            &hashed_signed_attributes,
-            &signer_info.signature.0 .0,
-        )
+    SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
+        .verify(rsa_public_key, &hashed_signed_attributes, &signer_info.signature.0 .0)
         .map_err(|_| Error::new(ErrorKind::InvalidToken, "Invalid signed data signature".into()))
 }

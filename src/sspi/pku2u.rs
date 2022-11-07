@@ -212,7 +212,8 @@ impl Sspi for Pku2u {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        // checks if the Token buffer present
+        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self

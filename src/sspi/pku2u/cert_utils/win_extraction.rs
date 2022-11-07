@@ -4,8 +4,9 @@ use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
 use byteorder::{LittleEndian, ReadBytesExt};
+use num_bigint_dig::BigUint;
+use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
-use rsa::{BigUint, RsaPrivateKey};
 use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC};
 use winapi::um::ncrypt::NCryptFreeObject;
 use winapi::um::wincrypt::{
@@ -53,7 +54,7 @@ impl BcryptRsaKeyBlob {
     }
 }
 
-fn decode_private_key(mut buffer: impl Read) -> Result<RsaPrivateKey> {
+fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     let rsa_key_blob = BcryptRsaKeyBlob::from_read(&mut buffer)?;
 
     if rsa_key_blob.magic == BCRYPT_RSAPUBLIC_MAGIC {
@@ -87,12 +88,18 @@ fn decode_private_key(mut buffer: impl Read) -> Result<RsaPrivateKey> {
     let mut private_exp = vec![0; (rsa_key_blob.bit_len / 8) as usize];
     buffer.read_exact(&mut private_exp)?;
 
-    let rsa_private_key = RsaPrivateKey::from_components(
-        BigUint::from_bytes_be(&modulus),
-        BigUint::from_bytes_be(&public_exp),
-        BigUint::from_bytes_be(&private_exp),
-        vec![BigUint::from_bytes_be(&prime1), BigUint::from_bytes_be(&prime2)],
-    );
+    let rsa_private_key = PrivateKey::from_rsa_components(
+        &BigUint::from_bytes_be(&modulus),
+        &BigUint::from_bytes_be(&public_exp),
+        &BigUint::from_bytes_be(&private_exp),
+        &vec![BigUint::from_bytes_be(&prime1), BigUint::from_bytes_be(&prime2)],
+    )
+    .map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Can not create a private from components: {:?}", err),
+        )
+    })?;
 
     Ok(rsa_private_key)
 }
@@ -135,7 +142,7 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
     client_auth
 }
 
-unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<RsaPrivateKey> {
+unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<PrivateKey> {
     let mut private_key_handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
     let mut spec = CERT_KEY_SPEC::default();
     let mut free = Foundation::BOOL::default();
@@ -216,7 +223,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Rs
     Ok(private_key)
 }
 
-unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Certificate, RsaPrivateKey)> {
+unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Certificate, PrivateKey)> {
     let mut certificate = CertEnumCertificatesInStore(cert_store, null_mut());
 
     while !certificate.is_null() {
@@ -244,7 +251,7 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
     ))
 }
 
-pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, RsaPrivateKey)> {
+pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
     unsafe {
         // "My\0" encoded as a wide string.
         // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks

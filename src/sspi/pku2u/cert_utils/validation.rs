@@ -1,6 +1,7 @@
+use num_bigint_dig::BigUint;
+use picky::key::PublicKey as RsaPublicKey;
 use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
 use picky_asn1_x509::{Certificate, PublicKey};
-use rsa::{BigUint, RsaPublicKey};
 
 use crate::{Error, ErrorKind, Result};
 
@@ -31,16 +32,10 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
         }
         .0;
 
-        return RsaPublicKey::new(
-            BigUint::from_bytes_be(&public_key.modulus.0),
-            BigUint::from_bytes_be(&public_key.public_exponent.0),
-        )
-        .map_err(|err| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                format!("Invalid certificate public key: {:?}", err),
-            )
-        });
+        return Ok(RsaPublicKey::from_rsa_components(
+            &BigUint::from_bytes_be(&public_key.modulus.0),
+            &BigUint::from_bytes_be(&public_key.public_exponent.0),
+        ));
     }
 
     Err(Error::new(

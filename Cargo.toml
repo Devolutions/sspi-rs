@@ -37,6 +37,7 @@ serde = "1.0"
 serde_derive = "1.0"
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
+picky = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
 picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
 picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40", features = ["chrono_conversion"] }
 picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
@@ -46,7 +47,7 @@ uuid = { version = "1.1", features = ["v4"] }
 whoami = "0.5"
 trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
-rsa = "0.6.1"
+num-bigint-dig = "0.8.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.10"

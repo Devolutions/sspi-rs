@@ -220,7 +220,8 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        // checks if the Token buffer present
+        let _ = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self

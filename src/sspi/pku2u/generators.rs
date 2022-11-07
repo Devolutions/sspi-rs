@@ -2,6 +2,9 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use chrono::Utc;
+use picky::hash::HashAlgorithm;
+use picky::key::PrivateKey;
+use picky::signature::SignatureAlgorithm;
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -44,7 +47,6 @@ use picky_krb::pkinit::{
 };
 use rand::rngs::OsRng;
 use rand::Rng;
-use rsa::{Hash, PaddingScheme, RsaPrivateKey};
 use sha1::{Digest, Sha1};
 
 use super::{DhParameters, Pku2uConfig};
@@ -131,11 +133,7 @@ pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<Neg
     }))
 }
 
-pub fn generate_signer_info(
-    p2p_cert: &Certificate,
-    digest: Vec<u8>,
-    private_key: &RsaPrivateKey,
-) -> Result<SignerInfo> {
+pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key: &PrivateKey) -> Result<SignerInfo> {
     let signed_attributes = Asn1SetOf::from(vec![
         Attribute {
             ty: ObjectIdentifierAsn1::from(oids::content_type()),
@@ -156,11 +154,8 @@ pub fn generate_signer_info(
 
     let hashed_signed_attributes = sha1.finalize().to_vec();
 
-    let signature = private_key
-        .sign(
-            PaddingScheme::new_pkcs1v15_sign(Some(Hash::SHA1)),
-            &hashed_signed_attributes,
-        )
+    let signature = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
+        .sign(&hashed_signed_attributes, private_key)
         .map_err(|err| {
             Error::new(
                 ErrorKind::InternalError,
@@ -237,7 +232,7 @@ pub fn generate_pa_datas_for_as_req(
     p2p_cert: &Certificate,
     kdc_req_body: &KdcReqBody,
     dh_parameters: &DhParameters,
-    private_key: &RsaPrivateKey,
+    private_key: &PrivateKey,
 ) -> Result<Vec<PaData>> {
     let current_date = Utc::now();
     let mut microseconds = current_date.timestamp_subsec_micros();

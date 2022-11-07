@@ -109,7 +109,7 @@ mod test {
     fn empty_message() {
         let key = "key".to_string();
         let message = "".to_string();
-        let expected = [];
+        let expected: [u8; 0] = [];
         assert_eq!(Rc4::new(key.as_bytes()).process(message.as_bytes())[..], expected);
     }
 
