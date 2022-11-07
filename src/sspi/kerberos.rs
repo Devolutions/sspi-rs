@@ -34,7 +34,7 @@ use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
-use crate::{detect_kdc_url};
+use crate::detect_kdc_url;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
@@ -150,11 +150,10 @@ impl Kerberos {
         if let Some((realm, kdc_url)) = self.get_kdc() {
             return match kdc_url.scheme() {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
-                "http" | "https" => {
-                    self.config
-                        .network_client
-                        .send_http(&kdc_url, data, Some(realm.to_string()))
-                }
+                "http" | "https" => self
+                    .config
+                    .network_client
+                    .send_http(&kdc_url, data, Some(realm.to_string())),
                 _ => Err(Error {
                     error_type: ErrorKind::InternalError,
                     description: "Invalid KDC server URL protocol scheme".to_owned(),
