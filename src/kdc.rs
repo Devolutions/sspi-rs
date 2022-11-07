@@ -36,7 +36,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 
     for krb5_conf_path in krb5_conf_paths {
         if krb5_conf_path.exists() {
-            if let Some(krb5_conf)  = Krb5Conf::new_from_file(krb5_conf_path) {
+            if let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path) {
                 if let Some(kdc) = krb5_conf.get_value(vec!["realms", domain, "kdc"]) {
                     let kdc_url = format!("tcp://{}", kdc.as_str());
                     return vec![kdc_url];

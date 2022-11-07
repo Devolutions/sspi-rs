@@ -142,7 +142,7 @@ cfg_if::cfg_if! {
         }
 
         impl From<&QueryRecordResult> for DnsSrvRecord {
-            fn from(record: &QueryRecordResult) -> Self {    
+            fn from(record: &QueryRecordResult) -> Self {
                 let rdata = record.rdata.as_slice();
                 let priority = u16::from_be_bytes(rdata[0..2].try_into().unwrap());
                 let weight = u16::from_be_bytes(rdata[2..4].try_into().unwrap());
@@ -159,7 +159,7 @@ cfg_if::cfg_if! {
 
         pub fn dns_decode_target_data_to_string(v: &[u8]) -> String {
             let mut names = Vec::new();
-        
+
             let mut i = 0;
             while i < v.len() {
                 let size = v[i] as usize;
@@ -169,19 +169,19 @@ cfg_if::cfg_if! {
                 names.push(String::from_utf8_lossy(&v[i+1..i+1+size]));
                 i = i + 1 + size;
             }
-        
+
             names.join(".")
         }
 
         pub fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
             let query_timeout = 1000;
             let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
-        
+
             let rt = runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        
+
             rt.block_on(async {
                 let mut query = query_record(name, Type::SRV);
-        
+
                 loop {
                     match timeout(Duration::from_millis(query_timeout), query.next()).await {
                         Ok(Some(Ok(dns_record))) => {
@@ -197,7 +197,7 @@ cfg_if::cfg_if! {
                     }
                 }
             });
-        
+
             dns_records
         }
 

@@ -1,5 +1,5 @@
-use libc::{c_uint, c_ulong, c_ushort};
 use crate::sspi_data_types::{SecChar, SecWChar};
+use libc::{c_uint, c_ulong, c_ushort};
 
 pub struct KdcProxySettings {
     pub proxy_server: String,

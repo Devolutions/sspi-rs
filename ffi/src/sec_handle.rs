@@ -18,12 +18,14 @@ use symbol_rename_macro::rename_symbol;
 
 use crate::credentials_attributes::{
     CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
-    SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW
+    SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
 };
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
-use crate::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentityW,
-    SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SEC_WINNT_AUTH_IDENTITY_VERSION};
+use crate::sec_winnt_auth_identity::{
+    SecWinntAuthIdentityA, SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
+    SEC_WINNT_AUTH_IDENTITY_VERSION,
+};
 use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
@@ -93,8 +95,9 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             }
             kerberos::PKG_NAME => {
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(
-                        KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new()),
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_kdc_url(
+                        &kdc_url,
+                        Box::new(ReqwestNetworkClient::new()),
                     ))?)
                 } else {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env())?)

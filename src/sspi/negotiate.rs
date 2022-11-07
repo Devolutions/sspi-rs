@@ -122,9 +122,15 @@ impl Negotiate {
                 };
 
                 match package_name.as_str() {
-                    "ntlm" => { ntlm_package = enabled; }
-                    "kerberos" => { kerberos_package = enabled; }
-                    _ => { eprintln!("unexpected package name: {}", &package_name); }
+                    "ntlm" => {
+                        ntlm_package = enabled;
+                    }
+                    "kerberos" => {
+                        kerberos_package = enabled;
+                    }
+                    _ => {
+                        eprintln!("unexpected package name: {}", &package_name);
+                    }
                 }
             }
         }
@@ -132,16 +138,19 @@ impl Negotiate {
         (ntlm_package, kerberos_package)
     }
 
-    fn filter_protocol(negotiated_protocol: &NegotiatedProtocol, package_list: &Option<String>) -> Option<NegotiatedProtocol> {
+    fn filter_protocol(
+        negotiated_protocol: &NegotiatedProtocol,
+        package_list: &Option<String>,
+    ) -> Option<NegotiatedProtocol> {
         let mut filtered_protocol = None;
         let (ntlm_package, kerberos_package) = Self::get_package_list_config(package_list);
-        
+
         match &negotiated_protocol {
             NegotiatedProtocol::Kerberos(_) => {
                 if !kerberos_package {
                     filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
                 }
-            },
+            }
             NegotiatedProtocol::Ntlm(_) => {
                 if !ntlm_package {
                     let kerberos_client = Kerberos::new_client_from_config(KerberosConfig::from_env()).unwrap();

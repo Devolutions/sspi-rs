@@ -1,15 +1,15 @@
 #![allow(dead_code)]
 
-use std::path::Path;
-use std::io::{BufRead,BufReader};
 use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 fn can_skip_line(line: &str) -> bool {
     if let Some(first_char) = line.chars().nth(0) {
         match first_char {
-            '#' => { true } // comment line
-            ';' => { true } // comment line
-            _ => { false }
+            '#' => true, // comment line
+            ';' => true, // comment line
+            _ => false,
         }
     } else {
         true // empty line
@@ -49,7 +49,7 @@ fn try_read_line(reader: &mut impl BufRead, line: &mut String) -> bool {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Krb5Conf {
-    pub values: Vec<(String,String)>,
+    pub values: Vec<(String, String)>,
     path: Vec<String>,
 }
 
@@ -57,7 +57,7 @@ impl Krb5Conf {
     fn new() -> Self {
         Self {
             values: Vec::new(),
-            path: Vec::new()
+            path: Vec::new(),
         }
     }
 
@@ -109,7 +109,7 @@ impl Krb5Conf {
             if can_skip_line(&line) {
                 continue;
             }
-    
+
             while is_section_line(&line) {
                 self.read_section(reader, &mut line);
             }
@@ -124,21 +124,21 @@ impl Krb5Conf {
     fn read_values(&mut self, reader: &mut impl BufRead, line: &mut String) {
         if let Some((lhs, _)) = line.split_once("=") {
             self.enter_group(lhs.trim());
-    
+
             while try_read_line(reader, line) {
                 if can_skip_line(&line) {
                     continue;
                 }
-    
+
                 if line.ends_with("}") {
                     break;
                 }
-        
+
                 self.read_value(reader, line);
             }
         }
     }
-    
+
     fn read_value(&mut self, reader: &mut impl BufRead, line: &mut String) {
         if line.contains("{") {
             self.read_values(reader, line);
@@ -150,20 +150,20 @@ impl Krb5Conf {
             }
         }
     }
-    
+
     fn read_section(&mut self, reader: &mut impl BufRead, line: &mut String) {
         let name = get_section_name(line).unwrap();
         self.enter_section(&name);
-    
+
         while try_read_line(reader, line) {
             if can_skip_line(&line) {
                 continue;
             }
-    
+
             if line.chars().nth(0).unwrap() == '[' {
                 break;
             }
-    
+
             self.read_value(reader, line);
         }
     }
@@ -174,7 +174,7 @@ mod tests {
     use super::Krb5Conf;
     #[test]
     fn test_parse_krb5_conf() {
-		let krb5_conf_data = r#"
+        let krb5_conf_data = r#"
 [libdefaults]
 	default_realm = AD.IT-HELP.NINJA
 	udp_preference_limit = 1
@@ -191,11 +191,23 @@ mod tests {
 		default_domain = ad.it-help.ninja
 	}
 "#;
-		let krb5_conf  = Krb5Conf::new_from_data(&krb5_conf_data).unwrap();
+        let krb5_conf = Krb5Conf::new_from_data(&krb5_conf_data).unwrap();
 
-		assert_eq!(krb5_conf.get_value(vec!["libdefaults","default_realm"]), Some("AD.IT-HELP.NINJA".to_string()));
-		assert_eq!(krb5_conf.get_value(vec!["realms","ad.it-help.ninja","kdc"]), Some("IT-HELP-DC.ad.it-help.ninja:88".to_string()));
-		assert_eq!(krb5_conf.get_value(vec!["realms","ad.it-help.ninja","admin_server"]), Some("IT-HELP-DC.ad.it-help.ninja:88".to_string()));
-		assert_eq!(krb5_conf.get_value(vec!["realms","ad.it-help.ninja","default_domain"]), Some("ad.it-help.ninja".to_string()));
+        assert_eq!(
+            krb5_conf.get_value(vec!["libdefaults", "default_realm"]),
+            Some("AD.IT-HELP.NINJA".to_string())
+        );
+        assert_eq!(
+            krb5_conf.get_value(vec!["realms", "ad.it-help.ninja", "kdc"]),
+            Some("IT-HELP-DC.ad.it-help.ninja:88".to_string())
+        );
+        assert_eq!(
+            krb5_conf.get_value(vec!["realms", "ad.it-help.ninja", "admin_server"]),
+            Some("IT-HELP-DC.ad.it-help.ninja:88".to_string())
+        );
+        assert_eq!(
+            krb5_conf.get_value(vec!["realms", "ad.it-help.ninja", "default_domain"]),
+            Some("ad.it-help.ninja".to_string())
+        );
     }
 }
