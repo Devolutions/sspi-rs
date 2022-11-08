@@ -37,11 +37,11 @@ serde = "1.0"
 serde_derive = "1.0"
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
-picky = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
-picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
-picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40", features = ["chrono_conversion"] }
-picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40" }
-picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "50dfc40", features = ["pkcs7"] }
+picky = { version = "7.0.0-rc.3" }
+picky-krb = { version = "0.5.0" }
+picky-asn1 = { version = "0.7.0", features = ["chrono_conversion"] }
+picky-asn1-der = { version = "0.4.0" }
+picky-asn1-x509 = { version = "0.9.0", features = ["pkcs7"] }
 oid = "0.2.1"
 uuid = { version = "1.1", features = ["v4"] }
 whoami = "0.5"
