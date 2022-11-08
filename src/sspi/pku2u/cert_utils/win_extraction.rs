@@ -251,7 +251,9 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
     ))
 }
 
-// The P2P certificates always are placed in the Personal folder.
+// There is no specification/documentation that said where the P2P certificates should be installed.
+// During dev testing, we notice that they always are in the Personal folder.
+// So we assume that the needed certificates are placed in this folder
 // It uses the "My" certificates store that has access to the Personal folder in order to extract those certificates.
 pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
     unsafe {
