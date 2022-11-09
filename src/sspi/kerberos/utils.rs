@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::io::Write;
 
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
@@ -21,16 +20,6 @@ pub fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
     data[0..4].copy_from_slice(&len.to_be_bytes());
 
     Ok(data)
-}
-
-pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
-    debug_assert_eq!(data.len() % 2, 0);
-    String::from_utf16_lossy(
-        &data
-            .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
-            .collect::<Vec<u16>>(),
-    )
 }
 
 pub fn validate_mic_token(raw_token: &[u8], key_usage: i32, params: &EncryptionParams) -> Result<()> {

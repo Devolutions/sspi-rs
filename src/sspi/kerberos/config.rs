@@ -6,8 +6,9 @@ use url::Url;
 #[cfg(feature = "network_client")]
 use super::network_client::reqwest_network_client::ReqwestNetworkClient;
 use super::network_client::NetworkClient;
-
 use crate::kdc::detect_kdc_url;
+use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
+use crate::{Kerberos, Result};
 
 pub struct KerberosConfig {
     pub url: Option<Url>,
@@ -22,6 +23,18 @@ impl Debug for KerberosConfig {
     }
 }
 
+impl ProtocolConfig for KerberosConfig {
+    fn new_client(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
+            Clone::clone(self),
+        )?))
+    }
+
+    fn clone(&self) -> Box<dyn ProtocolConfig> {
+        Box::new(Clone::clone(self))
+    }
+}
+
 pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
     if !kdc.contains("://") {
         kdc = format!("tcp://{}", kdc);
@@ -32,11 +45,9 @@ pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
 impl KerberosConfig {
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
         if let Some(kdc_url) = self.url {
-            Some(kdc_url).clone()
-        } else if let Some(kdc_url) = detect_kdc_url(&domain) {
-            Some(kdc_url).clone()
+            Some(kdc_url)
         } else {
-            None
+            detect_kdc_url(domain)
         }
     }
 

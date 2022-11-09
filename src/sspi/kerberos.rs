@@ -2,7 +2,7 @@ pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod network_client;
-mod server;
+pub mod server;
 mod utils;
 
 use std::fmt::Debug;
@@ -24,17 +24,16 @@ use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_authenticator, generate_krb_priv_request, generate_neg_ap_req,
-    generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
-    ChecksumOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
-    DEFAULT_AP_REQ_OPTIONS,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request,
+    generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
+    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions,
+    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM, DEFAULT_AP_REQ_OPTIONS,
 };
 use self::config::KerberosConfig;
 use self::server::extractors::extract_tgt_ticket;
-use self::utils::{serialize_message, utf16_bytes_to_utf8_string};
+use self::utils::serialize_message;
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
-use crate::detect_kdc_url;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
 use crate::sspi::kerberos::client::extractors::extract_salt_from_krb_error;
 use crate::sspi::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
@@ -44,10 +43,11 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
+use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags, ContextNames,
-    ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities, PackageInfo,
-    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
+    ContextNames, ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities,
+    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -57,15 +57,16 @@ pub const SERVICE_NAME: &str = "TERMSRV";
 pub const KADMIN: &str = "kadmin";
 pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
-const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
+// pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
+pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
 /// [MS-KILE](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
-const RRC: u16 = 28;
+pub const RRC: u16 = 28;
 // wrap token header len
-const MAX_SIGNATURE: usize = 16;
+pub const MAX_SIGNATURE: usize = 16;
 // minimal len to fit encrypted public key in wrap token
-const SECURITY_TRAILER: usize = 60;
+pub const SECURITY_TRAILER: usize = 60;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
@@ -105,28 +106,30 @@ pub struct Kerberos {
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.url.clone();
+
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng::new()?.gen::<u32>(),
+            seq_number: OsRng::default().gen::<u32>(),
             realm: None,
-            kdc_url: kdc_url,
+            kdc_url,
             channel_bindings: None,
         })
     }
 
     pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.url.clone();
+
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng::new()?.gen::<u32>(),
+            seq_number: OsRng::default().gen::<u32>(),
             realm: None,
-            kdc_url: kdc_url,
+            kdc_url,
             channel_bindings: None,
         })
     }
@@ -150,10 +153,7 @@ impl Kerberos {
         if let Some((realm, kdc_url)) = self.get_kdc() {
             return match kdc_url.scheme() {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
-                "http" | "https" => self
-                    .config
-                    .network_client
-                    .send_http(&kdc_url, data, Some(realm.to_string())),
+                "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
                 _ => Err(Error {
                     error_type: ErrorKind::InternalError,
                     description: "Invalid KDC server URL protocol scheme".to_owned(),
@@ -166,9 +166,15 @@ impl Kerberos {
         })
     }
 
-    pub fn as_exchange(&mut self, mut options: GenerateAsReqOptions) -> Result<AsRep> {
-        options.with_pre_auth = false;
-        let as_req = generate_as_req(&options)?;
+    pub fn as_exchange(
+        &mut self,
+        options: GenerateAsReqOptions,
+        mut pa_data_options: GenerateAsPaDataOptions,
+    ) -> Result<AsRep> {
+        pa_data_options.with_pre_auth = false;
+        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
+        let kdc_req_body = generate_as_req_kdc_body(&options)?;
+        let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -184,11 +190,14 @@ impl Kerberos {
         }
 
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-            options.salt = correct_salt.as_bytes().to_vec()
+            pa_data_options.salt = correct_salt.as_bytes().to_vec()
         }
 
-        options.with_pre_auth = true;
-        let as_req = generate_as_req(&options)?;
+        pa_data_options.with_pre_auth = false;
+        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
+
+        let kdc_req_body = generate_as_req_kdc_body(&options)?;
+        let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -211,7 +220,8 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        // checks if the Token buffer present
+        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
@@ -372,16 +382,22 @@ impl Sspi for Kerberos {
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
 
-        let as_rep = self.as_exchange(GenerateAsReqOptions {
-            realm,
-            username,
-            password,
-            salt: salt.as_bytes().to_vec(),
-            enc_params: self.encryption_params.clone(),
-            cname_type,
-            snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
-            with_pre_auth: false,
-        })?;
+        let as_rep = self.as_exchange(
+            GenerateAsReqOptions {
+                realm,
+                username,
+                cname_type,
+                snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
+                // 4 = size of u32
+                nonce: &OsRng::default().gen::<[u8; 4]>(),
+            },
+            GenerateAsPaDataOptions {
+                password,
+                salt: salt.as_bytes().to_vec(),
+                enc_params: self.encryption_params.clone(),
+                with_pre_auth: false,
+            },
+        )?;
 
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -392,12 +408,23 @@ impl Sspi for Kerberos {
 
         let seq_num = self.next_seq_number();
 
+        let enc_type = self
+            .encryption_params
+            .encryption_type
+            .as_ref()
+            .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
             seq_num: Some(seq_num),
-            sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+            sub_key: Some(EncKey {
+                key_type: enc_type.clone(),
+                key_value: authenticator_seb_key,
+            }),
             checksum: None,
             channel_bindings: self.channel_bindings.as_ref(),
+            extensions: Vec::new(),
         })?;
 
         let krb_priv = generate_krb_priv_request(
@@ -506,6 +533,7 @@ impl SspiImpl for Kerberos {
                 let input = builder.input.as_ref().ok_or_else(|| {
                     sspi::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into())
                 })?;
+
                 if let Ok(sec_buffer) =
                     SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
                 {
@@ -536,16 +564,22 @@ impl SspiImpl for Kerberos {
                 let cname_type = get_client_principal_name_type(&username, &domain);
                 let realm = &get_client_principal_realm(&username, &domain);
 
-                let as_rep = self.as_exchange(GenerateAsReqOptions {
-                    realm,
-                    username: &username,
-                    password: &password,
-                    salt: salt.as_bytes().to_vec(),
-                    enc_params: self.encryption_params.clone(),
-                    cname_type,
-                    snames: &[TGT_SERVICE_NAME, realm],
-                    with_pre_auth: false,
-                })?;
+                let as_rep = self.as_exchange(
+                    GenerateAsReqOptions {
+                        realm,
+                        username: &username,
+                        cname_type,
+                        snames: &[TGT_SERVICE_NAME, realm],
+                        // 4 = size of u32
+                        nonce: &OsRng::default().gen::<[u8; 4]>(),
+                    },
+                    GenerateAsPaDataOptions {
+                        password: &password,
+                        salt: salt.as_bytes().to_vec(),
+                        enc_params: self.encryption_params.clone(),
+                        with_pre_auth: false,
+                    },
+                )?;
 
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -554,10 +588,11 @@ impl SspiImpl for Kerberos {
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
-                    seq_num: Some(OsRng::new()?.gen::<u32>()),
+                    seq_num: Some(OsRng::default().gen::<u32>()),
                     sub_key: None,
                     checksum: None,
                     channel_bindings: self.channel_bindings.as_ref(),
+                    extensions: Vec::new(),
                 })?;
 
                 let session_key_1 =
@@ -591,15 +626,28 @@ impl SspiImpl for Kerberos {
                     &self.encryption_params,
                 )?);
 
+                let seq_num = self.next_seq_number();
+
+                let enc_type = self
+                    .encryption_params
+                    .encryption_type
+                    .as_ref()
+                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
-                    seq_num: Some(self.next_seq_number()),
-                    sub_key: Some(OsRng::new()?.gen::<[u8; 32]>().to_vec()),
+                    seq_num: Some(seq_num),
+                    sub_key: Some(EncKey {
+                        key_type: enc_type.clone(),
+                        key_value: authenticator_sub_key,
+                    }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                     }),
                     channel_bindings: self.channel_bindings.as_ref(),
+                    extensions: Vec::new(),
                 })?;
 
                 let ap_req = generate_ap_req(

@@ -22,6 +22,7 @@ use crate::sspi::internal::SspiImpl;
 use crate::sspi::kerberos::config::KerberosConfig;
 use crate::sspi::kerberos::Kerberos;
 use crate::sspi::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::sspi::pku2u::Pku2uConfig;
 use crate::sspi::{
     self, CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
     DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
@@ -30,7 +31,7 @@ use crate::sspi::{
 };
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, ErrorKind, InitializeSecurityContextResult, Negotiate,
-    NegotiateConfig,
+    NegotiateConfig, Pku2u,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -153,9 +154,11 @@ enum EndpointType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum ClientMode {
     Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),
+    Pku2u(Pku2uConfig),
     Ntlm,
 }
 
@@ -193,7 +196,7 @@ impl CredSspClient {
             credentials,
             public_key,
             cred_ssp_mode,
-            client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
+            client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
             client_mode,
@@ -215,7 +218,7 @@ impl CredSspClient {
             credentials,
             public_key,
             cred_ssp_mode,
-            client_nonce: OsRng::new()?.gen::<[u8; NONCE_SIZE]>(),
+            client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version,
             client_mode,
@@ -234,6 +237,9 @@ impl CredSspClient {
                 ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     Kerberos::new_client_from_config(kerberos_config.clone())?,
+                ))),
+                ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
+                    Pku2u::new_client_from_config(pku2u.clone())?,
                 ))),
                 ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
             };
@@ -286,6 +292,13 @@ impl CredSspClient {
                         peer_version,
                     )?);
                     ts_request.client_nonce = Some(self.client_nonce);
+
+                    if let Some(nego_tokens) = &ts_request.nego_tokens {
+                        if nego_tokens.is_empty() {
+                            ts_request.nego_tokens = None;
+                        }
+                    }
+
                     self.state = CredSspState::AuthInfo;
                 }
 
@@ -395,6 +408,10 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
                 ))),
                 ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+                ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
+                    Pku2u::new_server_from_config(pku2u.clone()),
+                    ts_request
+                )))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
                 self.context
@@ -431,20 +448,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     self.context.as_mut().unwrap().decrypt_ts_credentials(&auth_info),
                     ts_request
                 );
+
                 self.state = CredSspState::Final;
 
                 Ok(ServerState::Finished(read_credentials.into()))
             }
             CredSspState::NegoToken => {
-                let input = try_cred_ssp_server!(
-                    ts_request.nego_tokens.take().ok_or_else(|| {
-                        sspi::Error::new(
-                            sspi::ErrorKind::InvalidToken,
-                            String::from("Got empty nego_tokens field"),
-                        )
-                    }),
-                    ts_request
-                );
+                let input = ts_request.nego_tokens.take().unwrap_or_default();
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
@@ -543,6 +553,7 @@ pub enum SspiContext {
     Ntlm(Ntlm),
     Kerberos(Kerberos),
     Negotiate(Negotiate),
+    Pku2u(Pku2u),
 }
 
 impl SspiImpl for SspiContext {
@@ -557,6 +568,7 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
+            SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
         }
     }
 
@@ -568,6 +580,7 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder),
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
+            SspiContext::Pku2u(pku2u) => pku2u.initialize_security_context_impl(builder),
         }
     }
 
@@ -579,6 +592,7 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
+            SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
         }
     }
 }
@@ -589,6 +603,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
             SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),
             SspiContext::Negotiate(negotiate) => negotiate.complete_auth_token(token),
+            SspiContext::Pku2u(pku2u) => pku2u.complete_auth_token(token),
         }
     }
 
@@ -602,6 +617,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
             SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message, sequence_number),
+            SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message, sequence_number),
         }
     }
 
@@ -614,6 +630,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
             SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message, sequence_number),
+            SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
         }
     }
 
@@ -622,6 +639,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_sizes(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_sizes(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_sizes(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_sizes(),
         }
     }
     fn query_context_names(&mut self) -> sspi::Result<ContextNames> {
@@ -629,6 +647,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_names(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_names(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_names(),
         }
     }
     fn query_context_package_info(&mut self) -> sspi::Result<PackageInfo> {
@@ -636,6 +655,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_package_info(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_package_info(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_package_info(),
         }
     }
     fn query_context_cert_trust_status(&mut self) -> sspi::Result<CertTrustStatus> {
@@ -643,6 +663,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_cert_trust_status(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_cert_trust_status(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_cert_trust_status(),
         }
     }
 
@@ -651,6 +672,7 @@ impl Sspi for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
             SspiContext::Kerberos(kerberos) => kerberos.change_password(change_password),
             SspiContext::Negotiate(negotiate) => negotiate.change_password(change_password),
+            SspiContext::Pku2u(pku2u) => pku2u.change_password(change_password),
         }
     }
 }
@@ -661,6 +683,7 @@ impl SspiEx for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
             SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identity(identity),
+            SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
         }
     }
 }
@@ -768,6 +791,7 @@ impl CredSspContext {
             }
             SspiContext::Kerberos(_) => {}
             SspiContext::Negotiate(_) => {}
+            SspiContext::Pku2u(_) => {}
         };
 
         self.encrypt_message(&public_key)

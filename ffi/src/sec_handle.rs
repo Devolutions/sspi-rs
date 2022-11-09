@@ -10,8 +10,8 @@ use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 use sspi::{
-    kerberos, negotiate, ntlm, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind, Kerberos,
-    Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
+    kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Pku2u, Pku2uConfig, Result, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -84,14 +84,24 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             negotiate::PKG_NAME => {
                 if let Some(kdc_url) = attributes.kdc_url() {
                     let kerberos_config = KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new()));
-                    let mut negotiate_config = NegotiateConfig::new_with_kerberos(kerberos_config);
-                    negotiate_config.package_list = attributes.package_list.clone();
+                    let negotiate_config =
+                        NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone());
+
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 } else {
                     let mut negotiate_config = NegotiateConfig::default();
                     negotiate_config.package_list = attributes.package_list.clone();
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
+            }
+            pku2u::PKG_NAME => {
+                #[cfg(not(target_os = "windows"))]
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "PKU2U is not supported on non-Windows OS yet".into(),
+                ));
+                #[cfg(target_os = "windows")]
+                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?)
             }
             kerberos::PKG_NAME => {
                 if let Some(kdc_url) = attributes.kdc_url() {

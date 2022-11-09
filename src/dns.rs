@@ -50,9 +50,9 @@ cfg_if::cfg_if! {
                         if let (Some(namespace), Some(name_server_list)) = (namespace, name_server_list) {
                             let name_servers: Vec<String> = name_server_list.split(';').map(|x| x.to_string()).collect();
                             rules.push(DnsClientNrptRule {
-                                rule_name: rule_name,
-                                namespace: namespace,
-                                name_servers: name_servers
+                                rule_name,
+                                namespace,
+                                name_servers,
                             });
                         }
                     }
@@ -90,7 +90,7 @@ cfg_if::cfg_if! {
         }
 
         pub fn get_name_servers_for_domain(domain: &str) -> Vec<String> {
-            let domain_namespace = if domain.starts_with(".") {
+            let domain_namespace = if domain.starts_with('.') {
                 domain.to_string()
             } else {
                 format!(".{}", &domain)
@@ -102,7 +102,7 @@ cfg_if::cfg_if! {
                 }
             }
 
-            return get_default_name_servers();
+            get_default_name_servers()
         }
 
         pub fn detect_kdc_hosts_from_dns_windows(domain: &str) -> Vec<String> {
@@ -110,14 +110,14 @@ cfg_if::cfg_if! {
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
             if !krb_tcp_srv.is_empty() {
-                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:88", x).to_owned()).collect()
+                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:88", x)).collect()
             }
 
             let krb_udp_name = &format!("_kerberos._udp.{}", domain);
             let krb_udp_srv = dns_query_srv_records(krb_udp_name);
 
             if !krb_udp_srv.is_empty() {
-                return krb_udp_srv.iter().map(|x| format!("udp://{}:88", x).to_owned()).collect()
+                return krb_udp_srv.iter().map(|x| format!("udp://{}:88", x)).collect()
             }
 
             Vec::new()
@@ -232,7 +232,7 @@ cfg_if::cfg_if! {
         use url::Url;
 
         fn get_trust_dns_name_server_from_url_str(url: &str) -> Option<NameServerConfig> {
-            let url = if !url.contains("://") && url.len() > 0 {
+            let url = if !url.contains("://") && url.is_empty() {
                 format!("udp://{}", url)
             } else {
                 url.to_string()
@@ -241,7 +241,7 @@ cfg_if::cfg_if! {
             if let Ok(url) = Url::parse(&url) {
                 if let Some(url_host) = url.host_str() {
                     let url_port = url.port().unwrap_or(53);
-                    let url_protocol = match url.scheme().to_lowercase().as_str() {
+                    let protocol = match url.scheme().to_lowercase().as_str() {
                         "tcp" => Protocol::Tcp,
                         "udp" => Protocol::Udp,
                         _ => Protocol::Udp,
@@ -249,8 +249,8 @@ cfg_if::cfg_if! {
                     if let Ok(ip_addr) = IpAddr::from_str(url_host) {
                         let socket_addr = SocketAddr::new(ip_addr, url_port);
                         return Some(NameServerConfig {
-                            socket_addr: socket_addr,
-                            protocol: url_protocol,
+                            socket_addr,
+                            protocol,
                             tls_dns_name: None,
                             trust_nx_responses: false,
                             bind_addr: None

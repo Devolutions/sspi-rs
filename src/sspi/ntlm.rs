@@ -12,6 +12,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
+use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::sspi::internal::SspiImpl;
 use crate::sspi::{
     self, CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
@@ -19,7 +20,9 @@ use crate::sspi::{
     PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, PACKAGE_ID_NONE,
 };
-use crate::{utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult};
+use crate::{
+    utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult, Result,
+};
 
 pub const PKG_NAME: &str = "NTLM";
 pub const NTLM_VERSION_SIZE: usize = 8;
@@ -46,6 +49,19 @@ lazy_static! {
         name: SecurityPackageType::Ntlm,
         comment: String::from("NTLM Security Package"),
     };
+}
+
+#[derive(Debug, Clone)]
+pub struct NtlmConfig;
+
+impl ProtocolConfig for NtlmConfig {
+    fn new_client(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Ntlm(Ntlm::new()))
+    }
+
+    fn clone(&self) -> Box<dyn ProtocolConfig> {
+        Box::new(Clone::clone(self))
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

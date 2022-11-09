@@ -5,13 +5,16 @@ cfg_if::cfg_if! {
     }
 }
 
-use crate::dns::detect_kdc_hosts_from_dns;
-use crate::krb::Krb5Conf;
-
 use std::env;
+#[cfg(not(target_os = "windows"))]
 use std::path::Path;
 use std::str::FromStr;
+
 use url::Url;
+
+use crate::dns::detect_kdc_hosts_from_dns;
+#[cfg(not(target_os = "windows"))]
+use crate::krb::Krb5Conf;
 
 #[cfg(target_os = "windows")]
 pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
@@ -20,8 +23,8 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     let domains_key_path = "SYSTEM\\CurrentControlSet\\Control\\Lsa\\Kerberos\\Domains";
     let domain_key_path = format!("{}\\{}", domains_key_path, &domain_upper);
     if let Ok(domain_key) = hklm.open_subkey(domain_key_path) {
-        let kdc_names: Vec<String> = domain_key.get_value("KdcNames").unwrap_or(Vec::new());
-        kdc_names.iter().map(|x| format!("tcp://{}:88", x).to_owned()).collect()
+        let kdc_names: Vec<String> = domain_key.get_value("KdcNames").unwrap_or_default();
+        kdc_names.iter().map(|x| format!("tcp://{}:88", x)).collect()
     } else {
         Vec::new()
     }
@@ -57,15 +60,13 @@ pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
         return vec![kdc_url];
     }
 
-    let mut kdc_hosts = detect_kdc_hosts_from_system(domain);
+    let kdc_hosts = detect_kdc_hosts_from_system(domain);
 
     if !kdc_hosts.is_empty() {
         return kdc_hosts;
     }
 
-    kdc_hosts = detect_kdc_hosts_from_dns(domain);
-
-    return kdc_hosts;
+    detect_kdc_hosts_from_dns(domain)
 }
 
 pub fn detect_kdc_host(domain: &str) -> Option<String> {

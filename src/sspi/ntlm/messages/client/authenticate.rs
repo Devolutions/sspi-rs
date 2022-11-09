@@ -118,7 +118,7 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    let session_key = OsRng::new()?.gen::<[u8; SESSION_KEY_SIZE]>();
+    let session_key = OsRng::default().gen::<[u8; SESSION_KEY_SIZE]>();
     let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
