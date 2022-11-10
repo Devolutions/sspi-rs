@@ -149,13 +149,8 @@ pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key
 
     let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes)?;
 
-    let mut sha1 = Sha1::new();
-    sha1.update(&encoded_signed_attributes);
-
-    let hashed_signed_attributes = sha1.finalize().to_vec();
-
     let signature = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
-        .sign(&hashed_signed_attributes, private_key)
+        .sign(&encoded_signed_attributes, private_key)
         .map_err(|err| {
             Error::new(
                 ErrorKind::InternalError,
