@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 fn can_skip_line(line: &str) -> bool {
-    if let Some(first_char) = line.chars().nth(0) {
+    if let Some(first_char) = line.chars().next() {
         match first_char {
             '#' => true, // comment line
             ';' => true, // comment line
@@ -17,11 +17,11 @@ fn can_skip_line(line: &str) -> bool {
 }
 
 fn is_section_line(line: &str) -> bool {
-    if line.trim().len() == 0 {
+    if line.trim().is_empty() {
         return false;
     }
 
-    if line.starts_with("[") && line.ends_with("]") {
+    if line.starts_with('[') && line.ends_with(']') {
         return true;
     }
 
@@ -29,12 +29,11 @@ fn is_section_line(line: &str) -> bool {
 }
 
 fn get_section_name(line: &str) -> Option<String> {
-    if line.trim().len() > 0 {
-        if line.starts_with("[") && line.ends_with("]") {
-            return Some(line[1..line.len() - 1].to_string());
-        }
+    if !line.trim().is_empty() && line.starts_with('[') && line.ends_with(']') {
+        Some(line[1..line.len() - 1].to_string())
+    } else {
+        None
     }
-    None
 }
 
 fn try_read_line(reader: &mut impl BufRead, line: &mut String) -> bool {
@@ -98,9 +97,9 @@ impl Krb5Conf {
     fn current_path(&mut self, name: Option<String>) -> String {
         let mut current_path = self.path.clone();
         if let Some(name) = name {
-            current_path.push(name.to_owned());
+            current_path.push(name);
         }
-        return current_path.join("|");
+        current_path.join("|")
     }
 
     fn parse_from_reader(&mut self, reader: &mut impl BufRead) {
@@ -118,19 +117,19 @@ impl Krb5Conf {
 
     fn add_value(&mut self, key: &str, val: &str) {
         let path = self.current_path(Some(key.to_string()));
-        self.values.push((path.to_owned(), val.to_owned()));
+        self.values.push((path, val.to_owned()));
     }
 
     fn read_values(&mut self, reader: &mut impl BufRead, line: &mut String) {
-        if let Some((lhs, _)) = line.split_once("=") {
+        if let Some((lhs, _)) = line.split_once('=') {
             self.enter_group(lhs.trim());
 
             while try_read_line(reader, line) {
-                if can_skip_line(&line) {
+                if can_skip_line(line) {
                     continue;
                 }
 
-                if line.ends_with("}") {
+                if line.ends_with('}') {
                     break;
                 }
 
@@ -140,14 +139,12 @@ impl Krb5Conf {
     }
 
     fn read_value(&mut self, reader: &mut impl BufRead, line: &mut String) {
-        if line.contains("{") {
+        if line.contains('{') {
             self.read_values(reader, line);
         } else if let Some(section_name) = get_section_name(line) {
             self.enter_section(section_name.as_str());
-        } else {
-            if let Some((lhs, rhs)) = line.split_once("=") {
-                self.add_value(lhs.trim(), rhs.trim());
-            }
+        } else if let Some((lhs, rhs)) = line.split_once('=') {
+            self.add_value(lhs.trim(), rhs.trim());
         }
     }
 
@@ -156,11 +153,11 @@ impl Krb5Conf {
         self.enter_section(&name);
 
         while try_read_line(reader, line) {
-            if can_skip_line(&line) {
+            if can_skip_line(line) {
                 continue;
             }
 
-            if line.chars().nth(0).unwrap() == '[' {
+            if line.starts_with('[') {
                 break;
             }
 

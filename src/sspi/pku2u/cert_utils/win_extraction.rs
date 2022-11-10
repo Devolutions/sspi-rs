@@ -92,7 +92,7 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
         &BigUint::from_bytes_be(&modulus),
         &BigUint::from_bytes_be(&public_exp),
         &BigUint::from_bytes_be(&private_exp),
-        &vec![BigUint::from_bytes_be(&prime1), BigUint::from_bytes_be(&prime2)],
+        &[BigUint::from_bytes_be(&prime1), BigUint::from_bytes_be(&prime2)],
     )
     .map_err(|err| {
         Error::new(
