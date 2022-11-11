@@ -1,4 +1,3 @@
-#[cfg(target_os = "windows")]
 mod cert_utils;
 mod config;
 mod extractors;
