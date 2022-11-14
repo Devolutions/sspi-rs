@@ -11,6 +11,7 @@ use crate::kerberos::client::generators::get_client_principal_realm;
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 use crate::ntlm::NtlmConfig;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
+#[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 #[cfg(feature = "network_client")]
 use crate::KerberosConfig;
@@ -120,6 +121,7 @@ impl Negotiate {
     // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
     // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
     // 5) in any other cases, it'll use NTLM
+    #[allow(unused)]
     fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]

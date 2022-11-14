@@ -34,8 +34,8 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
 
-    let krb5_config = env::var("KRB5_CONFIG").unwrap_or("/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
-    let krb5_conf_paths = krb5_config.split(':').map(|x| Path::new(x)).collect::<Vec<&Path>>();
+    let krb5_config = env::var("KRB5_CONFIG").unwrap_or_else(|_| "/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
+    let krb5_conf_paths = krb5_config.split(':').map(Path::new).collect::<Vec<&Path>>();
 
     for krb5_conf_path in krb5_conf_paths {
         if krb5_conf_path.exists() {
