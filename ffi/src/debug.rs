@@ -3,7 +3,7 @@ pub use self::implementation::*;
 #[cfg(feature = "debug_mode")]
 mod implementation {
     use std::fs::OpenOptions;
-    use std::sync::Onc;
+    use std::sync::Once;
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::EnvFilter;
 
