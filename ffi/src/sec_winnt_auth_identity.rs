@@ -83,6 +83,7 @@ pub struct SecWinntAuthIdentityEx2 {
 }
 
 #[allow(clippy::missing_safety_doc)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiEncodeStringsAsAuthIdentity"))]
 #[no_mangle]
 pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
@@ -91,7 +92,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
     psz_packed_credentials_string: *const SecWChar,
     pp_auth_identity: *mut *mut c_void,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(pp_auth_identity);
         check_null!(psz_user_name);
         check_null!(psz_domain_name);
@@ -114,14 +115,15 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         *pp_auth_identity = into_raw_ptr(auth_identity) as *mut c_void;
 
         0
-    )
+    }
 }
 
 #[allow(clippy::missing_safety_doc)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiFreeAuthIdentity"))]
 #[no_mangle]
 pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         if auth_data.is_null() {
             return 0;
         }
@@ -135,7 +137,7 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
         drop_in_place(auth_data);
 
         0
-    )
+    }
 }
 
 #[cfg(test)]

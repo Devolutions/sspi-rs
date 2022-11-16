@@ -128,6 +128,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     Ok((*(*context)).dw_lower as *mut SspiContext)
 }
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleA"))]
 #[no_mangle]
 pub unsafe extern "system" fn AcquireCredentialsHandleA(
@@ -141,7 +142,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(psz_package);
         check_null!(p_auth_data);
         check_null!(ph_credential);
@@ -181,8 +182,9 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         }) as c_ulonglong;
 
         0
-    )
+    }
 }
+
 pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     LpStr,
     LpStr,
@@ -195,6 +197,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
 pub unsafe extern "system" fn AcquireCredentialsHandleW(
@@ -208,7 +211,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(psz_package);
         check_null!(p_auth_data);
         check_null!(ph_credential);
@@ -247,8 +250,9 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         }) as c_ulonglong;
 
         0
-    )
+    }
 }
+
 pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
     LpcWStr,
     LpcWStr,
@@ -261,6 +265,7 @@ pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesA"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesA(
@@ -270,8 +275,10 @@ pub extern "system" fn QueryCredentialsAttributesA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesW"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesW(
@@ -281,9 +288,11 @@ pub extern "system" fn QueryCredentialsAttributesW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextA"))]
 #[no_mangle]
 pub unsafe extern "system" fn InitializeSecurityContextA(
@@ -300,7 +309,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         // ph_context can be null on the first call
         // p_input can be null on the first call
         check_null!(ph_new_context);
@@ -358,12 +367,11 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
 
         *pf_context_attr = f_context_req;
 
-        result_status.map_or_else(
-            |err| err.error_type.to_u32().unwrap(),
-            |result| result.status.to_u32().unwrap(),
-        )
-    )
+        let result = try_execute!(result_status);
+        result.status.to_u32().unwrap()
+    }
 }
+
 pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
@@ -380,6 +388,7 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
 #[no_mangle]
 pub unsafe extern "system" fn InitializeSecurityContextW(
@@ -396,7 +405,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         // ph_context can be null on the first call
         // p_input can be null on the first call
         check_null!(ph_new_context);
@@ -453,12 +462,11 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
         (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
-        result_status.map_or_else(
-            |err| err.error_type.to_u32().unwrap(),
-            |result| result.status.to_u32().unwrap(),
-        )
-    )
+        let result = try_execute!(result_status);
+        result.status.to_u32().unwrap()
+    }
 }
+
 pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
@@ -475,6 +483,7 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesA(
@@ -482,7 +491,7 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
@@ -518,11 +527,13 @@ pub unsafe extern "system" fn QueryContextAttributesA(
             }
             _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
         }
-    )
+    }
 }
+
 pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesW(
@@ -530,7 +541,7 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
@@ -566,10 +577,12 @@ pub unsafe extern "system" fn QueryContextAttributesW(
             }
             _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
         }
-    )
+    }
 }
+
 pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextA"))]
 #[no_mangle]
 pub extern "system" fn ImportSecurityContextA(
@@ -580,9 +593,11 @@ pub extern "system" fn ImportSecurityContextA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type ImportSecurityContextFnA =
     extern "system" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextW"))]
 #[no_mangle]
 pub extern "system" fn ImportSecurityContextW(
@@ -593,9 +608,11 @@ pub extern "system" fn ImportSecurityContextW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type ImportSecurityContextFnW =
     extern "system" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsA"))]
 #[no_mangle]
 pub extern "system" fn AddCredentialsA(
@@ -610,6 +627,7 @@ pub extern "system" fn AddCredentialsA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type AddCredentialsFnA = extern "system" fn(
     PCredHandle,
     *mut SecChar,
@@ -621,6 +639,7 @@ pub type AddCredentialsFnA = extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsW"))]
 #[no_mangle]
 pub extern "system" fn AddCredentialsW(
@@ -635,6 +654,7 @@ pub extern "system" fn AddCredentialsW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type AddCredentialsFnW = extern "system" fn(
     PCredHandle,
     *mut SecWChar,
@@ -646,6 +666,7 @@ pub type AddCredentialsFnW = extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesA"))]
 #[no_mangle]
 pub extern "system" fn SetContextAttributesA(
@@ -656,6 +677,7 @@ pub extern "system" fn SetContextAttributesA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
@@ -668,8 +690,10 @@ pub extern "system" fn SetContextAttributesW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn SetCredentialsAttributesA(
@@ -678,7 +702,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(ph_credential);
         check_null!(p_buffer);
 
@@ -722,11 +746,13 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         } else {
             ErrorKind::UnsupportedFunction.to_u32().unwrap()
         }
-    )
+    }
 }
+
 pub type SetCredentialsAttributesFnA =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn SetCredentialsAttributesW(
@@ -735,7 +761,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(ph_credential);
         check_null!(p_buffer);
 
@@ -773,11 +799,13 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         } else {
             ErrorKind::UnsupportedFunction.to_u32().unwrap()
         }
-    )
+    }
 }
+
 pub type SetCredentialsAttributesFnW =
     unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordA"))]
 #[no_mangle]
 pub unsafe extern "system" fn ChangeAccountPasswordA(
@@ -790,7 +818,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     _dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(psz_package_name);
         check_null!(psz_domain_name);
         check_null!(psz_account_name);
@@ -833,9 +861,12 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
 
-        result_status.map_or_else(|err| err.error_type.to_u32().unwrap(), |_| 0)
-    )
+        try_execute!(result_status);
+
+        0
+    }
 }
+
 pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     *mut SecChar,
     *mut SecChar,
@@ -847,6 +878,7 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     PSecBufferDesc,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordW"))]
 #[no_mangle]
 pub unsafe extern "system" fn ChangeAccountPasswordW(
@@ -859,7 +891,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    catch_panic!(
+    catch_panic! {
         check_null!(psz_package_name);
         check_null!(psz_domain_name);
         check_null!(psz_account_name);
@@ -884,8 +916,9 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
             dw_reserved,
             p_output,
         )
-    )
+    }
 }
+
 pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     *mut SecWChar,
     *mut SecWChar,
@@ -897,6 +930,7 @@ pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     PSecBufferDesc,
 ) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExA"))]
 #[no_mangle]
 pub extern "system" fn QueryContextAttributesExA(
@@ -907,8 +941,10 @@ pub extern "system" fn QueryContextAttributesExA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExW"))]
 #[no_mangle]
 pub extern "system" fn QueryContextAttributesExW(
@@ -919,8 +955,10 @@ pub extern "system" fn QueryContextAttributesExW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExA"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesExA(
@@ -931,9 +969,11 @@ pub extern "system" fn QueryCredentialsAttributesExA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryCredentialsAttributesExFnA =
     extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExW"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesExW(
@@ -944,5 +984,6 @@ pub extern "system" fn QueryCredentialsAttributesExW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
+
 pub type QueryCredentialsAttributesExFnW =
     extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;

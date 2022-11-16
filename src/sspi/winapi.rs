@@ -226,17 +226,20 @@ fn file_time_to_system_time(timestamp: TimeStamp) -> NaiveDateTime {
         FileTimeToSystemTime(&timestamp as *const _ as *const _, &mut system_time as *mut _);
     }
 
-    NaiveDate::from_ymd(
+    NaiveDate::from_ymd_opt(
         i32::from(system_time.wYear),
         u32::from(system_time.wMonth),
         u32::from(system_time.wDay),
     )
-    .and_hms_micro(
-        u32::from(system_time.wHour),
-        u32::from(system_time.wMinute),
-        u32::from(system_time.wSecond),
-        u32::from(system_time.wMilliseconds),
-    )
+    .and_then(|date| {
+        date.and_hms_micro_opt(
+            u32::from(system_time.wHour),
+            u32::from(system_time.wMinute),
+            u32::from(system_time.wSecond),
+            u32::from(system_time.wMilliseconds),
+        )
+    })
+    .unwrap() // FIXME: should we return an Option? An error?
 }
 
 fn str_to_win_wstring(value: &str) -> Vec<u16> {

@@ -85,92 +85,100 @@ impl From<PackageInfo> for SecPkgInfoA {
     }
 }
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
-    catch_panic!(
-    check_null!(pc_packages);
-    check_null!(pp_package_info);
+    catch_panic! {
+        check_null!(pc_packages);
+        check_null!(pp_package_info);
 
-    let packages = try_execute!(enumerate_security_packages());
+        let packages = try_execute!(enumerate_security_packages());
 
-    *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
+        *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
 
-    0
-    )
+        0
+    }
 }
+
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     pc_packages: *mut c_ulong,
     pp_package_info: *mut *mut SecPkgInfoW,
 ) -> SecurityStatus {
-    catch_panic!(
-    check_null!(pc_packages);
-    check_null!(pp_package_info);
+    catch_panic! {
+        check_null!(pc_packages);
+        check_null!(pp_package_info);
 
-    let packages = try_execute!(enumerate_security_packages());
+        let packages = try_execute!(enumerate_security_packages());
 
-    *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as c_ulong;
 
-    *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
+        *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
 
-    0
-    )
+        0
+    }
 }
+
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
-    catch_panic!(
-    check_null!(p_package_name);
-    check_null!(pp_package_info);
+    catch_panic! {
+        check_null!(p_package_name);
+        check_null!(pp_package_info);
 
-    let pkg_name = try_execute!(CStr::from_ptr(p_package_name).to_str(), ErrorKind::InvalidParameter);
+        let pkg_name = try_execute!(CStr::from_ptr(p_package_name).to_str(), ErrorKind::InvalidParameter);
 
-    *pp_package_info = try_execute!(enumerate_security_packages())
-        .into_iter()
-        .find(|pkg| pkg.name.as_ref() == pkg_name)
-        .map(|pkg_info| into_raw_ptr(SecPkgInfoA::from(pkg_info)))
-        .unwrap();
+        *pp_package_info = try_execute!(enumerate_security_packages())
+            .into_iter()
+            .find(|pkg| pkg.name.as_ref() == pkg_name)
+            .map(|pkg_info| into_raw_ptr(SecPkgInfoA::from(pkg_info)))
+            .unwrap();
 
-    0
-    )
+        0
+    }
 }
+
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     p_package_name: *const SecWChar,
     pp_package_info: *mut PSecPkgInfoW,
 ) -> SecurityStatus {
-    catch_panic!(
-    check_null!(p_package_name);
-    check_null!(pp_package_info);
+    catch_panic! {
+        check_null!(p_package_name);
+        check_null!(pp_package_info);
 
-    let pkg_name = c_w_str_to_string(p_package_name);
+        let pkg_name = c_w_str_to_string(p_package_name);
 
-    *pp_package_info = try_execute!(enumerate_security_packages())
-        .into_iter()
-        .find(|pkg| pkg.name.to_string() == pkg_name)
-        .map(|pkg_info| into_raw_ptr(SecPkgInfoW::from(pkg_info)))
-        .unwrap();
+        *pp_package_info = try_execute!(enumerate_security_packages())
+            .into_iter()
+            .find(|pkg| pkg.name.to_string() == pkg_name)
+            .map(|pkg_info| into_raw_ptr(SecPkgInfoW::from(pkg_info)))
+            .unwrap();
 
-    0
-    )
+        0
+    }
 }
+
 pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar, *mut PSecPkgInfoW) -> SecurityStatus;
 
 #[cfg(test)]
