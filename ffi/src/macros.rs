@@ -5,6 +5,7 @@ macro_rules! try_execute {
         match $x {
             Ok(value) => value,
             Err(err) => {
+                tracing::error!(%err, "an error occurred");
                 return err.error_type.to_u32().unwrap();
             }
         }
@@ -14,7 +15,8 @@ macro_rules! try_execute {
 
         match $x {
             Ok(val) => val,
-            Err(_) => {
+            Err(err) => {
+                tracing::error!(%err, "an error occurred");
                 return $err_value.to_u32().unwrap();
             }
         }
@@ -35,7 +37,13 @@ macro_rules! check_null {
 macro_rules! catch_panic {
     ($($tokens:tt)*) => {{
         use sspi::ErrorKind;
+        use num_traits::ToPrimitive;
 
-        try_execute!(std::panic::catch_unwind(move || { $($tokens)* }), ErrorKind::InternalError)
+        match std::panic::catch_unwind(move || { $($tokens)* }) {
+            Ok(val) => val,
+            Err(_) => {
+                return ErrorKind::InternalError.to_u32().unwrap();
+            }
+        }
     }};
 }

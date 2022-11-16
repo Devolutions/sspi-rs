@@ -16,7 +16,7 @@ members = [
 ]
 
 [features]
-network_client = ["reqwest", "trust-dns-resolver", "portpicker"]
+network_client = ["dep:reqwest", "dep:trust-dns-resolver", "dep:portpicker"]
 
 [dependencies]
 byteorder = "1.2.7"

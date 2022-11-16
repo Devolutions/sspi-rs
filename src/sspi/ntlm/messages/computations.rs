@@ -120,7 +120,12 @@ pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], rand::Error> {
 }
 
 pub fn generate_timestamp() -> sspi::Result<u64> {
-    get_system_time_as_file_time(Utc.ymd(1601, 1, 1).and_hms(0, 1, 1), Utc::now())
+    let start_time = Utc
+        .with_ymd_and_hms(1601, 1, 1, 0, 1, 1)
+        .single()
+        .expect("hardcoded value should never fail");
+
+    get_system_time_as_file_time(start_time, Utc::now())
 }
 
 pub fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
