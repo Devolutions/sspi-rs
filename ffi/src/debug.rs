@@ -4,6 +4,7 @@ pub use self::implementation::*;
 mod implementation {
     use std::fs::OpenOptions;
     use std::sync::Once;
+
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::EnvFilter;
 
