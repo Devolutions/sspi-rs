@@ -367,7 +367,10 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
+
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
         (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
@@ -462,7 +465,10 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
+
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
 
         *pf_context_attr = f_context_req;
 
@@ -866,7 +872,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         let result_status = sspi_context.change_password(change_password);
 
-        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 
         try_execute!(result_status);
 
