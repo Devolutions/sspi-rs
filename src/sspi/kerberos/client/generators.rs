@@ -167,8 +167,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
 
     let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
         addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-        // address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
-        address: ExplicitContextTag1::from(OctetStringAsn1::from("DESKTOP-8F33RFH\x20".as_bytes().to_vec())),
+        address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
     }])));
 
     let mut service_names = Vec::with_capacity(snames.len());
