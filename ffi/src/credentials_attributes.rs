@@ -21,18 +21,19 @@ impl CredentialsAttributes {
     }
 
     pub fn new_with_package_list(package_list: Option<String>) -> Self {
-        let mut attributes = CredentialsAttributes::default();
-        attributes.package_list = package_list;
-        attributes
+        CredentialsAttributes {
+            package_list,
+            ..Default::default()
+        }
     }
 
     pub fn kdc_url(&self) -> Option<String> {
         if let Some(kdc_url) = &self.kdc_url {
             Some(kdc_url.to_string())
-        } else if let Some(kdc_proxy_settings) = &self.kdc_proxy_settings {
-            Some(kdc_proxy_settings.proxy_server.to_string())
         } else {
-            None
+            self.kdc_proxy_settings
+                .as_ref()
+                .map(|kdc_proxy_settings| kdc_proxy_settings.proxy_server.to_string())
         }
     }
 }

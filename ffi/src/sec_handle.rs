@@ -11,10 +11,15 @@ use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Pku2u, Pku2uConfig, Result, Sspi,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
 };
-#[cfg(windows)]
-use symbol_rename_macro::rename_symbol;
+
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        use sspi::{ Pku2u, Pku2uConfig };
+        use symbol_rename_macro::rename_symbol;
+    }
+}
 
 use crate::credentials_attributes::{
     CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
@@ -89,8 +94,10 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 } else {
-                    let mut negotiate_config = NegotiateConfig::default();
-                    negotiate_config.package_list = attributes.package_list.clone();
+                    let negotiate_config = NegotiateConfig {
+                        package_list: attributes.package_list.clone(),
+                        ..Default::default()
+                    };
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
             }

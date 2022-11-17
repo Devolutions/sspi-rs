@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+  workflow_dispatch:
+
+jobs:
+  formatting:
+    name: Check formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check formatting
+        shell: pwsh
+        run: |
+          Write-Host "Check formatting"
+          cargo fmt --all -- --check
+          if ($LastExitCode -eq 1) {   
+            throw "Bad formatting, please run 'cargo +stable fmt --all'"
+          }
+  
+  lints:
+    name: Lints
+    runs-on: ubuntu-latest
+    needs: formatting
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: formatting
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Test
+        run: cargo test --workspace --all-features
+
+  build-native:
+    name: Build native
+    needs: formatting
+    uses: ./.github/workflows/build-native.yml

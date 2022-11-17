@@ -128,6 +128,7 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
+        use tracing::error;
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
@@ -149,9 +150,9 @@ cfg_if::cfg_if! {
                 let port = u16::from_be_bytes(rdata[4..6].try_into().unwrap());
                 let target_data = &rdata[6..rdata.len()];
                 DnsSrvRecord {
-                    priority: priority,
-                    weight: weight,
-                    port: port,
+                    priority,
+                    weight,
+                    port,
                     target: dns_decode_target_data_to_string(target_data)
                 }
             }
@@ -191,7 +192,15 @@ cfg_if::cfg_if! {
                                 break;
                             }
                         }
-                        _ => {
+                        Ok(None) => {
+                            break
+                        }
+                        Ok(Some(Err(error))) => {
+                            error!(%error, "IO error when reading DNS query");
+                            break;
+                        }
+                        Err(error) => {
+                            error!(%error, "Timeout when reading DNS query");
                             break;
                         }
                     }
@@ -206,14 +215,14 @@ cfg_if::cfg_if! {
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
             if !krb_tcp_srv.is_empty() {
-                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", &x.target, x.port).to_owned()).collect()
+                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", &x.target, x.port)).collect()
             }
 
             let krb_udp_name = &format!("_kerberos._udp.{}", domain);
             let krb_udp_srv = dns_query_srv_records(krb_udp_name);
 
             if !krb_udp_srv.is_empty() {
-                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", &x.target, x.port).to_owned()).collect()
+                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", &x.target, x.port)).collect()
             }
 
             Vec::new()
