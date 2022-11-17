@@ -113,6 +113,7 @@ pub struct SecurityFunctionTableW {
 
 pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
@@ -155,6 +156,7 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     })
 }
 
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
