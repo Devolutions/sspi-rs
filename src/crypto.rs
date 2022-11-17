@@ -36,13 +36,18 @@ pub fn compute_md5_channel_bindings_hash(channel_bindings: &ChannelBindings) -> 
     let mut context = Md5::new();
     let mut result = [0x00; HASH_SIZE];
 
-    context.update(channel_bindings.initiator_addr_type.to_be_bytes());
-    context.update(channel_bindings.initiator.len().to_be_bytes());
+    let initiator_len = channel_bindings.initiator.len() as u32;
+    context.update(channel_bindings.initiator_addr_type.to_le_bytes());
+    context.update(initiator_len.to_le_bytes());
+    context.update(&channel_bindings.initiator);
 
-    context.update(channel_bindings.acceptor_addr_type.to_be_bytes());
-    context.update(channel_bindings.acceptor.len().to_be_bytes());
+    let acceptor_len = channel_bindings.acceptor.len() as u32;
+    context.update(channel_bindings.acceptor_addr_type.to_le_bytes());
+    context.update(acceptor_len.to_le_bytes());
+    context.update(&channel_bindings.acceptor);
 
-    context.update(channel_bindings.application_data.len().to_be_bytes());
+    let application_data_len = channel_bindings.application_data.len() as u32;
+    context.update(application_data_len.to_le_bytes());
     context.update(&channel_bindings.application_data);
 
     result.clone_from_slice(&context.finalize());
