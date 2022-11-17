@@ -82,7 +82,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
             .with_output(&mut output_tokens)
             .execute();
 
-        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens);
+        copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
         (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
@@ -218,8 +218,8 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_u
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
-pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
-    drop_in_place(pv_context_buffer);
+pub unsafe extern "system" fn FreeContextBuffer(_pv_context_buffer: *mut c_void) -> SecurityStatus {
+    // FIXME: patch leak
     0
 }
 
@@ -281,7 +281,7 @@ pub unsafe extern "system" fn EncryptMessage(
             message_seq_no.try_into().unwrap(),
         );
 
-        copy_to_c_sec_buffer((*p_message).p_buffers, &message);
+        copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
 
         let result = try_execute!(result_status);
         result.to_u32().unwrap()
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn DecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
-        copy_to_c_sec_buffer((*p_message).p_buffers, &message);
+        copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
         *pf_qop = decryption_flags.bits().try_into().unwrap();
 
         try_execute!(result_status);
