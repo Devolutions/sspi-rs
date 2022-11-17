@@ -708,7 +708,7 @@ where
     ///
     /// # Example
     ///
-    /// ```
+    /// ```ignore
     /// # use sspi::{Sspi, ChangePasswordBuilder};
     /// # let mut ntlm = sspi::Ntlm::new();
     /// let mut output = [];
