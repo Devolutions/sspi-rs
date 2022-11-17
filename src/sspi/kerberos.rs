@@ -193,7 +193,7 @@ impl Kerberos {
             pa_data_options.salt = correct_salt.as_bytes().to_vec()
         }
 
-        pa_data_options.with_pre_auth = false;
+        pa_data_options.with_pre_auth = true;
         let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
 
         let kdc_req_body = generate_as_req_kdc_body(&options)?;
