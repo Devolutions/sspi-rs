@@ -1482,10 +1482,7 @@ impl From<Asn1DerError> for Error {
 
 impl From<KrbError> for Error {
     fn from(err: KrbError) -> Self {
-        Self::new(
-            ErrorKind::InternalError,
-            format!("Got the krb error: {}", err.0.to_string()),
-        )
+        Self::new(ErrorKind::InternalError, format!("KRB error: {:?}", err.0.error_code))
     }
 }
 

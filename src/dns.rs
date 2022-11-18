@@ -241,7 +241,7 @@ cfg_if::cfg_if! {
         use url::Url;
 
         fn get_trust_dns_name_server_from_url_str(url: &str) -> Option<NameServerConfig> {
-            let url = if !url.contains("://") && url.is_empty() {
+            let url = if !url.contains("://") && !url.is_empty() {
                 format!("udp://{}", url)
             } else {
                 url.to_string()
@@ -294,12 +294,12 @@ cfg_if::cfg_if! {
 
         #[cfg(not(target_os="windows"))]
         fn get_trust_dns_resolver(_domain: &str) -> Option<Resolver> {
-            if let Ok((resolver_config, resolver_options)) = read_system_conf() {
-                Resolver::new(resolver_config, resolver_options).ok()
-            } else if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
+            if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
                 let name_servers: Vec<String> = name_server_list
                     .split(',').map(|c|c.trim().to_string()).filter(|x: &String| !x.is_empty()).collect();
                 get_trust_dns_resolver_from_name_servers(name_servers)
+            } else if let Ok((resolver_config, resolver_options)) = read_system_conf() {
+                    Resolver::new(resolver_config, resolver_options).ok()
             } else {
                 None
             }
