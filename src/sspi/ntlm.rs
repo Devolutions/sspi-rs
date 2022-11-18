@@ -59,7 +59,7 @@ impl ProtocolConfig for NtlmConfig {
         Ok(NegotiatedProtocol::Ntlm(Ntlm::new()))
     }
 
-    fn clone(&self) -> Box<dyn ProtocolConfig> {
+    fn clone(&self) -> Box<dyn ProtocolConfig + Send> {
         Box::new(Clone::clone(self))
     }
 }

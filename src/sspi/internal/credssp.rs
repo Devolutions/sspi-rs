@@ -937,3 +937,15 @@ fn integer_increment_le(buffer: &mut [u8]) {
 fn construct_error(e: &sspi::Error) -> u32 {
     ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32
 }
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::assert_impl_one;
+
+    use super::CredSspClient;
+
+    #[test]
+    fn cred_sspi_client_is_send() {
+        assert_impl_one!(CredSspClient: Send);
+    }
+}

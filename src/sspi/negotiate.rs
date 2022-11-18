@@ -36,24 +36,24 @@ lazy_static! {
 
 pub trait ProtocolConfig: Debug {
     fn new_client(&self) -> Result<NegotiatedProtocol>;
-    fn clone(&self) -> Box<dyn ProtocolConfig>;
+    fn clone(&self) -> Box<dyn ProtocolConfig + Send>;
 }
 
 #[derive(Debug)]
 pub struct NegotiateConfig {
-    pub protocol_config: Box<dyn ProtocolConfig>,
+    pub protocol_config: Box<dyn ProtocolConfig + Send>,
     pub package_list: Option<String>,
 }
 
 impl NegotiateConfig {
-    pub fn new(protocol_config: Box<dyn ProtocolConfig>, package_list: Option<String>) -> Self {
+    pub fn new(protocol_config: Box<dyn ProtocolConfig + Send>, package_list: Option<String>) -> Self {
         Self {
             protocol_config,
             package_list,
         }
     }
 
-    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig>) -> Self {
+    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>) -> Self {
         Self {
             protocol_config,
             package_list: None,
