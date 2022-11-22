@@ -86,7 +86,7 @@ The command above will create two files:
 * `<device id>_client_auth_p2p.cer` - the P2P certificate for the client authentication;
 * `<device id>_client_auth_p2p_ca.cer` - the P2P CA certificate of the obtained certificate;
 
-And here are files from my example:
+And here are files I had:
 
 ```
 03b8620d-12ff-48ee-b036-e1cf4c598609_client_auth_p2p.cer
@@ -94,5 +94,3 @@ And here are files from my example:
 03b8620d-12ff-48ee-b036-e1cf4c598609_server_auth_p2p.cer
 03b8620d-12ff-48ee-b036-e1cf4c598609_server_auth_p2p_ca.cer
 ```
-
-You can find this files in the `assets/` folder.
