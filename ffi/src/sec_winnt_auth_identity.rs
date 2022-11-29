@@ -128,10 +128,6 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
 
         let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data as *mut _);
 
-        // drop_in_place(auth_data.user as *mut c_ushort);
-        // drop_in_place(auth_data.domain as *mut c_ushort);
-        // drop_in_place(auth_data.password as *mut c_ushort);
-
         0
     }
 }

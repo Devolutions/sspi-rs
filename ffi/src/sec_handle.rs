@@ -532,9 +532,10 @@ pub unsafe extern "system" fn QueryContextAttributesA(
                 let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
                 (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
-                (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
+                let pkg_info: &mut SecPkgInfoA = try_execute!(
                     sspi_context.query_context_package_info()
-                )));
+                ).into();
+                (*nego_info).package_info = pkg_info;
 
                 0
             }
