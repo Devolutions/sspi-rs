@@ -84,7 +84,7 @@ lazy_static! {
         rpc_id: PACKAGE_ID_NONE,
         max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
         name: SecurityPackageType::Pku2u,
-        comment: String::from("Pku2u"),
+        comment: String::from("Pku2u Security Package"),
     };
 }
 
