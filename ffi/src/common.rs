@@ -218,8 +218,9 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_u
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
-pub unsafe extern "system" fn FreeContextBuffer(_pv_context_buffer: *mut c_void) -> SecurityStatus {
-    // FIXME: patch leak
+pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
+    let _ = Box::from_raw(pv_context_buffer as *mut _);
+
     0
 }
 

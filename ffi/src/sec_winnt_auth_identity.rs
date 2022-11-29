@@ -1,5 +1,3 @@
-use std::ptr::drop_in_place;
-
 use libc::{c_char, c_ushort, c_void};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -128,13 +126,11 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
             return 0;
         }
 
-        let auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
+        let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data as *mut _);
 
-        drop_in_place((*auth_data).user as *mut c_ushort);
-        drop_in_place((*auth_data).domain as *mut c_ushort);
-        drop_in_place((*auth_data).password as *mut c_ushort);
-
-        drop_in_place(auth_data);
+        // drop_in_place(auth_data.user as *mut c_ushort);
+        // drop_in_place(auth_data.domain as *mut c_ushort);
+        // drop_in_place(auth_data.password as *mut c_ushort);
 
         0
     }
