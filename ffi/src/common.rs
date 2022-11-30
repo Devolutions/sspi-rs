@@ -1,11 +1,11 @@
-use std::ptr::drop_in_place;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
+use sspi::internal::credssp::SspiContext;
 use sspi::{
-    AuthIdentityBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer,
-    SecurityBufferType, ServerRequestFlags, Sspi,
+    DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
+    ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -20,8 +20,12 @@ use crate::utils::{into_raw_ptr, transform_credentials_handle};
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
-    drop_in_place((*ph_credential).dw_lower as *mut AuthIdentityBuffers);
-    drop_in_place(ph_credential);
+    check_null!(ph_credential);
+
+    let cred_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
+    check_null!(cred_handle);
+
+    let _cred_handle = Box::from_raw(cred_handle);
 
     0
 }
@@ -142,17 +146,17 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
     catch_panic!(
-        if ph_context.is_null() {
-            return 0;
-        }
+        check_null!(ph_context);
 
-        drop_in_place(try_execute!(p_ctxt_handle_to_sspi_context(
+        let _context: Box<SspiContext> = Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
         )));
-        drop_in_place((*ph_context).dw_upper as *mut String);
-        drop_in_place(ph_context);
+
+        if (*ph_context).dw_upper != 0 {
+            let _name: Box<String> = Box::from_raw((*ph_context).dw_upper as *mut String);
+        }
 
         0
     )
