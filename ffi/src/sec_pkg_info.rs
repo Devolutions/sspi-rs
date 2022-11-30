@@ -1,7 +1,9 @@
+use std::alloc::{alloc, Layout};
 use std::ffi::CStr;
 use std::mem::size_of;
+use std::ptr::copy_nonoverlapping;
 
-use libc::{c_uint, c_ulong, c_ushort, malloc, memcpy};
+use libc::{c_uint, c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -26,36 +28,46 @@ pub type PSecPkgInfoW = *mut SecPkgInfoW;
 impl From<PackageInfo> for &mut SecPkgInfoW {
     fn from(pkg_info: PackageInfo) -> Self {
         let mut pkg_name = pkg_info.name.to_string().encode_utf16().collect::<Vec<_>>();
+        // null-terminator
         pkg_name.push(0);
         let name_bytes_len = pkg_name.len() * 2;
 
         let mut pkg_comment = pkg_info.comment.encode_utf16().collect::<Vec<_>>();
+        // null-terminator
         pkg_comment.push(0);
         let comment_bytes_len = pkg_comment.len() * 2;
 
         let pkg_info_w_size = size_of::<SecPkgInfoW>();
+        let size = pkg_info_w_size + name_bytes_len + comment_bytes_len;
 
+        let raw_pkg_info;
+        let pkg_info_w;
         unsafe {
-            let size = pkg_info_w_size + name_bytes_len + comment_bytes_len;
-            let raw_pkg_info = malloc(size);
-
-            let pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
-
-            pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
-            pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
-            pkg_info_w.w_rpc_id = pkg_info.rpc_id;
-            pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
-
-            let name_ptr = raw_pkg_info.add(pkg_info_w_size);
-            memcpy(name_ptr, pkg_name.as_ptr() as *const _, name_bytes_len);
-            pkg_info_w.name = name_ptr as *mut _;
-
-            let comment_ptr = name_ptr.add(name_bytes_len);
-            memcpy(comment_ptr, pkg_comment.as_ptr() as *const _, comment_bytes_len);
-            pkg_info_w.comment = comment_ptr as *mut _;
-
-            (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap()
+            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            raw_pkg_info = alloc(memory_layout);
+            pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
+
+        pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
+        pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
+        pkg_info_w.w_rpc_id = pkg_info.rpc_id;
+        pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
+
+        let name_ptr;
+        unsafe {
+            name_ptr = raw_pkg_info.add(pkg_info_w_size);
+            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+        }
+        pkg_info_w.name = name_ptr as *mut _;
+
+        let comment_ptr;
+        unsafe {
+            comment_ptr = name_ptr.add(name_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+        }
+        pkg_info_w.comment = comment_ptr as *mut _;
+
+        unsafe { (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap() }
     }
 }
 
@@ -74,36 +86,48 @@ pub type PSecPkgInfoA = *mut SecPkgInfoA;
 impl From<PackageInfo> for &mut SecPkgInfoA {
     fn from(pkg_info: PackageInfo) -> Self {
         let mut pkg_name = pkg_info.name.to_string().as_bytes().to_vec();
+        // null-terminator
         pkg_name.push(0);
         let name_bytes_len = pkg_name.len();
 
         let mut pkg_comment = pkg_info.comment.as_bytes().to_vec();
+        // null-terminator
         pkg_comment.push(0);
         let comment_bytes_len = pkg_comment.len();
 
         let pkg_info_a_size = size_of::<SecPkgInfoA>();
 
+        let size = pkg_info_a_size + name_bytes_len + comment_bytes_len;
+
+        let raw_pkg_info;
+        let pkg_info_a;
+
         unsafe {
-            let size = pkg_info_a_size + name_bytes_len + comment_bytes_len;
-            let raw_pkg_info = malloc(size);
-
-            let pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
-
-            pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
-            pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
-            pkg_info_a.w_rpc_id = pkg_info.rpc_id;
-            pkg_info_a.cb_max_token = pkg_info.max_token_len;
-
-            let name_ptr = raw_pkg_info.add(pkg_info_a_size);
-            memcpy(name_ptr, pkg_name.as_ptr() as *const _, name_bytes_len);
-            pkg_info_a.name = name_ptr as *mut _;
-
-            let comment_ptr = name_ptr.add(name_bytes_len);
-            memcpy(comment_ptr, pkg_comment.as_ptr() as *const _, comment_bytes_len);
-            pkg_info_a.comment = comment_ptr as *mut _;
-
-            (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap()
+            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            raw_pkg_info = alloc(memory_layout);
+            pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
         }
+
+        pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
+        pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
+        pkg_info_a.w_rpc_id = pkg_info.rpc_id;
+        pkg_info_a.cb_max_token = pkg_info.max_token_len;
+
+        let name_ptr;
+        unsafe {
+            name_ptr = raw_pkg_info.add(pkg_info_a_size);
+            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+        }
+        pkg_info_a.name = name_ptr as *mut _;
+
+        let comment_ptr;
+        unsafe {
+            comment_ptr = name_ptr.add(name_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+        }
+        pkg_info_a.comment = comment_ptr as *mut _;
+
+        unsafe { (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap() }
     }
 }
 
@@ -142,7 +166,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             size += package.name.as_ref().as_bytes().len() + package.comment.as_bytes().len();
         }
 
-        let raw_packages = malloc(size);
+        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let raw_packages = alloc(memory_layout);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoA;
         let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar;
@@ -154,13 +179,17 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             pkg_info_a.w_rpc_id = pkg_info.rpc_id;
             pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
-            let name = pkg_info.name.as_ref().as_bytes();
-            memcpy(data_ptr as *mut _, name.as_ptr() as *const _, name.len());
+            let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
+            // null-terminator
+            name.push(0);
+            copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len());
             pkg_info_a.name = data_ptr as *mut _;
             data_ptr = data_ptr.add(name.len());
 
-            let comment = pkg_info.comment.as_bytes();
-            memcpy(data_ptr as *mut _, comment.as_ptr() as *const _, comment.len());
+            let mut comment = pkg_info.comment.as_bytes().to_vec();
+            // null-terminator
+            comment.push(0);
+            copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len());
             pkg_info_a.comment = data_ptr as *mut _;
             data_ptr = data_ptr.add(comment.len());
 
@@ -196,8 +225,10 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         for package in &packages {
             let mut name = package.name.to_string().encode_utf16().collect::<Vec<_>>();
+            // null-terminator
             name.push(0);
             let mut comment = package.comment.encode_utf16().collect::<Vec<_>>();
+            // null-terminator
             comment.push(0);
 
             size += (name.len() + comment.len()) * 2;
@@ -206,7 +237,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             comments.push(comment);
         }
 
-        let raw_packages = malloc(size);
+        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let raw_packages = alloc(memory_layout);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoW;
         let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar;
@@ -218,11 +250,11 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
             pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
 
-            memcpy(data_ptr as *mut _, names[i].as_ptr() as *const _, names[i].len() * 2);
+            copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len());
             pkg_info_w.name = data_ptr as *mut _;
             data_ptr = data_ptr.add(names[i].len());
 
-            memcpy(data_ptr as *mut _, comments[i].as_ptr() as *const _, comments[i].len() * 2);
+            copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len());
             pkg_info_w.comment = data_ptr as *mut _;
             data_ptr = data_ptr.add(comments[i].len());
 

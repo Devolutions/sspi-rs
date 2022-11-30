@@ -2,9 +2,10 @@ mod attack;
 mod types;
 mod utils;
 
-use std::{env, path::Path};
+use std::env;
+use std::path::Path;
 
-use attack::{attack_w, attac_auth_identity, init_w_table, init_a_table, attack_a};
+use attack::{attac_auth_identity, attack_a, attack_w, init_a_table, init_w_table};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

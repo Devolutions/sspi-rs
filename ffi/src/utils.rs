@@ -36,15 +36,6 @@ pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u
     from_raw_parts(raw_buffer, len).iter().map(|c| *c as u8).collect()
 }
 
-pub unsafe fn c_w_str_len(s: *const SecWChar) -> usize {
-    let mut len = 0;
-    while *(s.add(len)) != 0 {
-        len += 1
-    }
-    // including the null byte: +1
-    len + 1
-}
-
 pub unsafe fn transform_credentials_handle<'a>(
     credentials_handle: *mut CredentialsHandle,
 ) -> Option<(AuthIdentityBuffers, &'a str, &'a CredentialsAttributes)> {

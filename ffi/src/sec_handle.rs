@@ -130,7 +130,9 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         };
 
         (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
-        (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        if (*(*context)).dw_upper == 0 {
+            (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        }
     }
 
     Ok((*(*context)).dw_lower as *mut SspiContext)
@@ -374,7 +376,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         *pf_context_attr = f_context_req;
 
@@ -416,9 +418,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    println!("init sec context");
     catch_panic! {
-        // ph_context can be null on the first calFreeCredentialsHandlel
+        // ph_context can be null on the first call
         // p_input can be null on the first call
         check_null!(ph_new_context);
         check_null!(ph_credential);
@@ -475,7 +476,6 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         *pf_context_attr = f_context_req;
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        // (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
         (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         let result = try_execute!(result_status);

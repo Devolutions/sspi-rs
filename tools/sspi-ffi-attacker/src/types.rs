@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_ulong, c_void, c_ushort, c_long, c_uint, c_char};
+use libc::{c_char, c_long, c_uint, c_ulong, c_ushort, c_void};
 
 pub type SEC_GET_KEY_FN = *mut c_void;
 
@@ -97,12 +97,10 @@ pub type LPSTR = *mut SEC_CHAR;
 pub type LPWSTR = *mut WCHAR;
 pub type SECURITY_STATUS = u32;
 
-pub type EnumerateSecurityPackagesFnW =
-    unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SECURITY_STATUS;
+pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SECURITY_STATUS;
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SECURITY_STATUS;
 
-pub type QueryCredentialsAttributesFnW =
-    extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
+pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
 pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
 
 pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
@@ -171,26 +169,22 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SECURITY_STATUS;
 
-pub type CompleteAuthTokenFn =
-    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SECURITY_STATUS;
+pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SECURITY_STATUS;
 
 pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> SECURITY_STATUS;
 
 pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SECURITY_STATUS;
 
-pub type QueryContextAttributesFnW =
-    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
+pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
 pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SECURITY_STATUS;
 
 pub type ImpersonateSecurityContextFn = extern "system" fn(PCtxtHandle) -> SECURITY_STATUS;
 
 pub type RevertSecurityContextFn = extern "system" fn(PCtxtHandle) -> SECURITY_STATUS;
 
-pub type MakeSignatureFn =
-    extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SECURITY_STATUS;
+pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SECURITY_STATUS;
 
-pub type VerifySignatureFn =
-    extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SECURITY_STATUS;
+pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SECURITY_STATUS;
 
 pub type FreeContextBufferFn = unsafe extern "system" fn(*mut c_void) -> SECURITY_STATUS;
 
@@ -201,10 +195,8 @@ pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SEC_CHAR
 pub type ExportSecurityContextFn =
     extern "system" fn(PCtxtHandle, c_ulong, PSecBuffer, *mut *mut c_void) -> SECURITY_STATUS;
 
-pub type ImportSecurityContextFnW =
-    extern "system" fn(LPWSTR, PSecBuffer, *mut c_void, PCtxtHandle) -> SECURITY_STATUS;
-pub type ImportSecurityContextFnA =
-    extern "system" fn(LPSTR, PSecBuffer, *mut c_void, PCtxtHandle) -> SECURITY_STATUS;
+pub type ImportSecurityContextFnW = extern "system" fn(LPWSTR, PSecBuffer, *mut c_void, PCtxtHandle) -> SECURITY_STATUS;
+pub type ImportSecurityContextFnA = extern "system" fn(LPSTR, PSecBuffer, *mut c_void, PCtxtHandle) -> SECURITY_STATUS;
 
 pub type AddCredentialsFnW = extern "system" fn(
     PCredHandle,
@@ -227,21 +219,14 @@ pub type AddCredentialsFnA = extern "system" fn(
     PTimeStamp,
 ) -> SECURITY_STATUS;
 
-pub type QuerySecurityContextTokenFn =
-    extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SECURITY_STATUS;
+pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SECURITY_STATUS;
 
-pub type EncryptMessageFn =
-    unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SECURITY_STATUS;
+pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SECURITY_STATUS;
 
-pub type DecryptMessageFn = unsafe extern "system" fn(
-    PCtxtHandle,
-    PSecBufferDesc,
-    c_ulong,
-    *mut c_ulong,
-) -> SECURITY_STATUS;
+pub type DecryptMessageFn =
+    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SECURITY_STATUS;
 
-pub type SetContextAttributesFnW =
-    extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
+pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
 pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
 
 pub type SetCredentialsAttributesFnW =
@@ -272,7 +257,8 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
 
 pub type QueryContextAttributesExFnW =
     extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
-pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
+pub type QueryContextAttributesExFnA =
+    extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
 
 pub type QueryCredentialsAttributesExFnW =
     extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SECURITY_STATUS;
@@ -346,7 +332,6 @@ pub struct SecurityFunctionTableA {
 pub type PSecurityFunctionTableA = *mut SecurityFunctionTableA;
 
 pub type InitSecurityInterfaceA = extern "system" fn() -> PSecurityFunctionTableA;
-
 
 #[repr(C)]
 pub struct SecurityFunctionTableW {

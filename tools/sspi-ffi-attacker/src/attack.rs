@@ -1,14 +1,21 @@
-use std::{ptr::null, ffi::CStr};
+use std::ffi::CStr;
+use std::ptr::null;
 
-use libc::{c_void};
+use libc::c_void;
 
-use crate::{types::{InitSecurityInterfaceW, PSecurityFunctionTableW, PSecPkgInfoW, SspiEncodeStringsAsAuthIdentityFn, SspiFreeAuthIdentityFn, SEC_WCHAR, SecHandle, SECURITY_INTEGER, SecWinntAuthIdentityW, SecBufferDesc, SecBuffer, PSecurityFunctionTableA, InitSecurityInterfaceA, PSecPkgInfoA, SecWinntAuthIdentityA, SEC_CHAR}, utils::{load_library, c_w_str_to_string, get_library_fn}};
+use crate::types::{
+    InitSecurityInterfaceA, InitSecurityInterfaceW, PSecPkgInfoA, PSecPkgInfoW, PSecurityFunctionTableA,
+    PSecurityFunctionTableW, SecBuffer, SecBufferDesc, SecHandle, SecWinntAuthIdentityA, SecWinntAuthIdentityW,
+    SspiEncodeStringsAsAuthIdentityFn, SspiFreeAuthIdentityFn, SECURITY_INTEGER, SEC_CHAR, SEC_WCHAR,
+};
+use crate::utils::{c_w_str_to_string, get_library_fn, load_library};
 
 pub unsafe fn init_w_table(path_to_library: &str) -> PSecurityFunctionTableW {
     let sspi_handle = load_library(path_to_library);
 
     let init_security_interface_w_fn = get_library_fn(sspi_handle, "InitSecurityInterfaceW\0");
-    let init_security_interface_w_fn: InitSecurityInterfaceW = unsafe { std::mem::transmute(init_security_interface_w_fn) };
+    let init_security_interface_w_fn: InitSecurityInterfaceW =
+        unsafe { std::mem::transmute(init_security_interface_w_fn) };
 
     let security_table = init_security_interface_w_fn();
 
@@ -23,7 +30,8 @@ pub unsafe fn init_a_table(path_to_library: &str) -> PSecurityFunctionTableA {
     let sspi_handle = load_library(path_to_library);
 
     let init_security_interface_a_fn = get_library_fn(sspi_handle, "InitSecurityInterfaceA\0");
-    let init_security_interface_a_fn: InitSecurityInterfaceA = unsafe { std::mem::transmute(init_security_interface_a_fn) };
+    let init_security_interface_a_fn: InitSecurityInterfaceA =
+        unsafe { std::mem::transmute(init_security_interface_a_fn) };
 
     let security_table = init_security_interface_a_fn();
 
@@ -42,12 +50,13 @@ pub unsafe fn attac_auth_identity(path_to_dll: &str) {
     }
 
     let encode_auth_identity_fn = get_library_fn(sspi_handle, "SspiEncodeStringsAsAuthIdentity\0");
-    let encode_auth_identity_fn: SspiEncodeStringsAsAuthIdentityFn = unsafe { std::mem::transmute(encode_auth_identity_fn) };
+    let encode_auth_identity_fn: SspiEncodeStringsAsAuthIdentityFn =
+        unsafe { std::mem::transmute(encode_auth_identity_fn) };
 
     let username = "username\0".encode_utf16().collect::<Vec<_>>();
     let domain = "domain\0".encode_utf16().collect::<Vec<_>>();
     let credentials = "credentials\0".encode_utf16().collect::<Vec<_>>();
-    let mut identity : *mut c_void = null::<c_void>() as *mut _;
+    let mut identity: *mut c_void = null::<c_void>() as *mut _;
 
     let status = encode_auth_identity_fn(username.as_ptr(), domain.as_ptr(), credentials.as_ptr(), &mut identity);
 
@@ -116,15 +125,12 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
         flags: 0,
     };
 
-    let mut cred_handle = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
+    let mut cred_handle = SecHandle { dwLower: 0, dwUpper: 0 };
 
     let status = ((*sec_w_table).AcquireCredentialsHandleW)(
         null::<SEC_WCHAR>() as *mut _,
         pkg_name.as_ptr() as *mut _,
-        2 /* SECPKG_CRED_OUTBOUND */,
+        2, /* SECPKG_CRED_OUTBOUND */
         null::<c_void>(),
         &credentials as *const _ as *const c_void,
         null::<c_void>() as *mut _,
@@ -139,15 +145,9 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
 
     println!("cred handle: {:?}", cred_handle);
 
-    let mut sec_context = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
-    let mut new_sec_context = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
-    let target_name = "TERMSRV/some@example.com".encode_utf16().collect::<Vec<_>>();
+    let mut sec_context = SecHandle { dwLower: 0, dwUpper: 0 };
+    let mut new_sec_context = SecHandle { dwLower: 0, dwUpper: 0 };
+    let target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
     let mut attrs = 0;
 
     let mut out_buffer = vec![0; (*pkg_info).cbMaxToken as usize];
@@ -174,7 +174,7 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
         target_name.as_ptr() as *mut _,
         0,
         0,
-        0x10 /* SECURITY_NATIVE_DREP */,
+        0x10, /* SECURITY_NATIVE_DREP */
         &mut in_buffer_desk,
         0,
         &mut new_sec_context,
@@ -183,7 +183,9 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
         null::<SECURITY_INTEGER>() as *mut _,
     );
 
-    if status != 0x0009_0312 /* CONTINUE_NEEDED */ {
+    if status != 0x0009_0312
+    /* CONTINUE_NEEDED */
+    {
         panic!("InitializeSecurityContextW failed: {}", status);
     }
 
@@ -197,12 +199,6 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
 
     if status != 0 {
         panic!("FreeCredentialsHandle failed: {}", status);
-    }
-
-    let status = ((*sec_w_table).DeleteSecurityContext)(&mut sec_context);
-
-    if status != 0 {
-        panic!("DeleteSecurityContext failed: {}", status);
     }
 
     let status = ((*sec_w_table).DeleteSecurityContext)(&mut new_sec_context);
@@ -261,15 +257,12 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
         flags: 0,
     };
 
-    let mut cred_handle = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
+    let mut cred_handle = SecHandle { dwLower: 0, dwUpper: 0 };
 
     let status = ((*sec_a_table).AcquireCredentialsHandleA)(
         null::<SEC_CHAR>() as *mut _,
         pkg_name.as_ptr() as *mut _,
-        2 /* SECPKG_CRED_OUTBOUND */,
+        2, /* SECPKG_CRED_OUTBOUND */
         null::<c_void>(),
         &credentials as *const _ as *const c_void,
         null::<c_void>() as *mut _,
@@ -284,15 +277,9 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
 
     println!("cred handle: {:?}", cred_handle);
 
-    let mut sec_context = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
-    let mut new_sec_context = SecHandle {
-        dwLower: 0,
-        dwUpper: 0,
-    };
-    let target_name = "TERMSRV/some@example.com";
+    let mut sec_context = SecHandle { dwLower: 0, dwUpper: 0 };
+    let mut new_sec_context = SecHandle { dwLower: 0, dwUpper: 0 };
+    let target_name = "TERMSRV/some@example.com\0";
     let mut attrs = 0;
 
     let mut out_buffer = vec![0; (*pkg_info).cbMaxToken as usize];
@@ -319,7 +306,7 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
         target_name.as_ptr() as *mut _,
         0,
         0,
-        0x10 /* SECURITY_NATIVE_DREP */,
+        0x10, /* SECURITY_NATIVE_DREP */
         &mut in_buffer_desk,
         0,
         &mut new_sec_context,
@@ -328,7 +315,9 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
         null::<SECURITY_INTEGER>() as *mut _,
     );
 
-    if status != 0x0009_0312 /* CONTINUE_NEEDED */ {
+    if status != 0x0009_0312
+    /* CONTINUE_NEEDED */
+    {
         panic!("InitializeSecurityContextA failed: {}", status);
     }
 
@@ -342,12 +331,6 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
 
     if status != 0 {
         panic!("FreeCredentialsHandle failed: {}", status);
-    }
-
-    let status = ((*sec_a_table).DeleteSecurityContext)(&mut sec_context);
-
-    if status != 0 {
-        panic!("DeleteSecurityContext failed: {}", status);
     }
 
     let status = ((*sec_a_table).DeleteSecurityContext)(&mut new_sec_context);
