@@ -323,14 +323,14 @@ pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::null;
+    use std::ptr::null_mut;
 
     use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
 
     #[test]
     fn enumerate_security_packages_a() {
         let mut packages_amount = 0;
-        let mut packages = null::<SecPkgInfoA>() as *mut _;
+        let mut packages = null_mut::<SecPkgInfoA>();
 
         unsafe {
             let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn enumerate_security_packages_w() {
         let mut packages_amount = 0;
-        let mut packages = null::<SecPkgInfoW>() as *mut _;
+        let mut packages = null_mut::<SecPkgInfoW>();
 
         unsafe {
             let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);

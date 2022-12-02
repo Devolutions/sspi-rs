@@ -1,12 +1,13 @@
 use std::ffi::CStr;
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 
 use libc::c_void;
 
 use crate::types::{
     InitSecurityInterfaceA, InitSecurityInterfaceW, PSecPkgInfoA, PSecPkgInfoW, PSecurityFunctionTableA,
-    PSecurityFunctionTableW, SecBuffer, SecBufferDesc, SecHandle, SecWinntAuthIdentityA, SecWinntAuthIdentityW,
-    SspiEncodeStringsAsAuthIdentityFn, SspiFreeAuthIdentityFn, SECURITY_INTEGER, SEC_CHAR, SEC_WCHAR,
+    PSecurityFunctionTableW, SecBuffer, SecBufferDesc, SecHandle, SecPkgInfoA, SecPkgInfoW, SecWinntAuthIdentityA,
+    SecWinntAuthIdentityW, SspiEncodeStringsAsAuthIdentityFn, SspiFreeAuthIdentityFn, SECURITY_INTEGER, SEC_CHAR,
+    SEC_WCHAR,
 };
 use crate::utils::{c_w_str_to_string, get_library_fn, load_library};
 
@@ -56,7 +57,7 @@ pub unsafe fn attac_auth_identity(path_to_dll: &str) {
     let username = "username\0".encode_utf16().collect::<Vec<_>>();
     let domain = "domain\0".encode_utf16().collect::<Vec<_>>();
     let credentials = "credentials\0".encode_utf16().collect::<Vec<_>>();
-    let mut identity: *mut c_void = null::<c_void>() as *mut _;
+    let mut identity: *mut c_void = null_mut::<c_void>();
 
     let status = encode_auth_identity_fn(username.as_ptr(), domain.as_ptr(), credentials.as_ptr(), &mut identity);
 
@@ -78,7 +79,7 @@ pub unsafe fn attac_auth_identity(path_to_dll: &str) {
 
 pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
     let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
-    let mut pkg_info: PSecPkgInfoW = null::<PSecPkgInfoW>() as *mut _;
+    let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
     let status = ((*sec_w_table).QuerySecurityPackageInfoW)(pkg_name.as_ptr(), &mut pkg_info);
 
@@ -91,7 +92,7 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
     println!("{:?}", c_w_str_to_string((*pkg_info).Comment));
 
     let mut pc_packages = 0;
-    let mut packages: PSecPkgInfoW = null::<PSecPkgInfoW>() as *mut _;
+    let mut packages: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
     let status = ((*sec_w_table).EnumerateSecurityPackagesW)(&mut pc_packages, &mut packages);
 
     if status != 0 {
@@ -128,15 +129,15 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
     let mut cred_handle = SecHandle { dwLower: 0, dwUpper: 0 };
 
     let status = ((*sec_w_table).AcquireCredentialsHandleW)(
-        null::<SEC_WCHAR>() as *mut _,
+        null_mut::<SEC_WCHAR>(),
         pkg_name.as_ptr() as *mut _,
         2, /* SECPKG_CRED_OUTBOUND */
         null::<c_void>(),
         &credentials as *const _ as *const c_void,
-        null::<c_void>() as *mut _,
+        null_mut::<c_void>(),
         null::<c_void>(),
         &mut cred_handle,
-        null::<SECURITY_INTEGER>() as *mut _,
+        null_mut::<SECURITY_INTEGER>(),
     );
 
     if status != 0 {
@@ -165,7 +166,7 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
     let mut in_buffer_desk = SecBufferDesc {
         ul_version: 0,
         c_buffers: 0,
-        p_buffers: null::<SecBuffer>() as *mut _,
+        p_buffers: null_mut::<SecBuffer>(),
     };
 
     let status = ((*sec_w_table).InitializeSecurityContextW)(
@@ -180,7 +181,7 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
         &mut new_sec_context,
         &mut out_buffer_desk,
         &mut attrs,
-        null::<SECURITY_INTEGER>() as *mut _,
+        null_mut::<SECURITY_INTEGER>(),
     );
 
     if status != 0x0009_0312
@@ -210,7 +211,7 @@ pub unsafe fn attack_w(sec_w_table: PSecurityFunctionTableW) {
 
 pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
     let pkg_name = "NTLM\0";
-    let mut pkg_info: PSecPkgInfoA = null::<PSecPkgInfoA>() as *mut _;
+    let mut pkg_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
     let status = ((*sec_a_table).QuerySecurityPackageInfoA)(pkg_name.as_ptr() as *const _, &mut pkg_info);
 
@@ -223,7 +224,7 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
     println!("{:?}", CStr::from_ptr((*pkg_info).Comment));
 
     let mut pc_packages = 0;
-    let mut packages: PSecPkgInfoA = null::<PSecPkgInfoA>() as *mut _;
+    let mut packages: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
     let status = ((*sec_a_table).EnumerateSecurityPackagesA)(&mut pc_packages, &mut packages);
 
     if status != 0 {
@@ -260,15 +261,15 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
     let mut cred_handle = SecHandle { dwLower: 0, dwUpper: 0 };
 
     let status = ((*sec_a_table).AcquireCredentialsHandleA)(
-        null::<SEC_CHAR>() as *mut _,
+        null_mut::<SEC_CHAR>(),
         pkg_name.as_ptr() as *mut _,
         2, /* SECPKG_CRED_OUTBOUND */
         null::<c_void>(),
         &credentials as *const _ as *const c_void,
-        null::<c_void>() as *mut _,
+        null_mut::<c_void>(),
         null::<c_void>(),
         &mut cred_handle,
-        null::<SECURITY_INTEGER>() as *mut _,
+        null_mut::<SECURITY_INTEGER>(),
     );
 
     if status != 0 {
@@ -297,7 +298,7 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
     let mut in_buffer_desk = SecBufferDesc {
         ul_version: 0,
         c_buffers: 0,
-        p_buffers: null::<SecBuffer>() as *mut _,
+        p_buffers: null_mut::<SecBuffer>(),
     };
 
     let status = ((*sec_a_table).InitializeSecurityContextA)(
@@ -312,7 +313,7 @@ pub unsafe fn attack_a(sec_a_table: PSecurityFunctionTableA) {
         &mut new_sec_context,
         &mut out_buffer_desk,
         &mut attrs,
-        null::<SECURITY_INTEGER>() as *mut _,
+        null_mut::<SECURITY_INTEGER>(),
     );
 
     if status != 0x0009_0312

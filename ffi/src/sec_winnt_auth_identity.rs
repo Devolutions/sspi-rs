@@ -134,7 +134,7 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::null;
+    use std::ptr::{null, null_mut};
     use std::slice::from_raw_parts;
 
     use libc::c_void;
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn sspi_encode_strings_as_auth_identity() {
         let (username, password, domain) = get_user_credentials();
-        let mut identity = null::<c_void>() as *mut c_void;
+        let mut identity = null_mut::<c_void>();
 
         unsafe {
             let status =
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn sspi_encode_strings_as_auth_identity_on_null() {
-        let mut identity = null::<c_void>() as *mut c_void;
+        let mut identity = null_mut::<c_void>();
 
         unsafe {
             let status = SspiEncodeStringsAsAuthIdentity(null(), null(), null(), &mut identity);
@@ -202,7 +202,7 @@ mod tests {
         let username = [0];
         let password = [0];
         let domain = [0];
-        let mut identity = null::<c_void>() as *mut c_void;
+        let mut identity = null_mut::<c_void>();
 
         unsafe {
             let status =
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn sspi_free_auth_identity() {
         let (username, password, domain) = get_user_credentials();
-        let mut identity = null::<c_void>() as *mut c_void;
+        let mut identity = null_mut::<c_void>();
 
         unsafe {
             SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn sspi_free_auth_identity_on_null() {
         unsafe {
-            let status = SspiFreeAuthIdentity(null::<c_void>() as *mut _);
+            let status = SspiFreeAuthIdentity(null_mut::<c_void>());
 
             assert_eq!(status, 0);
         }

@@ -175,7 +175,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
         0,
         blob_type_wide.as_ptr() as *const _,
         null(),
-        null::<u8>() as *mut _,
+        null_mut::<u8>(),
         0,
         &mut private_key_buffer_len,
         0,

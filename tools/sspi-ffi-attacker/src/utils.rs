@@ -1,5 +1,5 @@
-use std::slice::from_raw_parts;
 use std::io;
+use std::slice::from_raw_parts;
 
 use libc::{c_void, dlopen, dlsym, RTLD_LAZY, RTLD_LOCAL};
 
@@ -10,7 +10,11 @@ pub unsafe fn load_library(path_to_dll: &str) -> *mut c_void {
     let sspi_handle = dlopen(lp_file_name, RTLD_LOCAL | RTLD_LAZY);
 
     if sspi_handle.is_null() {
-        panic!("Can not load library: {}. {:?}", path_to_dll, io::Error::last_os_error());
+        panic!(
+            "Can not load library: {}. {:?}",
+            path_to_dll,
+            io::Error::last_os_error()
+        );
     }
 
     sspi_handle
