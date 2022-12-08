@@ -94,6 +94,7 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
     Ok(vec![
         negotiate::PACKAGE_INFO.clone(),
         kerberos::PACKAGE_INFO.clone(),
+        pku2u::PACKAGE_INFO.clone(),
         ntlm::PACKAGE_INFO.clone(),
     ])
 }

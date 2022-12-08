@@ -14,6 +14,9 @@ members = [
   "ffi",
   "ffi/symbol-rename-macro",
 ]
+exclude = [
+  "tools/sspi-ffi-attacker",
+]
 
 [features]
 network_client = ["dep:reqwest", "dep:trust-dns-resolver", "dep:portpicker"]

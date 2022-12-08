@@ -1,13 +1,17 @@
+use std::alloc::{alloc, Layout};
 use std::ffi::CStr;
+use std::mem::size_of;
+use std::ptr::copy_nonoverlapping;
 
-use libc::{c_char, c_uint, c_ulong, c_ushort};
+use libc::{c_uint, c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
 use crate::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
+use crate::utils::c_w_str_to_string;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecPkgInfoW {
     pub f_capabilities: c_ulong,
@@ -21,22 +25,49 @@ pub struct SecPkgInfoW {
 pub type PSecPkgInfoW = *mut SecPkgInfoW;
 
 #[allow(clippy::useless_conversion)]
-impl From<PackageInfo> for SecPkgInfoW {
-    fn from(data: PackageInfo) -> Self {
-        let mut name = data.name.to_string().encode_utf16().collect::<Vec<_>>();
-        name.push(0);
+impl From<PackageInfo> for &mut SecPkgInfoW {
+    fn from(pkg_info: PackageInfo) -> Self {
+        let mut pkg_name = pkg_info.name.to_string().encode_utf16().collect::<Vec<_>>();
+        // null-terminator
+        pkg_name.push(0);
+        let name_bytes_len = pkg_name.len() * 2;
 
-        let mut comment = data.comment.encode_utf16().collect::<Vec<_>>();
-        comment.push(0);
+        let mut pkg_comment = pkg_info.comment.encode_utf16().collect::<Vec<_>>();
+        // null-terminator
+        pkg_comment.push(0);
+        let comment_bytes_len = pkg_comment.len() * 2;
 
-        SecPkgInfoW {
-            f_capabilities: data.capabilities.bits() as c_ulong,
-            w_version: KERBEROS_VERSION as c_ushort,
-            w_rpc_id: data.rpc_id,
-            cb_max_token: data.max_token_len.try_into().unwrap(),
-            name: vec_into_raw_ptr(name),
-            comment: vec_into_raw_ptr(comment),
+        let pkg_info_w_size = size_of::<SecPkgInfoW>();
+        let size = pkg_info_w_size + name_bytes_len + comment_bytes_len;
+
+        let raw_pkg_info;
+        let pkg_info_w;
+        unsafe {
+            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            raw_pkg_info = alloc(memory_layout);
+            pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
+
+        pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
+        pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
+        pkg_info_w.w_rpc_id = pkg_info.rpc_id;
+        pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
+
+        let name_ptr;
+        unsafe {
+            name_ptr = raw_pkg_info.add(pkg_info_w_size);
+            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+        }
+        pkg_info_w.name = name_ptr as *mut _;
+
+        let comment_ptr;
+        unsafe {
+            comment_ptr = name_ptr.add(name_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+        }
+        pkg_info_w.comment = comment_ptr as *mut _;
+
+        unsafe { (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap() }
     }
 }
 
@@ -52,6 +83,54 @@ pub struct SecPkgInfoA {
 
 pub type PSecPkgInfoA = *mut SecPkgInfoA;
 
+impl From<PackageInfo> for &mut SecPkgInfoA {
+    fn from(pkg_info: PackageInfo) -> Self {
+        let mut pkg_name = pkg_info.name.to_string().as_bytes().to_vec();
+        // null-terminator
+        pkg_name.push(0);
+        let name_bytes_len = pkg_name.len();
+
+        let mut pkg_comment = pkg_info.comment.as_bytes().to_vec();
+        // null-terminator
+        pkg_comment.push(0);
+        let comment_bytes_len = pkg_comment.len();
+
+        let pkg_info_a_size = size_of::<SecPkgInfoA>();
+
+        let size = pkg_info_a_size + name_bytes_len + comment_bytes_len;
+
+        let raw_pkg_info;
+        let pkg_info_a;
+
+        unsafe {
+            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            raw_pkg_info = alloc(memory_layout);
+            pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
+        }
+
+        pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
+        pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
+        pkg_info_a.w_rpc_id = pkg_info.rpc_id;
+        pkg_info_a.cb_max_token = pkg_info.max_token_len;
+
+        let name_ptr;
+        unsafe {
+            name_ptr = raw_pkg_info.add(pkg_info_a_size);
+            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+        }
+        pkg_info_a.name = name_ptr as *mut _;
+
+        let comment_ptr;
+        unsafe {
+            comment_ptr = name_ptr.add(name_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+        }
+        pkg_info_a.comment = comment_ptr as *mut _;
+
+        unsafe { (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap() }
+    }
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct SecNegoInfoW {
@@ -64,25 +143,6 @@ pub struct SecNegoInfoW {
 pub struct SecNegoInfoA {
     pub package_info: *mut SecPkgInfoA,
     pub nego_state: c_uint,
-}
-
-impl From<PackageInfo> for SecPkgInfoA {
-    fn from(data: PackageInfo) -> Self {
-        let mut name = data.name.to_string().as_bytes().to_vec();
-        name.push(0);
-
-        let mut comment = data.comment.as_bytes().to_vec();
-        comment.push(0);
-
-        SecPkgInfoA {
-            f_capabilities: data.capabilities.bits() as c_uint,
-            w_version: KERBEROS_VERSION as c_ushort,
-            w_rpc_id: data.rpc_id,
-            cb_max_token: data.max_token_len,
-            name: vec_into_raw_ptr(name) as *mut c_char,
-            comment: vec_into_raw_ptr(comment) as *mut c_char,
-        }
-    }
 }
 
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
@@ -100,7 +160,43 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         *pc_packages = packages.len() as c_ulong;
 
-        *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoA::from).collect::<Vec<_>>());
+        let mut size = size_of::<SecPkgInfoA>() * packages.len();
+
+        for package in &packages {
+            size += package.name.as_ref().as_bytes().len() + package.comment.as_bytes().len();
+        }
+
+        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let raw_packages = alloc(memory_layout);
+
+        let mut package_ptr = raw_packages as *mut SecPkgInfoA;
+        let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar;
+        for pkg_info in packages {
+            let pkg_info_a = package_ptr.as_mut().unwrap();
+
+            pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
+            pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
+            pkg_info_a.w_rpc_id = pkg_info.rpc_id;
+            pkg_info_a.cb_max_token = pkg_info.max_token_len;
+
+            let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
+            // null-terminator
+            name.push(0);
+            copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len());
+            pkg_info_a.name = data_ptr as *mut _;
+            data_ptr = data_ptr.add(name.len());
+
+            let mut comment = pkg_info.comment.as_bytes().to_vec();
+            // null-terminator
+            comment.push(0);
+            copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len());
+            pkg_info_a.comment = data_ptr as *mut _;
+            data_ptr = data_ptr.add(comment.len());
+
+            package_ptr = package_ptr.add(1);
+        }
+
+        *pp_package_info = raw_packages as *mut _;
 
         0
     }
@@ -123,7 +219,49 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         *pc_packages = packages.len() as c_ulong;
 
-        *pp_package_info = vec_into_raw_ptr(packages.into_iter().map(SecPkgInfoW::from).collect::<Vec<_>>());
+        let mut size = size_of::<SecPkgInfoW>() * packages.len();
+        let mut names = Vec::with_capacity(packages.len());
+        let mut comments = Vec::with_capacity(packages.len());
+
+        for package in &packages {
+            let mut name = package.name.to_string().encode_utf16().collect::<Vec<_>>();
+            // null-terminator
+            name.push(0);
+            let mut comment = package.comment.encode_utf16().collect::<Vec<_>>();
+            // null-terminator
+            comment.push(0);
+
+            size += (name.len() + comment.len()) * 2;
+
+            names.push(name);
+            comments.push(comment);
+        }
+
+        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let raw_packages = alloc(memory_layout);
+
+        let mut package_ptr = raw_packages as *mut SecPkgInfoW;
+        let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar;
+        for (i, pkg_info) in packages.iter().enumerate() {
+            let pkg_info_w = package_ptr.as_mut().unwrap();
+
+            pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
+            pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
+            pkg_info_w.w_rpc_id = pkg_info.rpc_id;
+            pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
+
+            copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len());
+            pkg_info_w.name = data_ptr as *mut _;
+            data_ptr = data_ptr.add(names[i].len());
+
+            copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len());
+            pkg_info_w.comment = data_ptr as *mut _;
+            data_ptr = data_ptr.add(comments[i].len());
+
+            package_ptr = package_ptr.add(1);
+        }
+
+        *pp_package_info = raw_packages as *mut _;
 
         0
     }
@@ -144,11 +282,12 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 
         let pkg_name = try_execute!(CStr::from_ptr(p_package_name).to_str(), ErrorKind::InvalidParameter);
 
-        *pp_package_info = try_execute!(enumerate_security_packages())
+        let pkg_info: &mut SecPkgInfoA = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.as_ref() == pkg_name)
-            .map(|pkg_info| into_raw_ptr(SecPkgInfoA::from(pkg_info)))
-            .unwrap();
+            .unwrap()
+            .into();
+        *pp_package_info = pkg_info;
 
         0
     }
@@ -169,11 +308,12 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
 
         let pkg_name = c_w_str_to_string(p_package_name);
 
-        *pp_package_info = try_execute!(enumerate_security_packages())
+        let pkg_info: &mut SecPkgInfoW = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.to_string() == pkg_name)
-            .map(|pkg_info| into_raw_ptr(SecPkgInfoW::from(pkg_info)))
-            .unwrap();
+            .unwrap()
+            .into();
+        *pp_package_info = pkg_info;
 
         0
     }
@@ -183,20 +323,20 @@ pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::null;
+    use std::ptr::null_mut;
 
     use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
 
     #[test]
     fn enumerate_security_packages_a() {
         let mut packages_amount = 0;
-        let mut packages = null::<SecPkgInfoA>() as *mut _;
+        let mut packages = null_mut::<SecPkgInfoA>();
 
         unsafe {
             let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 3);
+            assert_eq!(packages_amount, 4);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {
@@ -208,13 +348,13 @@ mod tests {
     #[test]
     fn enumerate_security_packages_w() {
         let mut packages_amount = 0;
-        let mut packages = null::<SecPkgInfoW>() as *mut _;
+        let mut packages = null_mut::<SecPkgInfoW>();
 
         unsafe {
             let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 3);
+            assert_eq!(packages_amount, 4);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {

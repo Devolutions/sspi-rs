@@ -130,8 +130,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         };
 
         (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
-        (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        if (*(*context)).dw_upper == 0 {
+            (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        }
     }
+
     Ok((*(*context)).dw_lower as *mut SspiContext)
 }
 
@@ -373,7 +376,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         *pf_context_attr = f_context_req;
 
@@ -473,7 +476,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         *pf_context_attr = f_context_req;
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         let result = try_execute!(result_status);
         result.status.to_u32().unwrap()
@@ -532,9 +535,10 @@ pub unsafe extern "system" fn QueryContextAttributesA(
                 let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
                 (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
-                (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
+                let pkg_info: &mut SecPkgInfoA = try_execute!(
                     sspi_context.query_context_package_info()
-                )));
+                ).into();
+                (*nego_info).package_info = pkg_info;
 
                 0
             }
@@ -582,9 +586,10 @@ pub unsafe extern "system" fn QueryContextAttributesW(
                 let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
                 (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(try_execute!(
+                let pkg_info: &mut SecPkgInfoW = try_execute!(
                     sspi_context.query_context_package_info()
-                )));
+                ).into();
+                (*nego_info).package_info = pkg_info;
 
                 0
             }

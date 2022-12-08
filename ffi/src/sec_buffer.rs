@@ -10,7 +10,6 @@ use num_traits::FromPrimitive;
 use sspi::{SecurityBuffer, SecurityBufferType};
 
 #[cfg(target_os = "windows")]
-#[derive(Debug)]
 #[repr(C)]
 pub struct SecBuffer {
     pub cb_buffer: c_ulong,
