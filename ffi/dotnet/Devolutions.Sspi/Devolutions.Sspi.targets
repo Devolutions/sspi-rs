@@ -102,7 +102,7 @@
       <SmartLink>False</SmartLink>
     </NativeReference>
   </ItemGroup>
-  <ItemGroup Condition="$(IsIOS)">
+  <ItemGroup Condition="'$(IsIOS)' == 'true'">
     <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\ios-universal\native\libDevolutionsSspi.framework">
       <Kind>Framework</Kind>
     </NativeReference>
