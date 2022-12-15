@@ -121,11 +121,10 @@ impl Negotiate {
     // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
     // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
     // 5) in any other cases, it'll use NTLM
-    #[allow(unused)]
-    fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
+    fn negotiate_protocol(&mut self, _username: &str, _domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
-            if is_azure_ad_domain(domain) {
+            if is_azure_ad_domain(_domain) {
                 use super::pku2u::Pku2uConfig;
 
                 self.protocol =
@@ -133,7 +132,7 @@ impl Negotiate {
             }
 
             #[cfg(feature = "network_client")]
-            if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
+            if let Some(host) = detect_kdc_url(&get_client_principal_realm(_username, _domain)) {
                 self.protocol =
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
                         url: Some(host),

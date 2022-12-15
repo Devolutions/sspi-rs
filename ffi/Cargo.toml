@@ -17,7 +17,7 @@ debug_mode = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
 cfg-if = "0.1"
-sspi = { path = "..", features = ["network_client"] }
+sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 libc = "0.2"
 num-traits = "0.2"
 

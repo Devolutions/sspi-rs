@@ -231,7 +231,7 @@ cfg_if::cfg_if! {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(feature="network_client")] {
+    if #[cfg(feature="dns_resolver")] {
         use trust_dns_resolver::Resolver;
         use trust_dns_resolver::system_conf::read_system_conf;
         use trust_dns_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
@@ -342,7 +342,7 @@ pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
             detect_kdc_hosts_from_dns_windows(domain)
         } else if #[cfg(any(target_os="macos", target_os="ios"))] {
             detect_kdc_hosts_from_dns_apple(domain)
-        } else if #[cfg(feature="network_client")] {
+        } else if #[cfg(feature="dns_resolver")] {
             detect_kdc_hosts_from_dns_trust(domain)
         } else {
             Vec::new()

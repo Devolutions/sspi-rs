@@ -19,7 +19,9 @@ exclude = [
 ]
 
 [features]
-network_client = ["dep:reqwest", "dep:trust-dns-resolver", "dep:portpicker"]
+default = []
+network_client = ["dep:reqwest", "dep:portpicker"]
+dns_resolver = ["dep:trust-dns-resolver"]
 
 [dependencies]
 byteorder = "1.2.7"
