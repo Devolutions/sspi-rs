@@ -43,7 +43,7 @@ impl From<PackageInfo> for &mut SecPkgInfoW {
         let raw_pkg_info;
         let pkg_info_w;
         unsafe {
-            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            let memory_layout = Layout::from_size_align_unchecked(size, 8);
             raw_pkg_info = alloc(memory_layout);
             pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
@@ -103,7 +103,7 @@ impl From<PackageInfo> for &mut SecPkgInfoA {
         let pkg_info_a;
 
         unsafe {
-            let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+            let memory_layout = Layout::from_size_align_unchecked(size, 8);
             raw_pkg_info = alloc(memory_layout);
             pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
         }
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             size += package.name.as_ref().as_bytes().len() + package.comment.as_bytes().len();
         }
 
-        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let memory_layout = Layout::from_size_align_unchecked(size, 8);
         let raw_packages = alloc(memory_layout);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoA;
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             comments.push(comment);
         }
 
-        let memory_layout = Layout::from_size_align_unchecked(size as usize, 8);
+        let memory_layout = Layout::from_size_align_unchecked(size, 8);
         let raw_packages = alloc(memory_layout);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoW;
