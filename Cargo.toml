@@ -16,6 +16,7 @@ members = [
 ]
 exclude = [
   "tools/sspi-ffi-attacker",
+  "tools/wasm-testcompile",
 ]
 
 [features]

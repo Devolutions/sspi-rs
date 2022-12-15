@@ -1,0 +1,14 @@
+[package]
+name = "wasm-testcompile"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sspi = { path = "../.." }
+
+whoami = "0.5"
+getrandom = { version = "0.2.8", features = ["js"] }
+wasm-bindgen = "0.2.83"
