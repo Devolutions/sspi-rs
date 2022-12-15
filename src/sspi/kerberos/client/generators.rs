@@ -165,10 +165,14 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
-    let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![HostAddress {
+    let address = "INJECT HOSTNAME VIA ARGUMENTS"; // FIXME: previously whoami::hostname()
+
+    let host_address = HostAddress {
         addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-        address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
-    }])));
+        address: ExplicitContextTag1::from(OctetStringAsn1::from(address.as_bytes().to_vec())),
+    };
+
+    let address = Some(ExplicitContextTag9::from(Asn1SequenceOf::from(vec![host_address])));
 
     let mut service_names = Vec::with_capacity(snames.len());
     for sname in *snames {
@@ -535,6 +539,8 @@ pub fn generate_krb_priv_request(
 ) -> Result<KrbPrivMessage> {
     let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, &EMPTY_AP_REQ_OPTIONS)?;
 
+    let address = "INJECT HOSTNAME VIA ARGUMENTS"; // FIXME: previously whoami::hostname()
+
     let enc_part = EncKrbPrivPart::from(EncKrbPrivPartInner {
         user_data: ExplicitContextTag0::from(OctetStringAsn1::from(new_password.to_vec())),
         timestamp: Optional::from(None),
@@ -544,7 +550,7 @@ pub fn generate_krb_priv_request(
         )))),
         s_address: ExplicitContextTag4::from(HostAddress {
             addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
-            address: ExplicitContextTag1::from(OctetStringAsn1::from(whoami::hostname().as_bytes().to_vec())),
+            address: ExplicitContextTag1::from(OctetStringAsn1::from(address.as_bytes().to_vec())),
         }),
         r_address: Optional::from(None),
     });
