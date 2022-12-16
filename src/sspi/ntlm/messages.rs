@@ -50,7 +50,7 @@ impl MessageFields {
     fn write_to(&self, mut buffer: impl io::Write) -> io::Result<()> {
         buffer.write_u16::<LittleEndian>(self.buffer.len() as u16)?; // Len
         buffer.write_u16::<LittleEndian>(self.buffer.len() as u16)?; // MaxLen
-        buffer.write_u32::<LittleEndian>(self.buffer_offset as u32)?; // BufferOffset
+        buffer.write_u32::<LittleEndian>(self.buffer_offset)?; // BufferOffset
 
         Ok(())
     }

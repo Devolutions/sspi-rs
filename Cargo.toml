@@ -68,3 +68,4 @@ tokio = { version = "1.1", features = ["time", "rt"] }
 
 [dev-dependencies]
 static_assertions = "1.1"
+whoami = "0.5"

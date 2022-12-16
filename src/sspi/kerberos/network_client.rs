@@ -37,7 +37,7 @@ pub mod reqwest_network_client {
         fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             match url.scheme() {
                 "tcp" => {
-                    let mut stream = TcpStream::connect(&format!(
+                    let mut stream = TcpStream::connect(format!(
                         "{}:{}",
                         url.clone().host_str().unwrap_or_default(),
                         url.port().unwrap_or(88)

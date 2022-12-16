@@ -67,7 +67,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: 
         let buffer_size = buffer.buffer.len();
         to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
         if allocate {
-            let memory_layout = Layout::from_size_align_unchecked(buffer_size as usize, 8);
+            let memory_layout = Layout::from_size_align_unchecked(buffer_size, 8);
             to_buffers[i].pv_buffer = alloc(memory_layout) as *mut c_char;
         }
         let to_buffer = from_raw_parts_mut(to_buffers[i].pv_buffer, buffer_size);

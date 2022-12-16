@@ -309,7 +309,7 @@ cfg_if::cfg_if! {
             let mut kdc_hosts = Vec::new();
 
             if let Some(resolver) = get_trust_dns_resolver(domain) {
-                if let Ok(records) = resolver.srv_lookup(&format!("_kerberos._tcp.{}", domain)) {
+                if let Ok(records) = resolver.srv_lookup(format!("_kerberos._tcp.{}", domain)) {
                     for record in records {
                         let port = record.port();
                         let target_name = record.target().to_string();
@@ -319,7 +319,7 @@ cfg_if::cfg_if! {
                     }
                 }
 
-                if let Ok(records) = resolver.srv_lookup(&format!("_kerberos._udp.{}", domain)) {
+                if let Ok(records) = resolver.srv_lookup(format!("_kerberos._udp.{}", domain)) {
                     for record in records {
                         let port = record.port();
                         let target_name = record.target().to_string();
