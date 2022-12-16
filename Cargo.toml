@@ -49,6 +49,7 @@ trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
 num-bigint-dig = "0.8.1"
 tracing = { version = "0.1.37" }
+rustls = { version = "0.20.7", features = ["dangerous_configuration"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.10"

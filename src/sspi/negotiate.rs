@@ -272,11 +272,7 @@ impl Sspi for Negotiate {
     }
 
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
-        match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_package_info(),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_package_info(),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_package_info(),
-        }
+        crate::sspi::query_security_package_info(SecurityPackageType::Negotiate)
     }
 
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {

@@ -27,6 +27,7 @@ use self::builders::{
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
+use self::internal::credssp::sspi_cred_ssp;
 use self::internal::SspiImpl;
 pub use self::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm};
 
@@ -62,6 +63,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
         SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
         SecurityPackageType::Pku2u => Ok(pku2u::PACKAGE_INFO.clone()),
+        SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -1074,6 +1076,7 @@ pub enum SecurityPackageType {
     Kerberos,
     Negotiate,
     Pku2u,
+    CredSsp,
     Other(String),
 }
 
@@ -1084,6 +1087,7 @@ impl AsRef<str> for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME,
             SecurityPackageType::Negotiate => negotiate::PKG_NAME,
             SecurityPackageType::Pku2u => pku2u::PKG_NAME,
+            SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME,
             SecurityPackageType::Other(name) => name.as_str(),
         }
     }
@@ -1096,6 +1100,7 @@ impl string::ToString for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
             SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
             SecurityPackageType::Pku2u => pku2u::PKG_NAME.into(),
+            SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME.into(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1110,6 +1115,7 @@ impl str::FromStr for SecurityPackageType {
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
             pku2u::PKG_NAME => Ok(SecurityPackageType::Pku2u),
+            sspi_cred_ssp::PKG_NAME => Ok(SecurityPackageType::CredSsp),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }
