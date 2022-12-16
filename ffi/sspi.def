@@ -7,10 +7,10 @@ EXPORTS
     QueryCredentialsAttributesA=Rust_QueryCredentialsAttributesA
     QueryCredentialsAttributesW=Rust_QueryCredentialsAttributesW
     AcquireCredentialsHandleA=Rust_AcquireCredentialsHandleA
-    AcquireCredentialsHandleW=Rust_AcquireCredentialsHandleW
+    AcquireCredentialsHandleW=SpAcquireCredentialsHandleW
     FreeCredentialsHandle=Rust_FreeCredentialsHandle
     InitializeSecurityContextA=Rust_InitializeSecurityContextA
-    InitializeSecurityContextW=Rust_InitializeSecurityContextW
+    InitializeSecurityContextW=SpInitializeSecurityContextW
     AcceptSecurityContext=Rust_AcceptSecurityContext
     CompleteAuthToken=Rust_CompleteAuthToken
     DeleteSecurityContext=Rust_DeleteSecurityContext

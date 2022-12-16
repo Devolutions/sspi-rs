@@ -34,6 +34,7 @@ pub struct SecWinntAuthIdentityA {
 
 pub const SEC_WINNT_AUTH_IDENTITY_VERSION: u32 = 0x200;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecWinntAuthIdentityExW {
     pub version: u32,

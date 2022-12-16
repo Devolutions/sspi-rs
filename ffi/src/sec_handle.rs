@@ -5,7 +5,8 @@ use std::slice::from_raw_parts;
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
-use sspi::internal::credssp::SspiContext;
+use sspi::internal::credssp::sspi_cred_ssp::SspiCredSsp;
+use sspi::internal::credssp::{self, sspi_cred_ssp, SspiContext};
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
@@ -35,7 +36,7 @@ use crate::sspi_data_types::{
     LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecWChar, SecurityStatus,
 };
 use crate::utils::{
-    c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
+    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -121,11 +122,16 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            sspi_cred_ssp::PKG_NAME => {
+                file_message("credssp context create:");
+                SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new()))?)
+            }
             _ => {
+                file_message(&format!("security package name `{}` is not supported", name));
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
                     format!("security package name `{}` is not supported", name),
-                ))
+                ));
             }
         };
 
@@ -143,7 +149,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     psz_package: LpStr,
     _f_aredential_use: c_ulong,
     _pv_logon_id: *const c_void,
-    p_auth_data: *const c_void,
+    mut p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
     _pv_get_key_argument: *const c_void,
     ph_credential: PCredHandle,
@@ -156,6 +162,11 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let security_package_name =
             try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
+
+        if security_package_name == "CREDSSP" {
+            // here we should handle creds for the Schannel
+            p_auth_data = p_auth_data.add(2);
+        }
 
         let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
@@ -204,15 +215,34 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
+#[derive(Debug)]
+#[repr(C)]
+pub enum CredSspSubmitType {
+    CredsspPasswordCreds = 2,
+    CredsspSchannelCreds = 4,
+    CredsspCertificateCreds = 13,
+    CredsspSubmitBufferBoth = 50,
+    CredsspSubmitBufferBothOld = 51,
+    CredsspCredEx = 100,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct CredSspCred {
+    pub submit_type: CredSspSubmitType,
+    pub p_schannel_cred: *const c_void,
+    pub p_spnego_cred: *const c_void,
+}
+
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
-pub unsafe extern "system" fn AcquireCredentialsHandleW(
+pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
     psz_package: LpcWStr,
     _f_credential_use: c_ulong,
     _pv_logon_id: *const c_void,
-    p_auth_data: *const c_void,
+    mut p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
     _pv_get_key_argument: *const c_void,
     ph_credential: PCredHandle,
@@ -225,22 +255,45 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 
         let security_package_name = c_w_str_to_string(psz_package);
 
+        file_message(&format!("{:?}", p_auth_data));
+        file_message(&format!("{:?}", from_raw_parts(p_auth_data as *const u8, size_of::<CredSspCred>())));
+        if security_package_name == "CREDSSP" {
+            // here we should handle creds for the Schannel
+            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+            file_message(&format!("{:?}", credssp_cred));
+            p_auth_data = credssp_cred.p_spnego_cred;
+        } else {
+            file_message("not in credssp creds");
+        }
+
         let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
-        let credentials = if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+        let credentials =
+        if security_package_name == "CREDSSP" {
+            file_message("return empty buffers");
+            AuthIdentityBuffers {
+                user: vec![],
+                domain: vec![],
+                password: vec![],
+            }
+        } else
+        if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
+            file_message(&format!("{:?}", *auth_data));
             if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
                 package_list = Some(String::from_utf16_lossy(from_raw_parts(
                     (*auth_data).package_list as *const u16,
                     (*auth_data).package_list_length as usize)
                 ));
             }
-            AuthIdentityBuffers {
+            let auth_buffers = AuthIdentityBuffers {
                 user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
                 domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
                 password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
-            }
+            };
+            file_message(&format!("{:?}", auth_buffers));
+            auth_buffers
         } else {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
             AuthIdentityBuffers {
@@ -398,10 +451,10 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
 #[no_mangle]
-pub unsafe extern "system" fn InitializeSecurityContextW(
+pub unsafe extern "system" fn SpInitializeSecurityContextW(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecWChar,
@@ -422,6 +475,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         check_null!(ph_credential);
         check_null!(p_output);
         check_null!(pf_context_attr);
+
+        file_message("InitializeSecurityContextW");
 
         let service_principal = if p_target_name.is_null() {
             String::new()
@@ -463,6 +518,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             .with_target_name(&service_principal)
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens);
+        file_message("before the initialize_security_context_impl");
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
         let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);

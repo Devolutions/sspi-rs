@@ -9,7 +9,7 @@ edition = "2021"
 publish = false
 
 [lib]
-name = "sspi"
+name = "credssp"
 crate-type = ["cdylib"]
 
 [features]

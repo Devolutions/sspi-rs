@@ -1,3 +1,4 @@
+use std::io::{Seek, Write};
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_ushort};
@@ -49,4 +50,18 @@ pub unsafe fn transform_credentials_handle<'a>(
             &cred_handle.attributes,
         ))
     }
+}
+
+pub(crate) fn file_message(message: &str) {
+    let mut option = std::fs::OpenOptions::new();
+    option.read(true);
+    option.write(true);
+
+    let mut file = option
+        .open("D:\\apriorit\\reverse_tsssp\\credssp\\messages.txt")
+        .unwrap();
+    file.seek(std::io::SeekFrom::End(0)).unwrap();
+
+    file.write_all(message.as_bytes()).unwrap();
+    file.write_all(b"\n").unwrap();
 }
