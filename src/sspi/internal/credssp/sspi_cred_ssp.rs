@@ -3,15 +3,16 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
 
-use super::{CredSspContext, SspiContext};
+use super::{CredSspContext, SspiContext, TsRequest};
+use crate::builders::EmptyInitializeSecurityContext;
 use crate::internal::SspiImpl;
 use crate::sspi::{self, PACKAGE_ID_NONE};
 use crate::utils::file_message;
 use crate::{
-    builders, negotiate, ntlm, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, DataRepresentation, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -213,20 +214,93 @@ impl SspiImpl for SspiCredSsp {
                 let bytes_written = client_connection.write_tls(&mut tls_buffer)?;
                 file_message(&format!("after write tls: {}", bytes_written));
 
+                if bytes_written == 0 {
+                    self.state = CredSspState::NegoToken;
+                    file_message("new state: CredSspState::NegoToken");
+
+                    // delete the previous TLS message
+                    builder.input = None;
+
+                    return self.initialize_security_context_impl(builder);
+                }
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer = tls_buffer;
                 file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
 
-                // maybe replace with `bytes_written == 0` ? will see
-                if !client_connection.is_handshaking() {
-                    self.state = CredSspState::NegoToken;
+                SecurityStatus::ContinueNeeded
+            }
+            CredSspState::NegoToken => {
+                file_message("CredSspState::NegoToken");
+
+                // decode TsRequest from input buffers
+                let mut ts_request = if let Some(input) = &builder.input {
+                    let raw_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                    file_message(&format!("raw ts request: {:?}", raw_ts_request));
+
+                    let ts_request = TsRequest::from_buffer(&raw_ts_request.buffer)?;
+                    file_message(&format!("decoded ts request: {:?}", ts_request));
+                    ts_request.check_error()?;
+
+                    ts_request
+                } else {
+                    TsRequest::default()
+                };
+
+                let mut input_token = vec![SecurityBuffer::new(
+                    ts_request.nego_tokens.take().unwrap_or_default(),
+                    SecurityBufferType::Token,
+                )];
+
+                // invoke inner sspi function
+                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+
+                let mut inner_builder =
+                    EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
+                        .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
+                            Error::new(ErrorKind::InvalidParameter, "credentials handle is not present".into())
+                        })?)
+                        .with_context_requirements(ClientRequestFlags::empty())
+                        .with_target_data_representation(DataRepresentation::Native);
+                if let Some(target_name) = &builder.target_name {
+                    inner_builder = inner_builder.with_target_name(target_name);
+                }
+                let mut inner_builder = inner_builder
+                    .with_input(&mut input_token)
+                    .with_output(&mut output_token);
+
+                let result = self
+                    .cred_ssp_context
+                    .sspi_context
+                    .initialize_security_context_impl(&mut inner_builder)?;
+
+                // encode new TsRequest into output buffers
+                ts_request.nego_tokens = Some(output_token.remove(0).buffer);
+
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                ts_request.encode_ts_request(&mut output_token.buffer)?;
+
+                if result.status == SecurityStatus::Ok {
+                    self.state = CredSspState::AuthInfo;
+                    file_message("new state: CredSspState::AuthInfo");
                 }
 
                 SecurityStatus::ContinueNeeded
             }
-            CredSspState::NegoToken => todo!(),
-            CredSspState::AuthInfo => todo!(),
-            CredSspState::Final => todo!(),
+            CredSspState::AuthInfo => {
+                // TODO
+
+                self.state = CredSspState::Final;
+                file_message("new state: CredSspState::Final");
+
+                SecurityStatus::Ok
+            }
+            CredSspState::Final => {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    "Error: Initialize security context function has been called after authorization".into(),
+                ));
+            }
         };
 
         Ok(InitializeSecurityContextResult {
@@ -238,7 +312,7 @@ impl SspiImpl for SspiCredSsp {
 
     fn accept_security_context_impl<'a>(
         &'a mut self,
-        builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+        _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         match &self.state {
             CredSspState::Tls => todo!(),

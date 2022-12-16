@@ -6,7 +6,7 @@ use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::sspi_cred_ssp::SspiCredSsp;
-use sspi::internal::credssp::{self, sspi_cred_ssp, SspiContext};
+use sspi::internal::credssp::{sspi_cred_ssp, SspiContext};
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
