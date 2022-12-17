@@ -1,3 +1,4 @@
+use std::io::{Read, Write};
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
@@ -103,6 +104,44 @@ impl SspiCredSsp {
             ),
         })
     }
+
+    fn encrypt_tls(&mut self, plain_data: &[u8]) -> Result<Vec<u8>> {
+        file_message("start encrypt_tls");
+
+        let mut writer = self.tls_connection.writer();
+        writer.write(plain_data)?;
+
+        let mut tls_buffer = Vec::new();
+        file_message("before write encrypted tls");
+        let bytes_written = self.tls_connection.write_tls(&mut tls_buffer)?;
+        file_message(&format!(
+            "after write encrypted tls: {} {:?}",
+            bytes_written, tls_buffer
+        ));
+
+        Ok(tls_buffer)
+    }
+
+    fn decrypt_tls(&mut self, mut payload: &[u8]) -> Result<Vec<u8>> {
+        file_message("start decrypt_tls");
+
+        self.tls_connection.read_tls(&mut payload)?;
+        file_message("before process new packets");
+        let tls_state = self
+            .tls_connection
+            .process_new_packets()
+            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
+        file_message(&format!("tls_state: {:?}", tls_state));
+
+        let mut reader = self.tls_connection.reader();
+
+        let mut plain_data = vec![0; 2048];
+        let plain_data_len = reader.read(&mut plain_data)?;
+
+        plain_data.resize(plain_data_len, 0);
+
+        Ok(plain_data)
+    }
 }
 
 impl Sspi for SspiCredSsp {
@@ -170,18 +209,19 @@ impl SspiImpl for SspiCredSsp {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         file_message("sspi: init_sec -----------------------");
+        let client_connection = match &mut self.tls_connection {
+            Connection::Client(client_connection) => client_connection,
+            Connection::Server(_) => {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    "Error: Called initialize_security_context_impl on the server's context.".into(),
+                ))
+            }
+        };
+
         let status = match &self.state {
             CredSspState::Tls => {
                 file_message("sspi: init_sec: tls");
-                let client_connection = match &mut self.tls_connection {
-                    Connection::Client(client_connection) => client_connection,
-                    Connection::Server(_) => {
-                        return Err(Error::new(
-                            ErrorKind::InternalError,
-                            "Error: Called initialize_security_context_impl on the server's context.".into(),
-                        ))
-                    }
-                };
 
                 file_message(&format!("sspi: init_sec: in buffers: {:?}", builder.input));
                 // input token can not present on the first call
@@ -235,10 +275,13 @@ impl SspiImpl for SspiCredSsp {
 
                 // decode TsRequest from input buffers
                 let mut ts_request = if let Some(input) = &builder.input {
-                    let raw_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                    file_message(&format!("raw ts request: {:?}", raw_ts_request));
+                    let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                    file_message(&format!("encrypted ts request: {:?}", encrypted_ts_request));
 
-                    let ts_request = TsRequest::from_buffer(&raw_ts_request.buffer)?;
+                    let raw_ts_request = self.decrypt_tls(&encrypted_ts_request.buffer)?;
+                    file_message(&format!("raw ts request: {:?}", encrypted_ts_request));
+
+                    let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
                     file_message(&format!("decoded ts request: {:?}", ts_request));
                     ts_request.check_error()?;
 
@@ -269,16 +312,26 @@ impl SspiImpl for SspiCredSsp {
                     .with_input(&mut input_token)
                     .with_output(&mut output_token);
 
+                file_message(&format!(
+                    "sspi-rs: sspi: init sec: before: {:?}",
+                    self.cred_ssp_context.sspi_context
+                ));
                 let result = self
                     .cred_ssp_context
                     .sspi_context
                     .initialize_security_context_impl(&mut inner_builder)?;
+                file_message("sspi-rs: sspi: init sec: after");
 
                 // encode new TsRequest into output buffers
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
+                let mut encoded_ts_request = Vec::new();
+                ts_request.encode_ts_request(&mut encoded_ts_request)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                ts_request.encode_ts_request(&mut output_token.buffer)?;
+                output_token.buffer = self.encrypt_tls(&encoded_ts_request)?;
+
+                file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
 
                 if result.status == SecurityStatus::Ok {
                     self.state = CredSspState::AuthInfo;
