@@ -5,6 +5,7 @@ use rand::Rng;
 
 #[allow(unused)]
 use crate::sspi::pku2u::AZURE_AD_DOMAIN;
+use crate::{Error, ErrorKind, Result};
 
 pub fn string_to_utf16(value: &str) -> Vec<u8> {
     value
@@ -46,4 +47,19 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
     }
 
     key
+}
+
+pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
+    if let Some(hostname) = hostname {
+        Ok(hostname.into())
+    } else {
+        if cfg!(not(target_arch = "wasm32")) {
+            Ok(whoami::hostname())
+        } else {
+            Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "The hostname is not provided".into(),
+            ))
+        }
+    }
 }

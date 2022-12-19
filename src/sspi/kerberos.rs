@@ -43,7 +43,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
-use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, unwrap_hostname, utf16_bytes_to_utf8_string};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
     ContextNames, ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities,
@@ -101,6 +101,7 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
+    hostname: Option<String>,
 }
 
 impl Kerberos {
@@ -116,6 +117,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            hostname: None,
         })
     }
 
@@ -131,6 +133,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            hostname: None,
         })
     }
 
@@ -381,6 +384,7 @@ impl Sspi for Kerberos {
 
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
+        let hostname = unwrap_hostname(self.hostname.as_deref())?;
 
         let as_rep = self.as_exchange(
             GenerateAsReqOptions {
@@ -390,6 +394,7 @@ impl Sspi for Kerberos {
                 snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
                 // 4 = size of u32
                 nonce: &OsRng::default().gen::<[u8; 4]>(),
+                hostname: &hostname,
             },
             GenerateAsPaDataOptions {
                 password,
@@ -434,6 +439,7 @@ impl Sspi for Kerberos {
             &authenticator,
             &self.encryption_params,
             seq_num,
+            &hostname,
         )?;
 
         if let Some((_realm, mut kdc_url)) = self.get_kdc() {
@@ -572,6 +578,7 @@ impl SspiImpl for Kerberos {
                         snames: &[TGT_SERVICE_NAME, realm],
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
+                        hostname: &unwrap_hostname(self.hostname.as_deref())?,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,
@@ -760,5 +767,9 @@ impl SspiImpl for Kerberos {
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
+    }
+
+    fn custom_set_hostname(&mut self, hostname: String) {
+        self.hostname = Some(hostname);
     }
 }

@@ -701,7 +701,7 @@ pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
 #[no_mangle]
 pub extern "system" fn SetContextAttributesW(
-    _ph_credential: PCtxtHandle,
+    _ph_context: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,

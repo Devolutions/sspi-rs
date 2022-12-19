@@ -222,6 +222,14 @@ impl SspiEx for Negotiate {
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
         }
     }
+
+    fn custom_set_hostname(&mut self, hostname: String) {
+        match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_hostname(hostname),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_hostname(hostname),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_hostname(hostname),
+        }
+    }
 }
 
 impl Sspi for Negotiate {
