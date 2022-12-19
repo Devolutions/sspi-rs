@@ -52,14 +52,12 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
 pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
     if let Some(hostname) = hostname {
         Ok(hostname.into())
+    } else if cfg!(not(target_arch = "wasm32")) {
+        Ok(whoami::hostname())
     } else {
-        if cfg!(not(target_arch = "wasm32")) {
-            Ok(whoami::hostname())
-        } else {
-            Err(Error::new(
-                ErrorKind::InvalidParameter,
-                "The hostname is not provided".into(),
-            ))
-        }
+        Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "The hostname is not provided".into(),
+        ))
     }
 }
