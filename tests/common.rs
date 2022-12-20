@@ -3,10 +3,10 @@ use std::io;
 use chrono::Local;
 use lazy_static::lazy_static;
 use sspi::builders::EmptyInitializeSecurityContext;
-use sspi::internal::credssp;
 use sspi::{
-    AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse, DataRepresentation,
-    EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
+    credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi,
+    SspiEx,
 };
 
 lazy_static! {

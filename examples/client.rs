@@ -9,14 +9,13 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::builders::EmptyInitializeSecurityContext;
-use sspi::internal::SspiImpl;
 #[cfg(windows)]
 use sspi::winapi::Ntlm;
 #[cfg(not(windows))]
 use sspi::Ntlm;
 use sspi::{
     AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, Sspi,
+    SecurityStatus, Sspi, SspiImpl,
 };
 
 const IP: &str = "127.0.0.1:8080";

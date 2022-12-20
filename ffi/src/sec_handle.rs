@@ -5,14 +5,13 @@ use std::slice::from_raw_parts;
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
-use sspi::internal::credssp::SspiContext;
-use sspi::internal::SspiImpl;
+use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi, SspiImpl,
 };
 
 cfg_if::cfg_if! {
