@@ -8,7 +8,11 @@ pub fn credssp_client() {
         Vec::new(),
         AuthIdentity::default(),
         credssp::CredSspMode::WithCredentials,
-        credssp::ClientMode::Negotiate(sspi::NegotiateConfig::default()),
+        credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
+            protocol_config: Box::new(sspi::ntlm::NtlmConfig),
+            package_list: None,
+            hostname: "testhostname".into(),
+        }),
         String::new(),
     )
     .unwrap();

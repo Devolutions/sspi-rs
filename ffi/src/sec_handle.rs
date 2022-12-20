@@ -9,15 +9,16 @@ use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
     Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
 };
 
 cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        use sspi::{ Pku2u, Pku2uConfig };
+    if #[cfg(target_os = "windows")] {
         use symbol_rename_macro::rename_symbol;
+        use sspi::{Pku2u, Pku2uConfig};
     }
 }
 
@@ -87,16 +88,19 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         let sspi_context = match name {
             negotiate::PKG_NAME => {
+                let hostname = whoami::hostname();
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    let kerberos_config = KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new()));
+                    let kerberos_config =
+                        KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
                     let negotiate_config =
-                        NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone());
+                        NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone(), hostname);
 
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 } else {
                     let negotiate_config = NegotiateConfig {
+                        protocol_config: Box::new(NtlmConfig),
                         package_list: attributes.package_list.clone(),
-                        ..Default::default()
+                        hostname,
                     };
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
@@ -108,16 +112,22 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     "PKU2U is not supported on non-Windows OS yet".into(),
                 ));
                 #[cfg(target_os = "windows")]
-                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?)
+                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
+                    whoami::hostname(),
+                )?)?)
             }
             kerberos::PKG_NAME => {
+                let hostname = whoami::hostname();
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_kdc_url(
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
                         &kdc_url,
                         Box::new(ReqwestNetworkClient::new()),
+                        hostname,
                     ))?)
                 } else {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env())?)
+                    let mut krb_config = KerberosConfig::from_env();
+                    krb_config.hostname = Some(hostname);
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
@@ -865,10 +875,21 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             .expect("change password builder should never fail");
 
         let mut sspi_context = match security_package_name {
-            negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
-            kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
-                KerberosConfig::from_env()
-            ))),
+            negotiate::PKG_NAME => {
+                let negotiate_config = NegotiateConfig {
+                    protocol_config: Box::new(NtlmConfig),
+                    package_list: None,
+                    hostname: whoami::hostname(),
+                };
+                SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
+            },
+            kerberos::PKG_NAME => {
+                let mut krb_config = KerberosConfig::from_env();
+                krb_config.hostname = Some(whoami::hostname());
+                SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
+                    krb_config
+                )))
+            },
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();

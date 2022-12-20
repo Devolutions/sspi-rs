@@ -44,6 +44,16 @@ pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
 }
 
 impl KerberosConfig {
+    pub fn new(url: &str, network_client: Box<dyn NetworkClient>, hostname: String) -> Self {
+        let kdc_url = parse_kdc_url(url.to_owned());
+
+        Self {
+            url: kdc_url,
+            network_client,
+            hostname: Some(hostname),
+        }
+    }
+
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
         if let Some(kdc_url) = self.url {
             Some(kdc_url)
@@ -68,6 +78,7 @@ impl KerberosConfig {
 
     pub fn from_kdc_url(url: &str, network_client: Box<dyn NetworkClient>) -> Self {
         let kdc_url = parse_kdc_url(url.to_owned());
+
         Self {
             url: kdc_url,
             network_client,

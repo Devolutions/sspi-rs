@@ -90,7 +90,12 @@ pub struct Negotiate {
     protocol: NegotiatedProtocol,
     package_list: Option<String>,
     auth_identity: Option<AuthIdentityBuffers>,
-    hostname: String,
+    // on wasm targets, the hostname field is not used
+    // because the hostname is used only in the code that:
+    // * behind the network_client feature which is unable on wasm targets
+    // * for the Windows OS
+    #[allow(dead_code)]
+    hostname: Option<String>,
 }
 
 struct PackageListConfig {
@@ -110,7 +115,7 @@ impl Negotiate {
             protocol,
             package_list: config.package_list,
             auth_identity: None,
-            hostname: config.hostname,
+            hostname: Some(config.hostname),
         })
     }
 
@@ -126,9 +131,10 @@ impl Negotiate {
             #[cfg(target_os = "windows")]
             if is_azure_ad_domain(_domain) {
                 use super::pku2u::Pku2uConfig;
+                use crate::utils::unwrap_hostname;
 
                 self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(
-                    Pku2uConfig::default_client_config(self.hostname.clone())?,
+                    Pku2uConfig::default_client_config(unwrap_hostname(self.hostname.as_deref())?)?,
                 )?);
             }
 
@@ -138,7 +144,7 @@ impl Negotiate {
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
                         url: Some(host),
                         network_client: Box::new(ReqwestNetworkClient::new()),
-                        hostname: Some(self.hostname.clone()),
+                        hostname: self.hostname.clone(),
                     })?);
             }
         }
