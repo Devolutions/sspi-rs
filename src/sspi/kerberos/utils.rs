@@ -69,3 +69,14 @@ pub fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key
 
     Ok(mic_token_raw)
 }
+
+pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
+    if let Some(hostname) = hostname {
+        Ok(hostname.into())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "The hostname is not provided".into(),
+        ))
+    }
+}

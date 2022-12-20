@@ -8,18 +8,20 @@ use crate::{Pku2u, Result};
 pub struct Pku2uConfig {
     pub p2p_certificate: Certificate,
     pub private_key: PrivateKey,
+    pub hostname: String,
 }
 
 impl Pku2uConfig {
-    pub fn new(p2p_certificate: Certificate, private_key: PrivateKey) -> Self {
+    pub fn new(p2p_certificate: Certificate, private_key: PrivateKey, hostname: String) -> Self {
         Self {
             p2p_certificate,
             private_key,
+            hostname,
         }
     }
 
     #[cfg(target_os = "windows")]
-    pub fn default_client_config() -> Result<Self> {
+    pub fn default_client_config(hostname: String) -> Result<Self> {
         use super::cert_utils::extraction::extract_client_p2p_cert_and_key;
 
         let (p2p_certificate, private_key) = extract_client_p2p_cert_and_key()?;
@@ -27,6 +29,7 @@ impl Pku2uConfig {
         Ok(Self {
             p2p_certificate,
             private_key,
+            hostname,
         })
     }
 }

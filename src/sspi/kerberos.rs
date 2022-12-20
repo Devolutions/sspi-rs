@@ -1,7 +1,6 @@
 pub mod client;
 pub mod config;
 mod encryption_params;
-pub mod network_client;
 pub mod server;
 mod utils;
 
@@ -31,7 +30,7 @@ use self::client::generators::{
 };
 use self::config::KerberosConfig;
 use self::server::extractors::extract_tgt_ticket;
-use self::utils::serialize_message;
+use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
@@ -381,6 +380,7 @@ impl Sspi for Kerberos {
 
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
+        let hostname = unwrap_hostname(self.config.hostname.as_deref())?;
 
         let as_rep = self.as_exchange(
             GenerateAsReqOptions {
@@ -390,6 +390,7 @@ impl Sspi for Kerberos {
                 snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
                 // 4 = size of u32
                 nonce: &OsRng::default().gen::<[u8; 4]>(),
+                hostname: &hostname,
             },
             GenerateAsPaDataOptions {
                 password,
@@ -434,6 +435,7 @@ impl Sspi for Kerberos {
             &authenticator,
             &self.encryption_params,
             seq_num,
+            &hostname,
         )?;
 
         if let Some((_realm, mut kdc_url)) = self.get_kdc() {
@@ -572,6 +574,7 @@ impl SspiImpl for Kerberos {
                         snames: &[TGT_SERVICE_NAME, realm],
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
+                        hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,

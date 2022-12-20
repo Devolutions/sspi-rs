@@ -4,6 +4,7 @@ pub mod channel_bindings;
 pub mod internal;
 pub mod kerberos;
 pub mod negotiate;
+pub mod network_client;
 pub mod pku2u;
 #[cfg(windows)]
 pub mod winapi;

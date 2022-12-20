@@ -150,6 +150,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub cname_type: u8,
     pub snames: &'a [&'a str],
     pub nonce: &'a [u8],
+    pub hostname: &'a str,
 }
 
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
@@ -159,13 +160,12 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         cname_type,
         snames,
         nonce,
+        hostname: address,
     } = options;
 
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
-
-    let address = "INJECT HOSTNAME VIA ARGUMENTS"; // FIXME: previously whoami::hostname()
 
     let host_address = HostAddress {
         addr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NET_BIOS_ADDR_TYPE])),
@@ -536,10 +536,9 @@ pub fn generate_krb_priv_request(
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
     seq_num: u32,
+    address: &str,
 ) -> Result<KrbPrivMessage> {
     let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, &EMPTY_AP_REQ_OPTIONS)?;
-
-    let address = "INJECT HOSTNAME VIA ARGUMENTS"; // FIXME: previously whoami::hostname()
 
     let enc_part = EncKrbPrivPart::from(EncKrbPrivPartInner {
         user_data: ExplicitContextTag0::from(OctetStringAsn1::from(new_password.to_vec())),

@@ -94,10 +94,11 @@ pub use crate::sspi::pku2u::{self, Pku2u, Pku2uConfig, PACKAGE_INFO as PKU2U_PAC
 #[cfg(windows)]
 pub use crate::sspi::winapi;
 pub use crate::sspi::{
-    builders, enumerate_security_packages, internal, kerberos, negotiate, ntlm, query_security_package_info,
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
-    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames,
-    ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, Ntlm, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx,
+    builders, enumerate_security_packages, internal, kerberos, negotiate, network_client, ntlm,
+    query_security_package_info, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
+    AuthIdentityBuffers, CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Ntlm, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerRequestFlags, ServerResponseFlags,
+    Sspi, SspiEx,
 };

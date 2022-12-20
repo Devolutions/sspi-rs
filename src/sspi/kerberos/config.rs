@@ -3,16 +3,15 @@ use std::str::FromStr;
 
 use url::Url;
 
-#[cfg(feature = "network_client")]
-use super::network_client::reqwest_network_client::ReqwestNetworkClient;
-use super::network_client::NetworkClient;
 use crate::kdc::detect_kdc_url;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
+use crate::sspi::network_client::NetworkClient;
 use crate::{Kerberos, Result};
 
 pub struct KerberosConfig {
     pub url: Option<Url>,
     pub network_client: Box<dyn NetworkClient>,
+    pub hostname: Option<String>,
 }
 
 impl Debug for KerberosConfig {
@@ -43,6 +42,16 @@ pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
 }
 
 impl KerberosConfig {
+    pub fn new(url: &str, network_client: Box<dyn NetworkClient>, hostname: String) -> Self {
+        let kdc_url = parse_kdc_url(url.to_owned());
+
+        Self {
+            url: kdc_url,
+            network_client,
+            hostname: Some(hostname),
+        }
+    }
+
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
         if let Some(kdc_url) = self.url {
             Some(kdc_url)
@@ -55,20 +64,25 @@ impl KerberosConfig {
         Self {
             url: None,
             network_client,
+            hostname: None,
         }
     }
 
     #[cfg(feature = "network_client")]
     pub fn from_env() -> Self {
+        use crate::sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
+
         let network_client = Box::new(ReqwestNetworkClient::new());
         Self::new_with_network_client(network_client)
     }
 
     pub fn from_kdc_url(url: &str, network_client: Box<dyn NetworkClient>) -> Self {
         let kdc_url = parse_kdc_url(url.to_owned());
+
         Self {
             url: kdc_url,
             network_client,
+            hostname: None,
         }
     }
 
@@ -83,6 +97,7 @@ impl Clone for KerberosConfig {
         Self {
             url: self.url.clone(),
             network_client: self.network_client.clone(),
+            hostname: self.hostname.clone(),
         }
     }
 }
