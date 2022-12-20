@@ -8,7 +8,7 @@ use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
-use sspi::negotiate::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
+use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
@@ -105,7 +105,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                         protocol_config: Box::new(NtlmConfig),
                         package_list: attributes.package_list.clone(),
                         hostname,
-                        network_client_generator: Box::new(RequestClientFactory),
+                        network_client_factory: Box::new(RequestClientFactory),
                     };
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
@@ -885,7 +885,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     protocol_config: Box::new(NtlmConfig),
                     package_list: None,
                     hostname: whoami::hostname(),
-                    network_client_generator: Box::new(RequestClientFactory),
+                    network_client_factory: Box::new(RequestClientFactory),
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },

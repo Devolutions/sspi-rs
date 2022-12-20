@@ -1,13 +1,11 @@
-pub mod network_client;
-
 use std::fmt::Debug;
 
 use lazy_static::lazy_static;
 
-use self::network_client::NetworkClientFactory;
 use crate::internal::SspiImpl;
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::generators::get_client_principal_realm;
+use crate::sspi::network_client::NetworkClientFactory;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
@@ -42,7 +40,7 @@ pub struct NegotiateConfig {
     pub protocol_config: Box<dyn ProtocolConfig + Send>,
     pub package_list: Option<String>,
     pub hostname: String,
-    pub network_client_generator: Box<dyn NetworkClientFactory>,
+    pub network_client_factory: Box<dyn NetworkClientFactory>,
 }
 
 impl NegotiateConfig {
@@ -50,26 +48,26 @@ impl NegotiateConfig {
         protocol_config: Box<dyn ProtocolConfig + Send>,
         package_list: Option<String>,
         hostname: String,
-        get_network_client: Box<dyn NetworkClientFactory>,
+        network_client_factory: Box<dyn NetworkClientFactory>,
     ) -> Self {
         Self {
             protocol_config,
             package_list,
             hostname,
-            network_client_generator: get_network_client,
+            network_client_factory,
         }
     }
 
     pub fn from_protocol_config(
         protocol_config: Box<dyn ProtocolConfig + Send>,
         hostname: String,
-        get_network_client: Box<dyn NetworkClientFactory>,
+        network_client_factory: Box<dyn NetworkClientFactory>,
     ) -> Self {
         Self {
             protocol_config,
             package_list: None,
             hostname,
-            network_client_generator: get_network_client,
+            network_client_factory,
         }
     }
 }
@@ -80,7 +78,7 @@ impl Clone for NegotiateConfig {
             protocol_config: self.protocol_config.clone(),
             package_list: None,
             hostname: self.hostname.clone(),
-            network_client_generator: self.network_client_generator.clone(),
+            network_client_factory: self.network_client_factory.clone(),
         }
     }
 }
@@ -99,7 +97,7 @@ pub struct Negotiate {
     package_list: Option<String>,
     auth_identity: Option<AuthIdentityBuffers>,
     hostname: String,
-    network_client_generator: Box<dyn NetworkClientFactory>,
+    network_client_factory: Box<dyn NetworkClientFactory>,
 }
 
 impl Clone for Negotiate {
@@ -109,7 +107,7 @@ impl Clone for Negotiate {
             package_list: self.package_list.clone(),
             auth_identity: self.auth_identity.clone(),
             hostname: self.hostname.clone(),
-            network_client_generator: self.network_client_generator.clone(),
+            network_client_factory: self.network_client_factory.clone(),
         }
     }
 }
@@ -132,7 +130,7 @@ impl Negotiate {
             package_list: config.package_list,
             auth_identity: None,
             hostname: config.hostname,
-            network_client_generator: config.network_client_generator,
+            network_client_factory: config.network_client_factory,
         })
     }
 
@@ -158,7 +156,7 @@ impl Negotiate {
                 self.protocol =
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
                         url: Some(host),
-                        network_client: self.network_client_generator.network_client(),
+                        network_client: self.network_client_factory.network_client(),
                         hostname: Some(self.hostname.clone()),
                     })?);
             }

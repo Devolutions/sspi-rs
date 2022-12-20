@@ -4,8 +4,8 @@ use std::str::FromStr;
 use url::Url;
 
 use crate::kdc::detect_kdc_url;
-use crate::negotiate::network_client::NetworkClient;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
+use crate::sspi::network_client::NetworkClient;
 use crate::{Kerberos, Result};
 
 pub struct KerberosConfig {
@@ -70,7 +70,7 @@ impl KerberosConfig {
 
     #[cfg(feature = "network_client")]
     pub fn from_env() -> Self {
-        use crate::negotiate::network_client::reqwest_network_client::ReqwestNetworkClient;
+        use crate::sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
 
         let network_client = Box::new(ReqwestNetworkClient::new());
         Self::new_with_network_client(network_client)
