@@ -26,7 +26,7 @@ pub fn credssp_client() {
             protocol_config: Box::new(sspi::ntlm::NtlmConfig),
             package_list: None,
             hostname: "testhostname".into(),
-            network_client_generator: Box::new(DummyNetworkClientFactory),
+            network_client_factory: Box::new(DummyNetworkClientFactory),
         }),
         String::new(),
     )
