@@ -1,6 +1,13 @@
+use std::fmt::Debug;
+
 use url::Url;
 
 use crate::sspi::Result;
+
+pub trait NetworkClientFactory: Send + Debug {
+    fn network_client(&self) -> Box<dyn NetworkClient>;
+    fn clone(&self) -> Box<dyn NetworkClientFactory>;
+}
 
 pub trait NetworkClient: Send {
     fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
@@ -21,7 +28,7 @@ pub mod reqwest_network_client {
     use reqwest::blocking::Client;
     use url::Url;
 
-    use super::NetworkClient;
+    use super::{NetworkClient, NetworkClientFactory};
     use crate::{Error, ErrorKind, Result};
 
     #[derive(Debug, Clone)]
@@ -29,7 +36,7 @@ pub mod reqwest_network_client {
 
     impl ReqwestNetworkClient {
         pub fn new() -> Self {
-            Self {}
+            Self
         }
     }
 
@@ -140,6 +147,31 @@ pub mod reqwest_network_client {
     }
 
     impl Default for ReqwestNetworkClient {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct RequestClientFactory;
+
+    impl RequestClientFactory {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    impl NetworkClientFactory for RequestClientFactory {
+        fn network_client(&self) -> Box<dyn NetworkClient> {
+            Box::new(ReqwestNetworkClient::new())
+        }
+
+        fn clone(&self) -> Box<dyn NetworkClientFactory> {
+            Box::new(Clone::clone(self))
+        }
+    }
+
+    impl Default for RequestClientFactory {
         fn default() -> Self {
             Self::new()
         }

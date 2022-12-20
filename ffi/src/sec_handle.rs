@@ -8,7 +8,7 @@ use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::SspiContext;
 use sspi::internal::SspiImpl;
 use sspi::kerberos::config::KerberosConfig;
-use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+use sspi::negotiate::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
@@ -92,8 +92,12 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 if let Some(kdc_url) = attributes.kdc_url() {
                     let kerberos_config =
                         KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
-                    let negotiate_config =
-                        NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone(), hostname);
+                    let negotiate_config = NegotiateConfig::new(
+                        Box::new(kerberos_config),
+                        attributes.package_list.clone(),
+                        hostname,
+                        Box::new(RequestClientFactory),
+                    );
 
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 } else {
@@ -101,6 +105,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                         protocol_config: Box::new(NtlmConfig),
                         package_list: attributes.package_list.clone(),
                         hostname,
+                        network_client_generator: Box::new(RequestClientFactory),
                     };
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
@@ -880,6 +885,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     protocol_config: Box::new(NtlmConfig),
                     package_list: None,
                     hostname: whoami::hostname(),
+                    network_client_generator: Box::new(RequestClientFactory),
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },

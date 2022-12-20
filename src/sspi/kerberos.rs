@@ -1,7 +1,6 @@
 pub mod client;
 pub mod config;
 mod encryption_params;
-pub mod network_client;
 pub mod server;
 mod utils;
 
@@ -31,7 +30,7 @@ use self::client::generators::{
 };
 use self::config::KerberosConfig;
 use self::server::extractors::extract_tgt_ticket;
-use self::utils::serialize_message;
+use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::extract_status_code_from_krb_priv_response;
@@ -43,7 +42,7 @@ use crate::sspi::kerberos::server::extractors::{
 use crate::sspi::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::sspi::ntlm::AuthIdentityBuffers;
 use crate::sspi::{self, Error, ErrorKind, Result, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE};
-use crate::utils::{generate_random_symmetric_key, unwrap_hostname, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
     ContextNames, ContextSizes, CredentialUse, DecryptionFlags, InitializeSecurityContextResult, PackageCapabilities,

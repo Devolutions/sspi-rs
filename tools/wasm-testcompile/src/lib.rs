@@ -1,6 +1,20 @@
 use sspi::internal::credssp;
+use sspi::negotiate::network_client::{NetworkClient, NetworkClientFactory};
 use sspi::ntlm::AuthIdentity;
 use wasm_bindgen::prelude::*;
+
+#[derive(Debug, Clone)]
+struct DumpNetworkClientFactory;
+
+impl NetworkClientFactory for DumpNetworkClientFactory {
+    fn network_client(&self) -> Box<dyn NetworkClient> {
+        todo!()
+    }
+
+    fn clone(&self) -> Box<dyn NetworkClientFactory> {
+        Box::new(Clone::clone(self))
+    }
+}
 
 #[wasm_bindgen]
 pub fn credssp_client() {
@@ -12,6 +26,7 @@ pub fn credssp_client() {
             protocol_config: Box::new(sspi::ntlm::NtlmConfig),
             package_list: None,
             hostname: "testhostname".into(),
+            network_client_generator: Box::new(DumpNetworkClientFactory),
         }),
         String::new(),
     )
