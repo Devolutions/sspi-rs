@@ -424,8 +424,6 @@ impl SspiEx for Ntlm {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.identity = Some(identity.into());
     }
-
-    fn custom_set_hostname(&mut self, _hostname: String) {}
 }
 
 impl NegotiateMessage {

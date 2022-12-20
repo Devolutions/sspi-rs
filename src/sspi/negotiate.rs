@@ -9,7 +9,6 @@ use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::generators::get_client_principal_realm;
 #[cfg(feature = "network_client")]
 use crate::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
-use crate::ntlm::NtlmConfig;
 use crate::sspi::{Result, PACKAGE_ID_NONE};
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
@@ -43,29 +42,27 @@ pub trait ProtocolConfig: Debug {
 pub struct NegotiateConfig {
     pub protocol_config: Box<dyn ProtocolConfig + Send>,
     pub package_list: Option<String>,
+    pub hostname: String,
 }
 
 impl NegotiateConfig {
-    pub fn new(protocol_config: Box<dyn ProtocolConfig + Send>, package_list: Option<String>) -> Self {
+    pub fn new(
+        protocol_config: Box<dyn ProtocolConfig + Send>,
+        package_list: Option<String>,
+        hostname: String,
+    ) -> Self {
         Self {
             protocol_config,
             package_list,
+            hostname,
         }
     }
 
-    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>) -> Self {
+    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>, hostname: String) -> Self {
         Self {
             protocol_config,
             package_list: None,
-        }
-    }
-}
-
-impl Default for NegotiateConfig {
-    fn default() -> Self {
-        Self {
-            protocol_config: Box::new(NtlmConfig),
-            package_list: None,
+            hostname,
         }
     }
 }
@@ -75,6 +72,7 @@ impl Clone for NegotiateConfig {
         Self {
             protocol_config: self.protocol_config.clone(),
             package_list: None,
+            hostname: self.hostname.clone(),
         }
     }
 }
@@ -92,6 +90,7 @@ pub struct Negotiate {
     protocol: NegotiatedProtocol,
     package_list: Option<String>,
     auth_identity: Option<AuthIdentityBuffers>,
+    hostname: String,
 }
 
 struct PackageListConfig {
@@ -111,6 +110,7 @@ impl Negotiate {
             protocol,
             package_list: config.package_list,
             auth_identity: None,
+            hostname: config.hostname,
         })
     }
 
@@ -127,8 +127,9 @@ impl Negotiate {
             if is_azure_ad_domain(_domain) {
                 use super::pku2u::Pku2uConfig;
 
-                self.protocol =
-                    NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?);
+                self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(
+                    Pku2uConfig::default_client_config(self.hostname.clone())?,
+                )?);
             }
 
             #[cfg(feature = "network_client")]
@@ -137,6 +138,7 @@ impl Negotiate {
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
                         url: Some(host),
                         network_client: Box::new(ReqwestNetworkClient::new()),
+                        hostname: Some(self.hostname.clone()),
                     })?);
             }
         }
@@ -220,14 +222,6 @@ impl SspiEx for Negotiate {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
-        }
-    }
-
-    fn custom_set_hostname(&mut self, hostname: String) {
-        match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_hostname(hostname),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_hostname(hostname),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_hostname(hostname),
         }
     }
 }

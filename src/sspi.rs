@@ -736,7 +736,6 @@ where
     Self: Sized + SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
-    fn custom_set_hostname(&mut self, hostname: String);
 }
 
 pub type SspiPackage<'a, CredsHandle, AuthData> =

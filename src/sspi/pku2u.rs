@@ -48,7 +48,7 @@ use crate::sspi::pku2u::extractors::{
 use crate::sspi::pku2u::generators::{generate_authenticator, generate_authenticator_extension};
 use crate::sspi::pku2u::validate::validate_signed_data;
 use crate::sspi::{self, PACKAGE_ID_NONE};
-use crate::utils::{generate_random_symmetric_key, unwrap_hostname};
+use crate::utils::generate_random_symmetric_key;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
@@ -143,7 +143,6 @@ pub struct Pku2u {
     // The checksum is performed on all previous NEGOEX messages in the context negotiation.
     gss_api_messages: Vec<u8>,
     negoex_random: [u8; RANDOM_ARRAY_SIZE],
-    hostname: Option<String>,
 }
 
 impl Pku2u {
@@ -167,7 +166,6 @@ impl Pku2u {
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
             negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
-            hostname: None,
         })
     }
 
@@ -191,7 +189,6 @@ impl Pku2u {
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
             negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
-            hostname: None,
         })
     }
 
@@ -513,7 +510,7 @@ impl SspiImpl for Pku2u {
                     snames: &snames,
                     // we don't need the nonce in Pku2u
                     nonce: &[0],
-                    hostname: &unwrap_hostname(self.hostname.as_deref())?,
+                    hostname: &self.config.hostname,
                 })?;
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,
@@ -797,9 +794,5 @@ impl SspiImpl for Pku2u {
 impl SspiEx for Pku2u {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
-    }
-
-    fn custom_set_hostname(&mut self, hostname: String) {
-        self.hostname = Some(hostname);
     }
 }

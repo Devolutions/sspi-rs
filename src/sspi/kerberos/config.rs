@@ -13,6 +13,7 @@ use crate::{Kerberos, Result};
 pub struct KerberosConfig {
     pub url: Option<Url>,
     pub network_client: Box<dyn NetworkClient>,
+    pub hostname: Option<String>,
 }
 
 impl Debug for KerberosConfig {
@@ -55,6 +56,7 @@ impl KerberosConfig {
         Self {
             url: None,
             network_client,
+            hostname: None,
         }
     }
 
@@ -69,6 +71,7 @@ impl KerberosConfig {
         Self {
             url: kdc_url,
             network_client,
+            hostname: None,
         }
     }
 
@@ -83,6 +86,7 @@ impl Clone for KerberosConfig {
         Self {
             url: self.url.clone(),
             network_client: self.network_client.clone(),
+            hostname: self.hostname.clone(),
         }
     }
 }

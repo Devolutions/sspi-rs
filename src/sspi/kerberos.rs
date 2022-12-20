@@ -101,7 +101,6 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
-    hostname: Option<String>,
 }
 
 impl Kerberos {
@@ -117,7 +116,6 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            hostname: None,
         })
     }
 
@@ -133,7 +131,6 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            hostname: None,
         })
     }
 
@@ -384,7 +381,7 @@ impl Sspi for Kerberos {
 
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
-        let hostname = unwrap_hostname(self.hostname.as_deref())?;
+        let hostname = unwrap_hostname(self.config.hostname.as_deref())?;
 
         let as_rep = self.as_exchange(
             GenerateAsReqOptions {
@@ -578,7 +575,7 @@ impl SspiImpl for Kerberos {
                         snames: &[TGT_SERVICE_NAME, realm],
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
-                        hostname: &unwrap_hostname(self.hostname.as_deref())?,
+                        hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,
@@ -767,9 +764,5 @@ impl SspiImpl for Kerberos {
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
-    }
-
-    fn custom_set_hostname(&mut self, hostname: String) {
-        self.hostname = Some(hostname);
     }
 }

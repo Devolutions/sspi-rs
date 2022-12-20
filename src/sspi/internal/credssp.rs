@@ -687,15 +687,6 @@ impl SspiEx for SspiContext {
             SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
         }
     }
-
-    fn custom_set_hostname(&mut self, hostname: String) {
-        match self {
-            SspiContext::Ntlm(ntlm) => ntlm.custom_set_hostname(hostname),
-            SspiContext::Kerberos(kerberos) => kerberos.custom_set_hostname(hostname),
-            SspiContext::Negotiate(negotiate) => negotiate.custom_set_hostname(hostname),
-            SspiContext::Pku2u(pku2u) => pku2u.custom_set_hostname(hostname),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
