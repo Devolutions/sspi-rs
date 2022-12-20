@@ -2,7 +2,7 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
-use sspi::internal::credssp::SspiContext;
+use sspi::credssp::SspiContext;
 use sspi::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,

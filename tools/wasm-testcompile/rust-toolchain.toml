@@ -1,5 +1,3 @@
 [toolchain]
-channel = "1.66.0"
-components = [ "rustc-dev" ]
-targets = [ "wasm32-unknown-unknown" ]
+targets = ["wasm32-unknown-unknown"]
 profile = "minimal"

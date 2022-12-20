@@ -1,4 +1,4 @@
-use sspi::internal::credssp;
+use sspi::credssp;
 use sspi::network_client::{NetworkClient, NetworkClientFactory};
 use sspi::ntlm::AuthIdentity;
 use wasm_bindgen::prelude::*;
@@ -8,7 +8,7 @@ struct DummyNetworkClientFactory;
 
 impl NetworkClientFactory for DummyNetworkClientFactory {
     fn network_client(&self) -> Box<dyn NetworkClient> {
-        todo!()
+        unimplemented!()
     }
 
     fn clone(&self) -> Box<dyn NetworkClientFactory> {
