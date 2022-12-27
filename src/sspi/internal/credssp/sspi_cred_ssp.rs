@@ -2,18 +2,22 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use lazy_static::lazy_static;
+use picky_asn1_x509::Certificate;
+use rand::rngs::OsRng;
+use rand::Rng;
 use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
 
-use super::{CredSspContext, SspiContext, TsRequest};
+use super::ts_request::NONCE_SIZE;
+use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
 use crate::internal::SspiImpl;
-use crate::sspi::{self, PACKAGE_ID_NONE};
+use crate::sspi::{self, PACKAGE_ID_NONE, CertContext, CertEncodingType};
 use crate::utils::file_message;
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, DataRepresentation, DecryptionFlags,
-    EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result,
-    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
+    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
+    PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -65,6 +69,7 @@ pub struct SspiCredSsp {
     cred_ssp_context: Box<CredSspContext>,
     auth_identity: Option<AuthIdentityBuffers>,
     tls_connection: Connection,
+    nonce: Option<[u8; NONCE_SIZE]>,
 }
 
 impl SspiCredSsp {
@@ -84,6 +89,7 @@ impl SspiCredSsp {
                 ClientConnection::new(config, example_com)
                     .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
             ),
+            nonce: Some(OsRng::default().gen::<[u8; NONCE_SIZE]>()),
         })
     }
 
@@ -102,6 +108,8 @@ impl SspiCredSsp {
             tls_connection: Connection::Server(
                 ServerConnection::new(config).map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
             ),
+            // nonce for the server will be in the incoming TsRequest
+            nonce: None,
         })
     }
 
@@ -142,10 +150,49 @@ impl SspiCredSsp {
 
         Ok(plain_data)
     }
+
+    fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
+        if let Some(certificates) = self.tls_connection.peer_certificates() {
+            file_message(&format!(
+                "peer certificates present :) {:?} {}",
+                certificates,
+                certificates.len()
+            ));
+            let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::CertificateUnknown,
+                    "Can not acquire server certificate".into(),
+                )
+            })?;
+
+            let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
+
+            let raw_public_key = match server_certificate
+                .tbs_certificate
+                .subject_public_key_info
+                .subject_public_key
+            {
+                picky_asn1_x509::PublicKey::Rsa(rsa_pk) => picky_asn1_der::to_vec(&rsa_pk.0)?,
+                picky_asn1_x509::PublicKey::Ec(_) => todo!(),
+                picky_asn1_x509::PublicKey::Ed(_) => todo!(),
+            };
+
+            file_message(&format!("encoded public key: {:?}", raw_public_key));
+
+            Ok(raw_public_key)
+        } else {
+            file_message("no peer certificates :(");
+            Err(Error::new(
+                ErrorKind::CertificateUnknown,
+                "The server certificate is not present".into(),
+            ))
+        }
+    }
 }
 
 impl Sspi for SspiCredSsp {
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
+        file_message("SSPI: complete auth token");
         Ok(SecurityStatus::Ok)
     }
 
@@ -155,31 +202,72 @@ impl Sspi for SspiCredSsp {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
+        file_message("SSPI: encrypt");
         self.cred_ssp_context
             .sspi_context
             .encrypt_message(flags, message, sequence_number)
     }
 
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags> {
+        file_message("SSPI: decrypt");
         self.cred_ssp_context
             .sspi_context
             .decrypt_message(message, sequence_number)
     }
 
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
+        file_message("SSPI: query context sized");
         self.cred_ssp_context.sspi_context.query_context_sizes()
     }
 
     fn query_context_names(&mut self) -> Result<ContextNames> {
+        file_message("SSPI: query context names");
         self.cred_ssp_context.sspi_context.query_context_names()
     }
 
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
+        file_message("SSPI: query context package info");
         sspi::query_security_package_info(SecurityPackageType::CredSsp)
     }
 
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
+        file_message("SSPI: query context cert trust status");
         self.cred_ssp_context.sspi_context.query_context_cert_trust_status()
+    }
+
+    fn query_context_remote_cert(&mut self) -> Result<CertContext> {
+        file_message("query_context_remote_cert");
+        if let Some(certificates) = self.tls_connection.peer_certificates() {
+            file_message(&format!(
+                "peer certificates present :) {:?} {}",
+                certificates,
+                certificates.len()
+            ));
+            let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::CertificateUnknown,
+                    "Can not acquire server certificate".into(),
+                )
+            })?;
+
+            let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
+
+            Ok(CertContext {
+                encoding_type: CertEncodingType::X509AsnEncoding,
+                raw_cert: raw_server_certificate.clone(),
+                cert: server_certificate,
+            })
+        } else {
+            file_message("no peer certificates :(");
+            Err(Error::new(
+                ErrorKind::CertificateUnknown,
+                "The server certificate is not present".into(),
+            ))
+        }
+    }
+
+    fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
+        self.cred_ssp_context.sspi_context.query_context_package_info()
     }
 
     fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
@@ -196,8 +284,17 @@ impl SspiImpl for SspiCredSsp {
 
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
-        _builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+        builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+        if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "The client must specify the auth data".into(),
+            ));
+        }
+
+        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),
             expiry: None,
@@ -273,7 +370,7 @@ impl SspiImpl for SspiCredSsp {
             CredSspState::NegoToken => {
                 file_message("CredSspState::NegoToken");
 
-                // decode TsRequest from input buffers
+                // decrypt and decode TsRequest from input buffers
                 let mut ts_request = if let Some(input) = &builder.input {
                     let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
                     file_message(&format!("encrypted ts request: {:?}", encrypted_ts_request));
@@ -289,6 +386,8 @@ impl SspiImpl for SspiCredSsp {
                 } else {
                     TsRequest::default()
                 };
+
+                self.cred_ssp_context.check_peer_version(ts_request.version)?;
 
                 let mut input_token = vec![SecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
@@ -325,6 +424,67 @@ impl SspiImpl for SspiCredSsp {
                 // encode new TsRequest into output buffers
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
+                if result.status == SecurityStatus::Ok {
+                    let public_key = if let Some(certificates) = self.tls_connection.peer_certificates() {
+                        file_message(&format!(
+                            "peer certificates present :) {:?} {}",
+                            certificates,
+                            certificates.len()
+                        ));
+                        let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::CertificateUnknown,
+                                "Can not acquire server certificate".into(),
+                            )
+                        })?;
+
+                        let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
+
+                        let raw_public_key = match server_certificate
+                            .tbs_certificate
+                            .subject_public_key_info
+                            .subject_public_key
+                        {
+                            picky_asn1_x509::PublicKey::Rsa(rsa_pk) => picky_asn1_der::to_vec(&rsa_pk.0)?,
+                            picky_asn1_x509::PublicKey::Ec(_) => todo!(),
+                            picky_asn1_x509::PublicKey::Ed(_) => todo!(),
+                        };
+
+                        file_message(&format!("encoded public key: {:?}", raw_public_key));
+
+                        raw_public_key
+                    } else {
+                        file_message("no peer certificates :(");
+                        return Err(Error::new(
+                            ErrorKind::CertificateUnknown,
+                            "The server certificate is not present".into(),
+                        ));
+                    };
+                    file_message(&format!("pk: {:?}", public_key));
+
+                    let peer_version = self
+                        .cred_ssp_context
+                        .peer_version
+                        .expect("An encrypt public key client function cannot be fired without any incoming TSRequest");
+                    ts_request.pub_key_auth = Some(self.cred_ssp_context.encrypt_public_key(
+                        &public_key,
+                        EndpointType::Client,
+                        &self.nonce,
+                        peer_version,
+                    )?);
+
+                    ts_request.client_nonce = self.nonce.clone();
+
+                    if let Some(nego_tokens) = &ts_request.nego_tokens {
+                        if nego_tokens.is_empty() {
+                            ts_request.nego_tokens = None;
+                        }
+                    }
+
+                    self.state = CredSspState::AuthInfo;
+                    file_message("new state: CredSspState::AuthInfo");
+                }
+
                 let mut encoded_ts_request = Vec::new();
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
 
@@ -333,15 +493,76 @@ impl SspiImpl for SspiCredSsp {
 
                 file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
 
-                if result.status == SecurityStatus::Ok {
-                    self.state = CredSspState::AuthInfo;
-                    file_message("new state: CredSspState::AuthInfo");
-                }
-
                 SecurityStatus::ContinueNeeded
             }
             CredSspState::AuthInfo => {
-                // TODO
+                file_message("cur state: CredSspState::AuthInfo");
+
+                // decrypt and decode TsRequest from input buffers
+                let mut ts_request = if let Some(input) = &builder.input {
+                    let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                    file_message(&format!("encrypted ts request: {:?}", encrypted_ts_request));
+
+                    let raw_ts_request = self.decrypt_tls(&encrypted_ts_request.buffer)?;
+                    file_message(&format!("raw ts request: {:?}", encrypted_ts_request));
+
+                    let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
+                    file_message(&format!("decoded ts request: {:?}", ts_request));
+                    ts_request.check_error()?;
+
+                    ts_request
+                } else {
+                    TsRequest::default()
+                };
+
+                ts_request.nego_tokens = None;
+
+                let pub_key_auth = ts_request
+                    .pub_key_auth
+                    .take()
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Expected an encrypted public key".into()))?;
+                let peer_version = self
+                    .cred_ssp_context
+                    .peer_version
+                    .expect("An encrypt public key client function cannot be fired without any incoming TSRequest");
+
+                file_message("start  server's pub key auth verification");
+                self.cred_ssp_context.decrypt_public_key(
+                    &self.raw_peer_public_key()?,
+                    pub_key_auth.as_ref(),
+                    EndpointType::Client,
+                    &self.nonce,
+                    peer_version,
+                )?;
+                file_message("server's pub key auth is VALID :)");
+
+                // encrypt and send credentials
+                file_message(&format!("{:?}", builder.credentials_handle));
+                let credentials = builder
+                    .credentials_handle
+                    .take()
+                    .map(|c| c.as_ref())
+                    .flatten()
+                    .ok_or_else(|| {
+                        file_message("no credentials :(");
+                        Error::new(ErrorKind::InvalidParameter, "credentials handle is not present".into())
+                    })?;
+
+                ts_request.auth_info = Some(
+                    self.cred_ssp_context
+                        .encrypt_ts_credentials(credentials, CredSspMode::WithCredentials)?,
+                );
+
+                file_message(&format!("the final ts request: {:?}", ts_request));
+
+                // encode and encrypt TsRequest with credentials
+                let mut encoded_ts_request = Vec::new();
+                ts_request.encode_ts_request(&mut encoded_ts_request)?;
+
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                output_token.buffer = self.encrypt_tls(&encoded_ts_request)?;
+
+                file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
 
                 self.state = CredSspState::Final;
                 file_message("new state: CredSspState::Final");
@@ -349,6 +570,7 @@ impl SspiImpl for SspiCredSsp {
                 SecurityStatus::Ok
             }
             CredSspState::Final => {
+                file_message("cur state: CredSspState::Final");
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
                     "Error: Initialize security context function has been called after authorization".into(),

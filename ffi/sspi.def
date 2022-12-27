@@ -16,7 +16,7 @@ EXPORTS
     DeleteSecurityContext=Rust_DeleteSecurityContext
     ApplyControlToken=Rust_ApplyControlToken
     QueryContextAttributesA=Rust_QueryContextAttributesA
-    QueryContextAttributesW=Rust_QueryContextAttributesW
+    QueryContextAttributesW=SpQueryContextAttributesW
     ImpersonateSecurityContext=Rust_ImpersonateSecurityContext
     RevertSecurityContext=Rust_RevertSecurityContext
     MakeSignature=Rust_MakeSignature

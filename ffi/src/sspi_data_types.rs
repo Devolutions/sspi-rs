@@ -47,4 +47,24 @@ pub struct SecPkgContextSizes {
     pub cb_security_trailer: c_uint,
 }
 
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct SecPkgContextStreamSizes {
+    pub cb_header: c_ulong,
+    pub cb_trailer: c_ulong,
+    pub cb_maximum_message: c_ulong,
+    pub c_buffers: c_ulong,
+    pub cb_block_size: c_ulong,
+}
+
+#[cfg(not(target_os = "windows"))]
+#[repr(C)]
+pub struct SecPkgContextStreamSizes {
+    pub cb_header: c_uint,
+    pub cb_trailer: c_uint,
+    pub cb_maximum_message: c_uint,
+    pub c_buffers: c_uint,
+    pub cb_block_size: c_uint,
+}
+
 pub type SecGetKeyFn = extern "system" fn(*mut c_void, *mut c_void, u32, *mut *mut c_void, *mut i32);

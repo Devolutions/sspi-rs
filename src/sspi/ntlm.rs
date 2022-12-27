@@ -238,22 +238,21 @@ impl SspiImpl for Ntlm {
 
                 file_message("before read challenge");
                 client::read_challenge(self, input_token.buffer.as_slice())?;
-                file_message(&format!("between read challenge and write_auth: {:?}", builder.credentials_handle));
+                file_message(&format!(
+                    "between read challenge and write_auth: {:?}",
+                    builder.credentials_handle
+                ));
 
                 let creds_handle = builder
-                        .credentials_handle
-                        .as_ref()
-                        .expect("CredentialsHandle must be passed to the method")
-                        .as_ref()
-                        .expect("CredentialsHandle must be Some for the client's method");
+                    .credentials_handle
+                    .as_ref()
+                    .expect("CredentialsHandle must be passed to the method")
+                    .as_ref()
+                    .expect("CredentialsHandle must be Some for the client's method");
 
                 file_message(&format!("creds_handle: {:?}", creds_handle));
 
-                let status = client::write_authenticate(
-                    self,
-                    creds_handle,
-                    &mut output_token.buffer,
-                )?;
+                let status = client::write_authenticate(self, creds_handle, &mut output_token.buffer)?;
 
                 file_message("after wtite_auth");
 

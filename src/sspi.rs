@@ -16,6 +16,7 @@ use bitflags::bitflags;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
+use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 
@@ -96,7 +97,9 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
     Ok(vec![
         negotiate::PACKAGE_INFO.clone(),
         kerberos::PACKAGE_INFO.clone(),
+        pku2u::PACKAGE_INFO.clone(),
         ntlm::PACKAGE_INFO.clone(),
+        sspi_cred_ssp::PACKAGE_INFO.clone(),
     ])
 }
 
@@ -702,6 +705,14 @@ where
     /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
 
+    fn query_context_remote_cert(&mut self) -> Result<CertContext> {
+        Err(Error::new(ErrorKind::UnsupportedFunction, "query_remote_cert_context is not supported".into()))
+    }
+
+    fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
+        Err(Error::new(ErrorKind::UnsupportedFunction, "query_context_negotiation_package is not supported".into()))
+    }
+
     /// Changes the password for a Windows domain account.
     ///
     /// # Returns
@@ -954,6 +965,19 @@ bitflags! {
         const NO_TOKEN = 0x100_0000;
         const NO_ADDITIONAL_TOKEN = 0x200_0000;
     }
+}
+
+#[derive(Debug, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum CertEncodingType {
+    Pkcs7AsnEncoding = 65536,
+    X509AsnEncoding = 1,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CertContext {
+    pub encoding_type: CertEncodingType,
+    pub raw_cert: Vec<u8>,
+    pub cert: Certificate,
 }
 
 /// The data representation, such as byte ordering, on the target.

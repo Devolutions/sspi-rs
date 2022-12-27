@@ -29,8 +29,9 @@ use crate::sspi::{
     self, CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
     DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiEx,
+    ServerRequestFlags, Sspi, SspiEx, CertContext,
 };
+use crate::utils::file_message;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, ErrorKind, InitializeSecurityContextResult, Negotiate,
     NegotiateConfig, Pku2u,
@@ -337,6 +338,8 @@ impl CredSspClient {
                 );
 
                 self.state = CredSspState::Final;
+
+                file_message(&format!("the final ts request: {:?}", ts_request));
 
                 Ok(ClientState::FinalMessage(ts_request))
             }
@@ -681,6 +684,26 @@ impl Sspi for SspiContext {
         }
     }
 
+    fn query_context_remote_cert(&mut self) -> crate::Result<CertContext> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_remote_cert(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_remote_cert(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_remote_cert(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_remote_cert(),
+            SspiContext::CredSsp(credssp) => credssp.query_context_remote_cert(),
+        }
+    }
+
+    fn query_context_negotiation_package(&mut self) -> crate::Result<PackageInfo> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_negotiation_package(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_negotiation_package(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_negotiation_package(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_negotiation_package(),
+            SspiContext::CredSsp(credssp) => credssp.query_context_negotiation_package(),
+        }
+    }
+
     fn change_password(&mut self, change_password: ChangePassword) -> crate::Result<()> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
@@ -877,7 +900,10 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
+        file_message(&format!("encrypt_ts_credentials: {:?} {:?}", credentials, cred_ssp_mode));
+        let encoded_creds = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
+        file_message(&format!("encoded creds: {:?}", encoded_creds));
+        self.encrypt_message(&encoded_creds)
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
@@ -903,8 +929,6 @@ impl CredSspContext {
         output.append(&mut SecurityBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.buffer);
 
         self.send_seq_num += 1;
-
-        // there will be magic transform for the kerberos
 
         Ok(output)
     }
