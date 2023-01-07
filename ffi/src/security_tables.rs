@@ -9,7 +9,7 @@ use symbol_rename_macro::rename_symbol;
 
 use crate::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,
-    CompleteAuthTokenFn, DecryptMessage, DecryptMessageFn, DeleteSecurityContext, DeleteSecurityContextFn,
+    CompleteAuthTokenFn, SpDecryptMessage, DecryptMessageFn, DeleteSecurityContext, DeleteSecurityContextFn,
     EncryptMessage, EncryptMessageFn, ExportSecurityContext, ExportSecurityContextFn, FreeContextBuffer,
     FreeContextBufferFn, FreeCredentialsHandle, FreeCredentialsHandleFn, ImpersonateSecurityContext,
     ImpersonateSecurityContextFn, MakeSignature, MakeSignatureFn, QuerySecurityContextToken,
@@ -22,18 +22,18 @@ use crate::sec_handle::{
     ImportSecurityContextFnW, ImportSecurityContextW, InitializeSecurityContextA, InitializeSecurityContextFnA,
     InitializeSecurityContextFnW, QueryContextAttributesA, QueryContextAttributesExA, QueryContextAttributesExFnA,
     QueryContextAttributesExFnW, QueryContextAttributesExW, QueryContextAttributesFnA, QueryContextAttributesFnW,
-    SpQueryContextAttributesW, QueryCredentialsAttributesA, QueryCredentialsAttributesExA,
-    QueryCredentialsAttributesExFnA, QueryCredentialsAttributesExFnW, QueryCredentialsAttributesExW,
-    QueryCredentialsAttributesFnA, QueryCredentialsAttributesFnW, QueryCredentialsAttributesW, SetContextAttributesA,
-    SetContextAttributesFnA, SetContextAttributesFnW, SetContextAttributesW, SetCredentialsAttributesA,
-    SetCredentialsAttributesFnA, SetCredentialsAttributesFnW, SetCredentialsAttributesW, SpAcquireCredentialsHandleW,
-    SpInitializeSecurityContextW,
+    QueryCredentialsAttributesA, QueryCredentialsAttributesExA, QueryCredentialsAttributesExFnA,
+    QueryCredentialsAttributesExFnW, QueryCredentialsAttributesExW, QueryCredentialsAttributesFnA,
+    QueryCredentialsAttributesFnW, QueryCredentialsAttributesW, SetContextAttributesA, SetContextAttributesFnA,
+    SetContextAttributesFnW, SetContextAttributesW, SetCredentialsAttributesA, SetCredentialsAttributesFnA,
+    SetCredentialsAttributesFnW, SetCredentialsAttributesW, SpAcquireCredentialsHandleW, SpInitializeSecurityContextW,
+    SpQueryContextAttributesW,
 };
 use crate::sec_pkg_info::{
     EnumerateSecurityPackagesA, EnumerateSecurityPackagesFnA, EnumerateSecurityPackagesFnW, EnumerateSecurityPackagesW,
     QuerySecurityPackageInfoA, QuerySecurityPackageInfoFnA, QuerySecurityPackageInfoFnW, QuerySecurityPackageInfoW,
 };
-use crate::utils::into_raw_ptr;
+use crate::utils::{into_raw_ptr, file_message};
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {
@@ -55,8 +55,8 @@ pub struct SecurityFunctionTableA {
     pub VerifySignature: VerifySignatureFn,
     pub FreeContextBuffer: FreeContextBufferFn,
     pub QuerySecurityPackageInfoA: QuerySecurityPackageInfoFnA,
-    pub Reserved3: *const c_void,
-    pub Reserved4: *const c_void,
+    pub Reserved3: EncryptMessageFn,
+    pub Reserved4: DecryptMessageFn,
     pub ExportSecurityContext: ExportSecurityContextFn,
     pub ImportSecurityContextA: ImportSecurityContextFnA,
     pub AddCredentialsA: AddCredentialsFnA,
@@ -94,8 +94,8 @@ pub struct SecurityFunctionTableW {
     pub VerifySignature: VerifySignatureFn,
     pub FreeContextBuffer: FreeContextBufferFn,
     pub QuerySecurityPackageInfoW: QuerySecurityPackageInfoFnW,
-    pub Reserved3: *const c_void,
-    pub Reserved4: *const c_void,
+    pub Reserved3: EncryptMessageFn,
+    pub Reserved4: DecryptMessageFn,
     pub ExportSecurityContext: ExportSecurityContextFn,
     pub ImportSecurityContextW: ImportSecurityContextFnW,
     pub AddCredentialsW: AddCredentialsFnW,
@@ -113,11 +113,12 @@ pub struct SecurityFunctionTableW {
 
 pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
-    crate::debug::setup_logger();
+    // crate::debug::setup_logger();
+    file_message("ffi: InitSecurityInterfaceA");
 
     into_raw_ptr(SecurityFunctionTableA {
         dwVersion: KERBEROS_VERSION as c_ulong,
@@ -138,15 +139,15 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
         VerifySignature,
         FreeContextBuffer,
         QuerySecurityPackageInfoA,
-        Reserved3: null(),
-        Reserved4: null(),
+        Reserved3: EncryptMessage,
+        Reserved4: SpDecryptMessage,
         ExportSecurityContext,
         ImportSecurityContextA,
         AddCredentialsA,
         Reserved8: null(),
         QuerySecurityContextToken,
         EncryptMessage,
-        DecryptMessage,
+        DecryptMessage: SpDecryptMessage,
         SetContextAttributesA,
         SetCredentialsAttributesA,
         ChangeAccountPasswordA,
@@ -156,11 +157,12 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     })
 }
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
-    crate::debug::setup_logger();
+    // crate::debug::setup_logger();
+    file_message("ffi: InitSecurityInterfaceW");
 
     into_raw_ptr(SecurityFunctionTableW {
         dwVersion: KERBEROS_VERSION as c_ulong,
@@ -181,15 +183,15 @@ pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
         VerifySignature,
         FreeContextBuffer,
         QuerySecurityPackageInfoW,
-        Reserved3: null(),
-        Reserved4: null(),
+        Reserved3: EncryptMessage,
+        Reserved4: SpDecryptMessage,
         ExportSecurityContext,
         ImportSecurityContextW,
         AddCredentialsW,
         Reserved8: null(),
         QuerySecurityContextToken,
         EncryptMessage,
-        DecryptMessage,
+        DecryptMessage: SpDecryptMessage,
         SetContextAttributesW,
         SetCredentialsAttributesW,
         ChangeAccountPasswordW,

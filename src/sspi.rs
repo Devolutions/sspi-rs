@@ -706,11 +706,24 @@ where
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
 
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
-        Err(Error::new(ErrorKind::UnsupportedFunction, "query_remote_cert_context is not supported".into()))
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_remote_cert_context is not supported".into(),
+        ))
     }
 
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
-        Err(Error::new(ErrorKind::UnsupportedFunction, "query_context_negotiation_package is not supported".into()))
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_negotiation_package is not supported".into(),
+        ))
+    }
+
+    fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_connection_info is not supported".into(),
+        ))
     }
 
     /// Changes the password for a Windows domain account.
@@ -741,6 +754,62 @@ where
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
     fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
+}
+
+bitflags! {
+    pub struct ConnectionProtocol: u32 {
+        const SP_PROT_TLS1_CLIENT = 0x80;
+        const SP_PROT_TLS1_SERVER = 0x40;
+        const SP_PROT_SSL3_CLIENT = 0x20;
+        const SP_PROT_SSL3_SERVER = 0x10;
+        const SP_PROT_TLS1_1_CLIENT = 0x200;
+        const SP_PROT_TLS1_1_SERVER = 0x100;
+        const SP_PROT_TLS1_2_CLIENT = 0x800;
+        const SP_PROT_TLS1_2_SERVER = 0x400;
+        const SP_PROT_TLS1_3_CLIENT = 0x00002000;
+        const SP_PROT_TLS1_3_SERVER = 0x00001000;
+        const SP_PROT_PCT1_CLIENT = 0x2;
+        const SP_PROT_PCT1_SERVER = 0x1;
+        const SP_PROT_SSL2_CLIENT = 0x8;
+        const SP_PROT_SSL2_SERVER = 0x4;
+    }
+}
+
+bitflags! {
+    pub struct ConnectionCipher: u32 {
+        const CALG_3DES = 26115;
+        const CALG_AES_128 = 26126;
+        const CALG_AES_256 = 26128;
+        const CALG_DES = 26113;
+        const CALG_RC2 = 26114;
+        const CALG_RC4 = 26625;
+        const NO_ENCRYPTION = 0;
+    }
+}
+
+bitflags! {
+    pub struct ConnectionHash: u32 {
+        const CALG_MD5 = 32771;
+        const CALG_SHA = 32772;
+    }
+}
+
+bitflags! {
+    pub struct ConnectionKeyExchange: u32 {
+        const CALG_RSA_KEYX = 41984;
+        const CALG_DH_EPHEM = 43522;
+    }
+}
+
+#[derive(Debug)]
+pub struct ConnectionInfo {
+    pub protocol: ConnectionProtocol,
+    pub cipher: ConnectionCipher,
+    pub cipher_strength: u32,
+    pub hash: ConnectionHash,
+    pub hash_strength: u32,
+    pub key_exchange: ConnectionKeyExchange,
+    pub exchange_strength: u32,
 }
 
 pub trait SspiEx

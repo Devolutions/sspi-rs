@@ -3,7 +3,7 @@ use std::mem::size_of;
 use std::ptr::null;
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_ulonglong, c_void, c_char};
+use libc::{c_char, c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::sspi_cred_ssp::SspiCredSsp;
@@ -16,8 +16,8 @@ use sspi::{
     Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
 };
 use winapi::um::wincrypt::{
-    CertAddEncodedCertificateToStore, CertOpenStore, CERT_STORE_ADD_REPLACE_EXISTING, CERT_STORE_CREATE_NEW_FLAG,
-    CERT_STORE_PROV_MEMORY, CERT_CONTEXT,
+    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
+    CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
 };
 
 cfg_if::cfg_if! {
@@ -38,11 +38,12 @@ use crate::sec_winnt_auth_identity::{
     SEC_WINNT_AUTH_IDENTITY_VERSION,
 };
 use crate::sspi_data_types::{
-    LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextSizes, SecPkgContextStreamSizes,
-    SecWChar, SecurityStatus,
+    CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
+    SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use crate::utils::{
-    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle, vec_into_raw_ptr,
+    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes,
+    transform_credentials_handle, vec_into_raw_ptr,
 };
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -56,6 +57,8 @@ pub const SECPKG_ATTR_REMOTE_CERT_CONTEXT: u32 = 0x53;
 pub const SECPKG_ATTR_NEGOTIATION_PACKAGE: u32 = 0x80000081;
 pub const SECPKG_ATTR_PACKAGE_INFO: u32 = 10;
 pub const SECPKG_ATTR_SERVER_AUTH_FLAGS: u32 = 0x80000083;
+pub const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x80000084;
+pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
 
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
 
@@ -629,7 +632,7 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
     file_message("ffi: query context attr w");
-    file_message(&format!("params: {:?} {} {:?}", ph_context, ul_attribute, p_buffer));
+    file_message(&format!("params: {:?} {} {:x} {:?}", ph_context, ul_attribute, ul_attribute, p_buffer));
     catch_panic! {
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
@@ -679,9 +682,10 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
             }
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
                 file_message("start remote context info");
+                // return ErrorKind::UnsupportedFunction.to_u32().unwrap();
 
                 let cert_context = try_execute!(sspi_context.query_context_remote_cert());
-                file_message(&format!("cert context: {:?}", cert_context));
+                // file_message(&format!("cert context: {:?}", cert_context));
 
                 let store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null());
 
@@ -716,9 +720,7 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
                 file_message("SECPKG_ATTR_NEGOTIATION_PACKAGE");
 
                 let package_info = try_execute!(sspi_context.query_context_negotiation_package());
-                file_message(&format!("pi: {:?}", package_info));
-
-                // file_message(&format!("p_buffer memory: {:?}", from_raw_parts(p_buffer as *const _, 10)));
+                // file_message(&format!("pi: {:?}", package_info));
 
                 let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
 
@@ -731,7 +733,7 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
 
                 // let mut comment = package_info.comment.as_bytes().to_vec();
                 // comment.push(0);
-                
+
                 // (*nego_package_info).f_capabilities = package_info.capabilities.bits() as c_ulong;
                 // (*nego_package_info).w_version = 3;
                 // (*nego_package_info).w_rpc_id = package_info.rpc_id;
@@ -742,14 +744,80 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
                 file_message("finish SECPKG_ATTR_NEGOTIATION_PACKAGE");
 
                 0
+                // ErrorKind::UnsupportedFunction.to_u32().unwrap()
             }
             SECPKG_ATTR_SERVER_AUTH_FLAGS => {
                 file_message("start SECPKG_ATTR_SERVER_AUTH_FLAGS");
+                file_message("not expected...");
 
-                //
+                // let flags = SecPkgContextFlags {
+                //     flags: 0,
+                // };
+
+                // let sec_context_flags = p_buffer.cast::<SecPkgContextFlags>();
+
+                // (*sec_context_flags).flags = 0;
+
+                // let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
+
+                // *sec_context_flags = into_raw_ptr(flags);
 
                 file_message("finish SECPKG_ATTR_SERVER_AUTH_FLAGS");
-                0
+
+                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+            }
+            SECPKG_ATTR_CONNECTION_INFO => {
+                file_message("start SECPKG_ATTR_CONNECTION_INFO");
+
+                let connection_info = try_execute!(sspi_context.query_context_connection_info());
+                file_message(&format!("connection info: {:?}", connection_info));
+
+                // let sec_pkg_context_connection_info = p_buffer.cast::<*mut SecPkgContextConnectionInfo>();
+
+                // let s = SecPkgContextConnectionInfo {
+                //     dw_protocol: connection_info.protocol.bits(),
+                //     ai_cipher: connection_info.cipher.bits(),
+                //     dw_cipher_strength: connection_info.cipher_strength,
+                //     ai_hash: connection_info.hash.bits(),
+                //     dw_hash_strength: connection_info.hash_strength,
+                //     ai_exch: connection_info.key_exchange.bits(),
+                //     dw_exch_strength: connection_info.exchange_strength,
+                // };
+
+                // *sec_pkg_context_connection_info = into_raw_ptr(s);
+
+                // let sec_pkg_context_connection_info = p_buffer.cast::<SecPkgContextConnectionInfo>();
+
+                // (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.bits();
+                // (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.bits();
+                // (*sec_pkg_context_connection_info).dw_cipher_strength = connection_info.cipher_strength;
+                // (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.bits();
+                // // (*sec_pkg_context_connection_info).dw_hash_strength = connection_info.hash_strength;
+                // (*sec_pkg_context_connection_info).dw_hash_strength = 0;
+                // (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.bits();
+                // (*sec_pkg_context_connection_info).dw_exch_strength = connection_info.exchange_strength;
+
+                // file_message(&format!("{:x?}", from_raw_parts(p_buffer as *const u8, 32)));
+
+                file_message("finish SECPKG_ATTR_CONNECTION_INFO");
+
+                // 0
+                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+            }
+            SECPKG_ATTR_CERT_TRUST_STATUS => {
+                file_message("start SECPKG_ATTR_CERT_TRUST_STATUS");
+
+                // let sspi_cert_trust_status = try_execute!(sspi_context.query_context_cert_trust_status());
+                // let sec_pkg_context_connection_info = p_buffer.cast::<*mut SecPkgContextConnectionInfo>();
+
+                // let cert_trust_status = p_buffer.cast::<CertTrustStatus>();
+                // (*cert_trust_status).dw_error_status = 0;
+                // (*cert_trust_status).dw_info_status = 0;
+
+                file_message("finish SECPKG_ATTR_CERT_TRUST_STATUS");
+
+                // 0
+                ErrorKind::UnsupportedFunction.to_u32().unwrap()
             }
             SECPKG_ATTR_PACKAGE_INFO => {
                 file_message("SECPKG_ATTR_PACKAGE_INFO");
@@ -757,20 +825,26 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
                 let package_info = try_execute!(sspi_context.query_context_package_info());
                 file_message(&format!("pi: {:?}", package_info));
 
-                let nego_package_info = p_buffer.cast::<SecPkgInfoA>();
+                // let nego_package_info = p_buffer.cast::<SecPkgInfoA>();
 
-                let mut name = package_info.name.to_string().as_bytes().to_vec();
-                name.push(0);
+                // let mut name = package_info.name.to_string().as_bytes().to_vec();
+                // name.push(0);
 
-                let mut comment = package_info.comment.as_bytes().to_vec();
-                comment.push(0);
-                
-                (*nego_package_info).f_capabilities = package_info.capabilities.bits() as c_ulong;
-                (*nego_package_info).w_version = 3;
-                (*nego_package_info).w_rpc_id = package_info.rpc_id;
-                (*nego_package_info).cb_max_token = package_info.max_token_len;
-                (*nego_package_info).name = vec_into_raw_ptr(name) as *mut c_char;
-                (*nego_package_info).comment = vec_into_raw_ptr(comment) as *mut c_char;
+                // let mut comment = package_info.comment.as_bytes().to_vec();
+                // comment.push(0);
+
+                // (*nego_package_info).f_capabilities = package_info.capabilities.bits() as c_ulong;
+                // (*nego_package_info).w_version = 3;
+                // (*nego_package_info).w_rpc_id = package_info.rpc_id;
+                // (*nego_package_info).cb_max_token = package_info.max_token_len;
+                // (*nego_package_info).name = vec_into_raw_ptr(name) as *mut c_char;
+                // (*nego_package_info).comment = vec_into_raw_ptr(comment) as *mut c_char;
+
+                let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
+
+                let w_package_info = SecPkgInfoW::from(package_info);
+
+                *nego_package_info = into_raw_ptr(w_package_info);
 
                 file_message("finish SECPKG_ATTR_PACKAGE_INFO");
 

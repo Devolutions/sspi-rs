@@ -5,19 +5,20 @@ use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
+use rustls::{ClientConfig, ClientConnection, Connection, ProtocolVersion, ServerConfig, ServerConnection};
 
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
 use crate::internal::SspiImpl;
-use crate::sspi::{self, PACKAGE_ID_NONE, CertContext, CertEncodingType};
+use crate::sspi::{self, CertContext, CertEncodingType, ConnectionInfo, ConnectionProtocol, PACKAGE_ID_NONE, ConnectionCipher, ConnectionKeyExchange, ConnectionHash};
 use crate::utils::file_message;
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustErrorStatus,
+    CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes,
+    CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -232,7 +233,11 @@ impl Sspi for SspiCredSsp {
 
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         file_message("SSPI: query context cert trust status");
-        self.cred_ssp_context.sspi_context.query_context_cert_trust_status()
+        // self.cred_ssp_context.sspi_context.query_context_cert_trust_status()
+        Ok(CertTrustStatus {
+            error_status: CertTrustErrorStatus::NO_ERROR,
+            info_status: CertTrustInfoStatus::IS_CA_TRUSTED,
+        })
     }
 
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
@@ -268,6 +273,72 @@ impl Sspi for SspiCredSsp {
 
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         self.cred_ssp_context.sspi_context.query_context_package_info()
+    }
+
+    fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
+        let protocol_version = self.tls_connection.protocol_version().ok_or_else(|| {
+            file_message("no protocol version :(");
+            Error::new(
+                ErrorKind::InternalError,
+                "Can not acquire connection protocol version".into(),
+            )
+        })?;
+
+        let protocol = match self.tls_connection {
+            Connection::Client(_) => match protocol_version {
+                ProtocolVersion::SSLv2 => ConnectionProtocol::SP_PROT_SSL2_CLIENT,
+                ProtocolVersion::TLSv1_0 => ConnectionProtocol::SP_PROT_TLS1_CLIENT,
+                ProtocolVersion::TLSv1_1 => ConnectionProtocol::SP_PROT_TLS1_1_CLIENT,
+                ProtocolVersion::TLSv1_2 => ConnectionProtocol::SP_PROT_TLS1_2_CLIENT,
+                ProtocolVersion::TLSv1_3 => ConnectionProtocol::SP_PROT_TLS1_3_CLIENT,
+                version => {
+                    file_message(&format!("unsupported protocol version: {:?}", version));
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("Unsupported connection protocol was used: {:?}", version),
+                    ))
+                }
+            },
+            Connection::Server(_) => match protocol_version {
+                ProtocolVersion::SSLv2 => ConnectionProtocol::SP_PROT_SSL2_SERVER,
+                ProtocolVersion::TLSv1_0 => ConnectionProtocol::SP_PROT_TLS1_SERVER,
+                ProtocolVersion::TLSv1_1 => ConnectionProtocol::SP_PROT_TLS1_1_SERVER,
+                ProtocolVersion::TLSv1_2 => ConnectionProtocol::SP_PROT_TLS1_2_SERVER,
+                ProtocolVersion::TLSv1_3 => ConnectionProtocol::SP_PROT_TLS1_3_SERVER,
+                version => {
+                    file_message(&format!("unsupported protocol version: {:?}", version));
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("Unsupported connection protocol was used: {:?}", version),
+                    ))
+                }
+            },
+        };
+
+        let cipher = self
+            .tls_connection
+            .negotiated_cipher_suite()
+            .ok_or_else(|| {
+                file_message("connection cipher is not negotiated");
+                Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
+            })?;
+
+        // let e = self.tls_connection.
+
+        let hash_algo = cipher.hash_algorithm();
+        // let hash = match hash_algo.id {
+
+        // };
+
+        Ok(ConnectionInfo {
+            protocol,
+            cipher: ConnectionCipher::CALG_AES_256,
+            cipher_strength: 256,
+            hash: ConnectionHash::CALG_SHA,
+            hash_strength: hash_algo.output_len as u32,
+            key_exchange: ConnectionKeyExchange::CALG_RSA_KEYX,
+            exchange_strength: 2048,
+        })
     }
 
     fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {

@@ -26,10 +26,10 @@ use crate::sspi::kerberos::Kerberos;
 use crate::sspi::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
 use crate::sspi::pku2u::Pku2uConfig;
 use crate::sspi::{
-    self, CertTrustStatus, ClientRequestFlags, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    self, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
+    DataRepresentation, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiEx, CertContext,
+    ServerRequestFlags, Sspi, SspiEx,
 };
 use crate::utils::file_message;
 use crate::{
@@ -704,6 +704,16 @@ impl Sspi for SspiContext {
         }
     }
 
+    fn query_context_connection_info(&mut self) -> crate::Result<ConnectionInfo> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_connection_info(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_connection_info(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_connection_info(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_connection_info(),
+            SspiContext::CredSsp(credssp) => credssp.query_context_connection_info(),
+        }
+    }
+
     fn change_password(&mut self, change_password: ChangePassword) -> crate::Result<()> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
@@ -900,7 +910,10 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        file_message(&format!("encrypt_ts_credentials: {:?} {:?}", credentials, cred_ssp_mode));
+        file_message(&format!(
+            "encrypt_ts_credentials: {:?} {:?}",
+            credentials, cred_ssp_mode
+        ));
         let encoded_creds = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
         file_message(&format!("encoded creds: {:?}", encoded_creds));
         self.encrypt_message(&encoded_creds)

@@ -304,10 +304,10 @@ pub unsafe extern "system" fn EncryptMessage(
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
 #[no_mangle]
-pub unsafe extern "system" fn DecryptMessage(
+pub unsafe extern "system" fn SpDecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,

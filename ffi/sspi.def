@@ -1,7 +1,7 @@
 LIBRARY			"sspi"
 EXPORTS
-    InitSecurityInterfaceA=Rust_InitSecurityInterfaceA
-    InitSecurityInterfaceW=Rust_InitSecurityInterfaceW
+    InitSecurityInterfaceA=InitSecurityInterfaceA
+    InitSecurityInterfaceW=InitSecurityInterfaceW
     EnumerateSecurityPackagesA=Rust_EnumerateSecurityPackagesA
     EnumerateSecurityPackagesW=Rust_EnumerateSecurityPackagesW
     QueryCredentialsAttributesA=Rust_QueryCredentialsAttributesA
@@ -31,7 +31,7 @@ EXPORTS
     AddCredentialsW=Rust_AddCredentialsW
     QuerySecurityContextToken=Rust_QuerySecurityContextToken
     EncryptMessage=Rust_EncryptMessage
-    DecryptMessage=Rust_DecryptMessage
+    DecryptMessage=SpDecryptMessage
     SetContextAttributesA=Rust_SetContextAttributesA
     SetContextAttributesW=Rust_SetContextAttributesW
     SetCredentialsAttributesA=Rust_SetCredentialsAttributesA

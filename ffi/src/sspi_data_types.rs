@@ -1,6 +1,9 @@
+use std::os::raw::c_uint;
+
 #[cfg(not(target_os = "windows"))]
 use libc::c_uint;
 use libc::{c_char, c_long, c_ulong, c_ushort, c_void};
+use sspi::CertTrustStatus as SspiCertTrustStatus;
 
 pub type SecChar = c_char;
 
@@ -68,3 +71,66 @@ pub struct SecPkgContextStreamSizes {
 }
 
 pub type SecGetKeyFn = extern "system" fn(*mut c_void, *mut c_void, u32, *mut *mut c_void, *mut i32);
+
+/// [_SecPkgContext_Flags](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_flags)
+///
+/// ```not_rust
+/// typedef struct _SecPkgContext_Flags {
+///   unsigned long Flags;
+/// } SecPkgContext_Flags, *PSecPkgContext_Flags;
+/// ```
+#[repr(C)]
+pub struct SecPkgContextFlags {
+    pub flags: c_ulong,
+}
+
+/// [ALG_ID](https://learn.microsoft.com/en-us/windows/win32/seccrypto/alg-id)
+/// typedef unsigned int ALG_ID;
+pub type AlgId = c_uint;
+
+/// [_SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+///
+/// ```not_rust
+/// typedef struct _SecPkgContext_ConnectionInfo {
+///   DWORD  dwProtocol;
+///   ALG_ID aiCipher;
+///   DWORD  dwCipherStrength;
+///   ALG_ID aiHash;
+///   DWORD  dwHashStrength;
+///   ALG_ID aiExch;
+///   DWORD  dwExchStrength;
+/// } SecPkgContext_ConnectionInfo, *PSecPkgContext_ConnectionInfo;
+/// ```
+#[repr(C)]
+pub struct SecPkgContextConnectionInfo {
+    pub dw_protocol: u32,
+    pub ai_cipher: AlgId,
+    pub dw_cipher_strength: u32,
+    pub ai_hash: AlgId,
+    pub dw_hash_strength: u32,
+    pub ai_exch: AlgId,
+    pub dw_exch_strength: u32,
+}
+
+/// [CERT_TRUST_STATUS](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_trust_status)
+///
+/// ```not_rust
+/// typedef struct _CERT_TRUST_STATUS {
+///   DWORD dwErrorStatus;
+///   DWORD dwInfoStatus;
+/// } CERT_TRUST_STATUS, *PCERT_TRUST_STATUS;
+/// ```
+#[repr(C)]
+pub struct CertTrustStatus {
+    pub dw_error_status: u32,
+    pub dw_info_status: u32,
+}
+
+impl From<SspiCertTrustStatus> for CertTrustStatus {
+    fn from(cert_trust_status: SspiCertTrustStatus) -> Self {
+        Self {
+            dw_error_status: cert_trust_status.error_status.bits(),
+            dw_info_status: cert_trust_status.info_status.bits(),
+        }
+    }
+}
