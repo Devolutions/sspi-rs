@@ -31,10 +31,9 @@ use crate::sspi::{
     FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
     ServerRequestFlags, Sspi, SspiEx,
 };
-use crate::utils::file_message;
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, ErrorKind, InitializeSecurityContextResult, Negotiate,
-    NegotiateConfig, Pku2u,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, Error, ErrorKind, InitializeSecurityContextResult,
+    Negotiate, NegotiateConfig, Pku2u,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -339,13 +338,12 @@ impl CredSspClient {
 
                 self.state = CredSspState::Final;
 
-                file_message(&format!("the final ts request: {:?}", ts_request));
-
                 Ok(ClientState::FinalMessage(ts_request))
             }
-            CredSspState::Final => {
-                panic!("CredSSP client's 'process' method must not be fired after the 'Finished' state")
-            }
+            CredSspState::Final => Err(Error::new(
+                ErrorKind::InternalError,
+                "CredSSP client's 'process' method must not be fired after the 'Finished' state".into(),
+            )),
         }
     }
 }
@@ -546,9 +544,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
-            CredSspState::Final => {
-                panic!("CredSSP server's 'process' method must not be fired after the 'Finished' state")
-            }
+            CredSspState::Final => Err(ServerError {
+                ts_request,
+                error: Error::new(
+                    ErrorKind::InternalError,
+                    "CredSSP server's 'process' method must not be fired after the 'Finished' state".into(),
+                ),
+            }),
         }
     }
 }
@@ -838,10 +840,7 @@ impl CredSspContext {
                     integer_increment_le(&mut public_key);
                 }
             }
-            SspiContext::Kerberos(_) => {}
-            SspiContext::Negotiate(_) => {}
-            SspiContext::Pku2u(_) => {}
-            SspiContext::CredSsp(_) => todo!(),
+            _ => {}
         };
 
         self.encrypt_message(&public_key)
@@ -910,13 +909,7 @@ impl CredSspContext {
         credentials: &AuthIdentityBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> sspi::Result<Vec<u8>> {
-        file_message(&format!(
-            "encrypt_ts_credentials: {:?} {:?}",
-            credentials, cred_ssp_mode
-        ));
-        let encoded_creds = ts_request::write_ts_credentials(credentials, cred_ssp_mode)?;
-        file_message(&format!("encoded creds: {:?}", encoded_creds));
-        self.encrypt_message(&encoded_creds)
+        self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> sspi::Result<AuthIdentityBuffers> {
