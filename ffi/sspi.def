@@ -30,7 +30,7 @@ EXPORTS
     AddCredentialsA=Rust_AddCredentialsA
     AddCredentialsW=Rust_AddCredentialsW
     QuerySecurityContextToken=Rust_QuerySecurityContextToken
-    EncryptMessage=Rust_EncryptMessage
+    EncryptMessage=SpEncryptMessage
     DecryptMessage=SpDecryptMessage
     SetContextAttributesA=Rust_SetContextAttributesA
     SetContextAttributesW=Rust_SetContextAttributesW

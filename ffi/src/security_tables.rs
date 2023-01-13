@@ -9,11 +9,11 @@ use symbol_rename_macro::rename_symbol;
 
 use crate::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,
-    CompleteAuthTokenFn, SpDecryptMessage, DecryptMessageFn, DeleteSecurityContext, DeleteSecurityContextFn,
-    EncryptMessage, EncryptMessageFn, ExportSecurityContext, ExportSecurityContextFn, FreeContextBuffer,
-    FreeContextBufferFn, FreeCredentialsHandle, FreeCredentialsHandleFn, ImpersonateSecurityContext,
-    ImpersonateSecurityContextFn, MakeSignature, MakeSignatureFn, QuerySecurityContextToken,
-    QuerySecurityContextTokenFn, RevertSecurityContext, RevertSecurityContextFn, VerifySignature, VerifySignatureFn,
+    CompleteAuthTokenFn, DecryptMessageFn, DeleteSecurityContext, DeleteSecurityContextFn, EncryptMessageFn,
+    ExportSecurityContext, ExportSecurityContextFn, FreeContextBuffer, FreeContextBufferFn, FreeCredentialsHandle,
+    FreeCredentialsHandleFn, ImpersonateSecurityContext, ImpersonateSecurityContextFn, MakeSignature, MakeSignatureFn,
+    QuerySecurityContextToken, QuerySecurityContextTokenFn, RevertSecurityContext, RevertSecurityContextFn,
+    SpDecryptMessage, SpEncryptMessage, VerifySignature, VerifySignatureFn,
 };
 use crate::sec_handle::{
     AcquireCredentialsHandleA, AcquireCredentialsHandleFnA, AcquireCredentialsHandleFnW, AddCredentialsA,
@@ -33,7 +33,7 @@ use crate::sec_pkg_info::{
     EnumerateSecurityPackagesA, EnumerateSecurityPackagesFnA, EnumerateSecurityPackagesFnW, EnumerateSecurityPackagesW,
     QuerySecurityPackageInfoA, QuerySecurityPackageInfoFnA, QuerySecurityPackageInfoFnW, QuerySecurityPackageInfoW,
 };
-use crate::utils::{into_raw_ptr, file_message};
+use crate::utils::{file_message, into_raw_ptr};
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {
@@ -139,14 +139,14 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
         VerifySignature,
         FreeContextBuffer,
         QuerySecurityPackageInfoA,
-        Reserved3: EncryptMessage,
+        Reserved3: SpEncryptMessage,
         Reserved4: SpDecryptMessage,
         ExportSecurityContext,
         ImportSecurityContextA,
         AddCredentialsA,
         Reserved8: null(),
         QuerySecurityContextToken,
-        EncryptMessage,
+        EncryptMessage: SpEncryptMessage,
         DecryptMessage: SpDecryptMessage,
         SetContextAttributesA,
         SetCredentialsAttributesA,
@@ -183,14 +183,14 @@ pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
         VerifySignature,
         FreeContextBuffer,
         QuerySecurityPackageInfoW,
-        Reserved3: EncryptMessage,
+        Reserved3: SpEncryptMessage,
         Reserved4: SpDecryptMessage,
         ExportSecurityContext,
         ImportSecurityContextW,
         AddCredentialsW,
         Reserved8: null(),
         QuerySecurityContextToken,
-        EncryptMessage,
+        EncryptMessage: SpEncryptMessage,
         DecryptMessage: SpDecryptMessage,
         SetContextAttributesW,
         SetCredentialsAttributesW,

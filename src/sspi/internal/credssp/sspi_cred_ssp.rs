@@ -11,7 +11,10 @@ use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
 use crate::internal::SspiImpl;
-use crate::sspi::{self, CertContext, CertEncodingType, ConnectionInfo, ConnectionProtocol, PACKAGE_ID_NONE, ConnectionCipher, ConnectionKeyExchange, ConnectionHash};
+use crate::sspi::{
+    self, CertContext, CertEncodingType, ConnectionCipher, ConnectionHash, ConnectionInfo, ConnectionKeyExchange,
+    ConnectionProtocol, PACKAGE_ID_NONE,
+};
 use crate::utils::file_message;
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustErrorStatus,
@@ -199,21 +202,114 @@ impl Sspi for SspiCredSsp {
 
     fn encrypt_message(
         &mut self,
-        flags: EncryptionFlags,
+        _flags: EncryptionFlags,
         message: &mut [SecurityBuffer],
-        sequence_number: u32,
+        _sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        file_message("SSPI: encrypt");
-        self.cred_ssp_context
-            .sspi_context
-            .encrypt_message(flags, message, sequence_number)
+        file_message(&format!("SSPI: encrypt_message: {:?}", message));
+
+        for sb in message.iter() {
+            file_message(&format!("{:?} {}", sb.buffer_type, sb.buffer.len()));
+        }
+
+        let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let plain_len = plain_message.buffer.len();
+
+        let encrypted_message = self.encrypt_tls(&plain_message.buffer)?;
+
+        file_message(&format!(
+            "lens: plain({}), encrypted({})",
+            plain_len,
+            encrypted_message.len()
+        ));
+
+        // plain_message.buffer = encrypted_message;
+
+        let stream_header_data = encrypted_message[0..5].to_vec();
+        let data = encrypted_message[5..(5 + plain_len)].to_vec();
+        let stream_trailer_data = encrypted_message[(5 + plain_len)..].to_vec();
+        file_message(&format!(
+            "h({}), d({}), t({})",
+            stream_header_data.len(),
+            data.len(),
+            stream_trailer_data.len()
+        ));
+
+        if let Ok(stream_header) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader) {
+            file_message(&format!("old header len: {}", stream_header.buffer.len()));
+            stream_header.buffer = stream_header_data;
+        } else {
+            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
+            empty_buffer.buffer_type = SecurityBufferType::StreamHeader;
+            empty_buffer.buffer = stream_header_data;
+        }
+
+        let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        plain_message.buffer = data;
+
+        if let Ok(trailer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer) {
+            file_message(&format!("old trailer len: {}", trailer.buffer.len()));
+            trailer.buffer = stream_trailer_data;
+        } else {
+            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
+            empty_buffer.buffer_type = SecurityBufferType::StreamTrailer;
+            empty_buffer.buffer = stream_trailer_data;
+        }
+
+        file_message(&format!("finish encrypt_message: {:?}", message));
+
+        Ok(SecurityStatus::Ok)
     }
 
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags> {
-        file_message("SSPI: decrypt");
-        self.cred_ssp_context
-            .sspi_context
-            .decrypt_message(message, sequence_number)
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+        file_message(&format!("SSPI: decrypt: {:?}", message));
+
+        let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+
+        // 5 - TLS message header
+        // 11 - MAC + padding
+        if encrypted_message.buffer.len() < 5 + 11 {
+            return Err(Error::new(
+                ErrorKind::DecryptFailure,
+                "Input message is too short".into(),
+            ));
+        }
+
+        let stream_header_data = encrypted_message.buffer[0..5].to_vec();
+
+        let decrypted_message = self.decrypt_tls(&encrypted_message.buffer)?;
+        file_message(&format!("decrypted data: {:?}", decrypted_message));
+
+        let stream_trailer_data = encrypted_message.buffer[(5 + decrypted_message.len())..].to_vec();
+
+        // encrypted_message.buffer = decrypted_message;
+
+        encrypted_message.buffer = stream_header_data;
+        encrypted_message.buffer_type = SecurityBufferType::StreamHeader;
+
+        let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
+        empty_buffer.buffer_type = SecurityBufferType::Data;
+        empty_buffer.buffer = decrypted_message;
+
+        // if let Ok(stream_header) = SecurityBuffer::find_buffer_mut(message,  SecurityBufferType::StreamHeader) {
+        //     stream_header.buffer = stream_header_data;
+        // } else {
+        //     let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
+        //     empty_buffer.buffer_type = SecurityBufferType::StreamHeader;
+        //     empty_buffer.buffer = stream_header_data;
+        // }
+
+        if let Ok(trailer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer) {
+            trailer.buffer = stream_trailer_data;
+        } else {
+            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
+            empty_buffer.buffer_type = SecurityBufferType::StreamTrailer;
+            empty_buffer.buffer = stream_trailer_data;
+        }
+
+        file_message("finish decrypt_message");
+
+        Ok(DecryptionFlags::empty())
     }
 
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
@@ -296,7 +392,7 @@ impl Sspi for SspiCredSsp {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!("Unsupported connection protocol was used: {:?}", version),
-                    ))
+                    ));
                 }
             },
             Connection::Server(_) => match protocol_version {
@@ -310,18 +406,15 @@ impl Sspi for SspiCredSsp {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!("Unsupported connection protocol was used: {:?}", version),
-                    ))
+                    ));
                 }
             },
         };
 
-        let cipher = self
-            .tls_connection
-            .negotiated_cipher_suite()
-            .ok_or_else(|| {
-                file_message("connection cipher is not negotiated");
-                Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
-            })?;
+        let cipher = self.tls_connection.negotiated_cipher_suite().ok_or_else(|| {
+            file_message("connection cipher is not negotiated");
+            Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
+        })?;
 
         // let e = self.tls_connection.
 

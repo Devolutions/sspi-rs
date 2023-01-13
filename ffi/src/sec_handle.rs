@@ -632,7 +632,10 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
     file_message("ffi: query context attr w");
-    file_message(&format!("params: {:?} {} {:x} {:?}", ph_context, ul_attribute, ul_attribute, p_buffer));
+    file_message(&format!(
+        "params: {:?} {} {:x} {:?}",
+        ph_context, ul_attribute, ul_attribute, p_buffer
+    ));
     catch_panic! {
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
@@ -670,8 +673,8 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
             SECPKG_ATTR_STREAM_SIZES => {
                 let stream_info = p_buffer.cast::<SecPkgContextStreamSizes>();
 
-                (*stream_info).cb_header = 13;
-                (*stream_info).cb_trailer = 16;
+                (*stream_info).cb_header = 5;
+                (*stream_info).cb_trailer = 44;
                 (*stream_info).cb_maximum_message = 16384;
                 (*stream_info).c_buffers = 4;
                 (*stream_info).cb_block_size = 16;

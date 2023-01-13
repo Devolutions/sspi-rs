@@ -261,11 +261,11 @@ pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _toke
 
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
-#[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
+// #[allow(clippy::useless_conversion)]
+// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
 #[no_mangle]
-pub unsafe extern "system" fn EncryptMessage(
+pub unsafe extern "system" fn SpEncryptMessage(
     mut ph_context: PCtxtHandle,
     f_qop: c_ulong,
     p_message: PSecBufferDesc,
@@ -285,6 +285,8 @@ pub unsafe extern "system" fn EncryptMessage(
         .expect("security context pointer cannot be null");
 
         let len = (*p_message).c_buffers as usize;
+        // panic!("try to debug");
+        file_message(&format!("pMessage memory: {:?}", from_raw_parts((*p_message).p_buffers as *const u8, len * 16)));
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
         let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
@@ -313,11 +315,15 @@ pub unsafe extern "system" fn SpDecryptMessage(
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: decrypt message");
+    file_message(&format!(
+        "ffi: decrypt message: {:?} {:?} {:?} {:?}",
+        ph_context, p_message, message_seq_no, pf_qop
+    ));
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
-        check_null!(pf_qop);
+        // can be null in mstsc
+        // check_null!(pf_qop);
 
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
@@ -326,10 +332,12 @@ pub unsafe extern "system" fn SpDecryptMessage(
         ))
         .as_mut()
         .expect("security context pointer cannot be null");
+        file_message("sspi context here");
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
         let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
+        file_message("message buffers parsed");
 
         let (decryption_flags, result_status) =
             match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
@@ -337,10 +345,16 @@ pub unsafe extern "system" fn SpDecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
+        file_message(&format!("finish decryption: {:?} {:?} {:?}", decryption_flags, result_status, message));
+
         copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
-        *pf_qop = decryption_flags.bits().try_into().unwrap();
+        if !pf_qop.is_null() {
+            *pf_qop = decryption_flags.bits().try_into().unwrap();
+        }
 
         try_execute!(result_status);
+
+        file_message("========== dec m suc ==========");
 
         0
     }
