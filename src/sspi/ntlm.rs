@@ -20,7 +20,6 @@ use crate::sspi::{
     PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, PACKAGE_ID_NONE,
 };
-use crate::utils::file_message;
 use crate::{
     utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult, Result,
 };
@@ -236,27 +235,18 @@ impl SspiImpl for Ntlm {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
-                file_message("before read challenge");
                 client::read_challenge(self, input_token.buffer.as_slice())?;
-                file_message(&format!(
-                    "between read challenge and write_auth: {:?}",
-                    builder.credentials_handle
-                ));
 
-                let creds_handle = builder
-                    .credentials_handle
-                    .as_ref()
-                    .expect("CredentialsHandle must be passed to the method")
-                    .as_ref()
-                    .expect("CredentialsHandle must be Some for the client's method");
-
-                file_message(&format!("creds_handle: {:?}", creds_handle));
-
-                let status = client::write_authenticate(self, creds_handle, &mut output_token.buffer)?;
-
-                file_message("after wtite_auth");
-
-                status
+                client::write_authenticate(
+                    self,
+                    builder
+                        .credentials_handle
+                        .as_ref()
+                        .expect("CredentialsHandle must be passed to the method")
+                        .as_ref()
+                        .expect("CredentialsHandle must be Some for the client's method"),
+                    &mut output_token.buffer,
+                )?
             }
             _ => {
                 return Err(sspi::Error::new(

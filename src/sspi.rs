@@ -705,6 +705,15 @@ where
     /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
 
+    /// Retrieves the information about the end certificate supplied by the server. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `CertContext` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -712,6 +721,15 @@ where
         ))
     }
 
+    /// Retrieves the information about the negotiated security package. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `PackageInfo` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesw)
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -719,6 +737,15 @@ where
         ))
     }
 
+    /// Returns detailed information on the established connection. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `ConnectionInfo` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -757,6 +784,11 @@ where
 }
 
 bitflags! {
+    /// Protocol used to establish connection.
+    ///
+    /// # MSDN
+    ///
+    /// [SecPkgContext_ConnectionInfo (`dwProtocol` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
     pub struct ConnectionProtocol: u32 {
         const SP_PROT_TLS1_CLIENT = 0x80;
         const SP_PROT_TLS1_SERVER = 0x40;
@@ -776,6 +808,11 @@ bitflags! {
 }
 
 bitflags! {
+    /// Algorithm identifier for the bulk encryption cipher used by the connection.
+    ///
+    /// # MSDN
+    ///
+    /// [SecPkgContext_ConnectionInfo (`aiCipher` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
     pub struct ConnectionCipher: u32 {
         const CALG_3DES = 26115;
         const CALG_AES_128 = 26126;
@@ -788,6 +825,11 @@ bitflags! {
 }
 
 bitflags! {
+    /// ALG_ID indicating the hash used for generating Message Authentication Codes (MACs).
+    ///
+    /// # MSDN
+    ///
+    /// [SecPkgContext_ConnectionInfo (`aiHash` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
     pub struct ConnectionHash: u32 {
         const CALG_MD5 = 32771;
         const CALG_SHA = 32772;
@@ -795,12 +837,22 @@ bitflags! {
 }
 
 bitflags! {
+    /// ALG_ID indicating the key exchange algorithm used to generate the shared master secret.
+    ///
+    /// # MSDN
+    ///
+    /// [SecPkgContext_ConnectionInfo (`aiExch` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
     pub struct ConnectionKeyExchange: u32 {
         const CALG_RSA_KEYX = 41984;
         const CALG_DH_EPHEM = 43522;
     }
 }
 
+/// This structure contains protocol and cipher information.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
 #[derive(Debug)]
 pub struct ConnectionInfo {
     pub protocol: ConnectionProtocol,
@@ -1036,12 +1088,22 @@ bitflags! {
     }
 }
 
+/// Type of certificate encoding used.
+///
+/// # MSDN
+///
+/// [CERT_CONTEXT (`dwCertEncodingType` field)](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_context)
 #[derive(Debug, Clone, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum CertEncodingType {
     Pkcs7AsnEncoding = 65536,
     X509AsnEncoding = 1,
 }
 
+/// The CERT_CONTEXT structure contains both the encoded and decoded representations of a certificate.
+///
+/// # MSDN
+///
+/// [CERT_CONTEXT](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_context)
 #[derive(Debug, Clone, PartialEq)]
 pub struct CertContext {
     pub encoding_type: CertEncodingType,

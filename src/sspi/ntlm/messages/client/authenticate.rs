@@ -15,7 +15,6 @@ use crate::sspi::ntlm::{
     MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
 };
 use crate::sspi::{self, SecurityStatus};
-use crate::utils::file_message;
 
 const MIC_SIZE: usize = 16;
 const BASE_OFFSET: usize = 64;
@@ -88,18 +87,14 @@ pub fn write_authenticate(
 ) -> sspi::Result<SecurityStatus> {
     check_state(context.state)?;
 
-    file_message("state is good");
-
     let negotiate_message = context
         .negotiate_message
         .as_ref()
         .expect("negotiate message must be set on negotiate phase");
-    file_message("nego message is present in the context");
     let challenge_message = context
         .challenge_message
         .as_ref()
         .expect("challenge message must be set on challenge phase");
-    file_message("challenge message is present in the context");
 
     // calculate needed fields
     // NTLMv2
@@ -108,18 +103,14 @@ pub fn write_authenticate(
         context.channel_bindings.as_ref(),
         context.send_single_host_data,
     )?;
-    file_message("target info");
 
     let client_challenge = generate_challenge()?;
-    file_message("client challenge");
     let ntlm_v2_hash = compute_ntlm_v2_hash(credentials)?;
-    file_message("ntlm v2 hash");
     let lm_challenge_response = compute_lm_v2_response(
         client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
         ntlm_v2_hash.as_ref(),
     )?;
-    file_message("lm challenge respose");
     let (nt_challenge_response, key_exchange_key) = compute_ntlm_v2_response(
         client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
@@ -127,9 +118,7 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    file_message("computed response");
     let session_key = OsRng::default().gen::<[u8; SESSION_KEY_SIZE]>();
-    file_message("session key");
     let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
