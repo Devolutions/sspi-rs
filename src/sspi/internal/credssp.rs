@@ -834,14 +834,11 @@ impl CredSspContext {
     fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> sspi::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
-        match self.sspi_context {
-            SspiContext::Ntlm(_) => {
-                if endpoint == EndpointType::Server {
-                    integer_increment_le(&mut public_key);
-                }
+        if let SspiContext::Ntlm(_) = self.sspi_context {
+            if endpoint == EndpointType::Server {
+                integer_increment_le(&mut public_key);
             }
-            _ => {}
-        };
+        }
 
         self.encrypt_message(&public_key)
     }

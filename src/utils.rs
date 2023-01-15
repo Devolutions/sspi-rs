@@ -1,5 +1,3 @@
-use std::io::{Seek, Write};
-
 use byteorder::{LittleEndian, ReadBytesExt};
 use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
@@ -48,18 +46,4 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
     }
 
     key
-}
-
-pub(crate) fn file_message(message: &str) {
-    let mut option = std::fs::OpenOptions::new();
-    option.read(true);
-    option.write(true);
-
-    let mut file = option
-        .open("D:\\apriorit\\reverse_tsssp\\credssp\\messages.txt")
-        .unwrap();
-    file.seek(std::io::SeekFrom::End(0)).unwrap();
-
-    file.write_all(message.as_bytes()).unwrap();
-    file.write_all(b"\n").unwrap();
 }

@@ -1093,7 +1093,7 @@ bitflags! {
 /// # MSDN
 ///
 /// [CERT_CONTEXT (`dwCertEncodingType` field)](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_context)
-#[derive(Debug, Clone, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum CertEncodingType {
     Pkcs7AsnEncoding = 65536,
     X509AsnEncoding = 1,

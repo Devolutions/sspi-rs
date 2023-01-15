@@ -15,7 +15,6 @@ use crate::sspi::{
     self, CertContext, CertEncodingType, ConnectionCipher, ConnectionHash, ConnectionInfo, ConnectionKeyExchange,
     ConnectionProtocol, PACKAGE_ID_NONE,
 };
-use crate::utils::file_message;
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes,
@@ -25,6 +24,8 @@ use crate::{
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
+// type + version + length
+const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVersion */ + 2 /* length: uint16 */;
 
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
@@ -32,10 +33,15 @@ lazy_static! {
         rpc_id: PACKAGE_ID_NONE,
         max_token_len: negotiate::PACKAGE_INFO.max_token_len + 1,
         name: SecurityPackageType::CredSsp,
-        comment: String::from("CredSsp"),
+        comment: String::from("CredSsp security package"),
     };
 }
 
+// [Processing Events and Sequencing Rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c)
+// The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
+// Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
+//
+// This configuration just accepts any certificate
 pub mod danger {
     use std::time::SystemTime;
 
@@ -78,6 +84,7 @@ pub struct SspiCredSsp {
 
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
+        // "stub_string" - we don't check the server's certificate validity so we can use any server name
         let example_com = "stub_string".try_into().unwrap();
         let client_config = ClientConfig::builder()
             .with_safe_defaults()
@@ -101,7 +108,7 @@ impl SspiCredSsp {
         let server_config = ServerConfig::builder()
             .with_safe_defaults()
             .with_no_client_auth()
-            .with_single_cert(vec![], rustls::PrivateKey(vec![]))
+            .with_single_cert(vec![], rustls::PrivateKey(vec![])) // todo!()
             .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
         let config = Arc::new(server_config);
 
@@ -118,32 +125,21 @@ impl SspiCredSsp {
     }
 
     fn encrypt_tls(&mut self, plain_data: &[u8]) -> Result<Vec<u8>> {
-        file_message("start encrypt_tls");
-
         let mut writer = self.tls_connection.writer();
-        writer.write(plain_data)?;
+        let _bytes_written = writer.write(plain_data)?;
 
         let mut tls_buffer = Vec::new();
-        file_message("before write encrypted tls");
-        let bytes_written = self.tls_connection.write_tls(&mut tls_buffer)?;
-        file_message(&format!(
-            "after write encrypted tls: {} {:?}",
-            bytes_written, tls_buffer
-        ));
+        let _bytes_written = self.tls_connection.write_tls(&mut tls_buffer)?;
 
         Ok(tls_buffer)
     }
 
     fn decrypt_tls(&mut self, mut payload: &[u8]) -> Result<Vec<u8>> {
-        file_message("start decrypt_tls");
-
         self.tls_connection.read_tls(&mut payload)?;
-        file_message("before process new packets");
-        let tls_state = self
-            .tls_connection
+
+        self.tls_connection
             .process_new_packets()
             .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
-        file_message(&format!("tls_state: {:?}", tls_state));
 
         let mut reader = self.tls_connection.reader();
 
@@ -155,48 +151,35 @@ impl SspiCredSsp {
         Ok(plain_data)
     }
 
-    fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
-        if let Some(certificates) = self.tls_connection.peer_certificates() {
-            file_message(&format!(
-                "peer certificates present :) {:?} {}",
-                certificates,
-                certificates.len()
-            ));
-            let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
-                Error::new(
-                    ErrorKind::CertificateUnknown,
-                    "Can not acquire server certificate".into(),
-                )
-            })?;
+    fn raw_peer_public_key(&mut self) -> Result<Vec<u8>> {
+        let peer_certificate = self.query_context_remote_cert()?.cert;
 
-            let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
+        let raw_public_key = match peer_certificate
+            .tbs_certificate
+            .subject_public_key_info
+            .subject_public_key
+        {
+            picky_asn1_x509::PublicKey::Rsa(rsa_pk) => picky_asn1_der::to_vec(&rsa_pk.0)?,
+            picky_asn1_x509::PublicKey::Ec(ec) => picky_asn1_der::to_vec(&ec)?,
+            picky_asn1_x509::PublicKey::Ed(ed) => picky_asn1_der::to_vec(&ed)?,
+        };
 
-            let raw_public_key = match server_certificate
-                .tbs_certificate
-                .subject_public_key_info
-                .subject_public_key
-            {
-                picky_asn1_x509::PublicKey::Rsa(rsa_pk) => picky_asn1_der::to_vec(&rsa_pk.0)?,
-                picky_asn1_x509::PublicKey::Ec(_) => todo!(),
-                picky_asn1_x509::PublicKey::Ed(_) => todo!(),
-            };
+        Ok(raw_public_key)
+    }
 
-            file_message(&format!("encoded public key: {:?}", raw_public_key));
+    fn decrypt_and_decode_ts_request(&mut self, input: &[SecurityBuffer]) -> Result<TsRequest> {
+        let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+        let raw_ts_request = self.decrypt_tls(&encrypted_ts_request.buffer)?;
 
-            Ok(raw_public_key)
-        } else {
-            file_message("no peer certificates :(");
-            Err(Error::new(
-                ErrorKind::CertificateUnknown,
-                "The server certificate is not present".into(),
-            ))
-        }
+        let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
+        ts_request.check_error()?;
+
+        Ok(ts_request)
     }
 }
 
 impl Sspi for SspiCredSsp {
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
-        file_message("SSPI: complete auth token");
         Ok(SecurityStatus::Ok)
     }
 
@@ -206,37 +189,14 @@ impl Sspi for SspiCredSsp {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        file_message(&format!("SSPI: encrypt_message: {:?}", message));
-
-        for sb in message.iter() {
-            file_message(&format!("{:?} {}", sb.buffer_type, sb.buffer.len()));
-        }
-
         let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        let plain_len = plain_message.buffer.len();
+        let plain_message_len = plain_message.buffer.len();
 
-        let encrypted_message = self.encrypt_tls(&plain_message.buffer)?;
-
-        file_message(&format!(
-            "lens: plain({}), encrypted({})",
-            plain_len,
-            encrypted_message.len()
-        ));
-
-        // plain_message.buffer = encrypted_message;
-
-        let stream_header_data = encrypted_message[0..5].to_vec();
-        let data = encrypted_message[5..(5 + plain_len)].to_vec();
-        let stream_trailer_data = encrypted_message[(5 + plain_len)..].to_vec();
-        file_message(&format!(
-            "h({}), d({}), t({})",
-            stream_header_data.len(),
-            data.len(),
-            stream_trailer_data.len()
-        ));
+        let mut stream_header_data = self.encrypt_tls(&plain_message.buffer)?;
+        let mut stream_data = stream_header_data.split_off(TLS_PACKET_HEADER_LEN);
+        let stream_trailer_data = stream_data.split_off(plain_message_len);
 
         if let Ok(stream_header) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader) {
-            file_message(&format!("old header len: {}", stream_header.buffer.len()));
             stream_header.buffer = stream_header_data;
         } else {
             let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
@@ -245,105 +205,79 @@ impl Sspi for SspiCredSsp {
         }
 
         let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        plain_message.buffer = data;
+        plain_message.buffer = stream_data;
 
         if let Ok(trailer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer) {
-            file_message(&format!("old trailer len: {}", trailer.buffer.len()));
             trailer.buffer = stream_trailer_data;
         } else {
             let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
             empty_buffer.buffer_type = SecurityBufferType::StreamTrailer;
             empty_buffer.buffer = stream_trailer_data;
         }
-
-        file_message(&format!("finish encrypt_message: {:?}", message));
 
         Ok(SecurityStatus::Ok)
     }
 
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
-        file_message(&format!("SSPI: decrypt: {:?}", message));
-
-        let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-
-        // 5 - TLS message header
-        // 11 - MAC + padding
-        if encrypted_message.buffer.len() < 5 + 11 {
+        // CredSsp decrypt_message function just calls corresponding function from the Schannel
+        // MSDN: message must contain four buffers
+        // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
+        if message.len() < 4 {
             return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "Input message is too short".into(),
+                ErrorKind::InvalidParameter,
+                "Input message mut contain four buffers".into(),
             ));
         }
 
-        let stream_header_data = encrypted_message.buffer[0..5].to_vec();
+        let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let decrypted_message = self.decrypt_tls(&encrypted_message.buffer)?;
-        file_message(&format!("decrypted data: {:?}", decrypted_message));
-
-        let stream_trailer_data = encrypted_message.buffer[(5 + decrypted_message.len())..].to_vec();
-
-        // encrypted_message.buffer = decrypted_message;
-
-        encrypted_message.buffer = stream_header_data;
-        encrypted_message.buffer_type = SecurityBufferType::StreamHeader;
-
-        let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
-        empty_buffer.buffer_type = SecurityBufferType::Data;
-        empty_buffer.buffer = decrypted_message;
-
-        // if let Ok(stream_header) = SecurityBuffer::find_buffer_mut(message,  SecurityBufferType::StreamHeader) {
-        //     stream_header.buffer = stream_header_data;
-        // } else {
-        //     let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
-        //     empty_buffer.buffer_type = SecurityBufferType::StreamHeader;
-        //     empty_buffer.buffer = stream_header_data;
-        // }
-
-        if let Ok(trailer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer) {
-            trailer.buffer = stream_trailer_data;
-        } else {
-            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
-            empty_buffer.buffer_type = SecurityBufferType::StreamTrailer;
-            empty_buffer.buffer = stream_trailer_data;
+        if encrypted_message.buffer.len() < TLS_PACKET_HEADER_LEN {
+            return Err(Error::new(
+                ErrorKind::DecryptFailure,
+                "Input TLS message is too short".into(),
+            ));
         }
 
-        file_message("finish decrypt_message");
+        let stream_header_data = encrypted_message.buffer[0..TLS_PACKET_HEADER_LEN].to_vec();
+        let decrypted_data = self.decrypt_tls(&encrypted_message.buffer)?;
+        let stream_trailer_data = encrypted_message.buffer[(TLS_PACKET_HEADER_LEN + decrypted_data.len())..].to_vec();
+
+        // buffers order is important. MSTSC won't work with another buffers order
+        message[0].buffer_type = SecurityBufferType::StreamHeader;
+        message[0].buffer = stream_header_data;
+
+        message[1].buffer_type = SecurityBufferType::Data;
+        message[1].buffer = decrypted_data;
+
+        message[2].buffer_type = SecurityBufferType::StreamTrailer;
+        message[2].buffer = stream_trailer_data;
 
         Ok(DecryptionFlags::empty())
     }
 
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
-        file_message("SSPI: query context sized");
         self.cred_ssp_context.sspi_context.query_context_sizes()
     }
 
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        file_message("SSPI: query context names");
         self.cred_ssp_context.sspi_context.query_context_names()
     }
 
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
-        file_message("SSPI: query context package info");
         sspi::query_security_package_info(SecurityPackageType::CredSsp)
     }
 
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
-        file_message("SSPI: query context cert trust status");
-        // self.cred_ssp_context.sspi_context.query_context_cert_trust_status()
+        // The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
+        // we do not check certificate validity
         Ok(CertTrustStatus {
             error_status: CertTrustErrorStatus::NO_ERROR,
-            info_status: CertTrustInfoStatus::IS_CA_TRUSTED,
+            info_status: CertTrustInfoStatus::IS_SELF_SIGNED,
         })
     }
 
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
-        file_message("query_context_remote_cert");
         if let Some(certificates) = self.tls_connection.peer_certificates() {
-            file_message(&format!(
-                "peer certificates present :) {:?} {}",
-                certificates,
-                certificates.len()
-            ));
             let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
                 Error::new(
                     ErrorKind::CertificateUnknown,
@@ -359,7 +293,6 @@ impl Sspi for SspiCredSsp {
                 cert: server_certificate,
             })
         } else {
-            file_message("no peer certificates :(");
             Err(Error::new(
                 ErrorKind::CertificateUnknown,
                 "The server certificate is not present".into(),
@@ -371,9 +304,9 @@ impl Sspi for SspiCredSsp {
         self.cred_ssp_context.sspi_context.query_context_package_info()
     }
 
+    // TODO
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
         let protocol_version = self.tls_connection.protocol_version().ok_or_else(|| {
-            file_message("no protocol version :(");
             Error::new(
                 ErrorKind::InternalError,
                 "Can not acquire connection protocol version".into(),
@@ -388,7 +321,6 @@ impl Sspi for SspiCredSsp {
                 ProtocolVersion::TLSv1_2 => ConnectionProtocol::SP_PROT_TLS1_2_CLIENT,
                 ProtocolVersion::TLSv1_3 => ConnectionProtocol::SP_PROT_TLS1_3_CLIENT,
                 version => {
-                    file_message(&format!("unsupported protocol version: {:?}", version));
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!("Unsupported connection protocol was used: {:?}", version),
@@ -402,7 +334,6 @@ impl Sspi for SspiCredSsp {
                 ProtocolVersion::TLSv1_2 => ConnectionProtocol::SP_PROT_TLS1_2_SERVER,
                 ProtocolVersion::TLSv1_3 => ConnectionProtocol::SP_PROT_TLS1_3_SERVER,
                 version => {
-                    file_message(&format!("unsupported protocol version: {:?}", version));
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!("Unsupported connection protocol was used: {:?}", version),
@@ -411,26 +342,36 @@ impl Sspi for SspiCredSsp {
             },
         };
 
-        let cipher = self.tls_connection.negotiated_cipher_suite().ok_or_else(|| {
-            file_message("connection cipher is not negotiated");
-            Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
-        })?;
+        let connection_cipher = self
+            .tls_connection
+            .negotiated_cipher_suite()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into()))?;
 
-        // let e = self.tls_connection.
+        let bulk_cipher = match connection_cipher {
+            rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+            rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+        };
+        let (cipher, cipher_strength) = match bulk_cipher {
+            rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CALG_AES_128, 128),
+            rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CALG_AES_256, 256),
+            rustls::BulkAlgorithm::Chacha20Poly1305 => {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    "alg_id for CHACHA20_POLY1305 does not exist".into(),
+                ))
+            }
+        };
 
-        let hash_algo = cipher.hash_algorithm();
-        // let hash = match hash_algo.id {
-
-        // };
+        let hash_algo = connection_cipher.hash_algorithm();
 
         Ok(ConnectionInfo {
             protocol,
-            cipher: ConnectionCipher::CALG_AES_256,
-            cipher_strength: 256,
+            cipher,
+            cipher_strength,
             hash: ConnectionHash::CALG_SHA,
             hash_strength: hash_algo.output_len as u32,
             key_exchange: ConnectionKeyExchange::CALG_RSA_KEYX,
-            exchange_strength: 2048,
+            exchange_strength: (self.raw_peer_public_key()?.len() * 8) as u32,
         })
     }
 
@@ -469,7 +410,6 @@ impl SspiImpl for SspiCredSsp {
         &mut self,
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        file_message("sspi: init_sec -----------------------");
         let client_connection = match &mut self.tls_connection {
             Connection::Client(client_connection) => client_connection,
             Connection::Server(_) => {
@@ -482,42 +422,25 @@ impl SspiImpl for SspiCredSsp {
 
         let status = match &self.state {
             CredSspState::Tls => {
-                file_message("sspi: init_sec: tls");
-
-                file_message(&format!("sspi: init_sec: in buffers: {:?}", builder.input));
                 // input token can not present on the first call
                 if let Some(input_token) = builder
                     .input
                     .as_mut()
-                    .map(|buffers| SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Token).ok())
-                    .flatten()
+                    .and_then(|buffers| SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Token).ok())
                 {
-                    file_message("sspi: init_sec: read tls");
                     let mut buffer = input_token.buffer.as_slice();
-                    let bytes_read = client_connection.read_tls(&mut buffer)?;
-                    file_message(&format!(
-                        "sspi: init_sec: read tls: {} total. prev: {}",
-                        bytes_read,
-                        input_token.buffer.len()
-                    ));
-                } else {
-                    file_message("input token buffer is not present");
+                    let _bytes_read = client_connection.read_tls(&mut buffer)?;
                 }
 
-                file_message("before process_new_packets");
-                let io_status = client_connection
+                let _io_status = client_connection
                     .process_new_packets()
                     .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
-                file_message(&format!("after process_new_packets: {:?}", io_status));
 
                 let mut tls_buffer = Vec::new();
-                file_message("before write tls");
                 let bytes_written = client_connection.write_tls(&mut tls_buffer)?;
-                file_message(&format!("after write tls: {}", bytes_written));
 
                 if bytes_written == 0 {
                     self.state = CredSspState::NegoToken;
-                    file_message("new state: CredSspState::NegoToken");
 
                     // delete the previous TLS message
                     builder.input = None;
@@ -527,29 +450,16 @@ impl SspiImpl for SspiCredSsp {
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer = tls_buffer;
-                file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
 
                 SecurityStatus::ContinueNeeded
             }
             CredSspState::NegoToken => {
-                file_message("CredSspState::NegoToken");
-
                 // decrypt and decode TsRequest from input buffers
-                let mut ts_request = if let Some(input) = &builder.input {
-                    let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                    file_message(&format!("encrypted ts request: {:?}", encrypted_ts_request));
-
-                    let raw_ts_request = self.decrypt_tls(&encrypted_ts_request.buffer)?;
-                    file_message(&format!("raw ts request: {:?}", encrypted_ts_request));
-
-                    let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
-                    file_message(&format!("decoded ts request: {:?}", ts_request));
-                    ts_request.check_error()?;
-
-                    ts_request
-                } else {
-                    TsRequest::default()
-                };
+                let mut ts_request = builder
+                    .input
+                    .as_ref()
+                    .map(|input| self.decrypt_and_decode_ts_request(input))
+                    .unwrap_or_else(|| Ok(TsRequest::default()))?;
 
                 self.cred_ssp_context.check_peer_version(ts_request.version)?;
 
@@ -558,7 +468,6 @@ impl SspiImpl for SspiCredSsp {
                     SecurityBufferType::Token,
                 )];
 
-                // invoke inner sspi function
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut inner_builder =
@@ -575,56 +484,15 @@ impl SspiImpl for SspiCredSsp {
                     .with_input(&mut input_token)
                     .with_output(&mut output_token);
 
-                file_message(&format!(
-                    "sspi-rs: sspi: init sec: before: {:?}",
-                    self.cred_ssp_context.sspi_context
-                ));
                 let result = self
                     .cred_ssp_context
                     .sspi_context
                     .initialize_security_context_impl(&mut inner_builder)?;
-                file_message("sspi-rs: sspi: init sec: after");
 
-                // encode new TsRequest into output buffers
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
-                    let public_key = if let Some(certificates) = self.tls_connection.peer_certificates() {
-                        file_message(&format!(
-                            "peer certificates present :) {:?} {}",
-                            certificates,
-                            certificates.len()
-                        ));
-                        let raw_server_certificate = certificates.get(0).map(|cert| &cert.0).ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::CertificateUnknown,
-                                "Can not acquire server certificate".into(),
-                            )
-                        })?;
-
-                        let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
-
-                        let raw_public_key = match server_certificate
-                            .tbs_certificate
-                            .subject_public_key_info
-                            .subject_public_key
-                        {
-                            picky_asn1_x509::PublicKey::Rsa(rsa_pk) => picky_asn1_der::to_vec(&rsa_pk.0)?,
-                            picky_asn1_x509::PublicKey::Ec(_) => todo!(),
-                            picky_asn1_x509::PublicKey::Ed(_) => todo!(),
-                        };
-
-                        file_message(&format!("encoded public key: {:?}", raw_public_key));
-
-                        raw_public_key
-                    } else {
-                        file_message("no peer certificates :(");
-                        return Err(Error::new(
-                            ErrorKind::CertificateUnknown,
-                            "The server certificate is not present".into(),
-                        ));
-                    };
-                    file_message(&format!("pk: {:?}", public_key));
+                    let public_key = self.raw_peer_public_key()?;
 
                     let peer_version = self
                         .cred_ssp_context
@@ -637,7 +505,7 @@ impl SspiImpl for SspiCredSsp {
                         peer_version,
                     )?);
 
-                    ts_request.client_nonce = self.nonce.clone();
+                    ts_request.client_nonce = self.nonce;
 
                     if let Some(nego_tokens) = &ts_request.nego_tokens {
                         if nego_tokens.is_empty() {
@@ -646,7 +514,6 @@ impl SspiImpl for SspiCredSsp {
                     }
 
                     self.state = CredSspState::AuthInfo;
-                    file_message("new state: CredSspState::AuthInfo");
                 }
 
                 let mut encoded_ts_request = Vec::new();
@@ -655,29 +522,15 @@ impl SspiImpl for SspiCredSsp {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer = self.encrypt_tls(&encoded_ts_request)?;
 
-                file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
-
                 SecurityStatus::ContinueNeeded
             }
             CredSspState::AuthInfo => {
-                file_message("cur state: CredSspState::AuthInfo");
-
                 // decrypt and decode TsRequest from input buffers
-                let mut ts_request = if let Some(input) = &builder.input {
-                    let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                    file_message(&format!("encrypted ts request: {:?}", encrypted_ts_request));
-
-                    let raw_ts_request = self.decrypt_tls(&encrypted_ts_request.buffer)?;
-                    file_message(&format!("raw ts request: {:?}", encrypted_ts_request));
-
-                    let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
-                    file_message(&format!("decoded ts request: {:?}", ts_request));
-                    ts_request.check_error()?;
-
-                    ts_request
-                } else {
-                    TsRequest::default()
-                };
+                let mut ts_request = builder
+                    .input
+                    .as_ref()
+                    .map(|input| self.decrypt_and_decode_ts_request(input))
+                    .unwrap_or_else(|| Ok(TsRequest::default()))?;
 
                 ts_request.nego_tokens = None;
 
@@ -690,25 +543,21 @@ impl SspiImpl for SspiCredSsp {
                     .peer_version
                     .expect("An encrypt public key client function cannot be fired without any incoming TSRequest");
 
-                file_message("start  server's pub key auth verification");
+                let peer_public_key = self.raw_peer_public_key()?;
                 self.cred_ssp_context.decrypt_public_key(
-                    &self.raw_peer_public_key()?,
+                    &peer_public_key,
                     pub_key_auth.as_ref(),
                     EndpointType::Client,
                     &self.nonce,
                     peer_version,
                 )?;
-                file_message("server's pub key auth is VALID :)");
 
                 // encrypt and send credentials
-                file_message(&format!("{:?}", builder.credentials_handle));
                 let credentials = builder
                     .credentials_handle
                     .take()
-                    .map(|c| c.as_ref())
-                    .flatten()
+                    .and_then(|c| c.as_ref())
                     .ok_or_else(|| {
-                        file_message("no credentials :(");
                         Error::new(ErrorKind::InvalidParameter, "credentials handle is not present".into())
                     })?;
 
@@ -717,8 +566,6 @@ impl SspiImpl for SspiCredSsp {
                         .encrypt_ts_credentials(credentials, CredSspMode::WithCredentials)?,
                 );
 
-                file_message(&format!("the final ts request: {:?}", ts_request));
-
                 // encode and encrypt TsRequest with credentials
                 let mut encoded_ts_request = Vec::new();
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
@@ -726,15 +573,11 @@ impl SspiImpl for SspiCredSsp {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer = self.encrypt_tls(&encoded_ts_request)?;
 
-                file_message(&format!("sspi: init_sec: out buffers: {:?}", builder.output));
-
                 self.state = CredSspState::Final;
-                file_message("new state: CredSspState::Final");
 
                 SecurityStatus::Ok
             }
             CredSspState::Final => {
-                file_message("cur state: CredSspState::Final");
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
                     "Error: Initialize security context function has been called after authorization".into(),
@@ -753,12 +596,10 @@ impl SspiImpl for SspiCredSsp {
         &'a mut self,
         _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
-        match &self.state {
-            CredSspState::Tls => todo!(),
-            CredSspState::NegoToken => todo!(),
-            CredSspState::AuthInfo => todo!(),
-            CredSspState::Final => todo!(),
-        }
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "AcceptSecurityContext is not supported in SspiCredSsp context".into(),
+        ))
     }
 }
 
