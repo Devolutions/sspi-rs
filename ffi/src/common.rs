@@ -14,13 +14,12 @@ use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
-use crate::utils::{file_message, into_raw_ptr, transform_credentials_handle};
+use crate::utils::{into_raw_ptr, transform_credentials_handle};
 
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
-    file_message("ffi: Free creds handle");
     drop_in_place((*ph_credential).dw_lower as *mut AuthIdentityBuffers);
     drop_in_place(ph_credential);
 
@@ -44,7 +43,6 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: accept sec context");
     catch_panic! {
         // ph_context can be null on the first call
         check_null!(ph_new_context);
@@ -115,7 +113,6 @@ pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
 ) -> SecurityStatus {
-    file_message("ffi: complete auth token");
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_token);
@@ -144,7 +141,6 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
-    file_message("ffi: delete security context");
     catch_panic!(
         if ph_context.is_null() {
             return 0;
@@ -168,7 +164,6 @@ pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> Sec
 #[cfg_attr(windows, rename_symbol(to = "Rust_ApplyControlToken"))]
 #[no_mangle]
 pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSecBufferDesc) -> SecurityStatus {
-    file_message("ffi: apply control token");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -178,7 +173,6 @@ pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImpersonateSecurityContext"))]
 #[no_mangle]
 pub extern "system" fn ImpersonateSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
-    file_message("ffi: impersonate sec context");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -188,7 +182,6 @@ pub type ImpersonateSecurityContextFn = extern "system" fn(PCtxtHandle) -> Secur
 #[cfg_attr(windows, rename_symbol(to = "Rust_RevertSecurityContext"))]
 #[no_mangle]
 pub extern "system" fn RevertSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
-    file_message("ffi: revert sec context");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -203,7 +196,6 @@ pub extern "system" fn MakeSignature(
     _p_message: PSecBufferDesc,
     _message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: make signature");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -218,7 +210,6 @@ pub extern "system" fn VerifySignature(
     _message_seq_no: c_ulong,
     _pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: verity signature");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -228,7 +219,6 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_u
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(_pv_context_buffer: *mut c_void) -> SecurityStatus {
-    file_message("ffi: free context buffer");
     // FIXME: patch leak
     0
 }
@@ -244,7 +234,6 @@ pub extern "system" fn ExportSecurityContext(
     _p_packed_context: PSecBuffer,
     _p_token: *mut *mut c_void,
 ) -> SecurityStatus {
-    file_message("ffi: export sec context");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -255,23 +244,21 @@ pub type ExportSecurityContextFn =
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityContextToken"))]
 #[no_mangle]
 pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _token: *mut *mut c_void) -> SecurityStatus {
-    file_message("ffi: query sec context token");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
-// #[allow(clippy::useless_conversion)]
-// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-// #[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
+#[allow(clippy::useless_conversion)]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
 #[no_mangle]
-pub unsafe extern "system" fn SpEncryptMessage(
+pub unsafe extern "system" fn EncryptMessage(
     mut ph_context: PCtxtHandle,
     f_qop: c_ulong,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: encrypt message");
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -285,8 +272,6 @@ pub unsafe extern "system" fn SpEncryptMessage(
         .expect("security context pointer cannot be null");
 
         let len = (*p_message).c_buffers as usize;
-        // panic!("try to debug");
-        file_message(&format!("pMessage memory: {:?}", from_raw_parts((*p_message).p_buffers as *const u8, len * 16)));
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
         let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
 
@@ -306,19 +291,15 @@ pub unsafe extern "system" fn SpEncryptMessage(
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-// #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
 #[no_mangle]
-pub unsafe extern "system" fn SpDecryptMessage(
+pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
     pf_qop: *mut c_ulong,
 ) -> SecurityStatus {
-    file_message(&format!(
-        "ffi: decrypt message: {:?} {:?} {:?} {:?}",
-        ph_context, p_message, message_seq_no, pf_qop
-    ));
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -332,12 +313,10 @@ pub unsafe extern "system" fn SpDecryptMessage(
         ))
         .as_mut()
         .expect("security context pointer cannot be null");
-        file_message("sspi context here");
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
         let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
-        file_message("message buffers parsed");
 
         let (decryption_flags, result_status) =
             match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
@@ -345,16 +324,12 @@ pub unsafe extern "system" fn SpDecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
-        file_message(&format!("finish decryption: {:?} {:?} {:?}", decryption_flags, result_status, message));
-
         copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
         if !pf_qop.is_null() {
             *pf_qop = decryption_flags.bits().try_into().unwrap();
         }
 
         try_execute!(result_status);
-
-        file_message("========== dec m suc ==========");
 
         0
     }

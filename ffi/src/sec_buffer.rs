@@ -9,8 +9,6 @@ use libc::c_ulong;
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::{SecurityBuffer, SecurityBufferType};
 
-use crate::utils::file_message;
-
 #[cfg(target_os = "windows")]
 #[derive(Debug)]
 #[repr(C)]
@@ -54,18 +52,12 @@ pub type PSecBufferDesc = *mut SecBufferDesc;
 pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<SecurityBuffer> {
     raw_buffers
         .iter()
-        .map(|raw_buffer| {
-            file_message(&format!(
-                "raw_buffer: {:?} {} {}",
-                raw_buffer, raw_buffer.cb_buffer, raw_buffer.cb_buffer as usize
-            ));
-            SecurityBuffer {
-                buffer: from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
-                    .iter()
-                    .map(|v| *v as u8)
-                    .collect(),
-                buffer_type: SecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
-            }
+        .map(|raw_buffer| SecurityBuffer {
+            buffer: from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
+                .iter()
+                .map(|v| *v as u8)
+                .collect(),
+            buffer_type: SecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
         })
         .collect()
 }
