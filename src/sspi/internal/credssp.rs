@@ -29,7 +29,7 @@ use crate::sspi::{
     self, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
     DataRepresentation, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiEx,
+    ServerRequestFlags, Sspi, SspiEx, StreamSizes,
 };
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, Error, ErrorKind, InitializeSecurityContextResult,
@@ -658,6 +658,7 @@ impl Sspi for SspiContext {
             SspiContext::CredSsp(credssp) => credssp.query_context_sizes(),
         }
     }
+
     fn query_context_names(&mut self) -> sspi::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
@@ -667,6 +668,17 @@ impl Sspi for SspiContext {
             SspiContext::CredSsp(credssp) => credssp.query_context_names(),
         }
     }
+
+    fn query_context_stream_sizes(&mut self) -> crate::Result<StreamSizes> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_stream_sizes(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_stream_sizes(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_stream_sizes(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_stream_sizes(),
+            SspiContext::CredSsp(credssp) => credssp.query_context_stream_sizes(),
+        }
+    }
+
     fn query_context_package_info(&mut self) -> sspi::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
@@ -676,6 +688,7 @@ impl Sspi for SspiContext {
             SspiContext::CredSsp(credssp) => credssp.query_context_package_info(),
         }
     }
+
     fn query_context_cert_trust_status(&mut self) -> sspi::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),

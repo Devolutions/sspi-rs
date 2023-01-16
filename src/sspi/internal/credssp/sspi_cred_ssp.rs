@@ -13,7 +13,7 @@ use crate::builders::EmptyInitializeSecurityContext;
 use crate::internal::SspiImpl;
 use crate::sspi::{
     self, CertContext, CertEncodingType, ConnectionCipher, ConnectionHash, ConnectionInfo, ConnectionKeyExchange,
-    ConnectionProtocol, PACKAGE_ID_NONE,
+    ConnectionProtocol, StreamSizes, PACKAGE_ID_NONE,
 };
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustErrorStatus,
@@ -26,6 +26,9 @@ use crate::{
 pub const PKG_NAME: &str = "CREDSSP";
 // type + version + length
 const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVersion */ + 2 /* length: uint16 */;
+// [Block Size and Padding](https://www.rfc-editor.org/rfc/rfc3826#section-3.1.1.3)
+// The block size of the AES cipher is 128 bits
+const AES_BLOCK_SIZE: usize = 16;
 
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
@@ -261,6 +264,37 @@ impl Sspi for SspiCredSsp {
 
     fn query_context_names(&mut self) -> Result<ContextNames> {
         self.cred_ssp_context.sspi_context.query_context_names()
+    }
+
+    fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
+        let connection_cipher = self
+            .tls_connection
+            .negotiated_cipher_suite()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into()))?;
+
+        let bulk_cipher = match connection_cipher {
+            rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+            rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+        };
+        let block_size = match bulk_cipher {
+            rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
+            rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
+            // ChaCha20 is a stream cipher
+            rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
+        };
+
+        Ok(StreamSizes {
+            header: TLS_PACKET_HEADER_LEN as u32,
+            // trailer = tls mac + padding
+            // this value is taken from the win schannel
+            trailer: 0x2c,
+            // this value is taken from the win schannel
+            max_message: 0x4000,
+            // MSDN: message must contain four buffers
+            // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
+            buffers: 4,
+            block_size: block_size as u32,
+        })
     }
 
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {

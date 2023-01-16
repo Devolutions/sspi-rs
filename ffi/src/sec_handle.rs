@@ -3,7 +3,7 @@ use std::mem::size_of;
 use std::ptr::null;
 use std::slice::from_raw_parts;
 
-use libc::{c_char, c_ulong, c_ulonglong, c_void};
+use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 use sspi::internal::credssp::sspi_cred_ssp::SspiCredSsp;
@@ -42,8 +42,7 @@ use crate::sspi_data_types::{
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use crate::utils::{
-    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes,
-    transform_credentials_handle, vec_into_raw_ptr,
+    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -349,7 +348,6 @@ pub extern "system" fn QueryCredentialsAttributesA(
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    file_message("ffi: query creds attr a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -363,7 +361,6 @@ pub extern "system" fn QueryCredentialsAttributesW(
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
 ) -> SecurityStatus {
-    file_message("ffi: query creds attr w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -387,7 +384,6 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: init sec context a");
     catch_panic! {
         // ph_context can be null on the first call
         // p_input can be null on the first call
@@ -470,10 +466,10 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-// #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SpInitializeSecurityContextW(
+pub unsafe extern "system" fn InitializeSecurityContextW(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecWChar,
@@ -487,7 +483,6 @@ pub unsafe extern "system" fn SpInitializeSecurityContextW(
     pf_context_attr: *mut c_ulong,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: init sec context w");
     catch_panic! {
         // ph_context can be null on the first call
         // p_input can be null on the first call
@@ -495,8 +490,6 @@ pub unsafe extern "system" fn SpInitializeSecurityContextW(
         check_null!(ph_credential);
         check_null!(p_output);
         check_null!(pf_context_attr);
-
-        file_message("InitializeSecurityContextW");
 
         let service_principal = if p_target_name.is_null() {
             String::new()
@@ -538,7 +531,6 @@ pub unsafe extern "system" fn SpInitializeSecurityContextW(
             .with_target_name(&service_principal)
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens);
-        file_message("before the initialize_security_context_impl");
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
         let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
@@ -572,15 +564,12 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
 ) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-#[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
-#[no_mangle]
-pub unsafe extern "system" fn QueryContextAttributesA(
+unsafe fn query_context_attributes_common(
     mut ph_context: PCtxtHandle,
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
+    is_wide: bool,
 ) -> SecurityStatus {
-    file_message("ffi: query context attr a");
     catch_panic! {
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
@@ -606,94 +595,41 @@ pub unsafe extern "system" fn QueryContextAttributesA(
                 0
             }
             SECPKG_ATTR_NEGOTIATION_INFO => {
-                let nego_info = p_buffer.cast::<SecNegoInfoA>();
+                let package_info = try_execute!(sspi_context.query_context_package_info());
 
-                (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE;
-                (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(try_execute!(
-                    sspi_context.query_context_package_info()
-                )));
+                if is_wide {
+                    let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
-                0
-            }
-            _ => ErrorKind::UnsupportedFunction.to_u32().unwrap(),
-        }
-    }
-}
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(package_info));
+                } else {
+                    let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
-pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
-
-// #[allow(clippy::useless_conversion)]
-// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-// #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
-#[no_mangle]
-pub unsafe extern "system" fn SpQueryContextAttributesW(
-    mut ph_context: PCtxtHandle,
-    ul_attribute: c_ulong,
-    p_buffer: *mut c_void,
-) -> SecurityStatus {
-    file_message("ffi: query context attr w");
-    file_message(&format!(
-        "params: {:?} {} {:x} {:?}",
-        ph_context, ul_attribute, ul_attribute, p_buffer
-    ));
-    catch_panic! {
-        let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
-            &mut ph_context,
-            None,
-            &CredentialsAttributes::default()
-        ))
-        .as_mut()
-        .expect("security context pointer cannot be null");
-
-        check_null!(p_buffer);
-
-        match ul_attribute.try_into().unwrap() {
-            SECPKG_ATTR_SIZES => {
-                let sizes = p_buffer.cast::<SecPkgContextSizes>();
-
-                let pkg_sizes = try_execute!(sspi_context.query_context_sizes());
-
-                (*sizes).cb_max_token = pkg_sizes.max_token;
-                (*sizes).cb_max_signature = pkg_sizes.max_signature;
-                (*sizes).cb_block_size = pkg_sizes.block;
-                (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
-
-                0
-            }
-            SECPKG_ATTR_NEGOTIATION_INFO => {
-                let nego_info = p_buffer.cast::<SecNegoInfoW>();
-
-                (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(try_execute!(
-                    sspi_context.query_context_package_info()
-                )));
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(package_info));
+                }
 
                 0
             }
             SECPKG_ATTR_STREAM_SIZES => {
+                let stream_sizes = try_execute!(sspi_context.query_context_stream_sizes());
+
                 let stream_info = p_buffer.cast::<SecPkgContextStreamSizes>();
 
-                (*stream_info).cb_header = 5;
-                (*stream_info).cb_trailer = 44;
-                (*stream_info).cb_maximum_message = 16384;
-                (*stream_info).c_buffers = 4;
-                (*stream_info).cb_block_size = 16;
-
-                file_message("return stream sizes");
+                (*stream_info).cb_header = stream_sizes.header;
+                (*stream_info).cb_trailer = stream_sizes.trailer;
+                (*stream_info).cb_maximum_message = stream_sizes.max_message;
+                (*stream_info).c_buffers = stream_sizes.buffers;
+                (*stream_info).cb_block_size = stream_sizes.block_size;
 
                 0
             }
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
-                file_message("start remote context info");
-                // return ErrorKind::UnsupportedFunction.to_u32().unwrap();
-
                 let cert_context = try_execute!(sspi_context.query_context_remote_cert());
-                // file_message(&format!("cert context: {:?}", cert_context));
 
                 let store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null());
 
                 if store.is_null() {
-                    file_message("cert store is null");
                     return ErrorKind::InternalError.to_u32().unwrap();
                 }
 
@@ -707,158 +643,112 @@ pub unsafe extern "system" fn SpQueryContextAttributesW(
                     CERT_STORE_ADD_REPLACE_EXISTING,
                     &mut p_cert_context
                 );
-                file_message(&format!("cert add to store: {:x}", result));
                 if result != 1 {
                     return ErrorKind::InternalError.to_u32().unwrap();
                 }
-                file_message(&format!("p_cert_context: {:?}", p_cert_context));
 
                 let p_cert_buffer = p_buffer.cast::<*const CERT_CONTEXT>();
                 *p_cert_buffer = p_cert_context;
 
-                file_message("return remote context info");
                 0
             }
             SECPKG_ATTR_NEGOTIATION_PACKAGE => {
-                file_message("SECPKG_ATTR_NEGOTIATION_PACKAGE");
-
                 let package_info = try_execute!(sspi_context.query_context_negotiation_package());
-                // file_message(&format!("pi: {:?}", package_info));
 
-                let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
+                if is_wide {
+                    let package_info = SecPkgInfoW::from(package_info);
 
-                let w_package_info = SecPkgInfoW::from(package_info);
+                    let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
+                    *nego_package_info = into_raw_ptr(package_info);
+                } else {
+                    let package_info = SecPkgInfoA::from(package_info);
 
-                *nego_package_info = into_raw_ptr(w_package_info);
-
-                // let mut name = package_info.name.to_string().as_bytes().to_vec();
-                // name.push(0);
-
-                // let mut comment = package_info.comment.as_bytes().to_vec();
-                // comment.push(0);
-
-                // (*nego_package_info).f_capabilities = package_info.capabilities.bits() as c_ulong;
-                // (*nego_package_info).w_version = 3;
-                // (*nego_package_info).w_rpc_id = package_info.rpc_id;
-                // (*nego_package_info).cb_max_token = package_info.max_token_len;
-                // (*nego_package_info).name = vec_into_raw_ptr(name) as *mut c_char;
-                // (*nego_package_info).comment = vec_into_raw_ptr(comment) as *mut c_char;
-
-                file_message("finish SECPKG_ATTR_NEGOTIATION_PACKAGE");
+                    let nego_package_info = p_buffer.cast::<*mut SecPkgInfoA>();
+                    *nego_package_info = into_raw_ptr(package_info);
+                }
 
                 0
-                // ErrorKind::UnsupportedFunction.to_u32().unwrap()
             }
             SECPKG_ATTR_SERVER_AUTH_FLAGS => {
-                file_message("start SECPKG_ATTR_SERVER_AUTH_FLAGS");
-                file_message("not expected...");
+                let flags = SecPkgContextFlags {
+                    flags: 0,
+                };
 
-                // let flags = SecPkgContextFlags {
-                //     flags: 0,
-                // };
+                let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
+                *sec_context_flags = into_raw_ptr(flags);
 
-                // let sec_context_flags = p_buffer.cast::<SecPkgContextFlags>();
-
-                // (*sec_context_flags).flags = 0;
-
-                // let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
-
-                // *sec_context_flags = into_raw_ptr(flags);
-
-                file_message("finish SECPKG_ATTR_SERVER_AUTH_FLAGS");
-
-                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+                0
             }
             SECPKG_ATTR_CONNECTION_INFO => {
-                file_message("start SECPKG_ATTR_CONNECTION_INFO");
-
                 let connection_info = try_execute!(sspi_context.query_context_connection_info());
-                file_message(&format!("connection info: {:?}", connection_info));
 
-                // let sec_pkg_context_connection_info = p_buffer.cast::<*mut SecPkgContextConnectionInfo>();
+                let sec_pkg_context_connection_info = p_buffer.cast::<SecPkgContextConnectionInfo>();
 
-                // let s = SecPkgContextConnectionInfo {
-                //     dw_protocol: connection_info.protocol.bits(),
-                //     ai_cipher: connection_info.cipher.bits(),
-                //     dw_cipher_strength: connection_info.cipher_strength,
-                //     ai_hash: connection_info.hash.bits(),
-                //     dw_hash_strength: connection_info.hash_strength,
-                //     ai_exch: connection_info.key_exchange.bits(),
-                //     dw_exch_strength: connection_info.exchange_strength,
-                // };
+                (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.bits();
+                (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.bits();
+                (*sec_pkg_context_connection_info).dw_cipher_strength = connection_info.cipher_strength;
+                (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.bits();
+                (*sec_pkg_context_connection_info).dw_hash_strength = connection_info.hash_strength;
+                (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.bits();
+                (*sec_pkg_context_connection_info).dw_exch_strength = connection_info.exchange_strength;
 
-                // *sec_pkg_context_connection_info = into_raw_ptr(s);
-
-                // let sec_pkg_context_connection_info = p_buffer.cast::<SecPkgContextConnectionInfo>();
-
-                // (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.bits();
-                // (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.bits();
-                // (*sec_pkg_context_connection_info).dw_cipher_strength = connection_info.cipher_strength;
-                // (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.bits();
-                // // (*sec_pkg_context_connection_info).dw_hash_strength = connection_info.hash_strength;
-                // (*sec_pkg_context_connection_info).dw_hash_strength = 0;
-                // (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.bits();
-                // (*sec_pkg_context_connection_info).dw_exch_strength = connection_info.exchange_strength;
-
-                // file_message(&format!("{:x?}", from_raw_parts(p_buffer as *const u8, 32)));
-
-                file_message("finish SECPKG_ATTR_CONNECTION_INFO");
-
-                // 0
-                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+                0
             }
             SECPKG_ATTR_CERT_TRUST_STATUS => {
-                file_message("start SECPKG_ATTR_CERT_TRUST_STATUS");
+                let sspi_cert_trust_status = try_execute!(sspi_context.query_context_cert_trust_status());
 
-                // let sspi_cert_trust_status = try_execute!(sspi_context.query_context_cert_trust_status());
-                // let sec_pkg_context_connection_info = p_buffer.cast::<*mut SecPkgContextConnectionInfo>();
+                let cert_trust_status = p_buffer.cast::<CertTrustStatus>();
+                (*cert_trust_status).dw_error_status = sspi_cert_trust_status.error_status.bits();
+                (*cert_trust_status).dw_info_status = sspi_cert_trust_status.info_status.bits();
 
-                // let cert_trust_status = p_buffer.cast::<CertTrustStatus>();
-                // (*cert_trust_status).dw_error_status = 0;
-                // (*cert_trust_status).dw_info_status = 0;
-
-                file_message("finish SECPKG_ATTR_CERT_TRUST_STATUS");
-
-                // 0
-                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+                0
             }
             SECPKG_ATTR_PACKAGE_INFO => {
-                file_message("SECPKG_ATTR_PACKAGE_INFO");
-
                 let package_info = try_execute!(sspi_context.query_context_package_info());
-                file_message(&format!("pi: {:?}", package_info));
 
-                // let nego_package_info = p_buffer.cast::<SecPkgInfoA>();
+                if is_wide {
+                    let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
-                // let mut name = package_info.name.to_string().as_bytes().to_vec();
-                // name.push(0);
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(package_info));
+                } else {
+                    let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
-                // let mut comment = package_info.comment.as_bytes().to_vec();
-                // comment.push(0);
-
-                // (*nego_package_info).f_capabilities = package_info.capabilities.bits() as c_ulong;
-                // (*nego_package_info).w_version = 3;
-                // (*nego_package_info).w_rpc_id = package_info.rpc_id;
-                // (*nego_package_info).cb_max_token = package_info.max_token_len;
-                // (*nego_package_info).name = vec_into_raw_ptr(name) as *mut c_char;
-                // (*nego_package_info).comment = vec_into_raw_ptr(comment) as *mut c_char;
-
-                let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
-
-                let w_package_info = SecPkgInfoW::from(package_info);
-
-                *nego_package_info = into_raw_ptr(w_package_info);
-
-                file_message("finish SECPKG_ATTR_PACKAGE_INFO");
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(package_info));
+                }
 
                 0
             }
             _ => {
-                file_message(&format!("unsupported: {} {:x?}", ul_attribute, ul_attribute));
                 ErrorKind::UnsupportedFunction.to_u32().unwrap()
             },
         }
     }
+}
+
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
+#[no_mangle]
+pub unsafe extern "system" fn QueryContextAttributesA(
+    mut ph_context: PCtxtHandle,
+    ul_attribute: c_ulong,
+    p_buffer: *mut c_void,
+) -> SecurityStatus {
+    query_context_attributes_common(ph_context, ul_attribute, p_buffer, false)
+}
+
+pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
+
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
+#[no_mangle]
+pub unsafe extern "system" fn QueryContextAttributesW(
+    mut ph_context: PCtxtHandle,
+    ul_attribute: c_ulong,
+    p_buffer: *mut c_void,
+) -> SecurityStatus {
+    query_context_attributes_common(ph_context, ul_attribute, p_buffer, true)
 }
 
 pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
@@ -872,7 +762,6 @@ pub extern "system" fn ImportSecurityContextA(
     _token: *mut c_void,
     _ph_context: PCtxtHandle,
 ) -> SecurityStatus {
-    file_message("ffi: import sec context a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -888,7 +777,6 @@ pub extern "system" fn ImportSecurityContextW(
     _token: *mut c_void,
     _ph_context: PCtxtHandle,
 ) -> SecurityStatus {
-    file_message("ffi: import sec context w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -908,7 +796,6 @@ pub extern "system" fn AddCredentialsA(
     _p2: *mut c_void,
     _t: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: add creds a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -936,7 +823,6 @@ pub extern "system" fn AddCredentialsW(
     _p2: *mut c_void,
     _t: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: add creds w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -960,7 +846,6 @@ pub extern "system" fn SetContextAttributesA(
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: set context attr a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -974,7 +859,6 @@ pub extern "system" fn SetContextAttributesW(
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: set context attr w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -989,7 +873,6 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: set creds attr a");
     catch_panic! {
         check_null!(ph_credential);
         check_null!(p_buffer);
@@ -1049,7 +932,6 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: set creds attr w");
     catch_panic! {
         check_null!(ph_credential);
         check_null!(p_buffer);
@@ -1107,7 +989,6 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     _dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    file_message("ffi: change passw a");
     catch_panic! {
         check_null!(psz_package_name);
         check_null!(psz_domain_name);
@@ -1181,7 +1062,6 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     dw_reserved: c_ulong,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
-    file_message("ffi: change passw w");
     catch_panic! {
         check_null!(psz_package_name);
         check_null!(psz_domain_name);
@@ -1230,7 +1110,6 @@ pub extern "system" fn QueryContextAttributesExA(
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: query context attr ex a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -1245,7 +1124,6 @@ pub extern "system" fn QueryContextAttributesExW(
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: query context attr ex w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -1260,7 +1138,6 @@ pub extern "system" fn QueryCredentialsAttributesExA(
     _p_buffer: *mut c_void,
     _c_buffers: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: query creds attr ex a");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
@@ -1276,7 +1153,6 @@ pub extern "system" fn QueryCredentialsAttributesExW(
     _p_buffer: *mut c_void,
     _c_buffers: c_ulong,
 ) -> SecurityStatus {
-    file_message("ffi: query creds attr ex w");
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 

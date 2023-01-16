@@ -10,13 +10,13 @@ EXPORTS
     AcquireCredentialsHandleW=SpAcquireCredentialsHandleW
     FreeCredentialsHandle=Rust_FreeCredentialsHandle
     InitializeSecurityContextA=Rust_InitializeSecurityContextA
-    InitializeSecurityContextW=SpInitializeSecurityContextW
+    InitializeSecurityContextW=Rust_InitializeSecurityContextW
     AcceptSecurityContext=Rust_AcceptSecurityContext
     CompleteAuthToken=Rust_CompleteAuthToken
     DeleteSecurityContext=Rust_DeleteSecurityContext
     ApplyControlToken=Rust_ApplyControlToken
     QueryContextAttributesA=Rust_QueryContextAttributesA
-    QueryContextAttributesW=SpQueryContextAttributesW
+    QueryContextAttributesW=Rust_QueryContextAttributesW
     ImpersonateSecurityContext=Rust_ImpersonateSecurityContext
     RevertSecurityContext=Rust_RevertSecurityContext
     MakeSignature=Rust_MakeSignature

@@ -665,6 +665,18 @@ where
     /// * [QuerySecurityPackageInfoW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfow)
     fn query_context_names(&mut self) -> Result<ContextNames>;
 
+    /// Queries the sizes of the various parts of a stream used in the per-message functions. This function is implemented only for CredSSP security package.
+    ///
+    /// # MSDN
+    ///
+    /// * [QuerySecurityPackageInfoW function (`ulAttribute` parameter)](https://learn.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--schannel)
+    fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_stream_sizes is not supported".into(),
+        ))
+    }
+
     /// Retrieves information about the specified security package. This information includes the bounds of sizes of authentication information, credentials, and contexts.
     ///
     /// # Returns
@@ -1354,6 +1366,20 @@ bitflags! {
         /// * The caller has supplied credentials
         const APP_CONTAINER_CHECKS = 0x80_0000;
     }
+}
+
+/// Indicates the sizes of the various parts of a stream for use with the message support functions.
+/// `query_context_stream_sizes` function returns this structure.
+///
+/// # MSDN
+///
+/// * [SecPkgContext_StreamSizes](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes)
+pub struct StreamSizes {
+    pub header: u32,
+    pub trailer: u32,
+    pub max_message: u32,
+    pub buffers: u32,
+    pub block_size: u32,
 }
 
 /// Indicates the sizes of important structures used in the message support functions.
