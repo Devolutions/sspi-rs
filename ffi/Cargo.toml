@@ -28,3 +28,4 @@ tracing-subscriber = { version = "0.3.16", features = ["std", "fmt", "local-time
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
 winapi = "0.3.9"
+windows-sys = { version = "0.42.0", features = ["Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation"] }

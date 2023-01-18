@@ -642,3 +642,19 @@ impl SspiEx for SspiCredSsp {
         self.auth_identity = Some(identity.into());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::slice::from_raw_parts;
+
+    #[test]
+    fn test_creds_decoding() {
+        let memory: [u8; 92] = [64, 0, 64, 0, 68, 0, 7, 0, 8, 0, 12, 0, 10, 0, 13, 0, 89, 0, 65, 0, 65, 0, 65, 0, 65, 0, 65, 0, 66, 0, 113, 0, 70, 0, 67, 0, 65, 0, 65, 0, 65, 0, 65, 0, 65, 0, 65, 0, 103, 0, 98, 0, 118, 0, 51, 0, 79, 0, 109, 0, 120, 0, 65, 0, 107, 0, 52, 0, 35, 0, 48, 0, 97, 0, 90, 0, 72, 0, 73, 0, 54, 0, 65, 0, 68, 0, 69, 0, 73, 0, 112, 0];
+        unsafe {
+            let mem_ptr = memory.as_ptr();
+            let raw_wide_str_data = from_raw_parts(mem_ptr as *const u16, 46);
+            let s = String::from_utf16(raw_wide_str_data);
+            println!("{:?}", s);
+        }
+    }
+}

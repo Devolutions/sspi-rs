@@ -1,11 +1,13 @@
 use std::ptr::drop_in_place;
 
 use libc::{c_char, c_ushort, c_void};
+use sspi::AuthIdentityBuffers;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, file_message};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -67,6 +69,7 @@ pub struct SecWinntAuthIdentityExA {
 
 pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecWinntAuthIdentityEx2 {
     pub version: u32,
@@ -82,6 +85,61 @@ pub struct SecWinntAuthIdentityEx2 {
     pub package_list_offset: u32,
     pub package_list_length: u16,
 }
+
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> AuthIdentityBuffers {
+    let p_auth_data_len = 170;
+
+    let mut username = vec![0_u8; 64];
+    let mut max_username = 32;
+
+    let mut domain = vec![0_u8; 64];
+    let mut max_domain = 32;
+
+    let mut password = vec![0_u8; 64];
+    let mut max_password = 32;
+
+    let res = CredUnPackAuthenticationBufferW(
+        CRED_PACK_PROTECTED_CREDENTIALS,
+        p_auth_data,
+        p_auth_data_len,
+        username.as_mut_ptr() as *mut _,
+        &mut max_username,
+        domain.as_mut_ptr() as *mut _,
+        &mut max_domain,
+        password.as_mut_ptr() as *mut _,
+        &mut max_password,
+    );
+    file_message(&format!("res: {}", res));
+    file_message(&format!("{:?} {} | {:?} {} | {:?} {}", username.as_ptr(), max_username, domain.as_ptr(), max_domain, password.as_ptr(), max_password));
+    file_message(&format!("{:?} {:?} {:?}", username, domain, password));
+
+    let mut auth_identity_buffers = AuthIdentityBuffers::default();
+
+    if max_username < 32 {
+        username.resize((max_username as usize - 1) * 2, 0);
+        auth_identity_buffers.user = username;
+    }
+
+    if max_domain < 32 {
+        domain.resize((max_domain as usize - 1) * 2, 0);
+        auth_identity_buffers.domain = domain;
+    } else {
+        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == 92) {
+            auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
+            auth_identity_buffers.user = auth_identity_buffers.user[(index + 2)..].to_vec();
+        }
+    }
+
+    if max_password < 32 {
+        password.resize((max_password as usize - 1) * 2, 0);
+        auth_identity_buffers.password = password;
+    }
+
+    file_message(&format!("{:?}", auth_identity_buffers));
+
+    auth_identity_buffers
+}
+
 
 #[allow(clippy::missing_safety_doc)]
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]

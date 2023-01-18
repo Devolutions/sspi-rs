@@ -35,7 +35,7 @@ use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::sec_winnt_auth_identity::{
     SecWinntAuthIdentityA, SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
-    SEC_WINNT_AUTH_IDENTITY_VERSION,
+    SEC_WINNT_AUTH_IDENTITY_VERSION, unpack_sec_winnt_auth_identity_ex2,
 };
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
@@ -248,15 +248,15 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
-// #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
-// #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
+#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
 pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
     psz_package: LpcWStr,
     _f_credential_use: c_ulong,
     _pv_logon_id: *const c_void,
-    mut p_auth_data: *const c_void,
+    p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
     _pv_get_key_argument: *const c_void,
     ph_credential: PCredHandle,
@@ -270,28 +270,14 @@ pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
 
         let security_package_name = c_w_str_to_string(psz_package);
 
-        file_message(&format!("{:?}", p_auth_data));
-        file_message(&format!("{:?}", from_raw_parts(p_auth_data as *const u8, size_of::<CredSspCred>())));
-        if security_package_name == "CREDSSP" {
-            // here we should handle creds for the Schannel
-            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-            file_message(&format!("{:?}", credssp_cred));
-            p_auth_data = credssp_cred.p_spnego_cred;
-        } else {
-            file_message("not in credssp creds");
-        }
-
         let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
         let credentials =
         if security_package_name == "CREDSSP" {
-            file_message("return empty buffers");
-            AuthIdentityBuffers {
-                user: vec![116, 0, 101, 0, 115, 0, 116, 0],
-                domain: vec![],
-                password: vec![116, 0, 101, 0, 115, 0, 116, 0],
-            }
+            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+
+            unpack_sec_winnt_auth_identity_ex2(credssp_cred.p_spnego_cred)
         } else
         if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
