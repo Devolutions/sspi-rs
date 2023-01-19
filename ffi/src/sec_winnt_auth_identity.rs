@@ -4,6 +4,7 @@ use libc::{c_char, c_ushort, c_void};
 use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
@@ -126,6 +127,7 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
+#[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     let user_len_ptr = (p_auth_data as *const u16).add(4);
     let user_buffer_len = *user_len_ptr as u32;

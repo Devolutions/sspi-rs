@@ -15,6 +15,7 @@ use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
     Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi, SspiImpl,
 };
+#[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
     CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
     CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
@@ -49,16 +50,26 @@ pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;
 pub const SECPKG_NEGOTIATION_IN_PROGRESS: u32 = 2;
 
+// the sizes of the structures used in the per-message functions and authentication exchanges
 pub const SECPKG_ATTR_SIZES: u32 = 0;
+// information about the security package to be used with the negotiation process and the current state of the negotiation for the use of that package
 pub const SECPKG_ATTR_NEGOTIATION_INFO: u32 = 12;
+// the sizes of the various parts of a stream used in the per-message functions
 pub const SECPKG_ATTR_STREAM_SIZES: u32 = 4;
+// certificate context that contains the end certificate supplied by the server
 pub const SECPKG_ATTR_REMOTE_CERT_CONTEXT: u32 = 0x53;
+// the name of the authentication package negotiated by the Microsoft Negotiate provider
 pub const SECPKG_ATTR_NEGOTIATION_PACKAGE: u32 = 0x80000081;
+// information on the SSP in use
 pub const SECPKG_ATTR_PACKAGE_INFO: u32 = 10;
+// information about the flags in the current security context
 pub const SECPKG_ATTR_SERVER_AUTH_FLAGS: u32 = 0x80000083;
+// trust information about the certificate
 pub const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x80000084;
+// detailed information on the established connection
 pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
 
+// Sets the Kerberos proxy setting
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
 
 const SECPKG_CRED_ATTR_KDC_URL: c_ulong = 501;
@@ -607,32 +618,38 @@ unsafe fn query_context_attributes_common(
                 0
             }
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
-                let cert_context = try_execute!(sspi_context.query_context_remote_cert());
+                cfg_if::cfg_if! {
+                    if #[cfg(target_os = "windows")] {
+                        let cert_context = try_execute!(sspi_context.query_context_remote_cert());
 
-                let store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null());
+                        let store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null());
 
-                if store.is_null() {
-                    return ErrorKind::InternalError.to_u32().unwrap();
+                        if store.is_null() {
+                            return ErrorKind::InternalError.to_u32().unwrap();
+                        }
+
+                        let mut p_cert_context = null();
+
+                        let result = CertAddEncodedCertificateToStore(
+                            store,
+                            cert_context.encoding_type.to_u32().unwrap(),
+                            cert_context.raw_cert.as_ptr(),
+                            cert_context.raw_cert.len() as u32,
+                            CERT_STORE_ADD_REPLACE_EXISTING,
+                            &mut p_cert_context
+                        );
+                        if result != 1 {
+                            return ErrorKind::InternalError.to_u32().unwrap();
+                        }
+
+                        let p_cert_buffer = p_buffer.cast::<*const CERT_CONTEXT>();
+                        *p_cert_buffer = p_cert_context;
+
+                        0
+                    } else {
+                        return ErrorKind::UnsupportedFunction.to_u32().unwrap();
+                    }
                 }
-
-                let mut p_cert_context = null();
-
-                let result = CertAddEncodedCertificateToStore(
-                    store,
-                    cert_context.encoding_type.to_u32().unwrap(),
-                    cert_context.raw_cert.as_ptr(),
-                    cert_context.raw_cert.len() as u32,
-                    CERT_STORE_ADD_REPLACE_EXISTING,
-                    &mut p_cert_context
-                );
-                if result != 1 {
-                    return ErrorKind::InternalError.to_u32().unwrap();
-                }
-
-                let p_cert_buffer = p_buffer.cast::<*const CERT_CONTEXT>();
-                *p_cert_buffer = p_cert_context;
-
-                0
             }
             SECPKG_ATTR_NEGOTIATION_PACKAGE => {
                 let package_info = try_execute!(sspi_context.query_context_negotiation_package());
