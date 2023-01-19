@@ -34,15 +34,15 @@ use crate::credentials_attributes::{
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::sec_winnt_auth_identity::{
-    SecWinntAuthIdentityA, SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
-    SEC_WINNT_AUTH_IDENTITY_VERSION, unpack_sec_winnt_auth_identity_ex2,
+    unpack_sec_winnt_auth_identity_ex2, CredSspCred, SecWinntAuthIdentityA, SecWinntAuthIdentityExA,
+    SecWinntAuthIdentityExW, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_VERSION,
 };
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use crate::utils::{
-    c_w_str_to_string, file_message, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
+    c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
 };
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -135,12 +135,8 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
-            sspi_cred_ssp::PKG_NAME => {
-                file_message("credssp context create:");
-                SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new()))?)
-            }
+            sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new()))?),
             _ => {
-                file_message(&format!("security package name `{}` is not supported", name));
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
                     format!("security package name `{}` is not supported", name),
@@ -168,7 +164,6 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: acquire creds handle a");
     catch_panic! {
         check_null!(psz_package);
         check_null!(p_auth_data);
@@ -229,25 +224,6 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-#[derive(Debug)]
-#[repr(C)]
-pub enum CredSspSubmitType {
-    CredsspPasswordCreds = 2,
-    CredsspSchannelCreds = 4,
-    CredsspCertificateCreds = 13,
-    CredsspSubmitBufferBoth = 50,
-    CredsspSubmitBufferBothOld = 51,
-    CredsspCredEx = 100,
-}
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct CredSspCred {
-    pub submit_type: CredSspSubmitType,
-    pub p_schannel_cred: *const c_void,
-    pub p_spnego_cred: *const c_void,
-}
-
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
@@ -262,7 +238,6 @@ pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
     ph_credential: PCredHandle,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
-    file_message("ffi: acquire creds handle w");
     catch_panic! {
         check_null!(psz_package);
         check_null!(p_auth_data);
@@ -273,30 +248,30 @@ pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
         let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
-        let credentials =
-        if security_package_name == "CREDSSP" {
+        let credentials = if security_package_name == sspi_cred_ssp::PKG_NAME {
             let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
 
-            unpack_sec_winnt_auth_identity_ex2(credssp_cred.p_spnego_cred)
-        } else
-        if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+            try_execute!(unpack_sec_winnt_auth_identity_ex2(credssp_cred.p_spnego_cred))
+        } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
-            file_message(&format!("{:?}", *auth_data));
+
             if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
                 package_list = Some(String::from_utf16_lossy(from_raw_parts(
                     (*auth_data).package_list as *const u16,
                     (*auth_data).package_list_length as usize)
                 ));
             }
+
             let auth_buffers = AuthIdentityBuffers {
                 user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
                 domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
                 password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
             };
-            file_message(&format!("{:?}", auth_buffers));
+
             auth_buffers
         } else {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
+
             AuthIdentityBuffers {
                 user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
                 domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),

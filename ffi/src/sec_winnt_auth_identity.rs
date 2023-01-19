@@ -1,13 +1,13 @@
-use std::ptr::drop_in_place;
+use std::ptr::{drop_in_place, null_mut};
 
 use libc::{c_char, c_ushort, c_void};
-use sspi::AuthIdentityBuffers;
+use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, file_message};
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -86,60 +86,127 @@ pub struct SecWinntAuthIdentityEx2 {
     pub package_list_length: u16,
 }
 
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> AuthIdentityBuffers {
-    let p_auth_data_len = 170;
+/// [CREDSPP_SUBMIT_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/credssp/ne-credssp-credspp_submit_type)
+///
+/// ```not_rust
+/// typedef enum _CREDSSP_SUBMIT_TYPE {
+///   CredsspPasswordCreds = 2,
+///   CredsspSchannelCreds = 4,
+///   CredsspCertificateCreds = 13,
+///   CredsspSubmitBufferBoth = 50,
+///   CredsspSubmitBufferBothOld = 51,
+///   CredsspCredEx = 100
+/// } CREDSPP_SUBMIT_TYPE;
+/// ```
+#[derive(Debug)]
+#[repr(C)]
+pub enum CredSspSubmitType {
+    CredsspPasswordCreds = 2,
+    CredsspSchannelCreds = 4,
+    CredsspCertificateCreds = 13,
+    CredsspSubmitBufferBoth = 50,
+    CredsspSubmitBufferBothOld = 51,
+    CredsspCredEx = 100,
+}
 
-    let mut username = vec![0_u8; 64];
-    let mut max_username = 32;
+/// [CREDSSP_CRED](https://learn.microsoft.com/en-us/windows/win32/api/credssp/ns-credssp-credssp_cred)
+///
+/// ```not_rust
+/// typedef struct _CREDSSP_CRED {
+///   CREDSPP_SUBMIT_TYPE Type;
+///   PVOID               pSchannelCred;
+///   PVOID               pSpnegoCred;
+/// } CREDSSP_CRED, *PCREDSSP_CRED;
+/// ```
+#[derive(Debug)]
+#[repr(C)]
+pub struct CredSspCred {
+    pub submit_type: CredSspSubmitType,
+    pub p_schannel_cred: *const c_void,
+    pub p_spnego_cred: *const c_void,
+}
 
-    let mut domain = vec![0_u8; 64];
-    let mut max_domain = 32;
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+    let user_len_ptr = (p_auth_data as *const u16).add(4);
+    let user_buffer_len = *user_len_ptr as u32;
 
-    let mut password = vec![0_u8; 64];
-    let mut max_password = 32;
+    let domain_len_ptr = user_len_ptr.add(8);
+    let domain_buffer_len = *domain_len_ptr as u32;
 
-    let res = CredUnPackAuthenticationBufferW(
+    let creds_len_ptr = domain_len_ptr.add(8);
+    let creds_buffer_len = *creds_len_ptr as u32;
+
+    // header size + buffers size
+    let auth_data_len =
+        64 /* size of SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len;
+
+    let mut username_len = 0;
+    let mut domain_len = 0;
+    let mut password_len = 0;
+
+    // the first call is just to query the username, domain, and password length
+    CredUnPackAuthenticationBufferW(
         CRED_PACK_PROTECTED_CREDENTIALS,
         p_auth_data,
-        p_auth_data_len,
-        username.as_mut_ptr() as *mut _,
-        &mut max_username,
-        domain.as_mut_ptr() as *mut _,
-        &mut max_domain,
-        password.as_mut_ptr() as *mut _,
-        &mut max_password,
+        auth_data_len,
+        null_mut() as *mut _,
+        &mut username_len,
+        null_mut() as *mut _,
+        &mut domain_len,
+        null_mut() as *mut _,
+        &mut password_len,
     );
-    file_message(&format!("res: {}", res));
-    file_message(&format!("{:?} {} | {:?} {} | {:?} {}", username.as_ptr(), max_username, domain.as_ptr(), max_domain, password.as_ptr(), max_password));
-    file_message(&format!("{:?} {:?} {:?}", username, domain, password));
+
+    let mut username = vec![0_u8; username_len as usize * 2];
+    let mut domain = vec![0_u8; domain_len as usize * 2];
+    let mut password = vec![0_u8; password_len as usize * 2];
+
+    let result = CredUnPackAuthenticationBufferW(
+        CRED_PACK_PROTECTED_CREDENTIALS,
+        p_auth_data,
+        auth_data_len,
+        username.as_mut_ptr() as *mut _,
+        &mut username_len,
+        domain.as_mut_ptr() as *mut _,
+        &mut domain_len,
+        password.as_mut_ptr() as *mut _,
+        &mut password_len,
+    );
+
+    if result != 1 {
+        return Err(Error::new(
+            ErrorKind::WrongCredentialHandle,
+            "Cannot unpack credentials".into(),
+        ));
+    }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    if max_username < 32 {
-        username.resize((max_username as usize - 1) * 2, 0);
-        auth_identity_buffers.user = username;
-    }
+    // remove null
+    username.pop();
+    username.pop();
+    auth_identity_buffers.user = username;
 
-    if max_domain < 32 {
-        domain.resize((max_domain as usize - 1) * 2, 0);
-        auth_identity_buffers.domain = domain;
-    } else {
-        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == 92) {
+    if domain_len == 0 {
+        // sometimes username can be formatted as `DOMAIN\username`
+        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
             auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
             auth_identity_buffers.user = auth_identity_buffers.user[(index + 2)..].to_vec();
         }
+    } else {
+        // remove null
+        domain.pop();
+        domain.pop();
+        auth_identity_buffers.domain = domain;
     }
 
-    if max_password < 32 {
-        password.resize((max_password as usize - 1) * 2, 0);
-        auth_identity_buffers.password = password;
-    }
+    // remove null
+    password.pop();
+    password.pop();
+    auth_identity_buffers.password = password;
 
-    file_message(&format!("{:?}", auth_identity_buffers));
-
-    auth_identity_buffers
+    Ok(auth_identity_buffers)
 }
-
 
 #[allow(clippy::missing_safety_doc)]
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
