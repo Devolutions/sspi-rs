@@ -6,14 +6,14 @@ use std::slice::from_raw_parts;
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
-use sspi::internal::credssp::sspi_cred_ssp::SspiCredSsp;
-use sspi::internal::credssp::{sspi_cred_ssp, SspiContext};
-use sspi::internal::SspiImpl;
+use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
+use sspi::credssp::{sspi_cred_ssp, SspiContext};
 use sspi::kerberos::config::KerberosConfig;
-use sspi::kerberos::network_client::reqwest_network_client::ReqwestNetworkClient;
+use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
+use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi, SspiImpl,
 };
 use winapi::um::wincrypt::{
     CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
@@ -21,9 +21,9 @@ use winapi::um::wincrypt::{
 };
 
 cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        use sspi::{ Pku2u, Pku2uConfig };
+    if #[cfg(target_os = "windows")] {
         use symbol_rename_macro::rename_symbol;
+        use sspi::{Pku2u, Pku2uConfig};
     }
 }
 
@@ -101,16 +101,24 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         let sspi_context = match name {
             negotiate::PKG_NAME => {
+                let hostname = whoami::hostname();
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    let kerberos_config = KerberosConfig::from_kdc_url(&kdc_url, Box::new(ReqwestNetworkClient::new()));
-                    let negotiate_config =
-                        NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone());
+                    let kerberos_config =
+                        KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
+                    let negotiate_config = NegotiateConfig::new(
+                        Box::new(kerberos_config),
+                        attributes.package_list.clone(),
+                        hostname,
+                        Box::new(RequestClientFactory),
+                    );
 
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 } else {
                     let negotiate_config = NegotiateConfig {
+                        protocol_config: Box::new(NtlmConfig),
                         package_list: attributes.package_list.clone(),
-                        ..Default::default()
+                        hostname,
+                        network_client_factory: Box::new(RequestClientFactory),
                     };
                     SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
                 }
@@ -122,16 +130,22 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     "PKU2U is not supported on non-Windows OS yet".into(),
                 ));
                 #[cfg(target_os = "windows")]
-                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config()?)?)
+                SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
+                    whoami::hostname(),
+                )?)?)
             }
             kerberos::PKG_NAME => {
+                let hostname = whoami::hostname();
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_kdc_url(
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
                         &kdc_url,
                         Box::new(ReqwestNetworkClient::new()),
+                        hostname,
                     ))?)
                 } else {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::from_env())?)
+                    let mut krb_config = KerberosConfig::from_env();
+                    krb_config.hostname = Some(hostname);
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
@@ -145,8 +159,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         };
 
         (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
-        (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        if (*(*context)).dw_upper == 0 {
+            (*(*context)).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+        }
     }
+
     Ok((*(*context)).dw_lower as *mut SspiContext)
 }
 
@@ -402,7 +419,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         *pf_context_attr = f_context_req;
 
@@ -502,7 +519,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         *pf_context_attr = f_context_req;
 
         (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
-        (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        (*ph_new_context).dw_upper = (*ph_context).dw_upper;
 
         let result = try_execute!(result_status);
         result.status.to_u32().unwrap()
@@ -562,12 +579,16 @@ unsafe fn query_context_attributes_common(
                     let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
                     (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(package_info));
+
+                    let package_info: &mut SecPkgInfoW = package_info.into();
+                    (*nego_info).package_info = package_info;
                 } else {
                     let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
                     (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(package_info));
+
+                    let package_info: &mut SecPkgInfoA = package_info.into();
+                    (*nego_info).package_info = package_info;
                 }
 
                 0
@@ -617,15 +638,19 @@ unsafe fn query_context_attributes_common(
                 let package_info = try_execute!(sspi_context.query_context_negotiation_package());
 
                 if is_wide {
-                    let package_info = SecPkgInfoW::from(package_info);
+                    let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
-                    let nego_package_info = p_buffer.cast::<*mut SecPkgInfoW>();
-                    *nego_package_info = into_raw_ptr(package_info);
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+
+                    let package_info: &mut SecPkgInfoW = package_info.into();
+                    (*nego_info).package_info = package_info;
                 } else {
-                    let package_info = SecPkgInfoA::from(package_info);
+                    let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
-                    let nego_package_info = p_buffer.cast::<*mut SecPkgInfoA>();
-                    *nego_package_info = into_raw_ptr(package_info);
+                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
+
+                    let package_info: &mut SecPkgInfoA = package_info.into();
+                    (*nego_info).package_info = package_info;
                 }
 
                 0
@@ -671,12 +696,16 @@ unsafe fn query_context_attributes_common(
                     let nego_info = p_buffer.cast::<SecNegoInfoW>();
 
                     (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoW::from(package_info));
+
+                    let package_info: &mut SecPkgInfoW = package_info.into();
+                    (*nego_info).package_info = package_info;
                 } else {
                     let nego_info = p_buffer.cast::<SecNegoInfoA>();
 
                     (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-                    (*nego_info).package_info = into_raw_ptr(SecPkgInfoA::from(package_info));
+
+                    let package_info: &mut SecPkgInfoA = package_info.into();
+                    (*nego_info).package_info = package_info;
                 }
 
                 0
@@ -815,7 +844,7 @@ pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
 #[no_mangle]
 pub extern "system" fn SetContextAttributesW(
-    _ph_credential: PCtxtHandle,
+    _ph_context: PCtxtHandle,
     _ul_attribute: c_ulong,
     _p_buffer: *mut c_void,
     _cb_buffer: c_ulong,
@@ -979,10 +1008,22 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             .expect("change password builder should never fail");
 
         let mut sspi_context = match security_package_name {
-            negotiate::PKG_NAME => SspiContext::Negotiate(try_execute!(Negotiate::new(NegotiateConfig::default()))),
-            kerberos::PKG_NAME => SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
-                KerberosConfig::from_env()
-            ))),
+            negotiate::PKG_NAME => {
+                let negotiate_config = NegotiateConfig {
+                    protocol_config: Box::new(NtlmConfig),
+                    package_list: None,
+                    hostname: whoami::hostname(),
+                    network_client_factory: Box::new(RequestClientFactory),
+                };
+                SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
+            },
+            kerberos::PKG_NAME => {
+                let mut krb_config = KerberosConfig::from_env();
+                krb_config.hostname = Some(whoami::hostname());
+                SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
+                    krb_config
+                )))
+            },
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();

@@ -3,9 +3,6 @@ use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
 use rand::Rng;
 
-#[allow(unused)]
-use crate::sspi::pku2u::AZURE_AD_DOMAIN;
-
 pub fn string_to_utf16(value: &str) -> Vec<u8> {
     value
         .encode_utf16()
@@ -22,9 +19,9 @@ pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
     String::from_utf16_lossy(value_u16.as_ref())
 }
 
-#[allow(unused)]
+#[cfg_attr(not(target_os = "windows"), allow(unused))]
 pub fn is_azure_ad_domain(domain: &str) -> bool {
-    domain == AZURE_AD_DOMAIN
+    domain == crate::pku2u::AZURE_AD_DOMAIN
 }
 
 pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {

@@ -2,6 +2,9 @@
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <IsPowerShell Condition="$(DefineConstants.Contains('__POWERSHELL__'))">true</IsPowerShell>
+    <IsAndroid Condition="$(TargetFramework.ToUpper().Contains('ANDROID'))">true</IsAndroid>
+    <IsIOS Condition="'$(Platform)' == 'iPhone' or '$(Platform)' == 'iPhoneSimulator'">true</IsIOS>
+    <IsNet6Mac Condition="$(TargetFramework.Contains('-macos'))">true</IsNet6Mac>
   </PropertyGroup>
   <ItemGroup>
     <Content Condition="$([MSBuild]::IsOSPlatform('Windows')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\win-x64\native\DevolutionsSspi.dll">
@@ -93,13 +96,13 @@
           <Abi>x86_64</Abi>
       </AndroidNativeLibrary>
   </ItemGroup> 
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true' AND '$(Platform)' != 'iPhone' AND '$(Platform)' != 'iPhoneSimulator'">
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true' AND '$(IsIOS)' != 'true' AND '$(IsAndroid)' != 'true' AND '$(IsNet6Mac)' != 'true'">
     <NativeReference Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-universal\native\libDevolutionsSspi.dylib">
       <Kind>Dynamic</Kind>
       <SmartLink>False</SmartLink>
     </NativeReference>
   </ItemGroup>
-  <ItemGroup Condition="(('$(Platform)' == 'iPhone')) or (('$(Platform)' == 'iPhoneSimulator'))">
+  <ItemGroup Condition="'$(IsIOS)' == 'true'">
     <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\ios-universal\native\libDevolutionsSspi.framework">
       <Kind>Framework</Kind>
     </NativeReference>

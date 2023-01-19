@@ -10,7 +10,6 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::{SecurityBuffer, SecurityBufferType};
 
 #[cfg(target_os = "windows")]
-#[derive(Debug)]
 #[repr(C)]
 pub struct SecBuffer {
     pub cb_buffer: c_ulong,
@@ -70,7 +69,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: 
         to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
         to_buffers[i].buffer_type = buffer.buffer_type.to_u32().unwrap();
         if allocate || to_buffers[i].pv_buffer.is_null() {
-            let memory_layout = Layout::from_size_align_unchecked(buffer_size as usize, 8);
+            let memory_layout = Layout::from_size_align_unchecked(buffer_size, 8);
             to_buffers[i].pv_buffer = alloc(memory_layout) as *mut c_char;
         }
         let to_buffer = from_raw_parts_mut(to_buffers[i].pv_buffer, buffer_size);
