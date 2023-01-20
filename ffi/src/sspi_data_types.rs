@@ -1,8 +1,4 @@
-use std::os::raw::c_uint;
-
-#[cfg(not(target_os = "windows"))]
-use libc::c_uint;
-use libc::{c_char, c_long, c_ulong, c_ushort, c_void};
+use libc::{c_char, c_long, c_uint, c_ulong, c_ushort, c_void};
 use sspi::CertTrustStatus as SspiCertTrustStatus;
 
 pub type SecChar = c_char;
@@ -50,6 +46,17 @@ pub struct SecPkgContextSizes {
     pub cb_security_trailer: c_uint,
 }
 
+/// [SecPkgContext_StreamSizes](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes)
+///
+/// ```not_rust
+/// typedef struct _SecPkgContext_StreamSizes {
+///   unsigned long cbHeader;
+///   unsigned long cbTrailer;
+///   unsigned long cbMaximumMessage;
+///   unsigned long cBuffers;
+///   unsigned long cbBlockSize;
+/// } SecPkgContext_StreamSizes, *PSecPkgContext_StreamSizes;
+/// ```
 #[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct SecPkgContextStreamSizes {

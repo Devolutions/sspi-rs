@@ -1,6 +1,5 @@
 use std::ffi::CStr;
 use std::mem::size_of;
-use std::ptr::null;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulong, c_ulonglong, c_void};
@@ -35,8 +34,8 @@ use crate::credentials_attributes::{
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::sec_winnt_auth_identity::{
-    unpack_sec_winnt_auth_identity_ex2, CredSspCred, SecWinntAuthIdentityA, SecWinntAuthIdentityExA,
-    SecWinntAuthIdentityExW, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_VERSION,
+    unpack_sec_winnt_auth_identity_ex2_a, unpack_sec_winnt_auth_identity_ex2_w, CredSspCred, SecWinntAuthIdentityA,
+    SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_VERSION,
 };
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
@@ -89,6 +88,29 @@ pub struct CredentialsHandle {
     pub attributes: CredentialsAttributes,
 }
 
+fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
+    let hostname = whoami::hostname();
+    if let Some(kdc_url) = attributes.kdc_url() {
+        let kerberos_config = KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
+        let negotiate_config = NegotiateConfig::new(
+            Box::new(kerberos_config),
+            attributes.package_list.clone(),
+            hostname,
+            Box::new(RequestClientFactory),
+        );
+
+        Negotiate::new(negotiate_config)
+    } else {
+        let negotiate_config = NegotiateConfig {
+            protocol_config: Box::new(NtlmConfig),
+            package_list: attributes.package_list.clone(),
+            hostname,
+            network_client_factory: Box::new(RequestClientFactory),
+        };
+        Negotiate::new(negotiate_config)
+    }
+}
+
 pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     context: &mut PCtxtHandle,
     security_package_name: Option<&str>,
@@ -111,29 +133,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         let name = security_package_name.expect("security package name must be provided");
 
         let sspi_context = match name {
-            negotiate::PKG_NAME => {
-                let hostname = whoami::hostname();
-                if let Some(kdc_url) = attributes.kdc_url() {
-                    let kerberos_config =
-                        KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
-                    let negotiate_config = NegotiateConfig::new(
-                        Box::new(kerberos_config),
-                        attributes.package_list.clone(),
-                        hostname,
-                        Box::new(RequestClientFactory),
-                    );
-
-                    SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
-                } else {
-                    let negotiate_config = NegotiateConfig {
-                        protocol_config: Box::new(NtlmConfig),
-                        package_list: attributes.package_list.clone(),
-                        hostname,
-                        network_client_factory: Box::new(RequestClientFactory),
-                    };
-                    SspiContext::Negotiate(Negotiate::new(negotiate_config)?)
-                }
-            }
+            negotiate::PKG_NAME => SspiContext::Negotiate(create_negotiate_context(attributes)?),
             pku2u::PKG_NAME => {
                 #[cfg(not(target_os = "windows"))]
                 return Err(Error::new(
@@ -160,7 +160,9 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
-            sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new()))?),
+            sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Negotiate(
+                create_negotiate_context(attributes)?,
+            ))?),
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
@@ -186,7 +188,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     psz_package: LpStr,
     _f_aredential_use: c_ulong,
     _pv_logon_id: *const c_void,
-    mut p_auth_data: *const c_void,
+    p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
     _pv_get_key_argument: *const c_void,
     ph_credential: PCredHandle,
@@ -200,15 +202,14 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         let security_package_name =
             try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
 
-        if security_package_name == "CREDSSP" {
-            // here we should handle creds for the Schannel
-            p_auth_data = p_auth_data.add(2);
-        }
-
         let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
-        let credentials = if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+        let credentials = if security_package_name == sspi_cred_ssp::PKG_NAME {
+            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+
+            try_execute!(unpack_sec_winnt_auth_identity_ex2_a(credssp_cred.p_spnego_cred))
+        } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
             if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
                 package_list = Some(String::from_utf16_lossy(from_raw_parts(
@@ -255,7 +256,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
 #[cfg_attr(feature = "debug_mode", instrument(skip_all))]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
+pub unsafe extern "system" fn AcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
     psz_package: LpcWStr,
     _f_credential_use: c_ulong,
@@ -279,7 +280,7 @@ pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
         let credentials = if security_package_name == sspi_cred_ssp::PKG_NAME {
             let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
 
-            try_execute!(unpack_sec_winnt_auth_identity_ex2(credssp_cred.p_spnego_cred))
+            try_execute!(unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred))
         } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
 
@@ -290,13 +291,11 @@ pub unsafe extern "system" fn SpAcquireCredentialsHandleW(
                 ));
             }
 
-            let auth_buffers = AuthIdentityBuffers {
+            AuthIdentityBuffers {
                 user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
                 domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
                 password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
-            };
-
-            auth_buffers
+            }
         } else {
             let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
 
@@ -581,7 +580,7 @@ unsafe fn query_context_attributes_common(
                 (*sizes).cb_block_size = pkg_sizes.block;
                 (*sizes).cb_security_trailer = pkg_sizes.security_trailer;
 
-                0
+                return 0;
             }
             SECPKG_ATTR_NEGOTIATION_INFO => {
                 let package_info = try_execute!(sspi_context.query_context_package_info());
@@ -602,7 +601,7 @@ unsafe fn query_context_attributes_common(
                     (*nego_info).package_info = package_info;
                 }
 
-                0
+                return 0;
             }
             SECPKG_ATTR_STREAM_SIZES => {
                 let stream_sizes = try_execute!(sspi_context.query_context_stream_sizes());
@@ -615,11 +614,13 @@ unsafe fn query_context_attributes_common(
                 (*stream_info).c_buffers = stream_sizes.buffers;
                 (*stream_info).cb_block_size = stream_sizes.block_size;
 
-                0
+                return 0;
             }
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {
+                        use std::ptr::null;
+
                         let cert_context = try_execute!(sspi_context.query_context_remote_cert());
 
                         let store = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null());
@@ -639,38 +640,17 @@ unsafe fn query_context_attributes_common(
                             &mut p_cert_context
                         );
                         if result != 1 {
-                            return ErrorKind::InternalError.to_u32().unwrap();
+                            return std::io::Error::last_os_error().raw_os_error().unwrap_or_else(|| ErrorKind::InternalError.to_i32().unwrap()) as u32;
                         }
 
                         let p_cert_buffer = p_buffer.cast::<*const CERT_CONTEXT>();
                         *p_cert_buffer = p_cert_context;
 
-                        0
+                        return 0;
                     } else {
                         return ErrorKind::UnsupportedFunction.to_u32().unwrap();
                     }
                 }
-            }
-            SECPKG_ATTR_NEGOTIATION_PACKAGE => {
-                let package_info = try_execute!(sspi_context.query_context_negotiation_package());
-
-                if is_wide {
-                    let nego_info = p_buffer.cast::<SecNegoInfoW>();
-
-                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-
-                    let package_info: &mut SecPkgInfoW = package_info.into();
-                    (*nego_info).package_info = package_info;
-                } else {
-                    let nego_info = p_buffer.cast::<SecNegoInfoA>();
-
-                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-
-                    let package_info: &mut SecPkgInfoA = package_info.into();
-                    (*nego_info).package_info = package_info;
-                }
-
-                0
             }
             SECPKG_ATTR_SERVER_AUTH_FLAGS => {
                 let flags = SecPkgContextFlags {
@@ -680,22 +660,22 @@ unsafe fn query_context_attributes_common(
                 let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
                 *sec_context_flags = into_raw_ptr(flags);
 
-                0
+                return 0;
             }
             SECPKG_ATTR_CONNECTION_INFO => {
                 let connection_info = try_execute!(sspi_context.query_context_connection_info());
 
                 let sec_pkg_context_connection_info = p_buffer.cast::<SecPkgContextConnectionInfo>();
 
-                (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.bits();
-                (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.bits();
+                (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.to_u32().unwrap();
+                (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.to_u32().unwrap();
                 (*sec_pkg_context_connection_info).dw_cipher_strength = connection_info.cipher_strength;
-                (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.bits();
+                (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.to_u32().unwrap();
                 (*sec_pkg_context_connection_info).dw_hash_strength = connection_info.hash_strength;
-                (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.bits();
+                (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.to_u32().unwrap();
                 (*sec_pkg_context_connection_info).dw_exch_strength = connection_info.exchange_strength;
 
-                0
+                return 0;
             }
             SECPKG_ATTR_CERT_TRUST_STATUS => {
                 let sspi_cert_trust_status = try_execute!(sspi_context.query_context_cert_trust_status());
@@ -704,33 +684,36 @@ unsafe fn query_context_attributes_common(
                 (*cert_trust_status).dw_error_status = sspi_cert_trust_status.error_status.bits();
                 (*cert_trust_status).dw_info_status = sspi_cert_trust_status.info_status.bits();
 
-                0
+                return 0;
             }
+            _ => {},
+        };
+
+        let package_info = try_execute!(match ul_attribute.try_into().unwrap() {
             SECPKG_ATTR_PACKAGE_INFO => {
-                let package_info = try_execute!(sspi_context.query_context_package_info());
-
-                if is_wide {
-                    let nego_info = p_buffer.cast::<SecNegoInfoW>();
-
-                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-
-                    let package_info: &mut SecPkgInfoW = package_info.into();
-                    (*nego_info).package_info = package_info;
-                } else {
-                    let nego_info = p_buffer.cast::<SecNegoInfoA>();
-
-                    (*nego_info).nego_state = SECPKG_NEGOTIATION_COMPLETE.try_into().unwrap();
-
-                    let package_info: &mut SecPkgInfoA = package_info.into();
-                    (*nego_info).package_info = package_info;
-                }
-
-                0
+                sspi_context.query_context_package_info()
+            }
+            SECPKG_ATTR_NEGOTIATION_PACKAGE => {
+                sspi_context.query_context_negotiation_package()
             }
             _ => {
-                ErrorKind::UnsupportedFunction.to_u32().unwrap()
+                Err(Error::new(ErrorKind::UnsupportedFunction, "".into()))
             },
+        });
+
+        if is_wide {
+            let nego_info = p_buffer.cast::<*mut SecPkgInfoW>();
+
+            let package_info: &mut SecPkgInfoW = package_info.into();
+            *nego_info = package_info;
+        } else {
+            let nego_info = p_buffer.cast::<*mut SecPkgInfoA>();
+
+            let package_info: &mut SecPkgInfoA = package_info.into();
+            *nego_info = package_info;
         }
+
+        0
     }
 }
 
@@ -738,7 +721,7 @@ unsafe fn query_context_attributes_common(
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesA(
-    mut ph_context: PCtxtHandle,
+    ph_context: PCtxtHandle,
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
@@ -751,7 +734,7 @@ pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ul
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesW(
-    mut ph_context: PCtxtHandle,
+    ph_context: PCtxtHandle,
     ul_attribute: c_ulong,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {

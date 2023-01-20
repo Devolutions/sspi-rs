@@ -1,11 +1,7 @@
-use std::ptr::null_mut;
-
 use libc::{c_char, c_ushort, c_void};
 use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
@@ -127,8 +123,16 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
+#[cfg(not(target_os = "windows"))]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+    Err(Error::new(
+        ErrorKind::UnsupportedFunction,
+        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+    ))
+}
+
 #[cfg(target_os = "windows")]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+unsafe fn get_sec_winnt_auth_identity_ex2_a_size(p_auth_data: *const c_void) -> u32 {
     let user_len_ptr = (p_auth_data as *const u16).add(4);
     let user_buffer_len = *user_len_ptr as u32;
 
@@ -139,8 +143,111 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> 
     let creds_buffer_len = *creds_len_ptr as u32;
 
     // header size + buffers size
-    let auth_data_len =
-        64 /* size of SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len;
+    64 /* size of SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len
+}
+
+#[cfg(target_os = "windows")]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+    use std::ptr::null_mut;
+
+    use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
+
+    if p_auth_data.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "Cannot unpack credentials: p_auth_data is null".into(),
+        ));
+    }
+
+    let auth_data_len = get_sec_winnt_auth_identity_ex2_a_size(p_auth_data);
+
+    let mut username_len = 0;
+    let mut domain_len = 0;
+    let mut password_len = 0;
+
+    // the first call is just to query the username, domain, and password length
+    CredUnPackAuthenticationBufferA(
+        CRED_PACK_PROTECTED_CREDENTIALS,
+        p_auth_data,
+        auth_data_len,
+        null_mut() as *mut _,
+        &mut username_len,
+        null_mut() as *mut _,
+        &mut domain_len,
+        null_mut() as *mut _,
+        &mut password_len,
+    );
+
+    let mut username = vec![0_u8; username_len as usize];
+    let mut domain = vec![0_u8; domain_len as usize];
+    let mut password = vec![0_u8; password_len as usize];
+
+    let result = CredUnPackAuthenticationBufferA(
+        CRED_PACK_PROTECTED_CREDENTIALS,
+        p_auth_data,
+        auth_data_len,
+        username.as_mut_ptr() as *mut _,
+        &mut username_len,
+        domain.as_mut_ptr() as *mut _,
+        &mut domain_len,
+        password.as_mut_ptr() as *mut _,
+        &mut password_len,
+    );
+
+    if result != 1 {
+        return Err(Error::new(
+            ErrorKind::WrongCredentialHandle,
+            "Cannot unpack credentials".into(),
+        ));
+    }
+
+    let mut auth_identity_buffers = AuthIdentityBuffers::default();
+
+    // remove null
+    username.pop();
+    auth_identity_buffers.user = username;
+
+    if domain_len == 0 {
+        // sometimes username can be formatted as `DOMAIN\username`
+        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
+            auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
+            auth_identity_buffers.user = auth_identity_buffers.user[(index + 1)..].to_vec();
+        }
+    } else {
+        // remove null
+        domain.pop();
+        auth_identity_buffers.domain = domain;
+    }
+
+    // remove null
+    password.pop();
+    auth_identity_buffers.password = password;
+
+    Ok(auth_identity_buffers)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+    Err(Error::new(
+        ErrorKind::UnsupportedFunction,
+        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+    use std::ptr::null_mut;
+
+    use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
+
+    if p_auth_data.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "Cannot unpack credentials: p_auth_data is null".into(),
+        ));
+    }
+
+    let auth_data_len = get_sec_winnt_auth_identity_ex2_a_size(p_auth_data);
 
     let mut username_len = 0;
     let mut domain_len = 0;
@@ -185,8 +292,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
     // remove null
-    username.pop();
-    username.pop();
+    username.truncate(username.len() - 2);
     auth_identity_buffers.user = username;
 
     if domain_len == 0 {
@@ -197,14 +303,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2(p_auth_data: *const c_void) -> 
         }
     } else {
         // remove null
-        domain.pop();
-        domain.pop();
+        domain.truncate(domain.len() - 2);
         auth_identity_buffers.domain = domain;
     }
 
     // remove null
-    password.pop();
-    password.pop();
+    password.truncate(password.len() - 2);
     auth_identity_buffers.password = password;
 
     Ok(auth_identity_buffers)

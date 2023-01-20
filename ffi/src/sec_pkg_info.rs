@@ -336,7 +336,7 @@ mod tests {
             let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 4);
+            assert_eq!(packages_amount, 5);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {
@@ -354,7 +354,7 @@ mod tests {
             let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 4);
+            assert_eq!(packages_amount, 5);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {

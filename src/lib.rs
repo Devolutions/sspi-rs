@@ -877,69 +877,65 @@ where
     fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
 }
 
-bitflags! {
-    /// Protocol used to establish connection.
-    ///
-    /// # MSDN
-    ///
-    /// [SecPkgContext_ConnectionInfo (`dwProtocol` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
-    pub struct ConnectionProtocol: u32 {
-        const SP_PROT_TLS1_CLIENT = 0x80;
-        const SP_PROT_TLS1_SERVER = 0x40;
-        const SP_PROT_SSL3_CLIENT = 0x20;
-        const SP_PROT_SSL3_SERVER = 0x10;
-        const SP_PROT_TLS1_1_CLIENT = 0x200;
-        const SP_PROT_TLS1_1_SERVER = 0x100;
-        const SP_PROT_TLS1_2_CLIENT = 0x800;
-        const SP_PROT_TLS1_2_SERVER = 0x400;
-        const SP_PROT_TLS1_3_CLIENT = 0x00002000;
-        const SP_PROT_TLS1_3_SERVER = 0x00001000;
-        const SP_PROT_PCT1_CLIENT = 0x2;
-        const SP_PROT_PCT1_SERVER = 0x1;
-        const SP_PROT_SSL2_CLIENT = 0x8;
-        const SP_PROT_SSL2_SERVER = 0x4;
-    }
+/// Protocol used to establish connection.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`dwProtocol` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionProtocol {
+    SpProtTls1Client = 0x80,
+    SpProtTls1Server = 0x40,
+    SpProtSsl3Client = 0x20,
+    SpProtSsl3Server = 0x10,
+    SpProtTls1_1Client = 0x200,
+    SpProtTls1_1Server = 0x100,
+    SpProtTls1_2Client = 0x800,
+    SpProtTls1_2Server = 0x400,
+    SpProtTls1_3Client = 0x00002000,
+    SpProtTls1_3Server = 0x00001000,
+    SpProtPct1Client = 0x2,
+    SpProtPct1Server = 0x1,
+    SpProtSsl2Client = 0x8,
+    SpProtSsl2Server = 0x4,
 }
 
-bitflags! {
-    /// Algorithm identifier for the bulk encryption cipher used by the connection.
-    ///
-    /// # MSDN
-    ///
-    /// [SecPkgContext_ConnectionInfo (`aiCipher` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
-    pub struct ConnectionCipher: u32 {
-        const CALG_3DES = 26115;
-        const CALG_AES_128 = 26126;
-        const CALG_AES_256 = 26128;
-        const CALG_DES = 26113;
-        const CALG_RC2 = 26114;
-        const CALG_RC4 = 26625;
-        const NO_ENCRYPTION = 0;
-    }
+/// Algorithm identifier for the bulk encryption cipher used by the connection.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiCipher` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionCipher {
+    Calg3des = 26115,
+    CalgAes128 = 26126,
+    CalgAes256 = 26128,
+    CalgDes = 26113,
+    CalgRc2 = 26114,
+    CalgRc4 = 26625,
+    NoEncryption = 0,
 }
 
-bitflags! {
-    /// ALG_ID indicating the hash used for generating Message Authentication Codes (MACs).
-    ///
-    /// # MSDN
-    ///
-    /// [SecPkgContext_ConnectionInfo (`aiHash` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
-    pub struct ConnectionHash: u32 {
-        const CALG_MD5 = 32771;
-        const CALG_SHA = 32772;
-    }
+/// ALG_ID indicating the hash used for generating Message Authentication Codes (MACs).
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiHash` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionHash {
+    CalgMd5 = 32771,
+    CalgSha = 32772,
 }
 
-bitflags! {
-    /// ALG_ID indicating the key exchange algorithm used to generate the shared master secret.
-    ///
-    /// # MSDN
-    ///
-    /// [SecPkgContext_ConnectionInfo (`aiExch` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
-    pub struct ConnectionKeyExchange: u32 {
-        const CALG_RSA_KEYX = 41984;
-        const CALG_DH_EPHEM = 43522;
-    }
+/// ALG_ID indicating the key exchange algorithm used to generate the shared master secret.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiExch` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionKeyExchange {
+    CalgRsaKeyx = 41984,
+    CalgDhEphem = 43522,
 }
 
 /// Type of certificate encoding used.
@@ -970,7 +966,7 @@ pub struct CertContext {
 /// # MSDN
 ///
 /// [SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConnectionInfo {
     pub protocol: ConnectionProtocol,
     pub cipher: ConnectionCipher,
@@ -1476,6 +1472,7 @@ bitflags! {
 /// # MSDN
 ///
 /// * [SecPkgContext_StreamSizes](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes)
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StreamSizes {
     pub header: u32,
     pub trailer: u32,
@@ -1490,7 +1487,7 @@ pub struct StreamSizes {
 /// # MSDN
 ///
 /// * [SecPkgContext_Sizes structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sizes)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ContextSizes {
     pub max_token: u32,
     pub max_signature: u32,
