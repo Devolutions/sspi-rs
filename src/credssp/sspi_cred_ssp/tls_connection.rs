@@ -40,16 +40,14 @@ impl TlsConnection {
             TlsConnection::Rustls(tls_connection) => {
                 tls_connection.read_tls(&mut payload)?;
 
-                tls_connection
+                let tls_state = tls_connection
                     .process_new_packets()
                     .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
 
                 let mut reader = tls_connection.reader();
 
-                let mut plain_data = vec![0; 2048];
-                let plain_data_len = reader.read(&mut plain_data)?;
-
-                plain_data.resize(plain_data_len, 0);
+                let mut plain_data = vec![0; tls_state.plaintext_bytes_to_read()];
+                let _plain_data_len = reader.read(&mut plain_data)?;
 
                 Ok(plain_data)
             }
