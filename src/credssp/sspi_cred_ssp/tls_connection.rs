@@ -14,6 +14,34 @@ pub const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVers
 // The block size of the AES cipher is 128 bits
 const AES_BLOCK_SIZE: usize = 16;
 
+// [Processing Events and Sequencing Rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c)
+// The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
+// Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
+//
+// This configuration just accepts any certificate
+pub mod danger {
+    use std::time::SystemTime;
+
+    use rustls::client::{ServerCertVerified, ServerCertVerifier};
+    use rustls::{Certificate, Error, ServerName};
+
+    pub struct NoCertificateVerification;
+
+    impl ServerCertVerifier for NoCertificateVerification {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &Certificate,
+            _intermediates: &[Certificate],
+            _server_name: &ServerName,
+            _scts: &mut dyn Iterator<Item = &[u8]>,
+            _ocsp_response: &[u8],
+            _now: SystemTime,
+        ) -> Result<ServerCertVerified, Error> {
+            Ok(rustls::client::ServerCertVerified::assertion())
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TlsConnection {
     Rustls(Connection),

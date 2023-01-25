@@ -1,3 +1,4 @@
+#[cfg(not(target = "wasm32-unknown-unknown"))]
 mod tls_connection;
 
 use std::sync::Arc;
@@ -8,7 +9,8 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
 
-use self::tls_connection::{TlsConnection, TLS_PACKET_HEADER_LEN};
+#[cfg(not(target = "wasm32-unknown-unknown"))]
+use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
@@ -33,34 +35,6 @@ lazy_static! {
     };
 }
 
-// [Processing Events and Sequencing Rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c)
-// The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
-// Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
-//
-// This configuration just accepts any certificate
-pub mod danger {
-    use std::time::SystemTime;
-
-    use rustls::client::{ServerCertVerified, ServerCertVerifier};
-    use rustls::{Certificate, Error, ServerName};
-
-    pub struct NoCertificateVerification;
-
-    impl ServerCertVerifier for NoCertificateVerification {
-        fn verify_server_cert(
-            &self,
-            _end_entity: &Certificate,
-            _intermediates: &[Certificate],
-            _server_name: &ServerName,
-            _scts: &mut dyn Iterator<Item = &[u8]>,
-            _ocsp_response: &[u8],
-            _now: SystemTime,
-        ) -> Result<ServerCertVerified, Error> {
-            Ok(rustls::client::ServerCertVerified::assertion())
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 enum CredSspState {
     Tls,
@@ -80,50 +54,62 @@ pub struct SspiCredSsp {
 
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
-        // "stub_string" - we don't check the server's certificate validity so we can use any server name
-        let example_com = "stub_string".try_into().unwrap();
-        let client_config = ClientConfig::builder()
-            .with_safe_defaults()
-            .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
-            .with_no_client_auth();
-        let config = Arc::new(client_config);
+        cfg_if::cfg_if! {
+            if #[cfg(not(target = "wasm32-unknown-unknown"))] {
+                // "stub_string" - we don't check the server's certificate validity so we can use any server name
+                let example_com = "stub_string".try_into().unwrap();
+                let client_config = ClientConfig::builder()
+                    .with_safe_defaults()
+                    .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
+                    .with_no_client_auth();
+                let config = Arc::new(client_config);
 
-        Ok(Self {
-            state: CredSspState::Tls,
-            cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
-            auth_identity: None,
-            tls_connection: TlsConnection::Rustls(Connection::Client(
-                ClientConnection::new(config, example_com)
-                    .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
-            )),
-            nonce: Some(OsRng::default().gen::<[u8; NONCE_SIZE]>()),
-        })
+                Ok(Self {
+                    state: CredSspState::Tls,
+                    cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
+                    auth_identity: None,
+                    tls_connection: TlsConnection::Rustls(Connection::Client(
+                        ClientConnection::new(config, example_com)
+                            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
+                    )),
+                    nonce: Some(OsRng::default().gen::<[u8; NONCE_SIZE]>()),
+                })
+            } else {
+                Err(Error::new(ErrorKind::Unsupported, "SspiCredSsp is not supported on wasm".into()))
+            }
+        }
     }
 
     /// * `sspi_context` is a security package that will be used for authorization
     /// * `certificates` is a vector of DER-encoded X.509 certificates
     /// * `private_key` is a raw private key. it is DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format.
     pub fn new_server(sspi_context: SspiContext, certificates: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self> {
-        let server_config = ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(
-                certificates.into_iter().map(rustls::Certificate).collect(),
-                rustls::PrivateKey(private_key),
-            )
-            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
-        let config = Arc::new(server_config);
+        cfg_if::cfg_if! {
+            if #[cfg(not(target = "wasm32-unknown-unknown"))] {
+                let server_config = ServerConfig::builder()
+                    .with_safe_defaults()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        certificates.into_iter().map(rustls::Certificate).collect(),
+                        rustls::PrivateKey(private_key),
+                    )
+                    .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
+                let config = Arc::new(server_config);
 
-        Ok(Self {
-            state: CredSspState::Tls,
-            cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
-            auth_identity: None,
-            tls_connection: TlsConnection::Rustls(Connection::Server(
-                ServerConnection::new(config).map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
-            )),
-            // nonce for the server will be in the incoming TsRequest
-            nonce: None,
-        })
+                Ok(Self {
+                    state: CredSspState::Tls,
+                    cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
+                    auth_identity: None,
+                    tls_connection: TlsConnection::Rustls(Connection::Server(
+                        ServerConnection::new(config).map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
+                    )),
+                    // nonce for the server will be in the incoming TsRequest
+                    nonce: None,
+                })
+            } else {
+                Err(Error::new(ErrorKind::Unsupported, "SspiCredSsp is not supported on wasm".into()))
+            }
+        }
     }
 
     fn raw_peer_public_key(&mut self) -> Result<Vec<u8>> {

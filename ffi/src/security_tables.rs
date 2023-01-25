@@ -55,7 +55,9 @@ pub struct SecurityFunctionTableA {
     pub VerifySignature: VerifySignatureFn,
     pub FreeContextBuffer: FreeContextBufferFn,
     pub QuerySecurityPackageInfoA: QuerySecurityPackageInfoFnA,
+    // In the Windows sspicli.dll, the `Reserved3` field is used as EncryptFunction
     pub Reserved3: EncryptMessageFn,
+    // In the Windows sspicli.dll, the `Reserved4` field is used as DecryptFunction
     pub Reserved4: DecryptMessageFn,
     pub ExportSecurityContext: ExportSecurityContextFn,
     pub ImportSecurityContextA: ImportSecurityContextFnA,
@@ -94,7 +96,9 @@ pub struct SecurityFunctionTableW {
     pub VerifySignature: VerifySignatureFn,
     pub FreeContextBuffer: FreeContextBufferFn,
     pub QuerySecurityPackageInfoW: QuerySecurityPackageInfoFnW,
+    // In the Windows sspicli.dll, the `Reserved3` field is used as EncryptFunction
     pub Reserved3: EncryptMessageFn,
+    // In the Windows sspicli.dll, the `Reserved4` field is used as DecryptFunction
     pub Reserved4: DecryptMessageFn,
     pub ExportSecurityContext: ExportSecurityContextFn,
     pub ImportSecurityContextW: ImportSecurityContextFnW,

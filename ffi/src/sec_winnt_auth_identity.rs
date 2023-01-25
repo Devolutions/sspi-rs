@@ -124,7 +124,7 @@ pub struct CredSspCred {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
         "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
@@ -133,17 +133,20 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) 
 
 #[cfg(target_os = "windows")]
 unsafe fn get_sec_winnt_auth_identity_ex2_a_size(p_auth_data: *const c_void) -> u32 {
+    // username length is placed after the first 8 bytes
     let user_len_ptr = (p_auth_data as *const u16).add(4);
     let user_buffer_len = *user_len_ptr as u32;
 
+    // domain length is placed after 16 bytes from the username length
     let domain_len_ptr = user_len_ptr.add(8);
     let domain_buffer_len = *domain_len_ptr as u32;
 
+    // packet credentials length is placed after 16 bytes from the domain length
     let creds_len_ptr = domain_len_ptr.add(8);
     let creds_buffer_len = *creds_len_ptr as u32;
 
     // header size + buffers size
-    64 /* size of SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len
+    64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len
 }
 
 #[cfg(target_os = "windows")]
@@ -227,7 +230,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 }
 
 #[cfg(not(target_os = "windows"))]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
         "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
