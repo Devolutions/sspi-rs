@@ -5,8 +5,11 @@ use std::slice::from_raw_parts;
 use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
+#[cfg(feature = "tsssp")]
 use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
-use sspi::credssp::{sspi_cred_ssp, SspiContext};
+#[cfg(feature = "tsssp")]
+use sspi::credssp::sspi_cred_ssp;
+use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
@@ -34,15 +37,14 @@ use crate::credentials_attributes::{
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use crate::sec_winnt_auth_identity::{
-    unpack_sec_winnt_auth_identity_ex2_a, unpack_sec_winnt_auth_identity_ex2_w, CredSspCred, SecWinntAuthIdentityA,
-    SecWinntAuthIdentityExA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_VERSION,
+    auth_data_to_identity_buffers,
 };
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use crate::utils::{
-    c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_w_str_to_bytes, transform_credentials_handle,
+    c_w_str_to_string, into_raw_ptr, transform_credentials_handle,
 };
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -160,6 +162,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            #[cfg(feature = "tsssp")]
             sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Negotiate(
                 create_negotiate_context(attributes)?,
             ))?),
@@ -202,34 +205,9 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         let security_package_name =
             try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
 
-        let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
-        let credentials = if security_package_name == sspi_cred_ssp::PKG_NAME {
-            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-
-            try_execute!(unpack_sec_winnt_auth_identity_ex2_a(credssp_cred.p_spnego_cred))
-        } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
-            if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
-                package_list = Some(String::from_utf16_lossy(from_raw_parts(
-                    (*auth_data).package_list as *const u16,
-                    (*auth_data).package_list_length as usize)
-                ));
-            }
-            AuthIdentityBuffers {
-                user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-                domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-                password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
-            }
-        } else {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
-            AuthIdentityBuffers {
-                user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-                domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-                password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
-            }
-        };
+        let credentials = try_execute!(auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
             credentials,
@@ -274,37 +252,9 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 
         let security_package_name = c_w_str_to_string(psz_package);
 
-        let auth_version = *p_auth_data.cast::<u32>();
         let mut package_list: Option<String> = None;
 
-        let credentials = if security_package_name == sspi_cred_ssp::PKG_NAME {
-            let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-
-            try_execute!(unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred))
-        } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
-
-            if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
-                package_list = Some(String::from_utf16_lossy(from_raw_parts(
-                    (*auth_data).package_list as *const u16,
-                    (*auth_data).package_list_length as usize)
-                ));
-            }
-
-            AuthIdentityBuffers {
-                user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
-                domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-                password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
-            }
-        } else {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-
-            AuthIdentityBuffers {
-                user: raw_w_str_to_bytes((*auth_data).user, (*auth_data).user_length as usize),
-                domain: raw_w_str_to_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-                password: raw_w_str_to_bytes((*auth_data).password, (*auth_data).password_length as usize),
-            }
-        };
+        let credentials = try_execute!(auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
             credentials,

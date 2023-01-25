@@ -88,6 +88,9 @@ mod kdc;
 mod krb;
 mod utils;
 
+#[cfg(all(feature = "tsssp", not(target_os = "windows")))]
+compile_error!("tsssp feature should be used only on Windows");
+
 use std::{error, fmt, io, result, str, string};
 
 use bitflags::bitflags;
