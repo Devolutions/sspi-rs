@@ -91,6 +91,7 @@ mod utils;
 use std::{error, fmt, io, result, str, string};
 
 use bitflags::bitflags;
+#[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
@@ -146,6 +147,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
         SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
         SecurityPackageType::Pku2u => Ok(pku2u::PACKAGE_INFO.clone()),
+        #[cfg(feature = "tsssp")]
         SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
@@ -181,6 +183,7 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
         kerberos::PACKAGE_INFO.clone(),
         pku2u::PACKAGE_INFO.clone(),
         ntlm::PACKAGE_INFO.clone(),
+        #[cfg(feature = "tsssp")]
         credssp::sspi_cred_ssp::PACKAGE_INFO.clone(),
     ])
 }
@@ -1341,6 +1344,7 @@ pub enum SecurityPackageType {
     Kerberos,
     Negotiate,
     Pku2u,
+    #[cfg(feature = "tsssp")]
     CredSsp,
     Other(String),
 }
@@ -1352,6 +1356,7 @@ impl AsRef<str> for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME,
             SecurityPackageType::Negotiate => negotiate::PKG_NAME,
             SecurityPackageType::Pku2u => pku2u::PKG_NAME,
+            #[cfg(feature = "tsssp")]
             SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME,
             SecurityPackageType::Other(name) => name.as_str(),
         }
@@ -1365,6 +1370,7 @@ impl string::ToString for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
             SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
             SecurityPackageType::Pku2u => pku2u::PKG_NAME.into(),
+            #[cfg(feature = "tsssp")]
             SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME.into(),
             SecurityPackageType::Other(name) => name.clone(),
         }
@@ -1380,6 +1386,7 @@ impl str::FromStr for SecurityPackageType {
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
             pku2u::PKG_NAME => Ok(SecurityPackageType::Pku2u),
+            #[cfg(feature = "tsssp")]
             sspi_cred_ssp::PKG_NAME => Ok(SecurityPackageType::CredSsp),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
