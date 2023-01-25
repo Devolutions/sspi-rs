@@ -56,10 +56,8 @@ portpicker = { version = "0.1.1", optional = true }
 num-bigint-dig = "0.8.1"
 tracing = { version = "0.1.37" }
 
-[target.'cfg(not(wasm))'.dependencies]
-rustls = { version = "0.20.7", features = ["dangerous_configuration"] }
-
 [target.'cfg(windows)'.dependencies]
+rustls = { version = "0.20.7", features = ["dangerous_configuration"] }
 winreg = "0.10"
 winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
 windows = { version = "0.39.0", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }

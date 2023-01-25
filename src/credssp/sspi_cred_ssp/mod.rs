@@ -1,4 +1,4 @@
-#[cfg(not(target = "wasm32-unknown-unknown"))]
+#[cfg(target_os = "windows")]
 mod tls_connection;
 
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
 
-#[cfg(not(target = "wasm32-unknown-unknown"))]
+#[cfg(target_os = "windows")]
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
@@ -55,7 +55,7 @@ pub struct SspiCredSsp {
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
         cfg_if::cfg_if! {
-            if #[cfg(not(target = "wasm32-unknown-unknown"))] {
+            if #[cfg(target_os = "windows")] {
                 // "stub_string" - we don't check the server's certificate validity so we can use any server name
                 let example_com = "stub_string".try_into().unwrap();
                 let client_config = ClientConfig::builder()
@@ -85,7 +85,7 @@ impl SspiCredSsp {
     /// * `private_key` is a raw private key. it is DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format.
     pub fn new_server(sspi_context: SspiContext, certificates: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self> {
         cfg_if::cfg_if! {
-            if #[cfg(not(target = "wasm32-unknown-unknown"))] {
+            if #[cfg(target_os = "windows")] {
                 let server_config = ServerConfig::builder()
                     .with_safe_defaults()
                     .with_no_client_auth()
