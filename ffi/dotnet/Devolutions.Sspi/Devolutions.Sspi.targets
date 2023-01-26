@@ -3,9 +3,15 @@
   <PropertyGroup>
     <IsPowerShell Condition="$(DefineConstants.Contains('__POWERSHELL__'))">true</IsPowerShell>
     <IsAndroid Condition="$(TargetFramework.ToUpper().Contains('ANDROID'))">true</IsAndroid>
-    <IsIOS Condition="'$(Platform)' == 'iPhone' or '$(Platform)' == 'iPhoneSimulator'">true</IsIOS>
+    <IsIOS Condition="'$(Platform)' == 'iPhone' or '$(Platform)' == 'iPhoneSimulator' or $(TargetFramework.Contains('-ios'))">true</IsIOS>
     <IsNet6Mac Condition="$(TargetFramework.Contains('-macos'))">true</IsNet6Mac>
   </PropertyGroup>
+  <Target Name="DebugMessage" BeforeTargets="Build" >
+    <Message Text="PowerShell: $(IsPowerShell)" Importance="high"/>
+    <Message Text="Android: $(IsAndroid)" Importance="high"/>
+    <Message Text="iOS: $(IsIOS)" Importance="high"/>
+    <Message Text="Net6Mac: $(IsNet6Mac)" Importance="high"/>
+  </Target>
   <ItemGroup>
     <Content Condition="$([MSBuild]::IsOSPlatform('Windows')) OR '$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\win-x64\native\DevolutionsSspi.dll">
       <Link>runtimes\win-x64\native\DevolutionsSspi.dll</Link>
@@ -55,22 +61,6 @@
       <IncludeInVsix>true</IncludeInVsix>
       <Pack>false</Pack>
     </Content>
-    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\ios-x64\native\libDevolutionsSspi.dylib">
-      <Link>runtimes\ios-x64\native\libDevolutionsSspi.dylib</Link>
-      <PublishState>Included</PublishState>
-      <Visible>False</Visible>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <IncludeInVsix>true</IncludeInVsix>
-      <Pack>false</Pack>
-    </Content>
-    <Content Condition="'$(IsPowerShell)' == 'true'" Include="$(MSBuildThisFileDirectory)\..\runtimes\ios-arm64\native\libDevolutionsSspi.dylib">
-      <Link>runtimes\ios-arm64\native\libDevolutionsSspi.dylib</Link>
-      <PublishState>Included</PublishState>
-      <Visible>False</Visible>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <IncludeInVsix>true</IncludeInVsix>
-      <Pack>false</Pack>
-    </Content>
   </ItemGroup>
   <ItemGroup Condition="$(AndroidSupportedAbis.Contains('armeabi-v7a')) or $(RuntimeIdentifiers.Contains('android-arm'))">
       <AndroidNativeLibrary Include="$(MSBuildThisFileDirectory)\..\runtimes\android-arm\native\libDevolutionsSspi.so">
@@ -95,7 +85,7 @@
           <Link>%(Filename)%(Extension)</Link>
           <Abi>x86_64</Abi>
       </AndroidNativeLibrary>
-  </ItemGroup> 
+  </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) AND '$(IsPowerShell)' != 'true' AND '$(IsIOS)' != 'true' AND '$(IsAndroid)' != 'true' AND '$(IsNet6Mac)' != 'true'">
     <NativeReference Include="$(MSBuildThisFileDirectory)\..\runtimes\osx-universal\native\libDevolutionsSspi.dylib">
       <Kind>Dynamic</Kind>
