@@ -21,11 +21,11 @@ cfg-if = "0.1"
 libc = "0.2"
 num-traits = "0.2"
 whoami = "1.2.3"
+sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 
 # For debugging only
 tracing = { version = "0.1.37", optional = true }
 tracing-subscriber = { version = "0.3.16", features = ["std", "fmt", "local-time", "env-filter"], optional = true }
-sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }

@@ -171,7 +171,9 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn get_sec_winnt_auth_identity_ex2_a_size(p_auth_data: *const c_void) -> u32 {
+unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u32 {
+    // https://github.com/FreeRDP/FreeRDP/blob/master/winpr/libwinpr/sspi/sspi_winpr.c#L473
+
     // username length is placed after the first 8 bytes
     let user_len_ptr = (p_auth_data as *const u16).add(4);
     let user_buffer_len = *user_len_ptr as u32;
@@ -201,7 +203,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
         ));
     }
 
-    let auth_data_len = get_sec_winnt_auth_identity_ex2_a_size(p_auth_data);
+    let auth_data_len = get_sec_winnt_auth_identity_ex2_size(p_auth_data);
 
     let mut username_len = 0;
     let mut domain_len = 0;
@@ -289,7 +291,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         ));
     }
 
-    let auth_data_len = get_sec_winnt_auth_identity_ex2_a_size(p_auth_data);
+    let auth_data_len = get_sec_winnt_auth_identity_ex2_size(p_auth_data);
 
     let mut username_len = 0;
     let mut domain_len = 0;
