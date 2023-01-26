@@ -6,9 +6,9 @@ use libc::{c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 #[cfg(feature = "tsssp")]
-use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
-#[cfg(feature = "tsssp")]
 use sspi::credssp::sspi_cred_ssp;
+#[cfg(feature = "tsssp")]
+use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
 use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
@@ -36,16 +36,12 @@ use crate::credentials_attributes::{
 };
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
-use crate::sec_winnt_auth_identity::{
-    auth_data_to_identity_buffers,
-};
+use crate::sec_winnt_auth_identity::auth_data_to_identity_buffers;
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
-use crate::utils::{
-    c_w_str_to_string, into_raw_ptr, transform_credentials_handle,
-};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, transform_credentials_handle};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;

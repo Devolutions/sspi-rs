@@ -125,7 +125,11 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
-pub unsafe fn auth_data_to_identity_buffers(_security_package_name: &str, p_auth_data: *const c_void, package_list: &mut Option<String>) -> Result<AuthIdentityBuffers> {
+pub unsafe fn auth_data_to_identity_buffers(
+    _security_package_name: &str,
+    p_auth_data: *const c_void,
+    package_list: &mut Option<String>,
+) -> Result<AuthIdentityBuffers> {
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
@@ -134,14 +138,14 @@ pub unsafe fn auth_data_to_identity_buffers(_security_package_name: &str, p_auth
     }
 
     let auth_version = *p_auth_data.cast::<u32>();
-    
+
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
         if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
             *package_list = Some(String::from_utf16_lossy(from_raw_parts(
                 (*auth_data).package_list as *const u16,
-                (*auth_data).package_list_length as usize)
-            ));
+                (*auth_data).package_list_length as usize,
+            )));
         }
         Ok(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
