@@ -13,6 +13,7 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
+default = []
 debug_mode = ["dep:tracing", "dep:tracing-subscriber"]
 tsssp = ["sspi/tsssp"]
 

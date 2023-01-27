@@ -26,26 +26,60 @@ jobs:
           }
   
   lints:
-    name: Lints
-    runs-on: ubuntu-latest
+    name: Lints [${{ matrix.os }}]
+    runs-on: ${{ matrix.runner }}
     needs: formatting
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ win, osx, linux ]
+        include:
+          - os: win
+            runner: windows-2022
+            features: tsssp,debug_mode
+          - os: osx
+            runner: macos-12
+            features: debug_mode
+          - os: linux
+            runner: ubuntu-20.04
+            features: debug_mode
 
     steps:
       - uses: actions/checkout@v3
 
+      # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --manifest-path ffi/Cargo.toml --features ${{ matrix.features }} -- -D warnings
 
   tests:
-    name: Tests
-    runs-on: ubuntu-latest
+    name: Tests [${{ matrix.os }}] [${{ matrix.crate-name }}]
+    runs-on: ${{ matrix.runner }}
     needs: formatting
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ win, osx, linux ]
+        manifest: [ Cargo.toml, ffi/Cargo.toml ]
+        include:
+          - manifest: Cargo.toml
+            crate-name: sspi
+          - manifest: ffi/Cargo.toml
+            crate-name: sspi-ffi
+          - os: win
+            runner: windows-2022
+            features: tsssp
+          - os: osx
+            runner: macos-12
+            features: default
+          - os: linux
+            runner: ubuntu-20.04
+            features: default
 
     steps:
       - uses: actions/checkout@v3
 
       - name: Test
-        run: cargo test --workspace --all-features
+        run: cargo test --manifest-path ${{ matrix.manifest }} --features ${{ matrix.features }}
 
   wasm:
     name: WASM target
