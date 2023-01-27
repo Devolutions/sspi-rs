@@ -68,6 +68,24 @@ pub struct SecWinntAuthIdentityExA {
 
 pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
 
+/// [SEC_WINNT_AUTH_IDENTITY_EX2](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2)
+///
+/// ```not_rust
+/// typedef struct _SEC_WINNT_AUTH_IDENTITY_EX2 {
+///   unsigned long  Version;
+///   unsigned short cbHeaderLength;
+///   unsigned long  cbStructureLength;
+///   unsigned long  UserOffset;
+///   unsigned short UserLength;
+///   unsigned long  DomainOffset;
+///   unsigned short DomainLength;
+///   unsigned long  PackedCredentialsOffset;
+///   unsigned short PackedCredentialsLength;
+///   unsigned long  Flags;
+///   unsigned long  PackageListOffset;
+///   unsigned short PackageListLength;
+/// } SEC_WINNT_AUTH_IDENTITY_EX2, *PSEC_WINNT_AUTH_IDENTITY_EX2;
+/// ```
 #[derive(Debug)]
 #[repr(C)]
 pub struct SecWinntAuthIdentityEx2 {
@@ -172,6 +190,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 
 #[cfg(target_os = "windows")]
 unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u32 {
+    // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2
     // https://github.com/FreeRDP/FreeRDP/blob/master/winpr/libwinpr/sspi/sspi_winpr.c#L473
 
     // username length is placed after the first 8 bytes
