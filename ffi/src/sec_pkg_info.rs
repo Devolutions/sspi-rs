@@ -329,6 +329,14 @@ mod tests {
 
     #[test]
     fn enumerate_security_packages_a() {
+        cfg_if::cfg_if!(
+            if #[cfg(feature = "tsssp")] {
+                let expected_packages_amount = 5;
+            } else {
+                let expected_packages_amount = 4;
+            }
+        );
+
         let mut packages_amount = 0;
         let mut packages = null_mut::<SecPkgInfoA>();
 
@@ -336,7 +344,7 @@ mod tests {
             let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 5);
+            assert_eq!(packages_amount, expected_packages_amount);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {
@@ -347,6 +355,14 @@ mod tests {
 
     #[test]
     fn enumerate_security_packages_w() {
+        cfg_if::cfg_if!(
+            if #[cfg(feature = "tsssp")] {
+                let expected_packages_amount = 5;
+            } else {
+                let expected_packages_amount = 4;
+            }
+        );
+
         let mut packages_amount = 0;
         let mut packages = null_mut::<SecPkgInfoW>();
 
@@ -354,7 +370,7 @@ mod tests {
             let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
 
             assert_eq!(status, 0);
-            assert_eq!(packages_amount, 5);
+            assert_eq!(packages_amount, expected_packages_amount);
             assert!(!packages.is_null());
 
             for i in 0..(packages_amount as usize) {
