@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let is_running_tests = env::var("SSPI_RS_IS_RUNNING_TESTS").is_ok();
 
-    if target_os == "windows" {
+    if target_os == "windows" && !is_running_tests {
         // On Windows, we provide the linker with a .def file to rename exports.
         // This module definition file is used to rename some symbols
         // and avoid linkage conflicts with secur32.dll when building the library.
