@@ -5,6 +5,8 @@ cfg_if::cfg_if! {
         mod ts_request;
     }
 }
+#[cfg(feature = "tsssp")]
+pub mod sspi_cred_ssp;
 
 use std::io;
 
@@ -16,18 +18,20 @@ use rand::Rng;
 pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
+#[cfg(feature = "tsssp")]
+use self::sspi_cred_ssp::SspiCredSsp;
 use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::Kerberos;
-use crate::negotiate::{Negotiate, NegotiateConfig};
 use crate::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::pku2u::{Pku2u, Pku2uConfig};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertTrustStatus, ClientRequestFlags, ContextNames,
-    ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, PackageInfo, Pku2u, Pku2uConfig, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertContext, CertTrustStatus, ClientRequestFlags,
+    ConnectionInfo, ContextNames, ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -164,7 +168,7 @@ pub enum ClientMode {
 /// # MSDN
 ///
 /// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CredSspClient {
     state: CredSspState,
     context: Option<CredSspContext>,
@@ -334,9 +338,10 @@ impl CredSspClient {
 
                 Ok(ClientState::FinalMessage(ts_request))
             }
-            CredSspState::Final => {
-                panic!("CredSSP client's 'process' method must not be fired after the 'Finished' state")
-            }
+            CredSspState::Final => Err(Error::new(
+                ErrorKind::InternalError,
+                "CredSSP client's 'process' method must not be fired after the 'Finished' state".into(),
+            )),
         }
     }
 }
@@ -347,7 +352,7 @@ impl CredSspClient {
 /// # MSDN
 ///
 /// * [Glossary](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/97e4a826-1112-4ab4-8662-cfa58418b4c1)
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>> {
     credentials: C,
     state: CredSspState,
@@ -537,20 +542,26 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
-            CredSspState::Final => {
-                panic!("CredSSP server's 'process' method must not be fired after the 'Finished' state")
-            }
+            CredSspState::Final => Err(ServerError {
+                ts_request,
+                error: Error::new(
+                    ErrorKind::InternalError,
+                    "CredSSP server's 'process' method must not be fired after the 'Finished' state".into(),
+                ),
+            }),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum SspiContext {
     Ntlm(Ntlm),
     Kerberos(Kerberos),
     Negotiate(Negotiate),
     Pku2u(Pku2u),
+    #[cfg(feature = "tsssp")]
+    CredSsp(SspiCredSsp),
 }
 
 impl SspiImpl for SspiContext {
@@ -566,6 +577,8 @@ impl SspiImpl for SspiContext {
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
             SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
         }
     }
 
@@ -578,6 +591,8 @@ impl SspiImpl for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
             SspiContext::Pku2u(pku2u) => pku2u.initialize_security_context_impl(builder),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.initialize_security_context_impl(builder),
         }
     }
 
@@ -590,6 +605,8 @@ impl SspiImpl for SspiContext {
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
             SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
         }
     }
 }
@@ -601,6 +618,8 @@ impl Sspi for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),
             SspiContext::Negotiate(negotiate) => negotiate.complete_auth_token(token),
             SspiContext::Pku2u(pku2u) => pku2u.complete_auth_token(token),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.complete_auth_token(token),
         }
     }
 
@@ -615,6 +634,8 @@ impl Sspi for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
             SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message, sequence_number),
             SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message, sequence_number),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.encrypt_message(flags, message, sequence_number),
         }
     }
 
@@ -628,6 +649,8 @@ impl Sspi for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
             SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message, sequence_number),
             SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.decrypt_message(message, sequence_number),
         }
     }
 
@@ -637,30 +660,85 @@ impl Sspi for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.query_context_sizes(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_sizes(),
             SspiContext::Pku2u(pku2u) => pku2u.query_context_sizes(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_sizes(),
         }
     }
+
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_names(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_names(),
             SspiContext::Pku2u(pku2u) => pku2u.query_context_names(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_names(),
         }
     }
+
+    fn query_context_stream_sizes(&mut self) -> crate::Result<StreamSizes> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_stream_sizes(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_stream_sizes(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_stream_sizes(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_stream_sizes(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_stream_sizes(),
+        }
+    }
+
     fn query_context_package_info(&mut self) -> crate::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_package_info(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_package_info(),
             SspiContext::Pku2u(pku2u) => pku2u.query_context_package_info(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_package_info(),
         }
     }
+
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
             SspiContext::Kerberos(kerberos) => kerberos.query_context_cert_trust_status(),
             SspiContext::Negotiate(negotiate) => negotiate.query_context_cert_trust_status(),
             SspiContext::Pku2u(pku2u) => pku2u.query_context_cert_trust_status(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_cert_trust_status(),
+        }
+    }
+
+    fn query_context_remote_cert(&mut self) -> crate::Result<CertContext> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_remote_cert(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_remote_cert(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_remote_cert(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_remote_cert(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_remote_cert(),
+        }
+    }
+
+    fn query_context_negotiation_package(&mut self) -> crate::Result<PackageInfo> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_negotiation_package(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_negotiation_package(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_negotiation_package(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_negotiation_package(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_negotiation_package(),
+        }
+    }
+
+    fn query_context_connection_info(&mut self) -> crate::Result<ConnectionInfo> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_connection_info(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_connection_info(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_connection_info(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_connection_info(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_connection_info(),
         }
     }
 
@@ -670,6 +748,8 @@ impl Sspi for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.change_password(change_password),
             SspiContext::Negotiate(negotiate) => negotiate.change_password(change_password),
             SspiContext::Pku2u(pku2u) => pku2u.change_password(change_password),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.change_password(change_password),
         }
     }
 }
@@ -681,11 +761,13 @@ impl SspiEx for SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
             SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identity(identity),
             SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.custom_set_auth_identity(identity),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct CredSspContext {
     peer_version: Option<u32>,
     sspi_context: SspiContext,
@@ -780,16 +862,11 @@ impl CredSspContext {
     fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> crate::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
-        match self.sspi_context {
-            SspiContext::Ntlm(_) => {
-                if endpoint == EndpointType::Server {
-                    integer_increment_le(&mut public_key);
-                }
+        if let SspiContext::Ntlm(_) = self.sspi_context {
+            if endpoint == EndpointType::Server {
+                integer_increment_le(&mut public_key);
             }
-            SspiContext::Kerberos(_) => {}
-            SspiContext::Negotiate(_) => {}
-            SspiContext::Pku2u(_) => {}
-        };
+        }
 
         self.encrypt_message(&public_key)
     }
@@ -883,8 +960,6 @@ impl CredSspContext {
         output.append(&mut SecurityBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.buffer);
 
         self.send_seq_num += 1;
-
-        // there will be magic transform for the kerberos
 
         Ok(output)
     }

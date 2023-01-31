@@ -308,7 +308,6 @@ pub unsafe extern "system" fn DecryptMessage(
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
-        check_null!(pf_qop);
 
         let sspi_context = try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
@@ -329,7 +328,10 @@ pub unsafe extern "system" fn DecryptMessage(
             };
 
         copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
-        *pf_qop = decryption_flags.bits().try_into().unwrap();
+        // `pf_qop` can be null if this library is used as a CredSsp security package
+        if !pf_qop.is_null() {
+            *pf_qop = decryption_flags.bits().try_into().unwrap();
+        }
 
         try_execute!(result_status);
 

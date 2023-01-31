@@ -88,12 +88,18 @@ mod kdc;
 mod krb;
 mod utils;
 
+#[cfg(all(feature = "tsssp", not(target_os = "windows")))]
+compile_error!("tsssp feature should be used only on Windows");
+
 use std::{error, fmt, io, result, str, string};
 
 use bitflags::bitflags;
+#[cfg(feature = "tsssp")]
+use credssp::sspi_cred_ssp;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
+use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 
@@ -144,6 +150,8 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
         SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
         SecurityPackageType::Pku2u => Ok(pku2u::PACKAGE_INFO.clone()),
+        #[cfg(feature = "tsssp")]
+        SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
             format!("Queried info about unknown package: {:?}", s),
@@ -178,6 +186,8 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
         kerberos::PACKAGE_INFO.clone(),
         pku2u::PACKAGE_INFO.clone(),
         ntlm::PACKAGE_INFO.clone(),
+        #[cfg(feature = "tsssp")]
+        credssp::sspi_cred_ssp::PACKAGE_INFO.clone(),
     ])
 }
 
@@ -743,6 +753,18 @@ where
     /// * [QuerySecurityPackageInfoW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfow)
     fn query_context_names(&mut self) -> Result<ContextNames>;
 
+    /// Queries the sizes of the various parts of a stream used in the per-message functions. This function is implemented only for CredSSP security package.
+    ///
+    /// # MSDN
+    ///
+    /// * [QuerySecurityPackageInfoW function (`ulAttribute` parameter)](https://learn.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--schannel)
+    fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_stream_sizes is not supported".into(),
+        ))
+    }
+
     /// Retrieves information about the specified security package. This information includes the bounds of sizes of authentication information, credentials, and contexts.
     ///
     /// # Returns
@@ -783,6 +805,54 @@ where
     /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus>;
 
+    /// Retrieves the information about the end certificate supplied by the server. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `CertContext` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
+    fn query_context_remote_cert(&mut self) -> Result<CertContext> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_remote_cert_context is not supported".into(),
+        ))
+    }
+
+    /// Retrieves the information about the negotiated security package. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `PackageInfo` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesw)
+    fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_negotiation_package is not supported".into(),
+        ))
+    }
+
+    /// Returns detailed information on the established connection. This function is implemented only for CredSSP security package.
+    ///
+    /// # Returns
+    ///
+    /// * `ConnectionInfo` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes (CredSSP) function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--credssp)
+    fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_connection_info is not supported".into(),
+        ))
+    }
+
     /// Changes the password for a Windows domain account.
     ///
     /// # Returns
@@ -811,6 +881,106 @@ where
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
     fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
+}
+
+/// Protocol used to establish connection.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`dwProtocol` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionProtocol {
+    SpProtTls1Client = 0x80,
+    SpProtTls1Server = 0x40,
+    SpProtSsl3Client = 0x20,
+    SpProtSsl3Server = 0x10,
+    SpProtTls1_1Client = 0x200,
+    SpProtTls1_1Server = 0x100,
+    SpProtTls1_2Client = 0x800,
+    SpProtTls1_2Server = 0x400,
+    SpProtTls1_3Client = 0x00002000,
+    SpProtTls1_3Server = 0x00001000,
+    SpProtPct1Client = 0x2,
+    SpProtPct1Server = 0x1,
+    SpProtSsl2Client = 0x8,
+    SpProtSsl2Server = 0x4,
+}
+
+/// Algorithm identifier for the bulk encryption cipher used by the connection.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiCipher` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionCipher {
+    Calg3des = 26115,
+    CalgAes128 = 26126,
+    CalgAes256 = 26128,
+    CalgDes = 26113,
+    CalgRc2 = 26114,
+    CalgRc4 = 26625,
+    NoEncryption = 0,
+}
+
+/// ALG_ID indicating the hash used for generating Message Authentication Codes (MACs).
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiHash` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionHash {
+    CalgMd5 = 32771,
+    CalgSha = 32772,
+}
+
+/// ALG_ID indicating the key exchange algorithm used to generate the shared master secret.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo (`aiExch` field)](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum ConnectionKeyExchange {
+    CalgRsaKeyx = 41984,
+    CalgDhEphem = 43522,
+}
+
+/// Type of certificate encoding used.
+///
+/// # MSDN
+///
+/// [CERT_CONTEXT (`dwCertEncodingType` field)](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_context)
+#[derive(Debug, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+pub enum CertEncodingType {
+    Pkcs7AsnEncoding = 65536,
+    X509AsnEncoding = 1,
+}
+
+/// The CERT_CONTEXT structure contains both the encoded and decoded representations of a certificate.
+///
+/// # MSDN
+///
+/// [CERT_CONTEXT](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_context)
+#[derive(Debug, Clone, PartialEq)]
+pub struct CertContext {
+    pub encoding_type: CertEncodingType,
+    pub raw_cert: Vec<u8>,
+    pub cert: Certificate,
+}
+
+/// This structure contains protocol and cipher information.
+///
+/// # MSDN
+///
+/// [SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ConnectionInfo {
+    pub protocol: ConnectionProtocol,
+    pub cipher: ConnectionCipher,
+    pub cipher_strength: u32,
+    pub hash: ConnectionHash,
+    pub hash_strength: u32,
+    pub key_exchange: ConnectionKeyExchange,
+    pub exchange_strength: u32,
 }
 
 pub trait SspiImpl {
@@ -1177,6 +1347,8 @@ pub enum SecurityPackageType {
     Kerberos,
     Negotiate,
     Pku2u,
+    #[cfg(feature = "tsssp")]
+    CredSsp,
     Other(String),
 }
 
@@ -1187,6 +1359,8 @@ impl AsRef<str> for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME,
             SecurityPackageType::Negotiate => negotiate::PKG_NAME,
             SecurityPackageType::Pku2u => pku2u::PKG_NAME,
+            #[cfg(feature = "tsssp")]
+            SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME,
             SecurityPackageType::Other(name) => name.as_str(),
         }
     }
@@ -1199,6 +1373,8 @@ impl string::ToString for SecurityPackageType {
             SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
             SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
             SecurityPackageType::Pku2u => pku2u::PKG_NAME.into(),
+            #[cfg(feature = "tsssp")]
+            SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME.into(),
             SecurityPackageType::Other(name) => name.clone(),
         }
     }
@@ -1213,6 +1389,8 @@ impl str::FromStr for SecurityPackageType {
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
             negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
             pku2u::PKG_NAME => Ok(SecurityPackageType::Pku2u),
+            #[cfg(feature = "tsssp")]
+            sspi_cred_ssp::PKG_NAME => Ok(SecurityPackageType::CredSsp),
             s => Ok(SecurityPackageType::Other(s.to_string())),
         }
     }
@@ -1298,13 +1476,28 @@ bitflags! {
     }
 }
 
+/// Indicates the sizes of the various parts of a stream for use with the message support functions.
+/// `query_context_stream_sizes` function returns this structure.
+///
+/// # MSDN
+///
+/// * [SecPkgContext_StreamSizes](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes)
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct StreamSizes {
+    pub header: u32,
+    pub trailer: u32,
+    pub max_message: u32,
+    pub buffers: u32,
+    pub block_size: u32,
+}
+
 /// Indicates the sizes of important structures used in the message support functions.
 /// `query_context_sizes` function returns this structure.
 ///
 /// # MSDN
 ///
 /// * [SecPkgContext_Sizes structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sizes)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ContextSizes {
     pub max_token: u32,
     pub max_signature: u32,
