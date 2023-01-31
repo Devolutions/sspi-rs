@@ -55,6 +55,8 @@ jobs:
     name: Tests [${{ matrix.os }}] [${{ matrix.crate-name }}]
     runs-on: ${{ matrix.runner }}
     needs: formatting
+    env:
+      SSPI_RS_IS_RUNNING_TESTS: true
     strategy:
       fail-fast: true
       matrix:
