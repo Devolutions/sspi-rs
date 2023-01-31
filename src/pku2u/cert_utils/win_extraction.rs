@@ -7,7 +7,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use num_bigint_dig::BigUint;
 use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
-use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAPUBLIC_MAGIC};
+use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC};
 use winapi::um::ncrypt::NCryptFreeObject;
 use winapi::um::wincrypt::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
@@ -57,10 +57,10 @@ impl BcryptRsaKeyBlob {
 fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     let rsa_key_blob = BcryptRsaKeyBlob::from_read(&mut buffer)?;
 
-    if rsa_key_blob.magic == BCRYPT_RSAPUBLIC_MAGIC {
+    if rsa_key_blob.magic != BCRYPT_RSAFULLPRIVATE_MAGIC {
         return Err(Error::new(
             ErrorKind::InternalError,
-            "Cannot extract certificate private key".into(),
+            "Cannot extract certificate private key: invalid key blob magic".into(),
         ));
     }
 
@@ -165,7 +165,9 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
 
     let mut private_key_buffer_len = 0;
 
-    let blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
+    let mut blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
+    // add NULL char because the Rust library literal doesn't have it
+    blob_type_wide.extend_from_slice(&[0, 0]);
 
     // The first call need to determine the size of the needed buffer for the private key
     // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptexportkey
