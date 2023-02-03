@@ -41,7 +41,7 @@ use rand::Rng;
 
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
-use crate::kerberos::flags::KdcOptions;
+use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION, SERVICE_NAME};
 use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
@@ -59,13 +59,6 @@ pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x10];
 const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
 
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
-
-// AP-REQ toggled options:
-// * mutual required
-// * use session key
-// other options are disabled
-pub const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
-pub const EMPTY_AP_REQ_OPTIONS: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
 
 /// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
 pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
@@ -186,14 +179,10 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         service_names.push(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?));
     }
 
-    println!("client request flags: {:?}", client_requirements);
-
     let mut as_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_AS_REQ_OPTIONS)).unwrap();
     if client_requirements.contains(ClientRequestFlags::DELEGATE) {
-        as_req_options = as_req_options | KdcOptions::FORWARDABLE;
+        as_req_options |= KdcOptions::FORWARDABLE;
     }
-
-    println!("as req opts: {:?}", as_req_options);
 
     Ok(KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
@@ -237,16 +226,29 @@ pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
     })
 }
 
-pub fn generate_tgs_req(
-    realm: &str,
-    service_principal: &str,
-    session_key: &[u8],
-    ticket: Ticket,
-    mut authenticator: &mut Authenticator,
-    additional_tickets: Option<Vec<Ticket>>,
-    enc_params: &EncryptionParams,
-    client_requirements: ClientRequestFlags,
-) -> Result<TgsReq> {
+pub struct GenerateTgsReqOptions<'a> {
+    pub realm: &'a str,
+    pub service_principal: &'a str,
+    pub session_key: &'a [u8],
+    pub ticket: Ticket,
+    pub authenticator: &'a mut Authenticator,
+    pub additional_tickets: Option<Vec<Ticket>>,
+    pub enc_params: &'a EncryptionParams,
+    pub client_requirements: ClientRequestFlags,
+}
+
+pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
+    let GenerateTgsReqOptions {
+        realm,
+        service_principal,
+        session_key,
+        ticket,
+        authenticator,
+        additional_tickets,
+        enc_params,
+        client_requirements,
+    } = options;
+
     let divider = service_principal.find('/').ok_or_else(|| Error {
         error_type: ErrorKind::InvalidParameter,
         description: "Invalid service principal name: missing '/'".into(),
@@ -269,7 +271,7 @@ pub fn generate_tgs_req(
 
     let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
     if client_requirements.contains(ClientRequestFlags::DELEGATE) {
-        tgs_req_options = tgs_req_options | KdcOptions::FORWARDABLE;
+        tgs_req_options |= KdcOptions::FORWARDABLE;
     }
 
     let req_body = KdcReqBody {
@@ -468,7 +470,7 @@ pub fn generate_ap_req(
     session_key: &[u8],
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
-    options: &[u8; 4],
+    options: ApOptionsFlags,
 ) -> Result<ApReq> {
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
     let cipher = encryption_type.cipher();
@@ -480,7 +482,9 @@ pub fn generate_ap_req(
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
-        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(options.to_vec()))),
+        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(
+            options.bits().to_be_bytes().to_vec(),
+        ))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
             etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
@@ -560,7 +564,7 @@ pub fn generate_krb_priv_request(
     seq_num: u32,
     address: &str,
 ) -> Result<KrbPrivMessage> {
-    let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, &EMPTY_AP_REQ_OPTIONS)?;
+    let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, ApOptionsFlags::empty())?;
 
     let enc_part = EncKrbPrivPart::from(EncKrbPrivPartInner {
         user_data: ExplicitContextTag0::from(OctetStringAsn1::from(new_password.to_vec())),
