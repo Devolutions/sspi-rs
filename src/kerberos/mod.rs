@@ -388,7 +388,7 @@ impl Sspi for Kerberos {
                 // 4 = size of u32
                 nonce: &OsRng::default().gen::<[u8; 4]>(),
                 hostname: &hostname,
-                client_requirements: ClientRequestFlags::empty(),
+                context_requirements: ClientRequestFlags::empty(),
             },
             GenerateAsPaDataOptions {
                 password,
@@ -501,11 +501,6 @@ impl SspiImpl for Kerberos {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        println!(
-            "kerberos init sec context: {:?} {:?}",
-            builder.context_requirements, builder.target_name
-        );
-
         let status = match self.state {
             KerberosState::Negotiate => {
                 let credentials = builder
@@ -581,7 +576,7 @@ impl SspiImpl for Kerberos {
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
                         hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
-                        client_requirements: builder.context_requirements,
+                        context_requirements: builder.context_requirements,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,
@@ -621,7 +616,7 @@ impl SspiImpl for Kerberos {
                     authenticator: &mut authenticator,
                     additional_tickets: tgt_ticket.map(|ticket| vec![ticket]),
                     enc_params: &self.encryption_params,
-                    client_requirements: builder.context_requirements,
+                    context_requirements: builder.context_requirements,
                 })?;
 
                 let response = self.send(&serialize_message(&tgs_req)?)?;

@@ -150,7 +150,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub snames: &'a [&'a str],
     pub nonce: &'a [u8],
     pub hostname: &'a str,
-    pub client_requirements: ClientRequestFlags,
+    pub context_requirements: ClientRequestFlags,
 }
 
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
@@ -161,7 +161,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         snames,
         nonce,
         hostname: address,
-        client_requirements,
+        context_requirements,
     } = options;
 
     let expiration_date = Utc::now()
@@ -181,7 +181,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
     }
 
     let mut as_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_AS_REQ_OPTIONS)).unwrap();
-    if client_requirements.contains(ClientRequestFlags::DELEGATE) {
+    if context_requirements.contains(ClientRequestFlags::DELEGATE) {
         as_req_options |= KdcOptions::FORWARDABLE;
     }
 
@@ -235,7 +235,7 @@ pub struct GenerateTgsReqOptions<'a> {
     pub authenticator: &'a mut Authenticator,
     pub additional_tickets: Option<Vec<Ticket>>,
     pub enc_params: &'a EncryptionParams,
-    pub client_requirements: ClientRequestFlags,
+    pub context_requirements: ClientRequestFlags,
 }
 
 pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
@@ -247,7 +247,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
         authenticator,
         additional_tickets,
         enc_params,
-        client_requirements,
+        context_requirements,
     } = options;
 
     let (service_name, service_principal_name) = parse_target_name(service_principal)?;
@@ -257,7 +257,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
         .unwrap();
 
     let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
-    if client_requirements.contains(ClientRequestFlags::DELEGATE) {
+    if context_requirements.contains(ClientRequestFlags::DELEGATE) {
         tgs_req_options |= KdcOptions::FORWARDABLE;
     }
 

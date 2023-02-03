@@ -62,7 +62,7 @@ impl KerberosConfig {
 
     pub fn new_with_network_client(network_client: Box<dyn NetworkClient>) -> Self {
         Self {
-            url: Some(Url::from_str("tcp://192.168.0.106:88").unwrap()),
+            url: None,
             network_client,
             hostname: None,
         }

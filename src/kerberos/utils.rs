@@ -81,7 +81,7 @@ pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
     }
 }
 
-pub fn parse_target_name<'a>(target_name: &'a str) -> Result<(&'a str, &'a str)> {
+pub fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
     let divider = target_name.find('/').ok_or_else(|| Error {
         error_type: ErrorKind::InvalidParameter,
         description: "Invalid service principal name: missing '/'".into(),

@@ -508,7 +508,7 @@ impl SspiImpl for Pku2u {
                     // we don't need the nonce in Pku2u
                     nonce: &[0],
                     hostname: &self.config.hostname,
-                    client_requirements: builder.context_requirements,
+                    context_requirements: builder.context_requirements,
                 })?;
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,
