@@ -37,7 +37,7 @@ use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
-use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
+use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::ntlm::AuthIdentityBuffers;
 use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
@@ -50,7 +50,6 @@ use crate::{
 pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
-pub const SERVICE_NAME: &str = "TERMSRV";
 pub const KADMIN: &str = "kadmin";
 pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
@@ -502,7 +501,10 @@ impl SspiImpl for Kerberos {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        println!("kerberos init sec context: {:?}", builder.context_requirements);
+        println!(
+            "kerberos init sec context: {:?} {:?}",
+            builder.context_requirements, builder.target_name
+        );
 
         let status = match self.state {
             KerberosState::Negotiate => {
@@ -518,15 +520,18 @@ impl SspiImpl for Kerberos {
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
+                let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| Error {
+                    error_type: ErrorKind::NoCredentials,
+                    description: "Service target name (service principal name) is not provided".into(),
+                })?)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token
                     .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(&format!(
-                        "{}.{}",
-                        username,
-                        domain.to_ascii_lowercase()
-                    ))?)?)?;
+                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(
+                        &format!("{}.{}", username, domain.to_ascii_lowercase(),),
+                        service_name,
+                    )?)?)?;
 
                 self.state = KerberosState::Preauthentication;
 

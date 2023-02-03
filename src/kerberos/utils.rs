@@ -80,3 +80,23 @@ pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
         ))
     }
 }
+
+pub fn parse_target_name<'a>(target_name: &'a str) -> Result<(&'a str, &'a str)> {
+    let divider = target_name.find('/').ok_or_else(|| Error {
+        error_type: ErrorKind::InvalidParameter,
+        description: "Invalid service principal name: missing '/'".into(),
+    })?;
+
+    if divider == 0 || divider == target_name.len() - 1 {
+        return Err(Error {
+            error_type: ErrorKind::InvalidParameter,
+            description: "Invalid service principal name".into(),
+        });
+    }
+
+    let service_name = &target_name[0..divider];
+    // `divider + 1` - do not include '/' char
+    let service_principal_name = &target_name[(divider + 1)..];
+
+    Ok((service_name, service_principal_name))
+}

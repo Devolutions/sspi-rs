@@ -42,7 +42,8 @@ use rand::Rng;
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION, SERVICE_NAME};
+use crate::kerberos::utils::parse_target_name;
+use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
 use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
@@ -249,21 +250,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
         client_requirements,
     } = options;
 
-    let divider = service_principal.find('/').ok_or_else(|| Error {
-        error_type: ErrorKind::InvalidParameter,
-        description: "Invalid service principal name: missing '/'".into(),
-    })?;
-
-    if divider == 0 || divider == service_principal.len() - 1 {
-        return Err(Error {
-            error_type: ErrorKind::InvalidParameter,
-            description: "Invalid service principal name".into(),
-        });
-    }
-
-    let service_name = &service_principal[0..divider];
-    // `divider + 1` - do not include '/' char
-    let service_principal_name = &service_principal[(divider + 1)..];
+    let (service_name, service_principal_name) = parse_target_name(service_principal)?;
 
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
@@ -499,7 +486,7 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
-pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
+pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
     let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: TGT_REQ_TOKEN_ID,
@@ -509,7 +496,7 @@ pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiN
             server_name: ExplicitContextTag2::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into())?),
+                    KerberosStringAsn1::from(IA5String::from_string(service_name.into())?),
                     KerberosStringAsn1::from(IA5String::from_string(username.into())?),
                 ])),
             }),
