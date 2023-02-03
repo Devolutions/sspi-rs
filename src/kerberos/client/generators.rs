@@ -41,16 +41,23 @@ use rand::Rng;
 
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
+use crate::kerberos::flags::KdcOptions;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION, SERVICE_NAME};
-use crate::{Error, ErrorKind, Result};
+use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
 pub const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
 const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
-pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
-const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x08];
+// Renewable, Canonicalize, and Renewable-ok are on by default
+// https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
+pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x10];
+
+// Renewable, Canonicalize, Enc-tkt-in-skey are on by default
+// https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
+const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
+
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 
 // AP-REQ toggled options:
@@ -149,6 +156,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub snames: &'a [&'a str],
     pub nonce: &'a [u8],
     pub hostname: &'a str,
+    pub client_requirements: ClientRequestFlags,
 }
 
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
@@ -159,6 +167,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         snames,
         nonce,
         hostname: address,
+        client_requirements,
     } = options;
 
     let expiration_date = Utc::now()
@@ -177,9 +186,18 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         service_names.push(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?));
     }
 
+    println!("client request flags: {:?}", client_requirements);
+
+    let mut as_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_AS_REQ_OPTIONS)).unwrap();
+    if client_requirements.contains(ClientRequestFlags::DELEGATE) {
+        as_req_options = as_req_options | KdcOptions::FORWARDABLE;
+    }
+
+    println!("as req opts: {:?}", as_req_options);
+
     Ok(KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-            DEFAULT_AS_REQ_OPTIONS.to_vec(),
+            as_req_options.bits().to_be_bytes().to_vec(),
         ))),
         cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![*cname_type])),
@@ -227,6 +245,7 @@ pub fn generate_tgs_req(
     mut authenticator: &mut Authenticator,
     additional_tickets: Option<Vec<Ticket>>,
     enc_params: &EncryptionParams,
+    client_requirements: ClientRequestFlags,
 ) -> Result<TgsReq> {
     let divider = service_principal.find('/').ok_or_else(|| Error {
         error_type: ErrorKind::InvalidParameter,
@@ -248,9 +267,14 @@ pub fn generate_tgs_req(
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
+    let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
+    if client_requirements.contains(ClientRequestFlags::DELEGATE) {
+        tgs_req_options = tgs_req_options | KdcOptions::FORWARDABLE;
+    }
+
     let req_body = KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-            DEFAULT_TGS_REQ_OPTIONS.to_vec(),
+            tgs_req_options.bits().to_be_bytes().to_vec(),
         ))),
         cname: Optional::from(None),
         realm: ExplicitContextTag2::from(Realm::from(IA5String::from_str(realm)?)),

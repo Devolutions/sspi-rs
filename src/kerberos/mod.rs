@@ -1,6 +1,7 @@
 pub mod client;
 pub mod config;
 mod encryption_params;
+pub mod flags;
 pub mod server;
 mod utils;
 
@@ -40,10 +41,10 @@ use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::ntlm::AuthIdentityBuffers;
 use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
-    ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -388,6 +389,7 @@ impl Sspi for Kerberos {
                 // 4 = size of u32
                 nonce: &OsRng::default().gen::<[u8; 4]>(),
                 hostname: &hostname,
+                client_requirements: ClientRequestFlags::empty(),
             },
             GenerateAsPaDataOptions {
                 password,
@@ -500,6 +502,8 @@ impl SspiImpl for Kerberos {
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
+        println!("kerberos init sec context: {:?}", builder.context_requirements);
+
         let status = match self.state {
             KerberosState::Negotiate => {
                 let credentials = builder
@@ -572,6 +576,7 @@ impl SspiImpl for Kerberos {
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
                         hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
+                        client_requirements: builder.context_requirements,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,
@@ -611,6 +616,7 @@ impl SspiImpl for Kerberos {
                     &mut authenticator,
                     tgt_ticket.map(|ticket| vec![ticket]),
                     &self.encryption_params,
+                    builder.context_requirements,
                 )?;
 
                 let response = self.send(&serialize_message(&tgs_req)?)?;
