@@ -278,9 +278,13 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<crate::DecryptionFlags> {
-        let mut encrypted = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?
-            .buffer
-            .clone();
+        let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
+            buffer
+        } else {
+            SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Stream)?
+        }
+        .buffer
+        .clone();
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         encrypted.extend_from_slice(&data.buffer);
