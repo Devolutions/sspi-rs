@@ -265,7 +265,7 @@ impl Sspi for Kerberos {
             _ => {
                 return Err(Error {
                     error_type: ErrorKind::OutOfSequence,
-                    description: "Kerberos context is not established or finished".to_owned(),
+                    description: "Kerberos context is not established".to_owned(),
                 })
             }
         };
@@ -805,6 +805,15 @@ mod tests {
     fn stream_buffer_decryption() {
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
 
+        let session_key = vec![
+            137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75, 110,
+            235, 80, 228, 14, 238, 76, 128, 139, 81,
+        ];
+        let sub_session_key = vec![
+            35, 147, 211, 63, 83, 48, 241, 34, 97, 95, 27, 106, 195, 18, 95, 91, 17, 45, 187, 6, 26, 195, 16, 108, 123,
+            119, 121, 155, 58, 142, 204, 74,
+        ];
+
         let mut kerberos_server = Kerberos {
             state: KerberosState::Final,
             config: KerberosConfig {
@@ -815,19 +824,13 @@ mod tests {
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(vec![
-                    137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75,
-                    110, 235, 80, 228, 14, 238, 76, 128, 139, 81,
-                ]),
-                sub_session_key: Some(vec![
-                    35, 147, 211, 63, 83, 48, 241, 34, 97, 95, 27, 106, 195, 18, 95, 91, 17, 45, 187, 6, 26, 195, 16,
-                    108, 123, 119, 121, 155, 58, 142, 204, 74,
-                ]),
+                session_key: Some(session_key.clone()),
+                sub_session_key: Some(sub_session_key.clone()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
             },
             seq_number: 0,
-            realm: Some("EXAMPLE".into()),
+            realm: None,
             kdc_url: None,
             channel_bindings: None,
         };
@@ -842,19 +845,13 @@ mod tests {
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(vec![
-                    137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75,
-                    110, 235, 80, 228, 14, 238, 76, 128, 139, 81,
-                ]),
-                sub_session_key: Some(vec![
-                    35, 147, 211, 63, 83, 48, 241, 34, 97, 95, 27, 106, 195, 18, 95, 91, 17, 45, 187, 6, 26, 195, 16,
-                    108, 123, 119, 121, 155, 58, 142, 204, 74,
-                ]),
+                session_key: Some(session_key),
+                sub_session_key: Some(sub_session_key),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
             },
             seq_number: 0,
-            realm: Some("EXAMPLE".into()),
+            realm: None,
             kdc_url: None,
             channel_bindings: None,
         };

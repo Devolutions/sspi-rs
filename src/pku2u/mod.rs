@@ -253,7 +253,7 @@ impl Sspi for Pku2u {
         wrap_token.encode(&mut raw_wrap_token)?;
 
         match self.state {
-            Pku2uState::PubKeyAuth | Pku2uState::Credentials => {
+            Pku2uState::PubKeyAuth | Pku2uState::Credentials | Pku2uState::Final => {
                 if raw_wrap_token.len() < SECURITY_TRAILER {
                     return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data".into()));
                 }
@@ -265,7 +265,7 @@ impl Sspi for Pku2u {
             _ => {
                 return Err(Error {
                     error_type: ErrorKind::OutOfSequence,
-                    description: "Kerberos context is not established or finished".to_owned(),
+                    description: "Pku2u context is not established".to_owned(),
                 })
             }
         };
@@ -797,5 +797,195 @@ impl SspiImpl for Pku2u {
 impl SspiEx for Pku2u {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use picky::key::PrivateKey;
+    use picky_asn1_x509::Certificate;
+    use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
+    use picky_krb::crypto::CipherSuite;
+    use picky_krb::negoex::RANDOM_ARRAY_SIZE;
+    use rand::rngs::OsRng;
+    use rand::Rng;
+    use uuid::Uuid;
+
+    use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
+    use super::Pku2uMode;
+    use crate::kerberos::EncryptionParams;
+    use crate::{EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, SecurityBufferType, Sspi};
+
+    #[test]
+    fn stream_buffer_decryption() {
+        let session_key = vec![
+            137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75, 110,
+            235, 80, 228, 14, 238, 76, 128, 139, 81,
+        ];
+        let sub_session_key = vec![
+            35, 147, 211, 63, 83, 48, 241, 34, 97, 95, 27, 106, 195, 18, 95, 91, 17, 45, 187, 6, 26, 195, 16, 108, 123,
+            119, 121, 155, 58, 142, 204, 74,
+        ];
+
+        let mut rng = OsRng::default();
+
+        let p2p_certificate: Certificate = picky_asn1_der::from_bytes(&[
+            48, 130, 3, 213, 48, 130, 2, 189, 160, 3, 2, 1, 2, 2, 16, 32, 99, 134, 91, 60, 164, 166, 93, 186, 47, 71,
+            107, 255, 241, 24, 166, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 11, 5, 0, 48, 77, 49, 75, 48, 73, 6,
+            3, 85, 4, 3, 30, 66, 0, 77, 0, 83, 0, 45, 0, 79, 0, 114, 0, 103, 0, 97, 0, 110, 0, 105, 0, 122, 0, 97, 0,
+            116, 0, 105, 0, 111, 0, 110, 0, 45, 0, 80, 0, 50, 0, 80, 0, 45, 0, 65, 0, 99, 0, 99, 0, 101, 0, 115, 0,
+            115, 0, 32, 0, 91, 0, 50, 0, 48, 0, 50, 0, 50, 0, 93, 48, 30, 23, 13, 50, 51, 48, 49, 50, 57, 49, 53, 52,
+            57, 52, 57, 90, 23, 13, 50, 51, 48, 49, 50, 57, 49, 54, 53, 52, 52, 57, 90, 48, 129, 142, 49, 52, 48, 50,
+            6, 10, 9, 146, 38, 137, 147, 242, 44, 100, 1, 25, 22, 36, 97, 57, 50, 53, 50, 52, 52, 56, 45, 57, 97, 98,
+            55, 45, 52, 57, 98, 48, 45, 98, 98, 53, 99, 45, 102, 50, 102, 57, 50, 51, 99, 56, 52, 54, 55, 50, 49, 61,
+            48, 59, 6, 3, 85, 4, 3, 12, 52, 83, 45, 49, 45, 49, 50, 45, 49, 45, 51, 56, 48, 51, 49, 54, 49, 53, 57, 51,
+            45, 49, 51, 51, 49, 50, 56, 56, 57, 56, 50, 45, 50, 48, 56, 52, 57, 49, 53, 56, 52, 51, 45, 51, 50, 50, 57,
+            49, 49, 53, 52, 57, 56, 49, 23, 48, 21, 6, 3, 85, 4, 3, 12, 14, 115, 57, 64, 100, 97, 116, 97, 97, 110,
+            115, 46, 99, 111, 109, 48, 130, 1, 34, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 130, 1,
+            15, 0, 48, 130, 1, 10, 2, 130, 1, 1, 0, 213, 241, 189, 199, 35, 187, 172, 209, 113, 53, 145, 42, 93, 142,
+            53, 223, 26, 208, 110, 226, 178, 54, 187, 237, 181, 246, 230, 65, 42, 101, 36, 177, 121, 74, 97, 222, 146,
+            163, 254, 112, 155, 150, 227, 182, 123, 122, 251, 64, 119, 186, 229, 68, 157, 67, 211, 189, 241, 217, 197,
+            194, 143, 86, 210, 86, 178, 232, 140, 59, 99, 9, 98, 8, 164, 181, 4, 194, 5, 101, 191, 137, 140, 13, 158,
+            67, 216, 195, 67, 112, 162, 234, 81, 168, 198, 255, 40, 90, 165, 5, 155, 231, 80, 238, 124, 43, 98, 117,
+            181, 159, 195, 246, 146, 183, 221, 215, 129, 237, 67, 119, 100, 159, 35, 246, 189, 204, 50, 29, 25, 214,
+            121, 69, 120, 253, 143, 248, 219, 162, 32, 205, 111, 13, 76, 123, 158, 242, 60, 0, 233, 159, 17, 143, 199,
+            243, 230, 213, 14, 193, 148, 12, 27, 11, 7, 90, 140, 253, 72, 229, 24, 69, 40, 59, 2, 243, 194, 41, 248,
+            204, 92, 102, 189, 220, 19, 185, 227, 113, 192, 162, 86, 132, 88, 233, 191, 131, 215, 219, 5, 63, 163, 34,
+            55, 9, 209, 94, 255, 37, 32, 165, 163, 167, 133, 49, 105, 19, 85, 147, 227, 77, 189, 125, 140, 171, 127,
+            121, 249, 217, 216, 226, 253, 190, 105, 234, 99, 129, 100, 135, 231, 3, 237, 88, 81, 102, 67, 17, 147, 84,
+            233, 75, 124, 179, 16, 160, 203, 202, 196, 235, 191, 209, 2, 3, 1, 0, 1, 163, 111, 48, 109, 48, 14, 6, 3,
+            85, 29, 15, 1, 1, 255, 4, 4, 3, 2, 5, 160, 48, 41, 6, 3, 85, 29, 17, 4, 34, 48, 32, 160, 30, 6, 10, 43, 6,
+            1, 4, 1, 130, 55, 20, 2, 3, 160, 16, 12, 14, 115, 57, 64, 100, 97, 116, 97, 97, 110, 115, 46, 99, 111, 109,
+            48, 19, 6, 3, 85, 29, 37, 4, 12, 48, 10, 6, 8, 43, 6, 1, 5, 5, 7, 3, 2, 48, 27, 6, 9, 43, 6, 1, 4, 1, 130,
+            55, 21, 10, 4, 14, 48, 12, 48, 10, 6, 8, 43, 6, 1, 5, 5, 7, 3, 2, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13,
+            1, 1, 11, 5, 0, 3, 130, 1, 1, 0, 162, 35, 243, 146, 152, 98, 219, 208, 111, 136, 212, 0, 12, 134, 196, 6,
+            96, 113, 172, 17, 243, 26, 152, 107, 97, 89, 98, 235, 162, 130, 189, 228, 248, 44, 19, 41, 203, 8, 185, 83,
+            207, 142, 69, 242, 172, 137, 162, 78, 54, 219, 47, 213, 113, 120, 143, 177, 44, 242, 7, 79, 88, 71, 26,
+            134, 120, 77, 93, 81, 134, 253, 155, 50, 160, 79, 113, 196, 96, 53, 87, 132, 132, 117, 9, 202, 38, 15, 47,
+            4, 247, 57, 153, 145, 211, 181, 46, 92, 232, 219, 186, 226, 12, 7, 52, 61, 104, 55, 136, 170, 53, 57, 95,
+            224, 35, 39, 192, 47, 11, 75, 37, 117, 205, 1, 76, 242, 4, 96, 203, 50, 254, 239, 253, 27, 23, 73, 159,
+            110, 232, 164, 119, 55, 207, 77, 66, 95, 23, 202, 149, 245, 235, 57, 80, 50, 171, 183, 15, 27, 223, 7, 32,
+            155, 101, 139, 95, 167, 214, 90, 58, 199, 250, 127, 131, 12, 97, 61, 212, 12, 10, 245, 34, 136, 11, 215,
+            25, 168, 55, 120, 187, 5, 219, 220, 205, 45, 242, 237, 227, 43, 43, 164, 247, 181, 194, 251, 14, 153, 222,
+            33, 157, 8, 228, 144, 87, 207, 135, 243, 223, 233, 114, 139, 94, 122, 228, 80, 237, 90, 53, 83, 60, 251,
+            11, 179, 147, 227, 101, 85, 96, 80, 44, 176, 158, 85, 102, 31, 228, 24, 117, 230, 26, 202, 127, 121, 177,
+            26, 62, 17, 96, 9,
+        ])
+        .unwrap();
+        let private_key = PrivateKey::from_pem_str(
+            "-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDV8b3HI7us0XE1
+kSpdjjXfGtBu4rI2u+219uZBKmUksXlKYd6So/5wm5bjtnt6+0B3uuVEnUPTvfHZ
+xcKPVtJWsuiMO2MJYgiktQTCBWW/iYwNnkPYw0NwoupRqMb/KFqlBZvnUO58K2J1
+tZ/D9pK33deB7UN3ZJ8j9r3MMh0Z1nlFeP2P+NuiIM1vDUx7nvI8AOmfEY/H8+bV
+DsGUDBsLB1qM/UjlGEUoOwLzwin4zFxmvdwTueNxwKJWhFjpv4PX2wU/oyI3CdFe
+/yUgpaOnhTFpE1WT4029fYyrf3n52dji/b5p6mOBZIfnA+1YUWZDEZNU6Ut8sxCg
+y8rE67/RAgMBAAECggEAERzG6zjGeCpAfeJgmx8W3AOPDG+BhbM+bkGTZT743Bh9
+9R8i6GPJpEQtq4UbF1klbO48DGLv2+3jfGG/ECwHovuoch8F6ug2fMYl3UcFPm7I
+DwbLsnjb2hSN3X48fIhDx9NNBxGIIdJui6+9WbVNQvuxkyjhLpmTyRKhV8XiYgCK
+OkfCfBWOt/WTGdtuwPtDnvtZOA8Qm3L9Yf0BuqLQAqNZ6fihhwfi1bwLwzRTzC3x
+rAfxCMv4dLdYCTee9/6fUWGwJ4SKYqlolVbcZmpFJ7/ByRzfgq0etVJJxKIDOZ8y
+ba/bw8eLypdo4I9SSch/5x/WAS45bMarX4nmJKwUyQKBgQDxCHKmUdwuz1SDhYX/
+H/Si87uZ31Hs/Spjp/mUumwuEgtkmm2hlgtQXmbYnc47nIQqWOu/L0Z9//2D5WHU
+lhYk6S8xAN3dKyGPrYKaBzrh5FCzolprz0YK/N1do9Yu0hkshs73isMbpVHPTI9l
+WuzDqsqfz27VS4XovZJQfjL2+wKBgQDjOq5l5rFkLbeHxEoIFoMdEQnRrr1bXkrj
+Vf0QWN2fi4Y8/RVLUVNifkjoo4Aj3D7sgyT8ItCDyXtj9Rt5swKUW+rywgI44Fr2
+DuOAyAXhzFd7GLw0HnE9jeKMQyeXW5igAppXWOMgS6eAo25vIIRL4UBaIC4/WVCz
+jJ/aprkaowKBgQDR46ZauJwA0yBoKySlJkGUiKPLeVFRCqAYCdTnM3MypxnusB9Z
+f1w4zwvGA5zsAf6BFc+sO1GqNPmhGmUXht6fo8Mpa/THPGDMSa6ZzEP1Iyk3U+Bj
+UypONSXa/elr+h5bzMR7gQUnlM1ps+SGwSe9t4McqLh92ncwVawMlehxcwKBgBcG
+jj+TNeyR2WQvltTk+xpJ7LXLwDJvBqWsw/0RFDwjllG9z5eXQRzc8SRp1QVNPy8W
+RvwpxvljxFYns0YMxrkj61X4JOOAkJcYgSM+oaH04/R8WC3r28vCAe/2qh9jT77/
+JIavYiyWnf2iEgG+yMkrpSq80hLnSQ84s8YjWOSDAoGBAOaVvL6VVq2BawI+Qt3s
+9DlgTNtzpiJJCmUfwNd2yOPQJVq5trdA0DZeCQEc/psPWXBoyT01ptgcGHP+C/Da
+xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
+1pNtUBlMx+0X6wxVjMYulkRH
+-----END PRIVATE KEY-----",
+        )
+        .unwrap();
+
+        let mut pku2u_server = Pku2u {
+            mode: Pku2uMode::Server,
+            config: Pku2uConfig {
+                p2p_certificate: p2p_certificate.clone(),
+                private_key: private_key.clone(),
+                hostname: "hostname".into(),
+            },
+            state: Pku2uState::Final,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(session_key.clone()),
+                sub_session_key: Some(sub_session_key.clone()),
+                sspi_encrypt_key_usage: INITIATOR_SEAL,
+                sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+            },
+            auth_identity: None,
+            conversation_id: Uuid::new_v4(),
+            auth_scheme: None,
+            seq_number: 0,
+            dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
+            negoex_messages: Vec::new(),
+            gss_api_messages: Vec::new(),
+            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+        };
+
+        let mut pku2u_client = Pku2u {
+            mode: Pku2uMode::Client,
+            config: Pku2uConfig {
+                p2p_certificate,
+                private_key,
+                hostname: "hostname".into(),
+            },
+            state: Pku2uState::Final,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(session_key),
+                sub_session_key: Some(sub_session_key),
+                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
+                sspi_decrypt_key_usage: INITIATOR_SEAL,
+            },
+            auth_identity: None,
+            conversation_id: Uuid::new_v4(),
+            auth_scheme: None,
+            seq_number: 0,
+            dh_parameters: generate_client_dh_parameters(&mut rng).unwrap(),
+            negoex_messages: Vec::new(),
+            gss_api_messages: Vec::new(),
+            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+        };
+
+        let plain_message = b"some plain message";
+
+        let mut message = [
+            SecurityBuffer {
+                buffer: Vec::new(),
+                buffer_type: SecurityBufferType::Token,
+            },
+            SecurityBuffer {
+                buffer: plain_message.to_vec(),
+                buffer_type: SecurityBufferType::Data,
+            },
+        ];
+
+        pku2u_server
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .unwrap();
+
+        let mut buffer = message[0].buffer.clone();
+        buffer.extend_from_slice(&message[1].buffer);
+        let mut message = [
+            SecurityBuffer {
+                buffer,
+                buffer_type: SecurityBufferType::Stream,
+            },
+            SecurityBuffer {
+                buffer: Vec::new(),
+                buffer_type: SecurityBufferType::Data,
+            },
+        ];
+
+        pku2u_client.decrypt_message(&mut message, 0).unwrap();
+
+        assert_eq!(message[1].buffer, plain_message);
     }
 }
