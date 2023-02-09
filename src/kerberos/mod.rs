@@ -265,7 +265,7 @@ impl Sspi for Kerberos {
             _ => {
                 return Err(Error {
                     error_type: ErrorKind::OutOfSequence,
-                    description: "Kerberos context is not established or finished".to_owned(),
+                    description: "Kerberos context is not established".to_owned(),
                 })
             }
         };
@@ -278,9 +278,13 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<crate::DecryptionFlags> {
-        let mut encrypted = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?
-            .buffer
-            .clone();
+        let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
+            buffer
+        } else {
+            SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Stream)?
+        }
+        .buffer
+        .clone();
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         encrypted.extend_from_slice(&data.buffer);
@@ -760,5 +764,130 @@ impl SspiImpl for Kerberos {
 impl SspiEx for Kerberos {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
+    use picky_krb::crypto::CipherSuite;
+
+    use super::EncryptionParams;
+    use crate::network_client::NetworkClient;
+    use crate::{
+        EncryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, KerberosState, SecurityBuffer, SecurityBufferType,
+        Sspi,
+    };
+
+    struct NetworkClientMock;
+
+    impl NetworkClient for NetworkClientMock {
+        fn send(&self, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
+            Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "send is not supported".into(),
+            ))
+        }
+
+        fn send_http(&self, _url: &url::Url, _data: &[u8], _domain: Option<String>) -> crate::Result<Vec<u8>> {
+            Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "send_http is not supported".into(),
+            ))
+        }
+
+        fn clone(&self) -> Box<dyn NetworkClient> {
+            Box::new(Self)
+        }
+    }
+
+    #[test]
+    fn stream_buffer_decryption() {
+        // https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
+
+        let session_key = vec![
+            137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75, 110,
+            235, 80, 228, 14, 238, 76, 128, 139, 81,
+        ];
+        let sub_session_key = vec![
+            35, 147, 211, 63, 83, 48, 241, 34, 97, 95, 27, 106, 195, 18, 95, 91, 17, 45, 187, 6, 26, 195, 16, 108, 123,
+            119, 121, 155, 58, 142, 204, 74,
+        ];
+
+        let mut kerberos_server = Kerberos {
+            state: KerberosState::Final,
+            config: KerberosConfig {
+                url: None,
+                network_client: Box::new(NetworkClientMock),
+                hostname: None,
+            },
+            auth_identity: None,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(session_key.clone()),
+                sub_session_key: Some(sub_session_key.clone()),
+                sspi_encrypt_key_usage: INITIATOR_SEAL,
+                sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+            },
+            seq_number: 0,
+            realm: None,
+            kdc_url: None,
+            channel_bindings: None,
+        };
+
+        let mut kerberos_client = Kerberos {
+            state: KerberosState::Final,
+            config: KerberosConfig {
+                url: None,
+                network_client: Box::new(NetworkClientMock),
+                hostname: None,
+            },
+            auth_identity: None,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(session_key),
+                sub_session_key: Some(sub_session_key),
+                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
+                sspi_decrypt_key_usage: INITIATOR_SEAL,
+            },
+            seq_number: 0,
+            realm: None,
+            kdc_url: None,
+            channel_bindings: None,
+        };
+
+        let plain_message = b"some plain message";
+
+        let mut message = [
+            SecurityBuffer {
+                buffer: Vec::new(),
+                buffer_type: SecurityBufferType::Token,
+            },
+            SecurityBuffer {
+                buffer: plain_message.to_vec(),
+                buffer_type: SecurityBufferType::Data,
+            },
+        ];
+
+        kerberos_server
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .unwrap();
+
+        let mut buffer = message[0].buffer.clone();
+        buffer.extend_from_slice(&message[1].buffer);
+        let mut message = [
+            SecurityBuffer {
+                buffer,
+                buffer_type: SecurityBufferType::Stream,
+            },
+            SecurityBuffer {
+                buffer: Vec::new(),
+                buffer_type: SecurityBufferType::Data,
+            },
+        ];
+
+        kerberos_client.decrypt_message(&mut message, 0).unwrap();
+
+        assert_eq!(message[1].buffer, plain_message);
     }
 }
