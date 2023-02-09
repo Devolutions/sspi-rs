@@ -41,24 +41,25 @@ use rand::Rng;
 
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION, SERVICE_NAME};
-use crate::{Error, ErrorKind, Result};
+use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
+use crate::kerberos::utils::parse_target_name;
+use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
+use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
 pub const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
 const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
-pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x10];
-const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x40, 0x81, 0x00, 0x08];
-const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
+// Renewable, Canonicalize, and Renewable-ok are on by default
+// https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
+pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x10];
 
-// AP-REQ toggled options:
-// * mutual required
-// * use session key
-// other options are disabled
-pub const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x60, 0x00, 0x00, 0x00];
-pub const EMPTY_AP_REQ_OPTIONS: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+// Renewable, Canonicalize, Enc-tkt-in-skey are on by default
+// https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
+const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
+
+const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 
 /// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
 pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
@@ -149,6 +150,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub snames: &'a [&'a str],
     pub nonce: &'a [u8],
     pub hostname: &'a str,
+    pub context_requirements: ClientRequestFlags,
 }
 
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
@@ -159,6 +161,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         snames,
         nonce,
         hostname: address,
+        context_requirements,
     } = options;
 
     let expiration_date = Utc::now()
@@ -177,9 +180,14 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         service_names.push(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?));
     }
 
+    let mut as_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_AS_REQ_OPTIONS)).unwrap();
+    if context_requirements.contains(ClientRequestFlags::DELEGATE) {
+        as_req_options |= KdcOptions::FORWARDABLE;
+    }
+
     Ok(KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-            DEFAULT_AS_REQ_OPTIONS.to_vec(),
+            as_req_options.bits().to_be_bytes().to_vec(),
         ))),
         cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![*cname_type])),
@@ -219,38 +227,43 @@ pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
     })
 }
 
-pub fn generate_tgs_req(
-    realm: &str,
-    service_principal: &str,
-    session_key: &[u8],
-    ticket: Ticket,
-    mut authenticator: &mut Authenticator,
-    additional_tickets: Option<Vec<Ticket>>,
-    enc_params: &EncryptionParams,
-) -> Result<TgsReq> {
-    let divider = service_principal.find('/').ok_or_else(|| Error {
-        error_type: ErrorKind::InvalidParameter,
-        description: "Invalid service principal name: missing '/'".into(),
-    })?;
+pub struct GenerateTgsReqOptions<'a> {
+    pub realm: &'a str,
+    pub service_principal: &'a str,
+    pub session_key: &'a [u8],
+    pub ticket: Ticket,
+    pub authenticator: &'a mut Authenticator,
+    pub additional_tickets: Option<Vec<Ticket>>,
+    pub enc_params: &'a EncryptionParams,
+    pub context_requirements: ClientRequestFlags,
+}
 
-    if divider == 0 || divider == service_principal.len() - 1 {
-        return Err(Error {
-            error_type: ErrorKind::InvalidParameter,
-            description: "Invalid service principal name".into(),
-        });
-    }
+pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
+    let GenerateTgsReqOptions {
+        realm,
+        service_principal,
+        session_key,
+        ticket,
+        authenticator,
+        additional_tickets,
+        enc_params,
+        context_requirements,
+    } = options;
 
-    let service_name = &service_principal[0..divider];
-    // `divider + 1` - do not include '/' char
-    let service_principal_name = &service_principal[(divider + 1)..];
+    let (service_name, service_principal_name) = parse_target_name(service_principal)?;
 
     let expiration_date = Utc::now()
         .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
+    let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
+    if context_requirements.contains(ClientRequestFlags::DELEGATE) {
+        tgs_req_options |= KdcOptions::FORWARDABLE;
+    }
+
     let req_body = KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
-            DEFAULT_TGS_REQ_OPTIONS.to_vec(),
+            tgs_req_options.bits().to_be_bytes().to_vec(),
         ))),
         cname: Optional::from(None),
         realm: ExplicitContextTag2::from(Realm::from(IA5String::from_str(realm)?)),
@@ -444,7 +457,7 @@ pub fn generate_ap_req(
     session_key: &[u8],
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
-    options: &[u8; 4],
+    options: ApOptionsFlags,
 ) -> Result<ApReq> {
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
     let cipher = encryption_type.cipher();
@@ -456,7 +469,9 @@ pub fn generate_ap_req(
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REQ_MSG_TYPE])),
-        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(options.to_vec()))),
+        ap_options: ExplicitContextTag2::from(ApOptions::from(BitString::with_bytes(
+            options.bits().to_be_bytes().to_vec(),
+        ))),
         ticket: ExplicitContextTag3::from(ticket),
         authenticator: ExplicitContextTag4::from(EncryptedData {
             etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
@@ -471,7 +486,7 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
-pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
+pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
     let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: TGT_REQ_TOKEN_ID,
@@ -481,7 +496,7 @@ pub fn generate_neg_token_init(username: &str) -> Result<ApplicationTag0<GssApiN
             server_name: ExplicitContextTag2::from(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(SERVICE_NAME.into())?),
+                    KerberosStringAsn1::from(IA5String::from_string(service_name.into())?),
                     KerberosStringAsn1::from(IA5String::from_string(username.into())?),
                 ])),
             }),
@@ -536,7 +551,7 @@ pub fn generate_krb_priv_request(
     seq_num: u32,
     address: &str,
 ) -> Result<KrbPrivMessage> {
-    let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, &EMPTY_AP_REQ_OPTIONS)?;
+    let ap_req = generate_ap_req(ticket, session_key, authenticator, enc_params, ApOptionsFlags::empty())?;
 
     let enc_part = EncKrbPrivPart::from(EncKrbPrivPartInner {
         user_data: ExplicitContextTag0::from(OctetStringAsn1::from(new_password.to_vec())),

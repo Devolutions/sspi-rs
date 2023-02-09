@@ -1,6 +1,7 @@
 pub mod client;
 pub mod config;
 mod encryption_params;
+pub mod flags;
 pub mod server;
 mod utils;
 
@@ -26,7 +27,7 @@ use self::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request,
     generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
     get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions,
-    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM, DEFAULT_AP_REQ_OPTIONS,
+    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
 use self::config::KerberosConfig;
 use self::server::extractors::extract_tgt_ticket;
@@ -34,22 +35,21 @@ use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
-use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
+use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
-use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
+use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::ntlm::AuthIdentityBuffers;
 use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientResponseFlags,
-    ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
 pub const TGT_SERVICE_NAME: &str = "krbtgt";
-pub const SERVICE_NAME: &str = "TERMSRV";
 pub const KADMIN: &str = "kadmin";
 pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 
@@ -392,6 +392,7 @@ impl Sspi for Kerberos {
                 // 4 = size of u32
                 nonce: &OsRng::default().gen::<[u8; 4]>(),
                 hostname: &hostname,
+                context_requirements: ClientRequestFlags::empty(),
             },
             GenerateAsPaDataOptions {
                 password,
@@ -518,15 +519,18 @@ impl SspiImpl for Kerberos {
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
+                let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| Error {
+                    error_type: ErrorKind::NoCredentials,
+                    description: "Service target name (service principal name) is not provided".into(),
+                })?)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token
                     .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(&format!(
-                        "{}.{}",
-                        username,
-                        domain.to_ascii_lowercase()
-                    ))?)?)?;
+                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(
+                        &format!("{}.{}", username, domain.to_ascii_lowercase(),),
+                        service_name,
+                    )?)?)?;
 
                 self.state = KerberosState::Preauthentication;
 
@@ -576,6 +580,7 @@ impl SspiImpl for Kerberos {
                         // 4 = size of u32
                         nonce: &OsRng::default().gen::<[u8; 4]>(),
                         hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
+                        context_requirements: builder.context_requirements,
                     },
                     GenerateAsPaDataOptions {
                         password: &password,
@@ -607,15 +612,16 @@ impl SspiImpl for Kerberos {
                     description: "Service target name (service principal name) is not provided".into(),
                 })?;
 
-                let tgs_req = generate_tgs_req(
-                    &as_rep.0.crealm.0.to_string(),
+                let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
+                    realm: &as_rep.0.crealm.0.to_string(),
                     service_principal,
-                    &session_key_1,
-                    as_rep.0.ticket.0,
-                    &mut authenticator,
-                    tgt_ticket.map(|ticket| vec![ticket]),
-                    &self.encryption_params,
-                )?;
+                    session_key: &session_key_1,
+                    ticket: as_rep.0.ticket.0,
+                    authenticator: &mut authenticator,
+                    additional_tickets: tgt_ticket.map(|ticket| vec![ticket]),
+                    enc_params: &self.encryption_params,
+                    context_requirements: builder.context_requirements,
+                })?;
 
                 let response = self.send(&serialize_message(&tgs_req)?)?;
 
@@ -659,7 +665,7 @@ impl SspiImpl for Kerberos {
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &authenticator,
                     &self.encryption_params,
-                    &DEFAULT_AP_REQ_OPTIONS,
+                    builder.context_requirements.into(),
                 )?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;

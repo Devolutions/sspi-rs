@@ -75,8 +75,6 @@ pub const CLIENT_WRAP_TOKEN_FLAGS: u8 = 2;
 /// acceptor subkey = false
 pub const SERVER_WRAP_TOKEN_FLAGS: u8 = 3;
 
-const DEFAULT_AP_REQ_OPTIONS: [u8; 4] = [0x20, 0x00, 0x00, 0x00];
-
 lazy_static! {
     pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
         capabilities: PackageCapabilities::empty(),
@@ -514,6 +512,7 @@ impl SspiImpl for Pku2u {
                     // we don't need the nonce in Pku2u
                     nonce: &[0],
                     hostname: &self.config.hostname,
+                    context_requirements: builder.context_requirements,
                 })?;
                 let pa_datas = generate_pa_datas_for_as_req(
                     &self.config.p2p_certificate,
@@ -654,12 +653,13 @@ impl SspiImpl for Pku2u {
                         &self.gss_api_messages,
                     )?],
                 })?;
+
                 let ap_req = generate_ap_req(
                     as_rep.0.ticket.0,
                     check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &authenticator,
                     &self.encryption_params,
-                    &DEFAULT_AP_REQ_OPTIONS,
+                    builder.context_requirements.into(),
                 )?;
 
                 let mut mech_token = Vec::new();
