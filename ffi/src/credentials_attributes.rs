@@ -2,13 +2,14 @@ use libc::{c_uint, c_ulong, c_ushort};
 
 use crate::sspi_data_types::{SecChar, SecWChar};
 
+#[derive(Debug)]
 pub struct KdcProxySettings {
     pub proxy_server: String,
     #[allow(dead_code)]
     pub client_tls_cred: Option<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CredentialsAttributes {
     pub package_list: Option<String>,
     pub kdc_url: Option<String>,

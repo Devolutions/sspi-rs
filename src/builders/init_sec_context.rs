@@ -44,6 +44,7 @@ pub struct InitializeSecurityContextResult {
 /// * [`with_context_requirements`](struct.InitializeSecurityContext.html#method.with_context_requirements)
 /// * [`with_target_data_representation`](struct.InitializeSecurityContext.html#method.with_target_data_representation)
 /// * [`with_output`](struct.InitializeSecurityContext.html#method.with_output)
+#[derive(Debug)]
 pub struct InitializeSecurityContext<
     'a,
     CredsHandle,

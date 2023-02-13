@@ -9,6 +9,7 @@ use sspi::{
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+use tracing::instrument;
 
 use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
@@ -16,7 +17,7 @@ use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredH
 use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
 use crate::utils::{into_raw_ptr, transform_credentials_handle};
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
@@ -32,7 +33,7 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 
 pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[allow(clippy::useless_conversion)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcceptSecurityContext"))]
 #[no_mangle]
@@ -110,7 +111,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_CompleteAuthToken"))]
 #[no_mangle]
 pub unsafe extern "system" fn CompleteAuthToken(
@@ -141,7 +142,7 @@ pub unsafe extern "system" fn CompleteAuthToken(
 
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
@@ -164,7 +165,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
 
 pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ApplyControlToken"))]
 #[no_mangle]
 pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSecBufferDesc) -> SecurityStatus {
@@ -173,7 +174,7 @@ pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSe
 
 pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImpersonateSecurityContext"))]
 #[no_mangle]
 pub extern "system" fn ImpersonateSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
@@ -182,7 +183,7 @@ pub extern "system" fn ImpersonateSecurityContext(_ph_context: PCtxtHandle) -> S
 
 pub type ImpersonateSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_RevertSecurityContext"))]
 #[no_mangle]
 pub extern "system" fn RevertSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
@@ -191,7 +192,7 @@ pub extern "system" fn RevertSecurityContext(_ph_context: PCtxtHandle) -> Securi
 
 pub type RevertSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_MakeSignature"))]
 #[no_mangle]
 pub extern "system" fn MakeSignature(
@@ -205,7 +206,7 @@ pub extern "system" fn MakeSignature(
 
 pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_VerifySignature"))]
 #[no_mangle]
 pub extern "system" fn VerifySignature(
@@ -219,7 +220,7 @@ pub extern "system" fn VerifySignature(
 
 pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
@@ -230,7 +231,7 @@ pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) 
 
 pub type FreeContextBufferFn = unsafe extern "system" fn(*mut c_void) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ExportSecurityContext"))]
 #[no_mangle]
 pub extern "system" fn ExportSecurityContext(
@@ -245,7 +246,7 @@ pub extern "system" fn ExportSecurityContext(
 pub type ExportSecurityContextFn =
     extern "system" fn(PCtxtHandle, c_ulong, PSecBuffer, *mut *mut c_void) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityContextToken"))]
 #[no_mangle]
 pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _token: *mut *mut c_void) -> SecurityStatus {
@@ -255,7 +256,7 @@ pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _toke
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
 #[no_mangle]
 pub unsafe extern "system" fn EncryptMessage(
@@ -296,7 +297,7 @@ pub unsafe extern "system" fn EncryptMessage(
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
 #[no_mangle]
 pub unsafe extern "system" fn DecryptMessage(

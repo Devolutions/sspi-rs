@@ -24,6 +24,8 @@ use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
+#[cfg(feature = "logging")]
+use tracing::{debug, instrument, trace};
 use uuid::Uuid;
 
 use self::generators::{
@@ -47,7 +49,7 @@ use crate::pku2u::generators::{
     generate_as_req_username_from_certificate, generate_authenticator, generate_authenticator_extension,
 };
 use crate::pku2u::validate::validate_signed_data;
-use crate::utils::generate_random_symmetric_key;
+use crate::utils::{generate_random_symmetric_key, get_encryption_key};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
@@ -94,6 +96,20 @@ pub enum Pku2uState {
     PubKeyAuth,
     Credentials,
     Final,
+}
+
+impl AsRef<str> for Pku2uState {
+    fn as_ref(&self) -> &str {
+        match self {
+            Pku2uState::Negotiate => "Negotiate",
+            Pku2uState::Preauthentication => "Preauthentication",
+            Pku2uState::AsExchange => "AsExchange",
+            Pku2uState::ApExchange => "ApExchange",
+            Pku2uState::PubKeyAuth => "PubKeyAuth",
+            Pku2uState::Credentials => "Credentials",
+            Pku2uState::Final => "Final",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -198,16 +214,21 @@ impl Pku2u {
 }
 
 impl Sspi for Pku2u {
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags)))]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
+        #[cfg(feature = "logging")]
+        trace!("{:?}", self.encryption_params);
+
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
@@ -219,17 +240,7 @@ impl Sspi for Pku2u {
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
             .cipher();
 
-        // the sub-session key is always preferred over the session key
-        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
-            key
-        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
-            key
-        } else {
-            return Err(Error::new(
-                ErrorKind::EncryptFailure,
-                "No encryption key provided".into(),
-            ));
-        };
+        let key = get_encryption_key(&self.encryption_params)?;
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(sequence_number as u64);
@@ -271,7 +282,11 @@ impl Sspi for Pku2u {
         Ok(SecurityStatus::Ok)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _sequence_number)))]
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+        #[cfg(feature = "logging")]
+        trace!("{:?}", self.encryption_params);
+
         let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
             buffer
         } else {
@@ -290,18 +305,11 @@ impl Sspi for Pku2u {
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
             .cipher();
 
-        // the sub-session key is always preferred over the session key
-        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
-            key
-        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
-            key
-        } else {
-            return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "No encryption key provided".into(),
-            ));
-        };
+        let key = get_encryption_key(&self.encryption_params)?;
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
+
+        #[cfg(feature = "logging")]
+        debug!("Decryption key usage: {}", key_usage);
 
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
         wrap_token.checksum.rotate_left(RRC.into());
@@ -331,6 +339,7 @@ impl Sspi for Pku2u {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
@@ -340,6 +349,7 @@ impl Sspi for Pku2u {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         if let Some(ref identity_buffers) = self.auth_identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
@@ -355,10 +365,12 @@ impl Sspi for Pku2u {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Pku2u)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -366,6 +378,7 @@ impl Sspi for Pku2u {
         ))
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _change_password)))]
     fn change_password(&mut self, _change_password: ChangePassword) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -379,6 +392,7 @@ impl SspiImpl for Pku2u {
 
     type AuthenticationData = AuthIdentity;
 
+    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -398,10 +412,14 @@ impl SspiImpl for Pku2u {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(state = self.state.as_ref()), skip_all))]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
+        #[cfg(feature = "logging")]
+        trace!("{:?}", builder);
+
         let status = match self.state {
             Pku2uState::Negotiate => {
                 let auth_scheme = Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap();
@@ -411,6 +429,8 @@ impl SspiImpl for Pku2u {
                 let snames = check_if_empty!(builder.target_name, "service target name is not provided")
                     .split('/')
                     .collect();
+                #[cfg(feature = "logging")]
+                debug!("Service principal names: {:?}", snames);
 
                 let nego = Nego::new(
                     MessageType::InitiatorNego,
@@ -433,10 +453,10 @@ impl SspiImpl for Pku2u {
 
                 self.negoex_messages.extend_from_slice(&mech_token);
 
+                let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(mech_token)?)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(mech_token)?)?)?;
+                output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = Pku2uState::Preauthentication;
 
@@ -463,6 +483,8 @@ impl SspiImpl for Pku2u {
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_nego = Nego::decode(&buffer)?;
+                #[cfg(feature = "logging")]
+                trace!("NEGOEX ACCEPTOR NEGOTIATE: {:?}", acceptor_nego);
 
                 check_conversation_id!(acceptor_nego.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
@@ -493,6 +515,8 @@ impl SspiImpl for Pku2u {
 
                 let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
                 let acceptor_exchange = Exchange::decode(acceptor_exchange_data)?;
+                #[cfg(feature = "logging")]
+                trace!("NEGOEX ACCEPTOR EXCHANGE: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -503,6 +527,8 @@ impl SspiImpl for Pku2u {
                 let snames = check_if_empty!(builder.target_name, "service target name is not provided")
                     .split('/')
                     .collect::<Vec<_>>();
+                #[cfg(feature = "logging")]
+                debug!("Service principal names: {:?}", snames);
 
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
@@ -520,9 +546,9 @@ impl SspiImpl for Pku2u {
                     &self.dh_parameters,
                     &self.config.private_key,
                 )?;
+                let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
-                let exchange_data =
-                    picky_asn1_der::to_vec(&generate_neg(generate_as_req(&pa_datas, kdc_req_body), AS_REQ_TOKEN_ID))?;
+                let exchange_data = picky_asn1_der::to_vec(&generate_neg(as_req, AS_REQ_TOKEN_ID))?;
                 self.gss_api_messages.extend_from_slice(&exchange_data);
 
                 let exchange = Exchange::new(
@@ -566,6 +592,8 @@ impl SspiImpl for Pku2u {
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_exchange = Exchange::decode(&buffer)?;
+                #[cfg(feature = "logging")]
+                trace!("NEGOEX ACCEPTOR EXCHANGE MESSAGE: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -598,7 +626,8 @@ impl SspiImpl for Pku2u {
 
                 self.encryption_params.encryption_type =
                     Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
-                self.encryption_params.session_key = Some(generate_key(
+
+                let session_key = generate_key(
                     check_if_empty!(self.dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
                     &self.dh_parameters.private_key,
                     &self.dh_parameters.modulus,
@@ -618,13 +647,12 @@ impl SspiImpl for Pku2u {
                     )
                     .cipher()
                     .as_ref(),
-                )?);
+                )?;
+                #[cfg(feature = "logging")]
+                trace!("Session key generated from DH components: {:?}", session_key);
 
-                self.encryption_params.session_key = Some(extract_session_key_from_as_rep(
-                    &as_rep,
-                    check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
-                    &self.encryption_params,
-                )?);
+                let session_key = extract_session_key_from_as_rep(&as_rep, &session_key, &self.encryption_params)?;
+                self.encryption_params.session_key = Some(session_key);
 
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
@@ -691,10 +719,10 @@ impl SspiImpl for Pku2u {
 
                 verify.encode(&mut self.negoex_messages)?;
 
+                let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?)?;
+                output_token.buffer.write_all(&encoded_neg_token_targ)?;
 
                 self.state = Pku2uState::ApExchange;
 
@@ -720,6 +748,8 @@ impl SspiImpl for Pku2u {
                      .0;
 
                 let acceptor_exchange = Exchange::decode(&buffer)?;
+                #[cfg(feature = "logging")]
+                trace!("NEGOEX ACCEPTOR EXCHANGE MESSAGE: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -734,6 +764,8 @@ impl SspiImpl for Pku2u {
 
                 let acceptor_verify_data = &buffer[(acceptor_exchange.header.message_len as usize)..];
                 let acceptor_verify = Verify::decode(acceptor_verify_data)?;
+                #[cfg(feature = "logging")]
+                trace!("NEGOEX ACCEPTOR VERIFY MESSAGE: {:?}", acceptor_exchange);
 
                 check_conversation_id!(acceptor_verify.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_verify.header.sequence_num, self.next_seq_number());
@@ -741,18 +773,20 @@ impl SspiImpl for Pku2u {
 
                 let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 
-                self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
+                let sub_session_key = extract_sub_session_key_from_ap_rep(
                     &ap_rep,
                     check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &self.encryption_params,
-                )?);
+                )?;
+
+                self.encryption_params.sub_session_key = Some(sub_session_key);
 
                 let acceptor_checksum = ChecksumSuite::try_from(acceptor_verify.checksum.checksum_type as usize)?
                     .hasher()
                     .checksum(
                         check_if_empty!(
                             self.encryption_params.sub_session_key.as_ref(),
-                            "sub session key is not set"
+                            "sub-session key is not set"
                         ),
                         ACCEPTOR_SIGN,
                         &self.negoex_messages,
@@ -760,7 +794,7 @@ impl SspiImpl for Pku2u {
                 if acceptor_verify.checksum.checksum_value != acceptor_checksum {
                     return Err(Error::new(
                         ErrorKind::MessageAltered,
-                        "bad Verify message signature".into(),
+                        "bad server's Verify message signature".into(),
                     ));
                 }
 
@@ -776,6 +810,9 @@ impl SspiImpl for Pku2u {
             }
         };
 
+        #[cfg(feature = "logging")]
+        trace!("Output buffers: {:?}", builder.output);
+
         Ok(InitializeSecurityContextResult {
             status,
             flags: ClientResponseFlags::empty(),
@@ -783,6 +820,7 @@ impl SspiImpl for Pku2u {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _builder)))]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -795,6 +833,7 @@ impl SspiImpl for Pku2u {
 }
 
 impl SspiEx for Pku2u {
+    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
     }

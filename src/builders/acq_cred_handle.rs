@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use chrono::NaiveDateTime;
@@ -36,6 +37,24 @@ where
     pub principal_name: Option<&'a str>,
     pub logon_id: Option<Luid>,
     pub auth_data: Option<&'a AuthData>,
+}
+
+impl<'a, CredsHandle, AuthData, CredentialUseSet> Debug
+    for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+where
+    CredentialUseSet: ToAssign,
+    AuthData: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AcquireCredentialsHandle")
+            .field("phantom_cred_handle", &self.phantom_cred_handle)
+            .field("phantom_cred_use_set", &self.phantom_cred_use_set)
+            .field("credential_use", &self.credential_use)
+            .field("principal_name", &self.principal_name)
+            .field("logon_id", &self.logon_id)
+            .field("auth_data", &self.auth_data)
+            .finish()
+    }
 }
 
 impl<'a, CredsHandle, AuthData, CredentialUseSet> AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>

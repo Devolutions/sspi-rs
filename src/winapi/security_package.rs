@@ -30,6 +30,7 @@ const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x8000_0084;
 /// Using the methods of this structure, it is possible to get a Windows-provided SSP even if
 /// it doesn't have a wrapper or a platform independent implementation. It is still recommended
 /// to use a wrapper if one is available.
+#[derive(Debug)]
 pub struct SecurityPackage {
     context: Option<SecurityContext>,
     package_type: SecurityPackageType,
@@ -430,6 +431,17 @@ fn from_winapi_buffers(buffers: &[SecBuffer]) -> crate::Result<Vec<SecurityBuffe
 }
 
 struct SecurityContext(CtxtHandle);
+
+use std::fmt::Debug;
+
+impl Debug for SecurityContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SecurityContext")
+            .field(&self.0.dwLower)
+            .field(&self.0.dwUpper)
+            .finish()
+    }
+}
 
 impl Drop for SecurityContext {
     fn drop(&mut self) {

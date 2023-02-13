@@ -10,6 +10,8 @@ use std::env;
 use std::path::Path;
 use std::str::FromStr;
 
+#[cfg(feature = "logging")]
+use tracing::instrument;
 use url::Url;
 
 use crate::dns::detect_kdc_hosts_from_dns;
@@ -17,6 +19,7 @@ use crate::dns::detect_kdc_hosts_from_dns;
 use crate::krb::Krb5Conf;
 
 #[cfg(target_os = "windows")]
+#[cfg_attr(feature = "logging", instrument(level = "debug", ret))]
 pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     let domain_upper = domain.to_uppercase();
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
@@ -31,6 +34,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[cfg_attr(feature = "logging", instrument(level = "debug", ret))]
 pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
 
@@ -51,6 +55,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     Vec::new()
 }
 
+#[cfg_attr(feature = "logging", instrument(ret))]
 pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
     if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{}", domain)) {
         return vec![kdc_url];

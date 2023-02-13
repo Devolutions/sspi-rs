@@ -7,6 +7,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use num_bigint_dig::BigUint;
 use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
+#[cfg(feature = "logging")]
+use tracing::{debug, error};
 use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC};
 use winapi::um::ncrypt::NCryptFreeObject;
 use winapi::um::wincrypt::{
@@ -58,6 +60,12 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     let rsa_key_blob = BcryptRsaKeyBlob::from_read(&mut buffer)?;
 
     if rsa_key_blob.magic != BCRYPT_RSAFULLPRIVATE_MAGIC {
+        #[cfg(feature = "logging")]
+        debug!(
+            "Invalid RSA key blob magic. Expected {} but got {}",
+            BCRYPT_RSAFULLPRIVATE_MAGIC, rsa_key_blob.magic
+        );
+
         return Err(Error::new(
             ErrorKind::InternalError,
             "Cannot extract certificate private key: invalid key blob magic".into(),
@@ -87,6 +95,9 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
 
     let mut private_exp = vec![0; (rsa_key_blob.bit_len / 8) as usize];
     buffer.read_exact(&mut private_exp)?;
+
+    #[cfg(feature = "logging")]
+    debug!("RSA private key components are decoded successfully");
 
     let rsa_private_key = PrivateKey::from_rsa_components(
         &BigUint::from_bytes_be(&modulus),
@@ -157,6 +168,12 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     );
 
     if status == 0 || private_key_handle == 0 {
+        #[cfg(feature = "logging")]
+        error!(
+            "Cannot acquire certificate private key handle. Status: {:x?}. Private key handle: {}",
+            status, private_key_handle
+        );
+
         return Err(Error::new(
             ErrorKind::InternalError,
             "Cannot extract certificate private key: invalid handle".into(),
@@ -220,6 +237,9 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
         ));
     }
 
+    #[cfg(feature = "logging")]
+    debug!("The certificate private key exported");
+
     let private_key = decode_private_key(&private_key_blob[0..private_key_buffer_len as usize])?;
 
     Ok(private_key)
@@ -239,6 +259,12 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
             continue;
         }
+
+        #[cfg(feature = "logging")]
+        debug!(
+            "Found suitable client p2p certificate. Serial number: {:?}",
+            cert.tbs_certificate.serial_number.0
+        );
 
         let private_key = export_certificate_private_key(certificate);
 

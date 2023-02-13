@@ -15,6 +15,8 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
 use rand::Rng;
+#[cfg(feature = "logging")]
+use tracing::{error, info, instrument};
 pub use ts_request::TsRequest;
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
@@ -23,15 +25,15 @@ use self::sspi_cred_ssp::SspiCredSsp;
 use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::kerberos::config::KerberosConfig;
-use crate::kerberos::Kerberos;
-use crate::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
-use crate::pku2u::{Pku2u, Pku2uConfig};
+use crate::kerberos::{self, Kerberos};
+use crate::ntlm::{self, AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertContext, CertTrustStatus, ClientRequestFlags,
-    ConnectionInfo, ContextNames, ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes,
+    negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertContext, CertTrustStatus,
+    ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse, DataRepresentation, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo,
+    SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -147,6 +149,16 @@ enum CredSspState {
     Final,
 }
 
+impl AsRef<str> for CredSspState {
+    fn as_ref(&self) -> &str {
+        match self {
+            CredSspState::NegoToken => "NegoToken",
+            CredSspState::AuthInfo => "AuthInfo",
+            CredSspState::Final => "Final",
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum EndpointType {
     Client,
@@ -226,6 +238,7 @@ impl CredSspClient {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(fields(state = self.state.as_ref()), skip_all))]
     pub fn process(&mut self, mut ts_request: TsRequest) -> crate::Result<ClientState> {
         ts_request.check_error()?;
         if let Some(ref mut context) = self.context {
@@ -281,6 +294,9 @@ impl CredSspClient {
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
+                    #[cfg(feature = "logging")]
+                    info!("CredSSp finished NLA stage.");
+
                     let peer_version =
                         self.context.as_ref().unwrap().peer_version.expect(
                             "An encrypt public key client function cannot be fired without any incoming TSRequest",
@@ -394,6 +410,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
     }
 
     #[allow(clippy::result_large_err)]
+    #[cfg_attr(feature = "logging", instrument(fields(state = self.state.as_ref()), skip_all))]
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
             self.context = match &self.context_config {
@@ -564,10 +581,24 @@ pub enum SspiContext {
     CredSsp(SspiCredSsp),
 }
 
+impl SspiContext {
+    pub fn package_name(&self) -> &str {
+        match self {
+            SspiContext::Ntlm(_) => ntlm::PKG_NAME,
+            SspiContext::Kerberos(_) => kerberos::PKG_NAME,
+            SspiContext::Negotiate(_) => negotiate::PKG_NAME,
+            SspiContext::Pku2u(_) => pku2u::PKG_NAME,
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(_) => crate::credssp::sspi_cred_ssp::PKG_NAME,
+        }
+    }
+}
+
 impl SspiImpl for SspiContext {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip_all))]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -582,6 +613,7 @@ impl SspiImpl for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip_all))]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
@@ -596,6 +628,7 @@ impl SspiImpl for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip_all))]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -612,6 +645,7 @@ impl SspiImpl for SspiContext {
 }
 
 impl Sspi for SspiContext {
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
@@ -623,6 +657,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
@@ -639,6 +674,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBuffer],
@@ -654,6 +690,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_sizes(&mut self) -> crate::Result<ContextSizes> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_sizes(),
@@ -665,6 +702,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
@@ -676,6 +714,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_stream_sizes(&mut self) -> crate::Result<StreamSizes> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_stream_sizes(),
@@ -687,6 +726,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_package_info(&mut self) -> crate::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
@@ -698,6 +738,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
@@ -709,6 +750,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_remote_cert(&mut self) -> crate::Result<CertContext> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_remote_cert(),
@@ -720,6 +762,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_negotiation_package(&mut self) -> crate::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_negotiation_package(),
@@ -731,6 +774,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip(self)))]
     fn query_context_connection_info(&mut self) -> crate::Result<ConnectionInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_connection_info(),
@@ -742,6 +786,7 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(ret, fields(security_package = self.package_name()), skip_all))]
     fn change_password(&mut self, change_password: ChangePassword) -> crate::Result<()> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
@@ -755,6 +800,7 @@ impl Sspi for SspiContext {
 }
 
 impl SspiEx for SspiContext {
+    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(security_package = self.package_name()), skip(self)))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
@@ -896,6 +942,9 @@ impl CredSspContext {
         }
 
         if public_key != decrypted_public_key.as_slice() {
+            #[cfg(feature = "logging")]
+            error!("Expected and decrypted public key are not the same");
+
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
                 String::from("Could not verify a public key echo"),
@@ -920,6 +969,9 @@ impl CredSspContext {
         let expected_public_key = compute_sha256(&data);
 
         if expected_public_key.as_ref() != decrypted_public_key.as_slice() {
+            #[cfg(feature = "logging")]
+            error!("Expected and decrypted public key hash are not the same");
+
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
                 String::from("Could not verify a public key hash"),

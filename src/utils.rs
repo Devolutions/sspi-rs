@@ -2,8 +2,11 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
 use rand::Rng;
+#[cfg(feature = "logging")]
+use tracing::{debug, error, warn};
 
-use crate::ErrorKind;
+use crate::kerberos::EncryptionParams;
+use crate::{Error, ErrorKind, Result};
 
 pub fn string_to_utf16(value: &str) -> Vec<u8> {
     value
@@ -46,6 +49,7 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
 
     key
 }
+
 
 pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
@@ -219,5 +223,28 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
         KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "Client name mismatch".into()),
         KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
         code => (ErrorKind::Unknown, format!("Unknown Kerberos error: {}", code)),
+    }
+}
+
+pub fn get_encryption_key<'a>(enc_params: &'a EncryptionParams) -> Result<&'a [u8]> {
+    // the sub-session key is always preferred over the session key
+    if let Some(key) = enc_params.sub_session_key.as_ref() {
+        #[cfg(feature = "logging")]
+        debug!("Encryption using sub-session key");
+
+        Ok(key)
+    } else if let Some(key) = enc_params.session_key.as_ref() {
+        #[cfg(feature = "logging")]
+        warn!("Encryption using session key (not sub-session key)");
+
+        Ok(key)
+    } else {
+        #[cfg(feature = "logging")]
+        error!("No encryption keys in the krb context. Maybe security context is not established and encrypt_message called too early");
+
+        Err(Error::new(
+            ErrorKind::EncryptFailure,
+            "No encryption key provided".into(),
+        ))
     }
 }

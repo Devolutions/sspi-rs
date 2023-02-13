@@ -16,6 +16,7 @@ use crate::{
 };
 
 /// Represents a wrapper for Windows-provided NTLM.
+#[derive(Debug)]
 pub struct Ntlm(SecurityPackage);
 
 impl Ntlm {

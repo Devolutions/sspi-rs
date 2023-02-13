@@ -24,6 +24,7 @@ exclude = [
 default = []
 network_client = ["dep:reqwest", "dep:portpicker"]
 dns_resolver = ["dep:trust-dns-resolver"]
+logging = ["tracing"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement
 tsssp = ["dep:rustls"]
 
@@ -56,7 +57,7 @@ uuid = { version = "1.1", features = ["v4"] }
 trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
 num-bigint-dig = "0.8.1"
-tracing = { version = "0.1.37" }
+tracing = { version = "0.1.37", features = ["attributes"], optional = true }
 rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
 
 [target.'cfg(windows)'.dependencies]

@@ -9,7 +9,7 @@ mod macros;
 
 pub mod common;
 pub mod credentials_attributes;
-pub mod debug;
+pub mod logging;
 pub mod sec_buffer;
 pub mod sec_handle;
 pub mod sec_pkg_info;

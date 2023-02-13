@@ -5,10 +5,7 @@ macro_rules! try_execute {
         match $x {
             Ok(value) => value,
             Err(err) => {
-                #[cfg(feature = "debug_mode")]
-                {
-                    error!(%err, "an error occurred");
-                }
+                tracing::error!(%err, "an error occurred");
                 return err.error_type.to_u32().unwrap();
             }
         }
@@ -19,10 +16,7 @@ macro_rules! try_execute {
         match $x {
             Ok(val) => val,
             Err(_err) => {
-                #[cfg(feature = "debug_mode")]
-                {
-                    error!(err = %_err, "an error occurred");
-                }
+                tracing::error!(err = %_err, "an error occurred");
                 return $err_value.to_u32().unwrap();
             }
         }

@@ -6,6 +6,7 @@ use libc::{c_ulong, c_void};
 use sspi::KERBEROS_VERSION;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+use tracing::instrument;
 
 use crate::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,
@@ -117,11 +118,11 @@ pub struct SecurityFunctionTableW {
 
 pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
-    crate::debug::setup_logger();
+    crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableA {
         dwVersion: KERBEROS_VERSION as c_ulong,
@@ -160,11 +161,11 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     })
 }
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
 #[no_mangle]
 pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
-    crate::debug::setup_logger();
+    crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableW {
         dwVersion: KERBEROS_VERSION as c_ulong,

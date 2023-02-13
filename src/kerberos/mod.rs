@@ -18,6 +18,8 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
+#[cfg(feature = "logging")]
+use tracing::{debug, error, info, instrument, trace};
 use url::Url;
 
 use self::client::extractors::{
@@ -39,7 +41,7 @@ use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mec
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::ntlm::AuthIdentityBuffers;
-use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
@@ -85,6 +87,19 @@ pub enum KerberosState {
     PubKeyAuth,
     Credentials,
     Final,
+}
+
+impl AsRef<str> for KerberosState {
+    fn as_ref(&self) -> &str {
+        match self {
+            KerberosState::Negotiate => "Negotiate",
+            KerberosState::Preauthentication => "Preauthentication",
+            KerberosState::ApExchange => "AsExchange",
+            KerberosState::PubKeyAuth => "PubKeyAuth",
+            KerberosState::Credentials => "Credentials",
+            KerberosState::Final => "Final",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +150,7 @@ impl Kerberos {
         self.seq_number
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, skip(self)))]
     pub fn get_kdc(&self) -> Option<(String, Url)> {
         let realm = self.realm.to_owned()?;
         if let Some(kdc_url) = &self.kdc_url {
@@ -150,10 +166,15 @@ impl Kerberos {
             return match kdc_url.scheme() {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
                 "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
-                _ => Err(Error {
-                    error_type: ErrorKind::InvalidParameter,
-                    description: "Invalid KDC server URL protocol scheme".to_owned(),
-                }),
+                _scheme => {
+                    #[cfg(feature = "logging")]
+                    error!("Bad kdc url: invalid URL scheme: {}", _scheme);
+
+                    Err(Error {
+                        error_type: ErrorKind::InvalidParameter,
+                        description: "Invalid KDC server URL protocol scheme".to_owned(),
+                    })
+                }
             };
         }
         Err(Error {
@@ -179,13 +200,19 @@ impl Kerberos {
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
         if as_rep.is_ok() {
+            #[cfg(feature = "logging")]
+            error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
+
             return Err(Error {
                 error_type: ErrorKind::InternalError,
-                description: "KDC server should not proccess AS_REQ without the pa-pac data".to_owned(),
+                description: "KDC server should not process AS_REQ without the pa-pac data".to_owned(),
             });
         }
 
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+            #[cfg(feature = "logging")]
+            debug!("salt extracted successfully from the KRB_ERROR");
+
             pa_data_options.salt = correct_salt.as_bytes().to_vec()
         }
 
@@ -201,21 +228,30 @@ impl Kerberos {
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
-        Ok(as_rep?)
+        as_rep.map_err(|err| {
+            #[cfg(feature = "logging")]
+            error!("AS exchange error: {:?}", err);
+            err.into()
+        })
     }
 }
 
 impl Sspi for Kerberos {
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags, _sequence_number)))]
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
+        #[cfg(feature = "logging")]
+        trace!("{:?}", self.encryption_params);
+
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
@@ -229,17 +265,8 @@ impl Sspi for Kerberos {
 
         let seq_number = self.next_seq_number();
 
-        // the sub-session key is always preferred over the session key
-        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
-            key
-        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
-            key
-        } else {
-            return Err(Error::new(
-                ErrorKind::EncryptFailure,
-                "No encryption key provided".into(),
-            ));
-        };
+        let key = get_encryption_key(&self.encryption_params)?;
+
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
@@ -273,11 +300,15 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _sequence_number)))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<crate::DecryptionFlags> {
+        #[cfg(feature = "logging")]
+        trace!("{:?}", self.encryption_params);
+
         let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
             buffer
         } else {
@@ -296,17 +327,8 @@ impl Sspi for Kerberos {
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
             .cipher();
 
-        // the sub-session key is always preferred over the session key
-        let key = if let Some(key) = self.encryption_params.sub_session_key.as_ref() {
-            key
-        } else if let Some(key) = self.encryption_params.session_key.as_ref() {
-            key
-        } else {
-            return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "No encryption key provided".into(),
-            ));
-        };
+        let key = get_encryption_key(&self.encryption_params)?;
+
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
@@ -337,6 +359,7 @@ impl Sspi for Kerberos {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
@@ -346,6 +369,7 @@ impl Sspi for Kerberos {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         if let Some(ref identity_buffers) = self.auth_identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
@@ -361,10 +385,12 @@ impl Sspi for Kerberos {
         }
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Kerberos)
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn query_context_cert_trust_status(&mut self) -> Result<crate::CertTrustStatus> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -372,6 +398,7 @@ impl Sspi for Kerberos {
         ))
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, change_password)))]
     fn change_password(&mut self, change_password: ChangePassword) -> Result<()> {
         let username = &change_password.account_name;
         let domain = &change_password.domain_name;
@@ -402,9 +429,15 @@ impl Sspi for Kerberos {
             },
         )?;
 
+        #[cfg(feature = "logging")]
+        info!("AS exchange finished successfully.");
+
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+        #[cfg(feature = "logging")]
+        info!("Negotiated encryption type: {:?}", encryption_type);
+
         self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
 
         let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password, &self.encryption_params)?;
@@ -446,6 +479,8 @@ impl Sspi for Kerberos {
                 .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
 
             let response = self.send(&serialize_message(&krb_priv)?)?;
+            #[cfg(feature = "logging")]
+            trace!("Change password raw: response: {:?}", response);
 
             let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
                 Error::new(
@@ -482,6 +517,7 @@ impl SspiImpl for Kerberos {
 
     type AuthenticationData = AuthIdentity;
 
+    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -501,10 +537,14 @@ impl SspiImpl for Kerberos {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, builder)))]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
+        #[cfg(feature = "logging")]
+        trace!("Builder: {:?}", builder);
+
         let status = match self.state {
             KerberosState::Negotiate => {
                 let credentials = builder
@@ -524,13 +564,13 @@ impl SspiImpl for Kerberos {
                     description: "Service target name (service principal name) is not provided".into(),
                 })?)?;
 
+                let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
+                    &format!("{}.{}", username, domain.to_ascii_lowercase(),),
+                    service_name,
+                )?)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_token_init(
-                        &format!("{}.{}", username, domain.to_ascii_lowercase(),),
-                        service_name,
-                    )?)?)?;
+                output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = KerberosState::Preauthentication;
 
@@ -590,10 +630,16 @@ impl SspiImpl for Kerberos {
                     },
                 )?;
 
+                #[cfg(feature = "logging")]
+                info!("AS exchange finished successfully.");
+
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 
                 let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-                self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
+
+                let encryption_type = CipherSuite::try_from(encryption_type as usize)?;
+
+                self.encryption_params.encryption_type = Some(encryption_type);
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
@@ -630,11 +676,13 @@ impl SspiImpl for Kerberos {
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
 
-                self.encryption_params.session_key = Some(extract_session_key_from_tgs_rep(
-                    &tgs_rep,
-                    &session_key_1,
-                    &self.encryption_params,
-                )?);
+                #[cfg(feature = "logging")]
+                info!("TGS exchange finished successfully.");
+
+                let session_key_2 =
+                    extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &self.encryption_params)?;
+
+                self.encryption_params.session_key = Some(session_key_2);
 
                 let seq_num = self.next_seq_number();
 
@@ -668,10 +716,10 @@ impl SspiImpl for Kerberos {
                     builder.context_requirements.into(),
                 )?;
 
+                let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req)?)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req)?)?)?;
+                output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
                 self.state = KerberosState::ApExchange;
 
@@ -684,19 +732,20 @@ impl SspiImpl for Kerberos {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
-                let neg_token_targ: NegTokenTarg1 =
-                    picky_asn1_der::from_bytes(&input_token.buffer).map_err(|err| Error {
-                        error_type: ErrorKind::InvalidToken,
-                        description: format!("{:?}", err),
-                    })?;
+                let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
 
-                self.encryption_params.sub_session_key = Some(extract_sub_session_key_from_ap_rep(
+                let sub_session_key = extract_sub_session_key_from_ap_rep(
                     &ap_rep,
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &self.encryption_params,
-                )?);
+                )?;
+
+                self.encryption_params.sub_session_key = Some(sub_session_key);
+
+                #[cfg(feature = "logging")]
+                info!("Sub-session key from the AP_REP successfully extracted");
 
                 if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
                     validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
@@ -708,10 +757,10 @@ impl SspiImpl for Kerberos {
                     self.encryption_params.sub_session_key.as_ref().unwrap(),
                 )?));
 
+                let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
+
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token
-                    .buffer
-                    .write_all(&picky_asn1_der::to_vec(&neg_token_targ)?)?;
+                output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
 
                 self.state = KerberosState::PubKeyAuth;
 
@@ -725,6 +774,9 @@ impl SspiImpl for Kerberos {
             }
         };
 
+        #[cfg(feature = "logging")]
+        trace!("Output buffers: {:?}", builder.output);
+
         Ok(InitializeSecurityContextResult {
             status,
             flags: ClientResponseFlags::empty(),
@@ -732,6 +784,7 @@ impl SspiImpl for Kerberos {
         })
     }
 
+    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, builder)))]
     fn accept_security_context_impl(
         &mut self,
         builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -768,6 +821,7 @@ impl SspiImpl for Kerberos {
 }
 
 impl SspiEx for Kerberos {
+    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
     }
