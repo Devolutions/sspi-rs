@@ -245,7 +245,15 @@ fn read_length(mut stream: impl io::Read) -> io::Result<u16> {
         if len == 1 {
             stream.read_u8().map(u16::from)
         } else if len == 2 {
-            stream.read_u16::<BigEndian>()
+            let length = stream.read_u16::<BigEndian>()?;
+
+            // u16 should be capable to hold the ASN1 structure length
+            // this condition checks that length is not too big for the u16 type
+            if length > u16::MAX - 1 /* tag byte */ - sizeof_length(length) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "the length is too big"));
+            }
+
+            Ok(length)
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
