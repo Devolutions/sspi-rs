@@ -2,7 +2,7 @@
 #[macro_use] extern crate libfuzzer_sys;
 extern crate sspi;
 
-use sspi::internal::credssp::TsRequest;
+use sspi::credssp::TsRequest;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(req) = TsRequest::from_buffer(data) {
@@ -10,5 +10,5 @@ fuzz_target!(|data: &[u8]| {
         let _result = req.check_error();
     }
     
-    let _creds = sspi::internal::credssp::ts_request::read_ts_credentials(data);
+    let _creds = sspi::credssp::ts_request::read_ts_credentials(data);
 });
