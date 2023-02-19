@@ -318,7 +318,7 @@ impl Sspi for Ntlm {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
-        if self.send_sealing_key.is_none() || self.recv_sealing_key.is_none() {
+        if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
@@ -346,7 +346,7 @@ impl Sspi for Ntlm {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
-        if self.send_sealing_key.is_none() || self.recv_sealing_key.is_none() {
+        if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
