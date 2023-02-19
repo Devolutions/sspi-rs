@@ -25,7 +25,6 @@ lazy_static! {
         vec![0x1, 0x0, 0x0, 0x0, 0x58, 0x27, 0x4d, 0x35, 0x1f, 0x2d, 0x3c, 0xfd, 0xd2, 0x2, 0x96, 0x49];
 }
 
-#[ignore]
 #[test]
 fn encrypt_message_crypts_data() {
     let mut context = Ntlm::new();
@@ -46,7 +45,6 @@ fn encrypt_message_crypts_data() {
     assert_eq!(expected.as_slice(), output.buffer.as_slice());
 }
 
-#[ignore]
 #[test]
 fn encrypt_message_correct_computes_digest() {
     let mut context = Ntlm::new();
@@ -68,7 +66,6 @@ fn encrypt_message_correct_computes_digest() {
     assert_eq!(expected.as_slice(), &signature.buffer[4..12]);
 }
 
-#[ignore]
 #[test]
 fn encrypt_message_writes_seq_num_to_signature() {
     let mut context = Ntlm::new();
@@ -90,7 +87,6 @@ fn encrypt_message_writes_seq_num_to_signature() {
     assert_eq!(expected, signature.buffer[12..SIGNATURE_SIZE]);
 }
 
-#[ignore]
 #[test]
 fn decrypt_message_decrypts_data() {
     let mut context = Ntlm::new();
@@ -109,7 +105,6 @@ fn decrypt_message_decrypts_data() {
     assert_eq!(expected, &data.buffer);
 }
 
-#[ignore]
 #[test]
 fn decrypt_message_does_not_fail_on_correct_signature() {
     let mut context = Ntlm::new();
