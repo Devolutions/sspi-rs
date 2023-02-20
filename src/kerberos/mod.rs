@@ -151,14 +151,14 @@ impl Kerberos {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
                 "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
                 _ => Err(Error {
-                    error_type: ErrorKind::InternalError,
+                    error_type: ErrorKind::InvalidParameter,
                     description: "Invalid KDC server URL protocol scheme".to_owned(),
                 }),
             };
         }
         Err(Error {
             error_type: ErrorKind::NoAuthenticatingAuthority,
-            description: "No KDC server found!".to_owned(),
+            description: "No KDC server found".to_owned(),
         })
     }
 
@@ -549,7 +549,7 @@ impl SspiImpl for Kerberos {
                     .unwrap()
                     .as_ref()
                     .ok_or_else(|| Error {
-                        error_type: ErrorKind::NoCredentials,
+                        error_type: ErrorKind::WrongCredentialHandle,
                         description: "No credentials provided".to_owned(),
                     })?;
 

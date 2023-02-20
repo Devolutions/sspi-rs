@@ -47,10 +47,10 @@ serde_derive = "1.0"
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
 picky = { version = "7.0.0-rc.3", default-features = false }
-picky-krb = { version = "0.5.0" }
-picky-asn1 = { version = "0.7.0", features = ["chrono_conversion"] }
-picky-asn1-der = { version = "0.4.0" }
-picky-asn1-x509 = { version = "0.9.0", features = ["pkcs7"] }
+picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "871e0f7ab01cb98e732c94b78e8241ac72e219cb" }
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "871e0f7ab01cb98e732c94b78e8241ac72e219cb", features = ["chrono_conversion"] }
+picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", rev = "871e0f7ab01cb98e732c94b78e8241ac72e219cb" }
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "871e0f7ab01cb98e732c94b78e8241ac72e219cb", features = ["pkcs7"] }
 oid = "0.2.1"
 uuid = { version = "1.1", features = ["v4"] }
 trust-dns-resolver = { version = "0.21.2", optional = true }
