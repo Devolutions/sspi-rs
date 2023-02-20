@@ -123,16 +123,16 @@ mod tests {
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 
-        let channel_bindings = ChannelBindings::from_bytes(&buffer).unwrap();
+        let channel_bindings = ChannelBindings::from_bytes(buffer).unwrap();
 
         assert_eq!(channel_bindings, expected);
     }
 
     #[test]
     fn too_small_buffer() {
-        assert!(ChannelBindings::from_bytes(&[1, 2, 3, 4, 5, 6, 7, 8]).is_err());
+        assert!(ChannelBindings::from_bytes([1, 2, 3, 4, 5, 6, 7, 8]).is_err());
 
-        assert!(ChannelBindings::from_bytes(&[]).is_err());
+        assert!(ChannelBindings::from_bytes([]).is_err());
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 
-        let channel_bindings = ChannelBindings::from_bytes(&buffer);
+        let channel_bindings = ChannelBindings::from_bytes(buffer);
 
         assert!(channel_bindings.is_err());
     }
@@ -166,7 +166,7 @@ mod tests {
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 
-        let channel_bindings = ChannelBindings::from_bytes(&buffer);
+        let channel_bindings = ChannelBindings::from_bytes(buffer);
 
         assert!(channel_bindings.is_err());
     }

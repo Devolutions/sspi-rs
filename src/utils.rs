@@ -50,7 +50,6 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
     key
 }
 
-
 pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
 
@@ -226,7 +225,7 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
     }
 }
 
-pub fn get_encryption_key<'a>(enc_params: &'a EncryptionParams) -> Result<&'a [u8]> {
+pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     // the sub-session key is always preferred over the session key
     if let Some(key) = enc_params.sub_session_key.as_ref() {
         #[cfg(feature = "logging")]

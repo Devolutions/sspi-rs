@@ -188,7 +188,7 @@ mod tests {
 		default_domain = ad.it-help.ninja
 	}
 "#;
-        let krb5_conf = Krb5Conf::new_from_data(&krb5_conf_data).unwrap();
+        let krb5_conf = Krb5Conf::new_from_data(krb5_conf_data).unwrap();
 
         assert_eq!(
             krb5_conf.get_value(vec!["libdefaults", "default_realm"]),

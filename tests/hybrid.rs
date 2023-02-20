@@ -11,7 +11,7 @@ use sspi::{winapi, Ntlm};
 
 #[test]
 fn successful_ntlm_authentication_with_winapi_client_and_non_winapi_server() {
-    let mut credentials_proxy = CredentialsProxyImpl::new(&*CREDENTIALS);
+    let mut credentials_proxy = CredentialsProxyImpl::new(&CREDENTIALS);
 
     let mut client = winapi::Ntlm::new();
     let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();

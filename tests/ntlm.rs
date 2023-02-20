@@ -9,7 +9,7 @@ use sspi::Ntlm;
 
 #[test]
 fn successful_ntlm_authentication_with_client_auth_data() {
-    let mut credentials_proxy = CredentialsProxyImpl::new(&*CREDENTIALS);
+    let mut credentials_proxy = CredentialsProxyImpl::new(&CREDENTIALS);
 
     let mut client = Ntlm::new();
     let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();

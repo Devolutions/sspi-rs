@@ -126,9 +126,9 @@ impl SspiImpl for SecurityPackage {
         })
     }
 
-    fn initialize_security_context_impl<'a>(
+    fn initialize_security_context_impl(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<Self::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         let mut context_to_set = None;
         let (context, context_new) = if let Some(ref mut context) = self.context {

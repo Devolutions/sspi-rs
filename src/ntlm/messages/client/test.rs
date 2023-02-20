@@ -271,7 +271,7 @@ fn write_authenticate_writes_correct_header() {
     let mut buff = Vec::new();
     let expected = [0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x03, 0x00, 0x00, 0x00];
 
-    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
+    write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[SIGNATURE_START..AUTHENTICATE_LM_CHALLENGE_RESPONSE_START],
@@ -294,7 +294,7 @@ fn write_authenticate_changes_context_state_on_success() {
     context.state = NtlmState::Authenticate;
     let expected_state = NtlmState::Final;
 
-    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
+    write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(context.state, expected_state);
 }
@@ -322,7 +322,7 @@ fn write_authenticate_correct_writes_domain_name() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
+    write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[AUTHENTICATE_DOMAIN_NAME_START..AUTHENTICATE_USER_NAME_START],
@@ -357,7 +357,7 @@ fn write_authenticate_correct_writes_user_name() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).unwrap();
+    write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).unwrap();
 
     assert_eq!(
         buff[AUTHENTICATE_USER_NAME_START..AUTHENTICATE_WORKSTATION_START],
@@ -387,5 +387,5 @@ fn write_authenticate_fails_on_incorrect_state() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     let mut buff = Vec::new();
-    assert!(write_authenticate(&mut context, &*TEST_CREDENTIALS, &mut buff).is_err());
+    assert!(write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).is_err());
 }
