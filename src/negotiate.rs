@@ -215,7 +215,7 @@ impl Negotiate {
                 #[cfg(not(feature = "network_client"))]
                 if !ntlm {
                     return Err(Error::new(
-                        ErrorKind::InternalError,
+                        ErrorKind::InvalidParameter,
                         "Can not initialize Kerberos: network client is not provided".into(),
                     ));
                 }

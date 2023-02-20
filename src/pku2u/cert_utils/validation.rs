@@ -15,7 +15,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
             CertificateChoices::Certificate(cert) => picky_asn1_der::from_bytes(&cert.0)?,
             _ => {
                 return Err(Error::new(
-                    ErrorKind::CertificateUnknown,
+                    ErrorKind::Pku2uCertFailure,
                     "Received unknown certificate format".into(),
                 ))
             }
@@ -25,7 +25,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
             PublicKey::Rsa(rsa) => rsa,
             _ => {
                 return Err(Error::new(
-                    ErrorKind::CertificateUnknown,
+                    ErrorKind::Pku2uCertFailure,
                     "Received certificate has unsupported public key type. Only RSA is supported.".into(),
                 ))
             }
@@ -39,7 +39,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
     }
 
     Err(Error::new(
-        ErrorKind::CertificateUnknown,
+        ErrorKind::Pku2uCertFailure,
         "Received invalid server certificates".into(),
     ))
 }

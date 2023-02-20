@@ -333,7 +333,10 @@ impl SspiImpl for SspiCredSsp {
                 let mut inner_builder =
                     EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                         .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
-                            Error::new(ErrorKind::InvalidParameter, "credentials handle is not present".into())
+                            Error::new(
+                                ErrorKind::WrongCredentialHandle,
+                                "credentials handle is not present".into(),
+                            )
                         })?)
                         .with_context_requirements(ClientRequestFlags::empty())
                         .with_target_data_representation(DataRepresentation::Native);
@@ -416,7 +419,10 @@ impl SspiImpl for SspiCredSsp {
                     .take()
                     .and_then(|c| c.as_ref())
                     .ok_or_else(|| {
-                        Error::new(ErrorKind::InvalidParameter, "credentials handle is not present".into())
+                        Error::new(
+                            ErrorKind::WrongCredentialHandle,
+                            "credentials handle is not present".into(),
+                        )
                     })?;
 
                 ts_request.auth_info = Some(
@@ -436,7 +442,7 @@ impl SspiImpl for SspiCredSsp {
             }
             CredSspState::Final => {
                 return Err(Error::new(
-                    ErrorKind::InvalidParameter,
+                    ErrorKind::OutOfSequence,
                     "Error: Initialize security context function has been called after authorization".into(),
                 ));
             }

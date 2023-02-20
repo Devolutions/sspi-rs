@@ -3,6 +3,8 @@ use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
 use rand::Rng;
 
+use crate::ErrorKind;
+
 pub fn string_to_utf16(value: &str) -> Vec<u8> {
     value
         .encode_utf16()
@@ -43,4 +45,179 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> V
     }
 
     key
+}
+
+pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
+    use picky_krb::constants::error_codes::*;
+
+    match krb_error_code {
+        KDC_ERR_NONE => (ErrorKind::InternalError, "No error".into()),
+        KDC_ERR_NAME_EXP => (
+            ErrorKind::InvalidParameter,
+            "Client's entry in database has expired".into(),
+        ),
+        KDC_ERR_SERVICE_EXP => (
+            ErrorKind::InvalidParameter,
+            "Server's entry in database has expired".into(),
+        ),
+        KDC_ERR_BAD_PVNO => (
+            ErrorKind::KdcInvalidRequest,
+            "Requested protocol version number not supported".into(),
+        ),
+        KDC_ERR_C_OLD_MAST_KVNO => (
+            ErrorKind::EncryptFailure,
+            "Client's key encrypted in old master key".into(),
+        ),
+        KDC_ERR_S_OLD_MAST_KVNO => (
+            ErrorKind::EncryptFailure,
+            "Server's key encrypted in old master key".into(),
+        ),
+        KDC_ERR_C_PRINCIPAL_UNKNOWN => (
+            ErrorKind::UnknownCredentials,
+            "Client not found in Kerberos database".into(),
+        ),
+        KDC_ERR_S_PRINCIPAL_UNKNOWN => (
+            ErrorKind::UnknownCredentials,
+            "Server not found in Kerberos database".into(),
+        ),
+        KDC_ERR_PRINCIPAL_NOT_UNIQUE => (
+            ErrorKind::TooManyPrincipals,
+            "Multiple principal entries database".into(),
+        ),
+        KDC_ERR_NULL_KEY => (ErrorKind::EncryptFailure, "The client or server has a null key".into()),
+        KDC_ERR_CANNOT_POSTDATE => (
+            ErrorKind::KdcInvalidRequest,
+            "Ticket not eligible for postdating".into(),
+        ),
+        KDC_ERR_NEVER_VALID => (
+            ErrorKind::KdcInvalidRequest,
+            "Requested starttime is later than end time".into(),
+        ),
+        KDC_ERR_POLICY => (ErrorKind::KdcInvalidRequest, "KDC policy rejects request".into()),
+        KDC_ERR_BADOPTION => (
+            ErrorKind::KdcInvalidRequest,
+            "KDC cannot accommodate request option".into(),
+        ),
+        KDC_ERR_ETYPE_NOSUPP => (
+            ErrorKind::OperationNotSupported,
+            "KDC has no support for encryption type".into(),
+        ),
+        KDC_ERR_SUMTYPE_NOSUPP => (
+            ErrorKind::KdcInvalidRequest,
+            "KDC has no support for checksum type".into(),
+        ),
+        KDC_ERR_PADATA_TYPE_NOSUPP => (
+            ErrorKind::KdcInvalidRequest,
+            "KDC has no support for padata type".into(),
+        ),
+        KDC_ERR_TRTYPE_NOSUPP => (
+            ErrorKind::KdcInvalidRequest,
+            "KDC has no support for transited type".into(),
+        ),
+        KDC_ERR_CLIENT_REVOKED => (
+            ErrorKind::UnknownCredentials,
+            "Clients credentials have been revoked".into(),
+        ),
+        KDC_ERR_SERVICE_REVOKED => (
+            ErrorKind::UnknownCredentials,
+            "Credentials for server have been revoked".into(),
+        ),
+        KDC_ERR_TGT_REVOKED => (ErrorKind::UnknownCredentials, "TGT has been revoked".into()),
+        KDC_ERR_CLIENT_NOTYET => (
+            ErrorKind::UnknownCredentials,
+            "Client not yet valid; try again later".into(),
+        ),
+        KDC_ERR_SERVICE_NOTYET => (
+            ErrorKind::UnknownCredentials,
+            "Server not yet valid; try again later".into(),
+        ),
+        KDC_ERR_KEY_EXPIRED => (
+            ErrorKind::InvalidParameter,
+            "Password has expired; change password to reset".into(),
+        ),
+        KDC_ERR_PREAUTH_FAILED => (
+            ErrorKind::KdcInvalidRequest,
+            "Pre-authentication information was invalid".into(),
+        ),
+        KDC_ERR_PREAUTH_REQUIRED => (
+            ErrorKind::KdcInvalidRequest,
+            "Additional preauthentication required".into(),
+        ),
+        KDC_ERR_SERVER_NOMATCH => (
+            ErrorKind::KdcInvalidRequest,
+            "Requested server and ticket don't match".into(),
+        ),
+        KDC_ERR_MUST_USE_USER2USER => (
+            ErrorKind::KdcInvalidRequest,
+            "Server principal valid for user2user only".into(),
+        ),
+        KDC_ERR_PATH_NOT_ACCEPTED => (ErrorKind::KdcInvalidRequest, "KDC Policy rejects transited path".into()),
+        KDC_ERR_SVC_UNAVAILABLE => (ErrorKind::KdcInvalidRequest, "A service is not available".into()),
+        KRB_AP_ERR_BAD_INTEGRITY => (
+            ErrorKind::MessageAltered,
+            "Integrity check on decrypted field failed".into(),
+        ),
+        KRB_AP_ERR_TKT_EXPIRED => (ErrorKind::ContextExpired, "Ticket expired".into()),
+        KRB_AP_ERR_TKT_NYV => (ErrorKind::InvalidToken, "Ticket not yet valid".into()),
+        KRB_AP_ERR_REPEAT => (ErrorKind::KdcInvalidRequest, "Request is a replay".into()),
+        KRB_AP_ERR_NOT_US => (ErrorKind::InvalidToken, "The ticket isn't for us".into()),
+        KRB_AP_ERR_BADMATCH => (
+            ErrorKind::KdcInvalidRequest,
+            "Ticket and authenticator don't match".into(),
+        ),
+        KRB_AP_ERR_SKEW => (ErrorKind::TimeSkew, "Clock skew too great".into()),
+        KRB_AP_ERR_BADADDR => (ErrorKind::InvalidParameter, "Incorrect net address".into()),
+        KRB_AP_ERR_BADVERSION => (ErrorKind::KdcInvalidRequest, "Protocol version mismatch".into()),
+        KRB_AP_ERR_MSG_TYPE => (ErrorKind::InvalidToken, "Invalid msg type".into()),
+        KRB_AP_ERR_MODIFIED => (ErrorKind::MessageAltered, "Message stream modified".into()),
+        KRB_AP_ERR_BADORDER => (ErrorKind::OutOfSequence, "Message out of order".into()),
+        KRB_AP_ERR_BADKEYVER => (
+            ErrorKind::KdcInvalidRequest,
+            "Specified version of key is not available".into(),
+        ),
+        KRB_AP_ERR_NOKEY => (ErrorKind::NoKerbKey, "Service key not available".into()),
+        KRB_AP_ERR_MUT_FAIL => (ErrorKind::MutualAuthFailed, "Mutual authentication failed".into()),
+        KRB_AP_ERR_BADDIRECTION => (ErrorKind::OutOfSequence, "Incorrect message direction".into()),
+        KRB_AP_ERR_METHOD => (
+            ErrorKind::InvalidToken,
+            "Alternative authentication method required".into(),
+        ),
+        KRB_AP_ERR_BADSEQ => (ErrorKind::OutOfSequence, "Incorrect sequence number in message".into()),
+        KRB_AP_ERR_INAPP_CKSUM => (
+            ErrorKind::InvalidToken,
+            "Inappropriate type of checksum in message".into(),
+        ),
+        KRB_AP_PATH_NOT_ACCEPTED => (ErrorKind::KdcInvalidRequest, "Policy rejects transited path".into()),
+        KRB_ERR_RESPONSE_TOO_BIG => (
+            ErrorKind::InvalidParameter,
+            "Response too big for UDP; retry with TC".into(),
+        ),
+        KRB_ERR_GENERIC => (ErrorKind::InternalError, "Generic error (description in e-text)".into()),
+        KRB_ERR_FIELD_TOOLONG => (
+            ErrorKind::KdcInvalidRequest,
+            "Field is too long for this implementation".into(),
+        ),
+        KDC_ERROR_CLIENT_NOT_TRUSTED => (ErrorKind::InvalidParameter, "Client is not trusted".into()),
+        KDC_ERROR_KDC_NOT_TRUSTED => (ErrorKind::InvalidParameter, "KDC is not trusted".into()),
+        KDC_ERROR_INVALID_SIG => (ErrorKind::MessageAltered, "Invalid signature".into()),
+        KDC_ERR_KEY_TOO_WEAK => (ErrorKind::EncryptFailure, "Key is too weak".into()),
+        KDC_ERR_CERTIFICATE_MISMATCH => (ErrorKind::InvalidParameter, "Certificated mismatch".into()),
+        KRB_AP_ERR_NO_TGT => (
+            ErrorKind::NoTgtReply,
+            "No TGT available to validate USER-TO-USER".into(),
+        ),
+        KDC_ERR_WRONG_REALM => (ErrorKind::InvalidParameter, "Wrong Realm".into()),
+        KRB_AP_ERR_USER_TO_USER_REQUIRED => (ErrorKind::KdcInvalidRequest, "Ticket must be for USER-TO-USER".into()),
+        KDC_ERR_CANT_VERIFY_CERTIFICATE => (
+            ErrorKind::KdcInvalidRequest,
+            "KDC can not verify the certificate".into(),
+        ),
+        KDC_ERR_INVALID_CERTIFICATE => (ErrorKind::InvalidParameter, "Invalid certificate".into()),
+        KDC_ERR_REVOKED_CERTIFICATE => (ErrorKind::KdcCertRevoked, "Revoked certificate".into()),
+        KDC_ERR_REVOCATION_STATUS_UNKNOWN => (ErrorKind::InternalError, "Revoked status unknown".into()),
+        KDC_ERR_REVOCATION_STATUS_UNAVAILABLE => (ErrorKind::InternalError, "Revoked status unavailable".into()),
+        KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "Client name mismatch".into()),
+        KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
+        code => (ErrorKind::Unknown, format!("Unknown Kerberos error: {}", code)),
+    }
 }

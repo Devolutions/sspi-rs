@@ -397,7 +397,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
-                    ErrorKind::InternalError,
+                    ErrorKind::InvalidParameter,
                     format!(
                         "Invalid authenticator checksum length: expected >= 20 but got {}. ",
                         checksum_value.len()
@@ -461,7 +461,7 @@ pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> R
 
     if !issuer {
         return Err(Error::new(
-            ErrorKind::InternalError,
+            ErrorKind::Pku2uCertFailure,
             "Bad client certificate: cannot find common name of the issuer".into(),
         ));
     }
@@ -482,7 +482,7 @@ pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> R
 
     if !subject {
         return Err(Error::new(
-            ErrorKind::InternalError,
+            ErrorKind::Pku2uCertFailure,
             "Bad client certificate: cannot find appropriate common name of the subject".into(),
         ));
     }

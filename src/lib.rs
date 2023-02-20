@@ -102,6 +102,7 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
+use utils::map_keb_error_code_to_sspi_error;
 
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
@@ -1707,7 +1708,7 @@ pub enum ErrorKind {
     DelegationRequired = 0x8009_0345,
     BadBindings = 0x8009_0346,
     MultipleAccounts = 0x8009_0347,
-    NoKerdKey = 0x8009_0348,
+    NoKerbKey = 0x8009_0348,
     CertWrongUsage = 0x8009_0349,
     DowngradeDetected = 0x8009_0350,
     SmartCardCertificateRevoked = 0x8009_0351,
@@ -1777,8 +1778,24 @@ impl From<Asn1DerError> for Error {
 }
 
 impl From<KrbError> for Error {
-    fn from(err: KrbError) -> Self {
-        Self::new(ErrorKind::InternalError, format!("KRB error: {:?}", err.0.error_code))
+    fn from(krb_error: KrbError) -> Self {
+        let (error_kind, mut description) = map_keb_error_code_to_sspi_error(krb_error.0.error_code.0);
+
+        // https://www.rfc-editor.org/rfc/rfc4120#section-5.9.1
+
+        // This field contains additional text to help explain the error code
+        // associated with the failed request
+        if let Some(e_text) = krb_error.0.e_text.0 {
+            description.push_str(&format!(". Additional error text: {:?}", e_text.0));
+        }
+
+        // This field contains additional data about the error for use by the
+        // application to help it recover from or handle the error.
+        if let Some(e_data) = krb_error.0.e_data.0 {
+            description.push_str(&format!(". Additional error data: {:?}", e_data.0));
+        }
+
+        Error::new(error_kind, description)
     }
 }
 
