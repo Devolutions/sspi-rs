@@ -203,10 +203,12 @@ cfg_if::cfg_if! {
                             break
                         }
                         Ok(Some(Err(error))) => {
+                            #[cfg(feature = "logging")]
                             error!(%error, "IO error when reading DNS query");
                             break;
                         }
                         Err(error) => {
+                            #[cfg(feature = "logging")]
                             error!(%error, "Timeout when reading DNS query");
                             break;
                         }
