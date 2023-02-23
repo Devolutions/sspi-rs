@@ -12,9 +12,9 @@ const SSPI_LOG_PATH_ENV: &str = "SSPI_LOG_PATH";
 pub fn setup_logger() {
     SETUP.call_once(|| {
         let path = if let Ok(path) = std::env::var(SSPI_LOG_PATH_ENV) {
+            println!("[SSPI-DEBUG] SSPI_LOG_PATH = {path}");
             PathBuf::from(path)
         } else {
-            println!("[SSPI-DEBUG] Couldn’t find path for log file");
             return;
         };
 

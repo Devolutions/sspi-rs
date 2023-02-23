@@ -764,7 +764,7 @@ impl SspiImpl for Pku2u {
                 if acceptor_verify.checksum.checksum_value != acceptor_checksum {
                     return Err(Error::new(
                         ErrorKind::MessageAltered,
-                        "bad server's Verify message signature".into(),
+                        "bad verify message signature from server".into(),
                     ));
                 }
 

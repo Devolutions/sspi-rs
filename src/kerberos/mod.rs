@@ -151,8 +151,8 @@ impl Kerberos {
             return match kdc_url.scheme() {
                 "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
                 "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
-                _scheme => {
-                    error!(scheme = ?_scheme, "Bad kdc url: invalid URL scheme");
+                scheme => {
+                    error!(?scheme, "Bad kdc url: invalid URL scheme");
 
                     Err(Error {
                         error_type: ErrorKind::InvalidParameter,
@@ -650,7 +650,7 @@ impl SspiImpl for Kerberos {
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
 
-                info!("TGS exchange finished successfully.");
+                info!("TGS exchange finished successfully");
 
                 let session_key_2 =
                     extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &self.encryption_params)?;

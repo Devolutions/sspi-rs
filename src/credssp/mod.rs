@@ -147,16 +147,6 @@ enum CredSspState {
     Final,
 }
 
-impl AsRef<str> for CredSspState {
-    fn as_ref(&self) -> &str {
-        match self {
-            CredSspState::NegoToken => "NegoToken",
-            CredSspState::AuthInfo => "AuthInfo",
-            CredSspState::Final => "Final",
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum EndpointType {
     Client,
@@ -236,7 +226,7 @@ impl CredSspClient {
         })
     }
 
-    #[instrument(fields(state = self.state.as_ref()), skip_all)]
+    #[instrument(fields(state = ?self.state), skip_all)]
     pub fn process(&mut self, mut ts_request: TsRequest) -> crate::Result<ClientState> {
         ts_request.check_error()?;
         if let Some(ref mut context) = self.context {

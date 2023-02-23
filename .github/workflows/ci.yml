@@ -24,7 +24,7 @@ jobs:
           if ($LastExitCode -eq 1) {   
             throw "Bad formatting, please run 'cargo +stable fmt --all'"
           }
-  
+
   lints:
     name: Lints [${{ matrix.os }}]
     runs-on: ${{ matrix.runner }}
@@ -36,20 +36,18 @@ jobs:
         include:
           - os: win
             runner: windows-2022
-            features: tsssp,debug_mode
+            additional-args: --features tsssp
           - os: osx
             runner: macos-12
-            features: debug_mode
           - os: linux
             runner: ubuntu-20.04
-            features: debug_mode
 
     steps:
       - uses: actions/checkout@v3
 
       # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
-        run: cargo clippy --manifest-path ffi/Cargo.toml --features ${{ matrix.features }} -- -D warnings
+        run: cargo clippy --manifest-path ffi/Cargo.toml ${{ matrix.additional-args }} -- -D warnings
 
   tests:
     name: Tests [${{ matrix.os }}] [${{ matrix.crate-name }}]
@@ -69,19 +67,17 @@ jobs:
             crate-name: sspi-ffi
           - os: win
             runner: windows-2022
-            features: tsssp
+            additional-args: --features tsssp
           - os: osx
             runner: macos-12
-            features: default
           - os: linux
             runner: ubuntu-20.04
-            features: default
 
     steps:
       - uses: actions/checkout@v3
 
       - name: Test
-        run: cargo test --manifest-path ${{ matrix.manifest }} --features ${{ matrix.features }}
+        run: cargo test --manifest-path ${{ matrix.manifest }} ${{ matrix.additional-args }}
 
   wasm:
     name: WASM target

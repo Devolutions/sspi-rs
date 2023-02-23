@@ -41,17 +41,6 @@ enum CredSspState {
     Final,
 }
 
-impl AsRef<str> for CredSspState {
-    fn as_ref(&self) -> &str {
-        match self {
-            CredSspState::Tls => "Tls",
-            CredSspState::NegoToken => "NegoToken",
-            CredSspState::AuthInfo => "AuthInfo",
-            CredSspState::Final => "Final",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct SspiCredSsp {
     state: CredSspState,
@@ -137,7 +126,7 @@ impl SspiCredSsp {
 }
 
 impl Sspi for SspiCredSsp {
-    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all)]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }

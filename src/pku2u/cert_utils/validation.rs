@@ -14,8 +14,8 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
     if let Some(certificate) = certificates.iter().next() {
         let cert: Certificate = match certificate {
             CertificateChoices::Certificate(cert) => picky_asn1_der::from_bytes(&cert.0)?,
-            _cert => {
-                error!(cert = ?_cert, "Server sent unsupported certificate format");
+            cert => {
+                error!(?cert, "Server sent unsupported certificate format");
 
                 return Err(Error::new(
                     ErrorKind::Pku2uCertFailure,
@@ -26,9 +26,9 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
 
         let public_key = match cert.tbs_certificate.subject_public_key_info.subject_public_key {
             PublicKey::Rsa(rsa) => rsa,
-            _public_key => {
+            public_key => {
                 error!(
-                    public_key = ?_public_key,
+                    ?public_key,
                     "Server sent unsupported public key type. Only RSA keys supported",
                 );
 
