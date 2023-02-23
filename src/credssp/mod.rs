@@ -397,7 +397,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
     }
 
     #[allow(clippy::result_large_err)]
-    #[instrument(fields(state = self.state.as_ref()), skip_all)]
+    #[instrument(fields(state = ?self.state), skip_all)]
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
             self.context = match &self.context_config {
