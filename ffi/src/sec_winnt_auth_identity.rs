@@ -4,7 +4,6 @@ use libc::{c_char, c_ushort, c_void};
 use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use tracing::instrument;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};

@@ -7,7 +7,6 @@ use libc::{c_uint, c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use tracing::instrument;
 
 use crate::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
 use crate::utils::c_w_str_to_string;

@@ -1,6 +1,5 @@
 #![allow(clippy::missing_safety_doc)]
 
-#[cfg(feature = "debug_mode")]
 #[macro_use]
 extern crate tracing;
 

@@ -70,6 +70,9 @@
 //! # }
 //! ```
 
+#[macro_use]
+extern crate tracing;
+
 pub mod builders;
 pub mod channel_bindings;
 pub mod credssp;

@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-#[cfg(feature = "logging")]
-use tracing::instrument;
-
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         use windows::{
@@ -135,7 +132,6 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
-        use tracing::error;
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
@@ -203,12 +199,10 @@ cfg_if::cfg_if! {
                             break
                         }
                         Ok(Some(Err(error))) => {
-                            #[cfg(feature = "logging")]
                             error!(%error, "IO error when reading DNS query");
                             break;
                         }
                         Err(error) => {
-                            #[cfg(feature = "logging")]
                             error!(%error, "Timeout when reading DNS query");
                             break;
                         }
@@ -345,7 +339,7 @@ cfg_if::cfg_if! {
 }
 
 #[allow(unused_variables)]
-#[cfg_attr(feature = "logging", instrument(level = "debug", ret))]
+#[instrument(level = "debug", ret)]
 pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {

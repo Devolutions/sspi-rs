@@ -24,8 +24,6 @@ use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
-#[cfg(feature = "logging")]
-use tracing::{debug, instrument, trace};
 use uuid::Uuid;
 
 use self::generators::{
@@ -96,20 +94,6 @@ pub enum Pku2uState {
     PubKeyAuth,
     Credentials,
     Final,
-}
-
-impl AsRef<str> for Pku2uState {
-    fn as_ref(&self) -> &str {
-        match self {
-            Pku2uState::Negotiate => "Negotiate",
-            Pku2uState::Preauthentication => "Preauthentication",
-            Pku2uState::AsExchange => "AsExchange",
-            Pku2uState::ApExchange => "ApExchange",
-            Pku2uState::PubKeyAuth => "PubKeyAuth",
-            Pku2uState::Credentials => "Credentials",
-            Pku2uState::Final => "Final",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -214,20 +198,19 @@ impl Pku2u {
 }
 
 impl Sspi for Pku2u {
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        #[cfg(feature = "logging")]
-        trace!("{:?}", self.encryption_params);
+        trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
@@ -282,10 +265,9 @@ impl Sspi for Pku2u {
         Ok(SecurityStatus::Ok)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _sequence_number)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
-        #[cfg(feature = "logging")]
-        trace!("{:?}", self.encryption_params);
+        trace!(encryption_params = ?self.encryption_params);
 
         let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
             buffer
@@ -307,9 +289,6 @@ impl Sspi for Pku2u {
 
         let key = get_encryption_key(&self.encryption_params)?;
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
-
-        #[cfg(feature = "logging")]
-        debug!("Decryption key usage: {}", key_usage);
 
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
         wrap_token.checksum.rotate_left(RRC.into());
@@ -339,7 +318,7 @@ impl Sspi for Pku2u {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
@@ -349,7 +328,7 @@ impl Sspi for Pku2u {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         if let Some(ref identity_buffers) = self.auth_identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
@@ -365,12 +344,12 @@ impl Sspi for Pku2u {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Pku2u)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -378,7 +357,7 @@ impl Sspi for Pku2u {
         ))
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _change_password)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _change_password))]
     fn change_password(&mut self, _change_password: ChangePassword) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -392,7 +371,7 @@ impl SspiImpl for Pku2u {
 
     type AuthenticationData = AuthIdentity;
 
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -412,13 +391,12 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
-        #[cfg(feature = "logging")]
-        trace!("{:?}", builder);
+        trace!(?builder);
 
         let status = match self.state {
             Pku2uState::Negotiate => {
@@ -429,8 +407,7 @@ impl SspiImpl for Pku2u {
                 let snames = check_if_empty!(builder.target_name, "service target name is not provided")
                     .split('/')
                     .collect();
-                #[cfg(feature = "logging")]
-                debug!("Service principal names: {:?}", snames);
+                debug!(names = ?snames, "Service principal names");
 
                 let nego = Nego::new(
                     MessageType::InitiatorNego,
@@ -483,8 +460,7 @@ impl SspiImpl for Pku2u {
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_nego = Nego::decode(&buffer)?;
-                #[cfg(feature = "logging")]
-                trace!("NEGOEX ACCEPTOR NEGOTIATE: {:?}", acceptor_nego);
+                trace!(?acceptor_nego, "NEGOEX ACCEPTOR NEGOTIATE");
 
                 check_conversation_id!(acceptor_nego.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
@@ -515,8 +491,7 @@ impl SspiImpl for Pku2u {
 
                 let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
                 let acceptor_exchange = Exchange::decode(acceptor_exchange_data)?;
-                #[cfg(feature = "logging")]
-                trace!("NEGOEX ACCEPTOR EXCHANGE: {:?}", acceptor_exchange);
+                trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -527,8 +502,7 @@ impl SspiImpl for Pku2u {
                 let snames = check_if_empty!(builder.target_name, "service target name is not provided")
                     .split('/')
                     .collect::<Vec<_>>();
-                #[cfg(feature = "logging")]
-                debug!("Service principal names: {:?}", snames);
+                debug!(names = ?snames, "Service principal names");
 
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
@@ -592,8 +566,7 @@ impl SspiImpl for Pku2u {
                 self.negoex_messages.extend_from_slice(&buffer);
 
                 let acceptor_exchange = Exchange::decode(&buffer)?;
-                #[cfg(feature = "logging")]
-                trace!("NEGOEX ACCEPTOR EXCHANGE MESSAGE: {:?}", acceptor_exchange);
+                trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE MESSAGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -648,8 +621,7 @@ impl SspiImpl for Pku2u {
                     .cipher()
                     .as_ref(),
                 )?;
-                #[cfg(feature = "logging")]
-                trace!("Session key generated from DH components: {:?}", session_key);
+                trace!(?session_key, "Session key generated from DH components");
 
                 let session_key = extract_session_key_from_as_rep(&as_rep, &session_key, &self.encryption_params)?;
                 self.encryption_params.session_key = Some(session_key);
@@ -748,8 +720,7 @@ impl SspiImpl for Pku2u {
                      .0;
 
                 let acceptor_exchange = Exchange::decode(&buffer)?;
-                #[cfg(feature = "logging")]
-                trace!("NEGOEX ACCEPTOR EXCHANGE MESSAGE: {:?}", acceptor_exchange);
+                trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE MESSAGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
@@ -764,8 +735,7 @@ impl SspiImpl for Pku2u {
 
                 let acceptor_verify_data = &buffer[(acceptor_exchange.header.message_len as usize)..];
                 let acceptor_verify = Verify::decode(acceptor_verify_data)?;
-                #[cfg(feature = "logging")]
-                trace!("NEGOEX ACCEPTOR VERIFY MESSAGE: {:?}", acceptor_exchange);
+                trace!(?acceptor_exchange, "NEGOEX ACCEPTOR VERIFY MESSAGE");
 
                 check_conversation_id!(acceptor_verify.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_verify.header.sequence_num, self.next_seq_number());
@@ -810,8 +780,7 @@ impl SspiImpl for Pku2u {
             }
         };
 
-        #[cfg(feature = "logging")]
-        trace!("Output buffers: {:?}", builder.output);
+        trace!(output_buffers = ?builder.output);
 
         Ok(InitializeSecurityContextResult {
             status,
@@ -820,7 +789,7 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _builder)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -833,7 +802,7 @@ impl SspiImpl for Pku2u {
 }
 
 impl SspiEx for Pku2u {
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
     }

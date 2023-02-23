@@ -9,7 +9,6 @@ use sspi::{
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use tracing::instrument;
 
 use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};

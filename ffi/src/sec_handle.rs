@@ -17,7 +17,6 @@ use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
     Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi, SspiImpl,
 };
-use tracing::{debug, info, instrument};
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
     CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
@@ -132,7 +131,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         }
         let name = security_package_name.expect("security package name must be provided");
 
-        info!("Creating {:?} context", name);
+        info!(?name, "Creating context");
 
         let sspi_context = match name {
             negotiate::PKG_NAME => SspiContext::Negotiate(create_negotiate_context(attributes)?),
@@ -204,7 +203,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let security_package_name =
             try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
-        debug!("{:?}", security_package_name);
+        debug!(?security_package_name);
 
         let mut package_list: Option<String> = None;
 
@@ -252,7 +251,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         check_null!(ph_credential);
 
         let security_package_name = c_w_str_to_string(psz_package);
-        debug!("{:?}", security_package_name);
+        debug!(?security_package_name);
 
         let mut package_list: Option<String> = None;
 
@@ -337,7 +336,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         } else {
             try_execute!(CStr::from_ptr(p_target_name).to_str(), ErrorKind::InvalidParameter)
         };
-        debug!("Target name (SPN): {:?}", service_principal);
+        debug!(?service_principal, "Target name (SPN)");
 
         let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 
@@ -437,7 +436,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         } else {
             c_w_str_to_string(p_target_name)
         };
-        debug!("Target name (SPN): {:?}", service_principal);
+        debug!(?service_principal, "Target name (SPN)");
 
         let credentials_handle = (*ph_credential).dw_lower as *mut CredentialsHandle;
 

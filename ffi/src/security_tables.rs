@@ -6,7 +6,6 @@ use libc::{c_ulong, c_void};
 use sspi::KERBEROS_VERSION;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use tracing::instrument;
 
 use crate::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,

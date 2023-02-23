@@ -2,8 +2,6 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
 use rand::Rng;
-#[cfg(feature = "logging")]
-use tracing::{debug, error, warn};
 
 use crate::kerberos::EncryptionParams;
 use crate::{Error, ErrorKind, Result};
@@ -228,17 +226,14 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
 pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     // the sub-session key is always preferred over the session key
     if let Some(key) = enc_params.sub_session_key.as_ref() {
-        #[cfg(feature = "logging")]
         debug!("Encryption using sub-session key");
 
         Ok(key)
     } else if let Some(key) = enc_params.session_key.as_ref() {
-        #[cfg(feature = "logging")]
         warn!("Encryption using session key (not sub-session key)");
 
         Ok(key)
     } else {
-        #[cfg(feature = "logging")]
         error!("No encryption keys in the krb context. Maybe security context is not established and encrypt_message called too early");
 
         Err(Error::new(

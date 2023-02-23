@@ -12,8 +12,6 @@ use picky_krb::constants::types::PA_PK_AS_REP;
 use picky_krb::messages::{AsRep, EncAsRepPart};
 use picky_krb::pkinit::{DhRepInfo, KdcDhKeyInfo, PaPkAsRep};
 use serde::Deserialize;
-#[cfg(feature = "logging")]
-use tracing::{error, instrument};
 
 use super::generators::DH_NONCE_LEN;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
@@ -25,7 +23,7 @@ pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T,
     Ok((picky_asn1_der::from_bytes(data)?, data))
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
     Ok(picky_asn1_der::from_bytes(
         &as_rep
@@ -48,7 +46,7 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
     )?)
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN]> {
     let nonce = dh_rep_info
         .server_dh_nonce
@@ -71,7 +69,7 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
     Ok(nonce.try_into().unwrap())
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
     let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
     if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
@@ -92,11 +90,10 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
         .0
     {
         ContentValue::OctetString(data) => &data.0,
-        _content_value => {
-            #[cfg(feature = "logging")]
+        content_value => {
             error!(
-                "The server has sent KDC DH key info in unsupported format: {:?}. Only ContentValue::OctetString is supported",
-                _content_value
+                ?content_value,
+                "The server has sent KDC DH key info in unsupported format. Only ContentValue::OctetString is supported",
             );
 
             return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info".into()));
@@ -117,7 +114,7 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
     Ok(key.as_unsigned_bytes_be().to_vec())
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &EncryptionParams) -> Result<Vec<u8>> {
     let cipher = enc_params
         .encryption_type

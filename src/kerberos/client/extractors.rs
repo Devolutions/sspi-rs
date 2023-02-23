@@ -4,15 +4,12 @@ use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{EncKrbPrivPart, EtypeInfo2, PaData};
 use picky_krb::messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep};
-#[cfg(feature = "logging")]
-use tracing::{instrument, trace};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Error, ErrorKind, Result};
 
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
-    #[cfg(feature = "logging")]
-    trace!("KRB_ERROR: {:?}", error);
+    trace!(?error, "KRB_ERROR");
 
     if let Some(e_data) = error.0.e_data.0.as_ref() {
         let pa_datas: Asn1SequenceOf<PaData> = picky_asn1_der::from_bytes(&e_data.0 .0)?;
@@ -32,7 +29,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
     salt: &str,
@@ -54,7 +51,7 @@ pub fn extract_session_key_from_as_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
     session_key: &[u8],
@@ -78,7 +75,7 @@ pub fn extract_session_key_from_tgs_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, String)> {
     match as_rep
         .0

@@ -21,7 +21,7 @@ cfg-if = "0.1"
 libc = "0.2"
 num-traits = "0.2"
 whoami = "1.2.3"
-sspi = { path = "..", features = ["network_client", "dns_resolver", "logging"] }
+sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 
 # logging
 tracing = { version = "0.1.37" }

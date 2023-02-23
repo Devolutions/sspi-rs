@@ -1,8 +1,6 @@
 use std::fmt::Debug;
 
 use lazy_static::lazy_static;
-#[cfg(feature = "logging")]
-use tracing::{info, instrument, warn};
 
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::generators::get_client_principal_realm;
@@ -151,14 +149,13 @@ impl Negotiate {
     // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
     // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
     // 5) in any other cases, it'll use NTLM
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self)))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
             if is_azure_ad_domain(domain) {
                 use super::pku2u::Pku2uConfig;
 
-                #[cfg(feature = "logging")]
                 info!("Negotiate: try Pku2u");
 
                 self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(
@@ -167,7 +164,6 @@ impl Negotiate {
             }
 
             if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
-                #[cfg(feature = "logging")]
                 info!("Negotiate: try Kerberos");
 
                 self.protocol =
@@ -251,7 +247,7 @@ impl Negotiate {
 }
 
 impl SspiEx for Negotiate {
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.clone().into());
 
@@ -264,7 +260,7 @@ impl SspiEx for Negotiate {
 }
 
 impl Sspi for Negotiate {
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self)))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),
@@ -273,7 +269,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn encrypt_message(
         &mut self,
         flags: crate::EncryptionFlags,
@@ -287,7 +283,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
@@ -296,7 +292,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_sizes(),
@@ -305,7 +301,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names(),
@@ -314,12 +310,12 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Negotiate)
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_package_info(),
@@ -328,7 +324,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_cert_trust_status(),
@@ -337,7 +333,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn change_password(&mut self, change_password: builders::ChangePassword) -> Result<()> {
         self.negotiate_protocol(&change_password.account_name, &change_password.domain_name)?;
 
@@ -353,7 +349,7 @@ impl SspiImpl for Negotiate {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -383,7 +379,7 @@ impl SspiImpl for Negotiate {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
@@ -404,7 +400,6 @@ impl SspiImpl for Negotiate {
                     error_type: ErrorKind::NoCredentials,
                     description: _,
                 }) => {
-                    #[cfg(feature = "logging")]
                     warn!("Negotiate: Fall back to the NTLM");
 
                     self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone()));
@@ -420,7 +415,7 @@ impl SspiImpl for Negotiate {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all))]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,

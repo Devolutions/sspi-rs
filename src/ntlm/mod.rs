@@ -9,8 +9,6 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use lazy_static::lazy_static;
 use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
-#[cfg(feature = "logging")]
-use tracing::{info, instrument, trace};
 
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
@@ -71,19 +69,6 @@ enum NtlmState {
     Authenticate,
     Completion,
     Final,
-}
-
-impl AsRef<str> for NtlmState {
-    fn as_ref(&self) -> &str {
-        match self {
-            NtlmState::Initial => "Initial",
-            NtlmState::Negotiate => "Negotiate",
-            NtlmState::Challenge => "Challenge",
-            NtlmState::Authenticate => "Authenticate",
-            NtlmState::Completion => "Completion",
-            NtlmState::Final => "Final",
-        }
-    }
 }
 
 /// Specifies the NT LAN Manager (NTLM) Authentication Protocol, used for authentication between clients and servers.
@@ -201,7 +186,7 @@ impl SspiImpl for Ntlm {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -221,13 +206,12 @@ impl SspiImpl for Ntlm {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
-        #[cfg(feature = "logging")]
-        trace!("{:?}", builder);
+        trace!(?builder);
 
         let status = match self.state {
             NtlmState::Initial => {
@@ -273,8 +257,7 @@ impl SspiImpl for Ntlm {
             }
         };
 
-        #[cfg(feature = "logging")]
-        trace!("Output buffers: {:?}", builder.output);
+        trace!(output_buffers = ?builder.output);
 
         Ok(InitializeSecurityContextResult {
             status,
@@ -283,14 +266,11 @@ impl SspiImpl for Ntlm {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, builder)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
         builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
-        #[cfg(feature = "logging")]
-        info!("NTLM state: {:?}", self.state);
-
         let input = builder.input.ok_or_else(|| {
             crate::Error::new(
                 crate::ErrorKind::InvalidToken,
@@ -335,12 +315,12 @@ impl SspiImpl for Ntlm {
 }
 
 impl Sspi for Ntlm {
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
@@ -370,7 +350,7 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, sequence_number)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBuffer],
@@ -404,7 +384,7 @@ impl Sspi for Ntlm {
         Ok(DecryptionFlags::empty())
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> crate::Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: 2010,
@@ -414,7 +394,7 @@ impl Sspi for Ntlm {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
         if let Some(ref identity_buffers) = self.identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
@@ -430,12 +410,12 @@ impl Sspi for Ntlm {
         }
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_package_info(&mut self) -> crate::Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Ntlm)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
@@ -443,7 +423,7 @@ impl Sspi for Ntlm {
         ))
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
@@ -453,7 +433,7 @@ impl Sspi for Ntlm {
 }
 
 impl SspiEx for Ntlm {
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.identity = Some(identity.into());
     }

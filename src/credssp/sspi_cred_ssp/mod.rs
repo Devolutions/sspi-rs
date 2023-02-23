@@ -7,7 +7,6 @@ use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
 use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
-use tracing::{instrument, trace};
 
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
@@ -138,12 +137,12 @@ impl SspiCredSsp {
 }
 
 impl Sspi for SspiCredSsp {
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all)]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
@@ -179,7 +178,7 @@ impl Sspi for SspiCredSsp {
         Ok(SecurityStatus::Ok)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _sequence_number)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _sequence_number))]
     fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
@@ -217,27 +216,27 @@ impl Sspi for SspiCredSsp {
         Ok(DecryptionFlags::empty())
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         self.cred_ssp_context.sspi_context.query_context_sizes()
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         self.cred_ssp_context.sspi_context.query_context_names()
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
         self.tls_connection.stream_sizes()
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::CredSsp)
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         // The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
         // we do not check certificate validity
@@ -247,7 +246,7 @@ impl Sspi for SspiCredSsp {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
         let certificates = self.tls_connection.peer_certificates()?;
         let raw_server_certificate = certificates.get(0).ok_or_else(|| {
@@ -266,17 +265,17 @@ impl Sspi for SspiCredSsp {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         self.cred_ssp_context.sspi_context.query_context_package_info()
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self))]
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
         self.tls_connection.connection_info()
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip_all)]
     fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -289,7 +288,7 @@ impl SspiImpl for SspiCredSsp {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self))]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -309,12 +308,12 @@ impl SspiImpl for SspiCredSsp {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(ret, fields(state = self.state.as_ref()), skip_all))]
+    #[instrument(ret, fields(state = self.state.as_ref()), skip_all)]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        trace!("{:?}", builder);
+        trace!(?builder);
 
         let status = match &self.state {
             CredSspState::Tls => {
@@ -476,7 +475,7 @@ impl SspiImpl for SspiCredSsp {
             }
         };
 
-        trace!("{:?}", builder);
+        trace!(?builder);
 
         Ok(InitializeSecurityContextResult {
             status,
@@ -485,7 +484,7 @@ impl SspiImpl for SspiCredSsp {
         })
     }
 
-    #[cfg_attr(feature = "logging", instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _builder)))]
+    #[instrument(level = "debug", ret, fields(state = self.state.as_ref()), skip(self, _builder))]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -498,7 +497,7 @@ impl SspiImpl for SspiCredSsp {
 }
 
 impl SspiEx for SspiCredSsp {
-    #[cfg_attr(feature = "logging", instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self)))]
+    #[instrument(level = "trace", ret, fields(state = self.state.as_ref()), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.auth_identity = Some(identity.into());
     }

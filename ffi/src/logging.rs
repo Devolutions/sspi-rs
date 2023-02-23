@@ -2,28 +2,17 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Once;
 
-use tracing::error;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 static SETUP: Once = Once::new();
 
-const SSPI_DBG_LOG_PATH_ENV: &str = "SSPI_LOG_FILE_PATH";
-
-#[cfg(windows)]
-const HOME_PATH_ENV: &str = "USERPROFILE";
-
-#[cfg(not(windows))]
-const HOME_PATH_ENV: &str = "HOME";
+const SSPI_LOG_PATH_ENV: &str = "SSPI_LOG_PATH";
 
 pub fn setup_logger() {
     SETUP.call_once(|| {
-        let path = if let Ok(path) = std::env::var(SSPI_DBG_LOG_PATH_ENV) {
+        let path = if let Ok(path) = std::env::var(SSPI_LOG_PATH_ENV) {
             PathBuf::from(path)
-        } else if let Ok(path) = std::env::var(HOME_PATH_ENV) {
-            let mut path = PathBuf::from(path);
-            path.push("sspi-rs.log");
-            path
         } else {
             println!("[SSPI-DEBUG] Couldn’t find path for log file");
             return;

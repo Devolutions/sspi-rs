@@ -2,14 +2,12 @@ use num_bigint_dig::BigUint;
 use picky::key::PublicKey as RsaPublicKey;
 use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
 use picky_asn1_x509::{Certificate, PublicKey};
-#[cfg(feature = "logging")]
-use tracing::{error, instrument};
 
 use crate::{Error, ErrorKind, Result};
 
 /// validates server's p2p certificate.
 /// If certificate is valid then return its public key.
-#[cfg_attr(feature = "logging", instrument(level = "trace", ret))]
+#[instrument(level = "trace", ret)]
 pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPublicKey> {
     let certificates = &signed_data.certificates.0 .0;
 
@@ -17,8 +15,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
         let cert: Certificate = match certificate {
             CertificateChoices::Certificate(cert) => picky_asn1_der::from_bytes(&cert.0)?,
             _cert => {
-                #[cfg(feature = "logging")]
-                error!("Server sent unsupported certificate format: {:?}", _cert);
+                error!(cert = ?_cert, "Server sent unsupported certificate format");
 
                 return Err(Error::new(
                     ErrorKind::Pku2uCertFailure,
@@ -30,10 +27,9 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
         let public_key = match cert.tbs_certificate.subject_public_key_info.subject_public_key {
             PublicKey::Rsa(rsa) => rsa,
             _public_key => {
-                #[cfg(feature = "logging")]
                 error!(
-                    "Server sent unsupported public key type: {:?}. Only RSA keys supported",
-                    _public_key
+                    public_key = ?_public_key,
+                    "Server sent unsupported public key type. Only RSA keys supported",
                 );
 
                 return Err(Error::new(
