@@ -9,6 +9,8 @@ use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Error, ErrorKind, Result};
 
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
+    trace!(?error, "KRB_ERROR");
+
     if let Some(e_data) = error.0.e_data.0.as_ref() {
         let pa_datas: Asn1SequenceOf<PaData> = picky_asn1_der::from_bytes(&e_data.0 .0)?;
 
@@ -27,6 +29,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
     salt: &str,
@@ -48,6 +51,7 @@ pub fn extract_session_key_from_as_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
     session_key: &[u8],
@@ -71,6 +75,7 @@ pub fn extract_session_key_from_tgs_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, String)> {
     match as_rep
         .0

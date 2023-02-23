@@ -32,6 +32,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
     Ok(picky_asn1_der::from_reader(&mut data)?)
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_sub_session_key_from_ap_rep(
     ap_rep: &ApRep,
     session_key: &[u8],
@@ -63,6 +64,7 @@ pub fn extract_sub_session_key_from_ap_rep(
          .0)
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_tgt_ticket(data: &[u8]) -> Result<Option<Ticket>> {
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
 

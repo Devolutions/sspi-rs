@@ -66,16 +66,20 @@ cfg_if::cfg_if! {
             let tcpip_linkage_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Linkage";
             let tcpip_interfaces_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces";
             let dns_registered_adapters_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DNSRegisteredAdapters";
+
             if let Ok(tcpip_linkage_key) = hklm.open_subkey(tcpip_linkage_key_path) {
                 let bind_devices: Vec<String> = tcpip_linkage_key.get_value("Bind").unwrap();
                 let device_ids = bind_devices.iter().map(|x| x.strip_prefix("\\Device\\").unwrap());
+
                 for device_id in device_ids {
                     let interface_key_path = format!("{}\\{}", tcpip_interfaces_key_path, &device_id);
                     let dns_adapter_key_path = format!("{}\\{}", dns_registered_adapters_key_path, &device_id);
+
                     if let (Ok(interface_key), Ok(dns_adapter_key)) = (hklm.open_subkey(interface_key_path), hklm.open_subkey(dns_adapter_key_path)) {
                         let name_server: Option<String> = interface_key.get_value("NameServer").ok().filter(|x: &String| !x.is_empty());
                         let dhcp_name_server: Option<String> = interface_key.get_value("DhcpNameServer").ok().filter(|x: &String| !x.is_empty());
                         let stale_adapter: u32 = dns_adapter_key.get_value("StaleAdapter").unwrap_or(1);
+
                         if stale_adapter != 1 {
                             if let Some(name_server_list) = name_server.or(dhcp_name_server) {
                                 let name_servers: Vec<String> = name_server_list.split(' ')
@@ -128,7 +132,6 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
-        use tracing::error;
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
@@ -336,6 +339,7 @@ cfg_if::cfg_if! {
 }
 
 #[allow(unused_variables)]
+#[instrument(level = "debug", ret)]
 pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {

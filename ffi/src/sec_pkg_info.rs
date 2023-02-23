@@ -145,7 +145,7 @@ pub struct SecNegoInfoA {
     pub nego_state: c_uint,
 }
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesA(
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesW(
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoA(
@@ -295,7 +295,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QuerySecurityPackageInfoW(

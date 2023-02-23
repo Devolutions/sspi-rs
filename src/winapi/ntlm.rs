@@ -16,6 +16,7 @@ use crate::{
 };
 
 /// Represents a wrapper for Windows-provided NTLM.
+#[derive(Debug)]
 pub struct Ntlm(SecurityPackage);
 
 impl Ntlm {
@@ -74,9 +75,9 @@ impl SspiImpl for Ntlm {
         builder.execute()
     }
 
-    fn initialize_security_context_impl<'a>(
+    fn initialize_security_context_impl(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<Self::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         self.0.initialize_security_context_impl(builder)
     }

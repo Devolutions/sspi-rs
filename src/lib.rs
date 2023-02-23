@@ -70,6 +70,9 @@
 //! # }
 //! ```
 
+#[macro_use]
+extern crate tracing;
+
 pub mod builders;
 pub mod channel_bindings;
 pub mod credssp;
@@ -993,9 +996,9 @@ pub trait SspiImpl {
         builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
-    fn initialize_security_context_impl<'a>(
+    fn initialize_security_context_impl(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult>;
 
     fn accept_security_context_impl<'a>(

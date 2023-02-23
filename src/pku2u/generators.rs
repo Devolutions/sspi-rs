@@ -90,6 +90,7 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::negoex()), MechType::from(oids::ntlm_ssp())])
 }
 
+#[instrument(level = "debug", ret)]
 pub fn generate_pku2u_nego_req(service_names: Vec<&str>, config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
     let mut snames = Vec::with_capacity(service_names.len());
     for sname in service_names {
@@ -112,6 +113,7 @@ pub fn generate_pku2u_nego_req(service_names: Vec<&str>, config: &Pku2uConfig) -
     })
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<ApplicationTag0<GssApiNegInit>> {
     Ok(ApplicationTag0(GssApiNegInit {
         oid: ObjectIdentifierAsn1::from(oids::spnego()),
@@ -124,6 +126,7 @@ pub fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<ApplicationTag0<Gs
     }))
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<NegTokenTarg>> {
     Ok(ExplicitContextTag1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
@@ -157,6 +160,8 @@ pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key
                 format!("Cannot calculate signer info signature: {:?}", err),
             )
         })?;
+
+    trace!(?encoded_signed_attributes, ?signature, "Pku2u signed attributes",);
 
     Ok(SignerInfo {
         version: CmsVersion::V1,
@@ -223,6 +228,7 @@ pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
     })
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_pa_datas_for_as_req(
     p2p_cert: &Certificate,
     kdc_req_body: &KdcReqBody,
@@ -238,6 +244,7 @@ pub fn generate_pa_datas_for_as_req(
     // [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
     // paChecksum: Contains the SHA1 checksum, performed over KDC-REQ-BODY.
     let encoded_kdc_req_body = picky_asn1_der::to_vec(&kdc_req_body)?;
+    trace!(?kdc_req_body, "Encoded KdcReqBody");
 
     let mut sha1 = Sha1::new();
     sha1.update(&encoded_kdc_req_body);
@@ -281,6 +288,7 @@ pub fn generate_pa_datas_for_as_req(
     };
 
     let encoded_auth_pack = picky_asn1_der::to_vec(&auth_pack)?;
+    trace!(?encoded_auth_pack, "Encoded auth pack");
 
     let mut sha1 = Sha1::new();
     sha1.update(&encoded_auth_pack);
@@ -345,6 +353,7 @@ pub fn generate_authenticator_extension(key: &[u8], payload: &[u8]) -> Result<Au
     })
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,

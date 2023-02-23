@@ -17,7 +17,7 @@ use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
     ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
 };
-use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR};
+use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR};
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV, NET_BIOS_ADDR_TYPE,
     NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE,
@@ -86,6 +86,7 @@ pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
     domain.to_string()
 }
 
+#[derive(Debug)]
 pub struct GenerateAsPaDataOptions<'a> {
     pub password: &'a str,
     pub salt: Vec<u8>,
@@ -93,6 +94,7 @@ pub struct GenerateAsPaDataOptions<'a> {
     pub with_pre_auth: bool,
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         password,
@@ -118,8 +120,19 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
 
         let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
         let cipher = encryption_type.cipher();
+
         let key = cipher.generate_key_from_password(password.as_bytes(), salt)?;
+        trace!(?key, ?encryption_type, "AS timestamp encryption params",);
+
         let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes)?;
+
+        trace!(
+            ?current_date,
+            ?microseconds,
+            ?timestamp_bytes,
+            ?encrypted_timestamp,
+            "Encrypted timestamp params",
+        );
 
         vec![PaData {
             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
@@ -143,6 +156,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
     Ok(pa_datas)
 }
 
+#[derive(Debug)]
 pub struct GenerateAsReqOptions<'a> {
     pub realm: &'a str,
     pub username: &'a str,
@@ -153,6 +167,7 @@ pub struct GenerateAsReqOptions<'a> {
     pub context_requirements: ClientRequestFlags,
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
     let GenerateAsReqOptions {
         realm,
@@ -216,6 +231,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
     })
 }
 
+#[instrument(level = "debug", ret, skip_all)]
 pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -227,6 +243,7 @@ pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
     })
 }
 
+#[derive(Debug)]
 pub struct GenerateTgsReqOptions<'a> {
     pub realm: &'a str,
     pub service_principal: &'a str,
@@ -238,6 +255,7 @@ pub struct GenerateTgsReqOptions<'a> {
     pub context_requirements: ClientRequestFlags,
 }
 
+#[instrument(level = "debug", ret)]
 pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
     let GenerateTgsReqOptions {
         realm,
@@ -326,21 +344,25 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
     }))
 }
 
+#[derive(Debug)]
 pub struct ChecksumOptions {
     pub checksum_type: Vec<u8>,
     pub checksum_value: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct AuthenticatorChecksumExtension {
     pub extension_type: u32,
     pub extension_value: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct EncKey {
     pub key_type: CipherSuite,
     pub key_value: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct GenerateAuthenticatorOptions<'a> {
     pub kdc_rep: &'a KdcRep,
     pub seq_num: Option<u32>,
@@ -350,6 +372,7 @@ pub struct GenerateAuthenticatorOptions<'a> {
     pub extensions: Vec<AuthenticatorChecksumExtension>,
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,
@@ -430,11 +453,23 @@ pub fn generate_tgs_ap_req(
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
     let cipher = encryption_type.cipher();
 
+    let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
     let encrypted_authenticator = cipher.encrypt(
         session_key,
         TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
-        &picky_asn1_der::to_vec(&authenticator)?,
+        &encoded_authenticator,
     )?;
+
+    trace!(
+        ?session_key,
+        ?encryption_type,
+        "TGS AP_REQ authenticator encryption params",
+    );
+    trace!(
+        plain = ?encoded_authenticator,
+        encrypted = ?encrypted_authenticator,
+        "TGS AP_REQ authenticator",
+    );
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -452,6 +487,7 @@ pub fn generate_tgs_ap_req(
     }))
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_ap_req(
     ticket: Ticket,
     session_key: &[u8],
@@ -463,8 +499,13 @@ pub fn generate_ap_req(
     let cipher = encryption_type.cipher();
 
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
-
     let encrypted_authenticator = cipher.encrypt(session_key, AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
+
+    trace!(
+        plain = ?encoded_authenticator,
+        encrypted = ?encrypted_authenticator,
+        "AP_REQ authenticator",
+    );
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -542,6 +583,7 @@ pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegToken
     })
 }
 
+#[instrument(level = "trace", ret)]
 pub fn generate_krb_priv_request(
     ticket: Ticket,
     session_key: &[u8],
@@ -570,11 +612,17 @@ pub fn generate_krb_priv_request(
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
     let cipher = encryption_type.cipher();
 
-    let enc_part = cipher.encrypt(
-        &authenticator.0.subkey.0.as_ref().unwrap().key_value.0,
-        13,
-        &picky_asn1_der::to_vec(&enc_part)?,
-    )?;
+    let encryption_key = &authenticator.0.subkey.0.as_ref().unwrap().key_value.0;
+    let encoded_krb_priv = picky_asn1_der::to_vec(&enc_part)?;
+
+    let enc_part = cipher.encrypt(encryption_key, KRB_PRIV_ENC_PART, &encoded_krb_priv)?;
+
+    trace!(?encryption_key, ?encryption_type, "KRB_PRIV encryption params",);
+    trace!(
+        plain = ?encoded_krb_priv,
+        encrypted = ?enc_part,
+        "KRB_PRIV encrypted part",
+    );
 
     let krb_priv = KrbPriv::from(KrbPrivInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),

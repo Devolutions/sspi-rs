@@ -226,7 +226,7 @@ fn compute_ntlmv2_hash_password_is_less_than_hash_len_offset() {
         0xc, 0x86, 0x8a, 0x40, 0x3b, 0xfd, 0x7a, 0x93, 0xa3, 0x0, 0x1e, 0xf2, 0x2e, 0xf0, 0x2e, 0x3f,
     ];
 
-    assert_eq!(compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap(), expected);
+    assert_eq!(compute_ntlm_v2_hash(&TEST_CREDENTIALS).unwrap(), expected);
 }
 
 #[test]
@@ -299,12 +299,12 @@ fn compute_ntlmv2_hash_with_large_password() {
 #[test]
 #[should_panic]
 fn compute_ntlmv2_hash_fails_on_empty_identity() {
-    assert!(compute_ntlm_v2_hash(&*TEST_CREDENTIALS).is_err());
+    assert!(compute_ntlm_v2_hash(&TEST_CREDENTIALS).is_err());
 }
 
 #[test]
 fn compute_lm_v2_repsonse_correct_computes_response() {
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&TEST_CREDENTIALS).unwrap();
     let client_challenge = CLIENT_CHALLENGE.as_ref();
     let server_challenge = SERVER_CHALLENGE.as_ref();
 
@@ -324,7 +324,7 @@ fn compute_ntlm_v2_repsonse_correct_computes_challenge_response() {
     let server_challenge = SERVER_CHALLENGE;
     let client_challenge = CLIENT_CHALLENGE;
     let target_info = Vec::new();
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&TEST_CREDENTIALS).unwrap();
     let timestamp = TIMESTAMP;
 
     let expected = [
@@ -349,7 +349,7 @@ fn compute_ntlm_v2_repsonse_correct_computes_key_exchange_key() {
     let server_challenge = SERVER_CHALLENGE;
     let client_challenge = CLIENT_CHALLENGE;
     let target_info = Vec::new();
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&*TEST_CREDENTIALS).unwrap();
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&TEST_CREDENTIALS).unwrap();
     let timestamp = TIMESTAMP;
 
     let expected = [

@@ -58,6 +58,12 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     let rsa_key_blob = BcryptRsaKeyBlob::from_read(&mut buffer)?;
 
     if rsa_key_blob.magic != BCRYPT_RSAFULLPRIVATE_MAGIC {
+        debug!(
+            expected = BCRYPT_RSAFULLPRIVATE_MAGIC,
+            actual = rsa_key_blob.magic,
+            "Invalid RSA key blob magic",
+        );
+
         return Err(Error::new(
             ErrorKind::InternalError,
             "Cannot extract certificate private key: invalid key blob magic".into(),
@@ -87,6 +93,8 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
 
     let mut private_exp = vec![0; (rsa_key_blob.bit_len / 8) as usize];
     buffer.read_exact(&mut private_exp)?;
+
+    debug!("RSA private key components are decoded successfully");
 
     let rsa_private_key = PrivateKey::from_rsa_components(
         &BigUint::from_bytes_be(&modulus),
@@ -157,6 +165,11 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     );
 
     if status == 0 || private_key_handle == 0 {
+        error!(
+            ?status,
+            private_key_handle, "Cannot acquire certificate private key handle",
+        );
+
         return Err(Error::new(
             ErrorKind::InternalError,
             "Cannot extract certificate private key: invalid handle".into(),
@@ -220,6 +233,8 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
         ));
     }
 
+    debug!("The certificate private key exported");
+
     let private_key = decode_private_key(&private_key_blob[0..private_key_buffer_len as usize])?;
 
     Ok(private_key)
@@ -239,6 +254,11 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
             continue;
         }
+
+        debug!(
+            serial_number = ?cert.tbs_certificate.serial_number.0,
+            "Found suitable client p2p certificate",
+        );
 
         let private_key = export_certificate_private_key(certificate);
 

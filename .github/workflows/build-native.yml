@@ -229,9 +229,7 @@ jobs:
 
           $CargoArgs = @('build', '-p', 'sspi-ffi', '--target', $RustTarget)
 
-          if ($BuildType -Eq 'debug') {
-            $CargoArgs += @('--features', 'debug_mode')
-          } else {
+          if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')
           }
 

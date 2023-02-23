@@ -186,6 +186,7 @@ impl SspiImpl for Ntlm {
     type CredentialsHandle = Option<AuthIdentityBuffers>;
     type AuthenticationData = AuthIdentity;
 
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -205,10 +206,13 @@ impl SspiImpl for Ntlm {
         })
     }
 
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
+        trace!(?builder);
+
         let status = match self.state {
             NtlmState::Initial => {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
@@ -253,6 +257,8 @@ impl SspiImpl for Ntlm {
             }
         };
 
+        trace!(output_buffers = ?builder.output);
+
         Ok(InitializeSecurityContextResult {
             status,
             flags: ClientResponseFlags::empty(),
@@ -260,6 +266,7 @@ impl SspiImpl for Ntlm {
         })
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
         builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -308,10 +315,12 @@ impl SspiImpl for Ntlm {
 }
 
 impl Sspi for Ntlm {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
@@ -341,6 +350,7 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBuffer],
@@ -374,6 +384,7 @@ impl Sspi for Ntlm {
         Ok(DecryptionFlags::empty())
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> crate::Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: 2010,
@@ -383,6 +394,7 @@ impl Sspi for Ntlm {
         })
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
         if let Some(ref identity_buffers) = self.identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
@@ -398,10 +410,12 @@ impl Sspi for Ntlm {
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_package_info(&mut self) -> crate::Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Ntlm)
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
@@ -409,6 +423,7 @@ impl Sspi for Ntlm {
         ))
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
@@ -418,6 +433,7 @@ impl Sspi for Ntlm {
 }
 
 impl SspiEx for Ntlm {
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         self.identity = Some(identity.into());
     }

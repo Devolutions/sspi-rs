@@ -23,6 +23,7 @@ pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T,
     Ok((picky_asn1_der::from_bytes(data)?, data))
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
     Ok(picky_asn1_der::from_bytes(
         &as_rep
@@ -45,6 +46,7 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
     )?)
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN]> {
     let nonce = dh_rep_info
         .server_dh_nonce
@@ -67,6 +69,7 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
     Ok(nonce.try_into().unwrap())
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
     let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
     if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
@@ -87,7 +90,14 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
         .0
     {
         ContentValue::OctetString(data) => &data.0,
-        _ => return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info".into())),
+        content_value => {
+            error!(
+                ?content_value,
+                "The server has sent KDC DH key info in unsupported format. Only ContentValue::OctetString is supported",
+            );
+
+            return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info".into()));
+        }
     };
 
     let dh_key_info: KdcDhKeyInfo = picky_asn1_der::from_bytes(dh_key_info_data)?;
@@ -104,6 +114,7 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
     Ok(key.as_unsigned_bytes_be().to_vec())
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &EncryptionParams) -> Result<Vec<u8>> {
     let cipher = enc_params
         .encryption_type

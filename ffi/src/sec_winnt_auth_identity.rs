@@ -378,7 +378,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 }
 
 #[allow(clippy::missing_safety_doc)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiEncodeStringsAsAuthIdentity"))]
 #[no_mangle]
 pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
@@ -414,7 +414,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
 }
 
 #[allow(clippy::missing_safety_doc)]
-#[cfg_attr(feature = "debug_mode", instrument(skip_all))]
+#[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiFreeAuthIdentity"))]
 #[no_mangle]
 pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> SecurityStatus {
