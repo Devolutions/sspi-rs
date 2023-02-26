@@ -1247,10 +1247,20 @@ pub enum DataRepresentation {
 /// # MSDN
 ///
 /// * [SecBuffer structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecurityBuffer {
     pub buffer: Vec<u8>,
     pub buffer_type: SecurityBufferType,
+}
+
+impl fmt::Debug for SecurityBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SecurityBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
+        self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, " }}")?;
+
+        Ok(())
+    }
 }
 
 impl SecurityBuffer {

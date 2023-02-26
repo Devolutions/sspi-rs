@@ -3,6 +3,7 @@ mod messages;
 #[cfg(test)]
 mod test;
 
+use std::fmt::Debug;
 use std::io;
 
 use bitflags::bitflags;
@@ -514,7 +515,7 @@ pub struct AuthIdentity {
     pub domain: Option<String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
+#[derive(Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
     pub user: Vec<u8>,
     pub domain: Vec<u8>,
@@ -528,6 +529,35 @@ impl AuthIdentityBuffers {
 
     pub fn is_empty(&self) -> bool {
         self.user.is_empty()
+    }
+}
+
+impl Debug for AuthIdentityBuffers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AuthIdentityBuffers {{ user: 0x")?;
+        self.user.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, ", domain: 0x")?;
+        self.domain.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, ", password: {:?} }}", self.password)?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::AuthIdentityBuffers;
+
+    #[test]
+    fn td() {
+        let auth = AuthIdentityBuffers {
+            user: vec![98, 0, 50, 0],
+            domain: vec![69, 0, 88, 0, 65, 0, 77, 0, 80, 0, 76, 0, 69, 0],
+            password: vec![
+                113, 0, 113, 0, 113, 0, 81, 0, 81, 0, 81, 0, 49, 0, 49, 0, 49, 0, 33, 0, 33, 0, 33, 0,
+            ],
+        };
+        println!("{:?}", auth);
     }
 }
 
