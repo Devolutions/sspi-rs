@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::generators::get_client_principal_realm;
 use crate::network_client::NetworkClientFactory;
+use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 #[cfg(feature = "network_client")]
@@ -213,17 +214,28 @@ impl Negotiate {
         package_list: &Option<String>,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
-        let PackageListConfig { ntlm, kerberos, pku2u } = Self::parse_package_list_config(package_list);
+        let PackageListConfig {
+            ntlm,
+            kerberos: is_kerberos,
+            pku2u: is_pku2u,
+        } = Self::parse_package_list_config(package_list);
 
         match &negotiated_protocol {
-            NegotiatedProtocol::Pku2u(_) => {
-                if !pku2u {
-                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                if !is_pku2u {
+                    let ntlm_config = NtlmConfig::new(pku2u.config().hostname.clone());
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new(ntlm_config)));
                 }
             }
-            NegotiatedProtocol::Kerberos(_) => {
-                if !kerberos {
-                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new()));
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                if !is_kerberos {
+                    let ntlm_config = kerberos
+                        .config()
+                        .hostname
+                        .clone()
+                        .map(NtlmConfig::new)
+                        .unwrap_or_default();
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new(ntlm_config)));
                 }
             }
             NegotiatedProtocol::Ntlm(_) => {
@@ -402,7 +414,14 @@ impl SspiImpl for Negotiate {
                 }) => {
                     warn!("Negotiate: Fall back to the NTLM");
 
-                    self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone()));
+                    let ntlm_config = kerberos
+                        .config()
+                        .hostname
+                        .clone()
+                        .map(NtlmConfig::new)
+                        .unwrap_or_default();
+                    self.protocol =
+                        NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone(), ntlm_config));
                 }
                 result => return result,
             };

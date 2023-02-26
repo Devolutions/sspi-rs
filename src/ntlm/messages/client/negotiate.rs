@@ -15,9 +15,9 @@ struct NegotiateMessageFields {
 }
 
 impl NegotiateMessageFields {
-    pub fn new(offset: u32) -> Self {
+    pub fn new(offset: u32, workstation: Option<Vec<u8>>) -> Self {
         let mut domain_name = MessageFields::new();
-        let mut workstation = MessageFields::new();
+        let mut workstation = MessageFields::with_buffer(workstation.unwrap_or_default());
 
         domain_name.buffer_offset = offset;
         workstation.buffer_offset = domain_name.buffer_offset + domain_name.buffer.len() as u32;
@@ -47,8 +47,17 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
 pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
-    let negotiate_flags = get_flags();
-    let message_fields = NegotiateMessageFields::new(NEGO_MESSAGE_OFFSET as u32);
+    println!("{:?}", context.config());
+
+    let negotiate_flags = get_flags(context);
+    let message_fields = NegotiateMessageFields::new(
+        NEGO_MESSAGE_OFFSET as u32,
+        context
+            .config
+            .workstation
+            .as_ref()
+            .map(|workstation| workstation.as_bytes().to_vec()),
+    );
 
     let mut buffer = Vec::with_capacity(message_fields.data_len());
 
@@ -67,9 +76,9 @@ pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> cra
     Ok(crate::SecurityStatus::ContinueNeeded)
 }
 
-fn get_flags() -> NegotiateFlags {
+fn get_flags(context: &Ntlm) -> NegotiateFlags {
     // NTLMv2
-    NegotiateFlags::NTLM_SSP_NEGOTIATE56
+    let mut flags = NegotiateFlags::NTLM_SSP_NEGOTIATE56
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_LM_KEY
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_OEM
     // ASC_REQ_CONFIDENTIALITY, ISC_REQ_CONFIDENTIALITY always set in the nla
@@ -83,7 +92,13 @@ fn get_flags() -> NegotiateFlags {
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION
+        | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
+
+    if context.config().workstation.is_some() {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_WORKSTATION_SUPPLIED;
+    }
+
+    flags
 }
 
 fn write_header(

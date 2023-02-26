@@ -130,6 +130,10 @@ impl Kerberos {
         })
     }
 
+    pub fn config(&self) -> &KerberosConfig {
+        &self.config
+    }
+
     pub fn next_seq_number(&mut self) -> u32 {
         self.seq_number += 1;
         self.seq_number

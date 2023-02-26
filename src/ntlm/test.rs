@@ -27,7 +27,7 @@ lazy_static! {
 
 #[test]
 fn encrypt_message_crypts_data() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut buffers = vec![
@@ -47,7 +47,7 @@ fn encrypt_message_crypts_data() {
 
 #[test]
 fn encrypt_message_correct_computes_digest() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.send_signing_key = SIGNING_KEY;
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -68,7 +68,7 @@ fn encrypt_message_correct_computes_digest() {
 
 #[test]
 fn encrypt_message_writes_seq_num_to_signature() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.send_signing_key = SIGNING_KEY;
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -89,7 +89,7 @@ fn encrypt_message_writes_seq_num_to_signature() {
 
 #[test]
 fn decrypt_message_decrypts_data() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -107,7 +107,7 @@ fn decrypt_message_decrypts_data() {
 
 #[test]
 fn decrypt_message_does_not_fail_on_correct_signature() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -121,7 +121,7 @@ fn decrypt_message_does_not_fail_on_correct_signature() {
 
 #[test]
 fn decrypt_message_fails_on_incorrect_version() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -141,7 +141,7 @@ fn decrypt_message_fails_on_incorrect_version() {
 
 #[test]
 fn decrypt_message_fails_on_incorrect_checksum() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -161,7 +161,7 @@ fn decrypt_message_fails_on_incorrect_checksum() {
 
 #[test]
 fn decrypt_message_fails_on_incorrect_seq_num() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
@@ -181,7 +181,7 @@ fn decrypt_message_fails_on_incorrect_seq_num() {
 
 #[test]
 fn decrypt_message_fails_on_incorrect_signing_key() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
 
     context.recv_signing_key = SEALING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
@@ -196,7 +196,7 @@ fn decrypt_message_fails_on_incorrect_signing_key() {
 
 #[test]
 fn decrypt_message_fails_on_incorrect_sealing_key() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
 
     context.recv_signing_key = SIGNING_KEY;
     context.recv_sealing_key = Some(Rc4::new(&SIGNING_KEY));
@@ -211,7 +211,7 @@ fn decrypt_message_fails_on_incorrect_sealing_key() {
 
 #[test]
 fn initialize_security_context_wrong_state_negotiate() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Negotiate;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -229,7 +229,7 @@ fn initialize_security_context_wrong_state_negotiate() {
 
 #[test]
 fn initialize_security_context_wrong_state_authenticate() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Authenticate;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -247,7 +247,7 @@ fn initialize_security_context_wrong_state_authenticate() {
 
 #[test]
 fn initialize_security_context_wrong_state_completion() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Completion;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -265,7 +265,7 @@ fn initialize_security_context_wrong_state_completion() {
 
 #[test]
 fn initialize_security_context_wrong_state_final() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Final;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -283,7 +283,7 @@ fn initialize_security_context_wrong_state_final() {
 
 #[test]
 fn initialize_security_context_writes_negotiate_message() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
 
     context.state = NtlmState::Initial;
 
@@ -306,7 +306,7 @@ fn initialize_security_context_writes_negotiate_message() {
 
 #[test]
 fn initialize_security_context_reads_challenge_message() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
 
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(Vec::new()));
@@ -337,7 +337,7 @@ fn initialize_security_context_reads_challenge_message() {
 
 #[test]
 fn initialize_security_context_writes_authenticate_message() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Challenge;
     context.negotiate_message = Some(NegotiateMessage::new(Vec::new()));
 
@@ -370,7 +370,7 @@ fn initialize_security_context_writes_authenticate_message() {
 
 #[test]
 fn initialize_security_context_fails_on_empty_output_on_challenge_state() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Challenge;
 
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
@@ -387,7 +387,7 @@ fn initialize_security_context_fails_on_empty_output_on_challenge_state() {
 
 #[test]
 fn accept_security_context_wrong_state_negotiate() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Negotiate;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -405,7 +405,7 @@ fn accept_security_context_wrong_state_negotiate() {
 
 #[test]
 fn accept_security_context_wrong_state_challenge() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Challenge;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -423,7 +423,7 @@ fn accept_security_context_wrong_state_challenge() {
 
 #[test]
 fn accept_security_context_wrong_state_completion() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Completion;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -441,7 +441,7 @@ fn accept_security_context_wrong_state_completion() {
 
 #[test]
 fn accept_security_context_wrong_state_final() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Final;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -459,7 +459,7 @@ fn accept_security_context_wrong_state_final() {
 
 #[test]
 fn accept_security_context_reads_negotiate_message() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Initial;
 
     let input = SecurityBuffer::new(
@@ -486,7 +486,7 @@ fn accept_security_context_reads_negotiate_message() {
 
 #[test]
 fn accept_security_context_writes_challenge_message() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Initial;
 
     let input = SecurityBuffer::new(
@@ -515,7 +515,7 @@ fn accept_security_context_writes_challenge_message() {
 
 #[test]
 fn accept_security_context_reads_authenticate() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Authenticate;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
     context.challenge_message = Some(ChallengeMessage::new(
@@ -567,7 +567,7 @@ fn accept_security_context_reads_authenticate() {
 
 #[test]
 fn accept_security_context_fails_on_empty_output_on_negotiate_state() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
 
     context.state = NtlmState::Initial;
 
@@ -585,7 +585,7 @@ fn accept_security_context_fails_on_empty_output_on_negotiate_state() {
 
 #[test]
 fn complete_auth_token_fails_on_incorrect_state() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.state = NtlmState::Authenticate;
 
     assert!(context.complete_auth_token(&mut []).is_err());
@@ -593,7 +593,7 @@ fn complete_auth_token_fails_on_incorrect_state() {
 
 #[test]
 fn complete_auth_token_changes_state() {
-    let mut context = Ntlm::new();
+    let mut context = Ntlm::default();
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     context.state = NtlmState::Completion;
     context.identity = Some(TEST_CREDENTIALS.clone());

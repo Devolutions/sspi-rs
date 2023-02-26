@@ -24,7 +24,7 @@ use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::{self, Kerberos};
-use crate::ntlm::{self, AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::ntlm::{self, AuthIdentity, AuthIdentityBuffers, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertContext, CertTrustStatus,
@@ -159,7 +159,7 @@ pub enum ClientMode {
     Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),
     Pku2u(Pku2uConfig),
-    Ntlm,
+    Ntlm(NtlmConfig),
 }
 
 /// Implements the CredSSP *client*. The client's credentials are to
@@ -242,7 +242,7 @@ impl CredSspClient {
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
                     Pku2u::new_client_from_config(pku2u.clone())?,
                 ))),
-                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+                ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new(ntlm.clone())))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = self
                 .context
@@ -413,7 +413,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
                 ))),
-                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+                ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new(ntlm.clone())))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
                     Pku2u::new_server_from_config(pku2u.clone()),
                     ts_request
