@@ -16,7 +16,7 @@ fn successful_ntlm_authentication_with_winapi_client_and_non_winapi_server() {
     let mut client = winapi::Ntlm::new();
     let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();
 
-    let mut server = Ntlm::new();
+    let mut server = Ntlm::default();
     let server_credentials_handle = create_server_credentials_handle(&mut server).unwrap();
 
     let (client_status, server_status) = process_authentication_without_complete(
