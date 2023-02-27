@@ -35,6 +35,12 @@ impl<T: Zeroize> AsRef<T> for Secret<T> {
     }
 }
 
+impl<T: Zeroize> AsMut<T> for Secret<T> {
+    fn as_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
 impl<T: Zeroize> From<T> for Secret<T> {
     fn from(inner: T) -> Self {
         Self(inner)
