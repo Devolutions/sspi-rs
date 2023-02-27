@@ -215,7 +215,7 @@ impl Negotiate {
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
-            ntlm,
+            ntlm: is_ntlm,
             kerberos: is_kerberos,
             pku2u: is_pku2u,
         } = Self::parse_package_list_config(package_list);
@@ -224,7 +224,7 @@ impl Negotiate {
             NegotiatedProtocol::Pku2u(pku2u) => {
                 if !is_pku2u {
                     let ntlm_config = NtlmConfig::new(pku2u.config().hostname.clone());
-                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new(ntlm_config)));
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config)));
                 }
             }
             NegotiatedProtocol::Kerberos(kerberos) => {
@@ -235,19 +235,19 @@ impl Negotiate {
                         .clone()
                         .map(NtlmConfig::new)
                         .unwrap_or_default();
-                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::new(ntlm_config)));
+                    filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config)));
                 }
             }
             NegotiatedProtocol::Ntlm(_) => {
                 #[cfg(not(feature = "network_client"))]
-                if !ntlm {
+                if !is_ntlm {
                     return Err(Error::new(
                         ErrorKind::InvalidParameter,
                         "Can not initialize Kerberos: network client is not provided".into(),
                     ));
                 }
                 #[cfg(feature = "network_client")]
-                if !ntlm {
+                if !is_ntlm {
                     let kerberos_client = Kerberos::new_client_from_config(KerberosConfig::from_env())?;
                     filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
                 }

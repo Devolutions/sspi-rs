@@ -117,7 +117,31 @@ struct AuthenticateMessage {
 }
 
 impl Ntlm {
-    pub fn new(config: NtlmConfig) -> Self {
+    pub fn new() -> Self {
+        Self {
+            config: NtlmConfig::default(),
+
+            negotiate_message: None,
+            challenge_message: None,
+            authenticate_message: None,
+
+            channel_bindings: None,
+
+            state: NtlmState::Initial,
+            flags: NegotiateFlags::empty(),
+            identity: None,
+            version: DEFAULT_NTLM_VERSION,
+
+            send_single_host_data: false,
+
+            send_signing_key: [0x00; HASH_SIZE],
+            recv_signing_key: [0x00; HASH_SIZE],
+            send_sealing_key: None,
+            recv_sealing_key: None,
+        }
+    }
+
+    pub fn with_config(config: NtlmConfig) -> Self {
         Self {
             config,
 
@@ -176,7 +200,7 @@ impl Ntlm {
 
 impl Default for Ntlm {
     fn default() -> Self {
-        Self::new(Default::default())
+        Self::with_config(Default::default())
     }
 }
 

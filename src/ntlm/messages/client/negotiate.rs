@@ -47,8 +47,6 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
 pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
-    println!("{:?}", context.config());
-
     let negotiate_flags = get_flags(context);
     let message_fields = NegotiateMessageFields::new(
         NEGO_MESSAGE_OFFSET as u32,

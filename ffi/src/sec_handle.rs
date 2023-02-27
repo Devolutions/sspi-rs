@@ -168,7 +168,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             ntlm::PKG_NAME => {
                 let hostname = attributes.workstation.clone().unwrap_or_else(|| whoami::hostname());
 
-                SspiContext::Ntlm(Ntlm::new(NtlmConfig::new(hostname)))
+                SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname)))
             }
             #[cfg(feature = "tsssp")]
             sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Negotiate(
@@ -999,7 +999,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     krb_config
                 )))
             },
-            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new(NtlmConfig::new(whoami::hostname()))),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(whoami::hostname()))),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();
             }
