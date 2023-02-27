@@ -405,7 +405,7 @@ impl Sspi for Kerberos {
                 context_requirements: ClientRequestFlags::empty(),
             },
             GenerateAsPaDataOptions {
-                password,
+                password: password.as_ref(),
                 salt: salt.as_bytes().to_vec(),
                 enc_params: self.encryption_params.clone(),
                 with_pre_auth: false,
@@ -421,7 +421,7 @@ impl Sspi for Kerberos {
 
         self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
 
-        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password, &self.encryption_params)?;
+        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password.as_ref(), &self.encryption_params)?;
 
         let seq_num = self.next_seq_number();
 
@@ -447,7 +447,7 @@ impl Sspi for Kerberos {
         let krb_priv = generate_krb_priv_request(
             as_rep.0.ticket.0,
             &session_key,
-            change_password.new_password.as_bytes(),
+            change_password.new_password.as_ref().as_bytes(),
             &authenticator,
             &self.encryption_params,
             seq_num,
