@@ -522,7 +522,7 @@ impl SspiImpl for Pku2u {
                     &self.config.p2p_certificate,
                     &kdc_req_body,
                     &self.dh_parameters,
-                    &self.config.private_key,
+                    self.config.private_key.as_ref(),
                 )?;
                 let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
@@ -920,7 +920,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             mode: Pku2uMode::Server,
             config: Pku2uConfig {
                 p2p_certificate: p2p_certificate.clone(),
-                private_key: private_key.clone(),
+                private_key: private_key.clone().into(),
                 hostname: "hostname".into(),
             },
             state: Pku2uState::Final,
@@ -945,7 +945,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             mode: Pku2uMode::Client,
             config: Pku2uConfig {
                 p2p_certificate,
-                private_key,
+                private_key: private_key.into(),
                 hostname: "hostname".into(),
             },
             state: Pku2uState::Final,
