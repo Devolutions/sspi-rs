@@ -233,7 +233,7 @@ fn compute_ntlmv2_hash_password_is_less_than_hash_len_offset() {
 fn compute_ntlmv2_hash_password_local_logon() {
     let identity = AuthIdentity {
         username: String::from("username"),
-        password: String::from("password"),
+        password: String::from("password").into(),
         domain: Some(String::from("win7")),
     }
     .into();
@@ -248,7 +248,7 @@ fn compute_ntlmv2_hash_password_local_logon() {
 fn compute_ntlmv2_hash_password_domain_logon() {
     let identity = AuthIdentity {
         username: String::from("Administrator"),
-        password: String::from("Password123!"),
+        password: String::from("Password123!").into(),
         domain: Some(String::from("AWAKECODING")),
     }
     .into();
@@ -263,7 +263,7 @@ fn compute_ntlmv2_hash_password_domain_logon() {
 fn compute_ntlmv2_hash_works_on_empty_password() {
     let identity = AuthIdentity {
         username: String::from("Administrator"),
-        password: String::new(),
+        password: String::new().into(),
         domain: Some(String::from("AWAKECODING")),
     }
     .into();
@@ -282,7 +282,7 @@ fn compute_ntlmv2_hash_with_large_password() {
 
     let identity = AuthIdentity {
         username: String::from("Administrator"),
-        password,
+        password: password.into(),
         domain: Some(String::from("AWAKECODING")),
     }
     .into();

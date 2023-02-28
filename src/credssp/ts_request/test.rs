@@ -200,7 +200,7 @@ const TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: [u8; 25] = [
 lazy_static! {
     static ref AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: AuthIdentityBuffers = AuthIdentity {
         username: String::from("a"),
-        password: String::from("1"),
+        password: String::from("1").into(),
         domain: None
     }
     .into();
@@ -208,19 +208,20 @@ lazy_static! {
         username: String::from("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890"),
         password: String::from(
             "@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?"
-        ),
+        )
+        .into(),
         domain: None
     }
     .into();
     static ref AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: AuthIdentityBuffers = AuthIdentity {
         username: String::from("Username"),
-        password: String::from("Password"),
+        password: String::from("Password").into(),
         domain: Some(String::from("Domain"))
     }
     .into();
     static ref AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: AuthIdentityBuffers = AuthIdentity {
         username: String::from(""),
-        password: String::from(""),
+        password: String::from("").into(),
         domain: Some(String::from(""))
     }
     .into();

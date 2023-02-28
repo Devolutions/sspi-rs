@@ -582,7 +582,7 @@ impl SspiImpl for Kerberos {
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
-                let password = utf16_bytes_to_utf8_string(&credentials.password);
+                let password = utf16_bytes_to_utf8_string(credentials.password.as_ref());
                 let salt = format!("{}{}", domain, username);
 
                 self.realm = Some(get_client_principal_realm(&username, &domain));

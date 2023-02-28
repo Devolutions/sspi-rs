@@ -168,14 +168,14 @@ pub unsafe fn auth_data_to_identity_buffers(
         Ok(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
         })
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
         Ok(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
         })
     }
 }
@@ -284,7 +284,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 
     // remove null
     password.pop();
-    auth_identity_buffers.password = password;
+    auth_identity_buffers.password = password.into();
 
     Ok(auth_identity_buffers)
 }
@@ -372,7 +372,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
     // remove null
     password.truncate(password.len() - 2);
-    auth_identity_buffers.password = password;
+    auth_identity_buffers.password = password.into();
 
     Ok(auth_identity_buffers)
 }

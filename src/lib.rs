@@ -89,6 +89,7 @@ mod crypto;
 mod dns;
 mod kdc;
 mod krb;
+mod secret;
 mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
@@ -105,6 +106,7 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
+pub use secret::Secret;
 use utils::map_keb_error_code_to_sspi_error;
 
 use self::builders::{

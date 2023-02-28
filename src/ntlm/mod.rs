@@ -19,8 +19,8 @@ use crate::{
     utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertTrustStatus, ClientResponseFlags,
     ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
     FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContextResult,
-    PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    PackageCapabilities, PackageInfo, Result, Secret, SecurityBuffer, SecurityBufferType, SecurityPackageType,
+    SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -511,7 +511,7 @@ impl Mic {
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct AuthIdentity {
     pub username: String,
-    pub password: String,
+    pub password: Secret<String>,
     pub domain: Option<String>,
 }
 
@@ -519,12 +519,16 @@ pub struct AuthIdentity {
 pub struct AuthIdentityBuffers {
     pub user: Vec<u8>,
     pub domain: Vec<u8>,
-    pub password: Vec<u8>,
+    pub password: Secret<Vec<u8>>,
 }
 
 impl AuthIdentityBuffers {
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
-        Self { user, domain, password }
+        Self {
+            user,
+            domain,
+            password: Secret::new(password),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -546,16 +550,16 @@ impl Debug for AuthIdentityBuffers {
 
 #[cfg(test)]
 mod tests {
-    use crate::AuthIdentityBuffers;
+    use crate::{AuthIdentityBuffers, Secret};
 
     #[test]
     fn td() {
         let auth = AuthIdentityBuffers {
             user: vec![98, 0, 50, 0],
             domain: vec![69, 0, 88, 0, 65, 0, 77, 0, 80, 0, 76, 0, 69, 0],
-            password: vec![
+            password: Secret::new(vec![
                 113, 0, 113, 0, 113, 0, 81, 0, 81, 0, 81, 0, 49, 0, 49, 0, 49, 0, 33, 0, 33, 0, 33, 0,
-            ],
+            ]),
         };
         println!("{:?}", auth);
     }
@@ -569,7 +573,7 @@ impl From<AuthIdentity> for AuthIdentityBuffers {
                 .domain
                 .map(|v| utils::string_to_utf16(v.as_str()))
                 .unwrap_or_default(),
-            password: utils::string_to_utf16(credentials.password.as_str()),
+            password: utils::string_to_utf16(credentials.password.as_ref()).into(),
         }
     }
 }
@@ -578,7 +582,7 @@ impl From<AuthIdentityBuffers> for AuthIdentity {
     fn from(credentials_buffers: AuthIdentityBuffers) -> Self {
         Self {
             username: utils::bytes_to_utf16_string(credentials_buffers.user.as_ref()),
-            password: utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()),
+            password: utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()).into(),
             domain: if credentials_buffers.domain.is_empty() {
                 None
             } else {
