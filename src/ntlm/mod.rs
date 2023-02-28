@@ -18,7 +18,7 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
     SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 

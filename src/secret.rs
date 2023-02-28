@@ -15,7 +15,7 @@ impl<T: Zeroize> Secret<T> {
 
 impl<T: Zeroize> fmt::Debug for Secret<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "secret")?;
+        write!(f, "Secret")?;
 
         Ok(())
     }
@@ -58,7 +58,7 @@ impl SecretPrivateKey {
 
 impl fmt::Debug for SecretPrivateKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "secret private key")?;
+        write!(f, "SecretPrivateKey")?;
 
         Ok(())
     }

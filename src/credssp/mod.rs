@@ -24,7 +24,7 @@ use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::{self, Kerberos};
-use crate::ntlm::{self, Ntlm, SIGNATURE_SIZE, NtlmConfig};
+use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
