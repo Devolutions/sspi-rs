@@ -38,13 +38,13 @@ use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_s
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
-use crate::ntlm::AuthIdentityBuffers;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error,
+    ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
+    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";

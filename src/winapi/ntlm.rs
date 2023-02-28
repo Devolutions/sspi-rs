@@ -8,11 +8,10 @@ use crate::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandle, AcquireCredentialsHandleResult,
     InitializeSecurityContextResult,
 };
-use crate::ntlm::AuthIdentity;
 use crate::{
-    CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityPackageType,
-    SecurityStatus, Sspi, SspiImpl,
+    AuthIdentity, CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo,
+    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiImpl,
 };
 
 /// Represents a wrapper for Windows-provided NTLM.

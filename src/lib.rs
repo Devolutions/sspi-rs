@@ -84,6 +84,7 @@ pub mod pku2u;
 #[cfg(windows)]
 pub mod winapi;
 
+mod auth_identity;
 mod ber;
 mod crypto;
 mod dns;
@@ -106,9 +107,9 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
-pub use secret::Secret;
 use utils::map_keb_error_code_to_sspi_error;
 
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers};
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
     EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
@@ -121,8 +122,9 @@ pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::KerberosConfig;
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm};
+pub use self::ntlm::Ntlm;
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
+pub use self::secret::Secret;
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;

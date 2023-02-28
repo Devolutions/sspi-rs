@@ -4,8 +4,7 @@ mod test;
 use std::io::{self, Read};
 
 use super::CredSspMode;
-use crate::ber;
-use crate::ntlm::AuthIdentityBuffers;
+use crate::{ber, AuthIdentityBuffers};
 
 pub const TS_REQUEST_VERSION: u32 = 6;
 
