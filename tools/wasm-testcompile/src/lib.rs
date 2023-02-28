@@ -23,7 +23,7 @@ pub fn credssp_client() {
         AuthIdentity::default(),
         credssp::CredSspMode::WithCredentials,
         credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
-            protocol_config: Box::new(sspi::ntlm::NtlmConfig),
+            protocol_config: Box::new(sspi::ntlm::NtlmConfig::default()),
             package_list: None,
             hostname: "testhostname".into(),
             network_client_factory: Box::new(DummyNetworkClientFactory),

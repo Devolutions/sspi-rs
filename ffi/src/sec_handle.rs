@@ -66,6 +66,9 @@ pub const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x80000084;
 // detailed information on the established connection
 pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
 
+// Sets the name of a credential
+// In our library, we use this attribute to set the workstation for auth identity
+const SECPKG_CRED_ATTR_NAMES: c_ulong = 1;
 // Sets the Kerberos proxy setting
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
 
@@ -87,7 +90,8 @@ pub struct CredentialsHandle {
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
-    let hostname = whoami::hostname();
+    let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+
     if let Some(kdc_url) = attributes.kdc_url() {
         let kerberos_config = KerberosConfig::new(&kdc_url, Box::new(ReqwestNetworkClient::new()), hostname.clone());
         let negotiate_config = NegotiateConfig::new(
@@ -100,7 +104,7 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
         Negotiate::new(negotiate_config)
     } else {
         let negotiate_config = NegotiateConfig {
-            protocol_config: Box::new(NtlmConfig),
+            protocol_config: Box::new(NtlmConfig::new(hostname.clone())),
             package_list: attributes.package_list.clone(),
             hostname,
             network_client_factory: Box::new(RequestClientFactory),
@@ -147,7 +151,8 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 )?)?)
             }
             kerberos::PKG_NAME => {
-                let hostname = whoami::hostname();
+                let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
                         &kdc_url,
@@ -160,7 +165,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
             }
-            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            ntlm::PKG_NAME => {
+                let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+
+                SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname)))
+            }
             #[cfg(feature = "tsssp")]
             sspi_cred_ssp::PKG_NAME => SspiContext::CredSsp(SspiCredSsp::new_client(SspiContext::Negotiate(
                 create_negotiate_context(attributes)?,
@@ -822,7 +831,14 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
 
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
-        if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        if ul_attribute == SECPKG_CRED_ATTR_NAMES {
+            let workstation =
+                try_execute!(CStr::from_ptr(p_buffer as *const _).to_str(), ErrorKind::InvalidParameter).to_owned();
+
+            credentials_handle.attributes.workstation = Some(workstation);
+
+            0
+        } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
 
             let proxy_server = String::from_utf8_unchecked(
@@ -881,7 +897,13 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
 
         let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
-        if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
+        if ul_attribute == SECPKG_CRED_ATTR_NAMES {
+            let workstation = c_w_str_to_string(p_buffer as *const _);
+
+            credentials_handle.attributes.workstation = Some(workstation);
+
+            0
+        } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
 
             let proxy_server = String::from_utf16_lossy(from_raw_parts(
@@ -963,7 +985,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
         let mut sspi_context = match security_package_name {
             negotiate::PKG_NAME => {
                 let negotiate_config = NegotiateConfig {
-                    protocol_config: Box::new(NtlmConfig),
+                    protocol_config: Box::new(NtlmConfig::new(whoami::hostname())),
                     package_list: None,
                     hostname: whoami::hostname(),
                     network_client_factory: Box::new(RequestClientFactory),
@@ -977,7 +999,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     krb_config
                 )))
             },
-            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::new()),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(whoami::hostname()))),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();
             }

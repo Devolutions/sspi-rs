@@ -14,6 +14,7 @@ pub struct CredentialsAttributes {
     pub package_list: Option<String>,
     pub kdc_url: Option<String>,
     pub kdc_proxy_settings: Option<KdcProxySettings>,
+    pub workstation: Option<String>,
 }
 
 impl CredentialsAttributes {

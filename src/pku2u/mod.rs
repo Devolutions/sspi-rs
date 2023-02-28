@@ -189,6 +189,10 @@ impl Pku2u {
         })
     }
 
+    pub fn config(&self) -> &Pku2uConfig {
+        &self.config
+    }
+
     pub fn next_seq_number(&mut self) -> u32 {
         let seq_num = self.seq_number;
         self.seq_number += 1;

@@ -24,7 +24,7 @@ use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::{self, Kerberos};
-use crate::ntlm::{self, AuthIdentity, AuthIdentityBuffers, Ntlm, SIGNATURE_SIZE};
+use crate::ntlm::{self, AuthIdentity, AuthIdentityBuffers, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertContext, CertTrustStatus,
@@ -159,7 +159,7 @@ pub enum ClientMode {
     Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),
     Pku2u(Pku2uConfig),
-    Ntlm,
+    Ntlm(NtlmConfig),
 }
 
 /// Implements the CredSSP *client*. The client's credentials are to
@@ -178,7 +178,7 @@ pub struct CredSspClient {
     client_nonce: [u8; NONCE_SIZE],
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
-    client_mode: ClientMode,
+    client_mode: Option<ClientMode>,
     service_principal_name: String,
 }
 
@@ -199,7 +199,7 @@ impl CredSspClient {
             client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
-            client_mode,
+            client_mode: Some(client_mode),
             service_principal_name,
         })
     }
@@ -221,7 +221,7 @@ impl CredSspClient {
             client_nonce: OsRng::default().gen::<[u8; NONCE_SIZE]>(),
             credentials_handle: None,
             ts_request_version,
-            client_mode,
+            client_mode: Some(client_mode),
             service_principal_name,
         })
     }
@@ -232,17 +232,21 @@ impl CredSspClient {
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
         } else {
-            self.context = match &self.client_mode {
+            self.context = match self
+                .client_mode
+                .take()
+                .expect("CredSsp client mode should never be empty")
+            {
                 ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    Negotiate::new(negotiate_config.clone())?,
+                    Negotiate::new(negotiate_config)?,
                 ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    Kerberos::new_client_from_config(kerberos_config.clone())?,
+                    Kerberos::new_client_from_config(kerberos_config)?,
                 ))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
-                    Pku2u::new_client_from_config(pku2u.clone())?,
+                    Pku2u::new_client_from_config(pku2u)?,
                 ))),
-                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+                ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = self
                 .context
@@ -363,7 +367,7 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     public_key: Vec<u8>,
     credentials_handle: Option<AuthIdentityBuffers>,
     ts_request_version: u32,
-    context_config: ClientMode,
+    context_config: Option<ClientMode>,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
@@ -375,7 +379,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             public_key,
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
-            context_config: client_mode,
+            context_config: Some(client_mode),
         })
     }
 
@@ -392,7 +396,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             public_key,
             credentials_handle: None,
             ts_request_version,
-            context_config: client_mode,
+            context_config: Some(client_mode),
         })
     }
 
@@ -400,7 +404,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
     #[instrument(fields(state = ?self.state), skip_all)]
     pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
-            self.context = match &self.context_config {
+            self.context = match self
+                .context_config
+                .take()
+                .expect("CredSsp client mode should never be empty")
+            {
                 ClientMode::Negotiate(_) => {
                     return Err(ServerError {
                         ts_request,
@@ -411,11 +419,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     })
                 }
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config.clone()), ts_request),
+                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config), ts_request),
                 ))),
-                ClientMode::Ntlm => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::new()))),
+                ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
-                    Pku2u::new_server_from_config(pku2u.clone()),
+                    Pku2u::new_server_from_config(pku2u),
                     ts_request
                 )))),
             };

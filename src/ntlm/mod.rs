@@ -1,3 +1,4 @@
+mod config;
 mod messages;
 #[cfg(test)]
 mod test;
@@ -10,14 +11,14 @@ use lazy_static::lazy_static;
 use messages::{client, server};
 use serde_derive::{Deserialize, Serialize};
 
+pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
-use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::{
     utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertTrustStatus, ClientResponseFlags,
     ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
     FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContextResult,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
@@ -48,19 +49,6 @@ lazy_static! {
     };
 }
 
-#[derive(Debug, Clone)]
-pub struct NtlmConfig;
-
-impl ProtocolConfig for NtlmConfig {
-    fn new_client(&self) -> Result<NegotiatedProtocol> {
-        Ok(NegotiatedProtocol::Ntlm(Ntlm::new()))
-    }
-
-    fn clone(&self) -> Box<dyn ProtocolConfig + Send> {
-        Box::new(Clone::clone(self))
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum NtlmState {
     Initial,
@@ -79,6 +67,8 @@ enum NtlmState {
 /// * [[MS-NLMP]: NT LAN Manager (NTLM) Authentication Protocol](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b38c36ed-2804-4868-a9ff-8dd3182128e4)
 #[derive(Debug, Clone)]
 pub struct Ntlm {
+    config: NtlmConfig,
+
     negotiate_message: Option<NegotiateMessage>,
     challenge_message: Option<ChallengeMessage>,
     authenticate_message: Option<AuthenticateMessage>,
@@ -129,6 +119,8 @@ struct AuthenticateMessage {
 impl Ntlm {
     pub fn new() -> Self {
         Self {
+            config: NtlmConfig::default(),
+
             negotiate_message: None,
             challenge_message: None,
             authenticate_message: None,
@@ -149,8 +141,34 @@ impl Ntlm {
         }
     }
 
-    pub fn with_auth_identity(identity: Option<AuthIdentityBuffers>) -> Self {
+    pub fn with_config(config: NtlmConfig) -> Self {
         Self {
+            config,
+
+            negotiate_message: None,
+            challenge_message: None,
+            authenticate_message: None,
+
+            channel_bindings: None,
+
+            state: NtlmState::Initial,
+            flags: NegotiateFlags::empty(),
+            identity: None,
+            version: DEFAULT_NTLM_VERSION,
+
+            send_single_host_data: false,
+
+            send_signing_key: [0x00; HASH_SIZE],
+            recv_signing_key: [0x00; HASH_SIZE],
+            send_sealing_key: None,
+            recv_sealing_key: None,
+        }
+    }
+
+    pub fn with_auth_identity(identity: Option<AuthIdentityBuffers>, config: NtlmConfig) -> Self {
+        Self {
+            config,
+
             negotiate_message: None,
             challenge_message: None,
             authenticate_message: None,
@@ -171,6 +189,10 @@ impl Ntlm {
         }
     }
 
+    fn config(&self) -> &NtlmConfig {
+        &self.config
+    }
+
     pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
         self.version = version;
     }
@@ -178,7 +200,7 @@ impl Ntlm {
 
 impl Default for Ntlm {
     fn default() -> Self {
-        Self::new()
+        Self::with_config(Default::default())
     }
 }
 
