@@ -24,7 +24,7 @@
 //!
 //! let identity = sspi::AuthIdentity {
 //!     username: "user".to_string(),
-//!     password: "password".to_string(),
+//!     password: "password".to_string().into(),
 //!     domain: None,
 //! };
 //!
@@ -234,7 +234,7 @@ where
     /// #
     /// let identity = sspi::AuthIdentity {
     ///     username: "user".to_string(),
-    ///     password: "password".to_string(),
+    ///     password: "password".to_string().into(),
     ///     domain: None,
     /// };
     ///
@@ -284,7 +284,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: whoami::username(),
-    /// #     password: String::from("password"),
+    /// #     password: String::from("password").into(),
     /// #     domain: Some(whoami::hostname()),
     /// # };
     /// #
@@ -345,7 +345,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -429,7 +429,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -515,7 +515,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -625,7 +625,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -741,7 +741,7 @@ where
     /// # let mut ntlm = sspi::Ntlm::new();
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
