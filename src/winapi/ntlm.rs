@@ -8,11 +8,10 @@ use crate::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandle, AcquireCredentialsHandleResult,
     InitializeSecurityContextResult,
 };
-use crate::ntlm::AuthIdentity;
 use crate::{
-    CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo, SecurityBuffer, SecurityPackageType,
-    SecurityStatus, Sspi, SspiImpl,
+    AuthIdentity, CertTrustStatus, ContextNames, ContextSizes, DecryptionFlags, EncryptionFlags,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, PackageInfo,
+    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiImpl,
 };
 
 /// Represents a wrapper for Windows-provided NTLM.
@@ -43,7 +42,7 @@ impl SspiImpl for Ntlm {
             let domain_str = auth_data.domain.clone().unwrap_or_default();
             let mut user = str_to_win_wstring(auth_data.username.as_str());
             let mut domain = str_to_win_wstring(domain_str.as_str());
-            let mut password = str_to_win_wstring(auth_data.password.as_str());
+            let mut password = str_to_win_wstring(auth_data.password.as_ref());
 
             let mut identity = SEC_WINNT_AUTH_IDENTITY_W {
                 User: user.as_mut_ptr(),
@@ -51,7 +50,7 @@ impl SspiImpl for Ntlm {
                 Domain: domain.as_mut_ptr(),
                 DomainLength: domain_str.len() as u32,
                 Password: password.as_mut_ptr(),
-                PasswordLength: auth_data.password.len() as u32,
+                PasswordLength: auth_data.password.as_ref().len() as u32,
                 Flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             };
 

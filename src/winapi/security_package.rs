@@ -380,8 +380,8 @@ impl Sspi for SecurityPackage {
         let mut package_name = str_to_win_wstring(self.package_type.as_ref());
         let mut domain_name = str_to_win_wstring(&change_password.domain_name);
         let mut account_name = str_to_win_wstring(&change_password.account_name);
-        let mut old_password = str_to_win_wstring(&change_password.old_password);
-        let mut new_password = str_to_win_wstring(&change_password.new_password);
+        let mut old_password = str_to_win_wstring(change_password.old_password.as_ref());
+        let mut new_password = str_to_win_wstring(change_password.new_password.as_ref());
 
         let mut output_buffers = buffers_as_winapi(change_password.output);
         let mut output_buffer_descriptor = construct_buffer_desc(&mut output_buffers);

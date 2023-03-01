@@ -1,13 +1,13 @@
 use std::cell::RefCell;
 use std::ops::DerefMut;
 
-use crate::{Error, ErrorKind, Result, SecurityBuffer};
+use crate::{Error, ErrorKind, Result, Secret, SecurityBuffer};
 
 pub struct ChangePassword<'a> {
     pub domain_name: String,
     pub account_name: String,
-    pub old_password: String,
-    pub new_password: String,
+    pub old_password: Secret<String>,
+    pub new_password: Secret<String>,
     pub impersonating: bool,
     pub output: &'a mut [SecurityBuffer],
 }
@@ -16,8 +16,8 @@ pub struct ChangePassword<'a> {
 struct ChangePasswordBuilderInner<'a> {
     domain_name: Option<String>,
     account_name: Option<String>,
-    old_password: Option<String>,
-    new_password: Option<String>,
+    old_password: Option<Secret<String>>,
+    new_password: Option<Secret<String>>,
     impersonating: bool,
     output: Option<&'a mut [SecurityBuffer]>,
 }
@@ -47,13 +47,13 @@ impl<'a> ChangePasswordBuilder<'a> {
 
     /// Required
     pub fn with_old_password(&self, old_password: impl Into<String>) -> &Self {
-        self.inner.borrow_mut().old_password = Some(old_password.into());
+        self.inner.borrow_mut().old_password = Some(old_password.into().into());
         self
     }
 
     /// Required
     pub fn with_new_password(&self, new_password: impl Into<String>) -> &Self {
-        self.inner.borrow_mut().new_password = Some(new_password.into());
+        self.inner.borrow_mut().new_password = Some(new_password.into().into());
         self
     }
 

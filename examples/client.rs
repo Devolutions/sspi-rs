@@ -29,7 +29,7 @@ fn main() -> Result<(), io::Error> {
 
     let identity = AuthIdentity {
         username: whoami::username(),
-        password: String::from("password"),
+        password: String::from("password").into(),
         domain: Some(whoami::hostname()),
     };
 

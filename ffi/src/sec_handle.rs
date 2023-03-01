@@ -15,7 +15,7 @@ use sspi::network_client::reqwest_network_client::{RequestClientFactory, Reqwest
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, AuthIdentityBuffers, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Sspi, SspiImpl,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl,
 };
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
@@ -1047,19 +1047,19 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
         check_null!(psz_new_password);
         check_null!(p_output);
 
-        let security_package_name = c_w_str_to_string(psz_package_name);
+        let mut security_package_name = c_w_str_to_string(psz_package_name);
 
-        let domain = c_w_str_to_string(psz_domain_name);
-        let username = c_w_str_to_string(psz_account_name);
-        let password = c_w_str_to_string(psz_old_password);
-        let new_password = c_w_str_to_string(psz_new_password);
+        let mut domain = c_w_str_to_string(psz_domain_name);
+        let mut username = c_w_str_to_string(psz_account_name);
+        let mut password = Secret::new(c_w_str_to_string(psz_old_password));
+        let mut new_password = Secret::new(c_w_str_to_string(psz_new_password));
 
         ChangeAccountPasswordA(
-            security_package_name.as_ptr() as *mut _,
-            domain.as_ptr() as *mut _,
-            username.as_ptr() as *mut _,
-            password.as_ptr() as *mut _,
-            new_password.as_ptr() as *mut _,
+            security_package_name.as_mut_ptr() as *mut _,
+            domain.as_mut_ptr() as *mut _,
+            username.as_mut_ptr() as *mut _,
+            password.as_mut().as_mut_ptr() as *mut _,
+            new_password.as_mut().as_mut_ptr() as *mut _,
             b_impersonating,
             dw_reserved,
             p_output,

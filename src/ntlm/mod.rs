@@ -3,23 +3,23 @@ mod messages;
 #[cfg(test)]
 mod test;
 
+use std::fmt::Debug;
 use std::io;
 
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
 use lazy_static::lazy_static;
 use messages::{client, server};
-use serde_derive::{Deserialize, Serialize};
 
 pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::{
-    utils, AcceptSecurityContextResult, AcquireCredentialsHandleResult, CertTrustStatus, ClientResponseFlags,
-    ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContextResult,
-    PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
+    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -499,62 +499,6 @@ impl AuthenticateMessage {
 impl Mic {
     fn new(value: [u8; MESSAGE_INTEGRITY_CHECK_SIZE], offset: u8) -> Self {
         Self { value, offset }
-    }
-}
-
-/// Allows you to pass a particular user name and password to the run-time library for the purpose of authentication
-///
-/// # MSDN
-///
-/// * [SEC_WINNT_AUTH_IDENTITY_W structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_w)
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
-pub struct AuthIdentity {
-    pub username: String,
-    pub password: String,
-    pub domain: Option<String>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct AuthIdentityBuffers {
-    pub user: Vec<u8>,
-    pub domain: Vec<u8>,
-    pub password: Vec<u8>,
-}
-
-impl AuthIdentityBuffers {
-    pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
-        Self { user, domain, password }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.user.is_empty()
-    }
-}
-
-impl From<AuthIdentity> for AuthIdentityBuffers {
-    fn from(credentials: AuthIdentity) -> Self {
-        Self {
-            user: utils::string_to_utf16(credentials.username.as_str()),
-            domain: credentials
-                .domain
-                .map(|v| utils::string_to_utf16(v.as_str()))
-                .unwrap_or_default(),
-            password: utils::string_to_utf16(credentials.password.as_str()),
-        }
-    }
-}
-
-impl From<AuthIdentityBuffers> for AuthIdentity {
-    fn from(credentials_buffers: AuthIdentityBuffers) -> Self {
-        Self {
-            username: utils::bytes_to_utf16_string(credentials_buffers.user.as_ref()),
-            password: utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()),
-            domain: if credentials_buffers.domain.is_empty() {
-                None
-            } else {
-                Some(utils::bytes_to_utf16_string(credentials_buffers.domain.as_ref()))
-            },
-        }
     }
 }
 

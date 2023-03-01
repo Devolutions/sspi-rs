@@ -24,7 +24,7 @@
 //!
 //! let identity = sspi::AuthIdentity {
 //!     username: "user".to_string(),
-//!     password: "password".to_string(),
+//!     password: "password".to_string().into(),
 //!     domain: None,
 //! };
 //!
@@ -84,11 +84,13 @@ pub mod pku2u;
 #[cfg(windows)]
 pub mod winapi;
 
+mod auth_identity;
 mod ber;
 mod crypto;
 mod dns;
 mod kdc;
 mod krb;
+mod secret;
 mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
@@ -107,6 +109,7 @@ use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
 
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers};
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
     EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
@@ -119,8 +122,9 @@ pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::KerberosConfig;
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{AuthIdentity, AuthIdentityBuffers, Ntlm};
+pub use self::ntlm::Ntlm;
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
+pub use self::secret::Secret;
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;
@@ -230,7 +234,7 @@ where
     /// #
     /// let identity = sspi::AuthIdentity {
     ///     username: "user".to_string(),
-    ///     password: "password".to_string(),
+    ///     password: "password".to_string().into(),
     ///     domain: None,
     /// };
     ///
@@ -280,7 +284,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: whoami::username(),
-    /// #     password: String::from("password"),
+    /// #     password: String::from("password").into(),
     /// #     domain: Some(whoami::hostname()),
     /// # };
     /// #
@@ -341,7 +345,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -425,7 +429,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -511,7 +515,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -621,7 +625,7 @@ where
     /// #
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -737,7 +741,7 @@ where
     /// # let mut ntlm = sspi::Ntlm::new();
     /// # let identity = sspi::AuthIdentity {
     /// #     username: "user".to_string(),
-    /// #     password: "password".to_string(),
+    /// #     password: "password".to_string().into(),
     /// #     domain: None,
     /// # };
     /// #
@@ -1247,10 +1251,20 @@ pub enum DataRepresentation {
 /// # MSDN
 ///
 /// * [SecBuffer structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecurityBuffer {
     pub buffer: Vec<u8>,
     pub buffer_type: SecurityBufferType,
+}
+
+impl fmt::Debug for SecurityBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SecurityBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
+        self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, " }}")?;
+
+        Ok(())
+    }
 }
 
 impl SecurityBuffer {

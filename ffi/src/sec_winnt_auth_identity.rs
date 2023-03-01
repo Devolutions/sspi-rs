@@ -168,14 +168,14 @@ pub unsafe fn auth_data_to_identity_buffers(
         Ok(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
         })
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
         Ok(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
         })
     }
 }
@@ -213,6 +213,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     use std::ptr::null_mut;
 
+    use sspi::Secret;
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -243,7 +244,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 
     let mut username = vec![0_u8; username_len as usize];
     let mut domain = vec![0_u8; domain_len as usize];
-    let mut password = vec![0_u8; password_len as usize];
+    let mut password = Secret::new(vec![0_u8; password_len as usize]);
 
     let result = CredUnPackAuthenticationBufferA(
         CRED_PACK_PROTECTED_CREDENTIALS,
@@ -253,7 +254,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
         &mut username_len,
         domain.as_mut_ptr() as *mut _,
         &mut domain_len,
-        password.as_mut_ptr() as *mut _,
+        password.as_mut().as_mut_ptr() as *mut _,
         &mut password_len,
     );
 
@@ -283,7 +284,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     }
 
     // remove null
-    password.pop();
+    password.as_mut().pop();
     auth_identity_buffers.password = password;
 
     Ok(auth_identity_buffers)
@@ -301,6 +302,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     use std::ptr::null_mut;
 
+    use sspi::Secret;
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -331,7 +333,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
     let mut username = vec![0_u8; username_len as usize * 2];
     let mut domain = vec![0_u8; domain_len as usize * 2];
-    let mut password = vec![0_u8; password_len as usize * 2];
+    let mut password = Secret::new(vec![0_u8; password_len as usize * 2]);
 
     let result = CredUnPackAuthenticationBufferW(
         CRED_PACK_PROTECTED_CREDENTIALS,
@@ -341,7 +343,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         &mut username_len,
         domain.as_mut_ptr() as *mut _,
         &mut domain_len,
-        password.as_mut_ptr() as *mut _,
+        password.as_mut().as_mut_ptr() as *mut _,
         &mut password_len,
     );
 
@@ -371,7 +373,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     }
 
     // remove null
-    password.truncate(password.len() - 2);
+    let new_len = password.as_ref().len() - 2;
+    password.as_mut().truncate(new_len);
     auth_identity_buffers.password = password;
 
     Ok(auth_identity_buffers)

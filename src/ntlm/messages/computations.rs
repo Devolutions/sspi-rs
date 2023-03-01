@@ -178,10 +178,10 @@ pub fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HAS
 
 pub fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
-        let hmac_key = if identity.password.len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
-            convert_password_hash(&identity.password)?
+        let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
+            convert_password_hash(identity.password.as_ref())?
         } else {
-            compute_md4(&identity.password)
+            compute_md4(identity.password.as_ref())
         };
 
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref());

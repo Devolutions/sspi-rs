@@ -36,7 +36,7 @@ fn successful_ntlm_authentication_without_client_auth_data() {
 fn ntlm_authentication_fails_with_invalid_client_auth_data() {
     let credentials = AuthIdentity {
         username: whoami::username(),
-        password: String::from("InvalidPassword"),
+        password: String::from("InvalidPassword").into(),
         domain: Some(whoami::hostname()),
     };
 

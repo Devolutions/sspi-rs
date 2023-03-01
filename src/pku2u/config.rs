@@ -2,12 +2,13 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::Certificate;
 
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
+use crate::secret::SecretPrivateKey;
 use crate::{Pku2u, Result};
 
 #[derive(Debug, Clone)]
 pub struct Pku2uConfig {
     pub p2p_certificate: Certificate,
-    pub private_key: PrivateKey,
+    pub private_key: SecretPrivateKey,
     pub hostname: String,
 }
 
@@ -15,7 +16,7 @@ impl Pku2uConfig {
     pub fn new(p2p_certificate: Certificate, private_key: PrivateKey, hostname: String) -> Self {
         Self {
             p2p_certificate,
-            private_key,
+            private_key: private_key.into(),
             hostname,
         }
     }
@@ -28,7 +29,7 @@ impl Pku2uConfig {
 
         Ok(Self {
             p2p_certificate,
-            private_key,
+            private_key: private_key.into(),
             hostname,
         })
     }

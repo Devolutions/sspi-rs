@@ -12,7 +12,7 @@ use sspi::{
 lazy_static! {
     pub static ref CREDENTIALS: AuthIdentity = AuthIdentity {
         username: String::from("Username"),
-        password: String::from("Password"),
+        password: String::from("Password").into(),
         domain: Some(String::from("Domain"))
     };
     static ref MESSAGE_TO_CLIENT: Vec<u8> = b"Hello, client!".to_vec();
