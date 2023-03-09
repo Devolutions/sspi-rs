@@ -143,7 +143,7 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
-pub unsafe fn auth_data_to_identity_buffers(
+pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
@@ -160,22 +160,70 @@ pub unsafe fn auth_data_to_identity_buffers(
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
         if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
+            *package_list = Some(
+                String::from_utf8_lossy(from_raw_parts(
+                    (*auth_data).package_list as *const _,
+                    (*auth_data).package_list_length as usize,
+                ))
+                .to_string(),
+            );
+        }
+        Ok(AuthIdentityBuffers {
+            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
+            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
+        })
+    } else {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
+        Ok(AuthIdentityBuffers {
+            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
+            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
+            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
+        })
+    }
+}
+
+pub unsafe fn auth_data_to_identity_buffers_w(
+    _security_package_name: &str,
+    p_auth_data: *const c_void,
+    package_list: &mut Option<String>,
+) -> Result<AuthIdentityBuffers> {
+    #[cfg(feature = "tsssp")]
+    if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
+        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+
+        return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
+    }
+
+    let auth_version = *p_auth_data.cast::<u32>();
+
+    if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
+        if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
             *package_list = Some(String::from_utf16_lossy(from_raw_parts(
                 (*auth_data).package_list as *const u16,
                 (*auth_data).package_list_length as usize,
             )));
         }
         Ok(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
+            user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
+            domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
+            password: raw_str_into_bytes(
+                (*auth_data).password as *const _,
+                (*auth_data).password_length as usize * 2,
+            )
+            .into(),
         })
     } else {
-        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
         Ok(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize * 2),
-            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize * 2).into(),
+            user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
+            domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
+            password: raw_str_into_bytes(
+                (*auth_data).password as *const _,
+                (*auth_data).password_length as usize * 2,
+            )
+            .into(),
         })
     }
 }
