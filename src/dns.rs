@@ -132,10 +132,11 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
+        use std::thread;
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
-        use async_dnssd::{query_record,QueryRecordResult,QueriedRecordFlags,Type};
+        use async_dnssd::{query_record, QueryRecordResult, QueriedRecordFlags, Type};
 
         #[derive(Clone)]
         pub struct DnsSrvRecord {
@@ -179,12 +180,9 @@ cfg_if::cfg_if! {
 
         pub fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
             let query_timeout = 1000;
-            let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
-
-            let rt = runtime::Builder::new_current_thread().enable_all().build().unwrap();
-
-            rt.block_on(async {
-                let mut query = query_record(name, Type::SRV);
+            async fn query_with_timeout(name: String, query_timeout: u64) -> Vec<DnsSrvRecord> {
+                let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
+                let mut query = query_record(&name, Type::SRV);
 
                 loop {
                     match timeout(Duration::from_millis(query_timeout), query.next()).await {
@@ -208,9 +206,30 @@ cfg_if::cfg_if! {
                         }
                     }
                 }
-            });
 
-            dns_records
+                dns_records
+            }
+
+            match runtime::Handle::try_current() {
+                Ok(handle) => {
+                    // Tokio runtime already exists, cannot block again on the same thread.
+                    // Spawn a new thread to run the blocking code.
+                    let name = name.to_owned();
+                    thread::spawn(move || {
+                        // Send the dns_records back to the main thread.
+                        handle.block_on(query_with_timeout(name, query_timeout))
+                    }).join().unwrap() // returns the vec of dns records
+                },
+                Err(err) => {
+                    if err.is_missing_context() {
+                        // No existing tokio runtime context, block on a new one.
+                        let rt = runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                        return rt.block_on(query_with_timeout(name.to_owned(), query_timeout));
+                    }
+                    // ThreadLocalDestroyed error should never happen.
+                    panic!("Unexpected error when trying to get current runtime: {}", err);
+                }
+            }
         }
 
         pub fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
