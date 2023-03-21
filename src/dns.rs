@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use futures::FutureExt;
-
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         use windows::{
@@ -139,7 +137,7 @@ cfg_if::cfg_if! {
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
-        use async_dnssd::{query_record,QueryRecordResult,QueriedRecordFlags,Type};
+        use async_dnssd::{query_record, QueryRecordResult, QueriedRecordFlags, Type};
 
         #[derive(Clone)]
         pub struct DnsSrvRecord {
