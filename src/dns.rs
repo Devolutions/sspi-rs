@@ -215,16 +215,11 @@ cfg_if::cfg_if! {
                 Ok(handle) => {
                     // Tokio runtime already exists, cannot block again on the same thread.
                     // Spawn a new thread to run the blocking code.
-                    let (sender, receiver) = channel();
                     let name = name.to_owned();
                     thread::spawn(move || {
-                        let dns_records = handle.block_on(query_with_timeout(name, query_timeout));
                         // Send the dns_records back to the main thread.
-                        sender.send(dns_records).unwrap();
-                    });
-
-                    // Wait for the dns_records to be sent back from the blocking thread.
-                    receiver.recv().unwrap()
+                        handle.block_on(query_with_timeout(name, query_timeout))
+                    }).join().unwrap() // returns the vec of dns records
                 },
                 Err(err) => {
                     if err.is_missing_context() {
