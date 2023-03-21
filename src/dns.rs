@@ -133,7 +133,6 @@ cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
         use std::thread;
-        use std::sync::mpsc::channel;
         use tokio::time::timeout;
         use tokio::runtime;
         use futures::stream::{StreamExt};
