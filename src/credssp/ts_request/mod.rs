@@ -382,6 +382,7 @@ pub struct NStatusCode(pub u32);
 
 impl NStatusCode {
     pub const SUCCESS: Self = Self(0x0000_0000);
+    pub const NO_QUOTAS_FOR_ACCOUNT: Self = Self(0x0000_010d);
     pub const NO_LOGON_SERVERS: Self = Self(0xc000_005e);
     pub const NO_SUCH_LOGON_SESSION: Self = Self(0xc000_005f);
     pub const NO_SUCH_PRIVILEGE: Self = Self(0xc000_0060);
@@ -403,14 +404,23 @@ impl NStatusCode {
     pub const INVALID_WORKSTATION: Self = Self(0xc000_0070);
     pub const PASSWORD_EXPIRED: Self = Self(0xc000_0071);
     pub const ACCOUNT_DISABLED: Self = Self(0xc000_0072);
+    pub const IO_TIMEOUT: Self = Self(0xc000_00b5);
     pub const NOT_LOGON_PROCESS: Self = Self(0xc000_00ed);
     pub const LOGON_SESSION_EXISTS: Self = Self(0xc000_00ee);
     pub const BAD_LOGON_SESSION_STATE: Self = Self(0xc000_0104);
     pub const LOGON_SESSION_COLLISION: Self = Self(0xc000_0105);
     pub const INVALID_LOGON_TYPE: Self = Self(0xc000_010b);
+    pub const SPECIAL_ACCOUNT: Self = Self(0xc000_0124);
+    pub const TOKEN_ALREADY_IN_USE: Self = Self(0xc000_012b);
     pub const LOGON_SERVER_CONFLICT: Self = Self(0xc000_0132);
+    pub const TIME_DIFFERENCE_AT_DC: Self = Self(0xc000_0133);
+    pub const MEMBER_NOT_IN_ALIAS: Self = Self(0xc000_0152);
+    pub const MEMBER_IN_ALIAS: Self = Self(0xc000_0153);
     pub const LOGON_NOT_GRANTED: Self = Self(0xc000_0155);
     pub const LOGON_TYPE_NOT_GRANTED: Self = Self(0xc000_015b);
+    pub const TRANSACTION_TIMED_OUT: Self = Self(0xc000_0210);
+    pub const PASSWORD_MUST_CHANGE: Self = Self(0xc000_0224);
+    pub const ACCOUNT_LOCKED_OUT: Self = Self(0xc000_0234);
     pub const INSUFFICIENT_LOGON_INFO: Self = Self(0xc000_0250);
     pub const SMARTCARD_LOGON_REQUIRED: Self = Self(0xc000_02fa);
     pub const CTX_LOGON_DISABLED: Self = Self(0xc00a_0037);
@@ -418,6 +428,7 @@ impl NStatusCode {
     pub fn name(self) -> Option<&'static str> {
         let name = match self {
             Self::SUCCESS => "STATUS_SUCCESS",
+            Self::NO_QUOTAS_FOR_ACCOUNT => "STATUS_NO_QUOTAS_FOR_ACCOUNT",
             Self::NO_LOGON_SERVERS => "STATUS_NO_LOGON_SERVERS",
             Self::NO_SUCH_LOGON_SESSION => "STATUS_NO_SUCH_LOGON_SESSION",
             Self::NO_SUCH_PRIVILEGE => "STATUS_NO_SUCH_PRIVILEGE",
@@ -439,14 +450,23 @@ impl NStatusCode {
             Self::INVALID_WORKSTATION => "STATUS_INVALID_WORKSTATION",
             Self::PASSWORD_EXPIRED => "STATUS_PASSWORD_EXPIRED",
             Self::ACCOUNT_DISABLED => "STATUS_ACCOUNT_DISABLED",
+            Self::IO_TIMEOUT => "STATUS_IO_TIMEOUT",
             Self::NOT_LOGON_PROCESS => "STATUS_NOT_LOGON_PROCESS",
             Self::LOGON_SESSION_EXISTS => "STATUS_LOGON_SESSION_EXISTS",
             Self::BAD_LOGON_SESSION_STATE => "STATUS_BAD_LOGON_SESSION_STATE",
             Self::LOGON_SESSION_COLLISION => "STATUS_LOGON_SESSION_COLLISION",
             Self::INVALID_LOGON_TYPE => "STATUS_INVALID_LOGON_TYPE",
+            Self::SPECIAL_ACCOUNT => "STATUS_SPECIAL_ACCOUNT",
+            Self::TOKEN_ALREADY_IN_USE => "STATUS_TOKEN_ALREADY_IN_USE",
             Self::LOGON_SERVER_CONFLICT => "STATUS_LOGON_SERVER_CONFLICT",
+            Self::TIME_DIFFERENCE_AT_DC => "STATUS_TIME_DIFFERENCE_AT_DC",
+            Self::MEMBER_NOT_IN_ALIAS => "STATUS_MEMBER_NOT_IN_ALIAS",
+            Self::MEMBER_IN_ALIAS => "STATUS_MEMBER_IN_ALIAS",
             Self::LOGON_NOT_GRANTED => "STATUS_LOGON_NOT_GRANTED",
             Self::LOGON_TYPE_NOT_GRANTED => "STATUS_LOGON_TYPE_NOT_GRANTED",
+            Self::TRANSACTION_TIMED_OUT => "STATUS_TRANSACTION_TIMED_OUT",
+            Self::PASSWORD_MUST_CHANGE => "STATUS_PASSWORD_MUST_CHANGE",
+            Self::ACCOUNT_LOCKED_OUT => "STATUS_ACCOUNT_LOCKED_OUT",
             Self::INSUFFICIENT_LOGON_INFO => "STATUS_INSUFFICIENT_LOGON_INFO",
             Self::SMARTCARD_LOGON_REQUIRED => "STATUS_SMARTCARD_LOGON_REQUIRED",
             Self::CTX_LOGON_DISABLED => "STATUS_CTX_LOGON_DISABLED",
