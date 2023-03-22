@@ -175,17 +175,14 @@ impl Sspi for SspiCredSsp {
         if message.len() < 4 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Input message mut contain four buffers".into(),
+                "Input message mut contain four buffers",
             ));
         }
 
         let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         if encrypted_message.buffer.len() < TLS_PACKET_HEADER_LEN {
-            return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "Input TLS message is too short".into(),
-            ));
+            return Err(Error::new(ErrorKind::DecryptFailure, "Input TLS message is too short"));
         }
 
         let stream_header_data = encrypted_message.buffer[0..TLS_PACKET_HEADER_LEN].to_vec();
@@ -238,12 +235,9 @@ impl Sspi for SspiCredSsp {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
         let certificates = self.tls_connection.peer_certificates()?;
-        let raw_server_certificate = certificates.get(0).ok_or_else(|| {
-            Error::new(
-                ErrorKind::CertificateUnknown,
-                "Can not acquire server certificate".into(),
-            )
-        })?;
+        let raw_server_certificate = certificates
+            .get(0)
+            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "Can not acquire server certificate"))?;
 
         let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
 
@@ -268,7 +262,7 @@ impl Sspi for SspiCredSsp {
     fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "ChangePassword is not supported in SspiCredSsp context".into(),
+            "ChangePassword is not supported in SspiCredSsp context",
         ))
     }
 }
@@ -285,7 +279,7 @@ impl SspiImpl for SspiCredSsp {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
-                "The client must specify the auth data".into(),
+                "The client must specify the auth data",
             ));
         }
 
@@ -349,10 +343,7 @@ impl SspiImpl for SspiCredSsp {
                 let mut inner_builder =
                     EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                         .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::WrongCredentialHandle,
-                                "credentials handle is not present".into(),
-                            )
+                            Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present")
                         })?)
                         .with_context_requirements(ClientRequestFlags::empty())
                         .with_target_data_representation(DataRepresentation::Native);
@@ -415,7 +406,7 @@ impl SspiImpl for SspiCredSsp {
                 let pub_key_auth = ts_request
                     .pub_key_auth
                     .take()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Expected an encrypted public key".into()))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Expected an encrypted public key"))?;
                 let peer_version = self
                     .cred_ssp_context
                     .peer_version
@@ -434,12 +425,7 @@ impl SspiImpl for SspiCredSsp {
                     .credentials_handle
                     .take()
                     .and_then(|c| c.as_ref())
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::WrongCredentialHandle,
-                            "credentials handle is not present".into(),
-                        )
-                    })?;
+                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present"))?;
 
                 ts_request.auth_info = Some(
                     self.cred_ssp_context
@@ -459,7 +445,7 @@ impl SspiImpl for SspiCredSsp {
             CredSspState::Final => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
-                    "Error: Initialize security context function has been called after authorization".into(),
+                    "Error: Initialize security context function has been called after authorization",
                 ));
             }
         };
@@ -480,7 +466,7 @@ impl SspiImpl for SspiCredSsp {
     ) -> Result<crate::AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "AcceptSecurityContext is not supported in SspiCredSsp context".into(),
+            "AcceptSecurityContext is not supported in SspiCredSsp context",
         ))
     }
 }

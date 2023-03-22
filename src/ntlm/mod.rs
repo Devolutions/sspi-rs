@@ -216,7 +216,7 @@ impl SspiImpl for Ntlm {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(crate::Error::new(
                 crate::ErrorKind::NoCredentials,
-                String::from("The client must specify the auth data"),
+                "The client must specify the auth data",
             ));
         }
 
@@ -246,7 +246,7 @@ impl SspiImpl for Ntlm {
                 let input = builder.input.as_ref().ok_or_else(|| {
                     crate::Error::new(
                         crate::ErrorKind::InvalidToken,
-                        String::from("Input buffers must be specified on subsequent calls"),
+                        "Input buffers must be specified on subsequent calls",
                     )
                 })?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
@@ -293,12 +293,9 @@ impl SspiImpl for Ntlm {
         &mut self,
         builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
-        let input = builder.input.ok_or_else(|| {
-            crate::Error::new(
-                crate::ErrorKind::InvalidToken,
-                String::from("Input buffers must be specified"),
-            )
-        })?;
+        let input = builder
+            .input
+            .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
@@ -399,7 +396,7 @@ impl Sspi for Ntlm {
         if signature.buffer.as_slice() != expected_signature.as_ref() {
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
-                String::from("Signature verification failed, something nasty is going on!"),
+                "Signature verification failed, something nasty is going on!",
             ));
         }
 
@@ -427,7 +424,7 @@ impl Sspi for Ntlm {
         } else {
             Err(crate::Error::new(
                 crate::ErrorKind::NoCredentials,
-                String::from("Requested Names, but no credentials were provided"),
+                "Requested Names, but no credentials were provided",
             ))
         }
     }
@@ -441,7 +438,7 @@ impl Sspi for Ntlm {
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
-            String::from("Certificate trust status is not supported"),
+            "Certificate trust status is not supported",
         ))
     }
 
@@ -449,7 +446,7 @@ impl Sspi for Ntlm {
     fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
         Err(crate::Error::new(
             crate::ErrorKind::UnsupportedFunction,
-            "change_password is not supported in NTLM".into(),
+            "change_password is not supported in NTLM",
         ))
     }
 }

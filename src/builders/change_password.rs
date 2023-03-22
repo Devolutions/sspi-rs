@@ -84,20 +84,20 @@ impl<'a> ChangePasswordBuilder<'a> {
         Ok(ChangePassword {
             domain_name: domain_name
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing domain_name parameter".into()))?,
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing domain_name parameter"))?,
             account_name: account_name
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing account_name parameter".into()))?,
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing account_name parameter"))?,
             old_password: old_password
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing old_password parameter".into()))?,
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing old_password parameter"))?,
             new_password: new_password
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing new_password parameter".into()))?,
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing new_password parameter"))?,
             impersonating: *impersonating,
             output: output
                 .take()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing output parameter".into()))?,
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing output parameter"))?,
         })
     }
 }

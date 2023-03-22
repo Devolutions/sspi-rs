@@ -15,7 +15,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
 use rand::Rng;
-pub use ts_request::TsRequest;
+pub use ts_request::{NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
@@ -348,7 +348,7 @@ impl CredSspClient {
             }
             CredSspState::Final => Err(Error::new(
                 ErrorKind::InternalError,
-                "CredSSP client's 'process' method must not be fired after the 'Finished' state".into(),
+                "CredSSP client's 'process' method must not be fired after the 'Finished' state",
             )),
         }
     }
@@ -415,7 +415,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         ts_request,
                         error: crate::Error::new(
                             ErrorKind::UnsupportedFunction,
-                            "Negotiate module is not supported for the CredSsp server".into(),
+                            "Negotiate module is not supported for the CredSsp server",
                         ),
                     })
                 }
@@ -559,7 +559,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 ts_request,
                 error: Error::new(
                     ErrorKind::InternalError,
-                    "CredSSP server's 'process' method must not be fired after the 'Finished' state".into(),
+                    "CredSSP server's 'process' method must not be fired after the 'Finished' state",
                 ),
             }),
         }
@@ -1051,8 +1051,9 @@ fn integer_increment_le(buffer: &mut [u8]) {
     }
 }
 
-fn construct_error(e: &crate::Error) -> u32 {
-    ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32
+fn construct_error(e: &crate::Error) -> NStatusCode {
+    let code = ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32;
+    NStatusCode(code)
 }
 
 #[cfg(test)]

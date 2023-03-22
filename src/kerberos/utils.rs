@@ -34,19 +34,13 @@ pub fn validate_mic_token(raw_token: &[u8], key_usage: i32, params: &EncryptionP
     } else if let Some(key) = params.session_key.as_ref() {
         key
     } else {
-        return Err(Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: "unable to obtain decryption key".into(),
-        });
+        return Err(Error::new(ErrorKind::DecryptFailure, "unable to obtain decryption key"));
     };
 
     let checksum = checksum_sha_aes(key, key_usage, &payload, &params.aes_size().unwrap_or(AesSize::Aes256))?;
 
     if checksum != token.checksum {
-        return Err(Error {
-            error_type: ErrorKind::MessageAltered,
-            description: "bad checksum of the mic token".into(),
-        });
+        return Err(Error::new(ErrorKind::MessageAltered, "bad checksum of the mic token"));
     }
 
     Ok(())
@@ -74,24 +68,23 @@ pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
     if let Some(hostname) = hostname {
         Ok(hostname.into())
     } else {
-        Err(Error::new(
-            ErrorKind::InvalidParameter,
-            "The hostname is not provided".into(),
-        ))
+        Err(Error::new(ErrorKind::InvalidParameter, "The hostname is not provided"))
     }
 }
 
 pub fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
-    let divider = target_name.find('/').ok_or_else(|| Error {
-        error_type: ErrorKind::InvalidParameter,
-        description: "Invalid service principal name: missing '/'".into(),
+    let divider = target_name.find('/').ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidParameter,
+            "Invalid service principal name: missing '/'",
+        )
     })?;
 
     if divider == 0 || divider == target_name.len() - 1 {
-        return Err(Error {
-            error_type: ErrorKind::InvalidParameter,
-            description: "Invalid service principal name".into(),
-        });
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "Invalid service principal name",
+        ));
     }
 
     let service_name = &target_name[0..divider];

@@ -50,31 +50,26 @@ pub mod reqwest_network_client {
                         url.port().unwrap_or(88)
                     ))?;
 
-                    stream.write(data).map_err(|e| Error {
-                        error_type: ErrorKind::InternalError,
-                        description: format!("{:?}", e),
-                    })?;
+                    stream
+                        .write(data)
+                        .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
 
-                    let len = stream.read_u32::<BigEndian>().map_err(|e| Error {
-                        error_type: ErrorKind::InternalError,
-                        description: format!("{:?}", e),
-                    })?;
+                    let len = stream
+                        .read_u32::<BigEndian>()
+                        .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
 
                     let mut buf = vec![0; len as usize + 4];
                     buf[0..4].copy_from_slice(&(len.to_be_bytes()));
 
-                    stream.read_exact(&mut buf[4..]).map_err(|e| Error {
-                        error_type: ErrorKind::InternalError,
-                        description: format!("{:?}", e),
-                    })?;
+                    stream
+                        .read_exact(&mut buf[4..])
+                        .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
 
                     Ok(buf)
                 }
                 "udp" => {
-                    let port = portpicker::pick_unused_port().ok_or_else(|| Error {
-                        error_type: ErrorKind::InternalError,
-                        description: "No free ports".into(),
-                    })?;
+                    let port = portpicker::pick_unused_port()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "No free ports"))?;
                     let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port))?;
 
                     if data.len() < 4 {
@@ -97,10 +92,10 @@ pub mod reqwest_network_client {
 
                     Ok(reply_buf)
                 }
-                scheme => Err(Error {
-                    error_type: ErrorKind::InternalError,
-                    description: format!("Invalid protocol for KDC server: {:?}. Expected only tcp/udp", scheme),
-                }),
+                scheme => Err(Error::new(
+                    ErrorKind::InternalError,
+                    format!("Invalid protocol for KDC server: {:?}. Expected only tcp/udp", scheme),
+                )),
             }
         }
 
@@ -125,14 +120,18 @@ pub mod reqwest_network_client {
                 .post(url.clone())
                 .body(picky_asn1_der::to_vec(&kdc_proxy_message)?)
                 .send()
-                .map_err(|err| Error {
-                    error_type: ErrorKind::InternalError,
-                    description: format!("Unable to send the data to the KDC Proxy: {:?}", err),
+                .map_err(|err| {
+                    Error::new(
+                        ErrorKind::InternalError,
+                        format!("Unable to send the data to the KDC Proxy: {:?}", err),
+                    )
                 })?
                 .bytes()
-                .map_err(|err| Error {
-                    error_type: ErrorKind::InternalError,
-                    description: format!("Unable to read the response data from the KDC Proxy: {:?}", err),
+                .map_err(|err| {
+                    Error::new(
+                        ErrorKind::InternalError,
+                        format!("Unable to read the response data from the KDC Proxy: {:?}", err),
+                    )
                 })?
                 .to_vec();
 

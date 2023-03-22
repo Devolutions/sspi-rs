@@ -65,10 +65,7 @@ pub fn extract_session_key_from_tgs_rep(
 
     let enc_data = cipher
         .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
-        .map_err(|e| Error {
-            error_type: ErrorKind::InternalError,
-            description: format!("{:?}", e),
-        })?;
+        .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
 
     let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
@@ -92,10 +89,10 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
     {
         Some(data) => {
             let pa_etype_info2: EtypeInfo2 = picky_asn1_der::from_bytes(&data)?;
-            let pa_etype_info2 = pa_etype_info2.0.get(0).ok_or(Error {
-                error_type: ErrorKind::InternalError,
-                description: "Missing EtypeInto2Entry in EtypeInfo2".into(),
-            })?;
+            let pa_etype_info2 = pa_etype_info2.0.get(0).ok_or(Error::new(
+                ErrorKind::InternalError,
+                "Missing EtypeInto2Entry in EtypeInfo2",
+            ))?;
 
             Ok((
                 pa_etype_info2.etype.0 .0.first().copied().unwrap(),
@@ -104,16 +101,13 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .0
                     .as_ref()
                     .map(|salt| salt.0.to_string())
-                    .ok_or(Error {
-                        error_type: ErrorKind::InternalError,
-                        description: "Missing salt in EtypeInto2Entry".into(),
-                    })?,
+                    .ok_or(Error::new(ErrorKind::InternalError, "Missing salt in EtypeInto2Entry"))?,
             ))
         }
-        None => Err(Error {
-            error_type: ErrorKind::NoPaData,
-            description: format!("Missing PaData: PA_ETYPE_INFO2 ({:0x?})", PA_ETYPE_INFO2_TYPE),
-        }),
+        None => Err(Error::new(
+            ErrorKind::NoPaData,
+            format!("Missing PaData: PA_ETYPE_INFO2 ({:0x?})", PA_ETYPE_INFO2_TYPE),
+        )),
     }
 }
 
@@ -149,7 +143,7 @@ pub fn extract_status_code_from_krb_priv_response(
     if user_data.len() < 2 {
         return Err(Error::new(
             ErrorKind::InvalidToken,
-            "Invalid KRB_PRIV message: user-data first is too short (expected at least 2 bytes)".into(),
+            "Invalid KRB_PRIV message: user-data first is too short (expected at least 2 bytes)",
         ));
     }
 

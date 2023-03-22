@@ -158,17 +158,14 @@ impl Kerberos {
                 scheme => {
                     error!(?scheme, "Bad kdc url: invalid URL scheme");
 
-                    Err(Error {
-                        error_type: ErrorKind::InvalidParameter,
-                        description: "Invalid KDC server URL protocol scheme".to_owned(),
-                    })
+                    Err(Error::new(
+                        ErrorKind::InvalidParameter,
+                        "Invalid KDC server URL protocol scheme",
+                    ))
                 }
             };
         }
-        Err(Error {
-            error_type: ErrorKind::NoAuthenticatingAuthority,
-            description: "No KDC server found".to_owned(),
-        })
+        Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
     }
 
     pub fn as_exchange(
@@ -190,10 +187,10 @@ impl Kerberos {
         if as_rep.is_ok() {
             error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
 
-            return Err(Error {
-                error_type: ErrorKind::InternalError,
-                description: "KDC server should not process AS_REQ without the pa-pac data".to_owned(),
-            });
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "KDC server should not process AS_REQ without the pa-pac data",
+            ));
         }
 
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
@@ -274,10 +271,10 @@ impl Sspi for Kerberos {
                 *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
             }
             _ => {
-                return Err(Error {
-                    error_type: ErrorKind::OutOfSequence,
-                    description: "Kerberos context is not established".to_owned(),
-                })
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    "Kerberos context is not established",
+                ))
             }
         };
 
@@ -457,7 +454,7 @@ impl Sspi for Kerberos {
         if let Some((_realm, mut kdc_url)) = self.get_kdc() {
             kdc_url
                 .set_port(Some(KPASSWD_PORT))
-                .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC url".into()))?;
+                .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC URL"))?;
 
             let response = self.send(&serialize_message(&krb_priv)?)?;
             trace!(?response, "Change password raw response");
@@ -531,16 +528,15 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .unwrap()
                     .as_ref()
-                    .ok_or_else(|| Error {
-                        error_type: ErrorKind::NoCredentials,
-                        description: "No credentials provided".to_owned(),
-                    })?;
+                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "No credentials provided"))?;
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
-                let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| Error {
-                    error_type: ErrorKind::NoCredentials,
-                    description: "Service target name (service principal name) is not provided".into(),
+                let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::NoCredentials,
+                        "Service target name (service principal name) is not provided",
+                    )
                 })?)?;
 
                 let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
@@ -556,9 +552,10 @@ impl SspiImpl for Kerberos {
                 SecurityStatus::ContinueNeeded
             }
             KerberosState::Preauthentication => {
-                let input = builder.input.as_ref().ok_or_else(|| {
-                    crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into())
-                })?;
+                let input = builder
+                    .input
+                    .as_ref()
+                    .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
 
                 if let Ok(sec_buffer) =
                     SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
@@ -575,10 +572,7 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .unwrap()
                     .as_ref()
-                    .ok_or_else(|| Error {
-                        error_type: ErrorKind::WrongCredentialHandle,
-                        description: "No credentials provided".to_owned(),
-                    })?;
+                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
 
                 let username = utf16_bytes_to_utf8_string(&credentials.user);
                 let domain = utf16_bytes_to_utf8_string(&credentials.domain);
@@ -631,9 +625,11 @@ impl SspiImpl for Kerberos {
                 let session_key_1 =
                     extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
 
-                let service_principal = builder.target_name.ok_or_else(|| Error {
-                    error_type: ErrorKind::NoCredentials,
-                    description: "Service target name (service principal name) is not provided".into(),
+                let service_principal = builder.target_name.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::NoCredentials,
+                        "Service target name (service principal name) is not provided",
+                    )
                 })?;
 
                 let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
@@ -706,7 +702,7 @@ impl SspiImpl for Kerberos {
                 let input = builder
                     .input
                     .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -766,7 +762,7 @@ impl SspiImpl for Kerberos {
     ) -> Result<crate::AcceptSecurityContextResult> {
         let input = builder
             .input
-            .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+            .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
 
         let status = match &self.state {
             KerberosState::ApExchange => {
@@ -818,17 +814,11 @@ mod tests {
 
     impl NetworkClient for NetworkClientMock {
         fn send(&self, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
-            Err(Error::new(
-                ErrorKind::UnsupportedFunction,
-                "send is not supported".into(),
-            ))
+            Err(Error::new(ErrorKind::UnsupportedFunction, "send is not supported"))
         }
 
         fn send_http(&self, _url: &url::Url, _data: &[u8], _domain: Option<String>) -> crate::Result<Vec<u8>> {
-            Err(Error::new(
-                ErrorKind::UnsupportedFunction,
-                "send_http is not supported".into(),
-            ))
+            Err(Error::new(ErrorKind::UnsupportedFunction, "send_http is not supported"))
         }
 
         fn clone(&self) -> Box<dyn NetworkClient> {

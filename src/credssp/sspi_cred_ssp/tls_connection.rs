@@ -87,12 +87,7 @@ impl TlsConnection {
             TlsConnection::Rustls(tls_connection) => tls_connection
                 .peer_certificates()
                 .map(|certificates| certificates.iter().map(|cert| cert.as_ref()).collect())
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::CertificateUnknown,
-                        "The server certificate is not present".into(),
-                    )
-                }),
+                .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "The server certificate is not present")),
         }
     }
 
@@ -118,9 +113,9 @@ impl TlsConnection {
     pub fn stream_sizes(&self) -> Result<StreamSizes> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                let connection_cipher = tls_connection.negotiated_cipher_suite().ok_or_else(|| {
-                    Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
-                })?;
+                let connection_cipher = tls_connection
+                    .negotiated_cipher_suite()
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
                 let bulk_cipher = match connection_cipher {
                     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
@@ -153,10 +148,7 @@ impl TlsConnection {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let protocol_version = tls_connection.protocol_version().ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::InternalError,
-                        "Can not acquire connection protocol version".into(),
-                    )
+                    Error::new(ErrorKind::InternalError, "Can not acquire connection protocol version")
                 })?;
 
                 let protocol = match tls_connection {
@@ -188,9 +180,9 @@ impl TlsConnection {
                     },
                 };
 
-                let connection_cipher = tls_connection.negotiated_cipher_suite().ok_or_else(|| {
-                    Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated".into())
-                })?;
+                let connection_cipher = tls_connection
+                    .negotiated_cipher_suite()
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
                 let bulk_cipher = match connection_cipher {
                     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
@@ -202,7 +194,7 @@ impl TlsConnection {
                     rustls::BulkAlgorithm::Chacha20Poly1305 => {
                         return Err(Error::new(
                             ErrorKind::InternalError,
-                            "alg_id for CHACHA20_POLY1305 does not exist".into(),
+                            "alg_id for CHACHA20_POLY1305 does not exist",
                         ))
                     }
                 };
@@ -224,12 +216,9 @@ impl TlsConnection {
 
     pub fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
         let certificates = self.peer_certificates()?;
-        let peer_certificate = certificates.get(0).ok_or_else(|| {
-            Error::new(
-                ErrorKind::CertificateUnknown,
-                "Can not acquire server certificate".into(),
-            )
-        })?;
+        let peer_certificate = certificates
+            .get(0)
+            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "Can not acquire server certificate"))?;
 
         let peer_certificate: Certificate = picky_asn1_der::from_bytes(peer_certificate)?;
 

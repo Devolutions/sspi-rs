@@ -4,7 +4,7 @@ macro_rules! check_conversation_id {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
                 format!(
-                    "Server sent invalid conversation id. Got {:?} but expected {:?}.",
+                    "Server sent invalid conversation id. Got {:?} but expected {:?}",
                     $actual, $expected
                 ),
             ));
@@ -15,14 +15,14 @@ macro_rules! check_conversation_id {
 macro_rules! check_auth_scheme {
     ($actual:expr, $expected:expr) => {
         if $expected.is_none() {
-            return Err(Error::new(ErrorKind::InternalError, "auth scheme id is not set".into()));
+            return Err(Error::new(ErrorKind::InternalError, "auth scheme id is not set"));
         }
 
         if $actual != $expected.unwrap() {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
                 format!(
-                    "Server sent invalid conversation id. Got {:?} but expected {:?}.",
+                    "Server sent invalid conversation id. Got {:?} but expected {:?}",
                     $actual,
                     $expected.unwrap()
                 ),
@@ -37,7 +37,7 @@ macro_rules! check_sequence_number {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!(
-                    "Server sent invalid sequence number. Got {:?} but expected {:?}.",
+                    "Server sent invalid sequence number. Got {:?} but expected {:?}",
                     $actual, $expected
                 ),
             ));
@@ -47,6 +47,6 @@ macro_rules! check_sequence_number {
 
 macro_rules! check_if_empty {
     ($actual:expr, $msg:expr) => {
-        $actual.ok_or_else(|| Error::new(ErrorKind::InternalError, $msg.into()))?
+        $actual.ok_or_else(|| Error::new(ErrorKind::InternalError, $msg))?
     };
 }

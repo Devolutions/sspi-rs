@@ -16,9 +16,11 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
         .response_token
         .0
         .as_ref()
-        .ok_or_else(|| Error {
-            error_type: ErrorKind::InvalidToken,
-            description: "Missing responce token in NegTokenTarg".to_owned(),
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                "Missing responce token in NegTokenTarg".to_owned(),
+            )
         })?
         .0
          .0;
@@ -46,9 +48,11 @@ pub fn extract_sub_session_key_from_ap_rep(
 
     let res = cipher
         .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
-        .map_err(|err| Error {
-            error_type: ErrorKind::DecryptFailure,
-            description: format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
+        .map_err(|err| {
+            Error::new(
+                ErrorKind::DecryptFailure,
+                format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
+            )
         })?;
 
     let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
