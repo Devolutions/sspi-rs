@@ -16,12 +16,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
         .response_token
         .0
         .as_ref()
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                "Missing responce token in NegTokenTarg".to_owned(),
-            )
-        })?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response token in NegTokenTarg"))?
         .0
          .0;
 
@@ -61,7 +56,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .0
         .subkey
         .0
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing sub-key in ap_req".to_owned()))?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing sub-key in ap_req"))?
         .0
         .key_value
         .0

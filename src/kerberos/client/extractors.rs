@@ -89,10 +89,10 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
     {
         Some(data) => {
             let pa_etype_info2: EtypeInfo2 = picky_asn1_der::from_bytes(&data)?;
-            let pa_etype_info2 = pa_etype_info2.0.get(0).ok_or(Error::new(
-                ErrorKind::InternalError,
-                "Missing EtypeInto2Entry in EtypeInfo2",
-            ))?;
+            let pa_etype_info2 = pa_etype_info2
+                .0
+                .get(0)
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "Missing EtypeInto2Entry in EtypeInfo2"))?;
 
             Ok((
                 pa_etype_info2.etype.0 .0.first().copied().unwrap(),
@@ -101,7 +101,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .0
                     .as_ref()
                     .map(|salt| salt.0.to_string())
-                    .ok_or(Error::new(ErrorKind::InternalError, "Missing salt in EtypeInto2Entry"))?,
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Missing salt in EtypeInto2Entry"))?,
             ))
         }
         None => Err(Error::new(

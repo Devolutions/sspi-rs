@@ -175,7 +175,7 @@ impl Sspi for SspiCredSsp {
         if message.len() < 4 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Input message mut contain four buffers",
+                "Input message must contain four buffers",
             ));
         }
 
@@ -445,7 +445,7 @@ impl SspiImpl for SspiCredSsp {
             CredSspState::Final => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
-                    "Error: Initialize security context function has been called after authorization",
+                    "Initialize security context function has been called after authorization",
                 ));
             }
         };
