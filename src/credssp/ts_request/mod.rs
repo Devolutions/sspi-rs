@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test;
 
+use core::fmt;
 use std::io::{self, Read};
 
 use super::CredSspMode;
@@ -32,7 +33,7 @@ pub struct TsRequest {
     pub pub_key_auth: Option<Vec<u8>>,
     /// If the SPNEGO exchange fails on the server, this field is used to send
     /// the failure code to the client.
-    pub error_code: Option<u32>,
+    pub error_code: Option<NStatusCode>,
     /// An array of cryptographically random bytes used to provide sufficient
     /// entropy during hash computation.
     pub client_nonce: Option<[u8; NONCE_SIZE]>,
@@ -118,7 +119,7 @@ impl TsRequest {
                 let read_error_code = ber::read_integer(&mut stream)?;
                 let error_code = read_error_code as u32;
 
-                Some(error_code)
+                Some(NStatusCode(error_code))
             } else {
                 None
             };
@@ -193,10 +194,13 @@ impl TsRequest {
         }
 
         /* [4] errorCode (INTEGER) */
-        if self.version >= 3 && self.error_code.is_some() {
-            let (error_code_len, _) = get_error_code_len(self.version, self.error_code);
-            ber::write_contextual_tag(&mut buffer, 4, error_code_len, ber::Pc::Construct)?;
-            ber::write_integer(&mut buffer, self.error_code.unwrap())?;
+        match self.error_code {
+            Some(error_code) if self.version >= 3 => {
+                let (error_code_len, _) = get_error_code_len(self.version, self.error_code);
+                ber::write_contextual_tag(&mut buffer, 4, error_code_len, ber::Pc::Construct)?;
+                ber::write_integer(&mut buffer, error_code.0)?;
+            }
+            _ => {}
         }
 
         /* [5] clientNonce (OCTET STRING) */
@@ -213,9 +217,10 @@ impl TsRequest {
 
     pub fn check_error(&self) -> crate::Result<()> {
         match self.error_code {
-            Some(error_code) if error_code != 0 => Err(crate::Error::new(
+            Some(error_code) if error_code != NStatusCode::SUCCESS => Err(crate::Error::new_with_nstatus(
                 crate::ErrorKind::InvalidToken,
-                format!("Server has returned an error: 0x{:x}", error_code),
+                "CredSSP server returned an error status",
+                error_code,
             )),
             _ => Ok(()),
         }
@@ -347,10 +352,10 @@ fn get_nego_tokens_len(nego_tokens: &Option<Vec<u8>>) -> u16 {
     }
 }
 
-fn get_error_code_len(version: u32, error_code: Option<u32>) -> (u16, u16) {
-    match error_code {
+fn get_error_code_len(version: u32, error_code: impl Into<Option<NStatusCode>>) -> (u16, u16) {
+    match error_code.into() {
         Some(error_code) if version >= 3 && version != 5 => {
-            let len = ber::sizeof_integer(error_code);
+            let len = ber::sizeof_integer(error_code.0);
             let context_len = ber::sizeof_contextual_tag(len);
 
             (len, context_len)
@@ -369,5 +374,121 @@ fn get_field_len(field: &Option<Vec<u8>>) -> u16 {
             len
         }
         None => 0,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct NStatusCode(pub u32);
+
+impl NStatusCode {
+    pub const SUCCESS: Self = Self(0x0000_0000);
+    pub const NO_QUOTAS_FOR_ACCOUNT: Self = Self(0x0000_010d);
+    pub const NO_LOGON_SERVERS: Self = Self(0xc000_005e);
+    pub const NO_SUCH_LOGON_SESSION: Self = Self(0xc000_005f);
+    pub const NO_SUCH_PRIVILEGE: Self = Self(0xc000_0060);
+    pub const PRIVILEGE_NOT_HELD: Self = Self(0xc000_0061);
+    pub const INVALID_ACCOUNT_NAME: Self = Self(0xc000_0062);
+    pub const USER_EXISTS: Self = Self(0xc000_0063);
+    pub const NO_SUCH_USER: Self = Self(0xc000_0064);
+    pub const GROUP_EXISTS: Self = Self(0xc000_0065);
+    pub const NO_SUCH_GROUP: Self = Self(0xc000_0066);
+    pub const MEMBER_IN_GROUP: Self = Self(0xc000_0067);
+    pub const MEMBER_NOT_IN_GROUP: Self = Self(0xc000_0068);
+    pub const LAST_ADMIN: Self = Self(0xc000_0069);
+    pub const WRONG_PASSWORD: Self = Self(0xc000_006a);
+    pub const ILL_FORMED_PASSWORD: Self = Self(0xc000_006b);
+    pub const PASSWORD_RESTRICTION: Self = Self(0xc000_006c);
+    pub const LOGON_FAILURE: Self = Self(0xc000_006d);
+    pub const ACCOUNT_RESTRICTION: Self = Self(0xc000_006e);
+    pub const INVALID_LOGON_HOURS: Self = Self(0xc000_006f);
+    pub const INVALID_WORKSTATION: Self = Self(0xc000_0070);
+    pub const PASSWORD_EXPIRED: Self = Self(0xc000_0071);
+    pub const ACCOUNT_DISABLED: Self = Self(0xc000_0072);
+    pub const IO_TIMEOUT: Self = Self(0xc000_00b5);
+    pub const NOT_LOGON_PROCESS: Self = Self(0xc000_00ed);
+    pub const LOGON_SESSION_EXISTS: Self = Self(0xc000_00ee);
+    pub const BAD_LOGON_SESSION_STATE: Self = Self(0xc000_0104);
+    pub const LOGON_SESSION_COLLISION: Self = Self(0xc000_0105);
+    pub const INVALID_LOGON_TYPE: Self = Self(0xc000_010b);
+    pub const SPECIAL_ACCOUNT: Self = Self(0xc000_0124);
+    pub const TOKEN_ALREADY_IN_USE: Self = Self(0xc000_012b);
+    pub const LOGON_SERVER_CONFLICT: Self = Self(0xc000_0132);
+    pub const TIME_DIFFERENCE_AT_DC: Self = Self(0xc000_0133);
+    pub const MEMBER_NOT_IN_ALIAS: Self = Self(0xc000_0152);
+    pub const MEMBER_IN_ALIAS: Self = Self(0xc000_0153);
+    pub const LOGON_NOT_GRANTED: Self = Self(0xc000_0155);
+    pub const LOGON_TYPE_NOT_GRANTED: Self = Self(0xc000_015b);
+    pub const TRANSACTION_TIMED_OUT: Self = Self(0xc000_0210);
+    pub const PASSWORD_MUST_CHANGE: Self = Self(0xc000_0224);
+    pub const ACCOUNT_LOCKED_OUT: Self = Self(0xc000_0234);
+    pub const INSUFFICIENT_LOGON_INFO: Self = Self(0xc000_0250);
+    pub const SMARTCARD_LOGON_REQUIRED: Self = Self(0xc000_02fa);
+    pub const CTX_LOGON_DISABLED: Self = Self(0xc00a_0037);
+
+    pub fn name(self) -> Option<&'static str> {
+        let name = match self {
+            Self::SUCCESS => "STATUS_SUCCESS",
+            Self::NO_QUOTAS_FOR_ACCOUNT => "STATUS_NO_QUOTAS_FOR_ACCOUNT",
+            Self::NO_LOGON_SERVERS => "STATUS_NO_LOGON_SERVERS",
+            Self::NO_SUCH_LOGON_SESSION => "STATUS_NO_SUCH_LOGON_SESSION",
+            Self::NO_SUCH_PRIVILEGE => "STATUS_NO_SUCH_PRIVILEGE",
+            Self::PRIVILEGE_NOT_HELD => "STATUS_PRIVILEGE_NOT_HELD",
+            Self::INVALID_ACCOUNT_NAME => "STATUS_INVALID_ACCOUNT_NAME",
+            Self::USER_EXISTS => "STATUS_USER_EXISTS",
+            Self::NO_SUCH_USER => "STATUS_NO_SUCH_USER",
+            Self::GROUP_EXISTS => "STATUS_GROUP_EXISTS",
+            Self::NO_SUCH_GROUP => "STATUS_NO_SUCH_GROUP",
+            Self::MEMBER_IN_GROUP => "STATUS_MEMBER_IN_GROUP",
+            Self::MEMBER_NOT_IN_GROUP => "STATUS_MEMBER_NOT_IN_GROUP",
+            Self::LAST_ADMIN => "STATUS_LAST_ADMIN",
+            Self::WRONG_PASSWORD => "STATUS_WRONG_PASSWORD",
+            Self::ILL_FORMED_PASSWORD => "STATUS_ILL_FORMED_PASSWORD",
+            Self::PASSWORD_RESTRICTION => "STATUS_PASSWORD_RESTRICTION",
+            Self::LOGON_FAILURE => "STATUS_LOGON_FAILURE",
+            Self::ACCOUNT_RESTRICTION => "STATUS_ACCOUNT_RESTRICTION",
+            Self::INVALID_LOGON_HOURS => "STATUS_INVALID_LOGON_HOURS",
+            Self::INVALID_WORKSTATION => "STATUS_INVALID_WORKSTATION",
+            Self::PASSWORD_EXPIRED => "STATUS_PASSWORD_EXPIRED",
+            Self::ACCOUNT_DISABLED => "STATUS_ACCOUNT_DISABLED",
+            Self::IO_TIMEOUT => "STATUS_IO_TIMEOUT",
+            Self::NOT_LOGON_PROCESS => "STATUS_NOT_LOGON_PROCESS",
+            Self::LOGON_SESSION_EXISTS => "STATUS_LOGON_SESSION_EXISTS",
+            Self::BAD_LOGON_SESSION_STATE => "STATUS_BAD_LOGON_SESSION_STATE",
+            Self::LOGON_SESSION_COLLISION => "STATUS_LOGON_SESSION_COLLISION",
+            Self::INVALID_LOGON_TYPE => "STATUS_INVALID_LOGON_TYPE",
+            Self::SPECIAL_ACCOUNT => "STATUS_SPECIAL_ACCOUNT",
+            Self::TOKEN_ALREADY_IN_USE => "STATUS_TOKEN_ALREADY_IN_USE",
+            Self::LOGON_SERVER_CONFLICT => "STATUS_LOGON_SERVER_CONFLICT",
+            Self::TIME_DIFFERENCE_AT_DC => "STATUS_TIME_DIFFERENCE_AT_DC",
+            Self::MEMBER_NOT_IN_ALIAS => "STATUS_MEMBER_NOT_IN_ALIAS",
+            Self::MEMBER_IN_ALIAS => "STATUS_MEMBER_IN_ALIAS",
+            Self::LOGON_NOT_GRANTED => "STATUS_LOGON_NOT_GRANTED",
+            Self::LOGON_TYPE_NOT_GRANTED => "STATUS_LOGON_TYPE_NOT_GRANTED",
+            Self::TRANSACTION_TIMED_OUT => "STATUS_TRANSACTION_TIMED_OUT",
+            Self::PASSWORD_MUST_CHANGE => "STATUS_PASSWORD_MUST_CHANGE",
+            Self::ACCOUNT_LOCKED_OUT => "STATUS_ACCOUNT_LOCKED_OUT",
+            Self::INSUFFICIENT_LOGON_INFO => "STATUS_INSUFFICIENT_LOGON_INFO",
+            Self::SMARTCARD_LOGON_REQUIRED => "STATUS_SMARTCARD_LOGON_REQUIRED",
+            Self::CTX_LOGON_DISABLED => "STATUS_CTX_LOGON_DISABLED",
+            _ => return None,
+        };
+
+        Some(name)
+    }
+}
+
+impl fmt::Debug for NStatusCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NStatusCode({:#x})", self.0)
+    }
+}
+
+impl fmt::Display for NStatusCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(name) = self.name() {
+            write!(f, "{name} [{:#x}]", self.0)
+        } else {
+            write!(f, "NSTATUS code {:#x}", self.0)
+        }
     }
 }

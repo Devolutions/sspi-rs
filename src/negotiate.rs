@@ -243,7 +243,7 @@ impl Negotiate {
                 if !is_ntlm {
                     return Err(Error::new(
                         ErrorKind::InvalidParameter,
-                        "Can not initialize Kerberos: network client is not provided".into(),
+                        "Can not initialize Kerberos: network client is not provided",
                     ));
                 }
                 #[cfg(feature = "network_client")]
@@ -410,7 +410,7 @@ impl SspiImpl for Negotiate {
             match kerberos.initialize_security_context_impl(builder) {
                 Result::Err(Error {
                     error_type: ErrorKind::NoCredentials,
-                    description: _,
+                    ..
                 }) => {
                     warn!("Negotiate: Fall back to the NTLM");
 

@@ -19,7 +19,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
 
                 return Err(Error::new(
                     ErrorKind::Pku2uCertFailure,
-                    "Received unknown certificate format".into(),
+                    "Received unknown certificate format",
                 ));
             }
         };
@@ -34,7 +34,7 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
 
                 return Err(Error::new(
                     ErrorKind::Pku2uCertFailure,
-                    "Received certificate has unsupported public key type. Only RSA is supported.".into(),
+                    "Received certificate has unsupported public key type. Only RSA is supported",
                 ));
             }
         }
@@ -48,6 +48,6 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
 
     Err(Error::new(
         ErrorKind::Pku2uCertFailure,
-        "Received invalid server certificates".into(),
+        "Received invalid server certificates",
     ))
 }

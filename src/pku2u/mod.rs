@@ -251,7 +251,7 @@ impl Sspi for Pku2u {
         match self.state {
             Pku2uState::PubKeyAuth | Pku2uState::Credentials | Pku2uState::Final => {
                 if raw_wrap_token.len() < SECURITY_TRAILER {
-                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data".into()));
+                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
                 }
 
                 *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
@@ -259,10 +259,10 @@ impl Sspi for Pku2u {
                 *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
             }
             _ => {
-                return Err(Error {
-                    error_type: ErrorKind::OutOfSequence,
-                    description: "Pku2u context is not established".to_owned(),
-                })
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    "Pku2u context is not established".to_owned(),
+                ))
             }
         };
 
@@ -365,7 +365,7 @@ impl Sspi for Pku2u {
     fn change_password(&mut self, _change_password: ChangePassword) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "change_password is not supported in PKU2U".into(),
+            "change_password is not supported in PKU2U",
         ))
     }
 }
@@ -447,7 +447,7 @@ impl SspiImpl for Pku2u {
                 let input = builder
                     .input
                     .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -455,9 +455,7 @@ impl SspiImpl for Pku2u {
                     .0
                     .response_token
                     .0
-                    .ok_or_else(|| {
-                        Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg".into())
-                    })?
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
                      .0;
 
@@ -485,12 +483,12 @@ impl SspiImpl for Pku2u {
                 } else {
                     return Err(Error::new(
                         ErrorKind::InvalidToken,
-                        "Server didn't send any auth scheme".into(),
+                        "Server didn't send any auth scheme",
                     ));
                 }
 
                 if buffer.len() < acceptor_nego.header.header_len as usize {
-                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short".into()));
+                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
                 }
 
                 let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
@@ -553,7 +551,7 @@ impl SspiImpl for Pku2u {
                 let input = builder
                     .input
                     .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -561,9 +559,7 @@ impl SspiImpl for Pku2u {
                     .0
                     .response_token
                     .0
-                    .ok_or_else(|| {
-                        Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg".into())
-                    })?
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
                      .0;
 
@@ -585,7 +581,7 @@ impl SspiImpl for Pku2u {
                     PaPkAsRep::EncKeyPack(_) => {
                         return Err(Error::new(
                             ErrorKind::OperationNotSupported,
-                            "encKeyPack is not supported for the PA-PK-AS-REP".into(),
+                            "encKeyPack is not supported for the PA-PK-AS-REP",
                         ))
                     }
                 };
@@ -708,7 +704,7 @@ impl SspiImpl for Pku2u {
                 let input = builder
                     .input
                     .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified".into()))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -717,9 +713,7 @@ impl SspiImpl for Pku2u {
                     .0
                     .response_token
                     .0
-                    .ok_or_else(|| {
-                        Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg".into())
-                    })?
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
                      .0;
 
@@ -731,7 +725,7 @@ impl SspiImpl for Pku2u {
                 check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
                 if buffer.len() < acceptor_exchange.header.header_len as usize {
-                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short".into()));
+                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
                 }
 
                 self.negoex_messages
@@ -768,7 +762,7 @@ impl SspiImpl for Pku2u {
                 if acceptor_verify.checksum.checksum_value != acceptor_checksum {
                     return Err(Error::new(
                         ErrorKind::MessageAltered,
-                        "bad verify message signature from server".into(),
+                        "bad verify message signature from server",
                     ));
                 }
 
@@ -800,7 +794,7 @@ impl SspiImpl for Pku2u {
     ) -> Result<AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "accept_security_context_impl is not implemented yet".into(),
+            "accept_security_context_impl is not implemented yet",
         ))
     }
 }

@@ -66,7 +66,7 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
 
         return Err(Error::new(
             ErrorKind::InternalError,
-            "Cannot extract certificate private key: invalid key blob magic".into(),
+            "Cannot extract certificate private key: invalid key blob magic",
         ));
     }
 
@@ -172,7 +172,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
 
         return Err(Error::new(
             ErrorKind::InternalError,
-            "Cannot extract certificate private key: invalid handle".into(),
+            "Cannot extract certificate private key: invalid handle",
         ));
     }
 
@@ -269,7 +269,7 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
     Err(Error::new(
         ErrorKind::InternalError,
-        "Cannot find appropriate device certificate".into(),
+        "Cannot find appropriate device certificate",
     ))
 }
 
@@ -293,7 +293,7 @@ pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
         if cert_store.is_null() {
             return Err(Error::new(
                 ErrorKind::InternalError,
-                "Cannot initialize certificate store: permission denied".into(),
+                "Cannot initialize certificate store: permission denied",
             ));
         }
 

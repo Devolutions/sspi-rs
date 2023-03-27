@@ -769,7 +769,7 @@ where
     fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "query_context_stream_sizes is not supported".into(),
+            "query_context_stream_sizes is not supported",
         ))
     }
 
@@ -825,7 +825,7 @@ where
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "query_remote_cert_context is not supported".into(),
+            "query_remote_cert_context is not supported",
         ))
     }
 
@@ -841,7 +841,7 @@ where
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "query_context_negotiation_package is not supported".into(),
+            "query_context_negotiation_package is not supported",
         ))
     }
 
@@ -857,7 +857,7 @@ where
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "query_context_connection_info is not supported".into(),
+            "query_context_connection_info is not supported",
         ))
     }
 
@@ -1754,6 +1754,7 @@ pub enum ErrorKind {
 pub struct Error {
     pub error_type: ErrorKind,
     pub description: String,
+    pub nstatus: Option<credssp::NStatusCode>,
 }
 
 /// The success status of SSPI-related operation.
@@ -1772,10 +1773,23 @@ pub enum SecurityStatus {
 
 impl Error {
     /// Allows to fill a new error easily, supplying it with a coherent description.
-    pub fn new(error_type: ErrorKind, error: String) -> Self {
+    pub fn new(error_type: ErrorKind, description: impl Into<String>) -> Self {
         Self {
             error_type,
-            description: error,
+            description: description.into(),
+            nstatus: None,
+        }
+    }
+
+    pub fn new_with_nstatus(
+        error_type: ErrorKind,
+        description: impl Into<String>,
+        status_code: credssp::NStatusCode,
+    ) -> Self {
+        Self {
+            error_type,
+            description: description.into(),
+            nstatus: Some(status_code),
         }
     }
 }
@@ -1784,7 +1798,13 @@ impl error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{:?}: {}", self.error_type, self.description)?;
+
+        if let Some(nstatus) = self.nstatus {
+            write!(f, "; status is {}", nstatus)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1821,39 +1841,28 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
         use picky_krb::crypto::KerberosCryptoError;
 
         match err {
-            KerberosCryptoError::KeyLength(actual, expected) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description: format!("invalid key length. actual: {}. expected: {}", actual, expected),
-            },
+            KerberosCryptoError::KeyLength(actual, expected) => Self::new(
+                ErrorKind::InvalidParameter,
+                format!("invalid key length. actual: {}. expected: {}", actual, expected),
+            ),
             KerberosCryptoError::CipherLength(_, _) => todo!(),
-            KerberosCryptoError::AlgorithmIdentifier(identifier) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description: format!("unknown algorithm identifier: {}", identifier),
-            },
-            KerberosCryptoError::IntegrityCheck => Self {
-                error_type: ErrorKind::MessageAltered,
-                description: err.to_string(),
-            },
-            KerberosCryptoError::CipherError(description) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description,
-            },
-            KerberosCryptoError::CipherPad(description) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description: description.to_string(),
-            },
-            KerberosCryptoError::CipherUnpad(description) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description: description.to_string(),
-            },
-            KerberosCryptoError::SeedBitLen(description) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description,
-            },
-            KerberosCryptoError::AlgorithmIdentifierData(identifier) => Self {
-                error_type: ErrorKind::InvalidParameter,
-                description: format!("unknown algorithm identifier: {:?}", identifier),
-            },
+            KerberosCryptoError::AlgorithmIdentifier(identifier) => Self::new(
+                ErrorKind::InvalidParameter,
+                format!("unknown algorithm identifier: {}", identifier),
+            ),
+            KerberosCryptoError::IntegrityCheck => Self::new(ErrorKind::MessageAltered, err.to_string()),
+            KerberosCryptoError::CipherError(description) => Self::new(ErrorKind::InvalidParameter, description),
+            KerberosCryptoError::CipherPad(description) => {
+                Self::new(ErrorKind::InvalidParameter, description.to_string())
+            }
+            KerberosCryptoError::CipherUnpad(description) => {
+                Self::new(ErrorKind::InvalidParameter, description.to_string())
+            }
+            KerberosCryptoError::SeedBitLen(description) => Self::new(ErrorKind::InvalidParameter, description),
+            KerberosCryptoError::AlgorithmIdentifierData(identifier) => Self::new(
+                ErrorKind::InvalidParameter,
+                format!("unknown algorithm identifier: {:?}", identifier),
+            ),
         }
     }
 }
@@ -1863,24 +1872,15 @@ impl From<picky_krb::crypto::diffie_hellman::DiffieHellmanError> for Error {
         use picky_krb::crypto::diffie_hellman::DiffieHellmanError;
 
         match error {
-            DiffieHellmanError::BitLen(description) => Self {
-                error_type: ErrorKind::InternalError,
-                description,
-            },
-            error => Self {
-                error_type: ErrorKind::InternalError,
-                description: error.to_string(),
-            },
+            DiffieHellmanError::BitLen(description) => Self::new(ErrorKind::InternalError, description),
+            error => Self::new(ErrorKind::InternalError, error.to_string()),
         }
     }
 }
 
 impl From<CharSetError> for Error {
     fn from(err: CharSetError) -> Self {
-        Self {
-            error_type: ErrorKind::InternalError,
-            description: err.to_string(),
-        }
+        Self::new(ErrorKind::InternalError, err.to_string())
     }
 }
 
@@ -1888,22 +1888,10 @@ impl From<GssApiMessageError> for Error {
     fn from(err: GssApiMessageError) -> Self {
         match err {
             GssApiMessageError::IoError(err) => Self::from(err),
-            GssApiMessageError::InvalidId(_, _) => Self {
-                error_type: ErrorKind::InvalidToken,
-                description: err.to_string(),
-            },
-            GssApiMessageError::InvalidMicFiller(_) => Self {
-                error_type: ErrorKind::InvalidToken,
-                description: err.to_string(),
-            },
-            GssApiMessageError::InvalidWrapFiller(_) => Self {
-                error_type: ErrorKind::InvalidToken,
-                description: err.to_string(),
-            },
-            GssApiMessageError::Asn1Error(_) => Self {
-                error_type: ErrorKind::InvalidToken,
-                description: err.to_string(),
-            },
+            GssApiMessageError::InvalidId(_, _) => Self::new(ErrorKind::InvalidToken, err.to_string()),
+            GssApiMessageError::InvalidMicFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
+            GssApiMessageError::InvalidWrapFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
+            GssApiMessageError::Asn1Error(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
         }
     }
 }

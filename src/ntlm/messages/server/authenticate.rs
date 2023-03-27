@@ -56,7 +56,7 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
     if state != NtlmState::Authenticate {
         Err(crate::Error::new(
             crate::ErrorKind::OutOfSequence,
-            String::from("Read authenticate was fired but the state is not an Authenticate"),
+            "Read authenticate was fired but the state is not an Authenticate",
         ))
     } else {
         Ok(())
@@ -86,17 +86,15 @@ fn read_header(mut buffer: impl io::Read) -> crate::Result<(AuthenticateMessageF
     {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
-            String::from(
-                "Negotiate key exchange flag is set but encrypted random session key \
+            "Negotiate key exchange flag is set but encrypted random session key \
                  is empty or the flag is not set but the key is not empty",
-            ),
         ));
     }
 
     if encrypted_random_session_key.buffer.len() != ENCRYPTED_RANDOM_SESSION_KEY_SIZE {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
-            String::from("Invalid encrypted random session key"),
+            "Invalid encrypted random session key",
         ));
     }
 
@@ -151,7 +149,7 @@ fn process_message_fields(
     if message_fields.nt_challenge_response.buffer.is_empty() {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
-            String::from("NtChallengeResponse cannot be empty"),
+            "NtChallengeResponse cannot be empty",
         ));
     }
 
@@ -178,7 +176,7 @@ fn process_message_fields(
             if compute_md5_channel_bindings_hash(channel_bindings) != *hash {
                 return Err(crate::Error::new(
                     crate::ErrorKind::BadBindings,
-                    "Channel bindings hash mismatch".into(),
+                    "Channel bindings hash mismatch",
                 ));
             }
         }

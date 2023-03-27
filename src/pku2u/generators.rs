@@ -471,7 +471,7 @@ pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> R
     if !issuer {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
-            "Bad client certificate: cannot find common name of the issuer".into(),
+            "Bad client certificate: cannot find common name of the issuer",
         ));
     }
 
@@ -492,7 +492,7 @@ pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> R
     if !subject {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
-            "Bad client certificate: cannot find appropriate common name of the subject".into(),
+            "Bad client certificate: cannot find appropriate common name of the subject",
         ));
     }
 

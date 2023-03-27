@@ -232,7 +232,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
-        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+        "SecWinntIdentityEx2 is not supported on non Windows systems",
     ))
 }
 
@@ -267,7 +267,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     if p_auth_data.is_null() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
-            "Cannot unpack credentials: p_auth_data is null".into(),
+            "Cannot unpack credentials: p_auth_data is null",
         ));
     }
 
@@ -309,7 +309,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     if result != 1 {
         return Err(Error::new(
             ErrorKind::WrongCredentialHandle,
-            "Cannot unpack credentials".into(),
+            "Cannot unpack credentials",
         ));
     }
 
@@ -342,7 +342,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
-        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+        "SecWinntIdentityEx2 is not supported on non Windows systems",
     ))
 }
 
@@ -356,7 +356,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     if p_auth_data.is_null() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
-            "Cannot unpack credentials: p_auth_data is null".into(),
+            "Cannot unpack credentials: p_auth_data is null",
         ));
     }
 
@@ -398,7 +398,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     if result != 1 {
         return Err(Error::new(
             ErrorKind::WrongCredentialHandle,
-            "Cannot unpack credentials".into(),
+            "Cannot unpack credentials",
         ));
     }
 

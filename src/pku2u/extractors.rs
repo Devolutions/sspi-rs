@@ -31,13 +31,13 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
             .padata
             .0
             .as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "pa-datas is not present in as-rep".into()))?
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "pa-datas is not present in as-rep"))?
             .iter()
             .find(|pa_data| pa_data.padata_type.0 .0 == PA_PK_AS_REP)
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    "PA_PK_AS_REP is not present in pa-datas of the as-rep".into(),
+                    "PA_PK_AS_REP is not present in pa-datas of the as-rep",
                 )
             })?
             .padata_data
@@ -53,7 +53,7 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
         .0
         .as_ref()
         .map(|nonce| nonce.0 .0.clone())
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "DH server nonce is not present".into()))?;
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "DH server nonce is not present"))?;
 
     if nonce.len() != DH_NONCE_LEN {
         return Err(Error::new(
@@ -86,7 +86,7 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
         .content_info
         .content
         .as_ref()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "content info is not present".into()))?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "content info is not present"))?
         .0
     {
         ContentValue::OctetString(data) => &data.0,
@@ -96,7 +96,7 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
                 "The server has sent KDC DH key info in unsupported format. Only ContentValue::OctetString is supported",
             );
 
-            return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info".into()));
+            return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info"));
         }
     };
 

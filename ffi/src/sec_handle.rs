@@ -130,7 +130,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         if security_package_name.is_none() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Security package name is not provided".into(),
+                "Security package name is not provided",
             ));
         }
         let name = security_package_name.expect("security package name must be provided");
@@ -143,7 +143,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 #[cfg(not(target_os = "windows"))]
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    "PKU2U is not supported on non-Windows OS yet".into(),
+                    "PKU2U is not supported on non-Windows OS yet",
                 ));
                 #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
@@ -658,8 +658,8 @@ unsafe fn query_context_attributes_common(
             SECPKG_ATTR_NEGOTIATION_PACKAGE => {
                 sspi_context.query_context_negotiation_package()
             }
-            _ => {
-                Err(Error::new(ErrorKind::UnsupportedFunction, "".into()))
+            unsupported => {
+                Err(Error::new(ErrorKind::UnsupportedFunction, format!("Unsupported function ID {unsupported}")))
             },
         });
 
