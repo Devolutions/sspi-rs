@@ -420,7 +420,11 @@ fn read_authenticate_local_logon_correct_reads_encrypted_random_session_key() {
 
     assert_eq!(
         expected.as_ref(),
-        context.authenticate_message.unwrap().encrypted_random_session_key.unwrap(),
+        context
+            .authenticate_message
+            .unwrap()
+            .encrypted_random_session_key
+            .unwrap(),
     );
 }
 
