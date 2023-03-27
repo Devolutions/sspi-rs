@@ -267,7 +267,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     if p_auth_data.is_null() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
-            "Cannot unpack credentials: p_auth_data is null".into(),
+            "Cannot unpack credentials: p_auth_data is null",
         ));
     }
 
@@ -309,7 +309,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     if result != 1 {
         return Err(Error::new(
             ErrorKind::WrongCredentialHandle,
-            "Cannot unpack credentials".into(),
+            "Cannot unpack credentials",
         ));
     }
 
@@ -356,7 +356,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     if p_auth_data.is_null() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
-            "Cannot unpack credentials: p_auth_data is null".into(),
+            "Cannot unpack credentials: p_auth_data is null",
         ));
     }
 
@@ -398,7 +398,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     if result != 1 {
         return Err(Error::new(
             ErrorKind::WrongCredentialHandle,
-            "Cannot unpack credentials".into(),
+            "Cannot unpack credentials",
         ));
     }
 
