@@ -186,14 +186,21 @@ fn process_message_fields(
 
     // will not set workstation because it is not used anywhere
 
-    let mut encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]> = if message_fields.encrypted_random_session_key.buffer.len() == 0 {
-      None
-    } else {
-      // if the client sent a random session key, the length is expected to be ENCRYPTED_RANDOM_SESSION_KEY_SIZE = 16 bytes.
-      // otherwise clone_from_slice will fail.
-      let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
-      encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
-      Some(encrypted_random_session_key)
+    let encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]> = match message_fields.encrypted_random_session_key.buffer.len() {
+      0 => None,
+      ENCRYPTED_RANDOM_SESSION_KEY_SIZE => {
+        let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
+        encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
+        Some(encrypted_random_session_key)
+      },
+      key_len => {
+        return Err(crate::Error::new(
+          crate::ErrorKind::InvalidToken,
+          String::from(
+              format!("Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."),
+          ),
+        ))
+      }
     };
 
     let mut identity = if let Some(identity) = identity {
