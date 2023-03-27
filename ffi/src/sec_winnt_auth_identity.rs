@@ -232,7 +232,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
-        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+        "SecWinntIdentityEx2 is not supported on non Windows systems",
     ))
 }
 
@@ -342,7 +342,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
-        "SecWinntIdentityEx2 is not supported on non Windows systems".into(),
+        "SecWinntIdentityEx2 is not supported on non Windows systems",
     ))
 }
 
