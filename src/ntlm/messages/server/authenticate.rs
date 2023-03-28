@@ -196,9 +196,7 @@ fn process_message_fields(
       key_len => {
         return Err(crate::Error::new(
           crate::ErrorKind::InvalidToken,
-          String::from(
-              format!("Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."),
-          ),
+          format!("Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."),
         ))
       }
     };
@@ -213,7 +211,7 @@ fn process_message_fields(
         identity.user = message_fields.user_name.buffer.clone();
     }
     if !message_fields.domain_name.buffer.is_empty() {
-        identity.domain = message_fields.domain_name.buffer.clone();
+        identity.domain = message_fields.domain_name.buffer;
     }
 
     Ok((
