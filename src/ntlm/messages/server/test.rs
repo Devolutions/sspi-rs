@@ -420,7 +420,11 @@ fn read_authenticate_local_logon_correct_reads_encrypted_random_session_key() {
 
     assert_eq!(
         expected.as_ref(),
-        context.authenticate_message.unwrap().encrypted_random_session_key,
+        context
+            .authenticate_message
+            .unwrap()
+            .encrypted_random_session_key
+            .unwrap(),
     );
 }
 
@@ -594,7 +598,7 @@ fn complete_authenticate_does_not_fail_on_correct_mic() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
-        DOMAIN_ENCRYPTED_SESSION_KEY,
+        Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
     complete_authenticate(&mut context).unwrap();
@@ -624,7 +628,7 @@ fn complete_authenticate_fails_on_incorrect_challenge_message() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
-        DOMAIN_ENCRYPTED_SESSION_KEY,
+        Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
     assert!(complete_authenticate(&mut context).is_err());

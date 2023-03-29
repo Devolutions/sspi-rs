@@ -33,11 +33,12 @@ pub fn complete_authenticate(mut context: &mut Ntlm) -> crate::Result<SecuritySt
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    let session_key = get_session_key(
-        key_exchange_key,
-        authenticate_message.encrypted_random_session_key.as_ref(),
-        context.flags,
-    )?;
+    let session_key = authenticate_message
+        .encrypted_random_session_key
+        .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {
+            get_session_key(key_exchange_key, &encrypted_random_session_key, context.flags)
+        })?;
+
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
     context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));

@@ -163,7 +163,7 @@ pub fn write_authenticate(
         Some(mic),
         target_info,
         client_challenge,
-        encrypted_session_key,
+        Some(encrypted_session_key),
     ));
     context.state = NtlmState::Final;
 

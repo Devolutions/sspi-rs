@@ -113,7 +113,7 @@ struct AuthenticateMessage {
     mic: Option<Mic>,
     target_info: Vec<u8>,
     client_challenge: [u8; CHALLENGE_SIZE],
-    encrypted_random_session_key: [u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE],
+    encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]>,
 }
 
 impl Ntlm {
@@ -481,7 +481,7 @@ impl AuthenticateMessage {
         mic: Option<Mic>,
         target_info: Vec<u8>,
         client_challenge: [u8; CHALLENGE_SIZE],
-        encrypted_random_session_key: [u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE],
+        encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]>,
     ) -> Self {
         Self {
             message,

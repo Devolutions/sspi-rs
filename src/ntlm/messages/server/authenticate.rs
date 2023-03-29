@@ -91,7 +91,7 @@ fn read_header(mut buffer: impl io::Read) -> crate::Result<(AuthenticateMessageF
         ));
     }
 
-    if encrypted_random_session_key.buffer.len() != ENCRYPTED_RANDOM_SESSION_KEY_SIZE {
+    if negotiate_key_exchange && encrypted_random_session_key.buffer.len() != ENCRYPTED_RANDOM_SESSION_KEY_SIZE {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
             "Invalid encrypted random session key",
@@ -184,8 +184,20 @@ fn process_message_fields(
 
     // will not set workstation because it is not used anywhere
 
-    let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
-    encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
+    let encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]> = match message_fields.encrypted_random_session_key.buffer.len() {
+      0 => None,
+      ENCRYPTED_RANDOM_SESSION_KEY_SIZE => {
+        let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
+        encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
+        Some(encrypted_random_session_key)
+      },
+      key_len => {
+        return Err(crate::Error::new(
+          crate::ErrorKind::InvalidToken,
+          format!("Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."),
+        ))
+      }
+    };
 
     let mut identity = if let Some(identity) = identity {
         identity.clone()
@@ -197,7 +209,7 @@ fn process_message_fields(
         identity.user = message_fields.user_name.buffer.clone();
     }
     if !message_fields.domain_name.buffer.is_empty() {
-        identity.domain = message_fields.domain_name.buffer.clone();
+        identity.domain = message_fields.domain_name.buffer;
     }
 
     Ok((
