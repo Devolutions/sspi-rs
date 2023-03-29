@@ -275,7 +275,7 @@ impl CredSspClient {
                 let cred_ssp_context = self.context.as_mut().unwrap();
                 let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
-                    .with_context_requirements(ClientRequestFlags::empty())
+                    .with_context_requirements(ClientRequestFlags::MUTUAL_AUTH | ClientRequestFlags::USE_SESSION_KEY)
                     .with_target_data_representation(DataRepresentation::Native)
                     .with_target_name(&self.service_principal_name)
                     .with_input(&mut input_token)
