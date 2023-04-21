@@ -29,7 +29,7 @@ impl ProtocolConfig for KerberosConfig {
         )?))
     }
 
-    fn clone(&self) -> Box<dyn ProtocolConfig + Send> {
+    fn clone(&self) -> Box<dyn ProtocolConfig> {
         Box::new(Clone::clone(self))
     }
 }
