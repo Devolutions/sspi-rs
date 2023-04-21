@@ -29,14 +29,14 @@ lazy_static! {
     };
 }
 
-pub trait ProtocolConfig: Debug {
+pub trait ProtocolConfig: Debug + Send + Sync {
     fn new_client(&self) -> Result<NegotiatedProtocol>;
-    fn clone(&self) -> Box<dyn ProtocolConfig + Send>;
+    fn clone(&self) -> Box<dyn ProtocolConfig>;
 }
 
 #[derive(Debug)]
 pub struct NegotiateConfig {
-    pub protocol_config: Box<dyn ProtocolConfig + Send>,
+    pub protocol_config: Box<dyn ProtocolConfig>,
     pub package_list: Option<String>,
     pub hostname: String,
     pub network_client_factory: Box<dyn NetworkClientFactory>,

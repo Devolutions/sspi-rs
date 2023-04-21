@@ -4,12 +4,12 @@ use url::Url;
 
 use crate::Result;
 
-pub trait NetworkClientFactory: Send + Debug {
+pub trait NetworkClientFactory: Debug + Send + Sync {
     fn network_client(&self) -> Box<dyn NetworkClient>;
     fn clone(&self) -> Box<dyn NetworkClientFactory>;
 }
 
-pub trait NetworkClient: Send {
+pub trait NetworkClient: Send + Sync {
     fn send(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
     fn send_http(&self, url: &Url, data: &[u8], domain: Option<String>) -> Result<Vec<u8>>;
     fn clone(&self) -> Box<dyn NetworkClient>;

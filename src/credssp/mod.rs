@@ -1066,4 +1066,9 @@ mod tests {
     fn cred_sspi_client_is_send() {
         assert_impl_one!(CredSspClient: Send);
     }
+
+    #[test]
+    fn cred_sspi_client_is_sync() {
+        assert_impl_one!(CredSspClient: Sync);
+    }
 }
