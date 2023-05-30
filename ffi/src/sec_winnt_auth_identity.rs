@@ -143,6 +143,35 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
+pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_void) -> (u32, u32) {
+    let auth_version = *p_auth_data.cast::<u32>();
+    if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
+        (auth_version, (*auth_data).flags)
+    } else if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION_2 {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityEx2>();
+        (auth_version, (*auth_data).flags)
+    } else {
+        // SEC_WINNT_AUTH_IDENTITY
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
+        (auth_version, (*auth_data).flags)
+    }
+}
+
+pub unsafe fn auth_data_to_identity_buffers(
+    security_package_name: &str,
+    p_auth_data: *const c_void,
+    package_list: &mut Option<String>,
+) -> Result<AuthIdentityBuffers> {
+    let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
+
+    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
+        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
+    } else {
+        auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
+    }
+}
+
 pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
@@ -155,7 +184,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         return unpack_sec_winnt_auth_identity_ex2_a(credssp_cred.p_spnego_cred);
     }
 
-    let auth_version = *p_auth_data.cast::<u32>();
+    let (auth_version, _) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
@@ -195,7 +224,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
     }
 
-    let auth_version = *p_auth_data.cast::<u32>();
+    let (auth_version, _) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
