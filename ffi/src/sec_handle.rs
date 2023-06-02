@@ -322,14 +322,14 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecChar,
-    f_context_req: c_ulong,
+    f_context_req: u32,
     _reserved1: c_ulong,
-    target_data_rep: c_ulong,
+    target_data_rep: u32,
     p_input: PSecBufferDesc,
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut u32,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
@@ -403,14 +403,14 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     *const SecChar,
+    u32,
     c_ulong,
-    c_ulong,
-    c_ulong,
+    u32,
     PSecBufferDesc,
     c_ulong,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut u32,
     PTimeStamp,
 ) -> SecurityStatus;
 
@@ -422,14 +422,14 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecWChar,
-    f_context_req: c_ulong,
+    f_context_req: u32,
     _reserved1: c_ulong,
-    target_data_rep: c_ulong,
+    target_data_rep: u32,
     p_input: PSecBufferDesc,
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut u32,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -483,7 +483,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
@@ -502,14 +502,14 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     *const SecWChar,
+    u32,
     c_ulong,
-    c_ulong,
-    c_ulong,
+    u32,
     PSecBufferDesc,
     c_ulong,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut u32,
     PTimeStamp,
 ) -> SecurityStatus;
 
