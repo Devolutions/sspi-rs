@@ -1,6 +1,6 @@
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_ulonglong, c_void};
+use libc::{c_uint, c_ulong, c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::credssp::SspiContext;
 use sspi::{
@@ -40,11 +40,11 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_input: PSecBufferDesc,
-    f_context_req: c_ulong,
-    target_data_rep: c_ulong,
+    f_context_req: c_uint,
+    target_data_rep: c_uint,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_uint,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -102,11 +102,11 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     PSecBufferDesc,
-    c_ulong,
-    c_ulong,
+    c_uint,
+    c_uint,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut c_uint,
     PTimeStamp,
 ) -> SecurityStatus;
 
@@ -295,11 +295,6 @@ pub unsafe extern "system" fn EncryptMessage(
 
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
-#[cfg(target_os = "windows")]
-pub type QualityOfProtection = libc::c_ulong;
-#[cfg(not(target_os = "windows"))]
-pub type QualityOfProtection = libc::c_uint;
-
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
@@ -308,7 +303,7 @@ pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
-    pf_qop: *mut QualityOfProtection,
+    pf_qop: *mut c_uint,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_context);
@@ -345,4 +340,4 @@ pub unsafe extern "system" fn DecryptMessage(
 }
 
 pub type DecryptMessageFn =
-    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut QualityOfProtection) -> SecurityStatus;
+    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_uint) -> SecurityStatus;

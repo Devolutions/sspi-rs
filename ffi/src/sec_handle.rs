@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_ulonglong, c_void};
+use libc::{c_uint, c_ulong, c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 #[cfg(feature = "tsssp")]
@@ -322,14 +322,14 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecChar,
-    f_context_req: c_ulong,
+    f_context_req: c_uint,
     _reserved1: c_ulong,
-    target_data_rep: c_ulong,
+    target_data_rep: c_uint,
     p_input: PSecBufferDesc,
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_uint,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -403,14 +403,14 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     *const SecChar,
+    c_uint,
     c_ulong,
-    c_ulong,
-    c_ulong,
+    c_uint,
     PSecBufferDesc,
     c_ulong,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut c_uint,
     PTimeStamp,
 ) -> SecurityStatus;
 
@@ -422,14 +422,14 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecWChar,
-    f_context_req: c_ulong,
+    f_context_req: c_uint,
     _reserved1: c_ulong,
-    target_data_rep: c_ulong,
+    target_data_rep: c_uint,
     p_input: PSecBufferDesc,
     _reserved2: c_ulong,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut c_uint,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -502,14 +502,14 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     *const SecWChar,
+    c_uint,
     c_ulong,
-    c_ulong,
-    c_ulong,
+    c_uint,
     PSecBufferDesc,
     c_ulong,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut c_uint,
     PTimeStamp,
 ) -> SecurityStatus;
 
