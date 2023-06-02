@@ -295,6 +295,11 @@ pub unsafe extern "system" fn EncryptMessage(
 
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
 
+#[cfg(target_os = "windows")]
+pub type QualityOfProtection = libc::c_ulong;
+#[cfg(not(target_os = "windows"))]
+pub type QualityOfProtection = libc::c_uint;
+
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
@@ -303,7 +308,7 @@ pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
-    pf_qop: *mut c_ulong,
+    pf_qop: *mut QualityOfProtection,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_context);
@@ -340,4 +345,4 @@ pub unsafe extern "system" fn DecryptMessage(
 }
 
 pub type DecryptMessageFn =
-    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
+    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut QualityOfProtection) -> SecurityStatus;
