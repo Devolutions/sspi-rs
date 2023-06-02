@@ -384,7 +384,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
@@ -483,7 +483,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             .with_output(&mut output_tokens);
         let result_status = sspi_context.initialize_security_context_impl(&mut builder);
 
-        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req as u32);
+        let context_requirements = ClientRequestFlags::from_bits_unchecked(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, allocate);
