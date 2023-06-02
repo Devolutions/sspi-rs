@@ -158,7 +158,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as c_uint;
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
 
@@ -217,7 +217,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as c_uint;
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
         let mut names = Vec::with_capacity(packages.len());
