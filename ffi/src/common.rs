@@ -40,11 +40,11 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
     p_input: PSecBufferDesc,
-    f_context_req: c_ulong,
-    target_data_rep: c_ulong,
+    f_context_req: u32,
+    target_data_rep: u32,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
-    pf_context_attr: *mut c_ulong,
+    pf_context_attr: *mut u32,
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
@@ -102,11 +102,11 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
     PSecBufferDesc,
-    c_ulong,
-    c_ulong,
+    u32,
+    u32,
     PCtxtHandle,
     PSecBufferDesc,
-    *mut c_ulong,
+    *mut u32,
     PTimeStamp,
 ) -> SecurityStatus;
 
@@ -303,7 +303,7 @@ pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
     message_seq_no: c_ulong,
-    pf_qop: *mut c_ulong,
+    pf_qop: *mut u32,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_context);
@@ -339,5 +339,4 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
-pub type DecryptMessageFn =
-    unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
+pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut u32) -> SecurityStatus;

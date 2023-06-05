@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use libc::{c_uint, c_ulong, c_ushort};
+use libc::{c_ulong, c_ushort};
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -73,10 +73,10 @@ impl From<PackageInfo> for &mut SecPkgInfoW {
 
 #[repr(C)]
 pub struct SecPkgInfoA {
-    pub f_capabilities: c_uint,
+    pub f_capabilities: u32,
     pub w_version: c_ushort,
     pub w_rpc_id: c_ushort,
-    pub cb_max_token: c_uint,
+    pub cb_max_token: u32,
     pub name: *mut SecChar,
     pub comment: *mut SecChar,
 }
@@ -108,7 +108,7 @@ impl From<PackageInfo> for &mut SecPkgInfoA {
             pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
         }
 
-        pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
+        pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
         pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
         pkg_info_a.w_rpc_id = pkg_info.rpc_id;
         pkg_info_a.cb_max_token = pkg_info.max_token_len;
@@ -142,14 +142,14 @@ pub struct SecNegoInfoW {
 #[repr(C)]
 pub struct SecNegoInfoA {
     pub package_info: *mut SecPkgInfoA,
-    pub nego_state: c_uint,
+    pub nego_state: u32,
 }
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesA(
-    pc_packages: *mut c_ulong,
+    pc_packages: *mut u32,
     pp_package_info: *mut PSecPkgInfoA,
 ) -> SecurityStatus {
     catch_panic! {
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as u32;
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
 
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
         for pkg_info in packages {
             let pkg_info_a = package_ptr.as_mut().unwrap();
 
-            pkg_info_a.f_capabilities = pkg_info.capabilities.bits() as c_uint;
+            pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
             pkg_info_a.w_version = KERBEROS_VERSION as c_ushort;
             pkg_info_a.w_rpc_id = pkg_info.rpc_id;
             pkg_info_a.cb_max_token = pkg_info.max_token_len;
@@ -202,13 +202,13 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     }
 }
 
-pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoA) -> SecurityStatus;
+pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut u32, *mut PSecPkgInfoA) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn EnumerateSecurityPackagesW(
-    pc_packages: *mut c_ulong,
+    pc_packages: *mut u32,
     pp_package_info: *mut *mut SecPkgInfoW,
 ) -> SecurityStatus {
     catch_panic! {
@@ -217,7 +217,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as c_ulong;
+        *pc_packages = packages.len() as u32;
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
         let mut names = Vec::with_capacity(packages.len());
@@ -267,7 +267,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     }
 }
 
-pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut c_ulong, *mut PSecPkgInfoW) -> SecurityStatus;
+pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut u32, *mut PSecPkgInfoW) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
