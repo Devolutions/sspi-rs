@@ -2,7 +2,7 @@
 
 use std::ptr::null;
 
-use libc::{c_ulong, c_void};
+use libc::c_void;
 use sspi::KERBEROS_VERSION;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -37,7 +37,7 @@ use crate::utils::into_raw_ptr;
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {
-    pub dwVersion: c_ulong,
+    pub dwVersion: u32,
     pub EnumerateSecurityPackagesA: EnumerateSecurityPackagesFnA,
     pub QueryCredentialsAttributesA: QueryCredentialsAttributesFnA,
     pub AcquireCredentialsHandleA: AcquireCredentialsHandleFnA,
@@ -78,7 +78,7 @@ pub type PSecurityFunctionTableA = *mut SecurityFunctionTableA;
 
 #[repr(C)]
 pub struct SecurityFunctionTableW {
-    pub dwVersion: c_ulong,
+    pub dwVersion: u32,
     pub EnumerateSecurityPackagesW: EnumerateSecurityPackagesFnW,
     pub QueryCredentialsAttributesW: QueryCredentialsAttributesFnW,
     pub AcquireCredentialsHandleW: AcquireCredentialsHandleFnW,
@@ -124,7 +124,7 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableA {
-        dwVersion: KERBEROS_VERSION as c_ulong,
+        dwVersion: KERBEROS_VERSION as u32,
         EnumerateSecurityPackagesA,
         QueryCredentialsAttributesA,
         AcquireCredentialsHandleA,
@@ -167,7 +167,7 @@ pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
     crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableW {
-        dwVersion: KERBEROS_VERSION as c_ulong,
+        dwVersion: KERBEROS_VERSION as u32,
         EnumerateSecurityPackagesW,
         QueryCredentialsAttributesW,
         AcquireCredentialsHandleW,

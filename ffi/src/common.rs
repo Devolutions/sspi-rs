@@ -1,6 +1,6 @@
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_ulonglong, c_void};
+use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::credssp::SspiContext;
 use sspi::{
@@ -196,14 +196,14 @@ pub type RevertSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecuritySt
 #[no_mangle]
 pub extern "system" fn MakeSignature(
     _ph_context: PCtxtHandle,
-    _f_qop: c_ulong,
+    _f_qop: u32,
     _p_message: PSecBufferDesc,
-    _message_seq_no: c_ulong,
+    _message_seq_no: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
+pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_VerifySignature"))]
@@ -211,13 +211,13 @@ pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDe
 pub extern "system" fn VerifySignature(
     _ph_context: PCtxtHandle,
     _message: PSecBufferDesc,
-    _message_seq_no: c_ulong,
-    _pf_qop: *mut c_ulong,
+    _message_seq_no: u32,
+    _pf_qop: *mut u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut c_ulong) -> SecurityStatus;
+pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
@@ -235,15 +235,14 @@ pub type FreeContextBufferFn = unsafe extern "system" fn(*mut c_void) -> Securit
 #[no_mangle]
 pub extern "system" fn ExportSecurityContext(
     _ph_context: PCtxtHandle,
-    _f_flags: c_ulong,
+    _f_flags: u32,
     _p_packed_context: PSecBuffer,
     _p_token: *mut *mut c_void,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type ExportSecurityContextFn =
-    extern "system" fn(PCtxtHandle, c_ulong, PSecBuffer, *mut *mut c_void) -> SecurityStatus;
+pub type ExportSecurityContextFn = extern "system" fn(PCtxtHandle, u32, PSecBuffer, *mut *mut c_void) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityContextToken"))]
@@ -260,9 +259,9 @@ pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut
 #[no_mangle]
 pub unsafe extern "system" fn EncryptMessage(
     mut ph_context: PCtxtHandle,
-    f_qop: c_ulong,
+    f_qop: u32,
     p_message: PSecBufferDesc,
-    message_seq_no: c_ulong,
+    message_seq_no: u32,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_context);
@@ -293,7 +292,7 @@ pub unsafe extern "system" fn EncryptMessage(
     }
 }
 
-pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSecBufferDesc, c_ulong) -> SecurityStatus;
+pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
@@ -302,7 +301,7 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, c_ulong, PSec
 pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
-    message_seq_no: c_ulong,
+    message_seq_no: u32,
     pf_qop: *mut u32,
 ) -> SecurityStatus {
     catch_panic! {
@@ -339,4 +338,4 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
-pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, c_ulong, *mut u32) -> SecurityStatus;
+pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
