@@ -1,6 +1,6 @@
 use std::slice::from_raw_parts;
 
-use libc::{c_char, c_ushort, c_void};
+use libc::{c_char, c_void};
 use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -13,11 +13,11 @@ pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
 
 #[repr(C)]
 pub struct SecWinntAuthIdentityW {
-    pub user: *const c_ushort,
+    pub user: *const u16,
     pub user_length: u32,
-    pub domain: *const c_ushort,
+    pub domain: *const u16,
     pub domain_length: u32,
-    pub password: *const c_ushort,
+    pub password: *const u16,
     pub password_length: u32,
     pub flags: u32,
 }
@@ -40,14 +40,14 @@ pub const SEC_WINNT_AUTH_IDENTITY_VERSION: u32 = 0x200;
 pub struct SecWinntAuthIdentityExW {
     pub version: u32,
     pub length: u32,
-    pub user: *const c_ushort,
+    pub user: *const u16,
     pub user_length: u32,
-    pub domain: *const c_ushort,
+    pub domain: *const u16,
     pub domain_length: u32,
-    pub password: *const c_ushort,
+    pub password: *const u16,
     pub password_length: u32,
     pub flags: u32,
-    pub package_list: *const c_ushort,
+    pub package_list: *const u16,
     pub package_list_length: u32,
 }
 

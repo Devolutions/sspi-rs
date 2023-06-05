@@ -1,5 +1,3 @@
-use libc::c_ushort;
-
 use crate::sspi_data_types::{SecChar, SecWChar};
 
 #[derive(Debug)]
@@ -44,20 +42,20 @@ impl CredentialsAttributes {
 pub struct SecPkgCredentialsKdcProxySettingsA {
     pub version: u32,
     pub flags: u32,
-    pub proxy_server_offset: c_ushort,
-    pub proxy_server_length: c_ushort,
-    pub client_tls_cred_offset: c_ushort,
-    pub client_tls_cred_length: c_ushort,
+    pub proxy_server_offset: u16,
+    pub proxy_server_length: u16,
+    pub client_tls_cred_offset: u16,
+    pub client_tls_cred_length: u16,
 }
 
 #[repr(C)]
 pub struct SecPkgCredentialsKdcProxySettingsW {
     pub version: u32,
     pub flags: u32,
-    pub proxy_server_offset: c_ushort,
-    pub proxy_server_length: c_ushort,
-    pub client_tls_cred_offset: c_ushort,
-    pub client_tls_cred_length: c_ushort,
+    pub proxy_server_offset: u16,
+    pub proxy_server_length: u16,
+    pub client_tls_cred_offset: u16,
+    pub client_tls_cred_length: u16,
 }
 
 #[repr(C)]
