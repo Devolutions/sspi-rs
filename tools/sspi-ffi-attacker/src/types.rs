@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_ushort, c_void};
+use libc::{c_char, c_void};
 
 pub type SEC_GET_KEY_FN = *mut c_void;
 
@@ -50,8 +50,8 @@ pub type PCtxtHandle = *mut CtxtHandle;
 #[repr(C)]
 pub struct SecPkgInfoA {
     pub fCapabilities: u32,
-    pub wVersion: c_ushort,
-    pub wRPCID: c_ushort,
+    pub wVersion: u16,
+    pub wRPCID: u16,
     pub cbMaxToken: u32,
     pub Name: *mut SEC_CHAR,
     pub Comment: *mut SEC_CHAR,
@@ -62,8 +62,8 @@ pub type PSecPkgInfoA = *mut SecPkgInfoA;
 #[repr(C)]
 pub struct SecPkgInfoW {
     pub fCapabilities: u32,
-    pub wVersion: c_ushort,
-    pub wRPCID: c_ushort,
+    pub wVersion: u16,
+    pub wRPCID: u16,
     pub cbMaxToken: u32,
     pub Name: *mut SEC_WCHAR,
     pub Comment: *mut SEC_WCHAR,
@@ -263,11 +263,11 @@ pub struct SecWinntAuthIdentityA {
 
 #[repr(C)]
 pub struct SecWinntAuthIdentityW {
-    pub user: *const c_ushort,
+    pub user: *const u16,
     pub user_length: u32,
-    pub domain: *const c_ushort,
+    pub domain: *const u16,
     pub domain_length: u32,
-    pub password: *const c_ushort,
+    pub password: *const u16,
     pub password_length: u32,
     pub flags: u32,
 }

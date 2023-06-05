@@ -1,11 +1,11 @@
-use libc::{c_char, c_ushort, c_void};
+use libc::{c_char, c_void};
 use sspi::CertTrustStatus as SspiCertTrustStatus;
 
 pub type SecChar = c_char;
 
 pub type LpStr = *const SecChar;
 
-pub type SecWChar = c_ushort;
+pub type SecWChar = u16;
 
 pub type LpcWStr = *const SecWChar;
 
@@ -21,9 +21,9 @@ pub type PTimeStamp = *mut SecurityInteger;
 
 #[repr(C)]
 pub struct SecurityString {
-    pub length: c_ushort,
-    pub maximum_length: c_ushort,
-    pub buffer: *mut c_ushort,
+    pub length: u16,
+    pub maximum_length: u16,
+    pub buffer: *mut u16,
 }
 
 pub type PSecurityString = *mut SecurityString;
