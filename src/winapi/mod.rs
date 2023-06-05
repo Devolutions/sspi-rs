@@ -7,7 +7,7 @@ use std::{io, ptr, slice};
 
 use chrono::{NaiveDate, NaiveDateTime};
 use num_traits::{FromPrimitive, ToPrimitive};
-use winapi::ctypes::{c_ulong, c_void};
+use winapi::ctypes::c_void;
 use winapi::shared::sspi::{
     CredHandle, FreeContextBuffer, FreeCredentialsHandle, PSecPkgInfoW, QuerySecurityPackageInfoW, SecBuffer,
     SecBufferDesc, SecPkgInfoW, TimeStamp, SECBUFFER_VERSION,
@@ -21,7 +21,7 @@ use crate::{
     PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
 };
 
-const SEC_WINNT_AUTH_IDENTITY_UNICODE: c_ulong = 0x2;
+const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
 
 /// Retrieves information about a specified security package. This information includes credentials and contexts.
 ///
@@ -112,7 +112,7 @@ impl From<&mut SecurityBuffer> for SecBuffer {
     fn from(b: &mut SecurityBuffer) -> Self {
         Self {
             BufferType: b.buffer_type.to_u32().unwrap(),
-            cbBuffer: b.buffer.len() as c_ulong,
+            cbBuffer: b.buffer.len() as u32,
             pvBuffer: b.buffer.as_mut_ptr() as *mut c_void,
         }
     }
@@ -189,7 +189,7 @@ impl From<&PackageInfo> for SecPkgInfoW {
 fn construct_buffer_desc(sec_buffers: &mut [SecBuffer]) -> SecBufferDesc {
     SecBufferDesc {
         ulVersion: SECBUFFER_VERSION,
-        cBuffers: sec_buffers.len() as c_ulong,
+        cBuffers: sec_buffers.len() as u32,
         pBuffers: sec_buffers.as_mut_ptr(),
     }
 }

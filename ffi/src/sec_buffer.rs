@@ -2,46 +2,24 @@ use std::alloc::{alloc, Layout};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use libc::c_char;
-#[cfg(not(target_os = "windows"))]
-use libc::c_uint;
-#[cfg(target_os = "windows")]
-use libc::c_ulong;
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::{SecurityBuffer, SecurityBufferType};
 
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct SecBuffer {
-    pub cb_buffer: c_ulong,
-    pub buffer_type: c_ulong,
-    pub pv_buffer: *mut c_char,
-}
-
-#[cfg(not(target_os = "windows"))]
 #[derive(Debug)]
 #[repr(C)]
 pub struct SecBuffer {
-    pub cb_buffer: c_uint,
-    pub buffer_type: c_uint,
+    pub cb_buffer: u32,
+    pub buffer_type: u32,
     pub pv_buffer: *mut c_char,
 }
 
 pub type PSecBuffer = *mut SecBuffer;
 
 #[derive(Debug)]
-#[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct SecBufferDesc {
-    pub ul_version: c_ulong,
-    pub c_buffers: c_ulong,
-    pub p_buffers: PSecBuffer,
-}
-
-#[cfg(not(target_os = "windows"))]
-#[repr(C)]
-pub struct SecBufferDesc {
-    pub ul_version: c_uint,
-    pub c_buffers: c_uint,
+    pub ul_version: u32,
+    pub c_buffers: u32,
     pub p_buffers: PSecBuffer,
 }
 

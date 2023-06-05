@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use libc::{c_ulong, c_ushort};
+use libc::c_ushort;
 use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -14,10 +14,10 @@ use crate::utils::c_w_str_to_string;
 #[derive(Debug)]
 #[repr(C)]
 pub struct SecPkgInfoW {
-    pub f_capabilities: c_ulong,
+    pub f_capabilities: u32,
     pub w_version: c_ushort,
     pub w_rpc_id: c_ushort,
-    pub cb_max_token: c_ulong,
+    pub cb_max_token: u32,
     pub name: *mut SecWChar,
     pub comment: *mut SecWChar,
 }
@@ -48,7 +48,7 @@ impl From<PackageInfo> for &mut SecPkgInfoW {
             pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
 
-        pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
+        pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
         pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
         pkg_info_w.w_rpc_id = pkg_info.rpc_id;
         pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
@@ -135,7 +135,7 @@ impl From<PackageInfo> for &mut SecPkgInfoA {
 #[repr(C)]
 pub struct SecNegoInfoW {
     pub package_info: *mut SecPkgInfoW,
-    pub nego_state: c_ulong,
+    pub nego_state: u32,
 }
 
 #[derive(Debug)]
@@ -245,10 +245,10 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         for (i, pkg_info) in packages.iter().enumerate() {
             let pkg_info_w = package_ptr.as_mut().unwrap();
 
-            pkg_info_w.f_capabilities = pkg_info.capabilities.bits() as c_ulong;
+            pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
             pkg_info_w.w_version = KERBEROS_VERSION as c_ushort;
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
-            pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
+            pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
             copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len());
             pkg_info_w.name = data_ptr as *mut _;

@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::slice::from_raw_parts;
 
-use libc::{c_ulong, c_ulonglong, c_void};
+use libc::{c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::{ChangePasswordBuilder, EmptyInitializeSecurityContext};
 #[cfg(feature = "tsssp")]
@@ -68,11 +68,11 @@ pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
 
 // Sets the name of a credential
 // In our library, we use this attribute to set the workstation for auth identity
-const SECPKG_CRED_ATTR_NAMES: c_ulong = 1;
+const SECPKG_CRED_ATTR_NAMES: u32 = 1;
 // Sets the Kerberos proxy setting
-const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: c_ulong = 3;
+const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: u32 = 3;
 
-const SECPKG_CRED_ATTR_KDC_URL: c_ulong = 501;
+const SECPKG_CRED_ATTR_KDC_URL: u32 = 501;
 
 #[repr(C)]
 pub struct SecHandle {
@@ -197,7 +197,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 pub unsafe extern "system" fn AcquireCredentialsHandleA(
     _psz_principal: LpStr,
     psz_package: LpStr,
-    _f_aredential_use: c_ulong,
+    _f_aredential_use: u32,
     _pv_logon_id: *const c_void,
     p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
@@ -231,7 +231,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     LpStr,
     LpStr,
-    c_ulong,
+    u32,
     *const c_void,
     *const c_void,
     SecGetKeyFn,
@@ -246,7 +246,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
 pub unsafe extern "system" fn AcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
     psz_package: LpcWStr,
-    _f_credential_use: c_ulong,
+    _f_credential_use: u32,
     _pv_logon_id: *const c_void,
     p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
@@ -279,7 +279,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
     LpcWStr,
     LpcWStr,
-    c_ulong,
+    u32,
     *const c_void,
     *const c_void,
     SecGetKeyFn,
@@ -293,26 +293,26 @@ pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesA(
     _ph_credential: PCredHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
+pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesW"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesW(
     _ph_credential: PCredHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, c_ulong, *mut c_void) -> SecurityStatus;
+pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
 
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
@@ -323,10 +323,10 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecChar,
     f_context_req: u32,
-    _reserved1: c_ulong,
+    _reserved1: u32,
     target_data_rep: u32,
     p_input: PSecBufferDesc,
-    _reserved2: c_ulong,
+    _reserved2: u32,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
     pf_context_attr: *mut u32,
@@ -404,10 +404,10 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCtxtHandle,
     *const SecChar,
     u32,
-    c_ulong,
+    u32,
     u32,
     PSecBufferDesc,
-    c_ulong,
+    u32,
     PCtxtHandle,
     PSecBufferDesc,
     *mut u32,
@@ -423,10 +423,10 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
     mut ph_context: PCtxtHandle,
     p_target_name: *const SecWChar,
     f_context_req: u32,
-    _reserved1: c_ulong,
+    _reserved1: u32,
     target_data_rep: u32,
     p_input: PSecBufferDesc,
-    _reserved2: c_ulong,
+    _reserved2: u32,
     ph_new_context: PCtxtHandle,
     p_output: PSecBufferDesc,
     pf_context_attr: *mut u32,
@@ -503,10 +503,10 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PCtxtHandle,
     *const SecWChar,
     u32,
-    c_ulong,
+    u32,
     u32,
     PSecBufferDesc,
-    c_ulong,
+    u32,
     PCtxtHandle,
     PSecBufferDesc,
     *mut u32,
@@ -516,7 +516,7 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
 #[allow(clippy::useless_conversion)]
 unsafe fn query_context_attributes_common(
     mut ph_context: PCtxtHandle,
-    ul_attribute: c_ulong,
+    ul_attribute: u32,
     p_buffer: *mut c_void,
     is_wide: bool,
 ) -> SecurityStatus {
@@ -684,26 +684,26 @@ unsafe fn query_context_attributes_common(
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesA(
     ph_context: PCtxtHandle,
-    ul_attribute: c_ulong,
+    ul_attribute: u32,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
     query_context_attributes_common(ph_context, ul_attribute, p_buffer, false)
 }
 
-pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
+pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn QueryContextAttributesW(
     ph_context: PCtxtHandle,
-    ul_attribute: c_ulong,
+    ul_attribute: u32,
     p_buffer: *mut c_void,
 ) -> SecurityStatus {
     query_context_attributes_common(ph_context, ul_attribute, p_buffer, true)
 }
 
-pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void) -> SecurityStatus;
+pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextA"))]
@@ -742,7 +742,7 @@ pub extern "system" fn AddCredentialsA(
     _ph_credential: PCredHandle,
     _s1: *mut SecChar,
     _s2: *mut SecChar,
-    _n1: c_ulong,
+    _n1: u32,
     _p1: *mut c_void,
     _f: SecGetKeyFn,
     _p2: *mut c_void,
@@ -755,7 +755,7 @@ pub type AddCredentialsFnA = extern "system" fn(
     PCredHandle,
     *mut SecChar,
     *mut SecChar,
-    c_ulong,
+    u32,
     *mut c_void,
     SecGetKeyFn,
     *mut c_void,
@@ -769,7 +769,7 @@ pub extern "system" fn AddCredentialsW(
     _ph_credential: PCredHandle,
     _s1: *mut SecWChar,
     _s2: *mut SecWChar,
-    _n1: c_ulong,
+    _n1: u32,
     _p1: *mut c_void,
     _f: SecGetKeyFn,
     _p2: *mut c_void,
@@ -782,7 +782,7 @@ pub type AddCredentialsFnW = extern "system" fn(
     PCredHandle,
     *mut SecWChar,
     *mut SecWChar,
-    c_ulong,
+    u32,
     *mut c_void,
     SecGetKeyFn,
     *mut c_void,
@@ -794,36 +794,36 @@ pub type AddCredentialsFnW = extern "system" fn(
 #[no_mangle]
 pub extern "system" fn SetContextAttributesA(
     _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
 #[no_mangle]
 pub extern "system" fn SetContextAttributesW(
     _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesA"))]
 #[no_mangle]
 pub unsafe extern "system" fn SetCredentialsAttributesA(
     ph_credential: PCtxtHandle,
-    ul_attribute: c_ulong,
+    ul_attribute: u32,
     p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_credential);
@@ -879,17 +879,16 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     }
 }
 
-pub type SetCredentialsAttributesFnA =
-    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetCredentialsAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesW"))]
 #[no_mangle]
 pub unsafe extern "system" fn SetCredentialsAttributesW(
     ph_credential: PCtxtHandle,
-    ul_attribute: c_ulong,
+    ul_attribute: u32,
     p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_credential);
@@ -938,8 +937,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
     }
 }
 
-pub type SetCredentialsAttributesFnW =
-    unsafe extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type SetCredentialsAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordA"))]
@@ -951,7 +949,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     psz_old_password: *mut SecChar,
     psz_new_password: *mut SecChar,
     _b_impersonating: bool,
-    _dw_reserved: c_ulong,
+    _dw_reserved: u32,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
     catch_panic! {
@@ -1022,7 +1020,7 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     *mut SecChar,
     *mut SecChar,
     bool,
-    c_ulong,
+    u32,
     PSecBufferDesc,
 ) -> SecurityStatus;
 
@@ -1036,7 +1034,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     psz_old_password: *mut SecWChar,
     psz_new_password: *mut SecWChar,
     b_impersonating: bool,
-    dw_reserved: c_ulong,
+    dw_reserved: u32,
     p_output: PSecBufferDesc,
 ) -> SecurityStatus {
     catch_panic! {
@@ -1074,7 +1072,7 @@ pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
     *mut SecWChar,
     *mut SecWChar,
     bool,
-    c_ulong,
+    u32,
     PSecBufferDesc,
 ) -> SecurityStatus;
 
@@ -1083,55 +1081,53 @@ pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
 #[no_mangle]
 pub extern "system" fn QueryContextAttributesExA(
     _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExW"))]
 #[no_mangle]
 pub extern "system" fn QueryContextAttributesExW(
     _ph_context: PCtxtHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _cb_buffer: c_ulong,
+    _cb_buffer: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExA"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesExA(
     _ph_credential: PCredHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _c_buffers: c_ulong,
+    _c_buffers: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesExFnA =
-    extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type QueryCredentialsAttributesExFnA = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExW"))]
 #[no_mangle]
 pub extern "system" fn QueryCredentialsAttributesExW(
     _ph_aredential: PCredHandle,
-    _ul_attribute: c_ulong,
+    _ul_attribute: u32,
     _p_buffer: *mut c_void,
-    _c_buffers: c_ulong,
+    _c_buffers: u32,
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesExFnW =
-    extern "system" fn(PCredHandle, c_ulong, *mut c_void, c_ulong) -> SecurityStatus;
+pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
