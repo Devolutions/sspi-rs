@@ -10,6 +10,7 @@ use std::io::Write;
 
 pub use encryption_params::EncryptionParams;
 use lazy_static::lazy_static;
+use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::crypto::CipherSuite;
@@ -681,15 +682,25 @@ impl SspiImpl for Kerberos {
                     extensions: Vec::new(),
                 })?;
 
+                // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
+                let mech_id = oids::krb5_user_to_user();
+
+                let mut context_requirements = builder.context_requirements;
+
+                if mech_id == oids::krb5_user_to_user() {
+                    // KRB5 U2U always needs the use-session-key flag
+                    context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
+                }
+
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
                     self.encryption_params.session_key.as_ref().unwrap(),
                     &authenticator,
                     &self.encryption_params,
-                    builder.context_requirements.into(),
+                    context_requirements.into(),
                 )?;
 
-                let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req)?)?;
+                let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
