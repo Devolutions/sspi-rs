@@ -557,9 +557,9 @@ pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<App
     }))
 }
 
-pub fn generate_neg_ap_req(ap_req: ApReq) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<ExplicitContextTag1<NegTokenTarg>> {
     let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
+        krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
     });
