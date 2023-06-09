@@ -120,11 +120,15 @@ pub mod reqwest_network_client {
                 .post(url.clone())
                 .body(picky_asn1_der::to_vec(&kdc_proxy_message)?)
                 .send()
-                .map_err(|err| {
-                    Error::new(
+                .map_err(|err| match err {
+                    err if err.to_string().to_lowercase().contains("certificate") => Error::new(
+                        ErrorKind::CertificateUnknown,
+                        format!("Invalid certificate data: {:?}", err),
+                    ),
+                    _ => Error::new(
                         ErrorKind::InternalError,
                         format!("Unable to send the data to the KDC Proxy: {:?}", err),
-                    )
+                    ),
                 })?
                 .bytes()
                 .map_err(|err| {
