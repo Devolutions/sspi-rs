@@ -1,5 +1,4 @@
 use std::ffi::CStr;
-use std::mem::size_of;
 use std::slice::from_raw_parts;
 
 use libc::{c_ulonglong, c_void};
@@ -31,8 +30,7 @@ cfg_if::cfg_if! {
 }
 
 use crate::credentials_attributes::{
-    CredentialsAttributes, KdcProxySettings, SecPkgCredentialsKdcProxySettingsA, SecPkgCredentialsKdcProxySettingsW,
-    SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
+    extract_kdc_proxy_settings, CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
 };
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
@@ -839,33 +837,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
-            let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsA>();
-
-            let proxy_server = String::from_utf8_unchecked(
-                from_raw_parts(
-                    p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u8,
-                    (*kdc_proxy_settings).proxy_server_length as usize,
-                )
-                .to_vec(),
-            );
-
-            let client_tls_cred =
-                if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
-                    Some(String::from_utf8_unchecked(
-                        from_raw_parts(
-                            p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u8,
-                            (*kdc_proxy_settings).client_tls_cred_length as usize,
-                        )
-                        .to_vec(),
-                    ))
-                } else {
-                    None
-                };
-
-            credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
-                proxy_server,
-                client_tls_cred,
-            });
+            credentials_handle.attributes.kdc_proxy_settings = Some(extract_kdc_proxy_settings(p_buffer));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
@@ -903,33 +875,14 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
-            let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
-
-            let proxy_server = String::from_utf16_lossy(from_raw_parts(
-                p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
-                (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
-            ));
-
-            let client_tls_cred =
-                if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
-                    Some(String::from_utf16_lossy(from_raw_parts(
-                        p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
-                        (*kdc_proxy_settings).client_tls_cred_length as usize,
-                    )))
-                } else {
-                    None
-                };
-
-            credentials_handle.attributes.kdc_proxy_settings = Some(KdcProxySettings {
-                proxy_server,
-                client_tls_cred,
-            });
+            credentials_handle.attributes.kdc_proxy_settings = Some(extract_kdc_proxy_settings(p_buffer));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlW>();
             let kdc_url = c_w_str_to_string((*cred_attr).kdc_url as *const u16);
             credentials_handle.attributes.kdc_url = Some(kdc_url);
+
             0
         } else {
             ErrorKind::UnsupportedFunction.to_u32().unwrap()
