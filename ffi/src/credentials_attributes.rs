@@ -1,3 +1,8 @@
+use std::mem::size_of;
+use std::slice::from_raw_parts;
+
+use libc::c_void;
+
 use crate::sspi_data_types::{SecChar, SecWChar};
 
 #[derive(Debug)]
@@ -39,7 +44,7 @@ impl CredentialsAttributes {
 }
 
 #[repr(C)]
-pub struct SecPkgCredentialsKdcProxySettingsA {
+pub struct SecPkgCredentialsKdcProxySettingsW {
     pub version: u32,
     pub flags: u32,
     pub proxy_server_offset: u16,
@@ -48,14 +53,28 @@ pub struct SecPkgCredentialsKdcProxySettingsA {
     pub client_tls_cred_length: u16,
 }
 
-#[repr(C)]
-pub struct SecPkgCredentialsKdcProxySettingsW {
-    pub version: u32,
-    pub flags: u32,
-    pub proxy_server_offset: u16,
-    pub proxy_server_length: u16,
-    pub client_tls_cred_offset: u16,
-    pub client_tls_cred_length: u16,
+pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> KdcProxySettings {
+    let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
+
+    let proxy_server = String::from_utf16_lossy(from_raw_parts(
+        p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
+        (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
+    ));
+
+    let client_tls_cred =
+        if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+            Some(String::from_utf16_lossy(from_raw_parts(
+                p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
+                (*kdc_proxy_settings).client_tls_cred_length as usize,
+            )))
+        } else {
+            None
+        };
+
+    KdcProxySettings {
+        proxy_server,
+        client_tls_cred,
+    }
 }
 
 #[repr(C)]

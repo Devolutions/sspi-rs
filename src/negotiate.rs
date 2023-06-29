@@ -130,7 +130,7 @@ struct PackageListConfig {
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
         let mut protocol = config.protocol_config.new_client()?;
-        if let Some(filtered_protocol) = Self::filter_protocol(&protocol, &config.package_list)? {
+        if let Some(filtered_protocol) = Self::filter_protocol(&protocol, &config.package_list, &config.hostname)? {
             protocol = filtered_protocol;
         }
 
@@ -176,7 +176,7 @@ impl Negotiate {
             }
         }
 
-        if let Some(filtered_protocol) = Self::filter_protocol(&self.protocol, &self.package_list)? {
+        if let Some(filtered_protocol) = Self::filter_protocol(&self.protocol, &self.package_list, &self.hostname)? {
             self.protocol = filtered_protocol;
         }
 
@@ -212,6 +212,7 @@ impl Negotiate {
     fn filter_protocol(
         negotiated_protocol: &NegotiatedProtocol,
         package_list: &Option<String>,
+        _hostname: &str,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
@@ -248,7 +249,10 @@ impl Negotiate {
                 }
                 #[cfg(feature = "network_client")]
                 if !is_ntlm {
-                    let kerberos_client = Kerberos::new_client_from_config(KerberosConfig::from_env())?;
+                    let mut config = KerberosConfig::from_env();
+                    config.hostname = Some(_hostname.to_owned());
+
+                    let kerberos_client = Kerberos::new_client_from_config(config)?;
                     filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
                 }
             }
