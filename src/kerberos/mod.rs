@@ -231,7 +231,7 @@ impl Kerberos {
             error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
 
             return Err(Error::new(
-                ErrorKind::InternalError,
+                ErrorKind::InvalidToken,
                 "KDC server should not process AS_REQ without the pa-pac data",
             ));
         }

@@ -171,7 +171,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
         );
 
         return Err(Error::new(
-            ErrorKind::InternalError,
+            ErrorKind::InvalidHandle,
             "Cannot extract certificate private key: invalid handle",
         ));
     }
@@ -199,13 +199,36 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     if status != 0 {
         NCryptFreeObject(private_key_handle);
 
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!(
-                "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
-                status
-            ),
-        ));
+        return match status {
+            Foundation::NTE_BAD_TYPE => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {:x?}",
+                    status
+                ),
+            )),
+            Foundation::NTE_INVALID_HANDLE => Err(Error::new(
+                ErrorKind::InvalidHandle,
+                format!(
+                    "Cannot extract certificate private key: key or export key handle is invalid: {:x?}",
+                    status
+                ),
+            )),
+            Foundation::NTE_INVALID_PARAMETER => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Cannot extract certificate private key: invalid parameter: {:x?}",
+                    status
+                ),
+            )),
+            _ => Err(Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
+                    status
+                ),
+            )),
+        };
     }
 
     let mut private_key_blob = vec![0; private_key_buffer_len as usize];
@@ -224,13 +247,36 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     NCryptFreeObject(private_key_handle);
 
     if status != 0 {
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!(
-                "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
-                status
-            ),
-        ));
+        return match status {
+            Foundation::NTE_BAD_TYPE => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {:x?}",
+                    status
+                ),
+            )),
+            Foundation::NTE_INVALID_HANDLE => Err(Error::new(
+                ErrorKind::InvalidHandle,
+                format!(
+                    "Cannot extract certificate private key: key or export key handle is invalid: {:x?}",
+                    status
+                ),
+            )),
+            Foundation::NTE_INVALID_PARAMETER => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Cannot extract certificate private key: invalid parameter: {:x?}",
+                    status
+                ),
+            )),
+            _ => Err(Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
+                    status
+                ),
+            )),
+        };
     }
 
     debug!("The certificate private key exported");

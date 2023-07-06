@@ -70,7 +70,7 @@ impl TlsConnection {
 
                 let tls_state = tls_connection
                     .process_new_packets()
-                    .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
+                    .map_err(|err| Error::new(ErrorKind::DecryptFailure, err.to_string()))?;
 
                 let mut reader = tls_connection.reader();
 
@@ -100,7 +100,7 @@ impl TlsConnection {
 
                 let _io_status = tls_connection
                     .process_new_packets()
-                    .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
+                    .map_err(|err| Error::new(ErrorKind::EncryptFailure, err.to_string()))?;
 
                 let mut tls_buffer = Vec::new();
                 let bytes_written = tls_connection.write_tls(&mut tls_buffer)?;
@@ -148,7 +148,10 @@ impl TlsConnection {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let protocol_version = tls_connection.protocol_version().ok_or_else(|| {
-                    Error::new(ErrorKind::InternalError, "Can not acquire connection protocol version")
+                    Error::new(
+                        ErrorKind::InvalidParameter,
+                        "Can not acquire connection protocol version",
+                    )
                 })?;
 
                 let protocol = match tls_connection {
@@ -193,7 +196,7 @@ impl TlsConnection {
                     rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
                     rustls::BulkAlgorithm::Chacha20Poly1305 => {
                         return Err(Error::new(
-                            ErrorKind::InternalError,
+                            ErrorKind::UnsupportedFunction,
                             "alg_id for CHACHA20_POLY1305 does not exist",
                         ))
                     }

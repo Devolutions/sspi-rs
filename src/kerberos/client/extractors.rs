@@ -65,7 +65,7 @@ pub fn extract_session_key_from_tgs_rep(
 
     let enc_data = cipher
         .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
-        .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
+        .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
 
     let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
@@ -92,7 +92,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
             let pa_etype_info2 = pa_etype_info2
                 .0
                 .get(0)
-                .ok_or_else(|| Error::new(ErrorKind::InternalError, "Missing EtypeInto2Entry in EtypeInfo2"))?;
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing EtypeInto2Entry in EtypeInfo2"))?;
 
             Ok((
                 pa_etype_info2.etype.0 .0.first().copied().unwrap(),
@@ -101,7 +101,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .0
                     .as_ref()
                     .map(|salt| salt.0.to_string())
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Missing salt in EtypeInto2Entry"))?,
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing salt in EtypeInto2Entry"))?,
             ))
         }
         None => Err(Error::new(

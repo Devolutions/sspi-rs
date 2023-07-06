@@ -52,7 +52,7 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
     use picky_krb::constants::error_codes::*;
 
     match krb_error_code {
-        KDC_ERR_NONE => (ErrorKind::InternalError, "No error".into()),
+        KDC_ERR_NONE => (ErrorKind::Unknown, "No error".into()),
         KDC_ERR_NAME_EXP => (
             ErrorKind::InvalidParameter,
             "Client's entry in database has expired".into(),

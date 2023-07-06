@@ -72,22 +72,23 @@ pub mod reqwest_network_client {
 
         fn send_tcp(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
             let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
-            let mut stream = TcpStream::connect(addr)?;
+            let mut stream = TcpStream::connect(addr)
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
 
             stream
                 .write(data)
-                .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
 
             let len = stream
                 .read_u32::<BigEndian>()
-                .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
 
             let mut buf = vec![0; len as usize + 4];
             buf[0..4].copy_from_slice(&(len.to_be_bytes()));
 
             stream
                 .read_exact(&mut buf[4..])
-                .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
 
             Ok(buf)
         }
@@ -125,14 +126,14 @@ pub mod reqwest_network_client {
                         format!("Invalid certificate data: {:?}", err),
                     ),
                     _ => Error::new(
-                        ErrorKind::InternalError,
+                        ErrorKind::NoAuthenticatingAuthority,
                         format!("Unable to send the data to the KDC Proxy: {:?}", err),
                     ),
                 })?
                 .bytes()
                 .map_err(|err| {
                     Error::new(
-                        ErrorKind::InternalError,
+                        ErrorKind::NoAuthenticatingAuthority,
                         format!("Unable to read the response data from the KDC Proxy: {:?}", err),
                     )
                 })?

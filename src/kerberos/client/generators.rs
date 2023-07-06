@@ -404,7 +404,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
-                    ErrorKind::InternalError,
+                    ErrorKind::InvalidParameter,
                     format!(
                         "Invalid authenticator checksum length: expected >= 20 but got {}. ",
                         checksum_value.len()

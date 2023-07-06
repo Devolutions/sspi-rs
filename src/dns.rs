@@ -344,6 +344,7 @@ where
     Fut::Output: Send,
 {
     use std::thread;
+
     use tokio::runtime::{Builder, Handle};
 
     match Handle::try_current() {
