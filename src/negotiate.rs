@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::net::IpAddr;
 
 use lazy_static::lazy_static;
 
@@ -212,7 +213,7 @@ impl Negotiate {
     fn filter_protocol(
         negotiated_protocol: &NegotiatedProtocol,
         package_list: &Option<String>,
-        _hostname: &str,
+        hostname: &str,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
@@ -250,7 +251,7 @@ impl Negotiate {
                 #[cfg(feature = "network_client")]
                 if !is_ntlm {
                     let mut config = KerberosConfig::from_env();
-                    config.hostname = Some(_hostname.to_owned());
+                    config.hostname = Some(hostname.to_owned());
 
                     let kerberos_client = Kerberos::new_client_from_config(config)?;
                     filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
@@ -259,6 +260,30 @@ impl Negotiate {
         }
 
         Ok(filtered_protocol)
+    }
+
+    fn is_protocol_ntlm(&self) -> bool {
+        matches!(&self.protocol, NegotiatedProtocol::Ntlm(_))
+    }
+
+    fn can_downgrade_ntlm(&self) -> bool {
+        let package_list = Self::parse_package_list_config(&self.package_list);
+        package_list.ntlm
+    }
+
+    fn is_target_name_ip_address(address: &str) -> bool {
+        let stripped_address = address.split('/').last().unwrap_or(address);
+        stripped_address.parse::<IpAddr>().is_ok()
+    }
+
+    fn check_target_name_for_ntlm_downgrade(&mut self, target_name: &str) {
+        let should_downgrade = Self::is_target_name_ip_address(target_name);
+        let can_downgrade = self.can_downgrade_ntlm();
+
+        if can_downgrade && should_downgrade && !self.is_protocol_ntlm() {
+            let ntlm_config = NtlmConfig::new(self.hostname.clone());
+            self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
+        }
     }
 }
 
@@ -400,6 +425,10 @@ impl SspiImpl for Negotiate {
         &mut self,
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
+        if let Some(target_name) = &builder.target_name {
+            self.check_target_name_for_ntlm_downgrade(target_name);
+        }
+
         if let Some(Some(identity)) = builder.credentials_handle {
             let auth_identity: AuthIdentity = identity.clone().into();
 
