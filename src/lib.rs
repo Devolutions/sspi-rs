@@ -81,6 +81,9 @@ pub mod negotiate;
 pub mod network_client;
 pub mod ntlm;
 pub mod pku2u;
+mod pk_init;
+#[cfg(feature = "scard")]
+mod smartcard;
 #[cfg(windows)]
 pub mod winapi;
 
@@ -95,6 +98,9 @@ mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
+
+#[cfg(all(feature = "scard", not(target_os = "windows")))]
+compile_error!("scard feature should be used only on Windows");
 
 use std::{error, fmt, io, result, str, string};
 
@@ -1926,5 +1932,11 @@ impl From<Error> for io::Error {
             io::ErrorKind::Other,
             format!("{:?}: {}", err.error_type, err.description),
         )
+    }
+}
+
+impl From<pcsc::Error> for Error {
+    fn from(value: pcsc::Error) -> Self {
+        Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }

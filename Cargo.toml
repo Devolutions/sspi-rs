@@ -21,11 +21,13 @@ exclude = [
 ]
 
 [features]
-default = []
+default = ["scard"]
 network_client = ["dep:reqwest", "dep:portpicker"]
 dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement
 tsssp = ["dep:rustls"]
+# Turns on Kerberos smart card login (available only on Windows and users WinSCard API)
+scard = ["dep:pcsc"]
 
 [dependencies]
 byteorder = "1.2.7"
@@ -60,6 +62,7 @@ tracing = "0.1.37"
 rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
 zeroize = { version = "1.5.7", features = ["zeroize_derive"] }
 tokio = { version = "1.1", features = ["time", "rt"], optional = true }
+pcsc = { version = "2.8.0", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.10"
