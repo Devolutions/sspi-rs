@@ -112,7 +112,7 @@ use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers};
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, CredentialsBuffers, SmartCardIdentity, Credentials};
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
     EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
@@ -994,8 +994,11 @@ pub struct ConnectionInfo {
     pub exchange_strength: u32,
 }
 
+/// Trait for performing authentication on the client or server side
 pub trait SspiImpl {
+    /// Represents raw data for authentication
     type CredentialsHandle;
+    /// Represents authentication data prepared for the authentication process
     type AuthenticationData;
 
     fn acquire_credentials_handle_impl<'a>(
@@ -1932,8 +1935,9 @@ impl From<Error> for io::Error {
     }
 }
 
+#[cfg(feature = "scard")]
 impl From<pcsc::Error> for Error {
-    fn from(value: pcsc::Error) -> Self {
+    fn from(_value: pcsc::Error) -> Self {
         Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }
