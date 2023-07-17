@@ -45,11 +45,11 @@ use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate
 use crate::network_client::NetworkProtocol;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error,
     ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    PACKAGE_ID_NONE, Credentials, CredentialsBuffers,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -96,7 +96,7 @@ pub enum KerberosState {
 pub struct Kerberos {
     state: KerberosState,
     config: KerberosConfig,
-    auth_identity: Option<AuthIdentityBuffers>,
+    auth_identity: Option<CredentialsBuffers>,
     encryption_params: EncryptionParams,
     seq_number: u32,
     realm: Option<String>,
@@ -395,7 +395,7 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        if let Some(ref identity_buffers) = self.auth_identity {
+        if let Some(CredentialsBuffers::AuthIdentity(ref identity_buffers)) = self.auth_identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
             Ok(ContextNames {
                 username: identity.username,
@@ -534,9 +534,9 @@ impl Sspi for Kerberos {
 }
 
 impl SspiImpl for Kerberos {
-    type CredentialsHandle = Option<AuthIdentityBuffers>;
+    type CredentialsHandle = Option<CredentialsBuffers>;
 
-    type AuthenticationData = AuthIdentity;
+    type AuthenticationData = Credentials;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl(
@@ -550,7 +550,10 @@ impl SspiImpl for Kerberos {
             ));
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        self.auth_identity = match builder.auth_data.cloned() {
+            Some(auth_data) => Some(auth_data.try_into()?),
+            None => None,
+        };
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),
@@ -574,8 +577,11 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "No credentials provided"))?;
 
-                let username = utf16_bytes_to_utf8_string(&credentials.user);
-                let domain = utf16_bytes_to_utf8_string(&credentials.domain);
+                // todo: handle smart card creds here
+                let auth_identity = credentials.as_auth_identity().unwrap();
+
+                let username = utf16_bytes_to_utf8_string(&auth_identity.user);
+                let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
                 let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| {
                     Error::new(
                         ErrorKind::NoCredentials,
@@ -618,9 +624,12 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
 
-                let username = utf16_bytes_to_utf8_string(&credentials.user);
-                let domain = utf16_bytes_to_utf8_string(&credentials.domain);
-                let password = utf16_bytes_to_utf8_string(credentials.password.as_ref());
+                // todo: handle smart card creds here
+                let auth_identity = credentials.as_auth_identity().unwrap();
+
+                let username = utf16_bytes_to_utf8_string(&auth_identity.user);
+                let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+                let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref());
                 let salt = format!("{}{}", domain, username);
 
                 self.realm = Some(get_client_principal_realm(&username, &domain));
@@ -848,7 +857,7 @@ impl SspiImpl for Kerberos {
 impl SspiEx for Kerberos {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.into());
+        self.auth_identity = Some(identity.try_into().unwrap());
     }
 }
 
