@@ -241,6 +241,29 @@ impl<
 }
 
 impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
+    pub(crate) fn full_transform<CredsHandle2, AuthData2>(
+        self,
+        inner: SspiPackage<'a, CredsHandle2, AuthData2>,
+        credentials_handle: Option<&'a mut CredsHandle2>,
+    ) -> FilledAcceptSecurityContext<'a, AuthData2, CredsHandle2> {
+        AcceptSecurityContext {
+            inner: Some(inner),
+            phantom_creds_use_set: PhantomData,
+            phantom_context_req_set: PhantomData,
+            phantom_data_repr_set: PhantomData,
+            phantom_output_set: PhantomData,
+
+            credentials_handle,
+            context_requirements: self.context_requirements,
+            target_data_representation: self.target_data_representation,
+
+            output: self.output,
+            input: self.input,
+        }
+    }
+}
+
+impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> crate::Result<AcceptSecurityContextResult> {
         let inner = self.inner.take().unwrap();
