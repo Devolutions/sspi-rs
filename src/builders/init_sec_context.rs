@@ -79,6 +79,33 @@ impl<
         ContextRequirementsSet: ToAssign,
         TargetDataRepresentationSet: ToAssign,
         OutputSet: ToAssign,
+    > InitializeSecurityContext<
+        'a, CredsHandle, CredsHandleSet, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet,
+    > {
+    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(&mut self, credentials_handle: Option<&'a mut CredsHandle2>) -> InitializeSecurityContext<'a, CredsHandle2, CredHandleSet2, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet> {
+        InitializeSecurityContext {
+            phantom_creds_use_set: PhantomData,
+            phantom_context_req_set: PhantomData,
+            phantom_data_repr_set: PhantomData,
+            phantom_output_set: PhantomData,
+
+            credentials_handle,
+            context_requirements: self.context_requirements,
+            target_data_representation: self.target_data_representation,
+            output: std::mem::take(&mut self.output),
+            target_name: self.target_name.clone(),
+            input: std::mem::take(&mut self.input),
+        }
+    }
+}
+
+impl<
+        'a,
+        CredsHandle,
+        CredsHandleSet: ToAssign,
+        ContextRequirementsSet: ToAssign,
+        TargetDataRepresentationSet: ToAssign,
+        OutputSet: ToAssign,
     >
     InitializeSecurityContext<
         'a,
