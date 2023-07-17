@@ -118,6 +118,25 @@ where
 }
 
 impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
+    pub(crate) fn full_transform<NewCredsHandle, NewAuthData>(
+        self,
+        inner: SspiPackage<'a, NewCredsHandle, NewAuthData>,
+        auth_data: Option<&'a NewAuthData>,
+    ) -> FilledAcquireCredentialsHandle<'a, NewCredsHandle, NewAuthData> {
+        AcquireCredentialsHandle {
+            inner: Some(inner),
+            phantom_cred_handle: PhantomData,
+            phantom_cred_use_set: PhantomData,
+
+            principal_name: self.principal_name,
+            credential_use: self.credential_use,
+            logon_id: self.logon_id,
+            auth_data,
+        }
+    }
+}
+
+impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(mut self) -> crate::Result<AcquireCredentialsHandleResult<CredsHandle>> {
         let inner = self.inner.take().unwrap();
