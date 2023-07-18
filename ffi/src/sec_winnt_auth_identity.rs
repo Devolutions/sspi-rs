@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
+use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result, CredentialsBuffers};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -162,7 +162,7 @@ pub unsafe fn auth_data_to_identity_buffers(
     security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
@@ -176,7 +176,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
@@ -197,18 +197,18 @@ pub unsafe fn auth_data_to_identity_buffers_a(
                 .to_string(),
             );
         }
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
             password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
-        })
+        }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
             password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
-        })
+        }))
     }
 }
 
@@ -216,7 +216,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
@@ -234,7 +234,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
                 (*auth_data).package_list_length as usize,
             )));
         }
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
             password: raw_str_into_bytes(
@@ -242,10 +242,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
                 (*auth_data).password_length as usize * 2,
             )
             .into(),
-        })
+        }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
             password: raw_str_into_bytes(
@@ -253,7 +253,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
                 (*auth_data).password_length as usize * 2,
             )
             .into(),
-        })
+        }))
     }
 }
 
@@ -287,7 +287,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
 }
 
 #[cfg(target_os = "windows")]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use sspi::Secret;
@@ -364,11 +364,11 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     password.as_mut().pop();
     auth_identity_buffers.password = password;
 
-    Ok(auth_identity_buffers)
+    Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
         "SecWinntIdentityEx2 is not supported on non Windows systems",
@@ -376,7 +376,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 }
 
 #[cfg(target_os = "windows")]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use sspi::Secret;
@@ -454,7 +454,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     password.as_mut().truncate(new_len);
     auth_identity_buffers.password = password;
 
-    Ok(auth_identity_buffers)
+    Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
 
 #[allow(clippy::missing_safety_doc)]
