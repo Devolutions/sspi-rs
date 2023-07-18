@@ -32,7 +32,7 @@ use crate::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext,
     FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContextResult, Negotiate,
     NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
-    SspiImpl, StreamSizes,
+    SspiImpl, StreamSizes, Credentials, CredentialsBuffers,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -255,10 +255,10 @@ impl CredSspClient {
                 .unwrap()
                 .sspi_context
                 .acquire_credentials_handle()
-                .with_auth_data(&self.credentials)
+                .with_auth_data(&Credentials::AuthIdentity(self.credentials.clone()))
                 .with_credential_use(CredentialUse::Outbound)
                 .execute()?;
-            self.credentials_handle = credentials_handle;
+            self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
         }
 
         ts_request.version = self.ts_request_version;
@@ -271,7 +271,7 @@ impl CredSspClient {
                 )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take();
+                let mut credentials_handle = self.credentials_handle.take().map(|c| CredentialsBuffers::AuthIdentity(c));
                 let cred_ssp_context = self.context.as_mut().unwrap();
                 let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
@@ -283,7 +283,7 @@ impl CredSspClient {
                 let result = cred_ssp_context
                     .sspi_context
                     .initialize_security_context_impl(&mut builder)?;
-                self.credentials_handle = credentials_handle;
+                self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
@@ -438,7 +438,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     .execute(),
                 ts_request
             );
-            self.credentials_handle = credentials_handle;
+            self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
         }
         try_cred_ssp_server!(
             self.context.as_mut().unwrap().check_peer_version(ts_request.version),
@@ -473,7 +473,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take();
+                let mut credentials_handle = self.credentials_handle.take().map(|a| CredentialsBuffers::AuthIdentity(a));
                 match try_cred_ssp_server!(
                     self.context
                         .as_mut()
@@ -506,7 +506,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             .as_mut()
                             .unwrap()
                             .sspi_context
-                            .custom_set_auth_identity(auth_data);
+                            .custom_set_auth_identity(Credentials::AuthIdentity(auth_data));
 
                         try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
@@ -551,7 +551,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     }
                     _ => unreachable!(),
                 };
-                self.credentials_handle = credentials_handle;
+                self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
@@ -591,22 +591,36 @@ impl SspiContext {
 }
 
 impl SspiImpl for SspiContext {
-    type CredentialsHandle = Option<AuthIdentityBuffers>;
-    type AuthenticationData = AuthIdentity;
+    type CredentialsHandle = Option<CredentialsBuffers>;
+    type AuthenticationData = Credentials;
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
-        match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
-            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
-            SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
+        Ok(match self {
+            SspiContext::Ntlm(ntlm) => {
+                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
+                    identity
+                } else {
+                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                };
+                builder.full_transform(ntlm, Some(auth_identity)).execute()?.transform(&|a: Option<AuthIdentityBuffers>| a.map(|c| CredentialsBuffers::AuthIdentity(c)))
+            },
+            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute()?,
+            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute()?,
+            SspiContext::Pku2u(pku2u) => {
+                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
+                    identity
+                } else {
+                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                };
+                builder.full_transform(pku2u, Some(auth_identity)).execute()?.transform(&|a: Option<AuthIdentityBuffers>| a.map(|c| CredentialsBuffers::AuthIdentity(c)))
+            },
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
-        }
+            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute()?,
+        })
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
@@ -615,10 +629,26 @@ impl SspiImpl for SspiContext {
         builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder),
+            SspiContext::Ntlm(ntlm) => {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) = builder.credentials_handle_mut() {
+                    Some(identity.clone())
+                }  else {
+                    None
+                };
+                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
+                ntlm.initialize_security_context_impl(&mut new_builder)
+            },
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
-            SspiContext::Pku2u(pku2u) => pku2u.initialize_security_context_impl(builder),
+            SspiContext::Pku2u(pku2u) => {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) = builder.credentials_handle_mut() {
+                    Some(identity.clone())
+                }  else {
+                    None
+                };
+                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
+                pku2u.initialize_security_context_impl(&mut new_builder)
+            },
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => credssp.initialize_security_context_impl(builder),
         }
@@ -630,10 +660,24 @@ impl SspiImpl for SspiContext {
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
-            SspiContext::Ntlm(ntlm) => builder.transform(ntlm).execute(),
+            SspiContext::Ntlm(ntlm) => {
+                let auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
+                    identity.clone()
+                } else {
+                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                };
+                builder.full_transform(ntlm, Some(&mut Some(auth_identity))).execute()
+            },
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
-            SspiContext::Pku2u(pku2u) => builder.transform(pku2u).execute(),
+            SspiContext::Pku2u(pku2u) => {
+                let auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
+                    identity.clone()
+                } else {
+                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                };
+                builder.full_transform(pku2u, Some(&mut Some(auth_identity))).execute()
+            },
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
         }
@@ -799,10 +843,14 @@ impl SspiEx for SspiContext {
     #[instrument(level = "trace", ret, fields(security_package = self.package_name()), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
+            SspiContext::Ntlm(ntlm) => {
+                ntlm.custom_set_auth_identity(identity.auth_identity().unwrap())
+            },
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
             SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identity(identity),
-            SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
+            SspiContext::Pku2u(pku2u) => {
+                pku2u.custom_set_auth_identity(identity.auth_identity().unwrap())
+            },
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => credssp.custom_set_auth_identity(identity),
         }
