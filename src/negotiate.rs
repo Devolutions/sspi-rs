@@ -421,7 +421,7 @@ impl SspiImpl for Negotiate {
                     return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
                 };
                 let new_builder = builder.full_transform(pku2u, Some(auth_identity));
-                pku2u.acquire_credentials_handle_impl(new_builder)?;
+                new_builder.execute()?;
             },
             NegotiatedProtocol::Kerberos(kerberos) => {
                 kerberos.acquire_credentials_handle_impl(builder)?;
@@ -433,7 +433,7 @@ impl SspiImpl for Negotiate {
                     return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
                 };
                 let new_builder = builder.full_transform(ntlm, Some(auth_identity));
-                ntlm.acquire_credentials_handle_impl(new_builder)?;
+                new_builder.execute()?;
             },
         };
 
@@ -485,45 +485,45 @@ impl SspiImpl for Negotiate {
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
-                let credentials_handle = self.auth_identity.as_mut().map(|c| c.auth_identity()).flatten();
-                let transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+                let mut credentials_handle = self.auth_identity.as_mut().map(|c| c.clone().auth_identity()).flatten();
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                 pku2u.initialize_security_context_impl(&mut transformed_builder)
             },
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
-                let credentials_handle = self.auth_identity.as_mut().map(|c| c.auth_identity()).flatten();
-                let transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+                let mut credentials_handle = self.auth_identity.as_mut().map(|c| c.clone().auth_identity()).flatten();
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                 ntlm.initialize_security_context_impl(&mut transformed_builder)
             },
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    // #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
-                let creds_handle = if let Some(creds_handle) = builder.credentials_handle {
-                    creds_handle.map(|c| c.auth_identity()).flatten()
+                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
+                    creds_handle.as_ref().map(|c| c.clone().auth_identity()).flatten()
                 } else {
                     None
                 };
                 let new_builder = builder.full_transform(pku2u, Some(&mut creds_handle));
-                pku2u.accept_security_context_impl(new_builder)
+                new_builder.execute()
             },
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
-                let creds_handle = if let Some(creds_handle) = builder.credentials_handle {
-                    creds_handle.map(|c| c.auth_identity()).flatten()
+                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
+                    creds_handle.as_ref().map(|c| c.clone().auth_identity()).flatten()
                 } else {
                     None
                 };
                 let new_builder = builder.full_transform(ntlm, Some(&mut creds_handle));
-                ntlm.accept_security_context_impl(new_builder)
+                new_builder.execute()
             },
         }
     }
