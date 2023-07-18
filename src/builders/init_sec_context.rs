@@ -73,7 +73,8 @@ pub struct InitializeSecurityContext<
 }
 
 impl<
-        'a,
+        'b,
+        'a: 'b,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -82,7 +83,7 @@ impl<
     > InitializeSecurityContext<
         'a, CredsHandle, CredsHandleSet, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet,
     > {
-    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(&mut self, credentials_handle: Option<&'a mut CredsHandle2>) -> InitializeSecurityContext<'a, CredsHandle2, CredHandleSet2, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet> {
+    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(&mut self, credentials_handle: Option<&'b mut CredsHandle2>) -> InitializeSecurityContext<'b, CredsHandle2, CredHandleSet2, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet> {
         InitializeSecurityContext {
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
@@ -116,6 +117,10 @@ impl<
         OutputSet,
     >
 {
+    pub fn credentials_handle_mut(&mut self) -> &mut Option<&'a mut CredsHandle> {
+        &mut self.credentials_handle
+    }
+
     pub fn new() -> Self {
         Self {
             phantom_creds_use_set: PhantomData,
