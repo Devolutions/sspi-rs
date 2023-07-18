@@ -240,12 +240,12 @@ impl<
     }
 }
 
-impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
+impl<'b, 'a: 'b, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
     pub(crate) fn full_transform<CredsHandle2, AuthData2>(
         self,
         inner: SspiPackage<'a, CredsHandle2, AuthData2>,
-        credentials_handle: Option<&'a mut CredsHandle2>,
-    ) -> FilledAcceptSecurityContext<'a, AuthData2, CredsHandle2> {
+        credentials_handle: Option<&'b mut CredsHandle2>,
+    ) -> FilledAcceptSecurityContext<'b, AuthData2, CredsHandle2> {
         AcceptSecurityContext {
             inner: Some(inner),
             phantom_creds_use_set: PhantomData,
