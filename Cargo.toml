@@ -21,7 +21,7 @@ exclude = [
 ]
 
 [features]
-default = ["scard"]
+default = ["scard", "tsssp"]
 network_client = ["dep:reqwest", "dep:portpicker"]
 dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement

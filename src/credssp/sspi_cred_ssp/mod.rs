@@ -13,12 +13,12 @@ use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertContext,
+    builders, negotiate, AcquireCredentialsHandleResult, CertContext,
     CertEncodingType, CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
     ClientResponseFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
     PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
-    SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    SspiImpl, StreamSizes, PACKAGE_ID_NONE, Credentials, CredentialsBuffers,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -45,7 +45,7 @@ enum CredSspState {
 pub struct SspiCredSsp {
     state: CredSspState,
     cred_ssp_context: Box<CredSspContext>,
-    auth_identity: Option<AuthIdentityBuffers>,
+    auth_identity: Option<CredentialsBuffers>,
     tls_connection: TlsConnection,
     nonce: Option<[u8; NONCE_SIZE]>,
 }
@@ -268,8 +268,8 @@ impl Sspi for SspiCredSsp {
 }
 
 impl SspiImpl for SspiCredSsp {
-    type CredentialsHandle = Option<AuthIdentityBuffers>;
-    type AuthenticationData = AuthIdentity;
+    type CredentialsHandle = Option<CredentialsBuffers>;
+    type AuthenticationData = Credentials;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl<'a>(
@@ -283,7 +283,10 @@ impl SspiImpl for SspiCredSsp {
             ));
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        self.auth_identity = match builder.auth_data.cloned() {
+            Some(auth_data) => Some(auth_data.try_into()?),
+            None => None,
+        };
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),
@@ -429,7 +432,7 @@ impl SspiImpl for SspiCredSsp {
 
                 ts_request.auth_info = Some(
                     self.cred_ssp_context
-                        .encrypt_ts_credentials(credentials, CredSspMode::WithCredentials)?,
+                        .encrypt_ts_credentials(credentials.as_auth_identity().unwrap(), CredSspMode::WithCredentials)?,
                 );
 
                 let mut encoded_ts_request = Vec::new();
@@ -474,6 +477,6 @@ impl SspiImpl for SspiCredSsp {
 impl SspiEx for SspiCredSsp {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.into());
+        self.auth_identity = Some(identity.try_into().unwrap());
     }
 }
