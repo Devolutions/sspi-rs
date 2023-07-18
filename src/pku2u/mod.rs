@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use self::generators::{
     generate_client_dh_parameters, generate_neg, generate_neg_token_init, generate_neg_token_targ,
-    generate_pa_datas_for_as_req, generate_pku2u_nego_req, generate_server_dh_parameters, DH_NONCE_LEN,
+    generate_pku2u_nego_req, generate_server_dh_parameters, DH_NONCE_LEN,
     WELLKNOWN_REALM,
 };
 use crate::builders::ChangePassword;
@@ -38,6 +38,7 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
+use crate::pk_init::generate_pa_datas_for_as_req;
 use crate::pku2u::cert_utils::validation::validate_server_p2p_certificate;
 use crate::pku2u::extractors::{
     extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
@@ -105,17 +106,17 @@ enum Pku2uMode {
 #[derive(Debug, Clone)]
 pub struct DhParameters {
     // g
-    base: Vec<u8>,
+    pub base: Vec<u8>,
     // p
-    modulus: Vec<u8>,
+    pub modulus: Vec<u8>,
     //
-    q: Vec<u8>,
+    pub q: Vec<u8>,
     // generated private key
-    private_key: Vec<u8>,
+    pub private_key: Vec<u8>,
     // received public key
-    other_public_key: Option<Vec<u8>>,
-    client_nonce: Option<[u8; DH_NONCE_LEN]>,
-    server_nonce: Option<[u8; DH_NONCE_LEN]>,
+    pub other_public_key: Option<Vec<u8>>,
+    pub client_nonce: Option<[u8; DH_NONCE_LEN]>,
+    pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
 #[derive(Debug, Clone)]
@@ -410,7 +411,7 @@ impl SspiImpl for Pku2u {
 
                 let snames = check_if_empty!(builder.target_name, "service target name is not provided")
                     .split('/')
-                    .collect();
+                    .collect::<Vec<_>>();
                 debug!(names = ?snames, "Service principal names");
 
                 let nego = Nego::new(
@@ -428,7 +429,7 @@ impl SspiImpl for Pku2u {
                     self.conversation_id,
                     self.next_seq_number(),
                     auth_scheme,
-                    picky_asn1_der::to_vec(&generate_pku2u_nego_req(snames, &self.config)?)?,
+                    picky_asn1_der::to_vec(&generate_pku2u_nego_req(&snames, &self.config)?)?,
                 );
                 exchange.encode(&mut mech_token)?;
 

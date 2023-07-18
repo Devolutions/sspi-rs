@@ -582,12 +582,15 @@ impl SspiImpl for Kerberos {
 
                 let username = utf16_bytes_to_utf8_string(&auth_identity.user);
                 let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+                warn!(target_name = builder.target_name);
                 let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| {
                     Error::new(
                         ErrorKind::NoCredentials,
                         "Service target name (service principal name) is not provided",
                     )
                 })?)?;
+
+                warn!(service_name = service_name);
 
                 let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
                     &format!("{}.{}", username, domain.to_ascii_lowercase(),),
