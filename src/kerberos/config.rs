@@ -72,8 +72,7 @@ impl KerberosConfig {
     pub fn from_env() -> Self {
         use crate::network_client::reqwest_network_client::ReqwestNetworkClient;
 
-        let network_client = Box::new(ReqwestNetworkClient::new());
-        Self::new_with_network_client(network_client)
+        Self::new_with_network_client(Box::<ReqwestNetworkClient>::default())
     }
 
     pub fn from_kdc_url(url: &str, network_client: Box<dyn NetworkClient>) -> Self {
@@ -96,7 +95,7 @@ impl Clone for KerberosConfig {
     fn clone(&self) -> Self {
         Self {
             url: self.url.clone(),
-            network_client: self.network_client.clone(),
+            network_client: self.network_client.box_clone(),
             hostname: self.hostname.clone(),
         }
     }

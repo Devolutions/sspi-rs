@@ -14,9 +14,9 @@ use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::{KrbResult, ResultExt};
+use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
 use url::Url;
@@ -39,6 +39,7 @@ use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_s
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
+use crate::network_client::NetworkProtocol;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
@@ -47,6 +48,8 @@ use crate::{
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
     PACKAGE_ID_NONE,
 };
+use picky_asn1::restricted_string::IA5String;
+use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 
 pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
@@ -153,16 +156,43 @@ impl Kerberos {
 
     fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
         if let Some((realm, kdc_url)) = self.get_kdc() {
-            return match kdc_url.scheme() {
-                "udp" | "tcp" => self.config.network_client.send(&kdc_url, data),
-                "http" | "https" => self.config.network_client.send_http(&kdc_url, data, Some(realm)),
-                scheme => {
-                    error!(?scheme, "Bad kdc url: invalid URL scheme");
+            let protocol = NetworkProtocol::from_url_scheme(kdc_url.scheme()).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("Invalid protocol `{}` for KDC server", kdc_url.scheme()),
+                )
+            })?;
 
-                    Err(Error::new(
-                        ErrorKind::InvalidParameter,
-                        "Invalid KDC server URL protocol scheme",
-                    ))
+            if !self.config.network_client.is_protocol_supported(protocol) {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!(
+                        "Network protocol `{}` is not supported by `{}` network client. Supported protocols are: {:?}",
+                        kdc_url.scheme(),
+                        self.config.network_client.name(),
+                        self.config.network_client.supported_protocols(),
+                    ),
+                ));
+            }
+
+            return match protocol {
+                NetworkProtocol::Tcp | NetworkProtocol::Udp => {
+                    self.config.network_client.send(protocol, &kdc_url, data)
+                }
+                NetworkProtocol::Http | NetworkProtocol::Https => {
+                    let data = OctetStringAsn1::from(data.to_vec());
+                    let domain = KerberosStringAsn1::from(IA5String::from_string(realm)?);
+
+                    let kdc_proxy_message = KdcProxyMessage {
+                        kerb_message: ExplicitContextTag0::from(data),
+                        target_domain: Optional::from(Some(ExplicitContextTag1::from(domain))),
+                        dclocator_hint: Optional::from(None),
+                    };
+
+                    let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
+                    let result_bytes = self.config.network_client.send(protocol, &kdc_url, &message_request)?;
+                    let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
+                    Ok(message_response.kerb_message.0 .0)
                 }
             };
         }
@@ -815,25 +845,26 @@ mod tests {
     use picky_krb::crypto::CipherSuite;
 
     use super::EncryptionParams;
-    use crate::network_client::NetworkClient;
-    use crate::{
-        EncryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, KerberosState, SecurityBuffer, SecurityBufferType,
-        Sspi,
-    };
+    use crate::network_client::{NetworkClient, NetworkProtocol};
+    use crate::{EncryptionFlags, Kerberos, KerberosConfig, KerberosState, SecurityBuffer, SecurityBufferType, Sspi};
 
     struct NetworkClientMock;
 
     impl NetworkClient for NetworkClientMock {
-        fn send(&self, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
-            Err(Error::new(ErrorKind::UnsupportedFunction, "send is not supported"))
+        fn send(&self, _protocol: NetworkProtocol, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
+            unreachable!("unsupported protocol")
         }
 
-        fn send_http(&self, _url: &url::Url, _data: &[u8], _domain: Option<String>) -> crate::Result<Vec<u8>> {
-            Err(Error::new(ErrorKind::UnsupportedFunction, "send_http is not supported"))
-        }
-
-        fn clone(&self) -> Box<dyn NetworkClient> {
+        fn box_clone(&self) -> Box<dyn NetworkClient> {
             Box::new(Self)
+        }
+
+        fn name(&self) -> &'static str {
+            "Mock"
+        }
+
+        fn supported_protocols(&self) -> &[crate::network_client::NetworkProtocol] {
+            &[]
         }
     }
 

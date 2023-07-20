@@ -213,7 +213,7 @@ impl Negotiate {
     fn filter_protocol(
         negotiated_protocol: &NegotiatedProtocol,
         package_list: &Option<String>,
-        hostname: &str,
+        #[allow(unused_variables)] hostname: &str, // Unused if `network_client` feature is disabled
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
