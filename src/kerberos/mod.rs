@@ -3,6 +3,7 @@ pub mod config;
 mod encryption_params;
 pub mod flags;
 pub mod server;
+mod pa_datas;
 mod utils;
 
 use std::fmt::Debug;
@@ -18,7 +19,7 @@ use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KrbPrivMessage, TgsRep};
+use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, KdcProxyMessage, TgsRep, KdcReqBody};
 use rand::rngs::OsRng;
 use rand::Rng;
 use url::Url;
@@ -33,22 +34,27 @@ use self::client::generators::{
     GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
 use self::config::KerberosConfig;
+use self::pa_datas::AsReqPaDataOptions;
 use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
+use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::network_client::NetworkProtocol;
+use crate::pk_init::DhParameters;
+use crate::pku2u::{generate_client_dh_parameters, generate_authenticator_extension};
+use crate::smartcard::SmartCard;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
     Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    PACKAGE_ID_NONE, pk_init,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -101,6 +107,7 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
+    dh_parameters: Option<DhParameters>,
 }
 
 impl Kerberos {
@@ -116,6 +123,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            dh_parameters: None,
         })
     }
 
@@ -131,6 +139,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            dh_parameters: None,
         })
     }
 
@@ -213,13 +222,13 @@ impl Kerberos {
 
     pub fn as_exchange(
         &mut self,
-        options: GenerateAsReqOptions,
-        mut pa_data_options: GenerateAsPaDataOptions,
+        kdc_req_body: &KdcReqBody,
+        // mut pa_data_options: GenerateAsPaDataOptions,
+        mut pa_data_options: AsReqPaDataOptions,
     ) -> Result<AsRep> {
-        pa_data_options.with_pre_auth = false;
-        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
-        let kdc_req_body = generate_as_req_kdc_body(&options)?;
-        let as_req = generate_as_req(&pa_datas, kdc_req_body);
+        pa_data_options.with_pre_auth(false);
+        let pa_datas = pa_data_options.generate()?;
+        let as_req = generate_as_req(&pa_datas, kdc_req_body.clone());
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -239,14 +248,13 @@ impl Kerberos {
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
             debug!("salt extracted successfully from the KRB_ERROR");
 
-            pa_data_options.salt = correct_salt.as_bytes().to_vec()
+            pa_data_options.with_salt(correct_salt.as_bytes().to_vec());
         }
 
-        pa_data_options.with_pre_auth = true;
-        let pa_datas = generate_pa_datas_for_as_req(&pa_data_options)?;
+        pa_data_options.with_pre_auth(true);
+        let pa_datas = pa_data_options.generate()?;
 
-        let kdc_req_body = generate_as_req_kdc_body(&options)?;
-        let as_req = generate_as_req(&pa_datas, kdc_req_body);
+        let as_req = generate_as_req(&pa_datas, kdc_req_body.clone());
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -433,23 +441,28 @@ impl Sspi for Kerberos {
         let realm = &get_client_principal_realm(username, domain);
         let hostname = unwrap_hostname(self.config.hostname.as_deref())?;
 
+        let options = GenerateAsReqOptions {
+            realm,
+            username,
+            cname_type,
+            snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
+            // 4 = size of u32
+            nonce: &OsRng::default().gen::<[u8; 4]>(),
+            hostname: &hostname,
+            context_requirements: ClientRequestFlags::empty(),
+        };
+        let kdc_req_body = generate_as_req_kdc_body(&options)?;
+
+        let pa_data_options  = AsReqPaDataOptions::PasswordBased(GenerateAsPaDataOptions {
+            password: password.as_ref(),
+            salt: salt.as_bytes().to_vec(),
+            enc_params: self.encryption_params.clone(),
+            with_pre_auth: false,
+        });
+
         let as_rep = self.as_exchange(
-            GenerateAsReqOptions {
-                realm,
-                username,
-                cname_type,
-                snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
-                // 4 = size of u32
-                nonce: &OsRng.gen::<[u8; 4]>(),
-                hostname: &hostname,
-                context_requirements: ClientRequestFlags::empty(),
-            },
-            GenerateAsPaDataOptions {
-                password: password.as_ref(),
-                salt: salt.as_bytes().to_vec(),
-                enc_params: self.encryption_params.clone(),
-                with_pre_auth: false,
-            },
+            &kdc_req_body,
+            pa_data_options,
         )?;
 
         info!("AS exchange finished successfully.");
@@ -561,7 +574,7 @@ impl SspiImpl for Kerberos {
         })
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    // #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
@@ -627,36 +640,75 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
 
-                // todo: handle smart card creds here
-                let auth_identity = credentials.as_auth_identity().unwrap();
+                let (username, password, realm, cname_type) = match credentials {
+                    CredentialsBuffers::AuthIdentity(auth_identity) => {
+                        let username = utf16_bytes_to_utf8_string(&auth_identity.user);
+                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+                        let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref());
 
-                let username = utf16_bytes_to_utf8_string(&auth_identity.user);
-                let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-                let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref());
-                let salt = format!("{}{}", domain, username);
+                        let realm = get_client_principal_realm(&username, &domain);
 
-                self.realm = Some(get_client_principal_realm(&username, &domain));
+                        let cname_type = get_client_principal_name_type(&username, &domain);
 
-                let cname_type = get_client_principal_name_type(&username, &domain);
-                let realm = &get_client_principal_realm(&username, &domain);
+                        (username, password, realm, cname_type)
+                    },
+                    CredentialsBuffers::SmartCard(smart_card) => {
+                        let username = utf16_bytes_to_utf8_string(&smart_card.username);
+                        let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
+
+                        let realm = get_client_principal_realm(&username, "");
+                        let cname_type = get_client_principal_name_type(&username, "");
+
+                        (username, password, realm, cname_type)
+                    },
+                };
+                self.realm = Some(realm.clone());
+
+                let options = GenerateAsReqOptions {
+                    realm: &realm,
+                    username: &username,
+                    cname_type,
+                    snames: &[TGT_SERVICE_NAME, &realm],
+                    // 4 = size of u32
+                    nonce: &OsRng::default().gen::<[u8; 4]>(),
+                    hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
+                    context_requirements: builder.context_requirements,
+                };
+                let kdc_req_body = generate_as_req_kdc_body(&options)?;
+
+                let pa_data_options  = match credentials {
+                    CredentialsBuffers::AuthIdentity(auth_identity) => {
+                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+                        let salt = format!("{}{}", domain, username);
+
+                        AsReqPaDataOptions::PasswordBased(GenerateAsPaDataOptions {
+                            password: &password,
+                            salt: salt.as_bytes().to_vec(),
+                            enc_params: self.encryption_params.clone(),
+                            with_pre_auth: false,
+                        })
+                    },
+                    CredentialsBuffers::SmartCard(smart_card) => {
+                        let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
+                        let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
+
+                        self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng::default())?);
+
+                        AsReqPaDataOptions::PrivateKeyBased(pk_init::GenerateAsPaDataOptions {
+                            p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
+                            kdc_req_body: &kdc_req_body,
+                            dh_parameters: self.dh_parameters.clone().unwrap(),
+                            sign_data: Box::new(move |data_to_sign| {
+                                let smart_card = SmartCard::new(pin.clone(), &reader_name, 1)?;
+                                smart_card.sign(data_to_sign)
+                            }),
+                        })
+                    },
+                };
 
                 let as_rep = self.as_exchange(
-                    GenerateAsReqOptions {
-                        realm,
-                        username: &username,
-                        cname_type,
-                        snames: &[TGT_SERVICE_NAME, realm],
-                        // 4 = size of u32
-                        nonce: &OsRng.gen::<[u8; 4]>(),
-                        hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
-                        context_requirements: builder.context_requirements,
-                    },
-                    GenerateAsPaDataOptions {
-                        password: &password,
-                        salt: salt.as_bytes().to_vec(),
-                        enc_params: self.encryption_params.clone(),
-                        with_pre_auth: false,
-                    },
+                    &kdc_req_body,
+                    pa_data_options,
                 )?;
 
                 info!("AS exchange finished successfully.");
@@ -678,8 +730,20 @@ impl SspiImpl for Kerberos {
                     extensions: Vec::new(),
                 })?;
 
-                let session_key_1 =
-                    extract_session_key_from_as_rep(&as_rep, &salt, &password, &self.encryption_params)?;
+                let mut session_key_extractor = match credentials {
+                    CredentialsBuffers::AuthIdentity(_) => AsRepSessionKeyExtractor::PasswordBased {
+                        salt: &salt,
+                        password: &password,
+                        enc_params: &mut self.encryption_params
+                    },
+                    CredentialsBuffers::SmartCard(_) => {
+                        AsRepSessionKeyExtractor::PrivateKeyBased {
+                            dh_parameters: self.dh_parameters.as_mut().unwrap(),
+                            enc_params: &mut self.encryption_params,
+                        }
+                    },
+                };
+                let session_key_1 = session_key_extractor.session_key(&as_rep)?;
 
                 let service_principal = builder.target_name.ok_or_else(|| {
                     Error::new(
@@ -722,20 +786,43 @@ impl SspiImpl for Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
-                let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-                    kdc_rep: &tgs_rep.0,
-                    seq_num: Some(seq_num),
-                    sub_key: Some(EncKey {
-                        key_type: enc_type.clone(),
-                        key_value: authenticator_sub_key,
-                    }),
-                    checksum: Some(ChecksumOptions {
-                        checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
-                    }),
-                    channel_bindings: self.channel_bindings.as_ref(),
-                    extensions: Vec::new(),
-                })?;
+                let authenticator_options = match credentials {
+                    CredentialsBuffers::AuthIdentity(_) => GenerateAuthenticatorOptions {
+                        kdc_rep: &tgs_rep.0,
+                        seq_num: Some(seq_num),
+                        sub_key: Some(EncKey {
+                            key_type: enc_type.clone(),
+                            key_value: authenticator_sub_key,
+                        }),
+                        checksum: Some(ChecksumOptions {
+                            checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
+                            checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                        }),
+                        channel_bindings: self.channel_bindings.as_ref(),
+                        extensions: Vec::new(),
+                    },
+                    CredentialsBuffers::SmartCard(_) => GenerateAuthenticatorOptions {
+                        kdc_rep: &tgs_rep.0,
+                        seq_num: Some(seq_num),
+                        sub_key: Some(EncKey {
+                            key_type: enc_type.clone(),
+                            key_value: authenticator_sub_key.clone(),
+                        }),
+                        checksum: Some(ChecksumOptions {
+                            checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
+                            checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                        }),
+                        channel_bindings: None,
+                        extensions: vec![
+                            // generate_authenticator_extension(
+                            //     &authenticator_sub_key,
+                            //     &self.gss_api_messages,
+                            // )?
+                        ],
+                    },
+                };
+
+                let authenticator = generate_authenticator(authenticator_options)?;
 
                 // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
                 let mech_id = oids::krb5_user_to_user();
@@ -927,6 +1014,7 @@ mod tests {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
+            dh_parameters: None,
         };
 
         let mut kerberos_client = Kerberos {
@@ -948,6 +1036,7 @@ mod tests {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
+            dh_parameters: None,
         };
 
         let plain_message = b"some plain message";
