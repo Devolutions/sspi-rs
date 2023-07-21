@@ -91,8 +91,7 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
     let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
 
     if let Some(kdc_url) = attributes.kdc_url() {
-        let kerberos_config =
-            KerberosConfig::new(&kdc_url, Box::<ReqwestNetworkClient>::default(), hostname.clone());
+        let kerberos_config = KerberosConfig::new(&kdc_url, Box::<ReqwestNetworkClient>::default(), hostname.clone());
         let negotiate_config = NegotiateConfig::new(
             Box::new(kerberos_config),
             attributes.package_list.clone(),
