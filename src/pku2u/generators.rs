@@ -34,21 +34,17 @@ use picky_krb::pkinit::{
 use rand::rngs::OsRng;
 use rand::Rng;
 
-use super::{DhParameters, Pku2uConfig};
+use super::Pku2uConfig;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::client::generators::{
     AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
 };
+use crate::pk_init::DhParameters;
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// [The PKU2U Realm Name](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-09#section-3)
 /// The PKU2U realm name is defined as a reserved Kerberos realm name, and it has the value of "WELLKNOWN:PKU2U".
 pub const WELLKNOWN_REALM: &str = "WELLKNOWN:PKU2U";
-
-/// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
-/// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
-/// Key length of Aes256 is equal to 32
-pub const DH_NONCE_LEN: usize = 32;
 
 /// [The GSS-API Binding for PKU2U](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6)
 /// The type for the checksum extension.

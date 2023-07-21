@@ -1,15 +1,14 @@
 use chrono::Utc;
-use picky::hash::HashAlgorithm;
-use picky::key::PrivateKey;
-use picky::signature::SignatureAlgorithm;
+use oid::ObjectIdentifier;
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::wrapper::{IntegerAsn1, ObjectIdentifierAsn1, Optional, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, OctetStringAsn1, BitStringAsn1, Asn1SetOf, ImplicitContextTag0, Asn1SequenceOf};
 use picky_asn1_der::Asn1RawDer;
+use picky_asn1_x509::oids::PKINIT_DH_KEY_DATA;
 use picky_asn1_x509::signer_info::{SignerInfo, IssuerAndSerialNumber, CertificateSerialNumber, DigestAlgorithmIdentifier, SignatureAlgorithmIdentifier, UnsignedAttributes, Attributes, SignerIdentifier, SignatureValue};
 use picky_asn1_x509::{Certificate, AlgorithmIdentifier, Attribute, AttributeValues, ShaVariant, oids};
 use picky_asn1_x509::cmsversion::CmsVersion;
-use picky_asn1_x509::content_info::EncapsulatedContentInfo;
+use picky_asn1_x509::content_info::{EncapsulatedContentInfo, ContentValue};
 use picky_asn1_x509::signed_data::{
     CertificateChoices, CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos,
 };
@@ -17,20 +16,47 @@ use picky_krb::constants::types::PA_PK_AS_REQ;
 use picky_krb::crypto::diffie_hellman::compute_public_key;
 use picky_krb::data_types::{PaData, KerberosTime};
 use picky_krb::messages::KdcReqBody;
-use picky_krb::pkinit::{DhReqKeyInfo, AuthPack, DhDomainParameters, DhReqInfo, PkAuthenticator, PaPkAsReq};
+use picky_krb::pkinit::{DhReqKeyInfo, AuthPack, DhDomainParameters, DhReqInfo, PkAuthenticator, PaPkAsReq, KdcDhKeyInfo};
 use sha1::{Sha1, Digest};
 
 use crate::kerberos::client::generators::MAX_MICROSECONDS_IN_SECOND;
-use crate::pku2u::DhParameters;
 use crate::{Result, Error, ErrorKind};
 
-#[instrument(level = "trace", ret)]
+/// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
+/// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
+/// Key length of Aes256 is equal to 32
+pub const DH_NONCE_LEN: usize = 32;
+
+#[derive(Debug, Clone)]
+pub struct DhParameters {
+    // g
+    pub base: Vec<u8>,
+    // p
+    pub modulus: Vec<u8>,
+    //
+    pub q: Vec<u8>,
+    // generated private key
+    pub private_key: Vec<u8>,
+    // received public key
+    pub other_public_key: Option<Vec<u8>>,
+    pub client_nonce: Option<[u8; DH_NONCE_LEN]>,
+    pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
+}
+
+
+pub struct GenerateAsPaDataOptions<'a> {
+    pub p2p_cert: Certificate,
+    pub kdc_req_body: &'a KdcReqBody,
+    pub dh_parameters: DhParameters,
+    pub sign_data: Box<dyn Fn(&[u8]) -> Result<Vec<u8>>>,
+}
+
+#[instrument(level = "trace", skip_all, ret)]
 pub fn generate_pa_datas_for_as_req(
-    p2p_cert: &Certificate,
-    kdc_req_body: &KdcReqBody,
-    dh_parameters: &DhParameters,
-    private_key: &PrivateKey,
+    options: &GenerateAsPaDataOptions<'_>,
 ) -> Result<Vec<PaData>> {
+    let GenerateAsPaDataOptions { p2p_cert, kdc_req_body, dh_parameters, sign_data } = options;
+
     let current_date = Utc::now();
     let mut microseconds = current_date.timestamp_subsec_micros();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
@@ -102,7 +128,7 @@ pub fn generate_pa_datas_for_as_req(
         signers_infos: SignersInfos(Asn1SetOf::from(vec![generate_signer_info(
             p2p_cert,
             digest,
-            private_key,
+            sign_data,
         )?])),
     };
 
@@ -118,7 +144,7 @@ pub fn generate_pa_datas_for_as_req(
     }])
 }
 
-pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key: &PrivateKey) -> Result<SignerInfo> {
+pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, sign_data: &dyn Fn(&[u8]) -> Result<Vec<u8>>) -> Result<SignerInfo> {
     let signed_attributes = Asn1SetOf::from(vec![
         Attribute {
             ty: ObjectIdentifierAsn1::from(oids::content_type()),
@@ -134,14 +160,7 @@ pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key
 
     let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes)?;
 
-    let signature = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
-        .sign(&encoded_signed_attributes, private_key)
-        .map_err(|err| {
-            Error::new(
-                ErrorKind::InternalError,
-                format!("Cannot calculate signer info signature: {:?}", err),
-            )
-        })?;
+    let signature = sign_data(&encoded_signed_attributes)?;
 
     trace!(?encoded_signed_attributes, ?signature, "Pku2u signed attributes",);
 
@@ -157,4 +176,49 @@ pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key
         signature: SignatureValue(OctetStringAsn1::from(signature)),
         unsigned_attrs: Optional::from(UnsignedAttributes(Vec::new())),
     })
+}
+
+#[instrument(level = "trace", ret)]
+pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
+    let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
+    if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!(
+                "Invalid content info identifier: {:?}. Expected: {:?}",
+                signed_data.content_info.content_type.0, pkinit_dh_key_data
+            ),
+        ));
+    }
+
+    let dh_key_info_data = match &signed_data
+        .content_info
+        .content
+        .as_ref()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "content info is not present"))?
+        .0
+    {
+        ContentValue::OctetString(data) => &data.0,
+        content_value => {
+            error!(
+                ?content_value,
+                "The server has sent KDC DH key info in unsupported format. Only ContentValue::OctetString is supported",
+            );
+
+            return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info"));
+        }
+    };
+
+    let dh_key_info: KdcDhKeyInfo = picky_asn1_der::from_bytes(dh_key_info_data)?;
+
+    if dh_key_info.nonce.0 != vec![0] {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("DH key nonce must be 0. Got: {:?}", dh_key_info.nonce.0),
+        ));
+    }
+
+    let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
+
+    Ok(key.as_unsigned_bytes_be().to_vec())
 }

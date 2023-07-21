@@ -1,20 +1,15 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
-use oid::ObjectIdentifier;
-use picky_asn1::wrapper::IntegerAsn1;
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
-use picky_asn1_x509::content_info::ContentValue;
-use picky_asn1_x509::oids::PKINIT_DH_KEY_DATA;
-use picky_asn1_x509::signed_data::SignedData;
 use picky_krb::constants::key_usages::AS_REP_ENC;
 use picky_krb::constants::types::PA_PK_AS_REP;
 use picky_krb::messages::{AsRep, EncAsRepPart};
-use picky_krb::pkinit::{DhRepInfo, KdcDhKeyInfo, PaPkAsRep};
+use picky_krb::pkinit::{DhRepInfo, PaPkAsRep};
 use serde::Deserialize;
 
-use super::generators::DH_NONCE_LEN;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
+use crate::pk_init::DH_NONCE_LEN;
 use crate::{Error, ErrorKind, Result};
 
 pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
@@ -67,51 +62,6 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
     }
 
     Ok(nonce.try_into().unwrap())
-}
-
-#[instrument(level = "trace", ret)]
-pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
-    let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
-    if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            format!(
-                "Invalid content info identifier: {:?}. Expected: {:?}",
-                signed_data.content_info.content_type.0, pkinit_dh_key_data
-            ),
-        ));
-    }
-
-    let dh_key_info_data = match &signed_data
-        .content_info
-        .content
-        .as_ref()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "content info is not present"))?
-        .0
-    {
-        ContentValue::OctetString(data) => &data.0,
-        content_value => {
-            error!(
-                ?content_value,
-                "The server has sent KDC DH key info in unsupported format. Only ContentValue::OctetString is supported",
-            );
-
-            return Err(Error::new(ErrorKind::InvalidToken, "unexpected content info"));
-        }
-    };
-
-    let dh_key_info: KdcDhKeyInfo = picky_asn1_der::from_bytes(dh_key_info_data)?;
-
-    if dh_key_info.nonce.0 != vec![0] {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            format!("DH key nonce must be 0. Got: {:?}", dh_key_info.nonce.0),
-        ));
-    }
-
-    let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
-
-    Ok(key.as_unsigned_bytes_be().to_vec())
 }
 
 #[instrument(level = "trace", ret)]

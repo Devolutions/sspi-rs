@@ -3,8 +3,13 @@ mod config;
 mod extractors;
 mod generators;
 #[macro_use]
-mod macros;
+pub mod macros;
 mod validate;
+
+pub use cert_utils::validation::validate_server_p2p_certificate;
+pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce};
+pub use generators::{generate_client_dh_parameters, generate_authenticator_extension};
+pub use validate::validate_signed_data;
 
 use std::io::Write;
 use std::str::FromStr;
@@ -25,10 +30,12 @@ use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::Uuid;
+use picky::hash::HashAlgorithm;
+use picky::signature::SignatureAlgorithm;
 
 use self::generators::{
-    generate_client_dh_parameters, generate_neg, generate_neg_token_init, generate_neg_token_targ,
-    generate_pku2u_nego_req, generate_server_dh_parameters, DH_NONCE_LEN,
+    generate_neg, generate_neg_token_init, generate_neg_token_targ,
+    generate_pku2u_nego_req, generate_server_dh_parameters,
     WELLKNOWN_REALM,
 };
 use crate::builders::ChangePassword;
@@ -38,16 +45,14 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
-use crate::pk_init::generate_pa_datas_for_as_req;
-use crate::pku2u::cert_utils::validation::validate_server_p2p_certificate;
+use crate::pk_init::{generate_pa_datas_for_as_req, GenerateAsPaDataOptions, DhParameters, extract_server_dh_public_key};
 use crate::pku2u::extractors::{
-    extract_krb_rep, extract_pa_pk_as_rep, extract_server_dh_public_key, extract_server_nonce,
+    extract_krb_rep,
     extract_session_key_from_as_rep,
 };
 use crate::pku2u::generators::{
-    generate_as_req_username_from_certificate, generate_authenticator, generate_authenticator_extension,
+    generate_as_req_username_from_certificate, generate_authenticator,
 };
-use crate::pku2u::validate::validate_signed_data;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
@@ -101,22 +106,6 @@ pub enum Pku2uState {
 enum Pku2uMode {
     Client,
     Server,
-}
-
-#[derive(Debug, Clone)]
-pub struct DhParameters {
-    // g
-    pub base: Vec<u8>,
-    // p
-    pub modulus: Vec<u8>,
-    //
-    pub q: Vec<u8>,
-    // generated private key
-    pub private_key: Vec<u8>,
-    // received public key
-    pub other_public_key: Option<Vec<u8>>,
-    pub client_nonce: Option<[u8; DH_NONCE_LEN]>,
-    pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
 #[derive(Debug, Clone)]
@@ -396,7 +385,7 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    // #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl<'a>(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
@@ -507,6 +496,7 @@ impl SspiImpl for Pku2u {
                     .collect::<Vec<_>>();
                 debug!(names = ?snames, "Service principal names");
 
+                let next_seq_number = self.next_seq_number();
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
                     username: &generate_as_req_username_from_certificate(&self.config.p2p_certificate)?,
@@ -517,11 +507,23 @@ impl SspiImpl for Pku2u {
                     hostname: &self.config.hostname,
                     context_requirements: builder.context_requirements,
                 })?;
+                let private_key = self.config.private_key.clone();
                 let pa_datas = generate_pa_datas_for_as_req(
-                    &self.config.p2p_certificate,
-                    &kdc_req_body,
-                    &self.dh_parameters,
-                    self.config.private_key.as_ref(),
+                    &GenerateAsPaDataOptions {
+                        p2p_cert: self.config.p2p_certificate.clone(),
+                        kdc_req_body: &kdc_req_body,
+                        dh_parameters: self.dh_parameters.clone(),
+                        sign_data: Box::new(move |data_to_sign| {
+                            SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
+                                .sign(data_to_sign, private_key.as_ref())
+                                .map_err(|err| {
+                                    Error::new(
+                                        ErrorKind::InternalError,
+                                        format!("Cannot calculate signer info signature: {:?}", err),
+                                    )
+                                })
+                        }),
+                    }
                 )?;
                 let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
@@ -531,7 +533,7 @@ impl SspiImpl for Pku2u {
                 let exchange = Exchange::new(
                     MessageType::ApRequest,
                     self.conversation_id,
-                    self.next_seq_number(),
+                    next_seq_number,
                     check_if_empty!(self.auth_scheme, "auth scheme is not set"),
                     exchange_data,
                 );
