@@ -81,6 +81,8 @@ impl From<AuthIdentityBuffers> for AuthIdentity {
 #[cfg(feature = "scard")]
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct SmartCardIdentityBuffers {
+    /// UTF-16 encoded username
+    pub username: Vec<u8>,
     /// DER-encoded X509 certificate
     pub certificate: Vec<u8>,
     /// UTF-16 encoded smart card reader name
@@ -92,6 +94,8 @@ pub struct SmartCardIdentityBuffers {
 /// Represents data needed for smart card authentication
 #[derive(Debug, Clone, PartialEq)]
 pub struct SmartCardIdentity {
+    /// Username
+    pub username: String,
     /// X509 certificate
     pub certificate: Certificate,
     /// Smart card reader name
@@ -108,6 +112,7 @@ impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
             certificate: picky_asn1_der::to_vec(&value.certificate)?,
             reader_name: value.reader_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
             pin: value.pin.as_ref().clone().into(),
+            username: value.username.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
         })
     }
 }
@@ -119,7 +124,8 @@ impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
         Ok(Self {
             certificate: picky_asn1_der::from_bytes(&value.certificate)?,
             reader_name: utils::bytes_to_utf16_string(&value.reader_name),
-            pin: value.pin.as_ref().clone().into(),
+            pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
+            username: utils::bytes_to_utf16_string(&value.username),
         })
     }
 }
