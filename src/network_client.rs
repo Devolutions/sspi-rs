@@ -28,7 +28,7 @@ impl NetworkProtocol {
 
 pub trait NetworkClientFactory: Debug + Send + Sync {
     fn network_client(&self) -> Box<dyn NetworkClient>;
-    fn clone(&self) -> Box<dyn NetworkClientFactory>;
+    fn box_clone(&self) -> Box<dyn NetworkClientFactory>;
 }
 
 pub trait NetworkClient: Send + Sync {
@@ -181,7 +181,7 @@ pub mod reqwest_network_client {
             Box::<ReqwestNetworkClient>::default()
         }
 
-        fn clone(&self) -> Box<dyn NetworkClientFactory> {
+        fn box_clone(&self) -> Box<dyn NetworkClientFactory> {
             Box::new(Clone::clone(self))
         }
     }
