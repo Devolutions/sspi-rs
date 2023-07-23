@@ -23,7 +23,7 @@ struct AuthenticateMessageFields {
     nt_challenge_response: MessageFields,
 }
 
-pub fn read_authenticate(mut context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
+pub fn read_authenticate(context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);

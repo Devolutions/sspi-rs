@@ -14,7 +14,7 @@ struct ChallengeMessageFields {
     target_info: MessageFields,
 }
 
-pub fn read_challenge(mut context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
+pub fn read_challenge(context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
