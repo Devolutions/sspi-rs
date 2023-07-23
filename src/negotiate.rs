@@ -78,7 +78,7 @@ impl Clone for NegotiateConfig {
             protocol_config: self.protocol_config.clone(),
             package_list: None,
             hostname: self.hostname.clone(),
-            network_client_factory: self.network_client_factory.clone(),
+            network_client_factory: self.network_client_factory.box_clone(),
         }
     }
 }
@@ -117,7 +117,7 @@ impl Clone for Negotiate {
             package_list: self.package_list.clone(),
             auth_identity: self.auth_identity.clone(),
             hostname: self.hostname.clone(),
-            network_client_factory: self.network_client_factory.clone(),
+            network_client_factory: self.network_client_factory.box_clone(),
         }
     }
 }
