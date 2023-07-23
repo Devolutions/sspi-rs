@@ -4,7 +4,7 @@ use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MA
 use crate::ntlm::{Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE};
 use crate::SecurityStatus;
 
-pub fn complete_authenticate(mut context: &mut Ntlm) -> crate::Result<SecurityStatus> {
+pub fn complete_authenticate(context: &mut Ntlm) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_message = context

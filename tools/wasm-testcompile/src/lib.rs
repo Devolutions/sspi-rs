@@ -10,7 +10,7 @@ impl NetworkClientFactory for DummyNetworkClientFactory {
         unimplemented!()
     }
 
-    fn clone(&self) -> Box<dyn NetworkClientFactory> {
+    fn box_clone(&self) -> Box<dyn NetworkClientFactory> {
         Box::new(Clone::clone(self))
     }
 }

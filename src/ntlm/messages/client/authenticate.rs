@@ -81,7 +81,7 @@ impl AuthenticateMessageFields {
 }
 
 pub fn write_authenticate(
-    mut context: &mut Ntlm,
+    context: &mut Ntlm,
     credentials: &AuthIdentityBuffers,
     mut transport: impl io::Write,
 ) -> crate::Result<SecurityStatus> {
