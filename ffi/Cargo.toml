@@ -13,6 +13,7 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
+# for testing
 default = ["scard", "tsssp"]
 tsssp = ["sspi/tsssp"]
 scard = ["sspi/scard"]

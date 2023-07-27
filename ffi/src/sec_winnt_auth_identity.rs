@@ -158,12 +158,13 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
+// todo: refactor: delete this function and use corresponding a/w function in the `sec_handle` module
+// motivation: `(auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0` gives `false` for passed smart card credentials in the w function 
 pub unsafe fn auth_data_to_identity_buffers(
     security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
-    warn!("auth_data_to_identity_buffers");
     let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
@@ -174,12 +175,6 @@ pub unsafe fn auth_data_to_identity_buffers(
     }
 
     auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
-
-    // if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
-    //     auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
-    // } else {
-    //     auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
-    // }
 }
 
 pub unsafe fn auth_data_to_identity_buffers_a(
