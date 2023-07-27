@@ -22,6 +22,7 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KrbPrivMessage, KdcProxyMessage, TgsRep, KdcReqBody};
 use rand::rngs::OsRng;
 use rand::Rng;
+use sha1::{Sha1, Digest};
 use url::Url;
 
 use self::client::extractors::{
@@ -54,7 +55,7 @@ use crate::{
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
     Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE, pk_init,
+    PACKAGE_ID_NONE, pk_init, check_if_empty,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -108,6 +109,8 @@ pub struct Kerberos {
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
     dh_parameters: Option<DhParameters>,
+
+    gss_api_messages: Vec<u8>,
 }
 
 impl Kerberos {
@@ -124,6 +127,8 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+
+            gss_api_messages: Vec::new(),
         })
     }
 
@@ -140,6 +145,8 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+
+            gss_api_messages: Vec::new(),
         })
     }
 
@@ -590,13 +597,8 @@ impl SspiImpl for Kerberos {
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "No credentials provided"))?;
 
-                // todo: handle smart card creds here
-                let auth_identity = credentials.as_auth_identity().unwrap();
-
-                let username = utf16_bytes_to_utf8_string(&auth_identity.user);
-                let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
                 warn!(target_name = builder.target_name);
-                let (service_name, _) = parse_target_name(builder.target_name.ok_or_else(|| {
+                let (service_name, service_principal_name) = parse_target_name(builder.target_name.ok_or_else(|| {
                     Error::new(
                         ErrorKind::NoCredentials,
                         "Service target name (service principal name) is not provided",
@@ -605,10 +607,25 @@ impl SspiImpl for Kerberos {
 
                 warn!(service_name = service_name);
 
+                let (username, service_name) = match check_if_empty!(builder.credentials_handle.as_ref().unwrap().as_ref(), "AuthIdentity is not provided") {
+                    CredentialsBuffers::AuthIdentity(auth_identity) => {
+                        let username = utf16_bytes_to_utf8_string(&auth_identity.user);
+                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+
+                        (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
+                    },
+                    CredentialsBuffers::SmartCard(_) => {
+                        (service_principal_name.into(), service_name)
+                    },
+                };
+                info!(username, service_name);
+
                 let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
-                    &format!("{}.{}", username, domain.to_ascii_lowercase(),),
+                    &username,
                     service_name,
                 )?)?;
+                self.gss_api_messages.extend_from_slice(&encoded_neg_token_init);
+                warn!(token = ?encoded_neg_token_init, "Encoded token:");
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
@@ -630,6 +647,7 @@ impl SspiImpl for Kerberos {
                 }
 
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                self.gss_api_messages.extend_from_slice(&input_token.buffer);
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
@@ -659,11 +677,13 @@ impl SspiImpl for Kerberos {
                         let realm = get_client_principal_realm(&username, "");
                         let cname_type = get_client_principal_name_type(&username, "");
 
-                        (username, password, realm, cname_type)
+                        (username, password, realm.to_uppercase(), cname_type)
                     },
                 };
                 self.realm = Some(realm.clone());
+                warn!(hostname = ?self.config.hostname);
 
+                builder.context_requirements |= ClientRequestFlags::DELEGATE;
                 let options = GenerateAsReqOptions {
                     realm: &realm,
                     username: &username,
@@ -699,9 +719,14 @@ impl SspiImpl for Kerberos {
                             kdc_req_body: &kdc_req_body,
                             dh_parameters: self.dh_parameters.clone().unwrap(),
                             sign_data: Box::new(move |data_to_sign| {
+                                let mut sha1 = Sha1::new();
+                                sha1.update(data_to_sign);
+                                let hash = sha1.finalize().to_vec();
                                 let smart_card = SmartCard::new(pin.clone(), &reader_name, 1)?;
-                                smart_card.sign(data_to_sign)
+                                smart_card.sign(&hash)
                             }),
+                            with_pre_auth: false,
+                            authenticator_nonce: [0x59, 0x58, 0x7a, 0xfc],
                         })
                     },
                 };
@@ -744,6 +769,7 @@ impl SspiImpl for Kerberos {
                     },
                 };
                 let session_key_1 = session_key_extractor.session_key(&as_rep)?;
+                info!(?session_key_1, "Calculated session key:");
 
                 let service_principal = builder.target_name.ok_or_else(|| {
                     Error::new(
@@ -786,6 +812,8 @@ impl SspiImpl for Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
+                info!(channel_bindings = ?self.channel_bindings);
+
                 let authenticator_options = match credentials {
                     CredentialsBuffers::AuthIdentity(_) => GenerateAuthenticatorOptions {
                         kdc_rep: &tgs_rep.0,
@@ -812,17 +840,19 @@ impl SspiImpl for Kerberos {
                             checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                             checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
                         }),
-                        channel_bindings: None,
+                        channel_bindings: self.channel_bindings.as_ref(),
                         extensions: vec![
-                            // generate_authenticator_extension(
-                            //     &authenticator_sub_key,
-                            //     &self.gss_api_messages,
-                            // )?
+                            generate_authenticator_extension(
+                                &authenticator_sub_key,
+                                &self.gss_api_messages,
+                            )?
                         ],
                     },
                 };
 
                 let authenticator = generate_authenticator(authenticator_options)?;
+                let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
+                info!(authenticator = ?encoded_auth);
 
                 // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
                 let mech_id = oids::krb5_user_to_user();
@@ -843,6 +873,8 @@ impl SspiImpl for Kerberos {
                 )?;
 
                 let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
+
+                info!(ap_req = ?encoded_neg_ap_req);
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
@@ -1015,6 +1047,7 @@ mod tests {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            gss_api_messages: Vec::new(),
         };
 
         let mut kerberos_client = Kerberos {
@@ -1037,6 +1070,7 @@ mod tests {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            gss_api_messages: Vec::new(),
         };
 
         let plain_message = b"some plain message";
