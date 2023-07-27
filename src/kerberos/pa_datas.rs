@@ -7,51 +7,55 @@ use picky_krb::pkinit::PaPkAsRep;
 
 use super::client::extractors::extract_session_key_from_as_rep;
 use super::{
-    GenerateAsPaDataOptions as PasswordBasedPaDataOptions,
+    GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
     generate_pa_datas_for_as_req as generate_password_based, EncryptionParams,
 };
 use crate::pk_init::{
-    GenerateAsPaDataOptions as PrivateKeyBasedPaDataOptions,
+    GenerateAsPaDataOptions as SmartCardPaDataOptions,
     generate_pa_datas_for_as_req as generate_private_key_based, DhParameters, extract_server_dh_public_key, Wrapper,
 };
 use crate::{Result, Error, ErrorKind, check_if_empty, pku2u};
 use crate::pku2u::{extract_pa_pk_as_rep, validate_signed_data, validate_server_p2p_certificate, extract_server_nonce};
 
+// PA-DATAs are very different for the Kerberos logon using username+password and smart card.
+// This enum provides a unified way to generate PA-DATAs based on the provided options.
 pub enum AsReqPaDataOptions<'a> {
-    PasswordBased(PasswordBasedPaDataOptions<'a>),
-    PrivateKeyBased(PrivateKeyBasedPaDataOptions<'a>),
+    AuthIdentity(AuthIdentityPaDataOptions<'a>),
+    SmartCard(SmartCardPaDataOptions<'a>),
 }
 
 impl AsReqPaDataOptions<'_> {
     pub fn generate(&self) -> Result<Vec<PaData>> {
         match self {
-            AsReqPaDataOptions::PasswordBased(options) => generate_password_based(options),
-            AsReqPaDataOptions::PrivateKeyBased(options) => generate_private_key_based(options),
+            AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
+            AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),
         }
     }
 
     pub fn with_pre_auth(&mut self, pre_auth: bool) {
         match self {
-            AsReqPaDataOptions::PasswordBased(options) => options.with_pre_auth = pre_auth,
-            AsReqPaDataOptions::PrivateKeyBased(options) => options.with_pre_auth = pre_auth,
+            AsReqPaDataOptions::AuthIdentity(options) => options.with_pre_auth = pre_auth,
+            AsReqPaDataOptions::SmartCard(options) => options.with_pre_auth = pre_auth,
         }
     }
 
     pub fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
-            AsReqPaDataOptions::PasswordBased(options) => options.salt = salt,
-            AsReqPaDataOptions::PrivateKeyBased(_) => {},
+            AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
+            AsReqPaDataOptions::SmartCard(_) => {},
         }
     }
 }
 
+// ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.
+// This enum provides a unified way to extract session key from the AsRep.
 pub enum AsRepSessionKeyExtractor<'a> {
-    PasswordBased {
+    AuthIdentity {
         salt: &'a str,
         password: &'a str,
         enc_params: &'a EncryptionParams,
     },
-    PrivateKeyBased {
+    SmartCard {
         dh_parameters: &'a mut DhParameters,
         enc_params: &'a mut EncryptionParams,
     },
@@ -60,12 +64,12 @@ pub enum AsRepSessionKeyExtractor<'a> {
 impl AsRepSessionKeyExtractor<'_> {
     pub fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
         match self {
-            AsRepSessionKeyExtractor::PasswordBased {
+            AsRepSessionKeyExtractor::AuthIdentity {
                 salt,
                 password,
                 enc_params,
             } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
-            AsRepSessionKeyExtractor::PrivateKeyBased { dh_parameters, enc_params } => {
+            AsRepSessionKeyExtractor::SmartCard { dh_parameters, enc_params } => {
                 let dh_rep_info = match extract_pa_pk_as_rep(&as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
                     PaPkAsRep::EncKeyPack(_) => {

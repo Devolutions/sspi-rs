@@ -44,12 +44,13 @@ pub struct DhParameters {
     pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
+// PA_DATAs in the Kerberos smart card logon is packed into a wrapper with OID.
+// It's very similar to the `EncapsulatedContentInfo` structure, but the content field has another type.
 #[derive(Serialize, Deserialize)]
 pub struct Wrapper<T> {
     pub content_info: ObjectIdentifierAsn1,
     pub content: ExplicitContextTag0<T>,
 }
-
 
 pub struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,
@@ -103,7 +104,6 @@ pub fn generate_pa_datas_for_as_req(
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
             cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
             ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-            // always 0 in Pku2u
             nonce: ExplicitContextTag2::from(IntegerAsn1::from(authenticator_nonce.to_vec())),
             pa_checksum: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
                 kdc_req_body_sha1_hash,
@@ -171,7 +171,6 @@ pub fn generate_pa_datas_for_as_req(
         PaData {
             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PK_AS_REQ.to_vec())),
             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&pa_pk_as_req)?)),
-            // padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&e)?)),
         },
         PaData {
             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x12])),
@@ -204,7 +203,7 @@ pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, sign_data: 
 
     let signature = sign_data(&encoded_signed_attributes)?;
 
-    trace!(?encoded_signed_attributes, ?signature, "Pku2u signed attributes",);
+    trace!(?encoded_signed_attributes, ?signature, "Signed attributes",);
 
     Ok(SignerInfo {
         version: CmsVersion::V1,
@@ -252,13 +251,6 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
     };
 
     let dh_key_info: KdcDhKeyInfo = picky_asn1_der::from_bytes(dh_key_info_data)?;
-
-    // if dh_key_info.nonce.0 != vec![0] {
-    //     return Err(Error::new(
-    //         ErrorKind::InvalidToken,
-    //         format!("DH key nonce must be 0. Got: {:?}", dh_key_info.nonce.0),
-    //     ));
-    // }
 
     let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
 
