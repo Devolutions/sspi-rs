@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result, CredentialsBuffers, SmartCardIdentityBuffers};
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, SmartCardIdentityBuffers};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -159,7 +159,7 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 }
 
 // todo: refactor: delete this function and use corresponding a/w function in the `sec_handle` module
-// motivation: `(auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0` gives `false` for passed smart card credentials in the w function 
+// motivation: `(auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0` gives `false` for passed smart card credentials in the w function
 pub unsafe fn auth_data_to_identity_buffers(
     security_package_name: &str,
     p_auth_data: *const c_void,
@@ -385,7 +385,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     use std::ptr::null_mut;
 
     use sspi::Secret;
-    use winapi::um::wincred::{CredUnmarshalCredentialW, CRED_MARSHAL_TYPE, CertCredential, CERT_CREDENTIAL_INFO};
+    use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE};
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -448,13 +448,20 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
             if cred_type == CertCredential {
                 let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
 
-                let certificate = sspi::cert_utils::extract_raw_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
+                let certificate =
+                    sspi::cert_utils::extract_raw_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
 
                 // test credentials
                 // todo: use real reader name
-                let reader_name = "Microsoft Virtual Smart Card 0".encode_utf16().flat_map(|v| v.to_le_bytes()).collect();
+                let reader_name = "Microsoft Virtual Smart Card 0"
+                    .encode_utf16()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect();
                 // todo: extract username from the certificate
-                let username = "pw13@example.com".encode_utf16().flat_map(|v| v.to_le_bytes()).collect();
+                let username = "pw13@example.com"
+                    .encode_utf16()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect();
 
                 // remove null
                 let new_len = password.as_ref().len() - 2;
@@ -470,10 +477,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
                 return Ok(creds);
             } else {
-                return Err(Error::new(ErrorKind::NoCredentials, "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential"));
+                return Err(Error::new(
+                    ErrorKind::NoCredentials,
+                    "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential",
+                ));
             }
         } else {
-            return Err(Error::new(ErrorKind::NoCredentials, "Cannot unmarshal smart card credentials"));
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "Cannot unmarshal smart card credentials",
+            ));
         }
     }
 

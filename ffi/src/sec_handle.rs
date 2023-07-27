@@ -13,8 +13,8 @@ use sspi::kerberos::config::KerberosConfig;
 use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl, CredentialsBuffers,
+    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, CredentialsBuffers, DataRepresentation, Error, ErrorKind,
+    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl,
 };
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
