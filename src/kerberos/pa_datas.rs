@@ -1,21 +1,21 @@
 use picky_asn1_x509::signed_data::SignedData;
-use picky_krb::crypto::CipherSuite;
 use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use picky_krb::pkinit::PaPkAsRep;
 
 use super::client::extractors::extract_session_key_from_as_rep;
 use super::{
-    GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
     generate_pa_datas_for_as_req as generate_password_based, EncryptionParams,
+    GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
 };
 use crate::pk_init::{
-    GenerateAsPaDataOptions as SmartCardPaDataOptions,
-    generate_pa_datas_for_as_req as generate_private_key_based, DhParameters, extract_server_dh_public_key, Wrapper,
+    extract_server_dh_public_key, generate_pa_datas_for_as_req as generate_private_key_based, DhParameters,
+    GenerateAsPaDataOptions as SmartCardPaDataOptions, Wrapper,
 };
-use crate::{Result, Error, ErrorKind, check_if_empty, pku2u};
-use crate::pku2u::{extract_pa_pk_as_rep, validate_signed_data, validate_server_p2p_certificate, extract_server_nonce};
+use crate::pku2u::{extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data};
+use crate::{check_if_empty, pku2u, Error, ErrorKind, Result};
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
@@ -42,7 +42,7 @@ impl AsReqPaDataOptions<'_> {
     pub fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
-            AsReqPaDataOptions::SmartCard(_) => {},
+            AsReqPaDataOptions::SmartCard(_) => {}
         }
     }
 }
@@ -69,7 +69,10 @@ impl AsRepSessionKeyExtractor<'_> {
                 password,
                 enc_params,
             } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
-            AsRepSessionKeyExtractor::SmartCard { dh_parameters, enc_params } => {
+            AsRepSessionKeyExtractor::SmartCard {
+                dh_parameters,
+                enc_params,
+            } => {
                 let dh_rep_info = match extract_pa_pk_as_rep(&as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
                     PaPkAsRep::EncKeyPack(_) => {
@@ -83,7 +86,8 @@ impl AsRepSessionKeyExtractor<'_> {
                 let server_nonce = extract_server_nonce(&dh_rep_info)?;
                 dh_parameters.server_nonce = Some(server_nonce);
 
-                let wrapped_signed_data: Wrapper<SignedData> = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
+                let wrapped_signed_data: Wrapper<SignedData> =
+                    picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
                 let signed_data = wrapped_signed_data.content.0;
 
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
@@ -92,35 +96,28 @@ impl AsRepSessionKeyExtractor<'_> {
                 let public_key = extract_server_dh_public_key(&signed_data)?;
                 dh_parameters.other_public_key = Some(public_key);
 
-                enc_params.encryption_type =
-                    Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
+                enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
 
                 let key = generate_key(
                     check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
                     &dh_parameters.private_key,
                     &dh_parameters.modulus,
                     Some(DhNonce {
-                        client_nonce: check_if_empty!(
-                            dh_parameters.client_nonce.as_ref(),
-                            "dh client none is not set"
-                        ),
+                        client_nonce: check_if_empty!(dh_parameters.client_nonce.as_ref(), "dh client none is not set"),
                         server_nonce: check_if_empty!(
                             dh_parameters.server_nonce.as_ref(),
                             "dh server nonce is not set"
                         ),
                     }),
-                    check_if_empty!(
-                        enc_params.encryption_type.as_ref(),
-                        "encryption type is not set"
-                    )
-                    .cipher()
-                    .as_ref(),
+                    check_if_empty!(enc_params.encryption_type.as_ref(), "encryption type is not set")
+                        .cipher()
+                        .as_ref(),
                 )?;
 
                 let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, &enc_params)?;
 
                 Ok(session_key)
-            },
+            }
         }
     }
 }

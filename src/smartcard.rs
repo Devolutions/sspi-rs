@@ -145,8 +145,7 @@ fn build_data_sign_apdu(data_to_sign: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     #[rustfmt::skip]
     let mut sign_data_apdu = vec![
         // apdu header
-        0x00, 0x2a, 0x9e, 0x9a,
-        // data length
+        0x00, 0x2a, 0x9e, 0x9a, // data length
         0x00, 0x00,
     ];
 

@@ -2,26 +2,34 @@ use chrono::Utc;
 use oid::ObjectIdentifier;
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
-use picky_asn1::wrapper::{IntegerAsn1, ObjectIdentifierAsn1, Optional, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, OctetStringAsn1, BitStringAsn1, Asn1SetOf, ImplicitContextTag0, Asn1SequenceOf};
+use picky_asn1::wrapper::{
+    Asn1SequenceOf, Asn1SetOf, BitStringAsn1, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2,
+    ExplicitContextTag3, ImplicitContextTag0, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
+};
 use picky_asn1_der::Asn1RawDer;
-use picky_asn1_x509::oids::PKINIT_DH_KEY_DATA;
-use picky_asn1_x509::signer_info::{SignerInfo, IssuerAndSerialNumber, CertificateSerialNumber, DigestAlgorithmIdentifier, SignatureAlgorithmIdentifier, UnsignedAttributes, Attributes, SignerIdentifier, SignatureValue};
-use picky_asn1_x509::{Certificate, AlgorithmIdentifier, Attribute, AttributeValues, ShaVariant, oids};
 use picky_asn1_x509::cmsversion::CmsVersion;
-use picky_asn1_x509::content_info::{EncapsulatedContentInfo, ContentValue};
+use picky_asn1_x509::content_info::{ContentValue, EncapsulatedContentInfo};
+use picky_asn1_x509::oids::PKINIT_DH_KEY_DATA;
 use picky_asn1_x509::signed_data::{
     CertificateChoices, CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos,
 };
-use picky_krb::constants::types::{PA_PK_AS_REQ, PA_PAC_REQUEST_TYPE};
+use picky_asn1_x509::signer_info::{
+    Attributes, CertificateSerialNumber, DigestAlgorithmIdentifier, IssuerAndSerialNumber,
+    SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
+};
+use picky_asn1_x509::{oids, AlgorithmIdentifier, Attribute, AttributeValues, Certificate, ShaVariant};
+use picky_krb::constants::types::{PA_PAC_REQUEST_TYPE, PA_PK_AS_REQ};
 use picky_krb::crypto::diffie_hellman::compute_public_key;
-use picky_krb::data_types::{PaData, KerberosTime, KerbPaPacRequest};
+use picky_krb::data_types::{KerbPaPacRequest, KerberosTime, PaData};
 use picky_krb::messages::KdcReqBody;
-use picky_krb::pkinit::{DhReqKeyInfo, AuthPack, DhDomainParameters, DhReqInfo, PkAuthenticator, PaPkAsReq, KdcDhKeyInfo};
-use serde::{Serialize, Deserialize};
-use sha1::{Sha1, Digest};
+use picky_krb::pkinit::{
+    AuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, KdcDhKeyInfo, PaPkAsReq, PkAuthenticator,
+};
+use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 
 use crate::kerberos::client::generators::MAX_MICROSECONDS_IN_SECOND;
-use crate::{Result, Error, ErrorKind};
+use crate::{Error, ErrorKind, Result};
 
 /// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
 /// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
@@ -62,10 +70,15 @@ pub struct GenerateAsPaDataOptions<'a> {
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_pa_datas_for_as_req(
-    options: &GenerateAsPaDataOptions<'_>,
-) -> Result<Vec<PaData>> {
-    let GenerateAsPaDataOptions { p2p_cert, kdc_req_body, dh_parameters, sign_data, with_pre_auth, authenticator_nonce } = options;
+pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
+    let GenerateAsPaDataOptions {
+        p2p_cert,
+        kdc_req_body,
+        dh_parameters,
+        sign_data,
+        with_pre_auth,
+        authenticator_nonce,
+    } = options;
 
     if !with_pre_auth {
         return Ok(vec![
@@ -75,10 +88,12 @@ pub fn generate_pa_datas_for_as_req(
             },
             PaData {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
-                padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
-                    include_pac: ExplicitContextTag0::from(true),
-                })?)),
-            }
+                padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
+                    &KerbPaPacRequest {
+                        include_pac: ExplicitContextTag0::from(true),
+                    },
+                )?)),
+            },
         ]);
     }
 
@@ -150,9 +165,7 @@ pub fn generate_pa_datas_for_as_req(
         ))])),
         crls: None,
         signers_infos: SignersInfos(Asn1SetOf::from(vec![generate_signer_info(
-            p2p_cert,
-            digest,
-            sign_data,
+            p2p_cert, digest, sign_data,
         )?])),
     };
 
@@ -181,11 +194,15 @@ pub fn generate_pa_datas_for_as_req(
             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
                 include_pac: ExplicitContextTag0::from(true),
             })?)),
-        }
+        },
     ])
 }
 
-pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, sign_data: &dyn Fn(&[u8]) -> Result<Vec<u8>>) -> Result<SignerInfo> {
+pub fn generate_signer_info(
+    p2p_cert: &Certificate,
+    digest: Vec<u8>,
+    sign_data: &dyn Fn(&[u8]) -> Result<Vec<u8>>,
+) -> Result<SignerInfo> {
     let signed_attributes = Asn1SetOf::from(vec![
         Attribute {
             ty: ObjectIdentifierAsn1::from(oids::content_type()),
@@ -260,11 +277,13 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use picky_asn1::wrapper::{Asn1SetOf, ObjectIdentifierAsn1, OctetStringAsn1};
-    use picky_asn1_x509::{Attribute, AttributeValues, oids};
+    use picky_asn1_x509::{oids, Attribute, AttributeValues};
 
     #[test]
     fn signing() {
-        let digest = vec![22, 144, 59, 22, 68, 47, 213, 64, 69, 126, 237, 38, 151, 109, 213, 92, 122, 198, 202, 21];
+        let digest = vec![
+            22, 144, 59, 22, 68, 47, 213, 64, 69, 126, 237, 38, 151, 109, 213, 92, 122, 198, 202, 21,
+        ];
         let signed_attributes = Asn1SetOf::from(vec![
             Attribute {
                 ty: ObjectIdentifierAsn1::from(oids::content_type()),

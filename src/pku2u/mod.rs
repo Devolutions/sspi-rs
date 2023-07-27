@@ -6,16 +6,16 @@ mod generators;
 pub mod macros;
 mod validate;
 
-pub use cert_utils::validation::validate_server_p2p_certificate;
-pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
-pub use generators::{generate_client_dh_parameters, generate_authenticator_extension};
-pub use validate::validate_signed_data;
-
 use std::io::Write;
 use std::str::FromStr;
 
+pub use cert_utils::validation::validate_server_p2p_certificate;
 pub use config::Pku2uConfig;
+pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
+pub use generators::{generate_authenticator_extension, generate_client_dh_parameters};
 use lazy_static::lazy_static;
+use picky::hash::HashAlgorithm;
+use picky::signature::SignatureAlgorithm;
 use picky_asn1_x509::signed_data::SignedData;
 use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
@@ -30,13 +30,11 @@ use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::Uuid;
-use picky::hash::HashAlgorithm;
-use picky::signature::SignatureAlgorithm;
+pub use validate::validate_signed_data;
 
 use self::generators::{
-    generate_neg, generate_neg_token_init, generate_neg_token_targ,
-    generate_pku2u_nego_req, generate_server_dh_parameters,
-    WELLKNOWN_REALM,
+    generate_neg, generate_neg_token_init, generate_neg_token_targ, generate_pku2u_nego_req,
+    generate_server_dh_parameters, WELLKNOWN_REALM,
 };
 use crate::builders::ChangePassword;
 use crate::kerberos::client::generators::{
@@ -45,11 +43,11 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
-use crate::pk_init::{generate_pa_datas_for_as_req, GenerateAsPaDataOptions, DhParameters, extract_server_dh_public_key};
-use crate::pku2u::extractors::extract_krb_rep;
-use crate::pku2u::generators::{
-    generate_as_req_username_from_certificate, generate_authenticator,
+use crate::pk_init::{
+    extract_server_dh_public_key, generate_pa_datas_for_as_req, DhParameters, GenerateAsPaDataOptions,
 };
+use crate::pku2u::extractors::extract_krb_rep;
+use crate::pku2u::generators::{generate_as_req_username_from_certificate, generate_authenticator};
 use crate::utils::{generate_random_symmetric_key, get_encryption_key};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
@@ -505,25 +503,23 @@ impl SspiImpl for Pku2u {
                     context_requirements: builder.context_requirements,
                 })?;
                 let private_key = self.config.private_key.clone();
-                let pa_datas = generate_pa_datas_for_as_req(
-                    &GenerateAsPaDataOptions {
-                        p2p_cert: self.config.p2p_certificate.clone(),
-                        kdc_req_body: &kdc_req_body,
-                        dh_parameters: self.dh_parameters.clone(),
-                        sign_data: Box::new(move |data_to_sign| {
-                            SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
-                                .sign(data_to_sign, private_key.as_ref())
-                                .map_err(|err| {
-                                    Error::new(
-                                        ErrorKind::InternalError,
-                                        format!("Cannot calculate signer info signature: {:?}", err),
-                                    )
-                                })
-                        }),
-                        with_pre_auth: true,
-                        authenticator_nonce: Default::default(),
-                    }
-                )?;
+                let pa_datas = generate_pa_datas_for_as_req(&GenerateAsPaDataOptions {
+                    p2p_cert: self.config.p2p_certificate.clone(),
+                    kdc_req_body: &kdc_req_body,
+                    dh_parameters: self.dh_parameters.clone(),
+                    sign_data: Box::new(move |data_to_sign| {
+                        SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
+                            .sign(data_to_sign, private_key.as_ref())
+                            .map_err(|err| {
+                                Error::new(
+                                    ErrorKind::InternalError,
+                                    format!("Cannot calculate signer info signature: {:?}", err),
+                                )
+                            })
+                    }),
+                    with_pre_auth: true,
+                    authenticator_nonce: Default::default(),
+                })?;
                 let as_req = generate_as_req(&pa_datas, kdc_req_body);
 
                 let exchange_data = picky_asn1_der::to_vec(&generate_neg(as_req, AS_REQ_TOKEN_ID))?;

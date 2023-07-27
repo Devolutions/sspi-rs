@@ -80,8 +80,8 @@ pub mod kerberos;
 pub mod negotiate;
 pub mod network_client;
 pub mod ntlm;
-pub mod pku2u;
 mod pk_init;
+pub mod pku2u;
 #[cfg(windows)]
 pub mod winapi;
 
