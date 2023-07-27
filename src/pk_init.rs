@@ -12,11 +12,12 @@ use picky_asn1_x509::content_info::{EncapsulatedContentInfo, ContentValue};
 use picky_asn1_x509::signed_data::{
     CertificateChoices, CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos,
 };
-use picky_krb::constants::types::PA_PK_AS_REQ;
+use picky_krb::constants::types::{PA_PK_AS_REQ, PA_PAC_REQUEST_TYPE};
 use picky_krb::crypto::diffie_hellman::compute_public_key;
-use picky_krb::data_types::{PaData, KerberosTime};
+use picky_krb::data_types::{PaData, KerberosTime, KerbPaPacRequest};
 use picky_krb::messages::KdcReqBody;
 use picky_krb::pkinit::{DhReqKeyInfo, AuthPack, DhDomainParameters, DhReqInfo, PkAuthenticator, PaPkAsReq, KdcDhKeyInfo};
+use serde::{Serialize, Deserialize};
 use sha1::{Sha1, Digest};
 
 use crate::kerberos::client::generators::MAX_MICROSECONDS_IN_SECOND;
@@ -43,19 +44,42 @@ pub struct DhParameters {
     pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Wrapper<T> {
+    pub content_info: ObjectIdentifierAsn1,
+    pub content: ExplicitContextTag0<T>,
+}
+
 
 pub struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,
     pub kdc_req_body: &'a KdcReqBody,
     pub dh_parameters: DhParameters,
     pub sign_data: Box<dyn Fn(&[u8]) -> Result<Vec<u8>>>,
+    pub with_pre_auth: bool,
+    pub authenticator_nonce: [u8; 4],
 }
 
 #[instrument(level = "trace", skip_all, ret)]
 pub fn generate_pa_datas_for_as_req(
     options: &GenerateAsPaDataOptions<'_>,
 ) -> Result<Vec<PaData>> {
-    let GenerateAsPaDataOptions { p2p_cert, kdc_req_body, dh_parameters, sign_data } = options;
+    let GenerateAsPaDataOptions { p2p_cert, kdc_req_body, dh_parameters, sign_data, with_pre_auth, authenticator_nonce } = options;
+
+    if !with_pre_auth {
+        return Ok(vec![
+            PaData {
+                padata_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x00, 0x96])),
+                padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(Vec::new())),
+            },
+            PaData {
+                padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
+                padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
+                    include_pac: ExplicitContextTag0::from(true),
+                })?)),
+            }
+        ]);
+    }
 
     let current_date = Utc::now();
     let mut microseconds = current_date.timestamp_subsec_micros();
@@ -80,7 +104,7 @@ pub fn generate_pa_datas_for_as_req(
             cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
             ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
             // always 0 in Pku2u
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(vec![0])),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from(authenticator_nonce.to_vec())),
             pa_checksum: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
                 kdc_req_body_sha1_hash,
             )))),
@@ -100,7 +124,7 @@ pub fn generate_pa_datas_for_as_req(
                 public_value,
             ))?)),
         }))),
-        supported_cms_types: Optional::from(None),
+        supported_cms_types: Optional::from(Some(ExplicitContextTag2::from(Asn1SequenceOf::from(Vec::new())))),
         client_dh_nonce: Optional::from(
             dh_parameters
                 .client_nonce
@@ -132,16 +156,34 @@ pub fn generate_pa_datas_for_as_req(
         )?])),
     };
 
+    let e = Wrapper {
+        content_info: ObjectIdentifierAsn1::from(oids::signed_data()),
+        content: ExplicitContextTag0::from(signed_data),
+    };
+
     let pa_pk_as_req = PaPkAsReq {
-        signed_auth_pack: ImplicitContextTag0::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&signed_data)?)),
+        signed_auth_pack: ImplicitContextTag0::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&e)?)),
         trusted_certifiers: Optional::from(None),
         kdc_pk_id: Optional::from(None),
     };
 
-    Ok(vec![PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PK_AS_REQ.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&pa_pk_as_req)?)),
-    }])
+    Ok(vec![
+        PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PK_AS_REQ.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&pa_pk_as_req)?)),
+            // padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&e)?)),
+        },
+        PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x12])),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(Vec::new())),
+        },
+        PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
+                include_pac: ExplicitContextTag0::from(true),
+            })?)),
+        }
+    ])
 }
 
 pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, sign_data: &dyn Fn(&[u8]) -> Result<Vec<u8>>) -> Result<SignerInfo> {
@@ -211,14 +253,39 @@ pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>>
 
     let dh_key_info: KdcDhKeyInfo = picky_asn1_der::from_bytes(dh_key_info_data)?;
 
-    if dh_key_info.nonce.0 != vec![0] {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            format!("DH key nonce must be 0. Got: {:?}", dh_key_info.nonce.0),
-        ));
-    }
+    // if dh_key_info.nonce.0 != vec![0] {
+    //     return Err(Error::new(
+    //         ErrorKind::InvalidToken,
+    //         format!("DH key nonce must be 0. Got: {:?}", dh_key_info.nonce.0),
+    //     ));
+    // }
 
     let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
 
     Ok(key.as_unsigned_bytes_be().to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_asn1::wrapper::{Asn1SetOf, ObjectIdentifierAsn1, OctetStringAsn1};
+    use picky_asn1_x509::{Attribute, AttributeValues, oids};
+
+    #[test]
+    fn signing() {
+        let digest = vec![22, 144, 59, 22, 68, 47, 213, 64, 69, 126, 237, 38, 151, 109, 213, 92, 122, 198, 202, 21];
+        let signed_attributes = Asn1SetOf::from(vec![
+            Attribute {
+                ty: ObjectIdentifierAsn1::from(oids::content_type()),
+                value: AttributeValues::ContentType(Asn1SetOf::from(vec![ObjectIdentifierAsn1::from(
+                    oids::pkinit_auth_data(),
+                )])),
+            },
+            Attribute {
+                ty: ObjectIdentifierAsn1::from(oids::message_digest()),
+                value: AttributeValues::MessageDigest(Asn1SetOf::from(vec![OctetStringAsn1::from(digest)])),
+            },
+        ]);
+        let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes).unwrap();
+        println!("{:?}", encoded_signed_attributes);
+    }
 }
