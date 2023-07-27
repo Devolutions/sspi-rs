@@ -1,8 +1,12 @@
+#[cfg(feature = "scard")]
 use picky_asn1_x509::signed_data::SignedData;
+#[cfg(feature = "scard")]
 use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
+#[cfg(feature = "scard")]
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
+#[cfg(feature = "scard")]
 use picky_krb::pkinit::PaPkAsRep;
 
 use super::client::extractors::extract_session_key_from_as_rep;
@@ -10,17 +14,22 @@ use super::{
     generate_pa_datas_for_as_req as generate_password_based, EncryptionParams,
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
 };
+#[cfg(feature = "scard")]
 use crate::pk_init::{
     extract_server_dh_public_key, generate_pa_datas_for_as_req as generate_private_key_based, DhParameters,
     GenerateAsPaDataOptions as SmartCardPaDataOptions, Wrapper,
 };
+#[cfg(feature = "scard")]
 use crate::pku2u::{extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data};
-use crate::{check_if_empty, pku2u, Error, ErrorKind, Result};
+use crate::Result;
+#[cfg(feature = "scard")]
+use crate::{check_if_empty, pku2u, Error, ErrorKind};
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
 pub enum AsReqPaDataOptions<'a> {
     AuthIdentity(AuthIdentityPaDataOptions<'a>),
+    #[cfg(feature = "scard")]
     SmartCard(SmartCardPaDataOptions<'a>),
 }
 
@@ -28,6 +37,7 @@ impl AsReqPaDataOptions<'_> {
     pub fn generate(&self) -> Result<Vec<PaData>> {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
+            #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),
         }
     }
@@ -35,6 +45,7 @@ impl AsReqPaDataOptions<'_> {
     pub fn with_pre_auth(&mut self, pre_auth: bool) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.with_pre_auth = pre_auth,
+            #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(options) => options.with_pre_auth = pre_auth,
         }
     }
@@ -42,6 +53,7 @@ impl AsReqPaDataOptions<'_> {
     pub fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
+            #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(_) => {}
         }
     }
@@ -55,6 +67,7 @@ pub enum AsRepSessionKeyExtractor<'a> {
         password: &'a str,
         enc_params: &'a EncryptionParams,
     },
+    #[cfg(feature = "scard")]
     SmartCard {
         dh_parameters: &'a mut DhParameters,
         enc_params: &'a mut EncryptionParams,
@@ -69,6 +82,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 password,
                 enc_params,
             } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
+            #[cfg(feature = "scard")]
             AsRepSessionKeyExtractor::SmartCard {
                 dh_parameters,
                 enc_params,

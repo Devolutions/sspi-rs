@@ -85,6 +85,7 @@ pub mod pku2u;
 #[cfg(windows)]
 pub mod winapi;
 
+#[allow(unreachable_patterns)]
 mod auth_identity;
 mod ber;
 #[cfg(feature = "scard")]

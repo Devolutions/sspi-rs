@@ -22,6 +22,7 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
+#[cfg(feature = "scard")]
 use sha1::{Digest, Sha1};
 use url::Url;
 
@@ -47,7 +48,9 @@ use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, ex
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::network_client::NetworkProtocol;
 use crate::pk_init::DhParameters;
+#[cfg(feature = "scard")]
 use crate::pku2u::{generate_authenticator_extension, generate_client_dh_parameters};
+#[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
@@ -109,6 +112,7 @@ pub struct Kerberos {
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
     // uses in the smart card logon. Otherwise, always None.
+    #[allow(dead_code)]
     dh_parameters: Option<DhParameters>,
 
     gss_api_messages: Vec<u8>,
@@ -611,6 +615,7 @@ impl SspiImpl for Kerberos {
 
                         (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                     }
+                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(_) => (service_principal_name.into(), service_name),
                 };
                 info!(username, service_name);
@@ -663,6 +668,7 @@ impl SspiImpl for Kerberos {
 
                         (username, password, realm, cname_type)
                     }
+                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let username = utf16_bytes_to_utf8_string(&smart_card.username);
                         let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
@@ -701,6 +707,7 @@ impl SspiImpl for Kerberos {
                             with_pre_auth: false,
                         })
                     }
+                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
@@ -754,6 +761,7 @@ impl SspiImpl for Kerberos {
                         password: &password,
                         enc_params: &mut self.encryption_params,
                     },
+                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                         dh_parameters: self.dh_parameters.as_mut().unwrap(),
                         enc_params: &mut self.encryption_params,
@@ -820,6 +828,7 @@ impl SspiImpl for Kerberos {
                         channel_bindings: self.channel_bindings.as_ref(),
                         extensions: Vec::new(),
                     },
+                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(_) => GenerateAuthenticatorOptions {
                         kdc_rep: &tgs_rep.0,
                         seq_num: Some(seq_num),
