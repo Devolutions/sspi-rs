@@ -104,10 +104,9 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Missing salt in EtypeInto2Entry"))?,
             ))
         }
-        None => Err(Error::new(
-            ErrorKind::NoPaData,
-            format!("Missing PaData: PA_ETYPE_INFO2 ({:0x?})", PA_ETYPE_INFO2_TYPE),
-        )),
+        None => {
+            Ok((*as_rep.0.enc_part.0.etype.0.0.first().unwrap(), Default::default()))
+        },
     }
 }
 
