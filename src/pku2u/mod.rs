@@ -7,7 +7,7 @@ pub mod macros;
 mod validate;
 
 pub use cert_utils::validation::validate_server_p2p_certificate;
-pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce};
+pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
 pub use generators::{generate_client_dh_parameters, generate_authenticator_extension};
 pub use validate::validate_signed_data;
 
@@ -46,10 +46,7 @@ use crate::kerberos::client::generators::{
 use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
 use crate::pk_init::{generate_pa_datas_for_as_req, GenerateAsPaDataOptions, DhParameters, extract_server_dh_public_key};
-use crate::pku2u::extractors::{
-    extract_krb_rep,
-    extract_session_key_from_as_rep,
-};
+use crate::pku2u::extractors::extract_krb_rep;
 use crate::pku2u::generators::{
     generate_as_req_username_from_certificate, generate_authenticator,
 };
@@ -523,6 +520,8 @@ impl SspiImpl for Pku2u {
                                     )
                                 })
                         }),
+                        with_pre_auth: true,
+                        authenticator_nonce: Default::default(),
                     }
                 )?;
                 let as_req = generate_as_req(&pa_datas, kdc_req_body);
