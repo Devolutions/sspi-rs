@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result, CredentialsBuffers};
+use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result, CredentialsBuffers, SmartCardIdentityBuffers};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -163,13 +163,23 @@ pub unsafe fn auth_data_to_identity_buffers(
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
+    warn!("auth_data_to_identity_buffers");
     let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
-        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
+        warn!("auth data to identity buffers w");
     } else {
-        auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
+        warn!("auth data to identity buffers a");
+        // auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
     }
+
+    auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
+
+    // if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
+    //     auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
+    // } else {
+    //     auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
+    // }
 }
 
 pub unsafe fn auth_data_to_identity_buffers_a(
@@ -380,6 +390,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     use std::ptr::null_mut;
 
     use sspi::Secret;
+    use winapi::um::wincred::{CredUnmarshalCredentialW, CRED_MARSHAL_TYPE, CertCredential, CERT_CREDENTIAL_INFO};
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -429,6 +440,46 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
             ErrorKind::WrongCredentialHandle,
             "Cannot unpack credentials",
         ));
+    }
+
+    // only marshaled smart card creds starts with '@' char
+    if username[0] == b'@' {
+        let mut cred_type = 0;
+        let mut credential = null_mut();
+
+        let result = CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential);
+
+        if result == 1 {
+            if cred_type == CertCredential {
+                let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
+
+                let certificate = sspi::cert_utils::extract_raw_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
+
+                // test credentials
+                // todo: use real reader name
+                let reader_name = "Microsoft Virtual Smart Card 0".encode_utf16().flat_map(|v| v.to_le_bytes()).collect();
+                // todo: extract username from the certificate
+                let username = "pw13@example.com".encode_utf16().flat_map(|v| v.to_le_bytes()).collect();
+
+                // remove null
+                let new_len = password.as_ref().len() - 2;
+                password.as_mut().truncate(new_len);
+
+                let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
+                    certificate,
+                    reader_name,
+                    pin: password,
+                    username,
+                });
+                warn!(creds = ?creds);
+
+                return Ok(creds);
+            } else {
+                return Err(Error::new(ErrorKind::NoCredentials, "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential"));
+            }
+        } else {
+            return Err(Error::new(ErrorKind::NoCredentials, "Cannot unmarshal smart card credentials"));
+        }
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
