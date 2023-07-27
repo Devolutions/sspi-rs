@@ -12,9 +12,9 @@ use super::{
 };
 use crate::pk_init::{
     GenerateAsPaDataOptions as PrivateKeyBasedPaDataOptions,
-    generate_pa_datas_for_as_req as generate_private_key_based, DhParameters, extract_server_dh_public_key,
+    generate_pa_datas_for_as_req as generate_private_key_based, DhParameters, extract_server_dh_public_key, Wrapper,
 };
-use crate::{Result, Error, ErrorKind, check_if_empty};
+use crate::{Result, Error, ErrorKind, check_if_empty, pku2u};
 use crate::pku2u::{extract_pa_pk_as_rep, validate_signed_data, validate_server_p2p_certificate, extract_server_nonce};
 
 pub enum AsReqPaDataOptions<'a> {
@@ -33,7 +33,7 @@ impl AsReqPaDataOptions<'_> {
     pub fn with_pre_auth(&mut self, pre_auth: bool) {
         match self {
             AsReqPaDataOptions::PasswordBased(options) => options.with_pre_auth = pre_auth,
-            AsReqPaDataOptions::PrivateKeyBased(_) => {},
+            AsReqPaDataOptions::PrivateKeyBased(options) => options.with_pre_auth = pre_auth,
         }
     }
 
@@ -79,7 +79,8 @@ impl AsRepSessionKeyExtractor<'_> {
                 let server_nonce = extract_server_nonce(&dh_rep_info)?;
                 dh_parameters.server_nonce = Some(server_nonce);
 
-                let signed_data: SignedData = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
+                let wrapped_signed_data: Wrapper<SignedData> = picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
+                let signed_data = wrapped_signed_data.content.0;
 
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
@@ -90,7 +91,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 enc_params.encryption_type =
                     Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
 
-                Ok(generate_key(
+                let key = generate_key(
                     check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
                     &dh_parameters.private_key,
                     &dh_parameters.modulus,
@@ -110,7 +111,11 @@ impl AsRepSessionKeyExtractor<'_> {
                     )
                     .cipher()
                     .as_ref(),
-                )?)
+                )?;
+
+                let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, &enc_params)?;
+
+                Ok(session_key)
             },
         }
     }
