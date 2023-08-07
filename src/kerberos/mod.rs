@@ -10,6 +10,8 @@ use std::io::Write;
 
 pub use encryption_params::EncryptionParams;
 use lazy_static::lazy_static;
+use picky_asn1::restricted_string::IA5String;
+use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
@@ -48,8 +50,6 @@ use crate::{
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
     PACKAGE_ID_NONE,
 };
-use picky_asn1::restricted_string::IA5String;
-use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 
 pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
@@ -112,7 +112,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng::default().gen::<u32>(),
+            seq_number: OsRng.gen::<u32>(),
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -127,7 +127,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng::default().gen::<u32>(),
+            seq_number: OsRng.gen::<u32>(),
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -440,7 +440,7 @@ impl Sspi for Kerberos {
                 cname_type,
                 snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
                 // 4 = size of u32
-                nonce: &OsRng::default().gen::<[u8; 4]>(),
+                nonce: &OsRng.gen::<[u8; 4]>(),
                 hostname: &hostname,
                 context_requirements: ClientRequestFlags::empty(),
             },
@@ -470,7 +470,7 @@ impl Sspi for Kerberos {
             .encryption_type
             .as_ref()
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
@@ -634,7 +634,7 @@ impl SspiImpl for Kerberos {
                         cname_type,
                         snames: &[TGT_SERVICE_NAME, realm],
                         // 4 = size of u32
-                        nonce: &OsRng::default().gen::<[u8; 4]>(),
+                        nonce: &OsRng.gen::<[u8; 4]>(),
                         hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
                         context_requirements: builder.context_requirements,
                     },
@@ -658,7 +658,7 @@ impl SspiImpl for Kerberos {
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
-                    seq_num: Some(OsRng::default().gen::<u32>()),
+                    seq_num: Some(OsRng.gen::<u32>()),
                     sub_key: None,
                     checksum: None,
                     channel_bindings: self.channel_bindings.as_ref(),
@@ -707,7 +707,7 @@ impl SspiImpl for Kerberos {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,

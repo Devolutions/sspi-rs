@@ -144,7 +144,7 @@ pub struct Pku2u {
 
 impl Pku2u {
     pub fn new_server_from_config(config: Pku2uConfig) -> Result<Self> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         Ok(Self {
             mode: Pku2uMode::Server,
@@ -167,7 +167,7 @@ impl Pku2u {
     }
 
     pub fn new_client_from_config(config: Pku2uConfig) -> Result<Self> {
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         Ok(Self {
             mode: Pku2uMode::Client,
@@ -634,7 +634,7 @@ impl SspiImpl for Pku2u {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
@@ -833,7 +833,7 @@ mod tests {
             119, 121, 155, 58, 142, 204, 74,
         ];
 
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         let p2p_certificate: Certificate = picky_asn1_der::from_bytes(&[
             48, 130, 3, 213, 48, 130, 2, 189, 160, 3, 2, 1, 2, 2, 16, 32, 99, 134, 91, 60, 164, 166, 93, 186, 47, 71,
