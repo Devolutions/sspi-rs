@@ -1,5 +1,5 @@
-use sspi::{credssp, AuthIdentity};
 use sspi::network_client::{NetworkClient, NetworkClientFactory};
+use sspi::{credssp, AuthIdentity};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone)]

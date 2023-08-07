@@ -176,8 +176,20 @@ impl Kerberos {
             }
 
             return match protocol {
-                NetworkProtocol::Tcp | NetworkProtocol::Udp => {
-                    self.config.network_client.send(protocol, &kdc_url, data)
+                NetworkProtocol::Tcp => self.config.network_client.send(protocol, kdc_url, data),
+                NetworkProtocol::Udp => {
+                    if data.len() < 4 {
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            format!(
+                                "kerberos message has invalid length. expected >= 4 but got {}",
+                                data.len()
+                            ),
+                        ));
+                    }
+
+                    // First 4 bytes is message length and it’s not included when using UDP
+                    self.config.network_client.send(protocol, kdc_url, &data[4..])
                 }
                 NetworkProtocol::Http | NetworkProtocol::Https => {
                     let data = OctetStringAsn1::from(data.to_vec());
@@ -190,7 +202,7 @@ impl Kerberos {
                     };
 
                     let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
-                    let result_bytes = self.config.network_client.send(protocol, &kdc_url, &message_request)?;
+                    let result_bytes = self.config.network_client.send(protocol, kdc_url, &message_request)?;
                     let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
                     Ok(message_response.kerb_message.0 .0)
                 }
@@ -851,7 +863,7 @@ mod tests {
     struct NetworkClientMock;
 
     impl NetworkClient for NetworkClientMock {
-        fn send(&self, _protocol: NetworkProtocol, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
+        fn send(&self, _protocol: NetworkProtocol, _url: url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
             unreachable!("unsupported protocol")
         }
 

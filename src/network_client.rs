@@ -48,7 +48,7 @@ pub trait NetworkClient: Send + Sync {
     /// the same as specified by `protocol` argument. `sspi-rs` will call this method only if
     /// `NetworkClient::is_protocol_supported` returned true prior to the call, so unsupported
     /// `protocol` values could be marked as `unreachable!`.
-    fn send(&self, protocol: NetworkProtocol, url: &Url, data: &[u8]) -> Result<Vec<u8>>;
+    fn send(&self, protocol: NetworkProtocol, url: Url, data: &[u8]) -> Result<Vec<u8>>;
 }
 
 #[cfg(feature = "network_client")]
@@ -70,12 +70,9 @@ pub mod reqwest_network_client {
         const NAME: &str = "Reqwest";
         const SUPPORTED_PROTOCOLS: &[NetworkProtocol] = NetworkProtocol::ALL;
 
-        fn send_tcp(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
-            let mut stream = TcpStream::connect(format!(
-                "{}:{}",
-                url.clone().host_str().unwrap_or_default(),
-                url.port().unwrap_or(88)
-            ))?;
+        fn send_tcp(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
+            let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
+            let mut stream = TcpStream::connect(addr)?;
 
             stream
                 .write(data)
@@ -95,37 +92,31 @@ pub mod reqwest_network_client {
             Ok(buf)
         }
 
-        fn send_udp(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send_udp(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
             let port =
                 portpicker::pick_unused_port().ok_or_else(|| Error::new(ErrorKind::InternalError, "No free ports"))?;
-            let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port))?;
+            let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), port))?;
 
-            if data.len() < 4 {
-                return Err(Error::new(
-                    ErrorKind::InternalError,
-                    format!("kerb message has invalid length. expected >= 4 but got {}", data.len()),
-                ));
-            }
-            // first 4 bytes contains message length. we don't need it for UDP
-            udp_socket.send_to(&data[4..], url.as_str())?;
+            let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
+            udp_socket.send_to(data, addr)?;
 
             // 48 000 bytes: default maximum token len in Windows
-            let mut buff = vec![0; 0xbb80];
+            let mut buf = vec![0; 0xbb80];
 
-            let n = udp_socket.recv(&mut buff)?;
+            let n = udp_socket.recv(&mut buf)?;
 
             let mut reply_buf = Vec::with_capacity(n + 4);
             reply_buf.extend_from_slice(&(n as u32).to_be_bytes());
-            reply_buf.extend_from_slice(&buff[0..n]);
+            reply_buf.extend_from_slice(&buf[0..n]);
 
             Ok(reply_buf)
         }
 
-        fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send_http(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
             let client = Client::new();
 
             let result_bytes = client
-                .post(url.clone())
+                .post(url)
                 .body(data.to_vec())
                 .send()
                 .map_err(|err| match err {
@@ -152,7 +143,7 @@ pub mod reqwest_network_client {
     }
 
     impl NetworkClient for ReqwestNetworkClient {
-        fn send(&self, protocol: NetworkProtocol, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send(&self, protocol: NetworkProtocol, url: Url, data: &[u8]) -> Result<Vec<u8>> {
             match protocol {
                 NetworkProtocol::Tcp => self.send_tcp(url, data),
                 NetworkProtocol::Udp => self.send_udp(url, data),
