@@ -10,6 +10,8 @@ use std::io::Write;
 
 pub use encryption_params::EncryptionParams;
 use lazy_static::lazy_static;
+use picky_asn1::restricted_string::IA5String;
+use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
@@ -48,8 +50,6 @@ use crate::{
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
     PACKAGE_ID_NONE,
 };
-use picky_asn1::restricted_string::IA5String;
-use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 
 pub const PKG_NAME: &str = "Kerberos";
 pub const KERBEROS_VERSION: u8 = 0x05;
@@ -112,7 +112,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng::default().gen::<u32>(),
+            seq_number: OsRng.gen::<u32>(),
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -127,7 +127,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng::default().gen::<u32>(),
+            seq_number: OsRng.gen::<u32>(),
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -176,8 +176,20 @@ impl Kerberos {
             }
 
             return match protocol {
-                NetworkProtocol::Tcp | NetworkProtocol::Udp => {
-                    self.config.network_client.send(protocol, &kdc_url, data)
+                NetworkProtocol::Tcp => self.config.network_client.send(protocol, kdc_url, data),
+                NetworkProtocol::Udp => {
+                    if data.len() < 4 {
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            format!(
+                                "kerberos message has invalid length. expected >= 4 but got {}",
+                                data.len()
+                            ),
+                        ));
+                    }
+
+                    // First 4 bytes are message length and it’s not included when using UDP
+                    self.config.network_client.send(protocol, kdc_url, &data[4..])
                 }
                 NetworkProtocol::Http | NetworkProtocol::Https => {
                     let data = OctetStringAsn1::from(data.to_vec());
@@ -190,7 +202,7 @@ impl Kerberos {
                     };
 
                     let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
-                    let result_bytes = self.config.network_client.send(protocol, &kdc_url, &message_request)?;
+                    let result_bytes = self.config.network_client.send(protocol, kdc_url, &message_request)?;
                     let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
                     Ok(message_response.kerb_message.0 .0)
                 }
@@ -211,7 +223,7 @@ impl Kerberos {
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
-        // first 4 bytes is message len. skipping them
+        // first 4 bytes are message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
@@ -238,7 +250,7 @@ impl Kerberos {
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
-        // first 4 bytes is message len. skipping them
+        // first 4 bytes are message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
@@ -428,7 +440,7 @@ impl Sspi for Kerberos {
                 cname_type,
                 snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
                 // 4 = size of u32
-                nonce: &OsRng::default().gen::<[u8; 4]>(),
+                nonce: &OsRng.gen::<[u8; 4]>(),
                 hostname: &hostname,
                 context_requirements: ClientRequestFlags::empty(),
             },
@@ -458,7 +470,7 @@ impl Sspi for Kerberos {
             .encryption_type
             .as_ref()
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
         let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
             kdc_rep: &as_rep.0,
@@ -622,7 +634,7 @@ impl SspiImpl for Kerberos {
                         cname_type,
                         snames: &[TGT_SERVICE_NAME, realm],
                         // 4 = size of u32
-                        nonce: &OsRng::default().gen::<[u8; 4]>(),
+                        nonce: &OsRng.gen::<[u8; 4]>(),
                         hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
                         context_requirements: builder.context_requirements,
                     },
@@ -646,7 +658,7 @@ impl SspiImpl for Kerberos {
 
                 let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
-                    seq_num: Some(OsRng::default().gen::<u32>()),
+                    seq_num: Some(OsRng.gen::<u32>()),
                     sub_key: None,
                     checksum: None,
                     channel_bindings: self.channel_bindings.as_ref(),
@@ -676,7 +688,7 @@ impl SspiImpl for Kerberos {
 
                 let response = self.send(&serialize_message(&tgs_req)?)?;
 
-                // first 4 bytes is message len. skipping them
+                // first 4 bytes are message len. skipping them
                 let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
@@ -695,7 +707,7 @@ impl SspiImpl for Kerberos {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng::default());
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
@@ -851,7 +863,7 @@ mod tests {
     struct NetworkClientMock;
 
     impl NetworkClient for NetworkClientMock {
-        fn send(&self, _protocol: NetworkProtocol, _url: &url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
+        fn send(&self, _protocol: NetworkProtocol, _url: url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
             unreachable!("unsupported protocol")
         }
 

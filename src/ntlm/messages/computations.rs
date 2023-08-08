@@ -116,7 +116,7 @@ pub fn get_authenticate_target_info(
 }
 
 pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], rand::Error> {
-    Ok(OsRng::default().gen::<[u8; CHALLENGE_SIZE]>())
+    Ok(OsRng.gen::<[u8; CHALLENGE_SIZE]>())
 }
 
 pub fn generate_timestamp() -> crate::Result<u64> {

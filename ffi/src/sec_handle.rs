@@ -827,7 +827,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         check_null!(ph_credential);
         check_null!(p_buffer);
 
-        let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
+        let credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
             let workstation =
@@ -866,7 +866,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         check_null!(ph_credential);
         check_null!(p_buffer);
 
-        let mut credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
+        let credentials_handle = ((*ph_credential).dw_lower as *mut CredentialsHandle).as_mut().unwrap();
 
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
             let workstation = c_w_str_to_string(p_buffer as *const _);

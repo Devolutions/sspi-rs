@@ -68,7 +68,7 @@ impl SspiCredSsp {
                 ClientConnection::new(config, example_com)
                     .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
             )),
-            nonce: Some(OsRng::default().gen::<[u8; NONCE_SIZE]>()),
+            nonce: Some(OsRng.gen::<[u8; NONCE_SIZE]>()),
         })
     }
 
