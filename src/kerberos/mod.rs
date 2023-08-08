@@ -188,7 +188,7 @@ impl Kerberos {
                         ));
                     }
 
-                    // First 4 bytes is message length and it’s not included when using UDP
+                    // First 4 bytes are message length and it’s not included when using UDP
                     self.config.network_client.send(protocol, kdc_url, &data[4..])
                 }
                 NetworkProtocol::Http | NetworkProtocol::Https => {
@@ -223,7 +223,7 @@ impl Kerberos {
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
-        // first 4 bytes is message len. skipping them
+        // first 4 bytes are message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
@@ -250,7 +250,7 @@ impl Kerberos {
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
-        // first 4 bytes is message len. skipping them
+        // first 4 bytes are message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
@@ -688,7 +688,7 @@ impl SspiImpl for Kerberos {
 
                 let response = self.send(&serialize_message(&tgs_req)?)?;
 
-                // first 4 bytes is message len. skipping them
+                // first 4 bytes are message len. skipping them
                 let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
