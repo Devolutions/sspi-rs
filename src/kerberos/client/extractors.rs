@@ -67,6 +67,8 @@ pub fn extract_session_key_from_tgs_rep(
         .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
         .map_err(|e| Error::new(ErrorKind::InternalError, format!("{:?}", e)))?;
 
+    trace!(?enc_data, "Plain TgsRep::EncData");
+
     let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())

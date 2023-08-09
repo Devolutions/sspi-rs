@@ -30,7 +30,7 @@ use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request,
     generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
     get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions,
     GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
@@ -42,14 +42,14 @@ use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
-use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions};
+use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, generate_authenticator};
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::network_client::NetworkProtocol;
 use crate::pk_init::DhParameters;
 #[cfg(feature = "scard")]
-use crate::pku2u::{generate_authenticator_extension, generate_client_dh_parameters};
+use crate::pku2u::generate_client_dh_parameters;
 #[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
@@ -114,8 +114,6 @@ pub struct Kerberos {
     // uses in the smart card logon. Otherwise, always None.
     #[allow(dead_code)]
     dh_parameters: Option<DhParameters>,
-
-    gss_api_messages: Vec<u8>,
 }
 
 impl Kerberos {
@@ -132,8 +130,6 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
-
-            gss_api_messages: Vec::new(),
         })
     }
 
@@ -150,8 +146,6 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
-
-            gss_api_messages: Vec::new(),
         })
     }
 
@@ -587,13 +581,6 @@ impl SspiImpl for Kerberos {
 
         let status = match self.state {
             KerberosState::Negotiate => {
-                let credentials = builder
-                    .credentials_handle
-                    .as_ref()
-                    .unwrap()
-                    .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "No credentials provided"))?;
-
                 warn!(target_name = builder.target_name);
                 let (service_name, service_principal_name) =
                     parse_target_name(builder.target_name.ok_or_else(|| {
@@ -622,7 +609,6 @@ impl SspiImpl for Kerberos {
 
                 let encoded_neg_token_init =
                     picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
-                self.gss_api_messages.extend_from_slice(&encoded_neg_token_init);
                 warn!(token = ?encoded_neg_token_init, "Encoded token:");
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
@@ -645,7 +631,6 @@ impl SspiImpl for Kerberos {
                 }
 
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                self.gss_api_messages.extend_from_slice(&input_token.buffer);
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
@@ -813,44 +798,24 @@ impl SspiImpl for Kerberos {
 
                 info!(channel_bindings = ?self.channel_bindings);
 
-                let authenticator_options = match credentials {
-                    CredentialsBuffers::AuthIdentity(_) => GenerateAuthenticatorOptions {
-                        kdc_rep: &tgs_rep.0,
-                        seq_num: Some(seq_num),
-                        sub_key: Some(EncKey {
-                            key_type: enc_type.clone(),
-                            key_value: authenticator_sub_key,
-                        }),
-                        checksum: Some(ChecksumOptions {
-                            checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                            checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
-                        }),
-                        channel_bindings: self.channel_bindings.as_ref(),
-                        extensions: Vec::new(),
-                    },
-                    #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(_) => GenerateAuthenticatorOptions {
-                        kdc_rep: &tgs_rep.0,
-                        seq_num: Some(seq_num),
-                        sub_key: Some(EncKey {
-                            key_type: enc_type.clone(),
-                            key_value: authenticator_sub_key.clone(),
-                        }),
-                        checksum: Some(ChecksumOptions {
-                            checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                            checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
-                        }),
-                        channel_bindings: self.channel_bindings.as_ref(),
-                        extensions: vec![generate_authenticator_extension(
-                            &authenticator_sub_key,
-                            &self.gss_api_messages,
-                        )?],
-                    },
+                let authenticator_options = GenerateAuthenticatorOptions {
+                    kdc_rep: &tgs_rep.0,
+                    seq_num: Some(seq_num),
+                    sub_key: Some(EncKey {
+                        key_type: enc_type.clone(),
+                        key_value: authenticator_sub_key,
+                    }),
+                    checksum: Some(ChecksumOptions {
+                        checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
+                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                    }),
+                    channel_bindings: self.channel_bindings.as_ref(),
+                    extensions: Vec::new(),
                 };
 
                 let authenticator = generate_authenticator(authenticator_options)?;
                 let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
-                info!(authenticator = ?encoded_auth);
+                info!(encoded_ap_req_authenticator = ?encoded_auth);
 
                 // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
                 let mech_id = oids::krb5_user_to_user();
@@ -861,6 +826,8 @@ impl SspiImpl for Kerberos {
                     // KRB5 U2U always needs the use-session-key flag
                     context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
                 }
+                // FIXME: properly pass MUTUAL_AUTH flag
+                context_requirements.set(ClientRequestFlags::MUTUAL_AUTH, true);
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
@@ -1045,7 +1012,6 @@ mod tests {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
-            gss_api_messages: Vec::new(),
         };
 
         let mut kerberos_client = Kerberos {
@@ -1068,7 +1034,6 @@ mod tests {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
-            gss_api_messages: Vec::new(),
         };
 
         let plain_message = b"some plain message";
