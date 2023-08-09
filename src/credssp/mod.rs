@@ -335,12 +335,13 @@ impl CredSspClient {
                     peer_version,
                 )?;
 
-                ts_request.auth_info = Some(
-                    self.context
-                        .as_mut()
-                        .unwrap()
-                        .encrypt_ts_credentials(&self.credentials.clone().into(), self.cred_ssp_mode)?,
-                );
+                let auth_identity: AuthIdentityBuffers = self.credentials.clone().into();
+                ts_request.auth_info =
+                    Some(self.context.as_mut().unwrap().encrypt_ts_credentials(
+                        &CredentialsBuffers::AuthIdentity(auth_identity),
+                        self.cred_ssp_mode,
+                    )?);
+                info!("tscredentials has been written");
 
                 self.state = CredSspState::Final;
 
@@ -466,7 +467,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                 self.state = CredSspState::Final;
 
-                Ok(ServerState::Finished(read_credentials.into()))
+                Ok(ServerState::Finished(read_credentials.auth_identity().unwrap().into()))
             }
             CredSspState::NegoToken => {
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
@@ -1025,13 +1026,13 @@ impl CredSspContext {
 
     fn encrypt_ts_credentials(
         &mut self,
-        credentials: &AuthIdentityBuffers,
+        credentials: &CredentialsBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> crate::Result<Vec<u8>> {
         self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
     }
 
-    fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> crate::Result<AuthIdentityBuffers> {
+    fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> crate::Result<CredentialsBuffers> {
         let ts_credentials_buffer = self.decrypt_message(auth_info)?;
 
         Ok(ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())?)
