@@ -73,6 +73,7 @@ pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &
         .cipher();
 
     let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)?;
+    trace!(?enc_data, "Plain AsRep::EncData");
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
