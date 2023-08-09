@@ -4,8 +4,16 @@ mod test;
 use core::fmt;
 use std::io::{self, Read};
 
+use picky_asn1::wrapper::{
+    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4,
+    IntegerAsn1, OctetStringAsn1, Optional,
+};
+use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
+use picky_krb::credssp::{TsCredentials, TsCspDataDetail, TsPasswordCreds, TsSmartCardCreds};
+
 use super::CredSspMode;
-use crate::{ber, AuthIdentityBuffers};
+use crate::utils::string_to_utf16;
+use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, SmartCardIdentityBuffers};
 
 pub const TS_REQUEST_VERSION: u32 = 6;
 
@@ -244,7 +252,54 @@ impl TsRequest {
     }
 }
 
-pub fn write_ts_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: CredSspMode) -> io::Result<Vec<u8>> {
+#[instrument(ret)]
+fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
+    let smart_card_creds = TsSmartCardCreds {
+        pin: ExplicitContextTag0::from(OctetStringAsn1::from(string_to_utf16("214653214653"))),
+        csp_data: ExplicitContextTag1::from(TsCspDataDetail {
+            key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![1_u8])),
+            card_name: Optional::from(Some(ExplicitContextTag1::from(OctetStringAsn1::from(string_to_utf16(
+                "VSCtest",
+            ))))),
+            reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(string_to_utf16(
+                "Microsoft Virtual Smart Card 0",
+            ))))),
+            container_name: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(string_to_utf16(
+                "te-RDPsmartcardlogon5-8ff3a38e-c6-50987",
+            ))))),
+            csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(string_to_utf16(
+                "Microsoft Base Smart Card Crypto Provider",
+            ))))),
+        }),
+        user_hint: Optional::from(None),
+        domain_hint: Optional::from(None),
+    };
+    let ts_creds = TsCredentials {
+        cred_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
+        credentials: ExplicitContextTag1::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&smart_card_creds)?)),
+    };
+
+    Ok(picky_asn1_der::to_vec(&ts_creds)?)
+}
+
+pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: CredSspMode) -> crate::Result<Vec<u8>> {
+    let (creds_type, encoded_credentials) = match credentials {
+        CredentialsBuffers::AuthIdentity(creds) => {
+            (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
+        }
+        CredentialsBuffers::SmartCard(creds) => (TS_SMART_CARD_CREDS, write_smart_card_credentials(creds)?),
+    };
+
+    let ts_creds = TsCredentials {
+        cred_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![creds_type])),
+        credentials: ExplicitContextTag1::from(OctetStringAsn1::from(encoded_credentials)),
+    };
+
+    Ok(picky_asn1_der::to_vec(&ts_creds)?)
+}
+
+#[instrument(ret)]
+fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: CredSspMode) -> io::Result<Vec<u8>> {
     let empty_identity = AuthIdentityBuffers::default();
     let identity = match cred_ssp_mode {
         CredSspMode::WithCredentials => credentials,
@@ -254,23 +309,8 @@ pub fn write_ts_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: Cr
     let ts_credentials_len = sizeof_ts_credentials(identity);
     let ts_credentials_sequence_len = ber::sizeof_sequence(ts_credentials_len);
     let password_credentials_len = sizeof_ts_password_creds(identity);
-    let password_credentials_sequence_len = ber::sizeof_sequence(password_credentials_len);
 
     let mut buffer = Vec::with_capacity(ts_credentials_sequence_len as usize);
-
-    // TSCredentials (SEQUENCE)
-    ber::write_sequence_tag(&mut buffer, ts_credentials_len)?;
-    // [0] credType (INTEGER)
-    ber::write_contextual_tag(&mut buffer, 0, ber::sizeof_integer(1), ber::Pc::Construct)?;
-    ber::write_integer(&mut buffer, 1)?;
-    /* [1] credentials (OCTET STRING) */
-    ber::write_contextual_tag(
-        &mut buffer,
-        1,
-        ber::sizeof_octet_string(password_credentials_sequence_len),
-        ber::Pc::Construct,
-    )?;
-    ber::write_octet_string_tag(&mut buffer, password_credentials_sequence_len)?;
 
     /* TSPasswordCreds (SEQUENCE) */
     ber::write_sequence_tag(&mut buffer, password_credentials_len)?;
@@ -284,44 +324,42 @@ pub fn write_ts_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: Cr
     Ok(buffer)
 }
 
-pub fn read_ts_credentials(mut buffer: impl io::Read) -> io::Result<AuthIdentityBuffers> {
-    // TSCredentials (SEQUENCE)
-    ber::read_sequence_tag(&mut buffer)?;
-    // [0] credType (INTEGER)
-    ber::read_contextual_tag(&mut buffer, 0, ber::Pc::Construct)?;
-    ber::read_integer(&mut buffer)?;
-    // [1] credentials (OCTET STRING)
-    ber::read_contextual_tag(&mut buffer, 1, ber::Pc::Construct)?;
-    ber::read_octet_string_tag(&mut buffer)?;
+pub fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdentityBuffers> {
+    let password_card_creds: TsPasswordCreds = picky_asn1_der::from_bytes(data.as_ref())?;
 
-    // Read TS password credentials
-    let _len = ber::read_sequence_tag(&mut buffer)?;
+    let TsPasswordCreds {
+        domain_name,
+        user_name,
+        password,
+    } = password_card_creds;
 
-    /* [0] domainName (OCTET STRING) */
-    ber::read_contextual_tag(&mut buffer, 0, ber::Pc::Construct)?;
-    let length = ber::read_octet_string_tag(&mut buffer)?;
-    let mut domain = vec![0x00; length as usize];
-    if length > 0 {
-        buffer.read_exact(&mut domain)?;
+    Ok(AuthIdentityBuffers {
+        user: user_name.0 .0,
+        domain: domain_name.0 .0,
+        password: password.0 .0.into(),
+    })
+}
+
+pub fn read_ts_credentials(mut buffer: impl io::Read) -> crate::Result<CredentialsBuffers> {
+    let ts_credentials: TsCredentials = picky_asn1_der::from_reader(&mut buffer)?;
+
+    match ts_credentials.cred_type.0 .0.first() {
+        Some(&TS_PASSWORD_CREDS) => Ok(CredentialsBuffers::AuthIdentity(read_password_credentials(
+            &ts_credentials.credentials.0 .0,
+        )?)),
+        Some(&TS_SMART_CARD_CREDS) => Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "Reading of the TsSmartCard credentials is not supported yet",
+        )),
+        Some(cred_type) => Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("Invalid or unsupported TsCredentials::cred_type value: {}", cred_type),
+        )),
+        None => Err(Error::new(
+            ErrorKind::InvalidToken,
+            "TsCredentials::cred_type field is empty",
+        )),
     }
-
-    /* [1] userName (OCTET STRING) */
-    ber::read_contextual_tag(&mut buffer, 1, ber::Pc::Construct)?;
-    let length = ber::read_octet_string_tag(&mut buffer)?;
-    let mut user = vec![0x00; length as usize];
-    if length > 0 {
-        buffer.read_exact(&mut user)?;
-    }
-
-    /* [2] password (OCTET STRING) */
-    ber::read_contextual_tag(&mut buffer, 2, ber::Pc::Construct)?;
-    let length = ber::read_octet_string_tag(&mut buffer)?;
-    let mut password = vec![0x00; length as usize];
-    if length > 0 {
-        buffer.read_exact(&mut password)?;
-    }
-
-    Ok(AuthIdentityBuffers::new(user, domain, password))
 }
 
 fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
