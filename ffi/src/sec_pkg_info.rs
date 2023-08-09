@@ -1,4 +1,3 @@
-use std::alloc::{alloc, Layout};
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
@@ -42,8 +41,7 @@ impl From<PackageInfo> for &mut SecPkgInfoW {
         let raw_pkg_info;
         let pkg_info_w;
         unsafe {
-            let memory_layout = Layout::from_size_align_unchecked(size, 8);
-            raw_pkg_info = alloc(memory_layout);
+            raw_pkg_info = libc::malloc(size);
             pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
 
@@ -102,8 +100,13 @@ impl From<PackageInfo> for &mut SecPkgInfoA {
         let pkg_info_a;
 
         unsafe {
-            let memory_layout = Layout::from_size_align_unchecked(size, 8);
-            raw_pkg_info = alloc(memory_layout);
+            raw_pkg_info = libc::malloc(size);
+
+            // FIXME(safety): it is illegal to construct a reference to uninitialized data
+            // Useful references:
+            // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
+            // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
+            // NOTE: this is not the only place that needs to be fixed. An audit is required.
             pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
         }
 
@@ -165,8 +168,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             size += package.name.as_ref().as_bytes().len() + package.comment.as_bytes().len();
         }
 
-        let memory_layout = Layout::from_size_align_unchecked(size, 8);
-        let raw_packages = alloc(memory_layout);
+        let raw_packages = libc::malloc(size);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoA;
         let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar;
@@ -236,8 +238,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             comments.push(comment);
         }
 
-        let memory_layout = Layout::from_size_align_unchecked(size, 8);
-        let raw_packages = alloc(memory_layout);
+        let raw_packages = libc::malloc(size);
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoW;
         let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar;

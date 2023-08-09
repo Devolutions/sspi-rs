@@ -223,14 +223,8 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
-    // FIXME(SAFETY): this is unsound because `c_void` does not have the same memory layout as the original types.
-    // It’s likely we need to use `libc::malloc` and `libc::free` instead of Rust’s default global allocator.
-    // Indeed, libc allocator is writing a metadata chunk in front of the user data chunk, and this
-    // metadata chunk is used to find the size of the user data chunk so that it’s possible to free the
-    // memory using a void pointer. In Rust, knowledge of the original type is required. Alternatively,
-    // we could allocate a global table holding type metadata so we can cast back into the original type at this point.
-    #[allow(clippy::from_raw_with_void_ptr)]
-    let _ = Box::from_raw(pv_context_buffer as *mut _);
+    // NOTE: see #XXX for rationale behind libc usage at this place
+    libc::free(pv_context_buffer);
 
     0
 }
