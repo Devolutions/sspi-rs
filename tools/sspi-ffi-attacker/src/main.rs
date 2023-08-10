@@ -5,7 +5,7 @@ mod utils;
 use std::env;
 use std::path::Path;
 
-use attack::{attac_auth_identity, attack_a, attack_w, init_a_table, init_w_table};
+use attack::{attack_a, attack_auth_identity, attack_w, init_a_table, init_w_table};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -29,6 +29,6 @@ fn main() {
         attack_a(sec_a_table);
         let _ = Box::from_raw(sec_a_table);
 
-        attac_auth_identity(path_to_library);
+        attack_auth_identity(path_to_library);
     }
 }

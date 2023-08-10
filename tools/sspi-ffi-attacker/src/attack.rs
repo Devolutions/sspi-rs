@@ -43,7 +43,7 @@ pub unsafe fn init_a_table(path_to_library: &str) -> PSecurityFunctionTableA {
     security_table
 }
 
-pub unsafe fn attac_auth_identity(path_to_dll: &str) {
+pub unsafe fn attack_auth_identity(path_to_dll: &str) {
     let sspi_handle = load_library(path_to_dll);
 
     if sspi_handle.is_null() {

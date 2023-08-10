@@ -1,4 +1,3 @@
-use std::alloc::{alloc, Layout};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use libc::c_char;
@@ -47,8 +46,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: 
         to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
         to_buffers[i].buffer_type = buffer.buffer_type.to_u32().unwrap();
         if allocate || to_buffers[i].pv_buffer.is_null() {
-            let memory_layout = Layout::from_size_align_unchecked(buffer_size, 8);
-            to_buffers[i].pv_buffer = alloc(memory_layout) as *mut c_char;
+            to_buffers[i].pv_buffer = libc::malloc(buffer_size) as *mut c_char;
         }
         let to_buffer = from_raw_parts_mut(to_buffers[i].pv_buffer, buffer_size);
         to_buffer.copy_from_slice(from_raw_parts(buffer.buffer.as_ptr() as *const c_char, buffer_size));
