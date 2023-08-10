@@ -223,7 +223,7 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
-    // NOTE: see #XXX for rationale behind libc usage at this place
+    // NOTE: see https://github.com/Devolutions/sspi-rs/pull/141 for rationale behind libc usage.
     libc::free(pv_context_buffer);
 
     0
