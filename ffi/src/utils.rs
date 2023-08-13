@@ -50,3 +50,10 @@ pub unsafe fn transform_credentials_handle<'a>(
         ))
     }
 }
+
+pub fn str_to_utf16_bytes(s: impl AsRef<str>) -> Vec<u8> {
+    s.as_ref()
+        .encode_utf16()
+        .flat_map(|v| v.to_le_bytes())
+        .collect()
+}

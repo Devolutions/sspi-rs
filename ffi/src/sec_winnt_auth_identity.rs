@@ -384,9 +384,11 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::Secret;
+    use sspi::{Secret, cert_utils::{SmartCardInfo, finalize_smart_card_info}};
     use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE};
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
+
+    use crate::utils::str_to_utf16_bytes;
 
     if p_auth_data.is_null() {
         return Err(Error::new(
@@ -444,53 +446,46 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
         let result = CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential);
 
-        if result == 1 {
-            if cred_type == CertCredential {
-                let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
-
-                let certificate =
-                    sspi::cert_utils::extract_raw_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
-
-                // test credentials
-                // todo: use real reader name
-                let reader_name = "Microsoft Virtual Smart Card 0"
-                    .encode_utf16()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect();
-                // todo: extract username from the certificate
-                let username = "pw13@example.com"
-                    .encode_utf16()
-                    .flat_map(|v| v.to_le_bytes())
-                    .collect();
-
-                // remove null
-                let new_len = password.as_ref().len() - 2;
-                password.as_mut().truncate(new_len);
-
-                let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
-                    certificate,
-                    reader_name,
-                    pin: password,
-                    username,
-                    card_name: todo!(),
-                    container_name: todo!(),
-                    csp_name: todo!(),
-                });
-                warn!(creds = ?creds);
-
-                return Ok(creds);
-            } else {
-                return Err(Error::new(
-                    ErrorKind::NoCredentials,
-                    "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential",
-                ));
-            }
-        } else {
+        if result == 0 {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
                 "Cannot unmarshal smart card credentials",
             ));
         }
+
+        if cred_type != CertCredential {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential",
+            ));
+        }
+
+        let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
+
+        let (raw_certificate, certificate) =
+            sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
+
+        let username = str_to_utf16_bytes(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
+        // test credentials
+        let card_name = str_to_utf16_bytes("VSCtest");
+        let SmartCardInfo { key_container_name, reader_name, certificate: _, csp_name } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
+
+        // remove null
+        let new_len = password.as_ref().len() - 2;
+        password.as_mut().truncate(new_len);
+
+        let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
+            certificate: raw_certificate,
+            reader_name: str_to_utf16_bytes(reader_name),
+            pin: password,
+            username,
+            card_name,
+            container_name: str_to_utf16_bytes(key_container_name),
+            csp_name: str_to_utf16_bytes(csp_name),
+        });
+        warn!(creds = ?creds);
+
+        return Ok(creds);
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
