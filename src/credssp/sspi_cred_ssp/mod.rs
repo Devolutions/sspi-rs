@@ -432,7 +432,7 @@ impl SspiImpl for SspiCredSsp {
 
                 ts_request.auth_info = Some(
                     self.cred_ssp_context
-                        .encrypt_ts_credentials(credentials.as_auth_identity().unwrap(), CredSspMode::WithCredentials)?,
+                        .encrypt_ts_credentials(credentials, CredSspMode::WithCredentials)?,
                 );
 
                 let mut encoded_ts_request = Vec::new();
