@@ -472,6 +472,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
                     reader_name,
                     pin: password,
                     username,
+                    card_name: todo!(),
+                    container_name: todo!(),
+                    csp_name: todo!(),
                 });
                 warn!(creds = ?creds);
 
