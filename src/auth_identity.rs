@@ -85,9 +85,15 @@ pub struct SmartCardIdentityBuffers {
     pub username: Vec<u8>,
     /// DER-encoded X509 certificate
     pub certificate: Vec<u8>,
+    /// UTF-16 encoded smart card name
+    pub card_name: Vec<u8>,
     /// UTF-16 encoded smart card reader name
     pub reader_name: Vec<u8>,
-    /// Smart card PIN code
+    /// UTF-16 encoded smart card key container name
+    pub container_name: Vec<u8>,
+    /// UTF-16 encoded smart card CSP name
+    pub csp_name: Vec<u8>,
+    /// UTF-16 encoded smart card PIN code
     pub pin: Secret<Vec<u8>>,
 }
 
@@ -100,7 +106,13 @@ pub struct SmartCardIdentity {
     pub certificate: Certificate,
     /// Smart card reader name
     pub reader_name: String,
-    /// Smart card PIN code
+    /// Smart card name
+    pub card_name: String,
+    /// Smart card key container name
+    pub container_name: String,
+    /// Smart card CSP name
+    pub csp_name: String,
+    /// ASCII encoded mart card PIN code
     pub pin: Secret<Vec<u8>>,
 }
 
@@ -113,6 +125,13 @@ impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
             reader_name: value.reader_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
             pin: value.pin.as_ref().clone().into(),
             username: value.username.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            card_name: value.card_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            container_name: value
+                .container_name
+                .encode_utf16()
+                .flat_map(|v| v.to_be_bytes())
+                .collect(),
+            csp_name: value.csp_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
         })
     }
 }
@@ -126,6 +145,9 @@ impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
             reader_name: utils::bytes_to_utf16_string(&value.reader_name),
             pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
             username: utils::bytes_to_utf16_string(&value.username),
+            card_name: utils::bytes_to_utf16_string(&value.card_name),
+            container_name: utils::bytes_to_utf16_string(&value.container_name),
+            csp_name: utils::bytes_to_utf16_string(&value.csp_name),
         })
     }
 }
@@ -170,7 +192,7 @@ pub enum Credentials {
     AuthIdentity(AuthIdentity),
     #[cfg(feature = "scard")]
     /// Smart card identity for the smart card based authentication
-    SmartCard(SmartCardIdentity)
+    SmartCard(Box<SmartCardIdentity>),
 }
 
 impl Credentials {
@@ -184,7 +206,7 @@ impl Credentials {
 
 impl From<SmartCardIdentity> for Credentials {
     fn from(value: SmartCardIdentity) -> Self {
-        Self::SmartCard(value)
+        Self::SmartCard(Box::new(value))
     }
 }
 
@@ -200,7 +222,8 @@ impl TryFrom<Credentials> for CredentialsBuffers {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(match value {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
-            Credentials::SmartCard(identity) => Self::SmartCard(identity.try_into()?),
+            #[cfg(feature = "scard")]
+            Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
         })
     }
 }
