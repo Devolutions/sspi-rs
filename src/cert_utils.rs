@@ -1,8 +1,10 @@
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
-use picky_asn1::wrapper::{Utf8StringAsn1, IA5StringAsn1};
-use picky_asn1_x509::{Certificate, oids, ExtensionView, GeneralName, AttributeTypeAndValueParameters, DirectoryString};
+use picky_asn1::wrapper::{IA5StringAsn1, Utf8StringAsn1};
+use picky_asn1_x509::{
+    oids, AttributeTypeAndValueParameters, Certificate, DirectoryString, ExtensionView, GeneralName,
+};
 use sha1::{Digest, Sha1};
 use winapi::ctypes::c_void;
 use winapi::um::ncrypt::HCRYPTKEY;
@@ -266,40 +268,43 @@ pub fn extract_user_name_from_alt_name(certificate: &Certificate) -> Result<Stri
         .0
          .0
         .iter()
-        .find(|extension| {
-            extension.extn_id().0 == oids::subject_alternative_name()
-        })
-        .ok_or_else(|| Error::new(ErrorKind::IncompleteCredentials, "Subject alternative name certificate extension is not present"))?
+        .find(|extension| extension.extn_id().0 == oids::subject_alternative_name())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::IncompleteCredentials,
+                "Subject alternative name certificate extension is not present",
+            )
+        })?
         .extn_value();
 
     let alternate_name = match subject_alt_name_ext {
-        ExtensionView::SubjectAltName(alternate_name) => {
-            alternate_name
-        },
+        ExtensionView::SubjectAltName(alternate_name) => alternate_name,
         // safe: checked above
         _ => unreachable!(),
     };
     let other_name = match alternate_name.0.get(0).unwrap() {
-        GeneralName::OtherName(other_name) => {
-            other_name
-        },
-        _ => return Err(Error::new(ErrorKind::IncompleteCredentials, "Subject alternate name has unsupported value type")),
+        GeneralName::OtherName(other_name) => other_name,
+        _ => {
+            return Err(Error::new(
+                ErrorKind::IncompleteCredentials,
+                "Subject alternate name has unsupported value type",
+            ))
+        }
     };
 
     if other_name.type_id.0 != oids::user_principal_name() {
-        return Err(Error::new(ErrorKind::IncompleteCredentials, "Subject alternate name must be UPN"));
+        return Err(Error::new(
+            ErrorKind::IncompleteCredentials,
+            "Subject alternate name must be UPN",
+        ));
     }
 
-    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0.0)?;
+    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0 .0)?;
     Ok(data.to_string())
 }
 
 pub fn extract_user_name_from_subject_name(certificate: &Certificate) -> Result<String> {
-    let subject = &certificate
-        .tbs_certificate
-        .subject
-        .0
-        .0;
+    let subject = &certificate.tbs_certificate.subject.0 .0;
     let subject_parts = subject
         .iter()
         .map(|subject_part| {
@@ -311,8 +316,13 @@ pub fn extract_user_name_from_subject_name(certificate: &Certificate) -> Result<
                 AttributeTypeAndValueParameters::Custom(custom) => {
                     let string: IA5StringAsn1 = picky_asn1_der::from_bytes(&custom.0)?;
                     string.to_string()
-                },
-                _ => return Err(Error::new(ErrorKind::IncompleteCredentials, "Common name has unsupported value type")),
+                }
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::IncompleteCredentials,
+                        "Common name has unsupported value type",
+                    ))
+                }
             };
             Ok((t, v))
         })
@@ -337,7 +347,12 @@ pub fn extract_user_name_from_subject_name(certificate: &Certificate) -> Result<
         .skip(1)
         .map(|subject_part| subject_part.1.as_str())
         .next()
-        .ok_or_else(|| Error::new(ErrorKind::IncompleteMessage, "User name is not present in certificate common name field"))?;
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::IncompleteMessage,
+                "User name is not present in certificate common name field",
+            )
+        })?;
 
     Ok(format!("{}@{}", user_name, domain))
 }
@@ -351,14 +366,17 @@ pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<S
 
 #[cfg(test)]
 mod tests {
-    use crate::cert_utils::{finalize_smart_card_info, extract_certificate_by_thumbprint, extract_user_name_from_subject_name, extract_user_name_from_alt_name};
+    use super::{extract_raw_certificate_by_thumbprint, extract_user_name_from_alt_name};
+    use crate::cert_utils::{
+        extract_certificate_by_thumbprint, extract_user_name_from_subject_name, finalize_smart_card_info,
+    };
 
     #[test]
     fn smart_card_info() {
-        let serial_number = [126, 0, 0, 0, 15, 203, 194, 190, 102, 29, 163, 34, 144, 0, 0, 0, 0, 0, 15];
-        println!("{:?}", unsafe {
-            finalize_smart_card_info(&serial_number).unwrap()
-        });
+        let serial_number = [
+            126, 0, 0, 0, 15, 203, 194, 190, 102, 29, 163, 34, 144, 0, 0, 0, 0, 0, 15,
+        ];
+        println!("{:?}", unsafe { finalize_smart_card_info(&serial_number).unwrap() });
     }
 
     #[test]
@@ -371,7 +389,10 @@ mod tests {
     #[test]
     fn username_extraction() {
         let cert = unsafe {
-            extract_certificate_by_thumbprint(&[244, 5, 6, 138, 23, 82, 125, 87, 234, 251, 176, 71, 81, 51, 245, 207, 224, 92, 147, 141]).unwrap()
+            extract_certificate_by_thumbprint(&[
+                244, 5, 6, 138, 23, 82, 125, 87, 234, 251, 176, 71, 81, 51, 245, 207, 224, 92, 147, 141,
+            ])
+            .unwrap()
         };
         // dbg!(cert.1.clone());
         println!("username: {}", extract_user_name_from_alt_name(&cert.1).unwrap());
