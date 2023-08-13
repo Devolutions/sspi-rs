@@ -384,7 +384,8 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::{Secret, cert_utils::{SmartCardInfo, finalize_smart_card_info}};
+    use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
+    use sspi::Secret;
     use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE};
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
@@ -468,7 +469,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         let username = str_to_utf16_bytes(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
         // test credentials
         let card_name = str_to_utf16_bytes("VSCtest");
-        let SmartCardInfo { key_container_name, reader_name, certificate: _, csp_name } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
+        let SmartCardInfo {
+            key_container_name,
+            reader_name,
+            certificate: _,
+            csp_name,
+        } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
 
         // remove null
         let new_len = password.as_ref().len() - 2;
