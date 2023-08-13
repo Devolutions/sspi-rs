@@ -1035,7 +1035,7 @@ impl CredSspContext {
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> crate::Result<CredentialsBuffers> {
         let ts_credentials_buffer = self.decrypt_message(auth_info)?;
 
-        Ok(ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())?)
+        ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())
     }
 
     fn encrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {

@@ -8,11 +8,10 @@ use picky_asn1::wrapper::{
     ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4,
     IntegerAsn1, OctetStringAsn1, Optional,
 };
-use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
+use picky_krb::constants::cred_ssp::{AT_KEYEXCHANGE, TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
 use picky_krb::credssp::{TsCredentials, TsCspDataDetail, TsPasswordCreds, TsSmartCardCreds};
 
 use super::CredSspMode;
-use crate::utils::string_to_utf16;
 use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, SmartCardIdentityBuffers};
 
 pub const TS_REQUEST_VERSION: u32 = 6;
@@ -255,21 +254,21 @@ impl TsRequest {
 #[instrument(ret)]
 fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
     let smart_card_creds = TsSmartCardCreds {
-        pin: ExplicitContextTag0::from(OctetStringAsn1::from(string_to_utf16("214653214653"))),
+        pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
-            key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![1_u8])),
-            card_name: Optional::from(Some(ExplicitContextTag1::from(OctetStringAsn1::from(string_to_utf16(
-                "VSCtest",
-            ))))),
-            reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(string_to_utf16(
-                "Microsoft Virtual Smart Card 0",
-            ))))),
-            container_name: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(string_to_utf16(
-                "te-RDPsmartcardlogon5-8ff3a38e-c6-50987",
-            ))))),
-            csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(string_to_utf16(
-                "Microsoft Base Smart Card Crypto Provider",
-            ))))),
+            key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![AT_KEYEXCHANGE])),
+            card_name: Optional::from(Some(ExplicitContextTag1::from(OctetStringAsn1::from(
+                credentials.card_name.clone(),
+            )))),
+            reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
+                credentials.reader_name.clone(),
+            )))),
+            container_name: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
+                credentials.container_name.clone(),
+            )))),
+            csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(
+                credentials.csp_name.clone(),
+            )))),
         }),
         user_hint: Optional::from(None),
         domain_hint: Optional::from(None),
