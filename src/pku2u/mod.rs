@@ -12,7 +12,7 @@ use std::str::FromStr;
 pub use cert_utils::validation::validate_server_p2p_certificate;
 pub use config::Pku2uConfig;
 pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
-pub use generators::{generate_authenticator_extension, generate_client_dh_parameters, generate_authenticator};
+pub use generators::{generate_authenticator, generate_authenticator_extension, generate_client_dh_parameters};
 use lazy_static::lazy_static;
 use picky::hash::HashAlgorithm;
 use picky::signature::SignatureAlgorithm;
@@ -47,7 +47,7 @@ use crate::pk_init::{
     extract_server_dh_public_key, generate_pa_datas_for_as_req, DhParameters, GenerateAsPaDataOptions,
 };
 use crate::pku2u::extractors::extract_krb_rep;
-use crate::pku2u::generators::{generate_as_req_username_from_certificate};
+use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
