@@ -30,10 +30,10 @@ use self::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
 };
 use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request,
-    generate_neg_ap_req, generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req,
-    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions,
-    GenerateAsReqOptions, GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
+    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request, generate_neg_ap_req,
+    generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req, get_client_principal_name_type,
+    get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
+    GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
 use self::config::KerberosConfig;
 use self::pa_datas::AsReqPaDataOptions;
@@ -42,7 +42,9 @@ use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
-use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, generate_authenticator};
+use crate::kerberos::client::generators::{
+    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
+};
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
@@ -699,7 +701,7 @@ impl SspiImpl for Kerberos {
 
                         self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng::default())?);
 
-                        AsReqPaDataOptions::SmartCard(pk_init::GenerateAsPaDataOptions {
+                        AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
                             p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
                             kdc_req_body: &kdc_req_body,
                             dh_parameters: self.dh_parameters.clone().unwrap(),
@@ -710,12 +712,12 @@ impl SspiImpl for Kerberos {
                                 let hash = sha1.finalize().to_vec();
 
                                 let smart_card = SmartCard::new(pin.clone(), &reader_name, 1)?;
-                                smart_card.sign(&hash)
+                                smart_card.sign(hash)
                             }),
                             with_pre_auth: false,
                             // for testing. the random value should be here
                             authenticator_nonce: [0x59, 0x58, 0x7a, 0xfc],
-                        })
+                        }))
                     }
                 };
 

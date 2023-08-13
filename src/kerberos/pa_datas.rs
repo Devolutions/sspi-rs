@@ -30,7 +30,7 @@ use crate::{check_if_empty, pku2u, Error, ErrorKind};
 pub enum AsReqPaDataOptions<'a> {
     AuthIdentity(AuthIdentityPaDataOptions<'a>),
     #[cfg(feature = "scard")]
-    SmartCard(SmartCardPaDataOptions<'a>),
+    SmartCard(Box<SmartCardPaDataOptions<'a>>),
 }
 
 impl AsReqPaDataOptions<'_> {
@@ -87,7 +87,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 dh_parameters,
                 enc_params,
             } => {
-                let dh_rep_info = match extract_pa_pk_as_rep(&as_rep)? {
+                let dh_rep_info = match extract_pa_pk_as_rep(as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
                     PaPkAsRep::EncKeyPack(_) => {
                         return Err(Error::new(
@@ -128,7 +128,7 @@ impl AsRepSessionKeyExtractor<'_> {
                         .as_ref(),
                 )?;
 
-                let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, &enc_params)?;
+                let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, enc_params)?;
 
                 Ok(session_key)
             }
