@@ -132,9 +132,7 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(any(target_os="macos", target_os="ios"))] {
         use std::time::Duration;
-        use std::thread;
         use tokio::time::timeout;
-        use tokio::runtime;
         use futures::stream::{StreamExt};
         use async_dnssd::{query_record, QueryRecordResult, QueriedRecordFlags, Type};
 
@@ -179,10 +177,11 @@ cfg_if::cfg_if! {
         }
 
         pub fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
-            let query_timeout = 1000;
-            async fn query_with_timeout(name: String, query_timeout: u64) -> Vec<DnsSrvRecord> {
+            const QUERY_TIMEOUT: u64 = 1000;
+
+            async fn query_with_timeout(name: &str, query_timeout: u64) -> Vec<DnsSrvRecord> {
                 let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
-                let mut query = query_record(&name, Type::SRV);
+                let mut query = query_record(name, Type::SRV);
 
                 loop {
                     match timeout(Duration::from_millis(query_timeout), query.next()).await {
@@ -210,26 +209,7 @@ cfg_if::cfg_if! {
                 dns_records
             }
 
-            match runtime::Handle::try_current() {
-                Ok(handle) => {
-                    // Tokio runtime already exists, cannot block again on the same thread.
-                    // Spawn a new thread to run the blocking code.
-                    let name = name.to_owned();
-                    thread::spawn(move || {
-                        // Send the dns_records back to the main thread.
-                        handle.block_on(query_with_timeout(name, query_timeout))
-                    }).join().unwrap() // returns the vec of dns records
-                },
-                Err(err) => {
-                    if err.is_missing_context() {
-                        // No existing tokio runtime context, block on a new one.
-                        let rt = runtime::Builder::new_current_thread().enable_all().build().unwrap();
-                        return rt.block_on(query_with_timeout(name.to_owned(), query_timeout));
-                    }
-                    // ThreadLocalDestroyed error should never happen.
-                    panic!("Unexpected error when trying to get current runtime: {}", err);
-                }
-            }
+            execute_future(query_with_timeout(name, QUERY_TIMEOUT))
         }
 
         pub fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
@@ -254,7 +234,7 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature="dns_resolver")] {
-        use trust_dns_resolver::Resolver;
+        use trust_dns_resolver::TokioAsyncResolver;
         use trust_dns_resolver::system_conf::read_system_conf;
         use trust_dns_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
         use std::env;
@@ -293,7 +273,7 @@ cfg_if::cfg_if! {
             None
         }
 
-        fn get_trust_dns_resolver_from_name_servers(name_servers: Vec<String>) -> Option<Resolver> {
+        fn get_trust_dns_resolver_from_name_servers(name_servers: Vec<String>) -> Option<TokioAsyncResolver> {
             let mut resolver_config = ResolverConfig::new();
 
             for name_server_url in name_servers {
@@ -305,23 +285,23 @@ cfg_if::cfg_if! {
             let mut resolver_options = ResolverOpts::default();
             resolver_options.validate = false;
 
-            Resolver::new(resolver_config, resolver_options).ok()
+            TokioAsyncResolver::tokio(resolver_config, resolver_options).ok()
         }
 
         #[cfg(target_os="windows")]
-        fn get_trust_dns_resolver(domain: &str) -> Option<Resolver> {
+        fn get_trust_dns_resolver(domain: &str) -> Option<TokioAsyncResolver> {
             let name_servers = get_name_servers_for_domain(domain);
             get_trust_dns_resolver_from_name_servers(name_servers)
         }
 
         #[cfg(not(target_os="windows"))]
-        fn get_trust_dns_resolver(_domain: &str) -> Option<Resolver> {
+        fn get_trust_dns_resolver(_domain: &str) -> Option<TokioAsyncResolver> {
             if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
                 let name_servers: Vec<String> = name_server_list
                     .split(',').map(|c|c.trim().to_string()).filter(|x: &String| !x.is_empty()).collect();
                 get_trust_dns_resolver_from_name_servers(name_servers)
             } else if let Ok((resolver_config, resolver_options)) = read_system_conf() {
-                    Resolver::new(resolver_config, resolver_options).ok()
+                TokioAsyncResolver::tokio(resolver_config, resolver_options).ok()
             } else {
                 None
             }
@@ -331,7 +311,7 @@ cfg_if::cfg_if! {
             let mut kdc_hosts = Vec::new();
 
             if let Some(resolver) = get_trust_dns_resolver(domain) {
-                if let Ok(records) = resolver.srv_lookup(format!("_kerberos._tcp.{}", domain)) {
+                if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._tcp.{}", domain))) {
                     for record in records {
                         let port = record.port();
                         let target_name = record.target().to_string();
@@ -341,7 +321,7 @@ cfg_if::cfg_if! {
                     }
                 }
 
-                if let Ok(records) = resolver.srv_lookup(format!("_kerberos._udp.{}", domain)) {
+                if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._udp.{}", domain))) {
                     for record in records {
                         let port = record.port();
                         let target_name = record.target().to_string();
@@ -353,6 +333,34 @@ cfg_if::cfg_if! {
             }
 
             kdc_hosts
+        }
+    }
+}
+
+#[cfg(any(feature = "dns_resolver", target_os = "macos", target_os = "ios"))]
+fn execute_future<Fut>(fut: Fut) -> Fut::Output
+where
+    Fut: std::future::IntoFuture + Send,
+    Fut::Output: Send,
+{
+    use std::thread;
+    use tokio::runtime::{Builder, Handle};
+
+    match Handle::try_current() {
+        Ok(handle) => {
+            // Tokio runtime already exists, cannot block again on the same thread.
+            // Spawn a new thread to run the blocking code.
+            thread::scope(|s| s.spawn(move || handle.block_on(fut.into_future())).join().unwrap())
+        }
+        Err(err) => {
+            if err.is_missing_context() {
+                // No existing tokio runtime context, block on a new one.
+                let rt = Builder::new_current_thread().enable_all().build().unwrap();
+                return rt.block_on(fut.into_future());
+            }
+
+            // ThreadLocalDestroyed error should never happen.
+            panic!("Unexpected error when trying to get current runtime: {}", err);
         }
     }
 }
