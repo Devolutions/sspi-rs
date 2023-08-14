@@ -181,7 +181,7 @@ cfg_if::cfg_if! {
 
             async fn query_with_timeout(name: &str, query_timeout: u64) -> Vec<DnsSrvRecord> {
                 let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
-                let mut query = query_record(&name, Type::SRV);
+                let mut query = query_record(name, Type::SRV);
 
                 loop {
                     match timeout(Duration::from_millis(query_timeout), query.next()).await {
