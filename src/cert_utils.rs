@@ -88,11 +88,13 @@ pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Ve
 
 #[instrument(level = "trace", ret)]
 unsafe fn acquire_context(key_container_name: &str) -> Result<HCRYPTPROV> {
-    let container_name = key_container_name
+    let mut container_name = key_container_name
         .encode_utf16()
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>();
-    let csp_name = "Microsoft Base Smart Card Crypto Provider"
+    // add wire null char
+    container_name.extend_from_slice(&[0, 0]);
+    let csp_name = CSP_NAME
         .encode_utf16()
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>();
@@ -230,11 +232,15 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
             String::from_utf8(key_container_name.clone()),
             key_container_name
         );
-        // remove null byte
+        let mut key_container_name = String::from_utf8(key_container_name).unwrap();
+        // remove null char
         key_container_name.pop();
-        let key_container_name = String::from_utf8(key_container_name).unwrap();
 
-        let context = acquire_context(&key_container_name)?;
+        let context = if let Ok(context) = acquire_context(&key_container_name) {
+            context
+        } else {
+            continue;
+        };
 
         if let Ok(certificate) = get_key_container_certificate(context) {
             if certificate.tbs_certificate.serial_number.0 == cert_serial_number {
