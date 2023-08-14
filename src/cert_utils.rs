@@ -86,6 +86,7 @@ pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Ve
     Ok((raw_cert.to_vec(), picky_asn1_der::from_bytes(&raw_cert)?))
 }
 
+#[instrument(level = "trace", ret)]
 unsafe fn acquire_context(key_container_name: &str) -> Result<HCRYPTPROV> {
     let container_name = key_container_name
         .encode_utf16()
@@ -114,6 +115,7 @@ unsafe fn acquire_context(key_container_name: &str) -> Result<HCRYPTPROV> {
     Ok(crypt_context_handle)
 }
 
+#[instrument(level = "trace", ret)]
 unsafe fn get_reader_name(crypt_context_handle: HCRYPTPROV) -> Result<String> {
     let mut reader_buff_len = 0;
     if CryptGetProvParam(
@@ -146,6 +148,7 @@ unsafe fn get_reader_name(crypt_context_handle: HCRYPTPROV) -> Result<String> {
         .map_err(|_| Error::new(ErrorKind::InternalError, "reader name is not valid UTF-8 text"))
 }
 
+#[instrument(level = "trace", ret)]
 pub unsafe fn get_key_container_certificate(crypt_context_handle: HCRYPTPROV) -> Result<Certificate> {
     let mut key = HCRYPTKEY::default();
 
@@ -174,6 +177,7 @@ pub struct SmartCardInfo {
     pub certificate: Certificate,
 }
 
+#[instrument(level = "trace", ret)]
 pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardInfo> {
     let csp_name = CSP_NAME
         .encode_utf16()
@@ -261,6 +265,7 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
     Err(Error::new(ErrorKind::InternalError, "Cannot get smart card info"))
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_user_name_from_alt_name(certificate: &Certificate) -> Result<String> {
     let subject_alt_name_ext = &certificate
         .tbs_certificate
@@ -303,6 +308,7 @@ pub fn extract_user_name_from_alt_name(certificate: &Certificate) -> Result<Stri
     Ok(data.to_string())
 }
 
+#[instrument(level = "trace", ret)]
 pub fn extract_user_name_from_subject_name(certificate: &Certificate) -> Result<String> {
     let subject = &certificate.tbs_certificate.subject.0 .0;
     let subject_parts = subject
