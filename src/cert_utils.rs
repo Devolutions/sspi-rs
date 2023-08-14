@@ -177,6 +177,7 @@ pub struct SmartCardInfo {
     pub reader_name: String,
     pub csp_name: String,
     pub certificate: Certificate,
+    pub private_key_file_index: u8,
 }
 
 #[instrument(level = "trace", ret)]
@@ -203,6 +204,7 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
 
     let mut key_container_name_len = 0;
     let mut is_first = true;
+    let mut index = 1;
     loop {
         if CryptGetProvParam(
             crypt_context_handle,
@@ -261,8 +263,11 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
                     reader_name,
                     certificate,
                     csp_name,
+                    private_key_file_index: index,
                 });
             }
+
+            index += 1;
         }
 
         is_first = false;
