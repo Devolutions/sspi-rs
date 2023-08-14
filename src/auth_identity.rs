@@ -95,6 +95,8 @@ pub struct SmartCardIdentityBuffers {
     pub csp_name: Vec<u8>,
     /// UTF-16 encoded smart card PIN code
     pub pin: Secret<Vec<u8>>,
+    /// Private key file index
+    pub private_key_file_index: u8,
 }
 
 /// Represents data needed for smart card authentication
@@ -114,6 +116,8 @@ pub struct SmartCardIdentity {
     pub csp_name: String,
     /// ASCII encoded mart card PIN code
     pub pin: Secret<Vec<u8>>,
+    /// Private key file index
+    pub private_key_file_index: u8,
 }
 
 impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
@@ -132,6 +136,7 @@ impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
                 .flat_map(|v| v.to_be_bytes())
                 .collect(),
             csp_name: value.csp_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            private_key_file_index: value.private_key_file_index,
         })
     }
 }
@@ -148,6 +153,7 @@ impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
             card_name: utils::bytes_to_utf16_string(&value.card_name),
             container_name: utils::bytes_to_utf16_string(&value.container_name),
             csp_name: utils::bytes_to_utf16_string(&value.csp_name),
+            private_key_file_index: value.private_key_file_index,
         })
     }
 }
