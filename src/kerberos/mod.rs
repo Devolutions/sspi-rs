@@ -698,6 +698,7 @@ impl SspiImpl for Kerberos {
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
+                        let private_key_file_index = smart_card.private_key_file_index;
 
                         self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng::default())?);
 
@@ -711,7 +712,7 @@ impl SspiImpl for Kerberos {
                                 sha1.update(data_to_sign);
                                 let hash = sha1.finalize().to_vec();
 
-                                let smart_card = SmartCard::new(pin.clone(), &reader_name, 1)?;
+                                let smart_card = SmartCard::new(pin.clone(), &reader_name, private_key_file_index)?;
                                 smart_card.sign(hash)
                             }),
                             with_pre_auth: false,
