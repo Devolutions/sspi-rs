@@ -273,14 +273,11 @@ fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate
         user_hint: Optional::from(None),
         domain_hint: Optional::from(None),
     };
-    let ts_creds = TsCredentials {
-        cred_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
-        credentials: ExplicitContextTag1::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&smart_card_creds)?)),
-    };
 
-    Ok(picky_asn1_der::to_vec(&ts_creds)?)
+    Ok(picky_asn1_der::to_vec(&smart_card_creds)?)
 }
 
+#[instrument(level = "trace", ret)]
 pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: CredSspMode) -> crate::Result<Vec<u8>> {
     let (creds_type, encoded_credentials) = match credentials {
         CredentialsBuffers::AuthIdentity(creds) => {
@@ -294,7 +291,9 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
         credentials: ExplicitContextTag1::from(OctetStringAsn1::from(encoded_credentials)),
     };
 
-    Ok(picky_asn1_der::to_vec(&ts_creds)?)
+    let encoded_creds = picky_asn1_der::to_vec(&ts_creds)?;
+    debug!(?encoded_creds, "encodedtscreds");
+    Ok(encoded_creds)
 }
 
 #[instrument(ret)]
