@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, SmartCardIdentityBuffers, Secret};
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret, SmartCardIdentityBuffers};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -243,7 +243,8 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         let password = raw_str_into_bytes(
             (*auth_data).password as *const _,
             (*auth_data).password_length as usize * 2,
-        ).into();
+        )
+        .into();
 
         // only marshaled smart card creds starts with '@' char
         #[cfg(feature = "scard")]
@@ -262,7 +263,8 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         let password = raw_str_into_bytes(
             (*auth_data).password as *const _,
             (*auth_data).password_length as usize * 2,
-        ).into();
+        )
+        .into();
 
         // only marshaled smart card creds starts with '@' char
         #[cfg(feature = "scard")]
@@ -311,7 +313,6 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::Secret;
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -398,7 +399,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 
 #[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
-unsafe fn handle_smart_card_creds(username: Vec<u8>, mut password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
+unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
@@ -438,6 +439,7 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, mut password: Secret<Vec<u8
         reader_name,
         certificate: _,
         csp_name,
+        private_key_file_index,
     } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
@@ -448,6 +450,7 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, mut password: Secret<Vec<u8
         card_name,
         container_name: str_to_utf16_bytes(key_container_name),
         csp_name: str_to_utf16_bytes(csp_name),
+        private_key_file_index,
     });
     warn!(creds = ?creds);
 
