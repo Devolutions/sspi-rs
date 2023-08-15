@@ -112,6 +112,7 @@ use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
+pub use utils::string_to_utf16;
 
 pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers, Credentials};
 use self::builders::{
@@ -1022,7 +1023,7 @@ pub trait SspiEx
 where
     Self: Sized + SspiImpl,
 {
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
 }
 
 pub type SspiPackage<'a, CredsHandle, AuthData> =
