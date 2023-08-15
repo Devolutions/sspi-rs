@@ -92,7 +92,7 @@ unsafe fn acquire_context(key_container_name: &str) -> Result<HCRYPTPROV> {
         .encode_utf16()
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>();
-    // add wire null char
+    // add wide null char
     container_name.extend_from_slice(&[0, 0]);
     let csp_name = CSP_NAME
         .encode_utf16()
@@ -241,6 +241,7 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
         let context = if let Ok(context) = acquire_context(&key_container_name) {
             context
         } else {
+            index += 1;
             continue;
         };
 
@@ -266,10 +267,9 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
                     private_key_file_index: index,
                 });
             }
-
-            index += 1;
         }
 
+        index += 1;
         is_first = false;
     }
 
