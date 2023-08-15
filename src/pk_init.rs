@@ -60,11 +60,13 @@ pub struct Wrapper<T> {
     pub content: ExplicitContextTag0<T>,
 }
 
+pub type SignDataFn = Box<dyn Fn(&[u8]) -> Result<Vec<u8>>>;
+
 pub struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,
     pub kdc_req_body: &'a KdcReqBody,
     pub dh_parameters: DhParameters,
-    pub sign_data: Box<dyn Fn(&[u8]) -> Result<Vec<u8>>>,
+    pub sign_data: SignDataFn,
     pub with_pre_auth: bool,
     pub authenticator_nonce: [u8; 4],
 }
