@@ -300,6 +300,11 @@ impl SspiImpl for SspiCredSsp {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         trace!(?builder);
+        // In the CredSSP we always set DELEGATE flag
+        //
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7
+        // The CredSSP Protocol enables an application to securely delegate a user's credentials from a client to a target server.
+        builder.context_requirements |= ClientRequestFlags::DELEGATE;
 
         let status = match &self.state {
             CredSspState::Tls => {
@@ -476,7 +481,9 @@ impl SspiImpl for SspiCredSsp {
 
 impl SspiEx for SspiCredSsp {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.try_into().unwrap());
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
+        self.auth_identity = Some(identity.try_into()?);
+
+        Ok(())
     }
 }

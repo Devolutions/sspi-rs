@@ -5,14 +5,24 @@ use core::fmt;
 use std::io::{self, Read};
 
 use picky_asn1::wrapper::{
-    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4,
-    IntegerAsn1, OctetStringAsn1, Optional,
+    ExplicitContextTag0, ExplicitContextTag1,
+    IntegerAsn1, OctetStringAsn1,
 };
-use picky_krb::constants::cred_ssp::{AT_KEYEXCHANGE, TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
-use picky_krb::credssp::{TsCredentials, TsCspDataDetail, TsPasswordCreds, TsSmartCardCreds};
+#[cfg(feature = "scard")]
+use picky_asn1::wrapper::{
+    ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional,
+};
+use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
+#[cfg(feature = "scard")]
+use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
+use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
+#[cfg(feature = "scard")]
+use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
 
 use super::CredSspMode;
-use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, SmartCardIdentityBuffers};
+use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
+#[cfg(feature = "scard")]
+use crate::SmartCardIdentityBuffers;
 
 pub const TS_REQUEST_VERSION: u32 = 6;
 
@@ -252,6 +262,7 @@ impl TsRequest {
 }
 
 #[instrument(ret)]
+#[cfg(feature = "scard")]
 fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
@@ -286,6 +297,7 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
         CredentialsBuffers::AuthIdentity(creds) => {
             (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
         }
+        #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(creds) => (TS_SMART_CARD_CREDS, write_smart_card_credentials(creds)?),
     };
 
@@ -294,9 +306,7 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
         credentials: ExplicitContextTag1::from(OctetStringAsn1::from(encoded_credentials)),
     };
 
-    let encoded_creds = picky_asn1_der::to_vec(&ts_creds)?;
-    debug!(?encoded_creds, "encodedtscreds");
-    Ok(encoded_creds)
+    Ok(picky_asn1_der::to_vec(&ts_creds)?)
 }
 
 #[instrument(ret)]
