@@ -380,7 +380,7 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    // #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
@@ -520,7 +520,7 @@ impl SspiImpl for Pku2u {
                     with_pre_auth: true,
                     authenticator_nonce: Default::default(),
                 })?;
-                let as_req = generate_as_req(&pa_datas, kdc_req_body);
+                let as_req = generate_as_req(pa_datas, kdc_req_body);
 
                 let exchange_data = picky_asn1_der::to_vec(&generate_neg(as_req, AS_REQ_TOKEN_ID))?;
                 self.gss_api_messages.extend_from_slice(&exchange_data);
