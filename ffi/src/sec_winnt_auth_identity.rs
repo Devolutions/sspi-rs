@@ -443,7 +443,7 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
         certificate: raw_certificate,
         reader_name: str_to_utf16_bytes(reader_name),
-        pin: password.into(),
+        pin: password,
         username,
         card_name: None,
         container_name: str_to_utf16_bytes(key_container_name),
