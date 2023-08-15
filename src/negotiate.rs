@@ -289,15 +289,27 @@ impl Negotiate {
 
 impl SspiEx for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
         self.auth_identity = Some(identity.clone().try_into().unwrap());
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
-                pku2u.custom_set_auth_identity(identity.auth_identity().unwrap())
-            },
+                pku2u.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IncompleteCredentials,
+                        "Provided credentials are not password-based",
+                    )
+                })?)
+            }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity.auth_identity().unwrap()),
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                ntlm.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IncompleteCredentials,
+                        "Provided credentials are not password-based",
+                    )
+                })?)
+            }
         }
     }
 }
@@ -500,7 +512,7 @@ impl SspiImpl for Negotiate {
         }
     }
 
-    // #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
