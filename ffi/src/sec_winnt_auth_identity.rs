@@ -158,25 +158,6 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
-// todo: refactor: delete this function and use corresponding a/w function in the `sec_handle` module
-// motivation: `(auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0` gives `false` for passed smart card credentials in the w function
-pub unsafe fn auth_data_to_identity_buffers(
-    security_package_name: &str,
-    p_auth_data: *const c_void,
-    package_list: &mut Option<String>,
-) -> Result<CredentialsBuffers> {
-    let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
-
-    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
-        warn!("auth data to identity buffers w");
-    } else {
-        warn!("auth data to identity buffers a");
-        // auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
-    }
-
-    auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
-}
-
 pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
@@ -403,19 +384,16 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     use std::ptr::null_mut;
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
+    use sspi::string_to_utf16;
     use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
-
-    use crate::utils::str_to_utf16_bytes;
 
     let mut cred_type = 0;
     let mut credential = null_mut();
 
-    // all wide null char
+    // add wide null char
     username.extend_from_slice(&[0, 0]);
 
-    let result = CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential);
-
-    if result == 0 {
+    if CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) == 0 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "Cannot unmarshal smart card credentials",
@@ -425,7 +403,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     if cred_type != CertCredential {
         return Err(Error::new(
             ErrorKind::NoCredentials,
-            "Unmarshalled credentials is not CRED_MARSHAL_TYPE::CertCredential",
+            "Unmarshalled smart card credentials is not CRED_MARSHAL_TYPE::CertCredential",
         ));
     }
 
@@ -434,7 +412,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     let (raw_certificate, certificate) =
         sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
 
-    let username = str_to_utf16_bytes(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
+    let username = string_to_utf16(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
     let SmartCardInfo {
         key_container_name,
         reader_name,
@@ -445,15 +423,14 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
         certificate: raw_certificate,
-        reader_name: str_to_utf16_bytes(reader_name),
+        reader_name: string_to_utf16(reader_name),
         pin: password,
         username,
         card_name: None,
-        container_name: str_to_utf16_bytes(key_container_name),
-        csp_name: str_to_utf16_bytes(csp_name),
-        private_key_file_index,
+        container_name: string_to_utf16(key_container_name),
+        csp_name: string_to_utf16(csp_name),
+        private_key_file_index: Some(private_key_file_index),
     });
-    warn!(creds = ?creds);
 
     Ok(creds)
 }
