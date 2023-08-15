@@ -508,7 +508,7 @@ impl SspiImpl for Negotiate {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
                 let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().map(|c| c.clone().auth_identity()).flatten()
+                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
                 } else {
                     None
                 };
@@ -518,7 +518,7 @@ impl SspiImpl for Negotiate {
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
                 let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().map(|c| c.clone().auth_identity()).flatten()
+                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
                 } else {
                     None
                 };
