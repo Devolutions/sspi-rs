@@ -450,7 +450,7 @@ impl Sspi for Kerberos {
             cname_type,
             snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
             // 4 = size of u32
-            nonce: &OsRng::default().gen::<[u8; 4]>(),
+            nonce: &OsRng.gen::<[u8; 4]>(),
             hostname: &hostname,
             context_requirements: ClientRequestFlags::empty(),
         };
@@ -676,7 +676,7 @@ impl SspiImpl for Kerberos {
                     cname_type,
                     snames: &[TGT_SERVICE_NAME, &realm],
                     // 4 = size of u32
-                    nonce: &OsRng::default().gen::<[u8; 4]>(),
+                    nonce: &OsRng.gen::<[u8; 4]>(),
                     hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
                     context_requirements: builder.context_requirements,
                 };
@@ -700,7 +700,7 @@ impl SspiImpl for Kerberos {
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
                         let private_key_file_index = smart_card.private_key_file_index;
 
-                        self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng::default())?);
+                        self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
 
                         AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
                             p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
