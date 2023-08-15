@@ -432,8 +432,6 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) 
         sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
 
     let username = str_to_utf16_bytes(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
-    // test credentials
-    let card_name = str_to_utf16_bytes("VSCtest");
     let SmartCardInfo {
         key_container_name,
         reader_name,
@@ -447,7 +445,7 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) 
         reader_name: str_to_utf16_bytes(reader_name),
         pin: password.into(),
         username,
-        card_name,
+        card_name: None,
         container_name: str_to_utf16_bytes(key_container_name),
         csp_name: str_to_utf16_bytes(csp_name),
         private_key_file_index,
