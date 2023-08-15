@@ -257,9 +257,12 @@ fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
             key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![AT_KEYEXCHANGE])),
-            card_name: Optional::from(Some(ExplicitContextTag1::from(OctetStringAsn1::from(
-                credentials.card_name.clone(),
-            )))),
+            card_name: Optional::from(
+                credentials
+                    .card_name
+                    .clone()
+                    .map(|name| ExplicitContextTag1::from(OctetStringAsn1::from(name))),
+            ),
             reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
                 credentials.reader_name.clone(),
             )))),
