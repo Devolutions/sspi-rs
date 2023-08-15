@@ -19,9 +19,12 @@ pub struct AcquireCredentialsHandleResult<C> {
 }
 
 // we cannot replace it with the `From` trait implementation due to conflict with blanked impl in the std
-impl<T>  AcquireCredentialsHandleResult<T> {
-    pub fn transform<T2>(self, transformer: &dyn Fn(T) -> T2) -> AcquireCredentialsHandleResult<T2> {
-        let Self { credentials_handle, expiry } = self;
+impl<T> AcquireCredentialsHandleResult<T> {
+    pub fn transform_credentials_handle<T2>(self, transformer: &dyn Fn(T) -> T2) -> AcquireCredentialsHandleResult<T2> {
+        let Self {
+            credentials_handle,
+            expiry,
+        } = self;
         AcquireCredentialsHandleResult {
             credentials_handle: transformer(credentials_handle),
             expiry,
