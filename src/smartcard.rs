@@ -106,8 +106,11 @@ impl SmartCard {
                 )?;
                 // the last two bytes is status bytes
                 let output_len = output.len();
-                if &output[output_len - 2..] != APDU_RESPONSE_OK {
-                    return Err(Error::new(ErrorKind::InternalError, format!("error: {:?} != {:?}", output, APDU_RESPONSE_OK)))
+                if output[output_len - 2..] != APDU_RESPONSE_OK {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("Smart card error: {:?} != {:?}", output, APDU_RESPONSE_OK),
+                    ));
                 }
 
                 // the last two bytes is status bytes
