@@ -399,7 +399,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 
 #[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
-unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
+unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
@@ -409,6 +409,9 @@ unsafe fn handle_smart_card_creds(username: Vec<u8>, password: Secret<Vec<u8>>) 
 
     let mut cred_type = 0;
     let mut credential = null_mut();
+
+    // all wide null char
+    username.extend_from_slice(&[0, 0]);
 
     let result = CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential);
 
