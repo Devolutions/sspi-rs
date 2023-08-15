@@ -232,7 +232,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
 }
 
 #[instrument(level = "debug", ret, skip_all)]
-pub fn generate_as_req(pa_datas: &[PaData], kdc_req_body: KdcReqBody) -> AsReq {
+pub fn generate_as_req(pa_datas: Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq {
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),

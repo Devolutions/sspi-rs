@@ -61,6 +61,7 @@ impl AsReqPaDataOptions<'_> {
 
 // ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to extract session key from the AsRep.
+#[derive(Debug)]
 pub enum AsRepSessionKeyExtractor<'a> {
     AuthIdentity {
         salt: &'a str,
@@ -75,6 +76,7 @@ pub enum AsRepSessionKeyExtractor<'a> {
 }
 
 impl AsRepSessionKeyExtractor<'_> {
+    #[instrument(level = "trace", ret)]
     pub fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
         match self {
             AsRepSessionKeyExtractor::AuthIdentity {

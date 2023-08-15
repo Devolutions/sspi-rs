@@ -49,14 +49,15 @@ use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
 use crate::network_client::NetworkProtocol;
-use crate::pk_init::DhParameters;
+#[cfg(feature = "scard")]
+use crate::pk_init::{self, DhParameters};
 #[cfg(feature = "scard")]
 use crate::pku2u::generate_client_dh_parameters;
 #[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
-    check_if_empty, detect_kdc_url, pk_init, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
+    check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
     CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
     PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
@@ -113,8 +114,7 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
-    // uses in the smart card logon. Otherwise, always None.
-    #[allow(dead_code)]
+    #[cfg(feature = "scard")]
     dh_parameters: Option<DhParameters>,
 }
 
@@ -131,6 +131,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
         })
     }
@@ -147,6 +148,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
         })
     }
@@ -231,7 +233,7 @@ impl Kerberos {
     pub fn as_exchange(&mut self, kdc_req_body: &KdcReqBody, mut pa_data_options: AsReqPaDataOptions) -> Result<AsRep> {
         pa_data_options.with_pre_auth(false);
         let pa_datas = pa_data_options.generate()?;
-        let as_req = generate_as_req(&pa_datas, kdc_req_body.clone());
+        let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -257,7 +259,7 @@ impl Kerberos {
         pa_data_options.with_pre_auth(true);
         let pa_datas = pa_data_options.generate()?;
 
-        let as_req = generate_as_req(&pa_datas, kdc_req_body.clone());
+        let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
 
         let response = self.send(&serialize_message(&as_req)?)?;
 
@@ -407,16 +409,22 @@ impl Sspi for Kerberos {
     fn query_context_names(&mut self) -> Result<ContextNames> {
         if let Some(CredentialsBuffers::AuthIdentity(ref identity_buffers)) = self.auth_identity {
             let identity: AuthIdentity = identity_buffers.clone().into();
-            Ok(ContextNames {
+            return Ok(ContextNames {
                 username: identity.username,
                 domain: identity.domain,
-            })
-        } else {
-            Err(crate::Error::new(
-                crate::ErrorKind::NoCredentials,
-                String::from("Requested Names, but no credentials were provided"),
-            ))
+            });
         }
+        #[cfg(feature = "scard")]
+        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
+            return Ok(ContextNames {
+                username: utf16_bytes_to_utf8_string(&identity_buffers.username),
+                domain: None,
+            });
+        }
+        Err(crate::Error::new(
+            crate::ErrorKind::NoCredentials,
+            String::from("Requested Names, but no credentials were provided"),
+        ))
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
@@ -574,7 +582,7 @@ impl SspiImpl for Kerberos {
         })
     }
 
-    // #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
@@ -583,16 +591,13 @@ impl SspiImpl for Kerberos {
 
         let status = match self.state {
             KerberosState::Negotiate => {
-                warn!(target_name = builder.target_name);
-                let (service_name, service_principal_name) =
+                let (service_name, _service_principal_name) =
                     parse_target_name(builder.target_name.ok_or_else(|| {
                         Error::new(
                             ErrorKind::NoCredentials,
                             "Service target name (service principal name) is not provided",
                         )
                     })?)?;
-
-                warn!(service_name = service_name);
 
                 let (username, service_name) = match check_if_empty!(
                     builder.credentials_handle.as_ref().unwrap().as_ref(),
@@ -605,13 +610,12 @@ impl SspiImpl for Kerberos {
                         (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                     }
                     #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(_) => (service_principal_name.into(), service_name),
+                    CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
                 };
-                info!(username, service_name);
+                debug!(username, service_name);
 
                 let encoded_neg_token_init =
                     picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
-                warn!(token = ?encoded_neg_token_init, "Encoded token:");
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
@@ -650,7 +654,6 @@ impl SspiImpl for Kerberos {
                         let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref());
 
                         let realm = get_client_principal_realm(&username, &domain);
-
                         let cname_type = get_client_principal_name_type(&username, &domain);
 
                         (username, password, realm, cname_type)
@@ -667,9 +670,7 @@ impl SspiImpl for Kerberos {
                     }
                 };
                 self.realm = Some(realm.clone());
-                warn!(hostname = ?self.config.hostname);
 
-                builder.context_requirements |= ClientRequestFlags::DELEGATE;
                 let options = GenerateAsReqOptions {
                     realm: &realm,
                     username: &username,
@@ -712,12 +713,12 @@ impl SspiImpl for Kerberos {
                                 sha1.update(data_to_sign);
                                 let hash = sha1.finalize().to_vec();
 
-                                let smart_card = SmartCard::new(pin.clone(), &reader_name, private_key_file_index)?;
+                                let smart_card =
+                                    SmartCard::new(pin.clone(), &reader_name, private_key_file_index.unwrap_or(1))?;
                                 smart_card.sign(hash)
                             }),
                             with_pre_auth: false,
-                            // for testing. the random value should be here
-                            authenticator_nonce: [0x59, 0x58, 0x7a, 0xfc],
+                            authenticator_nonce: OsRng.gen::<[u8; 4]>(),
                         }))
                     }
                 };
@@ -756,7 +757,6 @@ impl SspiImpl for Kerberos {
                     },
                 };
                 let session_key_1 = session_key_extractor.session_key(&as_rep)?;
-                info!(?session_key_1, "Calculated session key:");
 
                 let service_principal = builder.target_name.ok_or_else(|| {
                     Error::new(
@@ -799,8 +799,6 @@ impl SspiImpl for Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
-                info!(channel_bindings = ?self.channel_bindings);
-
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
                     seq_num: Some(seq_num),
@@ -842,8 +840,6 @@ impl SspiImpl for Kerberos {
 
                 let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
 
-                info!(ap_req = ?encoded_neg_ap_req);
-
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
@@ -869,8 +865,6 @@ impl SspiImpl for Kerberos {
                 )?;
 
                 self.encryption_params.sub_session_key = Some(sub_session_key);
-
-                info!("Sub-session key from the AP_REP successfully extracted");
 
                 if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
                     validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
@@ -1014,6 +1008,7 @@ mod tests {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
         };
 
@@ -1036,6 +1031,7 @@ mod tests {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
         };
 
