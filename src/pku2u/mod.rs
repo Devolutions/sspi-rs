@@ -381,9 +381,9 @@ impl SspiImpl for Pku2u {
     }
 
     // #[instrument(ret, fields(state = ?self.state), skip_all)]
-    fn initialize_security_context_impl<'a>(
+    fn initialize_security_context_impl(
         &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
