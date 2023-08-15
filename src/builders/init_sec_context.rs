@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::mem;
 
 use chrono::NaiveDateTime;
 
@@ -93,9 +94,9 @@ impl<
             credentials_handle,
             context_requirements: self.context_requirements,
             target_data_representation: self.target_data_representation,
-            output: std::mem::take(&mut self.output),
-            target_name: self.target_name.clone(),
-            input: std::mem::take(&mut self.input),
+            output: mem::take(&mut self.output),
+            target_name: self.target_name,
+            input: mem::take(&mut self.input),
         }
     }
 }
