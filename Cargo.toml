@@ -21,7 +21,7 @@ exclude = [
 ]
 
 [features]
-default = ["scard", "tsssp"]
+default = []
 network_client = ["dep:reqwest", "dep:portpicker"]
 dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement
@@ -80,3 +80,4 @@ tokio = { version = "1.1", features = ["time", "rt"] }
 [dev-dependencies]
 static_assertions = "1.1"
 whoami = "0.5"
+picky = { path = "../picky-rs/picky", features = ["x509"] }
