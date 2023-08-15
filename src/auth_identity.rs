@@ -96,7 +96,8 @@ pub struct SmartCardIdentityBuffers {
     /// UTF-16 encoded smart card PIN code
     pub pin: Secret<Vec<u8>>,
     /// Private key file index
-    pub private_key_file_index: u8,
+    /// This value is used for the APDU message generation
+    pub private_key_file_index: Option<u8>,
 }
 
 /// Represents data needed for smart card authentication
@@ -117,7 +118,8 @@ pub struct SmartCardIdentity {
     /// ASCII encoded mart card PIN code
     pub pin: Secret<Vec<u8>>,
     /// Private key file index
-    pub private_key_file_index: u8,
+    /// This value is used for the APDU message generation
+    pub private_key_file_index: Option<u8>,
 }
 
 impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
@@ -126,18 +128,12 @@ impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
     fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
         Ok(Self {
             certificate: picky_asn1_der::to_vec(&value.certificate)?,
-            reader_name: value.reader_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            reader_name: utils::string_to_utf16(value.reader_name),
             pin: value.pin.as_ref().clone().into(),
-            username: value.username.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
-            card_name: value
-                .card_name
-                .map(|name| name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect()),
-            container_name: value
-                .container_name
-                .encode_utf16()
-                .flat_map(|v| v.to_be_bytes())
-                .collect(),
-            csp_name: value.csp_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            username: utils::string_to_utf16(value.username),
+            card_name: value.card_name.map(utils::string_to_utf16),
+            container_name: utils::string_to_utf16(value.container_name),
+            csp_name: utils::string_to_utf16(value.csp_name),
             private_key_file_index: value.private_key_file_index,
         })
     }
