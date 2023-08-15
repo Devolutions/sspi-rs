@@ -93,6 +93,8 @@ mod dns;
 mod kdc;
 mod krb;
 mod secret;
+#[cfg(feature = "scard")]
+mod smartcard;
 mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]

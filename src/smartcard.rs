@@ -22,22 +22,26 @@ impl fmt::Debug for SmartCardApi {
 pub struct SmartCard {
     smart_card_type: SmartCardApi,
     pin: Vec<u8>,
+    private_key_file_index: u8,
 }
 
 impl SmartCard {
-    pub fn new(pin: Vec<u8>, scard_reader_name: &str) -> Result<Self> {
+    pub fn new(pin: Vec<u8>, scard_reader_name: &str, private_key_file_index: u8) -> Result<Self> {
         let context = Context::establish(Scope::User)?;
         let readers_len = context.list_readers_len()?;
         let mut buff = vec![0_u8; readers_len];
         let mut names = context.list_readers(&mut buff)?;
-        
-        let reader_name = names.find(|reader_name| reader_name.to_bytes() == scard_reader_name.as_bytes()).ok_or_else(|| Error::new(ErrorKind::InternalError, "Provided smart card reader does not exist.".to_owned()))?;
+
+        let reader_name = names
+            .find(|reader_name| reader_name.to_bytes() == scard_reader_name.as_bytes())
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Requested smart card reader does not exist."))?;
 
         let scard = context.connect(reader_name, ShareMode::Shared, Protocols::T1)?;
 
         Ok(Self {
             smart_card_type: SmartCardApi::WinSCard(scard),
             pin,
+            private_key_file_index
         })
     }
 
@@ -87,11 +91,19 @@ impl SmartCard {
                 let output = scard.transmit(
                     &[
                         // apdu header
-                        0x00, 0x22, 0x41, 0xb6,
+                        0x00,
+                        0x22,
+                        0x41,
+                        0xb6,
                         // data len
                         0x06,
                         // data
-                        0x80, 0x01, 0x57, 0x84, 0x01, 0x81,
+                        0x80,
+                        0x01,
+                        0x57,
+                        0x84,
+                        0x01,
+                        0x80 + self.private_key_file_index,
                     ],
                     &mut result_buff,
                 )?;
@@ -151,16 +163,4 @@ fn build_data_sign_apdu(data_to_sign: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     sign_data_apdu.extend_from_slice(&[0x00, 0x00]);
 
     Ok(sign_data_apdu)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::SmartCard;
-
-    #[test]
-    fn run() {
-        let smart_card = SmartCard::new(b"214653214653".to_vec(), "Microsoft Virtual Smart Card 0").unwrap();
-        let signature = smart_card.sign(&[50, 20, 189, 215, 165, 228, 45, 66, 25, 95, 136, 194, 197, 202, 99, 190, 87, 13, 179, 10]).unwrap();
-        println!("{:?}", signature);
-    }
 }
