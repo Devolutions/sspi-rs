@@ -503,11 +503,14 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                                 .map_err(|e| crate::Error::new(crate::ErrorKind::LogonDenied, e.to_string())),
                             ts_request
                         );
-                        self.context
-                            .as_mut()
-                            .unwrap()
-                            .sspi_context
-                            .custom_set_auth_identity(Credentials::AuthIdentity(auth_data));
+                        try_cred_ssp_server!(
+                            self.context
+                                .as_mut()
+                                .unwrap()
+                                .sspi_context
+                                .custom_set_auth_identity(Credentials::AuthIdentity(auth_data)),
+                            ts_request
+                        );
 
                         try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
@@ -607,8 +610,13 @@ impl SspiImpl for SspiContext {
                 } else {
                     return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
                 };
-                builder.full_transform(ntlm, Some(auth_identity)).execute()?.transform(&|a: Option<AuthIdentityBuffers>| a.map(|c| CredentialsBuffers::AuthIdentity(c)))
-            },
+                builder
+                    .full_transform(ntlm, Some(auth_identity))
+                    .execute()?
+                    .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
+                        a.map(CredentialsBuffers::AuthIdentity)
+                    })
+            }
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute()?,
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute()?,
             SspiContext::Pku2u(pku2u) => {
@@ -617,8 +625,13 @@ impl SspiImpl for SspiContext {
                 } else {
                     return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
                 };
-                builder.full_transform(pku2u, Some(auth_identity)).execute()?.transform(&|a: Option<AuthIdentityBuffers>| a.map(|c| CredentialsBuffers::AuthIdentity(c)))
-            },
+                builder
+                    .full_transform(pku2u, Some(auth_identity))
+                    .execute()?
+                    .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
+                        a.map(CredentialsBuffers::AuthIdentity)
+                    })
+            }
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => builder.transform(credssp).execute()?,
         })
@@ -841,17 +854,23 @@ impl Sspi for SspiContext {
 }
 
 impl SspiEx for SspiContext {
-    #[instrument(level = "trace", ret, fields(security_package = self.package_name()), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+    // #[instrument(level = "trace", ret, fields(security_package = self.package_name()), skip(self))]
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
         match self {
-            SspiContext::Ntlm(ntlm) => {
-                ntlm.custom_set_auth_identity(identity.auth_identity().unwrap())
-            },
+            SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IncompleteCredentials,
+                    "Provided credentials are not password-based",
+                )
+            })?),
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
             SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identity(identity),
-            SspiContext::Pku2u(pku2u) => {
-                pku2u.custom_set_auth_identity(identity.auth_identity().unwrap())
-            },
+            SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::IncompleteCredentials,
+                    "Provided credentials are not password-based",
+                )
+            })?),
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => credssp.custom_set_auth_identity(identity),
         }
