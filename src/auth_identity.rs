@@ -86,7 +86,7 @@ pub struct SmartCardIdentityBuffers {
     /// DER-encoded X509 certificate
     pub certificate: Vec<u8>,
     /// UTF-16 encoded smart card name
-    pub card_name: Vec<u8>,
+    pub card_name: Option<Vec<u8>>,
     /// UTF-16 encoded smart card reader name
     pub reader_name: Vec<u8>,
     /// UTF-16 encoded smart card key container name
@@ -109,7 +109,7 @@ pub struct SmartCardIdentity {
     /// Smart card reader name
     pub reader_name: String,
     /// Smart card name
-    pub card_name: String,
+    pub card_name: Option<String>,
     /// Smart card key container name
     pub container_name: String,
     /// Smart card CSP name
@@ -129,7 +129,9 @@ impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
             reader_name: value.reader_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
             pin: value.pin.as_ref().clone().into(),
             username: value.username.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
-            card_name: value.card_name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect(),
+            card_name: value
+                .card_name
+                .map(|name| name.encode_utf16().flat_map(|v| v.to_be_bytes()).collect()),
             container_name: value
                 .container_name
                 .encode_utf16()
@@ -150,7 +152,7 @@ impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
             reader_name: utils::bytes_to_utf16_string(&value.reader_name),
             pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
             username: utils::bytes_to_utf16_string(&value.username),
-            card_name: utils::bytes_to_utf16_string(&value.card_name),
+            card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
             container_name: utils::bytes_to_utf16_string(&value.container_name),
             csp_name: utils::bytes_to_utf16_string(&value.csp_name),
             private_key_file_index: value.private_key_file_index,
