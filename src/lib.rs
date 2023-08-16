@@ -86,6 +86,7 @@ pub mod winapi;
 
 mod auth_identity;
 mod ber;
+pub mod cert_utils;
 mod crypto;
 mod dns;
 mod kdc;
@@ -112,7 +113,7 @@ use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, CredentialsBuffers, SmartCardIdentity, Credentials};
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers, Credentials};
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
     EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,

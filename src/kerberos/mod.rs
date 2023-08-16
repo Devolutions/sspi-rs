@@ -1,4 +1,3 @@
-mod cert_utils;
 pub mod client;
 pub mod config;
 mod encryption_params;
