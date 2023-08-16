@@ -489,7 +489,7 @@ impl SspiImpl for Negotiate {
                         .map(NtlmConfig::new)
                         .unwrap_or_default();
                     self.protocol =
-                        NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone().map(|c| c.auth_identity()).flatten(), ntlm_config));
+                        NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone().and_then(|c| c.auth_identity()), ntlm_config));
                 }
                 result => return result,
             };
@@ -497,14 +497,14 @@ impl SspiImpl for Negotiate {
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
-                let mut credentials_handle = self.auth_identity.as_mut().map(|c| c.clone().auth_identity()).flatten();
+                let mut credentials_handle = self.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
                 let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                 pku2u.initialize_security_context_impl(&mut transformed_builder)
             },
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
-                let mut credentials_handle = self.auth_identity.as_mut().map(|c| c.clone().auth_identity()).flatten();
+                let mut credentials_handle = self.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
                 let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                 ntlm.initialize_security_context_impl(&mut transformed_builder)

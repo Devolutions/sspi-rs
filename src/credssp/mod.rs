@@ -271,7 +271,7 @@ impl CredSspClient {
                 )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take().map(|c| CredentialsBuffers::AuthIdentity(c));
+                let mut credentials_handle = self.credentials_handle.take().map(CredentialsBuffers::AuthIdentity);
                 let cred_ssp_context = self.context.as_mut().unwrap();
                 let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
@@ -474,7 +474,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take().map(|a| CredentialsBuffers::AuthIdentity(a));
+                let mut credentials_handle = self.credentials_handle.take().map(CredentialsBuffers::AuthIdentity);
                 match try_cred_ssp_server!(
                     self.context
                         .as_mut()

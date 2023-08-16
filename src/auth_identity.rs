@@ -1,6 +1,5 @@
 use std::fmt;
 
-use picky_asn1_x509::Certificate;
 use serde::{Deserialize, Serialize};
 
 use crate::{utils, Secret, Error};
@@ -77,84 +76,93 @@ impl From<AuthIdentityBuffers> for AuthIdentity {
     }
 }
 
-/// Represents raw data needed for smart card authentication
 #[cfg(feature = "scard")]
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct SmartCardIdentityBuffers {
-    /// UTF-16 encoded username
-    pub username: Vec<u8>,
-    /// DER-encoded X509 certificate
-    pub certificate: Vec<u8>,
-    /// UTF-16 encoded smart card name
-    pub card_name: Option<Vec<u8>>,
-    /// UTF-16 encoded smart card reader name
-    pub reader_name: Vec<u8>,
-    /// UTF-16 encoded smart card key container name
-    pub container_name: Vec<u8>,
-    /// UTF-16 encoded smart card CSP name
-    pub csp_name: Vec<u8>,
-    /// UTF-16 encoded smart card PIN code
-    pub pin: Secret<Vec<u8>>,
-    /// Private key file index
-    /// This value is used for the APDU message generation
-    pub private_key_file_index: Option<u8>,
-}
+mod scard_credentials {
+    use picky_asn1_x509::Certificate;
 
-/// Represents data needed for smart card authentication
-#[derive(Debug, Clone, PartialEq)]
-pub struct SmartCardIdentity {
-    /// Username
-    pub username: String,
-    /// X509 certificate
-    pub certificate: Certificate,
-    /// Smart card reader name
-    pub reader_name: String,
-    /// Smart card name
-    pub card_name: Option<String>,
-    /// Smart card key container name
-    pub container_name: String,
-    /// Smart card CSP name
-    pub csp_name: String,
-    /// ASCII encoded mart card PIN code
-    pub pin: Secret<Vec<u8>>,
-    /// Private key file index
-    /// This value is used for the APDU message generation
-    pub private_key_file_index: Option<u8>,
-}
+    use crate::{Secret, Error, utils};
 
-impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
-    type Error = Error;
+    /// Represents raw data needed for smart card authentication
+    #[derive(Clone, Eq, PartialEq, Debug)]
+    pub struct SmartCardIdentityBuffers {
+        /// UTF-16 encoded username
+        pub username: Vec<u8>,
+        /// DER-encoded X509 certificate
+        pub certificate: Vec<u8>,
+        /// UTF-16 encoded smart card name
+        pub card_name: Option<Vec<u8>>,
+        /// UTF-16 encoded smart card reader name
+        pub reader_name: Vec<u8>,
+        /// UTF-16 encoded smart card key container name
+        pub container_name: Vec<u8>,
+        /// UTF-16 encoded smart card CSP name
+        pub csp_name: Vec<u8>,
+        /// UTF-16 encoded smart card PIN code
+        pub pin: Secret<Vec<u8>>,
+        /// Private key file index
+        /// This value is used for the APDU message generation
+        pub private_key_file_index: Option<u8>,
+    }
 
-    fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
-        Ok(Self {
-            certificate: picky_asn1_der::to_vec(&value.certificate)?,
-            reader_name: utils::string_to_utf16(value.reader_name),
-            pin: value.pin.as_ref().clone().into(),
-            username: utils::string_to_utf16(value.username),
-            card_name: value.card_name.map(utils::string_to_utf16),
-            container_name: utils::string_to_utf16(value.container_name),
-            csp_name: utils::string_to_utf16(value.csp_name),
-            private_key_file_index: value.private_key_file_index,
-        })
+    /// Represents data needed for smart card authentication
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct SmartCardIdentity {
+        /// Username
+        pub username: String,
+        /// X509 certificate
+        pub certificate: Certificate,
+        /// Smart card reader name
+        pub reader_name: String,
+        /// Smart card name
+        pub card_name: Option<String>,
+        /// Smart card key container name
+        pub container_name: String,
+        /// Smart card CSP name
+        pub csp_name: String,
+        /// ASCII encoded mart card PIN code
+        pub pin: Secret<Vec<u8>>,
+        /// Private key file index
+        /// This value is used for the APDU message generation
+        pub private_key_file_index: Option<u8>,
+    }
+
+    impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
+        type Error = Error;
+
+        fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
+            Ok(Self {
+                certificate: picky_asn1_der::to_vec(&value.certificate)?,
+                reader_name: utils::string_to_utf16(value.reader_name),
+                pin: value.pin.as_ref().clone().into(),
+                username: utils::string_to_utf16(value.username),
+                card_name: value.card_name.map(utils::string_to_utf16),
+                container_name: utils::string_to_utf16(value.container_name),
+                csp_name: utils::string_to_utf16(value.csp_name),
+                private_key_file_index: value.private_key_file_index,
+            })
+        }
+    }
+
+    impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
+        type Error = Error;
+
+        fn try_from(value: SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
+            Ok(Self {
+                certificate: picky_asn1_der::from_bytes(&value.certificate)?,
+                reader_name: utils::bytes_to_utf16_string(&value.reader_name),
+                pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
+                username: utils::bytes_to_utf16_string(&value.username),
+                card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
+                container_name: utils::bytes_to_utf16_string(&value.container_name),
+                csp_name: utils::bytes_to_utf16_string(&value.csp_name),
+                private_key_file_index: value.private_key_file_index,
+            })
+        }
     }
 }
 
-impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
-    type Error = Error;
-
-    fn try_from(value: SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
-        Ok(Self {
-            certificate: picky_asn1_der::from_bytes(&value.certificate)?,
-            reader_name: utils::bytes_to_utf16_string(&value.reader_name),
-            pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
-            username: utils::bytes_to_utf16_string(&value.username),
-            card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
-            container_name: utils::bytes_to_utf16_string(&value.container_name),
-            csp_name: utils::bytes_to_utf16_string(&value.csp_name),
-            private_key_file_index: value.private_key_file_index,
-        })
-    }
-}
+#[cfg(feature = "scard")]
+pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -166,6 +174,7 @@ pub enum CredentialsBuffers {
     SmartCard(SmartCardIdentityBuffers)
 }
 
+#[allow(unreachable_patterns)]
 impl CredentialsBuffers {
     pub fn auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
@@ -200,6 +209,7 @@ pub enum Credentials {
 }
 
 impl Credentials {
+    #[allow(unreachable_patterns)]
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
@@ -208,6 +218,7 @@ impl Credentials {
     }
 }
 
+#[cfg(feature = "scard")]
 impl From<SmartCardIdentity> for Credentials {
     fn from(value: SmartCardIdentity) -> Self {
         Self::SmartCard(Box::new(value))
