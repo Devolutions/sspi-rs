@@ -801,8 +801,10 @@ impl SspiImpl for Pku2u {
 
 impl SspiEx for Pku2u {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
         self.auth_identity = Some(identity.into());
+
+        Ok(())
     }
 }
 
