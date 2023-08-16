@@ -855,8 +855,10 @@ impl SspiImpl for Kerberos {
 
 impl SspiEx for Kerberos {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.try_into().unwrap());
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData)  -> Result<()> {
+        self.auth_identity = Some(identity.try_into()?);
+
+        Ok(())
     }
 }
 
