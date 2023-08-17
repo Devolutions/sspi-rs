@@ -93,7 +93,17 @@ impl<
 {
     /// Creates a new builder with the other `AuthData` and `CredsHandle` types.
     /// References to the input and output buffers will be moved to the created builder leaving the `None` instead.
-    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(&mut self, credentials_handle: Option<&'b mut CredsHandle2>) -> InitializeSecurityContext<'b, CredsHandle2, CredHandleSet2, ContextRequirementsSet, TargetDataRepresentationSet, OutputSet> {
+    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(
+        &mut self,
+        credentials_handle: Option<&'b mut CredsHandle2>,
+    ) -> InitializeSecurityContext<
+        'b,
+        CredsHandle2,
+        CredHandleSet2,
+        ContextRequirementsSet,
+        TargetDataRepresentationSet,
+        OutputSet,
+    > {
         InitializeSecurityContext {
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,

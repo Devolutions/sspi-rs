@@ -114,7 +114,7 @@ use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, CredentialsBuffers, Credentials};
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers};
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
 use self::builders::{

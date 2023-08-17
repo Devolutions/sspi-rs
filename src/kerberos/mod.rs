@@ -44,11 +44,11 @@ use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate
 use crate::network_client::NetworkProtocol;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error,
-    ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE, Credentials, CredentialsBuffers,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -855,7 +855,7 @@ impl SspiImpl for Kerberos {
 
 impl SspiEx for Kerberos {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData)  -> Result<()> {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
         self.auth_identity = Some(identity.try_into()?);
 
         Ok(())

@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{utils, Secret, Error};
+use crate::{utils, Error, Secret};
 
 /// Allows you to pass a particular user name and password to the run-time library for the purpose of authentication
 ///
@@ -80,7 +80,7 @@ impl From<AuthIdentityBuffers> for AuthIdentity {
 mod scard_credentials {
     use picky_asn1_x509::Certificate;
 
-    use crate::{Secret, Error, utils};
+    use crate::{utils, Error, Secret};
 
     /// Represents raw data needed for smart card authentication
     #[derive(Clone, Eq, PartialEq, Debug)]
@@ -171,7 +171,7 @@ pub enum CredentialsBuffers {
     AuthIdentity(AuthIdentityBuffers),
     #[cfg(feature = "scard")]
     /// Raw smart card identity buffers for the smart card based authentication
-    SmartCard(SmartCardIdentityBuffers)
+    SmartCard(SmartCardIdentityBuffers),
 }
 
 #[allow(unreachable_patterns)]

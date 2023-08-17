@@ -29,10 +29,10 @@ use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
-    DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContextResult, Negotiate,
-    NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
-    SspiImpl, StreamSizes, Credentials, CredentialsBuffers,
+    Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -608,7 +608,10 @@ impl SspiImpl for SspiContext {
                 let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
                     identity
                 } else {
-                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                    return Err(Error::new(
+                        ErrorKind::NoCredentials,
+                        "Auth identity is not provided for the Pku2u",
+                    ));
                 };
                 builder
                     .full_transform(ntlm, Some(auth_identity))
@@ -623,7 +626,10 @@ impl SspiImpl for SspiContext {
                 let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
                     identity
                 } else {
-                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
+                    return Err(Error::new(
+                        ErrorKind::NoCredentials,
+                        "Auth identity is not provided for the Pku2u",
+                    ));
                 };
                 builder
                     .full_transform(pku2u, Some(auth_identity))
@@ -644,25 +650,29 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) = builder.credentials_handle_mut() {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
+                    builder.credentials_handle_mut()
+                {
                     Some(identity.clone())
-                }  else {
+                } else {
                     None
                 };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 ntlm.initialize_security_context_impl(&mut new_builder)
-            },
+            }
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
             SspiContext::Pku2u(pku2u) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) = builder.credentials_handle_mut() {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
+                    builder.credentials_handle_mut()
+                {
                     Some(identity.clone())
-                }  else {
+                } else {
                     None
                 };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 pku2u.initialize_security_context_impl(&mut new_builder)
-            },
+            }
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => credssp.initialize_security_context_impl(builder),
         }
@@ -675,23 +685,31 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-                    identity.clone()
-                } else {
-                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
-                };
+                let auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
+                        identity.clone()
+                    } else {
+                        return Err(Error::new(
+                            ErrorKind::NoCredentials,
+                            "Auth identity is not provided for the Pku2u",
+                        ));
+                    };
                 builder.full_transform(ntlm, Some(&mut Some(auth_identity))).execute()
-            },
+            }
             SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
             SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
             SspiContext::Pku2u(pku2u) => {
-                let auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-                    identity.clone()
-                } else {
-                    return Err(Error::new(ErrorKind::NoCredentials, "Auth identity is not provided for the Pku2u"));
-                };
+                let auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
+                        identity.clone()
+                    } else {
+                        return Err(Error::new(
+                            ErrorKind::NoCredentials,
+                            "Auth identity is not provided for the Pku2u",
+                        ));
+                    };
                 builder.full_transform(pku2u, Some(&mut Some(auth_identity))).execute()
-            },
+            }
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
         }

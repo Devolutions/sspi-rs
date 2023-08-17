@@ -4,25 +4,20 @@ mod test;
 use core::fmt;
 use std::io::{self, Read};
 
-use picky_asn1::wrapper::{
-    ExplicitContextTag0, ExplicitContextTag1,
-    IntegerAsn1, OctetStringAsn1,
-};
+use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
 #[cfg(feature = "scard")]
-use picky_asn1::wrapper::{
-    ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional,
-};
-use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
+use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
 #[cfg(feature = "scard")]
 use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
+use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
 #[cfg(feature = "scard")]
 use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
 
 use super::CredSspMode;
-use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
 #[cfg(feature = "scard")]
 use crate::SmartCardIdentityBuffers;
+use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
 
 pub const TS_REQUEST_VERSION: u32 = 6;
 
