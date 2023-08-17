@@ -1,10 +1,8 @@
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
-use picky_asn1::wrapper::{IA5StringAsn1, Utf8StringAsn1};
-use picky_asn1_x509::{
-    oids, AttributeTypeAndValueParameters, Certificate, DirectoryString, ExtensionView, GeneralName,
-};
+use picky_asn1::wrapper::Utf8StringAsn1;
+use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
 use sha1::{Digest, Sha1};
 use winapi::ctypes::c_void;
 use winapi::um::ncrypt::HCRYPTKEY;
@@ -280,7 +278,7 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
 
 // This function tries to extract the user principal name from the smart card certificate by searching in the Subject Alternative Name.
 #[instrument(level = "trace", ret)]
-pub fn extract_upn_from_alt_name(certificate: &Certificate) -> Result<String> {
+pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
     let subject_alt_name_ext = &certificate
         .tbs_certificate
         .extensions
@@ -322,87 +320,12 @@ pub fn extract_upn_from_alt_name(certificate: &Certificate) -> Result<String> {
     Ok(data.to_string())
 }
 
-// This function tries to extract the user name from the smart card certificate
-// by extracting and concatenating the subject name fields of the provided certificate.
-// Usually, the smart card certificate subject name has the following structure: [domain components], "Users", <username component>.
-// For instance:
-// DC = com
-// DC = example
-// CN = Users
-// CN = pw11
-// From the example above, this function will return "pw13@example.com".
-#[instrument(level = "trace", ret)]
-pub fn extract_user_name_from_subject_name(certificate: &Certificate) -> Result<String> {
-    let subject = &certificate.tbs_certificate.subject.0 .0;
-    let subject_parts = subject
-        .iter()
-        .map(|subject_part| {
-            let set = subject_part.0.get(0).unwrap();
-            let t = set.ty.0.clone();
-            let v = match &set.value {
-                AttributeTypeAndValueParameters::CommonName(DirectoryString::PrintableString(name)) => name.to_string(),
-                AttributeTypeAndValueParameters::CommonName(DirectoryString::Utf8String(name)) => name.clone(),
-                AttributeTypeAndValueParameters::Custom(custom) => {
-                    let string: IA5StringAsn1 = picky_asn1_der::from_bytes(&custom.0)?;
-                    string.to_string()
-                }
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::IncompleteCredentials,
-                        "Common name has unsupported value type",
-                    ))
-                }
-            };
-            Ok((t, v))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let domain = subject_parts
-        .iter()
-        .filter(|subject_part| subject_part.0 == oids::domain_component())
-        .map(|subject_part| subject_part.1.as_str())
-        .rev()
-        .fold(String::new(), |mut domain, subject_part| {
-            if !domain.is_empty() {
-                domain.push('.');
-            }
-            domain.push_str(subject_part);
-            domain
-        });
-
-    let user_name = subject_parts
-        .iter()
-        .filter(|subject_part| subject_part.0 == oids::at_common_name())
-        // Skip "CN = Users" part
-        .skip(1)
-        .map(|subject_part| subject_part.1.as_str())
-        .next()
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::IncompleteMessage,
-                "User name is not present in certificate common name field",
-            )
-        })?;
-
-    Ok(format!("{}@{}", user_name, domain))
-}
-
-// This function extracts the user name from the smart card certificate.
-pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
-    // Firstly, it looks at the Subject Alternative Name
-    // because this action doesn't require any data concatenation unlike extracting from the Subject Name.
-    match extract_upn_from_alt_name(certificate) {
-        Ok(user_name) => Ok(user_name),
-        Err(_) => extract_user_name_from_subject_name(certificate),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use picky::x509::Cert;
     use picky_asn1_x509::Certificate;
 
-    use super::extract_upn_from_alt_name;
+    use super::extract_user_name_from_certificate;
 
     #[test]
     fn username_extraction() {
@@ -410,6 +333,9 @@ mod tests {
             .unwrap()
             .into();
 
-        assert_eq!("pw11@example.com", extract_upn_from_alt_name(&certificate).unwrap());
+        assert_eq!(
+            "pw11@example.com",
+            extract_user_name_from_certificate(&certificate).unwrap()
+        );
     }
 }
