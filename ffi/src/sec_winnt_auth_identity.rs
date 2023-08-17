@@ -1,7 +1,9 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret, SmartCardIdentityBuffers};
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret};
+#[cfg(feature = "scard")]
+use sspi::SmartCardIdentityBuffers;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -491,6 +493,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     }
 
     // only marshaled smart card creds starts with '@' char
+    #[cfg(feature = "scard")]
     if username[0] == b'@' {
         // remove null
         let new_len = password.as_ref().len() - 2;
