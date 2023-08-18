@@ -1,7 +1,9 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret};
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
+#[cfg(windows)]
+use sspi::Secret;
 #[cfg(feature = "scard")]
 use sspi::SmartCardIdentityBuffers;
 #[cfg(windows)]
