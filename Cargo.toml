@@ -49,11 +49,11 @@ serde_derive = "1.0"
 url = "2.2.2"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
 
-picky = { path = "../picky-rs/picky", default-features = false }
-picky-asn1 = { path = "../picky-rs/picky-asn1", features = ["chrono_conversion"] }
-picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
-picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509", features = ["pkcs7"] }
-picky-krb = { path = "../picky-rs/picky-krb" }
+picky = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff", default-features = false }
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff", features = ["chrono_conversion"] }
+picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff" }
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff", features = ["pkcs7"] }
+picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff" }
 
 oid = "0.2.1"
 uuid = { version = "1.1", features = ["v4"] }
@@ -80,4 +80,4 @@ tokio = { version = "1.1", features = ["time", "rt"] }
 [dev-dependencies]
 static_assertions = "1.1"
 whoami = "0.5"
-picky = { path = "../picky-rs/picky", features = ["x509"] }
+picky = { git = "https://github.com/Devolutions/picky-rs.git", rev = "fda2fad12a704f2d5008f1ec4df62e5ca8a5e8ff", features = ["x509"] }
