@@ -282,10 +282,11 @@ impl SspiImpl for SspiCredSsp {
             ));
         }
 
-        self.auth_identity = match builder.auth_data.cloned() {
-            Some(auth_data) => Some(auth_data.try_into()?),
-            None => None,
-        };
+        self.auth_identity = builder
+            .auth_data
+            .cloned()
+            .map(|auth_data| auth_data.try_into())
+            .transpose()?;
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),

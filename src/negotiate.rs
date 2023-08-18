@@ -420,10 +420,11 @@ impl SspiImpl for Negotiate {
             self.negotiate_protocol(&identity.username, identity.domain.as_deref().unwrap_or_default())?;
         }
 
-        self.auth_identity = match builder.auth_data.cloned() {
-            Some(auth_data) => Some(auth_data.try_into()?),
-            None => None,
-        };
+        self.auth_identity = builder
+            .auth_data
+            .cloned()
+            .map(|auth_data| auth_data.try_into())
+            .transpose()?;
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
