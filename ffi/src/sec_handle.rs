@@ -214,6 +214,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let mut package_list: Option<String> = None;
 
+        // we don't have the general `auth_data_to_identity_buffers` function to automatically handle A/W buffers
+        // because in Windows 11 the SEC_WINNT_AUTH_IDENTITY_UNICODE flag doesn't work properly
+        //
+        // (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) is equal to 0 even on W-function call
         let credentials = try_execute!(auth_data_to_identity_buffers_a(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
@@ -262,6 +266,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 
         let mut package_list: Option<String> = None;
 
+        // we don't have the general `auth_data_to_identity_buffers` function to automatically handle A/W buffers
+        // because in Windows 11 the SEC_WINNT_AUTH_IDENTITY_UNICODE flag doesn't work properly
+        //
+        // (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) is equal to 0 even on W-function call
         let credentials = try_execute!(auth_data_to_identity_buffers_w(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
