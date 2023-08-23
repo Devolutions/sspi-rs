@@ -56,7 +56,7 @@ picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", rev = "
 picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", rev = "19838e703b3e3bddfcac14682eaf88e15cbd55d8" }
 
 oid = "0.2.1"
-uuid = { version = "1.1", features = ["v4"] }
+uuid = { version = "1.3", features = ["v4"] }
 trust-dns-resolver = { version = "0.21.2", optional = true }
 portpicker = { version = "0.1.1", optional = true }
 num-bigint-dig = "0.8.1"

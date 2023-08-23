@@ -1,5 +1,6 @@
 use sspi::network_client::{NetworkClient, NetworkClientFactory};
-use sspi::{credssp, AuthIdentity};
+use sspi::ntlm::NtlmConfig;
+use sspi::{credssp, Credentials};
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -19,10 +20,10 @@ impl NetworkClientFactory for DummyNetworkClientFactory {
 pub fn credssp_client() {
     let mut cred_ssp_client = credssp::CredSspClient::new(
         Vec::new(),
-        AuthIdentity::default(),
+        Credentials::AuthIdentity(Default::default()),
         credssp::CredSspMode::WithCredentials,
         credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
-            protocol_config: Box::new(sspi::ntlm::NtlmConfig::default()),
+            protocol_config: Box::<NtlmConfig>::default(),
             package_list: None,
             hostname: "testhostname".into(),
             network_client_factory: Box::new(DummyNetworkClientFactory),
