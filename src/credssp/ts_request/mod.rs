@@ -9,7 +9,7 @@ use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1,
 use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
 #[cfg(feature = "scard")]
 use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
-use picky_krb::constants::cred_ssp::{TS_PASSWORD_CREDS, TS_SMART_CARD_CREDS};
+use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
 #[cfg(feature = "scard")]
 use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
@@ -293,7 +293,10 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
             (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
         }
         #[cfg(feature = "scard")]
-        CredentialsBuffers::SmartCard(creds) => (TS_SMART_CARD_CREDS, write_smart_card_credentials(creds)?),
+        CredentialsBuffers::SmartCard(creds) => (
+            picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
+            write_smart_card_credentials(creds)?,
+        ),
     };
 
     let ts_creds = TsCredentials {
@@ -330,14 +333,14 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     Ok(buffer)
 }
 
-pub fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdentityBuffers> {
-    let password_card_creds: TsPasswordCreds = picky_asn1_der::from_bytes(data.as_ref())?;
+fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdentityBuffers> {
+    let password_creds: TsPasswordCreds = picky_asn1_der::from_bytes(data.as_ref())?;
 
     let TsPasswordCreds {
         domain_name,
         user_name,
         password,
-    } = password_card_creds;
+    } = password_creds;
 
     Ok(AuthIdentityBuffers {
         user: user_name.0 .0,
@@ -353,7 +356,8 @@ pub fn read_ts_credentials(mut buffer: impl io::Read) -> crate::Result<Credentia
         Some(&TS_PASSWORD_CREDS) => Ok(CredentialsBuffers::AuthIdentity(read_password_credentials(
             &ts_credentials.credentials.0 .0,
         )?)),
-        Some(&TS_SMART_CARD_CREDS) => Err(Error::new(
+        #[cfg(feature = "scard")]
+        Some(&picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS) => Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Reading of the TsSmartCard credentials is not supported yet",
         )),

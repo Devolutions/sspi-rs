@@ -173,11 +173,11 @@ pub enum ClientMode {
 pub struct CredSspClient {
     state: CredSspState,
     context: Option<CredSspContext>,
-    credentials: AuthIdentity,
+    credentials: Credentials,
     public_key: Vec<u8>,
     cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
-    credentials_handle: Option<AuthIdentityBuffers>,
+    credentials_handle: Option<CredentialsBuffers>,
     ts_request_version: u32,
     client_mode: Option<ClientMode>,
     service_principal_name: String,
@@ -186,7 +186,7 @@ pub struct CredSspClient {
 impl CredSspClient {
     pub fn new(
         public_key: Vec<u8>,
-        credentials: AuthIdentity,
+        credentials: Credentials,
         cred_ssp_mode: CredSspMode,
         client_mode: ClientMode,
         service_principal_name: String,
@@ -207,7 +207,7 @@ impl CredSspClient {
 
     pub fn new_with_version(
         public_key: Vec<u8>,
-        credentials: AuthIdentity,
+        credentials: Credentials,
         cred_ssp_mode: CredSspMode,
         ts_request_version: u32,
         client_mode: ClientMode,
@@ -255,10 +255,10 @@ impl CredSspClient {
                 .unwrap()
                 .sspi_context
                 .acquire_credentials_handle()
-                .with_auth_data(&Credentials::AuthIdentity(self.credentials.clone()))
+                .with_auth_data(&self.credentials)
                 .with_credential_use(CredentialUse::Outbound)
                 .execute()?;
-            self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
+            self.credentials_handle = credentials_handle;
         }
 
         ts_request.version = self.ts_request_version;
@@ -271,7 +271,7 @@ impl CredSspClient {
                 )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take().map(CredentialsBuffers::AuthIdentity);
+                let mut credentials_handle = self.credentials_handle.take();
                 let cred_ssp_context = self.context.as_mut().unwrap();
                 let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
                     .with_credentials_handle(&mut credentials_handle)
@@ -283,7 +283,7 @@ impl CredSspClient {
                 let result = cred_ssp_context
                     .sspi_context
                     .initialize_security_context_impl(&mut builder)?;
-                self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
+                self.credentials_handle = credentials_handle;
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
@@ -335,12 +335,12 @@ impl CredSspClient {
                     peer_version,
                 )?;
 
-                let auth_identity: AuthIdentityBuffers = self.credentials.clone().into();
-                ts_request.auth_info =
-                    Some(self.context.as_mut().unwrap().encrypt_ts_credentials(
-                        &CredentialsBuffers::AuthIdentity(auth_identity),
-                        self.cred_ssp_mode,
-                    )?);
+                ts_request.auth_info = Some(
+                    self.context
+                        .as_mut()
+                        .unwrap()
+                        .encrypt_ts_credentials(self.credentials_handle.as_ref().unwrap(), self.cred_ssp_mode)?,
+                );
                 info!("tscredentials has been written");
 
                 self.state = CredSspState::Final;
@@ -367,7 +367,7 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     state: CredSspState,
     context: Option<CredSspContext>,
     public_key: Vec<u8>,
-    credentials_handle: Option<AuthIdentityBuffers>,
+    credentials_handle: Option<CredentialsBuffers>,
     ts_request_version: u32,
     context_config: Option<ClientMode>,
 }
@@ -439,7 +439,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     .execute(),
                 ts_request
             );
-            self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
+            self.credentials_handle = credentials_handle;
         }
         try_cred_ssp_server!(
             self.context.as_mut().unwrap().check_peer_version(ts_request.version),
@@ -474,7 +474,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut credentials_handle = self.credentials_handle.take().map(CredentialsBuffers::AuthIdentity);
+                let mut credentials_handle = self.credentials_handle.take();
                 match try_cred_ssp_server!(
                     self.context
                         .as_mut()
@@ -555,7 +555,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     }
                     _ => unreachable!(),
                 };
-                self.credentials_handle = credentials_handle.map(|c| c.auth_identity().unwrap());
+                self.credentials_handle = credentials_handle;
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
