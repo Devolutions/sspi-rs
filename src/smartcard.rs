@@ -1,10 +1,10 @@
 use std::fmt;
 
-use pcsc::{Context, Scope, Protocols, ShareMode, Card};
+use pcsc::{Card, Context, Protocols, Scope, ShareMode};
 use picky_asn1::wrapper::OctetStringAsn1;
-use picky_asn1_x509::{DigestInfo, AlgorithmIdentifier};
+use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
 
-use crate::{Result, Error, ErrorKind};
+use crate::{Error, ErrorKind, Result};
 
 pub enum SmartCardApi {
     WinSCard(Card),
@@ -13,7 +13,7 @@ pub enum SmartCardApi {
 impl fmt::Debug for SmartCardApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WinSCard { .. } => f.debug_tuple("SmartCardApi::WinSCard").finish(),
+            Self::WinSCard { .. } => f.write_str("SmartCardApi::WinSCard"),
         }
     }
 }
@@ -41,12 +41,11 @@ impl SmartCard {
         Ok(Self {
             smart_card_type: SmartCardApi::WinSCard(scard),
             pin,
-            private_key_file_index
+            private_key_file_index,
         })
     }
 
     pub fn sign(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
-
         match &self.smart_card_type {
             SmartCardApi::WinSCard(scard) => {
                 // https://www.eftlab.com/knowledge-base/complete-list-of-apdu-responses
@@ -55,7 +54,8 @@ impl SmartCard {
                 // this control code is extracted from the API calls recording during the mstsc connection establishing
                 scard.control(0x00313520, &[], &mut [])?;
 
-                let mut result_buff = [0; 128];
+                let mut result_buff = [0; 16];
+                #[rustfmt::skip]
                 let output = scard.transmit(
                     &[
                         // apdu header
@@ -63,29 +63,35 @@ impl SmartCard {
                         // data len
                         0x02,
                         // data
-                        0x3f, 0xff
+                        0x3f, 0xff,
                     ],
                     &mut result_buff,
                 )?;
                 if output != APDU_RESPONSE_OK {
-                    return Err(Error::new(ErrorKind::InternalError, format!("error: {:?} != {:?}", output, APDU_RESPONSE_OK)))
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("smart card error: {:?} != {:?}", output, APDU_RESPONSE_OK),
+                    ));
                 }
 
                 let mut pin_apdu = vec![
                     // command header
-                    0x00, 0x20, 0x00, 0x80,
+                    0x00,
+                    0x20,
+                    0x00,
+                    0x80,
                     // pin len
                     self.pin.len().try_into().unwrap(),
                 ];
                 pin_apdu.extend_from_slice(&self.pin);
 
-                let output = scard.transmit(
-                    &pin_apdu,
-                    &mut result_buff,
-                )?;
+                let output = scard.transmit(&pin_apdu, &mut result_buff)?;
 
                 if output != APDU_RESPONSE_OK {
-                    return Err(Error::new(ErrorKind::InternalError, format!("error: {:?} != {:?}", output, APDU_RESPONSE_OK)))
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("smart card error: {:?} != {:?}", output, APDU_RESPONSE_OK),
+                    ));
                 }
 
                 let output = scard.transmit(
@@ -108,14 +114,14 @@ impl SmartCard {
                     &mut result_buff,
                 )?;
                 if output != APDU_RESPONSE_OK {
-                    return Err(Error::new(ErrorKind::InternalError, format!("error: {:?} != {:?}", output, APDU_RESPONSE_OK)))
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!("smart card error: {:?} != {:?}", output, APDU_RESPONSE_OK),
+                    ));
                 }
 
                 let mut signature_buff = vec![0; 300];
-                let output = scard.transmit(
-                    &build_data_sign_apdu(data)?,
-                    &mut signature_buff
-                )?;
+                let output = scard.transmit(&build_data_sign_apdu(data)?, &mut signature_buff)?;
                 // the last two bytes is status bytes
                 let output_len = output.len();
                 if output[output_len - 2..] != APDU_RESPONSE_OK {
@@ -137,7 +143,7 @@ impl SmartCard {
                 )?;
 
                 Ok(signature)
-            },
+            }
         }
     }
 }
@@ -145,8 +151,7 @@ impl SmartCard {
 fn build_data_sign_apdu(data_to_sign: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     let mut sign_data_apdu = vec![
         // apdu header
-        0x00, 0x2a, 0x9e, 0x9a,
-        // data length
+        0x00, 0x2a, 0x9e, 0x9a, // data length
         0x00, 0x00,
     ];
 

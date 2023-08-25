@@ -94,6 +94,7 @@ mod kdc;
 mod krb;
 mod secret;
 #[cfg(feature = "scard")]
+#[allow(dead_code)]
 mod smartcard;
 mod utils;
 
