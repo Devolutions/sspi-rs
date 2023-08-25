@@ -164,6 +164,11 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
+// This function determines what format credentials have: ASCII or UNICODE,
+// and then calls an appropriate raw credentials handler function.
+// Why do we need such a function:
+// Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
+// So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
 pub unsafe fn auth_data_to_identity_buffers(
     security_package_name: &str,
     p_auth_data: *const c_void,
