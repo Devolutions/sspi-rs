@@ -34,7 +34,7 @@ use crate::credentials_attributes::{
 };
 use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
 use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
-use crate::sec_winnt_auth_identity::{auth_data_to_identity_buffers_a, auth_data_to_identity_buffers_w};
+use crate::sec_winnt_auth_identity::auth_data_to_identity_buffers;
 use crate::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
@@ -214,11 +214,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let mut package_list: Option<String> = None;
 
-        // we don't have the general `auth_data_to_identity_buffers` function to automatically handle A/W buffers
-        // because in Windows 11 the SEC_WINNT_AUTH_IDENTITY_UNICODE flag doesn't work properly
-        //
-        // (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) is equal to 0 even on W-function call
-        let credentials = try_execute!(auth_data_to_identity_buffers_a(&security_package_name, p_auth_data, &mut package_list));
+        let credentials = try_execute!(auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
             credentials,
@@ -266,11 +262,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 
         let mut package_list: Option<String> = None;
 
-        // we don't have the general `auth_data_to_identity_buffers` function to automatically handle A/W buffers
-        // because in Windows 11 the SEC_WINNT_AUTH_IDENTITY_UNICODE flag doesn't work properly
-        //
-        // (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) is equal to 0 even on W-function call
-        let credentials = try_execute!(auth_data_to_identity_buffers_w(&security_package_name, p_auth_data, &mut package_list));
+        let credentials = try_execute!(auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list));
 
         (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
             credentials,
