@@ -1,9 +1,17 @@
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, Error, ErrorKind, Result};
+#[cfg(windows)]
+use sspi::Secret;
+#[cfg(feature = "scard")]
+use sspi::SmartCardIdentityBuffers;
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+#[cfg(feature = "scard")]
+use winapi::um::wincred::CredIsMarshaledCredentialW;
+#[cfg(feature = "tsssp")]
+use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
@@ -158,17 +166,31 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
+// This function determines what format credentials have: ASCII or UNICODE,
+// and then calls an appropriate raw credentials handler function.
+// Why do we need such a function:
+// Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
+// So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
 pub unsafe fn auth_data_to_identity_buffers(
     security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
 
-    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_UNICODE) != 0 {
-        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
-    } else {
+    let rawcreds = std::slice::from_raw_parts(p_auth_data as *const u8, 128);
+    debug!(?rawcreds);
+
+    #[cfg(feature = "tsssp")]
+    if SspiIsAuthIdentityEncrypted(p_auth_data) != 0 {
+        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+        return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
+    }
+
+    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_ANSI) != 0 {
         auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
+    } else {
+        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
     }
 }
 
@@ -176,7 +198,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
@@ -197,18 +219,18 @@ pub unsafe fn auth_data_to_identity_buffers_a(
                 .to_string(),
             );
         }
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
             password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
-        })
+        }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
-        Ok(AuthIdentityBuffers {
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
             domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
             password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
-        })
+        }))
     }
 }
 
@@ -216,7 +238,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
-) -> Result<AuthIdentityBuffers> {
+) -> Result<CredentialsBuffers> {
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
@@ -234,26 +256,44 @@ pub unsafe fn auth_data_to_identity_buffers_w(
                 (*auth_data).package_list_length as usize,
             )));
         }
-        Ok(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
+        let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
+        let password = raw_str_into_bytes(
+            (*auth_data).password as *const _,
+            (*auth_data).password_length as usize * 2,
+        )
+        .into();
+
+        // only marshaled smart card creds starts with '@' char
+        #[cfg(feature = "scard")]
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+            return handle_smart_card_creds(user, password);
+        }
+
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+            user,
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes(
-                (*auth_data).password as *const _,
-                (*auth_data).password_length as usize * 2,
-            )
-            .into(),
-        })
+            password,
+        }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-        Ok(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2),
+        let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
+        let password = raw_str_into_bytes(
+            (*auth_data).password as *const _,
+            (*auth_data).password_length as usize * 2,
+        )
+        .into();
+
+        // only marshaled smart card creds starts with '@' char
+        #[cfg(feature = "scard")]
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+            return handle_smart_card_creds(user, password);
+        }
+
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+            user,
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
-            password: raw_str_into_bytes(
-                (*auth_data).password as *const _,
-                (*auth_data).password_length as usize * 2,
-            )
-            .into(),
-        })
+            password,
+        }))
     }
 }
 
@@ -287,10 +327,9 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
 }
 
 #[cfg(target_os = "windows")]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::Secret;
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -364,22 +403,78 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     password.as_mut().pop();
     auth_identity_buffers.password = password;
 
-    Ok(auth_identity_buffers)
+    Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     Err(Error::new(
         ErrorKind::UnsupportedFunction,
         "SecWinntIdentityEx2 is not supported on non Windows systems",
     ))
 }
 
-#[cfg(target_os = "windows")]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<AuthIdentityBuffers> {
+#[cfg(feature = "scard")]
+#[instrument(level = "trace", ret)]
+unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::Secret;
+    use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
+    use sspi::string_to_utf16;
+    use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
+
+    let mut cred_type = 0;
+    let mut credential = null_mut();
+
+    // add wide null char
+    username.extend_from_slice(&[0, 0]);
+
+    if CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) == 0 {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "Cannot unmarshal smart card credentials",
+        ));
+    }
+
+    if cred_type != CertCredential {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "Unmarshalled smart card credentials is not CRED_MARSHAL_TYPE::CertCredential",
+        ));
+    }
+
+    let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
+
+    let (raw_certificate, certificate) =
+        sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)?;
+
+    let username = string_to_utf16(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
+    let SmartCardInfo {
+        key_container_name,
+        reader_name,
+        certificate: _,
+        csp_name,
+        private_key_file_index,
+    } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
+
+    let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
+        certificate: raw_certificate,
+        reader_name: string_to_utf16(reader_name),
+        pin: password,
+        username,
+        card_name: None,
+        container_name: string_to_utf16(key_container_name),
+        csp_name: string_to_utf16(csp_name),
+        private_key_file_index: Some(private_key_file_index),
+    });
+
+    Ok(creds)
+}
+
+#[cfg(target_os = "windows")]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    use std::ptr::null_mut;
+
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -431,6 +526,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         ));
     }
 
+    // only marshaled smart card creds starts with '@' char
+    #[cfg(feature = "scard")]
+    if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
+        // remove null
+        let new_len = password.as_ref().len() - 2;
+        password.as_mut().truncate(new_len);
+
+        return handle_smart_card_creds(username, password);
+    }
+
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
     // remove null
@@ -454,7 +559,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     password.as_mut().truncate(new_len);
     auth_identity_buffers.password = password;
 
-    Ok(auth_identity_buffers)
+    Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
 
 #[allow(clippy::missing_safety_doc)]

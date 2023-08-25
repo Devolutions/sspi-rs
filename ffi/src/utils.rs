@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 
 use libc::c_char;
-use sspi::AuthIdentityBuffers;
+use sspi::CredentialsBuffers;
 
 use crate::credentials_attributes::CredentialsAttributes;
 use crate::sec_handle::CredentialsHandle;
@@ -38,7 +38,7 @@ pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u
 
 pub unsafe fn transform_credentials_handle<'a>(
     credentials_handle: *mut CredentialsHandle,
-) -> Option<(AuthIdentityBuffers, &'a str, &'a CredentialsAttributes)> {
+) -> Option<(CredentialsBuffers, &'a str, &'a CredentialsAttributes)> {
     if credentials_handle.is_null() {
         None
     } else {

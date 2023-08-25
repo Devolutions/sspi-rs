@@ -13,12 +13,11 @@ use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertContext,
-    CertEncodingType, CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags,
-    ClientResponseFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
-    SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
+    CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
+    SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -45,7 +44,7 @@ enum CredSspState {
 pub struct SspiCredSsp {
     state: CredSspState,
     cred_ssp_context: Box<CredSspContext>,
-    auth_identity: Option<AuthIdentityBuffers>,
+    auth_identity: Option<CredentialsBuffers>,
     tls_connection: TlsConnection,
     nonce: Option<[u8; NONCE_SIZE]>,
 }
@@ -268,8 +267,8 @@ impl Sspi for SspiCredSsp {
 }
 
 impl SspiImpl for SspiCredSsp {
-    type CredentialsHandle = Option<AuthIdentityBuffers>;
-    type AuthenticationData = AuthIdentity;
+    type CredentialsHandle = Option<CredentialsBuffers>;
+    type AuthenticationData = Credentials;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn acquire_credentials_handle_impl<'a>(
@@ -283,7 +282,11 @@ impl SspiImpl for SspiCredSsp {
             ));
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        self.auth_identity = builder
+            .auth_data
+            .cloned()
+            .map(|auth_data| auth_data.try_into())
+            .transpose()?;
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),
@@ -297,6 +300,11 @@ impl SspiImpl for SspiCredSsp {
         builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         trace!(?builder);
+        // In the CredSSP we always set DELEGATE flag
+        //
+        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7
+        // The CredSSP Protocol enables an application to securely delegate a user's credentials from a client to a target server.
+        builder.context_requirements |= ClientRequestFlags::DELEGATE;
 
         let status = match &self.state {
             CredSspState::Tls => {
@@ -473,7 +481,9 @@ impl SspiImpl for SspiCredSsp {
 
 impl SspiEx for SspiCredSsp {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.into());
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
+        self.auth_identity = Some(identity.try_into()?);
+
+        Ok(())
     }
 }

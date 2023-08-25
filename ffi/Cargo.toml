@@ -15,6 +15,7 @@ crate-type = ["cdylib"]
 [features]
 default = []
 tsssp = ["sspi/tsssp"]
+scard = ["sspi/scard"]
 
 [dependencies]
 cfg-if = "0.1"

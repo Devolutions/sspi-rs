@@ -6,8 +6,9 @@ use rand::Rng;
 use crate::kerberos::EncryptionParams;
 use crate::{Error, ErrorKind, Result};
 
-pub fn string_to_utf16(value: &str) -> Vec<u8> {
+pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
+        .as_ref()
         .encode_utf16()
         .flat_map(|i| i.to_le_bytes().to_vec())
         .collect::<Vec<u8>>()

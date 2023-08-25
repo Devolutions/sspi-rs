@@ -18,6 +18,20 @@ pub struct AcquireCredentialsHandleResult<C> {
     pub expiry: Option<NaiveDateTime>,
 }
 
+// we cannot replace it with the `From` trait implementation due to conflict with blanked impl in the std
+impl<T> AcquireCredentialsHandleResult<T> {
+    pub fn transform_credentials_handle<T2>(self, transformer: &dyn Fn(T) -> T2) -> AcquireCredentialsHandleResult<T2> {
+        let Self {
+            credentials_handle,
+            expiry,
+        } = self;
+        AcquireCredentialsHandleResult {
+            credentials_handle: transformer(credentials_handle),
+            expiry,
+        }
+    }
+}
+
 /// A builder to execute one of the SSPI functions. Returned by the `acquire_credentials_handle` method.
 ///
 /// # Requirements for execution
@@ -113,6 +127,25 @@ where
         Self {
             auth_data: Some(auth_data),
             ..self
+        }
+    }
+}
+
+impl<'b, 'a: 'b, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
+    pub(crate) fn full_transform<NewCredsHandle, NewAuthData>(
+        self,
+        inner: SspiPackage<'a, NewCredsHandle, NewAuthData>,
+        auth_data: Option<&'b NewAuthData>,
+    ) -> FilledAcquireCredentialsHandle<'b, NewCredsHandle, NewAuthData> {
+        AcquireCredentialsHandle {
+            inner: Some(inner),
+            phantom_cred_handle: PhantomData,
+            phantom_cred_use_set: PhantomData,
+
+            principal_name: self.principal_name,
+            credential_use: self.credential_use,
+            logon_id: self.logon_id,
+            auth_data,
         }
     }
 }
