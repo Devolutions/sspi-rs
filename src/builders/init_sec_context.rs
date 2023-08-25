@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::mem;
 
 use chrono::NaiveDateTime;
 
@@ -73,6 +74,53 @@ pub struct InitializeSecurityContext<
 }
 
 impl<
+        'b,
+        'a: 'b,
+        CredsHandle,
+        CredsHandleSet: ToAssign,
+        ContextRequirementsSet: ToAssign,
+        TargetDataRepresentationSet: ToAssign,
+        OutputSet: ToAssign,
+    >
+    InitializeSecurityContext<
+        'a,
+        CredsHandle,
+        CredsHandleSet,
+        ContextRequirementsSet,
+        TargetDataRepresentationSet,
+        OutputSet,
+    >
+{
+    /// Creates a new builder with the other `AuthData` and `CredsHandle` types.
+    /// References to the input and output buffers will be moved to the created builder leaving the `None` instead.
+    pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(
+        &mut self,
+        credentials_handle: Option<&'b mut CredsHandle2>,
+    ) -> InitializeSecurityContext<
+        'b,
+        CredsHandle2,
+        CredHandleSet2,
+        ContextRequirementsSet,
+        TargetDataRepresentationSet,
+        OutputSet,
+    > {
+        InitializeSecurityContext {
+            phantom_creds_use_set: PhantomData,
+            phantom_context_req_set: PhantomData,
+            phantom_data_repr_set: PhantomData,
+            phantom_output_set: PhantomData,
+
+            credentials_handle,
+            context_requirements: self.context_requirements,
+            target_data_representation: self.target_data_representation,
+            output: mem::take(&mut self.output),
+            target_name: self.target_name,
+            input: mem::take(&mut self.input),
+        }
+    }
+}
+
+impl<
         'a,
         CredsHandle,
         CredsHandleSet: ToAssign,
@@ -89,6 +137,10 @@ impl<
         OutputSet,
     >
 {
+    pub fn credentials_handle_mut(&mut self) -> &mut Option<&'a mut CredsHandle> {
+        &mut self.credentials_handle
+    }
+
     pub fn new() -> Self {
         Self {
             phantom_creds_use_set: PhantomData,

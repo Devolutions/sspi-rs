@@ -13,9 +13,9 @@ use crate::utils::is_azure_ad_domain;
 use crate::KerberosConfig;
 use crate::{
     builders, kerberos, ntlm, pku2u, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    AuthIdentityBuffers, CertTrustStatus, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, Ntlm, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, Kerberos, Ntlm, PackageCapabilities, PackageInfo, Pku2u, Result,
+    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -105,7 +105,7 @@ impl NegotiatedProtocol {
 pub struct Negotiate {
     protocol: NegotiatedProtocol,
     package_list: Option<String>,
-    auth_identity: Option<AuthIdentityBuffers>,
+    auth_identity: Option<CredentialsBuffers>,
     hostname: String,
     network_client_factory: Box<dyn NetworkClientFactory>,
 }
@@ -289,13 +289,27 @@ impl Negotiate {
 
 impl SspiEx for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
-        self.auth_identity = Some(identity.clone().into());
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
+        self.auth_identity = Some(identity.clone().try_into().unwrap());
 
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity),
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                pku2u.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IncompleteCredentials,
+                        "Provided credentials are not password-based",
+                    )
+                })?)
+            }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity),
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                ntlm.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::IncompleteCredentials,
+                        "Provided credentials are not password-based",
+                    )
+                })?)
+            }
         }
     }
 }
@@ -387,10 +401,10 @@ impl Sspi for Negotiate {
 }
 
 impl SspiImpl for Negotiate {
-    type CredentialsHandle = Option<AuthIdentityBuffers>;
-    type AuthenticationData = AuthIdentity;
+    type CredentialsHandle = Option<CredentialsBuffers>;
+    type AuthenticationData = Credentials;
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    // #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn acquire_credentials_handle_impl<'a>(
         &'a mut self,
         builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -402,16 +416,44 @@ impl SspiImpl for Negotiate {
             ));
         }
 
-        if let Some(identity) = builder.auth_data {
+        if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
             self.negotiate_protocol(&identity.username, identity.domain.as_deref().unwrap_or_default())?;
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        self.auth_identity = builder
+            .auth_data
+            .cloned()
+            .map(|auth_data| auth_data.try_into())
+            .transpose()?;
 
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.acquire_credentials_handle_impl(builder)?,
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.acquire_credentials_handle_impl(builder)?,
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.acquire_credentials_handle_impl(builder)?,
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
+                    identity
+                } else {
+                    return Err(Error::new(
+                        ErrorKind::NoCredentials,
+                        "Auth identity is not provided for the Pku2u",
+                    ));
+                };
+                let new_builder = builder.full_transform(pku2u, Some(auth_identity));
+                new_builder.execute()?;
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                kerberos.acquire_credentials_handle_impl(builder)?;
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
+                    identity
+                } else {
+                    return Err(Error::new(
+                        ErrorKind::NoCredentials,
+                        "Auth identity is not provided for the Pku2u",
+                    ));
+                };
+                let new_builder = builder.full_transform(ntlm, Some(auth_identity));
+                new_builder.execute()?;
+            }
         };
 
         Ok(AcquireCredentialsHandleResult {
@@ -429,7 +471,7 @@ impl SspiImpl for Negotiate {
             self.check_target_name_for_ntlm_downgrade(target_name);
         }
 
-        if let Some(Some(identity)) = builder.credentials_handle {
+        if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
             let auth_identity: AuthIdentity = identity.clone().into();
 
             if let Some(domain) = &auth_identity.domain {
@@ -453,17 +495,29 @@ impl SspiImpl for Negotiate {
                         .clone()
                         .map(NtlmConfig::new)
                         .unwrap_or_default();
-                    self.protocol =
-                        NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(self.auth_identity.clone(), ntlm_config));
+                    self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_auth_identity(
+                        self.auth_identity.clone().and_then(|c| c.auth_identity()),
+                        ntlm_config,
+                    ));
                 }
                 result => return result,
             };
         }
 
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.initialize_security_context_impl(builder),
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut credentials_handle = self.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                pku2u.initialize_security_context_impl(&mut transformed_builder)
+            }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.initialize_security_context_impl(builder),
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut credentials_handle = self.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                ntlm.initialize_security_context_impl(&mut transformed_builder)
+            }
         }
     }
 
@@ -473,9 +527,25 @@ impl SspiImpl for Negotiate {
         builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.accept_security_context_impl(builder),
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
+                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
+                } else {
+                    None
+                };
+                let new_builder = builder.full_transform(pku2u, Some(&mut creds_handle));
+                new_builder.execute()
+            }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.accept_security_context_impl(builder),
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
+                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
+                } else {
+                    None
+                };
+                let new_builder = builder.full_transform(ntlm, Some(&mut creds_handle));
+                new_builder.execute()
+            }
         }
     }
 }

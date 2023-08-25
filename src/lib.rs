@@ -86,6 +86,8 @@ pub mod winapi;
 
 mod auth_identity;
 mod ber;
+#[cfg(feature = "scard")]
+pub mod cert_utils;
 mod crypto;
 mod dns;
 mod kdc;
@@ -95,6 +97,9 @@ mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
+
+#[cfg(all(feature = "scard", not(target_os = "windows")))]
+compile_error!("scard feature should be used only on Windows");
 
 use std::{error, fmt, io, result, str, string};
 
@@ -108,8 +113,11 @@ use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
+pub use utils::string_to_utf16;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers};
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers};
+#[cfg(feature = "scard")]
+pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
 use self::builders::{
     AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
     EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
@@ -991,8 +999,11 @@ pub struct ConnectionInfo {
     pub exchange_strength: u32,
 }
 
+/// Trait for performing authentication on the client or server side
 pub trait SspiImpl {
+    /// Represents raw data for authentication
     type CredentialsHandle;
+    /// Represents authentication data prepared for the authentication process
     type AuthenticationData;
 
     fn acquire_credentials_handle_impl<'a>(
@@ -1015,7 +1026,7 @@ pub trait SspiEx
 where
     Self: Sized + SspiImpl,
 {
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData);
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
 }
 
 pub type SspiPackage<'a, CredsHandle, AuthData> =
@@ -1929,5 +1940,12 @@ impl From<Error> for io::Error {
             io::ErrorKind::Other,
             format!("{:?}: {}", err.error_type, err.description),
         )
+    }
+}
+
+#[cfg(feature = "scard")]
+impl From<pcsc::Error> for Error {
+    fn from(_value: pcsc::Error) -> Self {
+        Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }

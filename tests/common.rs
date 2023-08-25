@@ -160,7 +160,7 @@ where
     {
         let ContextNames { username, domain } = server.query_context_names()?;
         let auth_data = credentials_proxy.auth_data_by_user(username, domain)?;
-        server.custom_set_auth_identity(auth_data);
+        server.custom_set_auth_identity(auth_data).unwrap();
 
         let mut token = Vec::new();
         server.complete_auth_token(&mut token)?;

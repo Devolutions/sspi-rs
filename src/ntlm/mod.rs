@@ -453,8 +453,10 @@ impl Sspi for Ntlm {
 
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) {
+    fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
         self.identity = Some(identity.into());
+
+        Ok(())
     }
 }
 
