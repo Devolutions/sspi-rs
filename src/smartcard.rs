@@ -94,22 +94,15 @@ impl SmartCard {
                     ));
                 }
 
+                #[rustfmt::skip]
                 let output = scard.transmit(
                     &[
                         // apdu header
-                        0x00,
-                        0x22,
-                        0x41,
-                        0xb6,
+                        0x00, 0x22, 0x41, 0xb6,
                         // data len
                         0x06,
                         // data
-                        0x80,
-                        0x01,
-                        0x57,
-                        0x84,
-                        0x01,
-                        0x80 + self.private_key_file_index,
+                        0x80, 0x01, 0x57, 0x84, 0x01, 0x80 + self.private_key_file_index,
                     ],
                     &mut result_buff,
                 )?;
@@ -149,9 +142,11 @@ impl SmartCard {
 }
 
 fn build_data_sign_apdu(data_to_sign: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+    #[rustfmt::skip]
     let mut sign_data_apdu = vec![
         // apdu header
-        0x00, 0x2a, 0x9e, 0x9a, // data length
+        0x00, 0x2a, 0x9e, 0x9a,
+        // data length
         0x00, 0x00,
     ];
 
