@@ -8,10 +8,10 @@ use sspi::SmartCardIdentityBuffers;
 use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-#[cfg(feature = "tsssp")]
-use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
 #[cfg(feature = "scard")]
 use winapi::um::wincred::CredIsMarshaledCredentialW;
+#[cfg(feature = "tsssp")]
+use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
@@ -265,7 +265,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // only marshaled smart card creds starts with '@' char
         #[cfg(feature = "scard")]
-        if user[0] == b'@' && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -285,7 +285,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // only marshaled smart card creds starts with '@' char
         #[cfg(feature = "scard")]
-        if user[0] == b'@' && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -528,7 +528,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
     // only marshaled smart card creds starts with '@' char
     #[cfg(feature = "scard")]
-    if username[0] == b'@' && CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
+    if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
         // remove null
         let new_len = password.as_ref().len() - 2;
         password.as_mut().truncate(new_len);
