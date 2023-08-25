@@ -8,6 +8,8 @@ use sspi::SmartCardIdentityBuffers;
 use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+#[cfg(feature = "tsssp")]
+use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
@@ -159,6 +161,29 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
         // SEC_WINNT_AUTH_IDENTITY
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
         (auth_version, (*auth_data).flags)
+    }
+}
+
+pub unsafe fn auth_data_to_identity_buffers(
+    security_package_name: &str,
+    p_auth_data: *const c_void,
+    package_list: &mut Option<String>,
+) -> Result<CredentialsBuffers> {
+    let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
+
+    let rawcreds = std::slice::from_raw_parts(p_auth_data as *const u8, 128);
+    debug!(?rawcreds);
+
+    #[cfg(feature = "tsssp")]
+    if SspiIsAuthIdentityEncrypted(p_auth_data) != 0 {
+        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+        return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
+    }
+
+    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_ANSI) != 0 {
+        auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
+    } else {
+        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
     }
 }
 
