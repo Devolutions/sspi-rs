@@ -86,7 +86,7 @@ pub mod winapi;
 
 mod auth_identity;
 mod ber;
-#[cfg(scard)]
+#[cfg(feature = "scard")]
 pub mod cert_utils;
 mod crypto;
 mod dns;
