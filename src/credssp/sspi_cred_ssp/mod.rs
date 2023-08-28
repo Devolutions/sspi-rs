@@ -306,6 +306,9 @@ impl SspiImpl for SspiCredSsp {
         // The CredSSP Protocol enables an application to securely delegate a user's credentials from a client to a target server.
         builder.context_requirements |= ClientRequestFlags::DELEGATE;
 
+        // The CredSSP flag should be always set in the CredSsp protocol.
+        builder.context_requirements.set(ClientRequestFlags::MUTUAL_AUTH, true);
+
         let status = match &self.state {
             CredSspState::Tls => {
                 // input token can not present on the first call
