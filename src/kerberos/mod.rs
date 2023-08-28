@@ -827,8 +827,6 @@ impl SspiImpl for Kerberos {
                     // KRB5 U2U always needs the use-session-key flag
                     context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
                 }
-                // FIXME: properly pass MUTUAL_AUTH flag
-                context_requirements.set(ClientRequestFlags::MUTUAL_AUTH, true);
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
