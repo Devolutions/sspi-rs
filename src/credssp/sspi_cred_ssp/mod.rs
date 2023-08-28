@@ -83,7 +83,7 @@ impl SspiCredSsp {
                 certificates.into_iter().map(rustls::Certificate).collect(),
                 rustls::PrivateKey(private_key),
             )
-            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?;
+            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))?;
         let config = Arc::new(server_config);
 
         Ok(Self {

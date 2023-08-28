@@ -1845,7 +1845,10 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
                 ErrorKind::InvalidParameter,
                 format!("invalid key length. actual: {}. expected: {}", actual, expected),
             ),
-            KerberosCryptoError::CipherLength(_, _) => todo!(),
+            KerberosCryptoError::CipherLength(actual, expected) => Self::new(
+                ErrorKind::InvalidParameter,
+                format!("invalid cipher length. actual: {}. expected: {}", actual, expected),
+            ),
             KerberosCryptoError::AlgorithmIdentifier(identifier) => Self::new(
                 ErrorKind::InvalidParameter,
                 format!("unknown algorithm identifier: {}", identifier),

@@ -347,7 +347,7 @@ impl CredSspClient {
                 Ok(ClientState::FinalMessage(ts_request))
             }
             CredSspState::Final => Err(Error::new(
-                ErrorKind::InternalError,
+                ErrorKind::OutOfSequence,
                 "CredSSP client's 'process' method must not be fired after the 'Finished' state",
             )),
         }
@@ -558,7 +558,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             CredSspState::Final => Err(ServerError {
                 ts_request,
                 error: Error::new(
-                    ErrorKind::InternalError,
+                    ErrorKind::UnsupportedFunction,
                     "CredSSP server's 'process' method must not be fired after the 'Finished' state",
                 ),
             }),
