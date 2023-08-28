@@ -29,7 +29,6 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: *mut c_void
 
     while !certificate.is_null() {
         let cert_der = from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize);
-
         let mut sha1 = Sha1::new();
         sha1.update(cert_der);
         let cert_thumbprint = sha1.finalize().to_vec();

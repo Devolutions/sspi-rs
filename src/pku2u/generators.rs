@@ -2,68 +2,44 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use chrono::Utc;
-use picky::hash::HashAlgorithm;
-use picky::key::PrivateKey;
-use picky::signature::SignatureAlgorithm;
-use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
-    Asn1SequenceOf, Asn1SetOf, BitStringAsn1, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2,
-    ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7,
-    ExplicitContextTag8, ImplicitContextTag0, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
+    ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8,
+    ImplicitContextTag0, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
-use picky_asn1_x509::cmsversion::CmsVersion;
-use picky_asn1_x509::content_info::EncapsulatedContentInfo;
-use picky_asn1_x509::signed_data::{
-    CertificateChoices, CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos,
-};
-use picky_asn1_x509::signer_info::{
-    Attributes, CertificateSerialNumber, DigestAlgorithmIdentifier, IssuerAndSerialNumber,
-    SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
-};
-use picky_asn1_x509::{
-    oids, AlgorithmIdentifier, Attribute, AttributeTypeAndValueParameters, AttributeValues, Certificate, ShaVariant,
-};
+use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate};
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::KEY_USAGE_FINISHED;
-use picky_krb::constants::types::{NT_SRV_INST, PA_PK_AS_REQ};
-use picky_krb::crypto::diffie_hellman::{compute_public_key, generate_private_key};
+use picky_krb::constants::types::NT_SRV_INST;
+use picky_krb::crypto::diffie_hellman::generate_private_key;
 use picky_krb::crypto::ChecksumSuite;
 use picky_krb::data_types::{
     Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncryptionKey,
-    KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime, LsapTokenInfoIntegrity, PaData, PrincipalName, Realm,
+    KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime, LsapTokenInfoIntegrity, PrincipalName, Realm,
 };
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg,
 };
-use picky_krb::messages::KdcReqBody;
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
-use picky_krb::pkinit::{
-    AuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, KrbFinished, PaPkAsReq, PkAuthenticator, Pku2uNegoBody,
-    Pku2uNegoReq, Pku2uNegoReqMetadata,
-};
+use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
 use rand::rngs::OsRng;
 use rand::Rng;
-use sha1::{Digest, Sha1};
 
-use super::{DhParameters, Pku2uConfig};
+use super::Pku2uConfig;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::client::generators::{
     AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
 };
+use crate::pk_init::DhParameters;
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// [The PKU2U Realm Name](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-09#section-3)
 /// The PKU2U realm name is defined as a reserved Kerberos realm name, and it has the value of "WELLKNOWN:PKU2U".
 pub const WELLKNOWN_REALM: &str = "WELLKNOWN:PKU2U";
-
-/// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
-/// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
-/// Key length of Aes256 is equal to 32
-pub const DH_NONCE_LEN: usize = 32;
 
 /// [The GSS-API Binding for PKU2U](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6)
 /// The type for the checksum extension.
@@ -91,7 +67,7 @@ pub fn get_mech_list() -> MechTypeList {
 }
 
 #[instrument(level = "debug", ret)]
-pub fn generate_pku2u_nego_req(service_names: Vec<&str>, config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
+pub fn generate_pku2u_nego_req(service_names: &[&str], config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
     let mut snames = Vec::with_capacity(service_names.len());
     for sname in service_names {
         snames.push(KerberosStringAsn1::from(IA5String::from_str(sname)?));
@@ -136,47 +112,6 @@ pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<Neg
     }))
 }
 
-pub fn generate_signer_info(p2p_cert: &Certificate, digest: Vec<u8>, private_key: &PrivateKey) -> Result<SignerInfo> {
-    let signed_attributes = Asn1SetOf::from(vec![
-        Attribute {
-            ty: ObjectIdentifierAsn1::from(oids::content_type()),
-            value: AttributeValues::ContentType(Asn1SetOf::from(vec![ObjectIdentifierAsn1::from(
-                oids::pkinit_auth_data(),
-            )])),
-        },
-        Attribute {
-            ty: ObjectIdentifierAsn1::from(oids::message_digest()),
-            value: AttributeValues::MessageDigest(Asn1SetOf::from(vec![OctetStringAsn1::from(digest)])),
-        },
-    ]);
-
-    let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes)?;
-
-    let signature = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA1)
-        .sign(&encoded_signed_attributes, private_key)
-        .map_err(|err| {
-            Error::new(
-                ErrorKind::InternalError,
-                format!("Cannot calculate signer info signature: {:?}", err),
-            )
-        })?;
-
-    trace!(?encoded_signed_attributes, ?signature, "Pku2u signed attributes",);
-
-    Ok(SignerInfo {
-        version: CmsVersion::V1,
-        sid: SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber {
-            issuer: p2p_cert.tbs_certificate.issuer.clone(),
-            serial_number: CertificateSerialNumber(p2p_cert.tbs_certificate.serial_number.clone()),
-        }),
-        digest_algorithm: DigestAlgorithmIdentifier(AlgorithmIdentifier::new_sha(ShaVariant::SHA1)),
-        signed_attrs: Optional::from(Attributes(Asn1SequenceOf::from(signed_attributes.0))),
-        signature_algorithm: SignatureAlgorithmIdentifier(AlgorithmIdentifier::new_rsa_encryption()),
-        signature: SignatureValue(OctetStringAsn1::from(signature)),
-        unsigned_attrs: Optional::from(UnsignedAttributes(Vec::new())),
-    })
-}
-
 /// returns (p, g, q)
 pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     (
@@ -186,7 +121,12 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
             4, 221, 239, 149, 25, 179, 205, 58, 67, 27, 48, 43, 10, 109, 242, 95, 20, 55, 79, 225, 53, 109, 109, 81,
             194, 69, 228, 133, 181, 118, 98, 94, 126, 198, 244, 76, 66, 233, 166, 55, 237, 107, 11, 255, 92, 182, 244,
             6, 183, 237, 238, 56, 107, 251, 90, 137, 159, 165, 174, 159, 36, 17, 124, 75, 31, 230, 73, 40, 102, 81,
-            236, 230, 83, 129, 255, 255, 255, 255, 255, 255, 255, 255,
+            236, 228, 91, 61, 194, 0, 124, 184, 161, 99, 191, 5, 152, 218, 72, 54, 28, 85, 211, 154, 105, 22, 63, 168,
+            253, 36, 207, 95, 131, 101, 93, 35, 220, 163, 173, 150, 28, 98, 243, 86, 32, 133, 82, 187, 158, 213, 41, 7,
+            112, 150, 150, 109, 103, 12, 53, 78, 74, 188, 152, 4, 241, 116, 108, 8, 202, 24, 33, 124, 50, 144, 94, 70,
+            46, 54, 206, 59, 227, 158, 119, 44, 24, 14, 134, 3, 155, 39, 131, 162, 236, 7, 162, 143, 181, 197, 93, 240,
+            111, 76, 82, 201, 222, 43, 203, 246, 149, 88, 23, 24, 57, 149, 73, 124, 234, 149, 106, 229, 21, 210, 38,
+            24, 152, 250, 5, 16, 21, 114, 142, 90, 138, 172, 170, 104, 255, 255, 255, 255, 255, 255, 255, 255,
         ],
         vec![2],
         vec![
@@ -195,7 +135,12 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
             247, 202, 140, 217, 230, 157, 33, 141, 152, 21, 133, 54, 249, 47, 138, 27, 167, 240, 154, 182, 182, 168,
             225, 34, 242, 66, 218, 187, 49, 47, 63, 99, 122, 38, 33, 116, 211, 27, 246, 181, 133, 255, 174, 91, 122, 3,
             91, 246, 247, 28, 53, 253, 173, 68, 207, 210, 215, 79, 146, 8, 190, 37, 143, 243, 36, 148, 51, 40, 246,
-            115, 41, 192, 255, 255, 255, 255, 255, 255, 255, 255,
+            114, 45, 158, 225, 0, 62, 92, 80, 177, 223, 130, 204, 109, 36, 27, 14, 42, 233, 205, 52, 139, 31, 212, 126,
+            146, 103, 175, 193, 178, 174, 145, 238, 81, 214, 203, 14, 49, 121, 171, 16, 66, 169, 93, 207, 106, 148,
+            131, 184, 75, 75, 54, 179, 134, 26, 167, 37, 94, 76, 2, 120, 186, 54, 4, 101, 12, 16, 190, 25, 72, 47, 35,
+            23, 27, 103, 29, 241, 207, 59, 150, 12, 7, 67, 1, 205, 147, 193, 209, 118, 3, 209, 71, 218, 226, 174, 248,
+            55, 166, 41, 100, 239, 21, 229, 251, 74, 172, 11, 140, 28, 202, 164, 190, 117, 74, 181, 114, 138, 233, 19,
+            12, 76, 125, 2, 136, 10, 185, 71, 45, 69, 86, 85, 52, 127, 255, 255, 255, 255, 255, 255, 255,
         ],
     )
 }
@@ -226,100 +171,6 @@ pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
         client_nonce: Some(rng.gen::<[u8; RANDOM_ARRAY_SIZE]>()),
         server_nonce: None,
     })
-}
-
-#[instrument(level = "trace", ret)]
-pub fn generate_pa_datas_for_as_req(
-    p2p_cert: &Certificate,
-    kdc_req_body: &KdcReqBody,
-    dh_parameters: &DhParameters,
-    private_key: &PrivateKey,
-) -> Result<Vec<PaData>> {
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
-    }
-
-    // [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
-    // paChecksum: Contains the SHA1 checksum, performed over KDC-REQ-BODY.
-    let encoded_kdc_req_body = picky_asn1_der::to_vec(&kdc_req_body)?;
-    trace!(?kdc_req_body, "Encoded KdcReqBody");
-
-    let mut sha1 = Sha1::new();
-    sha1.update(&encoded_kdc_req_body);
-
-    let kdc_req_body_sha1_hash = sha1.finalize().to_vec();
-
-    let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base);
-
-    let auth_pack = AuthPack {
-        pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
-            cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-            ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-            // always 0 in Pku2u
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(vec![0])),
-            pa_checksum: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
-                kdc_req_body_sha1_hash,
-            )))),
-        }),
-        client_public_value: Optional::from(Some(ExplicitContextTag1::from(DhReqInfo {
-            key_info: DhReqKeyInfo {
-                identifier: ObjectIdentifierAsn1::from(oids::diffie_hellman()),
-                key_info: DhDomainParameters {
-                    p: IntegerAsn1::from(dh_parameters.modulus.clone()),
-                    g: IntegerAsn1::from(dh_parameters.base.clone()),
-                    q: IntegerAsn1::from(dh_parameters.q.clone()),
-                    j: Optional::from(None),
-                    validation_params: Optional::from(None),
-                },
-            },
-            key_value: BitStringAsn1::from(BitString::with_bytes(picky_asn1_der::to_vec(&IntegerAsn1::from(
-                public_value,
-            ))?)),
-        }))),
-        supported_cms_types: Optional::from(None),
-        client_dh_nonce: Optional::from(
-            dh_parameters
-                .client_nonce
-                .as_ref()
-                .map(|nonce| ExplicitContextTag3::from(OctetStringAsn1::from(nonce.to_vec()))),
-        ),
-    };
-
-    let encoded_auth_pack = picky_asn1_der::to_vec(&auth_pack)?;
-    trace!(?encoded_auth_pack, "Encoded auth pack");
-
-    let mut sha1 = Sha1::new();
-    sha1.update(&encoded_auth_pack);
-
-    let digest = sha1.finalize().to_vec();
-
-    let signed_data = SignedData {
-        version: CmsVersion::V3,
-        digest_algorithms: DigestAlgorithmIdentifiers(Asn1SetOf::from(vec![AlgorithmIdentifier::new_sha1()])),
-        content_info: EncapsulatedContentInfo::new(oids::pkinit_auth_data(), Some(encoded_auth_pack)),
-        certificates: Optional::from(CertificateSet(vec![CertificateChoices::Certificate(Asn1RawDer(
-            picky_asn1_der::to_vec(p2p_cert)?,
-        ))])),
-        crls: None,
-        signers_infos: SignersInfos(Asn1SetOf::from(vec![generate_signer_info(
-            p2p_cert,
-            digest,
-            private_key,
-        )?])),
-    };
-
-    let pa_pk_as_req = PaPkAsReq {
-        signed_auth_pack: ImplicitContextTag0::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&signed_data)?)),
-        trusted_certifiers: Optional::from(None),
-        kdc_pk_id: Optional::from(None),
-    };
-
-    Ok(vec![PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PK_AS_REQ.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&pa_pk_as_req)?)),
-    }])
 }
 
 pub fn generate_neg<T: Debug + PartialEq + Clone>(

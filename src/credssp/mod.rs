@@ -610,7 +610,7 @@ impl SspiImpl for SspiContext {
                 } else {
                     return Err(Error::new(
                         ErrorKind::NoCredentials,
-                        "Auth identity is not provided for the Pku2u",
+                        "Auth identity is not provided for the Ntlm",
                     ));
                 };
                 builder
@@ -691,7 +691,7 @@ impl SspiImpl for SspiContext {
                     } else {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
-                            "Auth identity is not provided for the Pku2u",
+                            "Auth identity is not provided for the Ntlm",
                         ));
                     };
                 builder.full_transform(ntlm, Some(&mut Some(auth_identity))).execute()

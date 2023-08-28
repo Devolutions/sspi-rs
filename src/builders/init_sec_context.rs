@@ -141,6 +141,10 @@ impl<
         &mut self.credentials_handle
     }
 
+    pub fn credentials_handle(&mut self) -> &Option<&'a mut CredsHandle> {
+        &self.credentials_handle
+    }
+
     pub fn new() -> Self {
         Self {
             phantom_creds_use_set: PhantomData,
