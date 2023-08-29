@@ -486,7 +486,7 @@ impl SspiImpl for Negotiate {
             if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
                 let username = crate::utils::bytes_to_utf16_string(&identity.username);
                 let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
-                    .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "Can not detect KDC url."))?;
+                    .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
                 info!("Negotiate: try Kerberos");
 
                 self.protocol =
