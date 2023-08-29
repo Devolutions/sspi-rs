@@ -356,7 +356,7 @@ impl SspiImpl for SspiCredSsp {
                         .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
                             Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present")
                         })?)
-                        .with_context_requirements(ClientRequestFlags::empty())
+                        .with_context_requirements(builder.context_requirements)
                         .with_target_data_representation(DataRepresentation::Native);
                 if let Some(target_name) = &builder.target_name {
                     inner_builder = inner_builder.with_target_name(target_name);

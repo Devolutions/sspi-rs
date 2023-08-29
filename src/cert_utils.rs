@@ -266,11 +266,11 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
             }
         }
 
-        CryptReleaseContext(crypt_context_handle, 0);
-
         index += 1;
         is_first = false;
     }
+
+    CryptReleaseContext(crypt_context_handle, 0);
 
     Err(Error::new(ErrorKind::InternalError, "Cannot get smart card info"))
 }

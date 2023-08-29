@@ -481,6 +481,23 @@ impl SspiImpl for Negotiate {
             }
         }
 
+        #[cfg(feature = "scard")]
+        if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
+            if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
+                let username = crate::utils::bytes_to_utf16_string(&identity.username);
+                let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
+                    .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
+                info!("Negotiate: try Kerberos");
+
+                self.protocol =
+                    NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
+                        url: Some(host),
+                        network_client: self.network_client_factory.network_client(),
+                        hostname: Some(self.hostname.clone()),
+                    })?);
+            }
+        }
+
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {
             match kerberos.initialize_security_context_impl(builder) {
                 Result::Err(Error {
