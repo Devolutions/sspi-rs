@@ -183,6 +183,7 @@ impl AvPair {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MsvAvFlags: u32 {
         const MESSAGE_INTEGRITY_CHECK = 0x0000_0002;
     }

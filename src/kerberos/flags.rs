@@ -7,6 +7,7 @@ bitflags! {
     /// the KDC and indicates the flags that the client wants set on the tickets.
     ///
     /// [KDCOptions](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct KdcOptions: u32 {
         const FORWARDABLE = 0x40000000;
         const FORWARDED = 0x20000000;
@@ -30,6 +31,7 @@ bitflags! {
     /// affects the way the request is processed.
     ///
     /// [APOptions](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ApOptions: u32 {
         const USE_SESSION_KEY = 0x40000000;
         const MUTUAL_REQUIRED = 0x20000000;

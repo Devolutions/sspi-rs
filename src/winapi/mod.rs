@@ -5,8 +5,8 @@ use std::convert::TryFrom;
 use std::str::FromStr;
 use std::{io, ptr, slice};
 
-use chrono::{NaiveDate, NaiveDateTime};
 use num_traits::{FromPrimitive, ToPrimitive};
+use time::{Date, Month, OffsetDateTime};
 use winapi::ctypes::c_void;
 use winapi::shared::sspi::{
     CredHandle, FreeContextBuffer, FreeCredentialsHandle, PSecPkgInfoW, QuerySecurityPackageInfoW, SecBuffer,
@@ -219,27 +219,39 @@ unsafe fn wide_ptr_to_string(ptr: *const u16) -> crate::Result<String> {
     String::from_utf16(s).map_err(From::from)
 }
 
-fn file_time_to_system_time(timestamp: TimeStamp) -> NaiveDateTime {
+fn file_time_to_system_time(timestamp: TimeStamp) -> OffsetDateTime {
+    use winapi::shared::minwindef::FILETIME;
+
     let mut system_time = SYSTEMTIME::default();
 
     unsafe {
-        FileTimeToSystemTime(&timestamp as *const _ as *const _, &mut system_time as *mut _);
+        let filetime = FILETIME {
+            dwLowDateTime: timestamp.u().LowPart,
+            dwHighDateTime: timestamp.u().HighPart as u32,
+        };
+
+        FileTimeToSystemTime(&filetime as *const FILETIME, &mut system_time as *mut SYSTEMTIME);
     }
 
-    NaiveDate::from_ymd_opt(
-        i32::from(system_time.wYear),
-        u32::from(system_time.wMonth),
-        u32::from(system_time.wDay),
-    )
-    .and_then(|date| {
-        date.and_hms_micro_opt(
-            u32::from(system_time.wHour),
-            u32::from(system_time.wMinute),
-            u32::from(system_time.wSecond),
-            u32::from(system_time.wMilliseconds),
-        )
-    })
-    .unwrap() // FIXME: should we return an Option? An error?
+    // FIXME: should we return an error instead of unwrapping?
+
+    let year = i32::from(system_time.wYear);
+
+    let month = u8::try_from(system_time.wMonth).unwrap();
+    let month = Month::try_from(month).unwrap();
+
+    let day = u8::try_from(system_time.wDay).unwrap();
+
+    let date = Date::from_calendar_date(year, month, day).unwrap();
+
+    let hour = u8::try_from(system_time.wHour).unwrap();
+    let minute = u8::try_from(system_time.wMinute).unwrap();
+    let second = u8::try_from(system_time.wSecond).unwrap();
+    let millisecond = u32::from(system_time.wMilliseconds);
+
+    let date_time = date.with_hms_micro(hour, minute, second, microsecond).unwrap();
+
+    date_time.assume_utc()
 }
 
 fn str_to_win_wstring(value: &str) -> Vec<u16> {
