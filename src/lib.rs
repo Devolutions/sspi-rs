@@ -8,14 +8,9 @@
 //! # Getting started
 //!
 //! Here is a quick example how to start working with the crate. This is the first stage of the client-server authentication performed on the client side.
-//! It includes calling several SSPI functions and choosing between our own and WinAPI implementations of NTLM SSP depending on the system:
 //!
 //! ```rust
 //! use sspi::Sspi;
-//!
-//! #[cfg(windows)]
-//! use sspi::winapi::Ntlm;
-//! #[cfg(not(windows))]
 //! use sspi::Ntlm;
 //! use sspi::builders::EmptyInitializeSecurityContext;
 //! use sspi::SspiImpl;
@@ -53,22 +48,6 @@
 //!
 //! println!("Initialized security context with result status: {:?}", result.status);
 //! ```
-//! It is also possible to use any of the Windows SSPs that we do not implement. Here is an example of querying all
-//! available SSPs and acquiring Negotiate SSP on Windows:
-//! ```
-//! # #[cfg(windows)]
-//! # mod win {
-//! # fn main() {
-//! let package_name = "Negotiate";
-//! // Get information about the specified security package
-//! let package = sspi::winapi::query_security_package_info(sspi::SecurityPackageType::Other(package_name.to_string()))
-//!     .expect("query_security_package_info resulted in error");
-//!
-//! // Acquire the SSP using its name
-//! let pack = sspi::winapi::SecurityPackage::from_package_type(package.name);
-//! # }
-//! # }
-//! ```
 
 #[macro_use]
 extern crate tracing;
@@ -82,8 +61,6 @@ pub mod network_client;
 pub mod ntlm;
 mod pk_init;
 pub mod pku2u;
-#[cfg(windows)]
-pub mod winapi;
 
 #[allow(unreachable_patterns)]
 mod auth_identity;

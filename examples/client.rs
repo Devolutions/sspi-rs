@@ -9,12 +9,8 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::builders::EmptyInitializeSecurityContext;
-#[cfg(windows)]
-use sspi::winapi::Ntlm;
-#[cfg(not(windows))]
-use sspi::Ntlm;
 use sspi::{
-    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, SecurityBuffer, SecurityBufferType,
+    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, SecurityBuffer, SecurityBufferType,
     SecurityStatus, Sspi, SspiImpl,
 };
 
