@@ -15,14 +15,8 @@ name = "kerberos"
 required-features = ["network_client"]
 
 [workspace]
-members = [
-  "ffi",
-  "ffi/symbol-rename-macro",
-]
-exclude = [
-  "tools/sspi-ffi-attacker",
-  "tools/wasm-testcompile",
-]
+members = ["ffi", "ffi/symbol-rename-macro", "winscard-rs"]
+exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile"]
 
 [features]
 default = []
