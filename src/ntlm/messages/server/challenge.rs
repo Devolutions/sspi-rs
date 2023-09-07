@@ -40,7 +40,7 @@ pub fn write_challenge(context: &mut Ntlm, mut transport: impl io::Write) -> cra
     check_state(context.state)?;
 
     let server_challenge = generate_challenge()?;
-    let timestamp = generate_timestamp()?;
+    let timestamp = now_file_time_timestamp()?;
     let target_info = get_challenge_target_info(timestamp)?;
 
     context.flags = get_flags(context.flags);

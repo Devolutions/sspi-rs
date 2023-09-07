@@ -1,4 +1,3 @@
-use chrono::Utc;
 use oid::ObjectIdentifier;
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
@@ -27,6 +26,7 @@ use picky_krb::pkinit::{
 };
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
+use time::OffsetDateTime;
 
 use crate::kerberos::client::generators::MAX_MICROSECONDS_IN_SECOND;
 use crate::{Error, ErrorKind, Result};
@@ -99,8 +99,8 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
         ]);
     }
 
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
+    let current_date = OffsetDateTime::now_utc();
+    let mut microseconds = current_date.microsecond();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }

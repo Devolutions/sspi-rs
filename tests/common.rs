@@ -1,6 +1,5 @@
 use std::io;
 
-use chrono::Local;
 use lazy_static::lazy_static;
 use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
@@ -8,6 +7,7 @@ use sspi::{
     DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi,
     SspiEx,
 };
+use time::OffsetDateTime;
 
 lazy_static! {
     pub static ref CREDENTIALS: AuthIdentity = AuthIdentity {
@@ -60,8 +60,10 @@ where
             .with_credential_use(CredentialUse::Outbound)
             .execute()?
     };
+
     if let Some(expiry) = expiry {
-        assert!(Local::now().naive_local() < expiry);
+        let now = OffsetDateTime::now_utc();
+        assert!(now < expiry);
     }
 
     Ok(credentials_handle)
@@ -79,7 +81,8 @@ where
         .with_credential_use(CredentialUse::Inbound)
         .execute()?;
     if let Some(expiry) = expiry {
-        assert!(Local::now().naive_local() < expiry);
+        let now = OffsetDateTime::now_utc();
+        assert!(now < expiry);
     }
 
     Ok(credentials_handle)

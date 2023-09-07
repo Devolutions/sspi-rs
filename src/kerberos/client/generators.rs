@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use chrono::{Duration, Utc};
 use md5::{Digest, Md5};
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
@@ -38,6 +37,7 @@ use picky_krb::messages::{
 };
 use rand::rngs::OsRng;
 use rand::Rng;
+use time::{Duration, OffsetDateTime};
 
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
@@ -104,8 +104,8 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
     } = options;
 
     let mut pa_datas = if *with_pre_auth {
-        let current_date = Utc::now();
-        let mut microseconds = current_date.timestamp_subsec_micros();
+        let current_date = OffsetDateTime::now_utc();
+        let mut microseconds = current_date.microsecond();
         if microseconds > MAX_MICROSECONDS_IN_SECOND {
             microseconds = MAX_MICROSECONDS_IN_SECOND;
         }
@@ -179,8 +179,8 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReq
         context_requirements,
     } = options;
 
-    let expiration_date = Utc::now()
-        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
+    let expiration_date = OffsetDateTime::now_utc()
+        .checked_add(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
     let host_address = HostAddress {
@@ -268,8 +268,8 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
 
     let (service_name, service_principal_name) = parse_target_name(service_principal)?;
 
-    let expiration_date = Utc::now()
-        .checked_add_signed(Duration::days(TGT_TICKET_LIFETIME_DAYS))
+    let expiration_date = OffsetDateTime::now_utc()
+        .checked_add(Duration::days(TGT_TICKET_LIFETIME_DAYS))
         .unwrap();
 
     let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
@@ -381,8 +381,8 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         ..
     } = options;
 
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
+    let current_date = OffsetDateTime::now_utc();
+    let mut microseconds = current_date.microsecond();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
 
 use super::{Assigned, NotAssigned, ToAssign};
 use crate::{CredentialUse, Luid, SspiPackage};
@@ -15,7 +15,7 @@ pub type FilledAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a,
 #[derive(Debug, Clone)]
 pub struct AcquireCredentialsHandleResult<C> {
     pub credentials_handle: C,
-    pub expiry: Option<NaiveDateTime>,
+    pub expiry: Option<OffsetDateTime>,
 }
 
 // we cannot replace it with the `From` trait implementation due to conflict with blanked impl in the std
