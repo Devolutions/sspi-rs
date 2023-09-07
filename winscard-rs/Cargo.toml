@@ -1,0 +1,19 @@
+[package]
+name = "winscard-rs"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/devolutions/winscard-rs"
+repository = "https://github.com/devolutions/winscard-rs"
+authors = ["Devolutions Inc. <infos@devolutions.net>"]
+
+[lib]
+name = "winscard"
+
+[dependencies]
+iso7816 = "0.1.1"
+
+[dev-dependencies]
+proptest = "1.2.0"
+proptest-derive = "0.4.0"

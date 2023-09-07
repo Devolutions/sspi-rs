@@ -18,12 +18,10 @@ required-features = ["network_client"]
 members = [
   "ffi",
   "ffi/symbol-rename-macro",
-  "crates/ffi-types",
+  "winscard-rs",
+  "crates/ffi-types"
 ]
-exclude = [
-  "tools/sspi-ffi-attacker",
-  "tools/wasm-testcompile",
-]
+exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile"]
 
 [features]
 default = []
