@@ -1,7 +1,7 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 extern crate alloc;
-#[cfg(feature = "std")]
-extern crate std;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::{fmt, result};
