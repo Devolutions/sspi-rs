@@ -1043,6 +1043,7 @@ bitflags! {
     /// # MSDN
     ///
     /// * [EncryptMessage function (`fQOP` parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct EncryptionFlags: u32 {
         const WRAP_OOB_DATA = 0x4000_0000;
         const WRAP_NO_ENCRYPT = 0x8000_0001;
@@ -1055,6 +1056,7 @@ bitflags! {
     /// # MSDN
     ///
     /// * [DecryptMessage function (`pfQOP` parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct DecryptionFlags: u32 {
         const SIGN_ONLY = 0x8000_0000;
         const WRAP_NO_ENCRYPT = 0x8000_0001;
@@ -1068,6 +1070,7 @@ bitflags! {
     ///
     /// * [Context Requirements](https://docs.microsoft.com/en-us/windows/win32/secauthn/context-requirements)
     /// * [InitializeSecurityContextW function (fContextReq parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ClientRequestFlags: u32 {
         /// The server can use the context to authenticate to other servers as the client.
         /// The `MUTUAL_AUTH` flag must be set for this flag to work. Valid for Kerberos. Ignore this flag for constrained delegation.
@@ -1121,6 +1124,7 @@ bitflags! {
     ///
     /// * [Context Requirements](https://docs.microsoft.com/en-us/windows/win32/secauthn/context-requirements)
     /// * [AcceptSecurityContext function function (fContextReq parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext?redirectedfrom=MSDN)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ServerRequestFlags: u32 {
         /// The server is allowed to impersonate the client. Ignore this flag for [constrained delegation](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly).
         const DELEGATE = 0x1;
@@ -1164,6 +1168,7 @@ bitflags! {
     ///
     /// * [Context Requirements](https://docs.microsoft.com/en-us/windows/win32/secauthn/context-requirements)
     /// * [InitializeSecurityContextW function (pfContextAttr parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ClientResponseFlags: u32 {
         /// The server can use the context to authenticate to other servers as the client.
         /// The `MUTUAL_AUTH` flag must be set for this flag to work. Valid for Kerberos. Ignore this flag for constrained delegation.
@@ -1216,6 +1221,7 @@ bitflags! {
     ///
     /// * [Context Requirements](https://docs.microsoft.com/en-us/windows/win32/secauthn/context-requirements)
     /// * [AcceptSecurityContext function function (pfContextAttr parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext?redirectedfrom=MSDN)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ServerResponseFlags: u32 {
         /// The server is allowed to impersonate the client. Ignore this flag for [constrained delegation](https://docs.microsoft.com/windows/desktop/SecGloss/c-gly).
         const DELEGATE = 0x1;
@@ -1452,6 +1458,7 @@ bitflags! {
     /// # MSDN
     ///
     /// * [SecPkgInfoW structure (`fCapabilities` parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkginfow)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct PackageCapabilities: u32 {
         /// The security package supports the `make_signature` (TBI) and `verify_signature` (TBI) functions.
         const INTEGRITY = 0x1;
@@ -1558,6 +1565,7 @@ bitflags! {
     /// # MSDN
     ///
     /// * [CERT_TRUST_STATUS structure](https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_trust_status)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CertTrustErrorStatus: u32 {
         /// No error found for this certificate or chain.
         const NO_ERROR = 0x0;
@@ -1630,6 +1638,7 @@ bitflags! {
     /// # MSDN
     ///
     /// * [CERT_TRUST_STATUS structure](https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_trust_status)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CertTrustInfoStatus: u32 {
         /// An exact match issuer certificate has been found for this certificate. This status code applies to certificates only.
         const HAS_EXACT_MATCH_ISSUER = 0x1;

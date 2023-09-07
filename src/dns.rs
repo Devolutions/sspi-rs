@@ -16,17 +16,20 @@ cfg_if::cfg_if! {
             let mut records = Vec::new();
             unsafe {
                 let mut p_query_results: *mut DNS_RECORDA = null_mut();
-                let dns_status = DnsQuery_W(&HSTRING::from(name), DNS_TYPE_SRV as u16,
-                    DNS_QUERY_STANDARD, null_mut(), &mut p_query_results, null_mut());
+                let dns_status = DnsQuery_W(&HSTRING::from(name), DNS_TYPE_SRV,
+                    DNS_QUERY_STANDARD, None, &mut p_query_results, None);
 
-                if dns_status == 0 {
-                    let p_name_target = (*p_query_results).Data.Srv.pNameTarget;
-                    if let Ok(name_target) = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16).to_string() {
-                        records.push(name_target);
+                match dns_status {
+                    Ok(()) => {
+                        let p_name_target = (*p_query_results).Data.Srv.pNameTarget;
+                        if let Ok(name_target) = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16).to_string() {
+                            records.push(name_target);
+                        }
                     }
+                    Err(error) => error!(%error, "DnsQuery_W failed"),
                 }
 
-                DnsFree(p_query_results as *const c_void, DnsFreeRecordList);
+                DnsFree(Some(p_query_results as *const c_void), DnsFreeRecordList);
             }
             records
         }
@@ -263,7 +266,7 @@ cfg_if::cfg_if! {
                             socket_addr,
                             protocol,
                             tls_dns_name: None,
-                            trust_nx_responses: false,
+                            trust_negative_responses: false,
                             bind_addr: None
                         });
                     }
@@ -273,7 +276,7 @@ cfg_if::cfg_if! {
             None
         }
 
-        fn get_trust_dns_resolver_from_name_servers(name_servers: Vec<String>) -> Option<TokioAsyncResolver> {
+        fn get_trust_dns_resolver_from_name_servers(name_servers: Vec<String>) -> TokioAsyncResolver {
             let mut resolver_config = ResolverConfig::new();
 
             for name_server_url in name_servers {
@@ -285,23 +288,23 @@ cfg_if::cfg_if! {
             let mut resolver_options = ResolverOpts::default();
             resolver_options.validate = false;
 
-            TokioAsyncResolver::tokio(resolver_config, resolver_options).ok()
+            TokioAsyncResolver::tokio(resolver_config, resolver_options)
         }
 
         #[cfg(target_os="windows")]
         fn get_trust_dns_resolver(domain: &str) -> Option<TokioAsyncResolver> {
             let name_servers = get_name_servers_for_domain(domain);
-            get_trust_dns_resolver_from_name_servers(name_servers)
+            Some(get_trust_dns_resolver_from_name_servers(name_servers))
         }
 
         #[cfg(not(target_os="windows"))]
         fn get_trust_dns_resolver(_domain: &str) -> Option<TokioAsyncResolver> {
             if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
                 let name_servers: Vec<String> = name_server_list
-                    .split(',').map(|c|c.trim().to_string()).filter(|x: &String| !x.is_empty()).collect();
-                get_trust_dns_resolver_from_name_servers(name_servers)
+                    .split(',').map(|c|c.trim()).filter(|x| !x.is_empty()).map(String::from).collect();
+                Some(get_trust_dns_resolver_from_name_servers(name_servers))
             } else if let Ok((resolver_config, resolver_options)) = read_system_conf() {
-                TokioAsyncResolver::tokio(resolver_config, resolver_options).ok()
+                Some(TokioAsyncResolver::tokio(resolver_config, resolver_options))
             } else {
                 None
             }

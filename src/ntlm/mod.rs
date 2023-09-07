@@ -502,6 +502,7 @@ impl Mic {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     struct NegotiateFlags: u32 {
         /// W-bit
         /// requests 56-bit encryption

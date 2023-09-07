@@ -252,8 +252,8 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
         if !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 {
             *package_list = Some(String::from_utf16_lossy(from_raw_parts(
-                (*auth_data).package_list as *const u16,
-                (*auth_data).package_list_length as usize,
+                (*auth_data).package_list,
+                usize::try_from((*auth_data).package_list_length).unwrap(),
             )));
         }
         let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);

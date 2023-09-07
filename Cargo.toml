@@ -30,54 +30,54 @@ tsssp = ["dep:rustls"]
 scard = ["dep:pcsc"]
 
 [dependencies]
-byteorder = "1.2.7"
-bitflags = "1.0"
-rand = "0.8.5"
-cfg-if = "0.1"
+byteorder = "1.4"
+bitflags = "2.4"
+rand = "0.8"
+cfg-if = "1"
 chrono = "0.4"
-md-5 = "0.9"
-md4 = "0.9"
-sha2 = "0.9"
+md-5 = "0.10"
+md4 = "0.10"
+sha2 = "0.10"
 sha1 = "0.10"
-hmac = "0.11"
+hmac = "0.12"
 crypto-mac = "0.11"
-num-derive = "0.2"
+num-derive = "0.4"
 num-traits = "0.2"
-lazy_static = "1.2"
-serde = "1.0"
-serde_derive = "1.0"
-url = "2.2.2"
+lazy_static = "1.4"
+serde = "1"
+serde_derive = "1"
+url = "2.4"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
 
 picky = { version = "7.0.0-rc.8", default-features = false }
-picky-asn1 = { version = "0.8.0", features = ["chrono_conversion"] }
-picky-asn1-der = "0.4.1"
-picky-asn1-x509 = { version = "0.12.0", features = ["pkcs7"] }
-picky-krb = "0.8.0"
+picky-krb = "0.8"
+picky-asn1 = { version = "0.8", features = ["chrono_conversion"] }
+picky-asn1-der = "0.4"
+picky-asn1-x509 = { version = "0.12", features = ["pkcs7"] }
 
-oid = "0.2.1"
-uuid = { version = "1.3", features = ["v4"] }
-trust-dns-resolver = { version = "0.21.2", optional = true }
-portpicker = { version = "0.1.1", optional = true }
-num-bigint-dig = "0.8.1"
-tracing = "0.1.37"
-rustls = { version = "0.20.7", features = ["dangerous_configuration"], optional = true }
-zeroize = { version = "1.5.7", features = ["zeroize_derive"] }
-tokio = { version = "1.1", features = ["time", "rt"], optional = true }
-pcsc = { version = "2.8.0", optional = true }
+oid = "0.2"
+uuid = { version = "1.4", features = ["v4"] }
+trust-dns-resolver = { version = "0.23", optional = true }
+portpicker = { version = "0.1", optional = true }
+num-bigint-dig = "0.8"
+tracing = "0.1"
+rustls = { version = "0.21", features = ["dangerous_configuration"], optional = true }
+zeroize = { version = "1.6", features = ["zeroize_derive"] }
+tokio = { version = "1.32", features = ["time", "rt"], optional = true }
+pcsc = { version = "2.8", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.10"
-winapi = { version = "0.3", features = ["sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
-windows = { version = "0.39.0", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
-windows-sys = { version = "0.42.0", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+winreg = "0.51"
+winapi = { version = "0.3", features = ["std", "sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
+windows = { version = "0.51", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+windows-sys = { version = "0.48", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-async-dnssd = "0.5.0"
-futures = "0.3.1"
-tokio = { version = "1.1", features = ["time", "rt"] }
+async-dnssd = "0.5"
+futures = "0.3"
+tokio = { version = "1.32", features = ["time", "rt"] }
 
 [dev-dependencies]
-static_assertions = "1.1"
-whoami = "0.5"
+static_assertions = "1"
+whoami = "1.4"
 picky = { version = "7.0.0-rc.8", features = ["x509"] }

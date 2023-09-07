@@ -39,7 +39,7 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
 }
 
 pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: &[SecurityBuffer], allocate: bool) {
-    let to_buffers = from_raw_parts_mut(to_buffers as *mut SecBuffer, from_buffers.len());
+    let to_buffers = from_raw_parts_mut(to_buffers, from_buffers.len());
     for i in 0..from_buffers.len() {
         let buffer = &from_buffers[i];
         let buffer_size = buffer.buffer.len();
