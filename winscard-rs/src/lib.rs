@@ -23,13 +23,19 @@ impl Response {
 
 impl From<Response> for Vec<u8> {
     fn from(value: Response) -> Self {
-        let status_as_bytes: [u8; 2] = value.status.into();
-        if let Some(mut bytes) = value.data {
-            bytes.extend(status_as_bytes);
-            bytes
+        // status is always two bytes in length
+        let mut vec_capacity = 2;
+        let mut encoded: Vec<u8>;
+        if let Some(bytes) = value.data {
+            vec_capacity += bytes.len();
+            encoded = Vec::with_capacity(vec_capacity);
+            encoded.extend(bytes);
         } else {
-            Vec::from(status_as_bytes)
+            encoded = Vec::with_capacity(vec_capacity);
         }
+        let status_as_bytes: [u8; 2] = value.status.into();
+        encoded.extend(status_as_bytes);
+        encoded
     }
 }
 
