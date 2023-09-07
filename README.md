@@ -8,9 +8,6 @@ The purpose of sspi-rs is to clean the original interface from cluttering and pr
 
 The sspi-rs works in accordance with the MSDN documentation. At the moment, [NT LAN Manager (NTLM)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b38c36ed-2804-4868-a9ff-8dd3182128e4) is implemented and available for platform independent execution. It is also possible to create your own SSPs by implementing the [`SspiImpl`]() trait. More on that in the [Documentation](target/doc/sspi/index.html).
 
-###### WinAPI
-You can switch between the [`sspi`]() module to use the platform independent implementations of the SSPs, and the [`sspi::winapi`]() module to use the native Windows libraries when running under Windows.
-
 ###### Ease of use
 Some SSPI functions tend to be cumbersome, that's why sspi-rs allows to use SSPI in a convenient way by utilizing builders. Examples are available in the [examples](examples), [example section](#example), and [Documentation](target/doc/sspi/index.html).
 
@@ -31,11 +28,8 @@ Documentation will give you a comprehensive overlook of the crate. For the examp
 
 The usage of the SSPs is as simple as creating an instance of the security provider and calling its functions.
 
-It is easy to switch between Windows and our SSP implementations. Here is an example of acquiring a credentials handle and a timestamp of their vaidity. The source of `Ntlm` is selected automatically depending on the platform:
-```Rust
-#[cfg(windows)]
-use sspi::{winapi::Ntlm, Sspi, CredentialUse};
-#[cfg(unix)]
+Here is an example of acquiring a credentials handle and a timestamp of their validity:
+```rust
 use sspi::{Ntlm, Sspi, CredentialUse};
 
 fn main() {

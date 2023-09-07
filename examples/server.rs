@@ -7,12 +7,8 @@ use std::io;
 use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-#[cfg(windows)]
-use sspi::winapi::Ntlm;
-#[cfg(not(windows))]
-use sspi::Ntlm;
 use sspi::{
-    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType,
+    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer, SecurityBufferType,
     SecurityStatus, ServerRequestFlags, Sspi,
 };
 
