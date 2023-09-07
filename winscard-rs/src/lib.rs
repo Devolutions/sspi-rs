@@ -1,15 +1,19 @@
-use std::{fmt, result};
+#![no_std]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::{fmt, result};
 
 use iso7816::Aid;
-#[cfg(test)]
-use proptest_derive::Arbitrary;
 
 const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 
-pub type APDUResult<T> = result::Result<T, Error>;
+pub type ApduResult<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
-#[cfg_attr(test, derive(Arbitrary))]
+#[cfg_attr(feature = "proptest", derive(proptest_derive::Arbitrary))]
 pub struct Response {
     status: Status,
     data: Option<Vec<u8>>,
@@ -73,7 +77,7 @@ pub enum SCardState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(test, derive(Arbitrary))]
+#[cfg_attr(feature = "proptest", derive(proptest_derive::Arbitrary))]
 pub enum Status {
     NotFound,
     OK,
@@ -102,22 +106,29 @@ impl From<Status> for [u8; 2] {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
+    extern crate std;
 
-    use super::*;
+    pub use super::*;
 
-    proptest! {
-        #[test]
-        fn response_is_encoded_correctly(arb_response in any::<Response>()) {
-            let data = arb_response.data.clone();
-            let status: [u8; 2] = arb_response.status.clone().into();
-            let expected_result = if let Some(mut bytes) = data {
-                bytes.extend(status);
-                bytes
-            } else {
-                Vec::from(status)
-            };
-            assert_eq!(expected_result, Vec::from(arb_response));
+    #[cfg(feature = "proptest")]
+    mod proptests {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn response_is_encoded_correctly(arb_response in any::<Response>()) {
+                let data = arb_response.data.clone();
+                let status: [u8; 2] = arb_response.status.clone().into();
+                let expected_result = if let Some(mut bytes) = data {
+                    bytes.extend(status);
+                    bytes
+                } else {
+                    Vec::from(status)
+                };
+                assert_eq!(expected_result, Vec::from(arb_response));
+            }
         }
     }
 }
