@@ -34,7 +34,8 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> crate::
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
-    let mut package_info_ptr = ptr::null_mut() as *mut SecPkgInfoW;
+
+    let mut package_info_ptr = ptr::null_mut();
 
     unsafe {
         convert_winapi_status(QuerySecurityPackageInfoW(
@@ -60,7 +61,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> crate::
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
 pub fn enumerate_security_packages() -> crate::Result<Vec<PackageInfo>> {
     let mut size: u32 = 0;
-    let mut packages = ptr::null_mut() as *mut SecPkgInfoW;
+    let mut packages = ptr::null_mut();
 
     unsafe {
         convert_winapi_status(winapi::shared::sspi::EnumerateSecurityPackagesW(
@@ -247,9 +248,9 @@ fn file_time_to_system_time(timestamp: TimeStamp) -> OffsetDateTime {
     let hour = u8::try_from(system_time.wHour).unwrap();
     let minute = u8::try_from(system_time.wMinute).unwrap();
     let second = u8::try_from(system_time.wSecond).unwrap();
-    let millisecond = u32::from(system_time.wMilliseconds);
+    let millisecond = system_time.wMilliseconds;
 
-    let date_time = date.with_hms_micro(hour, minute, second, microsecond).unwrap();
+    let date_time = date.with_hms_milli(hour, minute, second, millisecond).unwrap();
 
     date_time.assume_utc()
 }

@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::str::FromStr;
 
-use chrono::Utc;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
@@ -28,6 +27,7 @@ use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
 use rand::rngs::OsRng;
 use rand::Rng;
+use time::OffsetDateTime;
 
 use super::Pku2uConfig;
 use crate::crypto::compute_md5_channel_bindings_hash;
@@ -215,8 +215,8 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         extensions,
     } = options;
 
-    let current_date = Utc::now();
-    let mut microseconds = current_date.timestamp_subsec_micros();
+    let current_date = OffsetDateTime::now_utc();
+    let mut microseconds = current_date.microsecond();
     if microseconds > MAX_MICROSECONDS_IN_SECOND {
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }

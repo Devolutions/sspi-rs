@@ -1,4 +1,4 @@
-use chrono::{TimeZone, Utc};
+use time::{Date, Month, OffsetDateTime};
 
 use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::messages::computations::*;
@@ -6,40 +6,29 @@ use crate::ntlm::messages::test::*;
 use crate::AuthIdentity;
 
 #[test]
-fn get_system_time_as_file_time_test_same_start_and_end_date() {
-    let expected = 0;
-    let start_date = Utc::now();
-    let end_date = start_date;
-    assert_eq!(get_system_time_as_file_time(start_date, end_date).unwrap(), expected);
-}
-
-#[test]
 fn get_system_time_as_file_time_test_one_second_diff() {
     let expected = 1000 * 1000 * 10;
-    let start_date = Utc.with_ymd_and_hms(1601, 1, 1, 0, 1, 1).unwrap();
-    let end_date = Utc.with_ymd_and_hms(1601, 1, 1, 0, 1, 2).unwrap();
-    assert_eq!(get_system_time_as_file_time(start_date, end_date).unwrap(), expected);
+    let end_date = Date::from_calendar_date(1601, Month::January, 1)
+        .unwrap()
+        .with_hms(0, 1, 2)
+        .unwrap()
+        .assume_utc();
+    assert_eq!(convert_to_file_time(end_date).unwrap(), expected);
 }
 
 #[test]
 fn get_system_time_as_file_time_test_start_date_is_bigger_than_end_date() {
-    let start_date = Utc.with_ymd_and_hms(2019, 1, 2, 0, 1, 1).unwrap();
-    let end_date = Utc.with_ymd_and_hms(2019, 1, 1, 0, 1, 1).unwrap();
-    assert!(get_system_time_as_file_time(start_date, end_date).is_err());
-}
-
-#[test]
-fn get_system_time_as_file_time_test_start_date_is_not_windows_file_time_start_date() {
-    let start_date = Utc.with_ymd_and_hms(1602, 1, 1, 0, 1, 1).unwrap();
-    let end_date = Utc::now();
-    get_system_time_as_file_time(start_date, end_date).unwrap();
+    let end_date = Date::from_calendar_date(1601, Month::January, 1)
+        .unwrap()
+        .midnight()
+        .assume_utc();
+    assert!(convert_to_file_time(end_date).is_err());
 }
 
 #[test]
 fn get_system_time_as_file_time_test_returns_value_in_correct_case() {
-    let start_date = Utc.with_ymd_and_hms(1601, 1, 1, 0, 1, 1).unwrap();
-    let end_date = Utc::now();
-    get_system_time_as_file_time(start_date, end_date).unwrap();
+    let end_date = OffsetDateTime::now_utc();
+    convert_to_file_time(end_date).unwrap();
 }
 
 #[test]

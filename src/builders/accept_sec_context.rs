@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use chrono::NaiveDateTime;
+use time::OffsetDateTime;
 
 use super::{
     ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
@@ -34,7 +34,7 @@ pub type FilledAcceptSecurityContext<'a, AuthData, C> = AcceptSecurityContext<
 pub struct AcceptSecurityContextResult {
     pub status: SecurityStatus,
     pub flags: ServerResponseFlags,
-    pub expiry: Option<NaiveDateTime>,
+    pub expiry: Option<OffsetDateTime>,
 }
 
 /// A builder to execute one of the SSPI functions. Returned by the `accept_security_context` method.

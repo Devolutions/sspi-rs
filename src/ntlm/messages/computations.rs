@@ -4,10 +4,10 @@ mod test;
 use std::io::{self, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use chrono::{DateTime, TimeZone, Utc};
 use lazy_static::lazy_static;
 use rand::rngs::OsRng;
 use rand::Rng;
+use time::OffsetDateTime;
 
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, compute_md4, compute_md5, compute_md5_channel_bindings_hash, HASH_SIZE};
@@ -43,10 +43,13 @@ lazy_static! {
     };
 }
 
-pub fn get_system_time_as_file_time<T>(start_date: DateTime<T>, end_date: DateTime<T>) -> crate::Result<u64>
-where
-    T: TimeZone,
-{
+fn convert_to_file_time(end_date: OffsetDateTime) -> crate::Result<u64> {
+    let start_date = time::Date::from_calendar_date(1601, time::Month::January, 1)
+        .expect("hardcoded")
+        .with_hms(0, 1, 1)
+        .expect("hardcoded")
+        .assume_utc();
+
     if start_date > end_date {
         Err(crate::Error::new(
             crate::ErrorKind::InternalError,
@@ -56,11 +59,10 @@ where
             ),
         ))
     } else {
-        Ok(end_date
-            .signed_duration_since(start_date)
-            .num_microseconds()
-            .expect("System time does not fit to i64") as u64
-            * 10)
+        let duration = end_date - start_date;
+        let whole_microseconds = duration.whole_microseconds();
+        let file_time = u64::try_from(whole_microseconds).expect("whole_microseconds to u64 conversion") * 10;
+        Ok(file_time)
     }
 }
 
@@ -119,13 +121,8 @@ pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], rand::Error> {
     Ok(OsRng.gen::<[u8; CHALLENGE_SIZE]>())
 }
 
-pub fn generate_timestamp() -> crate::Result<u64> {
-    let start_time = Utc
-        .with_ymd_and_hms(1601, 1, 1, 0, 1, 1)
-        .single()
-        .expect("hardcoded value should never fail");
-
-    get_system_time_as_file_time(start_time, Utc::now())
+pub fn now_file_time_timestamp() -> crate::Result<u64> {
+    convert_to_file_time(OffsetDateTime::now_utc())
 }
 
 pub fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
@@ -275,6 +272,6 @@ pub fn get_challenge_timestamp_from_response(target_info: &[u8]) -> crate::Resul
     if let Some(AvPair::Timestamp(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_TIMESTAMP) {
         Ok(*value)
     } else {
-        generate_timestamp()
+        now_file_time_timestamp()
     }
 }
