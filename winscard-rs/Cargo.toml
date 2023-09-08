@@ -9,7 +9,7 @@ repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
 
 [features]
-proptest = ["std", "dep:proptest-derive", "dep:proptest"]
+proptest = ["std"]
 std = []
 
 [lib]
@@ -17,5 +17,6 @@ name = "winscard"
 
 [dependencies]
 iso7816 = "0.1.1"
-proptest-derive = { version = "0.4.0", optional = true }
-proptest = { version = "1.2.0", optional = true }
+
+[dev-dependencies]
+proptest = "1.2.0"
