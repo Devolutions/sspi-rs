@@ -53,10 +53,11 @@ impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
         // "stub_string" - we don't check the server's certificate validity so we can use any server name
         let example_com = "stub_string".try_into().unwrap();
-        let client_config = ClientConfig::builder()
+        let mut client_config = ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
             .with_no_client_auth();
+        client_config.key_log = std::sync::Arc::new(rustls::KeyLogFile::new());
         let config = Arc::new(client_config);
 
         Ok(Self {
