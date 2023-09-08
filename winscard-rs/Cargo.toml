@@ -18,6 +18,7 @@ name = "winscard"
 [dependencies]
 bitflags = "2.4.0"
 iso7816 = "0.1.1"
+picky = "6.3.0"
 
 [dev-dependencies]
 proptest = "1.2.0"
