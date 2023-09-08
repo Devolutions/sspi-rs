@@ -1,18 +1,80 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+mod helpers;
+
 extern crate alloc;
 
 pub mod winscard;
 
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::{fmt, result};
 
-use iso7816::Aid;
+pub type ApduResult<T> = result::Result<T, Error>;
+
+use helpers::build_chuid;
+use iso7816::{Aid, Command};
+use picky::key::{KeyError, PrivateKey};
+pub use scard_context::{Reader, ScardContext};
 
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 
-pub type ApduResult<T> = result::Result<T, Error>;
+pub type Result<T> = result::Result<T, Error>;
+
+pub struct SmartCard {
+    // chuid will always have a fixed length when excluding optional fields and asymmetric signature
+    chuid: [u8; 61],
+    pin: Vec<u8>,
+    auth_cert: Vec<u8>,
+    auth_pk: PrivateKey,
+    state: SCardState,
+    pending_command: Option<Command<1024>>,
+    pending_response: Option<(Vec<u8>, usize)>,
+}
+
+impl SmartCard {
+    pub fn new(pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
+        let chuid = build_chuid();
+        let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
+        if !(6..=8).contains(&pin.len()) {
+            return Err(Error::new(
+                ErrorKind::InvalidPin,
+                "PIN should be no shorter than 6 bytes and no longer than 8",
+            ));
+        }
+        Ok(SmartCard {
+            chuid,
+            pin,
+            auth_cert: auth_cert_der,
+            auth_pk,
+            state: SCardState::Ready,
+            pending_command: None,
+            pending_response: None,
+        })
+    }
+
+    fn get_next_response_chunk(&mut self) -> Option<(&[u8], usize)> {
+        if let Some((ref vec, ref mut current_index)) = self.pending_response {
+            if *current_index == vec.len() {
+                return None;
+            }
+            let chunk_size = 256;
+            let next_index = *current_index + chunk_size.min(vec.len() - *current_index);
+            let chunk = &vec[*current_index..next_index];
+            let bytes_left = if next_index != vec.len() {
+                // update the index if there is still data left
+                *current_index = next_index;
+                vec.len() - next_index
+            } else {
+                0
+            };
+            Some((chunk, bytes_left))
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Response {
@@ -63,6 +125,15 @@ impl fmt::Display for Error {
 
 #[cfg(feature = "std")]
 impl std::error::Error for Error {}
+
+impl From<KeyError> for Error {
+    fn from(value: KeyError) -> Self {
+        Error::new(
+            ErrorKind::KeyError,
+            format!("Error while parsing a PEM-encoded private key: {}", value),
+        )
+    }
+}
 
 #[derive(Debug)]
 #[repr(u32)]
