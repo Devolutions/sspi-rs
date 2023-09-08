@@ -13,7 +13,6 @@ const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 
 pub type ApduResult<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
-#[cfg_attr(feature = "proptest", derive(proptest_derive::Arbitrary))]
 pub struct Response {
     status: Status,
     data: Option<Vec<u8>>,
@@ -77,7 +76,6 @@ pub enum SCardState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "proptest", derive(proptest_derive::Arbitrary))]
 pub enum Status {
     NotFound,
     OK,
@@ -113,12 +111,32 @@ mod tests {
     #[cfg(feature = "proptest")]
     mod proptests {
         use proptest::prelude::*;
+        use proptest::{collection, option, prop_compose};
 
         use super::*;
 
+        fn arb_status() -> impl Strategy<Value = Status> {
+            prop_oneof![
+                Just(Status::NotFound),
+                Just(Status::OK),
+                Just(Status::VerificationFailed),
+                any::<u8>().prop_map(Status::MoreAvailable),
+                Just(Status::KeyReferenceNotFound),
+                Just(Status::SecurityStatusNotSatisfied),
+                Just(Status::IncorrectP1orP2),
+                Just(Status::IncorrectDataField)
+            ]
+        }
+
+        prop_compose! {
+            fn arb_response()(status in arb_status(), data in option::of(collection::vec(any::<u8>(), 0..256))) -> Response {
+                Response::new(status, data)
+            }
+        }
+
         proptest! {
             #[test]
-            fn response_is_encoded_correctly(arb_response in any::<Response>()) {
+            fn response_is_encoded_correctly(arb_response in arb_response()) {
                 let data = arb_response.data.clone();
                 let status: [u8; 2] = arb_response.status.clone().into();
                 let expected_result = if let Some(mut bytes) = data {
