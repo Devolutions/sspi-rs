@@ -17,8 +17,12 @@ name = "winscard"
 
 [dependencies]
 bitflags = "2.4.0"
+chrono = "0.4.30"
 iso7816 = "0.1.1"
+iso7816-tlv = "0.4.3"
 picky = "6.3.0"
+tracing = "0.1.37"
+uuid = { version = "1.4.1", features = ["v4"] }
 
 [dev-dependencies]
 proptest = "1.2.0"

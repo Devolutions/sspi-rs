@@ -7,17 +7,18 @@ extern crate alloc;
 mod scard_context;
 pub mod winscard;
 
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::{fmt, result};
 
-use helpers::build_chuid;
-use iso7816::{Aid, Command};
+use helpers::{build_auth_cert, build_chuid, tlv_tags};
+use iso7816_tlv::TlvError;
 use picky::key::{KeyError, PrivateKey};
 pub use scard_context::{Reader, ScardContext};
 
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
+const CHUNK_SIZE: usize = 256;
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -35,6 +36,7 @@ pub struct SmartCard {
 impl SmartCard {
     pub fn new(pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
         let chuid = build_chuid();
+        let auth_cert = build_auth_cert(auth_cert_der)?;
         let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
         if !(6..=8).contains(&pin.len()) {
             return Err(Error::new(
@@ -45,7 +47,7 @@ impl SmartCard {
         Ok(SmartCard {
             chuid,
             pin,
-            auth_cert: auth_cert_der,
+            auth_cert,
             auth_pk,
             state: SCardState::Ready,
             pending_command: None,
@@ -58,8 +60,7 @@ impl SmartCard {
             if *current_index == vec.len() {
                 return None;
             }
-            let chunk_size = 256;
-            let next_index = *current_index + chunk_size.min(vec.len() - *current_index);
+            let next_index = *current_index + CHUNK_SIZE.min(vec.len() - *current_index);
             let chunk = &vec[*current_index..next_index];
             let bytes_left = if next_index != vec.len() {
                 // update the index if there is still data left
@@ -130,6 +131,18 @@ impl From<KeyError> for Error {
         Error::new(
             ErrorKind::KeyError,
             format!("Error while parsing a PEM-encoded private key: {}", value),
+        )
+    }
+}
+
+impl From<TlvError> for Error {
+    fn from(value: TlvError) -> Self {
+        Error::new(
+            ErrorKind::TlvError,
+            format!(
+                "Error while trying to build or parse a TLV-encoded value or tag: {}",
+                value
+            ),
         )
     }
 }
