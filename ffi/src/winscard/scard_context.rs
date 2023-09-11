@@ -7,7 +7,7 @@ use winscard_ffi_types::{
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardEstablishContext(
+pub extern "system" fn SCardEstablishContext(
     _dw_scope: u32,
     _r1: *const c_void,
     _r2: *const c_void,
@@ -16,28 +16,27 @@ pub unsafe extern "system" fn SCardEstablishContext(
     todo!()
 }
 
-pub type SCardEstablishContextFn =
-    unsafe extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
+pub type SCardEstablishContextFn = extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardReleaseContext(_context: ScardContext) -> ScardStatus {
+pub extern "system" fn SCardReleaseContext(_context: ScardContext) -> ScardStatus {
     todo!()
 }
 
-pub type SCardReleaseContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardReleaseContextFn = extern "system" fn(ScardContext) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIsValidContext(_context: ScardContext) -> ScardStatus {
+pub extern "system" fn SCardIsValidContext(_context: ScardContext) -> ScardStatus {
     todo!()
 }
 
-pub type SCardIsValidContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardIsValidContextFn = extern "system" fn(ScardContext) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListReaderGroupsA(
+pub extern "system" fn SCardListReaderGroupsA(
     _context: ScardContext,
     _gmsz_groups: LpStr,
     _pcch_groups: LpDword,
@@ -45,11 +44,11 @@ pub unsafe extern "system" fn SCardListReaderGroupsA(
     todo!()
 }
 
-pub type SCardListReaderGroupsAFn = unsafe extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
+pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListReaderGroupsW(
+pub extern "system" fn SCardListReaderGroupsW(
     _context: ScardContext,
     _gmsz_groups: LpWStr,
     _pcch_groups: LpDword,
@@ -57,11 +56,11 @@ pub unsafe extern "system" fn SCardListReaderGroupsW(
     todo!()
 }
 
-pub type SCardListReaderGroupsWFn = unsafe extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
+pub type SCardListReaderGroupsWFn = extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListReadersA(
+pub extern "system" fn SCardListReadersA(
     _context: ScardContext,
     _msz_groups: LpCStr,
     _msz_readers: LpStr,
@@ -70,11 +69,11 @@ pub unsafe extern "system" fn SCardListReadersA(
     todo!()
 }
 
-pub type SCardListReadersAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
+pub type SCardListReadersAFn = extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListReadersW(
+pub extern "system" fn SCardListReadersW(
     _context: ScardContext,
     _msz_groups: LpCWStr,
     _msz_readers: LpWStr,
@@ -83,11 +82,11 @@ pub unsafe extern "system" fn SCardListReadersW(
     todo!()
 }
 
-pub type SCardListReadersWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpStr, LpDword) -> ScardStatus;
+pub type SCardListReadersWFn = extern "system" fn(ScardContext, LpCWStr, LpStr, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListCardsA(
+pub extern "system" fn SCardListCardsA(
     _context: ScardContext,
     _pb_atr: LpCByte,
     _rgquid_nterfaces: LpCGuid,
@@ -98,12 +97,11 @@ pub unsafe extern "system" fn SCardListCardsA(
     todo!()
 }
 
-pub type SCardListCardsAFn =
-    unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u8, LpDword) -> ScardStatus;
+pub type SCardListCardsAFn = extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u8, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListCardsW(
+pub extern "system" fn SCardListCardsW(
     _context: ScardContext,
     _pb_atr: LpCByte,
     _rgquid_nterfaces: LpCGuid,
@@ -114,12 +112,11 @@ pub unsafe extern "system" fn SCardListCardsW(
     todo!()
 }
 
-pub type SCardListCardsWFn =
-    unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u16, LpDword) -> ScardStatus;
+pub type SCardListCardsWFn = extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u16, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListInterfacesA(
+pub extern "system" fn SCardListInterfacesA(
     _context: ScardContext,
     _sz_scard: LpCStr,
     _pguid_interfaces: LpGuid,
@@ -128,11 +125,11 @@ pub unsafe extern "system" fn SCardListInterfacesA(
     todo!()
 }
 
-pub type SCardListInterfacesAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpGuid, LpDword) -> ScardStatus;
+pub type SCardListInterfacesAFn = extern "system" fn(ScardContext, LpCStr, LpGuid, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardListInterfacesW(
+pub extern "system" fn SCardListInterfacesW(
     _context: ScardContext,
     _sz_scard: LpCWStr,
     _pguid_interfaces: LpGuid,
@@ -141,11 +138,11 @@ pub unsafe extern "system" fn SCardListInterfacesW(
     todo!()
 }
 
-pub type SCardListInterfacesWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpGuid, LpDword) -> ScardStatus;
+pub type SCardListInterfacesWFn = extern "system" fn(ScardContext, LpCWStr, LpGuid, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetProviderIdA(
+pub extern "system" fn SCardGetProviderIdA(
     _context: ScardContext,
     _sz_card: LpCStr,
     _pguid_provider_id: LpGuid,
@@ -153,11 +150,11 @@ pub unsafe extern "system" fn SCardGetProviderIdA(
     todo!()
 }
 
-pub type SCardGetProviderIdAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpGuid) -> ScardStatus;
+pub type SCardGetProviderIdAFn = extern "system" fn(ScardContext, LpCStr, LpGuid) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetProviderIdW(
+pub extern "system" fn SCardGetProviderIdW(
     _context: ScardContext,
     _sz_card: LpCWStr,
     _pguid_provider_id: LpGuid,
@@ -165,11 +162,11 @@ pub unsafe extern "system" fn SCardGetProviderIdW(
     todo!()
 }
 
-pub type SCardGetProviderIdWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpGuid) -> ScardStatus;
+pub type SCardGetProviderIdWFn = extern "system" fn(ScardContext, LpCWStr, LpGuid) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
+pub extern "system" fn SCardGetCardTypeProviderNameA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
     _dw_provide_id: u32,
@@ -180,11 +177,11 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 }
 
 pub type SCardGetCardTypeProviderNameAFn =
-    unsafe extern "system" fn(ScardContext, LpCStr, u32, *mut u8, LpDword) -> ScardStatus;
+    extern "system" fn(ScardContext, LpCStr, u32, *mut u8, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
+pub extern "system" fn SCardGetCardTypeProviderNameW(
     _context: ScardContext,
     _sz_card_name: LpCWStr,
     _dw_provide_id: u32,
@@ -195,49 +192,43 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
 }
 
 pub type SCardGetCardTypeProviderNameWFn =
-    unsafe extern "system" fn(ScardContext, LpCWStr, u32, *mut u16, LpDword) -> ScardStatus;
+    extern "system" fn(ScardContext, LpCWStr, u32, *mut u16, LpDword) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceReaderGroupA(
-    _context: ScardContext,
-    _sz_group_name: LpCStr,
-) -> ScardStatus {
+pub extern "system" fn SCardIntroduceReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardIntroduceReaderGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardIntroduceReaderGroupAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceReaderGroupW(
-    _context: ScardContext,
-    _sz_group_name: LpCWStr,
-) -> ScardStatus {
+pub extern "system" fn SCardIntroduceReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardIntroduceReaderGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardIntroduceReaderGroupWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
+pub extern "system" fn SCardForgetReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetReaderGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardForgetReaderGroupAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
+pub extern "system" fn SCardForgetReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetReaderGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardForgetReaderGroupWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceReaderA(
+pub extern "system" fn SCardIntroduceReaderA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
     _sz_device_name: LpCStr,
@@ -245,11 +236,11 @@ pub unsafe extern "system" fn SCardIntroduceReaderA(
     todo!()
 }
 
-pub type SCardIntroduceReaderAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardIntroduceReaderAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceReaderW(
+pub extern "system" fn SCardIntroduceReaderW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
     _sz_device_name: LpCWStr,
@@ -257,27 +248,27 @@ pub unsafe extern "system" fn SCardIntroduceReaderW(
     todo!()
 }
 
-pub type SCardIntroduceReaderWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardIntroduceReaderWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetReaderA(_context: ScardContext, _sz_reader_name: LpCStr) -> ScardStatus {
+pub extern "system" fn SCardForgetReaderA(_context: ScardContext, _sz_reader_name: LpCStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetReaderAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardForgetReaderAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetReaderW(_context: ScardContext, _sz_reader_name: LpCWStr) -> ScardStatus {
+pub extern "system" fn SCardForgetReaderW(_context: ScardContext, _sz_reader_name: LpCWStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetReaderWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardForgetReaderWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardAddReaderToGroupA(
+pub extern "system" fn SCardAddReaderToGroupA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
     _sz_group_name: LpCStr,
@@ -285,11 +276,11 @@ pub unsafe extern "system" fn SCardAddReaderToGroupA(
     todo!()
 }
 
-pub type SCardAddReaderToGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardAddReaderToGroupAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardAddReaderToGroupW(
+pub extern "system" fn SCardAddReaderToGroupW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
     _sz_group_name: LpCWStr,
@@ -297,11 +288,11 @@ pub unsafe extern "system" fn SCardAddReaderToGroupW(
     todo!()
 }
 
-pub type SCardAddReaderToGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardAddReaderToGroupWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardRemoveReaderFromGroupA(
+pub extern "system" fn SCardRemoveReaderFromGroupA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
     _sz_group_name: LpCStr,
@@ -309,11 +300,11 @@ pub unsafe extern "system" fn SCardRemoveReaderFromGroupA(
     todo!()
 }
 
-pub type SCardRemoveReaderFromGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardRemoveReaderFromGroupAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardRemoveReaderFromGroupW(
+pub extern "system" fn SCardRemoveReaderFromGroupW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
     _sz_group_name: LpCWStr,
@@ -321,11 +312,11 @@ pub unsafe extern "system" fn SCardRemoveReaderFromGroupW(
     todo!()
 }
 
-pub type SCardRemoveReaderFromGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardRemoveReaderFromGroupWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceCardTypeA(
+pub extern "system" fn SCardIntroduceCardTypeA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
     _pguid_primary_provider: LpCGuid,
@@ -339,11 +330,11 @@ pub unsafe extern "system" fn SCardIntroduceCardTypeA(
 }
 
 pub type SCardIntroduceCardTypeAFn =
-    unsafe extern "system" fn(ScardContext, LpCStr, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardContext;
+    extern "system" fn(ScardContext, LpCStr, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardIntroduceCardTypeW(
+pub extern "system" fn SCardIntroduceCardTypeW(
     _context: ScardContext,
     _sz_card_name: LpCWStr,
     _pguid_primary_provider: LpCGuid,
@@ -357,11 +348,11 @@ pub unsafe extern "system" fn SCardIntroduceCardTypeW(
 }
 
 pub type SCardIntroduceCardTypeWFn =
-    unsafe extern "system" fn(ScardContext, LpCWStr, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardContext;
+    extern "system" fn(ScardContext, LpCWStr, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardSetCardTypeProviderNameA(
+pub extern "system" fn SCardSetCardTypeProviderNameA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
     _dw_provider_id: u32,
@@ -370,11 +361,11 @@ pub unsafe extern "system" fn SCardSetCardTypeProviderNameA(
     todo!()
 }
 
-pub type SCardSetCardTypeProviderNameAFn = unsafe extern "system" fn(ScardContext, LpCStr, u32, LpCStr) -> ScardContext;
+pub type SCardSetCardTypeProviderNameAFn = extern "system" fn(ScardContext, LpCStr, u32, LpCStr) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardSetCardTypeProviderNameW(
+pub extern "system" fn SCardSetCardTypeProviderNameW(
     _context: ScardContext,
     _sz_card_name: LpCWStr,
     _dw_provider_id: u32,
@@ -383,52 +374,51 @@ pub unsafe extern "system" fn SCardSetCardTypeProviderNameW(
     todo!()
 }
 
-pub type SCardSetCardTypeProviderNameWFn =
-    unsafe extern "system" fn(ScardContext, LpCWStr, u32, LpCWStr) -> ScardContext;
+pub type SCardSetCardTypeProviderNameWFn = extern "system" fn(ScardContext, LpCWStr, u32, LpCWStr) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetCardTypeA(_context: ScardContext, _sz_card_name: LpCStr) -> ScardStatus {
+pub extern "system" fn SCardForgetCardTypeA(_context: ScardContext, _sz_card_name: LpCStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetCardTypeAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardContext;
+pub type SCardForgetCardTypeAFn = extern "system" fn(ScardContext, LpCStr) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_name: LpCWStr) -> ScardStatus {
+pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_name: LpCWStr) -> ScardStatus {
     todo!()
 }
 
-pub type SCardForgetCardTypeWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardContext;
+pub type SCardForgetCardTypeWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, _pv_mem: LpCVoid) -> ScardStatus {
+pub extern "system" fn SCardFreeMemory(_context: ScardContext, _pv_mem: LpCVoid) -> ScardStatus {
     todo!()
 }
 
-pub type SCardFreeMemoryFn = unsafe extern "system" fn(ScardContext, LpCVoid) -> ScardContext;
+pub type SCardFreeMemoryFn = extern "system" fn(ScardContext, LpCVoid) -> ScardContext;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardAccessStartedEvent() -> Handle {
+pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     todo!()
 }
 
-pub type SCardAccessStartedEventFn = unsafe extern "system" fn() -> Handle;
+pub type SCardAccessStartedEventFn = extern "system" fn() -> Handle;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardReleaseStartedEvent() -> c_void {
+pub extern "system" fn SCardReleaseStartedEvent() -> c_void {
     todo!()
 }
 
-pub type SCardReleaseStartedEventFn = unsafe extern "system" fn() -> c_void;
+pub type SCardReleaseStartedEventFn = extern "system" fn() -> c_void;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardLocateCardsA(
+pub extern "system" fn SCardLocateCardsA(
     _context: ScardContext,
     _msz_cards: LpCStr,
     _rg_reader_states: LpScardReaderStateA,
@@ -437,11 +427,11 @@ pub unsafe extern "system" fn SCardLocateCardsA(
     todo!()
 }
 
-pub type SCardLocateCardsAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpScardReaderStateA, u32) -> ScardStatus;
+pub type SCardLocateCardsAFn = extern "system" fn(ScardContext, LpCStr, LpScardReaderStateA, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardLocateCardsW(
+pub extern "system" fn SCardLocateCardsW(
     _context: ScardContext,
     _msz_cards: LpCWStr,
     _rg_reader_states: LpScardReaderStateW,
@@ -450,12 +440,11 @@ pub unsafe extern "system" fn SCardLocateCardsW(
     todo!()
 }
 
-pub type SCardLocateCardsWFn =
-    unsafe extern "system" fn(ScardContext, LpCWStr, LpScardReaderStateW, u32) -> ScardStatus;
+pub type SCardLocateCardsWFn = extern "system" fn(ScardContext, LpCWStr, LpScardReaderStateW, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardLocateCardsByATRA(
+pub extern "system" fn SCardLocateCardsByATRA(
     _context: ScardContext,
     _rg_atr_masks: LpScardAtrMask,
     _c_atrs: u32,
@@ -466,11 +455,11 @@ pub unsafe extern "system" fn SCardLocateCardsByATRA(
 }
 
 pub type SCardLocateCardsByATRAFn =
-    unsafe extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateA, u32) -> ScardStatus;
+    extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateA, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardLocateCardsByATRW(
+pub extern "system" fn SCardLocateCardsByATRW(
     _context: ScardContext,
     _rg_atr_masks: LpScardAtrMask,
     _c_atrs: u32,
@@ -481,11 +470,11 @@ pub unsafe extern "system" fn SCardLocateCardsByATRW(
 }
 
 pub type SCardLocateCardsByATRWFn =
-    unsafe extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateW, u32) -> ScardStatus;
+    extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateW, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetStatusChangeA(
+pub extern "system" fn SCardGetStatusChangeA(
     _context: ScardContext,
     _dw_timeout: u32,
     _rg_reader_states: LpScardReaderStateA,
@@ -494,12 +483,11 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     todo!()
 }
 
-pub type SCardGetStatusChangeAFn =
-    unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateA, u32) -> ScardStatus;
+pub type SCardGetStatusChangeAFn = extern "system" fn(ScardContext, u32, LpScardReaderStateA, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeW"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardGetStatusChangeW(
+pub extern "system" fn SCardGetStatusChangeW(
     _context: ScardContext,
     _dw_timeout: u32,
     _rg_reader_states: LpScardReaderStateW,
@@ -508,13 +496,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     todo!()
 }
 
-pub type SCardGetStatusChangeWFn =
-    unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateW, u32) -> ScardStatus;
+pub type SCardGetStatusChangeWFn = extern "system" fn(ScardContext, u32, LpScardReaderStateW, u32) -> ScardStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
 #[no_mangle]
-pub unsafe extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
+pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
     todo!()
 }
 
-pub type SCardCancelFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardCancelFn = extern "system" fn(ScardContext) -> ScardStatus;
