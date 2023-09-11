@@ -13,9 +13,10 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+# for testing
+default = ["scard"]
 tsssp = ["sspi/tsssp"]
-scard = ["sspi/scard"]
+scard = ["sspi/scard", "dep:winscard-ffi-types"]
 
 [dependencies]
 cfg-if = "1"
@@ -23,6 +24,7 @@ libc = "0.2"
 num-traits = "0.2"
 whoami = "1.4"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
+winscard-ffi-types = { path = "../crates/winscard-ffi-types", optional = true }
 
 # logging
 tracing = { version = "0.1" }
