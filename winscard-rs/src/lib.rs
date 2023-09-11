@@ -14,10 +14,12 @@ use core::{fmt, result};
 pub type ApduResult<T> = result::Result<T, Error>;
 
 use helpers::{build_auth_cert, build_chuid, tlv_tags};
-use iso7816::{Aid, Command};
+use iso7816::{Aid, Command, Instruction};
+use iso7816_tlv::ber::{Tag, Tlv, Value};
 use iso7816_tlv::TlvError;
 use picky::key::{KeyError, PrivateKey};
 pub use scard_context::{Reader, ScardContext};
+use tracing::error;
 
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 const CHUNK_SIZE: usize = 256;
@@ -55,6 +57,88 @@ impl SmartCard {
             pending_command: None,
             pending_response: None,
         })
+    }
+
+    pub fn handle_command(&mut self, data: Vec<u8>) -> Result<Response> {
+        let cmd = Command::<1024>::try_from(&data).map_err(|e| {
+            error!("APDU command parsing error: {:?}", e);
+            Error::new(
+                ErrorKind::MalformedRequest,
+                format!("Error: an error happened while parsing an APDU command: {:?}", e),
+            )
+        })?;
+        let cmd = match self.pending_command.as_mut() {
+            Some(chained) => {
+                chained.extend_from_command(&cmd).map_err(|_| {
+                    Error::new(
+                        ErrorKind::MalformedRequest,
+                        "Error: an error happened while trying to build a chained APDU command",
+                    )
+                })?;
+                if cmd.class().chain().not_the_last() {
+                    return Ok(Response::new(Status::OK, None));
+                } else {
+                    self.pending_command.take().unwrap()
+                }
+            }
+            None => cmd,
+        };
+        if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
+            // if the application wasn't selected, only the SELECT command can be used
+            return Ok(Response::new(Status::NotFound, None));
+        }
+        match cmd.instruction() {
+            Instruction::Select => self.select(cmd),
+            Instruction::GetData => self.get_data(cmd),
+            Instruction::Verify => self.verify(cmd),
+            Instruction::GeneralAuthenticate => self.general_authenticate(cmd),
+            Instruction::GetResponse => self.get_response(),
+            _ => {
+                error!("unimplemented instruction {:?}", cmd.instruction());
+                Ok(Response::new(Status::InstructionNotSupported, None))
+            }
+        }
+    }
+
+    fn select(&self, cmd: Command<1024>) -> Result<Response> {
+        if cmd.p1 != 0x04 || cmd.p2 != 0x00 || !PIV_AID.matches(cmd.data()) {
+            return Ok(Response::new(Status::NotFound, None));
+        }
+        let data = Tlv::new(
+            Tag::try_from(tlv_tags::APPLICATION_PROPERTY_TEMPLATE)?,
+            Value::Constructed(vec![
+                Tlv::new(
+                    Tag::try_from(tlv_tags::APPLICATION_IDENTIFIER)?,
+                    // application portion + version portion of the PIV AID
+                    // NIST.SP.800-73-4 Part 1, section 2.2
+                    Value::Primitive(vec![0x00, 0x00, 0x10, 0x00, 0x01, 0x00]),
+                )?,
+                Tlv::new(
+                    Tag::try_from(tlv_tags::COEXISTING_TAG_ALLOCATION_AUTHORITY)?,
+                    Value::Constructed(vec![Tlv::new(
+                        Tag::try_from(tlv_tags::APPLICATION_IDENTIFIER)?,
+                        Value::Primitive(PIV_AID.to_vec()),
+                    )?]),
+                )?,
+            ]),
+        )?;
+        Ok(Response::new(Status::OK, Some(data.to_vec())))
+    }
+
+    fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
+        unimplemented!();
+    }
+
+    fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
+        unimplemented!();
+    }
+
+    fn get_response(&mut self) -> Result<Response> {
+        unimplemented!();
+    }
+
+    fn general_authenticate(&self, cmd: Command<1024>) -> Result<Response> {
+        unimplemented!();
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(&[u8], usize)> {
@@ -222,6 +306,7 @@ pub enum ErrorKind {
     WrongChv = 0x8010006B,
 }
 
+#[derive(PartialEq)]
 pub enum SCardState {
     Ready,
     PivAppSelected,
@@ -233,12 +318,14 @@ pub enum SCardState {
 pub enum Status {
     NotFound,
     OK,
-    VerificationFailed,
+    // number of allowed retries is always 9
+    VerificationFailedWithRetries,
     MoreAvailable(u8),
     KeyReferenceNotFound,
     SecurityStatusNotSatisfied,
     IncorrectP1orP2,
     IncorrectDataField,
+    InstructionNotSupported,
 }
 
 impl From<Status> for [u8; 2] {
@@ -246,12 +333,13 @@ impl From<Status> for [u8; 2] {
         match value {
             Status::NotFound => [0x6A, 0x82],
             Status::OK => [0x90, 0x00],
-            Status::VerificationFailed => [0x63, 0x00],
+            Status::VerificationFailedWithRetries => [0x63, 0xC9],
             Status::MoreAvailable(bytes_left) => [0x61, bytes_left],
             Status::KeyReferenceNotFound => [0x6A, 0x88],
             Status::SecurityStatusNotSatisfied => [0x69, 0x82],
             Status::IncorrectP1orP2 => [0x6A, 0x86],
             Status::IncorrectDataField => [0x6A, 0x80],
+            Status::InstructionNotSupported => [0x6D, 0x00],
         }
     }
 }

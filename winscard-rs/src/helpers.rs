@@ -87,5 +87,4 @@ pub mod tlv_tags {
     pub const TAG_LIST: u8 = 0x5C;
     pub const CERTIFICATE: u8 = 0x70;
     pub const CERT_INFO: u8 = 0x71;
-
 }
