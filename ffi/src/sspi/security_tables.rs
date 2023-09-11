@@ -7,7 +7,7 @@ use sspi::KERBEROS_VERSION;
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
-use crate::common::{
+use super::common::{
     AcceptSecurityContext, AcceptSecurityContextFn, ApplyControlToken, ApplyControlTokenFn, CompleteAuthToken,
     CompleteAuthTokenFn, DecryptMessage, DecryptMessageFn, DeleteSecurityContext, DeleteSecurityContextFn,
     EncryptMessage, EncryptMessageFn, ExportSecurityContext, ExportSecurityContextFn, FreeContextBuffer,
@@ -15,7 +15,7 @@ use crate::common::{
     ImpersonateSecurityContextFn, MakeSignature, MakeSignatureFn, QuerySecurityContextToken,
     QuerySecurityContextTokenFn, RevertSecurityContext, RevertSecurityContextFn, VerifySignature, VerifySignatureFn,
 };
-use crate::sec_handle::{
+use super::sec_handle::{
     AcquireCredentialsHandleA, AcquireCredentialsHandleFnA, AcquireCredentialsHandleFnW, AcquireCredentialsHandleW,
     AddCredentialsA, AddCredentialsFnA, AddCredentialsFnW, AddCredentialsW, ChangeAccountPasswordA,
     ChangeAccountPasswordFnA, ChangeAccountPasswordFnW, ChangeAccountPasswordW, ImportSecurityContextA,
@@ -29,11 +29,11 @@ use crate::sec_handle::{
     SetContextAttributesW, SetCredentialsAttributesA, SetCredentialsAttributesFnA, SetCredentialsAttributesFnW,
     SetCredentialsAttributesW,
 };
-use crate::sec_pkg_info::{
+use super::sec_pkg_info::{
     EnumerateSecurityPackagesA, EnumerateSecurityPackagesFnA, EnumerateSecurityPackagesFnW, EnumerateSecurityPackagesW,
     QuerySecurityPackageInfoA, QuerySecurityPackageInfoFnA, QuerySecurityPackageInfoFnW, QuerySecurityPackageInfoW,
 };
-use crate::utils::into_raw_ptr;
+use super::utils::into_raw_ptr;
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {

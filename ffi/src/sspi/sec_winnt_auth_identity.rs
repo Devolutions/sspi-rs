@@ -15,10 +15,10 @@ use winapi::um::wincred::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
-use crate::sspi_data_types::{SecWChar, SecurityStatus};
 #[cfg(feature = "tsssp")]
-use crate::utils::raw_wide_str_trim_nulls;
-use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
+use super::utils::raw_wide_str_trim_nulls;
+use super::sspi_data_types::{SecWChar, SecurityStatus};
+use super::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -679,8 +679,7 @@ mod tests {
     use num_traits::ToPrimitive;
     use sspi::ErrorKind;
 
-    use super::{SecWinntAuthIdentityW, SspiEncodeStringsAsAuthIdentity};
-    use crate::sec_winnt_auth_identity::SspiFreeAuthIdentity;
+    use super::{SecWinntAuthIdentityW, SspiEncodeStringsAsAuthIdentity, SspiFreeAuthIdentity};
 
     fn get_user_credentials() -> ([u16; 5], [u16; 5], [u16; 7]) {
         // (user, pass, domain)

@@ -3,9 +3,9 @@ use std::slice::from_raw_parts;
 use libc::c_char;
 use sspi::CredentialsBuffers;
 
-use crate::credentials_attributes::CredentialsAttributes;
-use crate::sec_handle::CredentialsHandle;
-use crate::sspi_data_types::SecWChar;
+use super::credentials_attributes::CredentialsAttributes;
+use super::sec_handle::CredentialsHandle;
+use super::sspi_data_types::SecWChar;
 
 pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))

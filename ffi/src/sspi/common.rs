@@ -10,11 +10,11 @@ use sspi::{
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
-use crate::credentials_attributes::CredentialsAttributes;
-use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
-use crate::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
-use crate::sspi_data_types::{PTimeStamp, SecurityStatus};
-use crate::utils::{into_raw_ptr, transform_credentials_handle};
+use super::credentials_attributes::CredentialsAttributes;
+use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use super::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
+use super::sspi_data_types::{PTimeStamp, SecurityStatus};
+use super::utils::{into_raw_ptr, transform_credentials_handle};
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
