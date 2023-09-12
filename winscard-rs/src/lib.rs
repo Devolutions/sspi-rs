@@ -26,17 +26,12 @@ impl Response {
 
 impl From<Response> for Vec<u8> {
     fn from(value: Response) -> Self {
-        // status is always two bytes in length
-        let mut vec_capacity = 2;
-        let mut encoded: Vec<u8>;
-        if let Some(bytes) = value.data {
-            vec_capacity += bytes.len();
-            encoded = Vec::with_capacity(vec_capacity);
-            encoded.extend(bytes);
-        } else {
-            encoded = Vec::with_capacity(vec_capacity);
-        }
         let status_as_bytes: [u8; 2] = value.status.into();
+        let vec_capacity = status_as_bytes.len() + value.data.as_ref().map(|data| data.len()).unwrap_or(0);
+        let mut encoded: Vec<u8> = Vec::with_capacity(vec_capacity);
+        if let Some(bytes) = value.data {
+            encoded.extend(bytes);
+        }
         encoded.extend(status_as_bytes);
         encoded
     }
@@ -62,6 +57,9 @@ impl fmt::Display for Error {
         Ok(())
     }
 }
+
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 #[derive(Debug)]
 pub enum ErrorKind {
