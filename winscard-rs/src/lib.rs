@@ -125,15 +125,79 @@ impl SmartCard {
     }
 
     fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
-        unimplemented!();
+        if (cmd.p1 != 0x00 && cmd.p1 != 0xFF) || (cmd.p1 == 0xFF && !cmd.data().is_empty()) {
+            return Ok(Response::new(Status::IncorrectP1orP2, None));
+        }
+        if cmd.p2 != 0x80 {
+            return Ok(Response::new(Status::KeyReferenceNotFound, None));
+        }
+        if !(6..=8).contains(&cmd.data().len()) {
+            // incorrect PIN length -> do not proceed and return an error
+            return Ok(Response::new(Status::IncorrectDataField, None));
+        }
+        match cmd.p1 {
+            0x00 => {
+                // PIN was already verified -> return OK
+                if self.state != SCardState::PinVerified {
+                    // Retrieve the number of further allowed retries if the data field is absent
+                    // Otherwise just compare the provided PIN with the stored one
+                    if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
+                        return Ok(Response::new(Status::VerificationFailedWithRetries, None));
+                    } else {
+                        // data field is present and the provided PIN is correct -> change state and return OK
+                        self.state = SCardState::PinVerified;
+                    }
+                }
+            }
+            0xFF => {
+                // p1 is 0xFF and the data field is absent -> reset the security status and return OK
+                self.state = SCardState::PivAppSelected;
+            }
+            _ => unreachable!(),
+        };
+        Ok(Response::new(Status::OK, None))
     }
 
     fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
-        unimplemented!();
+        if cmd.p1 != 0x3F || cmd.p2 != 0xFF {
+            return Ok(Response::new(Status::IncorrectP1orP2, None));
+        }
+        let request = Tlv::from_bytes(cmd.data())?;
+        if request.tag() != &Tag::try_from(tlv_tags::TAG_LIST)? {
+            return Ok(Response::new(Status::NotFound, None));
+        }
+        match request.value() {
+            Value::Primitive(tag) => match tag.as_slice() {
+                [0x5F, 0xC1, 0x02] => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
+                [0x5F, 0xC1, 0x05] => {
+                    // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
+                    self.pending_response = Some((self.auth_cert.clone(), 0));
+                    self.get_response()
+                }
+                _ => Ok(Response::new(Status::NotFound, None)),
+            },
+            Value::Constructed(_) => Ok(Response::new(Status::NotFound, None)),
+        }
     }
 
     fn get_response(&mut self) -> Result<Response> {
-        unimplemented!();
+        match self.get_next_response_chunk() {
+            Some((chunk, bytes_left)) => {
+                let chunk = chunk.to_vec();
+                let status = if bytes_left == 0 {
+                    self.pending_response = None;
+                    Status::OK
+                } else if bytes_left < CHUNK_SIZE {
+                    // conversion is safe as we know that bytes_left isn't bigger than 256
+                    Status::MoreAvailable(bytes_left as u8)
+                } else {
+                    // 0 indicates that we have 256 or more bytes left to be read
+                    Status::MoreAvailable(0)
+                };
+                Ok(Response::new(status, Some(chunk)))
+            }
+            None => Ok(Response::new(Status::NotFound, None)),
+        }
     }
 
     fn general_authenticate(&self, cmd: Command<1024>) -> Result<Response> {
