@@ -12,6 +12,16 @@ pub type LpVoid = *mut c_void;
 pub type Handle = *mut c_void;
 pub type Bool = i32;
 
+/// [Guid](https://learn.microsoft.com/en-us/windows/win32/api/guiddef/ns-guiddef-guid)
+///
+/// ```not_rust
+/// typedef struct _GUID {
+///   unsigned long  Data1;
+///   unsigned short Data2;
+///   unsigned short Data3;
+///   unsigned char  Data4[8];
+/// } GUID;
+/// ```
 #[repr(C)]
 pub struct Guid {
     pub data1: u32,

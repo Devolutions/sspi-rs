@@ -1,9 +1,12 @@
 use std::ffi::c_void;
 
 use super::{
-    LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus, ScardHandle, LpScardHandle, LpScardIoRequest, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameA, LpOpenCardNameW,
+    LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardAtrMask, LpScardContext,
+    LpScardHandle, LpScardIoRequest, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardHandle, ScardStatus,
 };
-use crate::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr, LpVoid};
+use crate::{
+    Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpVoid, LpWStr,
+};
 
 pub type SCardEstablishContextFn = extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
 pub type SCardReleaseContextFn = extern "system" fn(ScardContext) -> ScardStatus;
@@ -91,6 +94,7 @@ pub type GetOpenCardNameAFn = extern "system" fn(LpOpenCardNameA) -> ScardStatus
 pub type GetOpenCardNameWFn = extern "system" fn(LpOpenCardNameW) -> ScardStatus;
 pub type SCardDlgExtendedErrorFn = extern "system" fn() -> i32;
 
+// https://github.com/FreeRDP/FreeRDP/blob/88f79c5748f4031cb50dfae3ebadcc6619b69f1c/winpr/include/winpr/smartcard.h#L1114
 #[repr(C)]
 #[allow(non_snake_case)]
 pub struct SCardApiFunctionTable {

@@ -1,6 +1,6 @@
 pub mod functions;
 
-use crate::common::{Handle, Bool, LpVoid, LpWStr, LpStr, LpCStr, LpCWStr, LpCGuid};
+use crate::common::{Bool, Handle, LpCGuid, LpCStr, LpCWStr, LpStr, LpVoid, LpWStr};
 
 pub type ScardStatus = u32;
 
@@ -14,12 +14,26 @@ pub type Hicon = Handle;
 // https://docs.rs/winapi/latest/winapi/um/winscard/type.LPOCNCHKPROC.html
 pub type LpOcnChkProc = Option<unsafe extern "system" fn(_: ScardContext, _: ScardHandle, _: LpVoid) -> Bool>;
 // https://docs.rs/winapi/latest/winapi/um/winscard/type.LPOCNCONNPROCA.html
-pub type LpOcnConnProcA = Option<unsafe extern "system" fn(_: ScardContext, _: LpStr, _: LpStr, _: LpVoid) -> ScardHandle>;
+pub type LpOcnConnProcA =
+    Option<unsafe extern "system" fn(_: ScardContext, _: LpStr, _: LpStr, _: LpVoid) -> ScardHandle>;
 // https://docs.rs/winapi/latest/winapi/um/winscard/type.LPOCNCONNPROCW.html
-pub type LpOcnConnProcW = Option<unsafe extern "system" fn(_: ScardContext, _: LpWStr, _: LpWStr, _: LpVoid) -> ScardHandle>;
+pub type LpOcnConnProcW =
+    Option<unsafe extern "system" fn(_: ScardContext, _: LpWStr, _: LpWStr, _: LpVoid) -> ScardHandle>;
 // https://docs.rs/winapi/latest/winapi/um/winscard/type.LPOCNDSCPROC.html
 pub type LpOcnDscProc = Option<unsafe extern "system" fn(_: ScardContext, _: ScardHandle, _: LpVoid)>;
 
+/// [SCARD_READERSTATEA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatea)
+///
+/// ```not_rut
+/// typedef struct {
+///   LPCSTR szReader;
+///   LPVOID pvUserData;
+///   DWORD  dwCurrentState;
+///   DWORD  dwEventState;
+///   DWORD  cbAtr;
+///   BYTE   rgbAtr[36];
+/// } SCARD_READERSTATEA, *PSCARD_READERSTATEA, *LPSCARD_READERSTATEA;
+/// ```
 #[repr(C)]
 pub struct ScardReaderStateA {
     sz_reader: LpCStr,
@@ -32,6 +46,18 @@ pub struct ScardReaderStateA {
 
 pub type LpScardReaderStateA = *mut ScardReaderStateA;
 
+/// [SCARD_READERSTATEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatew)
+///
+/// ```not_rut
+/// typedef struct {
+///   LPCWSTR szReader;
+///   LPVOID pvUserData;
+///   DWORD  dwCurrentState;
+///   DWORD  dwEventState;
+///   DWORD  cbAtr;
+///   BYTE   rgbAtr[36];
+/// } SCARD_READERSTATEW, *PSCARD_READERSTATEW, *LPSCARD_READERSTATEW;
+/// ```
 #[repr(C)]
 pub struct ScardReaderStateW {
     sz_reader: LpCWStr,
@@ -44,6 +70,15 @@ pub struct ScardReaderStateW {
 
 pub type LpScardReaderStateW = *mut ScardReaderStateW;
 
+/// [SCARD_ATRMASK](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_atrmask)
+///
+/// ```not_rust
+/// typedef struct _SCARD_ATRMASK {
+///   DWORD cbAtr;
+///   BYTE  rgbAtr[36];
+///   BYTE  rgbMask[36];
+/// } SCARD_ATRMASK, *PSCARD_ATRMASK, *LPSCARD_ATRMASK;
+/// ```
 #[repr(C)]
 pub struct ScardAtrMask {
     cb_atr: u32,
@@ -53,6 +88,14 @@ pub struct ScardAtrMask {
 
 pub type LpScardAtrMask = *mut ScardAtrMask;
 
+/// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD dwProtocol;
+///   DWORD cbPciLength;
+/// } SCARD_IO_REQUEST;
+/// ```
 #[repr(C)]
 pub struct ScardIoRequest {
     dw_protocol: u32,
@@ -61,6 +104,25 @@ pub struct ScardIoRequest {
 
 pub type LpScardIoRequest = *mut ScardIoRequest;
 
+/// [OPENCARD_SEARCH_CRITERIAA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencard_search_criteriaa)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD          dwStructSize;
+///   LPSTR          lpstrGroupNames;
+///   DWORD          nMaxGroupNames;
+///   LPCGUID        rgguidInterfaces;
+///   DWORD          cguidInterfaces;
+///   LPSTR          lpstrCardNames;
+///   DWORD          nMaxCardNames;
+///   LPOCNCHKPROC   lpfnCheck;
+///   LPOCNCONNPROCA lpfnConnect;
+///   LPOCNDSCPROC   lpfnDisconnect;
+///   LPVOID         pvUserData;
+///   DWORD          dwShareMode;
+///   DWORD          dwPreferredProtocols;
+/// } OPENCARD_SEARCH_CRITERIAA, *POPENCARD_SEARCH_CRITERIAA, *LPOPENCARD_SEARCH_CRITERIAA;
+/// ```
 #[repr(C)]
 pub struct OpenCardSearchCriteriaA {
     dw_struct_size: u32,
@@ -80,6 +142,25 @@ pub struct OpenCardSearchCriteriaA {
 
 pub type LpOpenCardSearchCriteriaA = *mut OpenCardSearchCriteriaA;
 
+/// [OPENCARD_SEARCH_CRITERIAW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencard_search_criteriaw)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD          dwStructSize;
+///   LPWSTR         lpstrGroupNames;
+///   DWORD          nMaxGroupNames;
+///   LPCGUID        rgguidInterfaces;
+///   DWORD          cguidInterfaces;
+///   LPWSTR         lpstrCardNames;
+///   DWORD          nMaxCardNames;
+///   LPOCNCHKPROC   lpfnCheck;
+///   LPOCNCONNPROCW lpfnConnect;
+///   LPOCNDSCPROC   lpfnDisconnect;
+///   LPVOID         pvUserData;
+///   DWORD          dwShareMode;
+///   DWORD          dwPreferredProtocols;
+/// } OPENCARD_SEARCH_CRITERIAW, *POPENCARD_SEARCH_CRITERIAW, *LPOPENCARD_SEARCH_CRITERIAW;
+/// ```
 #[repr(C)]
 pub struct OpenCardSearchCriteriaW {
     dw_struct_size: u32,
@@ -99,6 +180,30 @@ pub struct OpenCardSearchCriteriaW {
 
 pub type LpOpenCardSearchCriteriaW = *mut OpenCardSearchCriteriaW;
 
+/// [OPENCARDNAME_EXA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencardname_exa)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD                      dwStructSize;
+///   SCARDCONTEXT               hSCardContext;
+///   HWND                       hwndOwner;
+///   DWORD                      dwFlags;
+///   LPCSTR                     lpstrTitle;
+///   LPCSTR                     lpstrSearchDesc;
+///   HICON                      hIcon;
+///   POPENCARD_SEARCH_CRITERIAA pOpenCardSearchCriteria;
+///   LPOCNCONNPROCA             lpfnConnect;
+///   LPVOID                     pvUserData;
+///   DWORD                      dwShareMode;
+///   DWORD                      dwPreferredProtocols;
+///   LPSTR                      lpstrRdr;
+///   DWORD                      nMaxRdr;
+///   LPSTR                      lpstrCard;
+///   DWORD                      nMaxCard;
+///   DWORD                      dwActiveProtocol;
+///   SCARDHANDLE                hCardHandle;
+/// } OPENCARDNAME_EXA, *POPENCARDNAME_EXA, *LPOPENCARDNAME_EXA;
+/// ```
 #[repr(C)]
 pub struct OpenCardNameExA {
     dw_struct_size: u32,
@@ -123,6 +228,30 @@ pub struct OpenCardNameExA {
 
 pub type LpOpenCardNameExA = *mut OpenCardNameExA;
 
+/// [OPENCARDNAME_EXW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencardname_exw)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD                      dwStructSize;
+///   SCARDCONTEXT               hSCardContext;
+///   HWND                       hwndOwner;
+///   DWORD                      dwFlags;
+///   LPCWSTR                    lpstrTitle;
+///   LPCWSTR                    lpstrSearchDesc;
+///   HICON                      hIcon;
+///   POPENCARD_SEARCH_CRITERIAW pOpenCardSearchCriteria;
+///   LPOCNCONNPROCW             lpfnConnect;
+///   LPVOID                     pvUserData;
+///   DWORD                      dwShareMode;
+///   DWORD                      dwPreferredProtocols;
+///   LPWSTR                     lpstrRdr;
+///   DWORD                      nMaxRdr;
+///   LPWSTR                     lpstrCard;
+///   DWORD                      nMaxCard;
+///   DWORD                      dwActiveProtocol;
+///   SCARDHANDLE                hCardHandle;
+/// } OPENCARDNAME_EXW, *POPENCARDNAME_EXW, *LPOPENCARDNAME_EXW;
+/// ```
 #[repr(C)]
 pub struct OpenCardNameExW {
     dw_struct_size: u32,
@@ -147,6 +276,35 @@ pub struct OpenCardNameExW {
 
 pub type LpOpenCardNameExW = *mut OpenCardNameExW;
 
+/// [OPENCARDNAMEA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencardnamea)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD          dwStructSize;
+///   HWND           hwndOwner;
+///   SCARDCONTEXT   hSCardContext;
+///   LPSTR          lpstrGroupNames;
+///   DWORD          nMaxGroupNames;
+///   LPSTR          lpstrCardNames;
+///   DWORD          nMaxCardNames;
+///   LPCGUID        rgguidInterfaces;
+///   DWORD          cguidInterfaces;
+///   LPSTR          lpstrRdr;
+///   DWORD          nMaxRdr;
+///   LPSTR          lpstrCard;
+///   DWORD          nMaxCard;
+///   LPCSTR         lpstrTitle;
+///   DWORD          dwFlags;
+///   LPVOID         pvUserData;
+///   DWORD          dwShareMode;
+///   DWORD          dwPreferredProtocols;
+///   DWORD          dwActiveProtocol;
+///   LPOCNCONNPROCA lpfnConnect;
+///   LPOCNCHKPROC   lpfnCheck;
+///   LPOCNDSCPROC   lpfnDisconnect;
+///   SCARDHANDLE    hCardHandle;
+/// } OPENCARDNAMEA, *POPENCARDNAMEA, *LPOPENCARDNAMEA;
+/// ```
 #[repr(C)]
 pub struct OpenCardNameA {
     dw_struct_size: u32,
@@ -176,6 +334,35 @@ pub struct OpenCardNameA {
 
 pub type LpOpenCardNameA = *mut OpenCardNameA;
 
+/// [OPENCARDNAMEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencardnamew)
+///
+/// ```not_rust
+/// typedef struct {
+///   DWORD          dwStructSize;
+///   HWND           hwndOwner;
+///   SCARDCONTEXT   hSCardContext;
+///   LPWSTR         lpstrGroupNames;
+///   DWORD          nMaxGroupNames;
+///   LPWSTR         lpstrCardNames;
+///   DWORD          nMaxCardNames;
+///   LPCGUID        rgguidInterfaces;
+///   DWORD          cguidInterfaces;
+///   LPWSTR         lpstrRdr;
+///   DWORD          nMaxRdr;
+///   LPWSTR         lpstrCard;
+///   DWORD          nMaxCard;
+///   LPCWSTR        lpstrTitle;
+///   DWORD          dwFlags;
+///   LPVOID         pvUserData;
+///   DWORD          dwShareMode;
+///   DWORD          dwPreferredProtocols;
+///   DWORD          dwActiveProtocol;
+///   LPOCNCONNPROCW lpfnConnect;
+///   LPOCNCHKPROC   lpfnCheck;
+///   LPOCNDSCPROC   lpfnDisconnect;
+///   SCARDHANDLE    hCardHandle;
+/// } OPENCARDNAMEW, *POPENCARDNAMEW, *LPOPENCARDNAMEW;
+/// ```
 #[repr(C)]
 pub struct OpenCardNameW {
     dw_struct_size: u32,
