@@ -7,4 +7,5 @@ extern crate tracing;
 pub mod logging;
 pub mod sspi;
 mod utils;
+#[cfg(feature = "scard")]
 pub mod winscard;
