@@ -360,12 +360,13 @@ mod tests {
             prop_oneof![
                 Just(Status::NotFound),
                 Just(Status::OK),
-                Just(Status::VerificationFailed),
+                Just(Status::VerificationFailedWithRetries),
                 any::<u8>().prop_map(Status::MoreAvailable),
                 Just(Status::KeyReferenceNotFound),
                 Just(Status::SecurityStatusNotSatisfied),
                 Just(Status::IncorrectP1orP2),
-                Just(Status::IncorrectDataField)
+                Just(Status::IncorrectDataField),
+                Just(Status::InstructionNotSupported)
             ]
         }
 
