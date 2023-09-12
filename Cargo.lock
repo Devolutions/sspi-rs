@@ -518,6 +518,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffi-types"
+version = "0.1.0"
+
+[[package]]
 name = "fiat-crypto"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2036,6 +2040,7 @@ name = "sspi-ffi"
 version = "0.10.1"
 dependencies = [
  "cfg-if",
+ "ffi-types",
  "libc",
  "num-traits",
  "sspi",
@@ -2045,7 +2050,6 @@ dependencies = [
  "whoami",
  "winapi",
  "windows-sys 0.48.0",
- "winscard-ffi-types",
 ]
 
 [[package]]
@@ -2741,10 +2745,6 @@ dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
 ]
-
-[[package]]
-name = "winscard-ffi-types"
-version = "0.1.0"
 
 [[package]]
 name = "x25519-dalek"

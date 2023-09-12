@@ -18,7 +18,7 @@ required-features = ["network_client"]
 members = [
   "ffi",
   "ffi/symbol-rename-macro",
-  "crates/winscard-ffi-types",
+  "crates/ffi-types",
 ]
 exclude = [
   "tools/sspi-ffi-attacker",

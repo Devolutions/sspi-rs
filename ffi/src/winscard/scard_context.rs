@@ -1,9 +1,9 @@
+use ffi_types::winscard::{
+    LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus,
+};
+use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
 use symbol_rename_macro::rename_symbol;
-use winscard_ffi_types::{
-    Handle, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpScardAtrMask, LpScardContext,
-    LpScardReaderStateA, LpScardReaderStateW, LpStr, LpWStr, ScardContext, ScardStatus,
-};
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[no_mangle]
@@ -505,3 +505,151 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
 }
 
 pub type SCardCancelFn = extern "system" fn(ScardContext) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
+#[no_mangle]
+pub extern "system" fn SCardReadCacheA(
+    _context: ScardContext,
+    _card_identifier: LpUuid,
+    _freshness_counter: u32,
+    _lookup_lame: LpStr,
+    _data: LpByte,
+    _data_len: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardReadCacheAFn = extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
+#[no_mangle]
+pub extern "system" fn SCardReadCacheW(
+    _context: ScardContext,
+    _card_identifier: LpUuid,
+    _freshness_counter: u32,
+    _lookup_lame: LpWStr,
+    _data: LpByte,
+    _data_len: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardReadCacheWFn = extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
+#[no_mangle]
+pub extern "system" fn SCardWriteCacheA(
+    _context: ScardContext,
+    _card_identifier: LpUuid,
+    _freshness_counter: u32,
+    _lookup_lame: LpStr,
+    _data: LpByte,
+    _data_len: u32,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardWriteCacheAFn = extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, u32) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheW"))]
+#[no_mangle]
+pub extern "system" fn SCardWriteCacheW(
+    _context: ScardContext,
+    _card_identifier: LpUuid,
+    _freshness_counter: u32,
+    _lookup_lame: LpWStr,
+    _data: LpByte,
+    _data_len: u32,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardWriteCacheWFn = extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, u32) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
+#[no_mangle]
+pub extern "system" fn SCardGetReaderIconA(
+    _context: ScardContext,
+    _sz_reader_name: LpCStr,
+    _pb_icon: LpByte,
+    _pcb_icon: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardGetReaderIconAFn = extern "system" fn(ScardContext, LpCStr, LpByte, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconW"))]
+#[no_mangle]
+pub extern "system" fn SCardGetReaderIconW(
+    _context: ScardContext,
+    _sz_reader_name: LpCWStr,
+    _pb_icon: LpByte,
+    _pcb_icon: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardGetReaderIconWFn = extern "system" fn(ScardContext, LpCWStr, LpByte, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdA"))]
+#[no_mangle]
+pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
+    _context: ScardContext,
+    _sz_reader_name: LpCStr,
+    _sz_device_instance_id: LpStr,
+    _pcch_device_instance_id: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardGetReaderDeviceInstanceIdAFn = extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdW"))]
+#[no_mangle]
+pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
+    _context: ScardContext,
+    _sz_reader_name: LpCWStr,
+    _sz_device_instance_id: LpWStr,
+    _pcch_device_instance_id: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardGetReaderDeviceInstanceIdWFn = extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdA"))]
+#[no_mangle]
+pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
+    _context: ScardContext,
+    _sz_device_instance_id: LpCStr,
+    _msz_readers: LpStr,
+    _pcch_readers: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardListReadersWithDeviceInstanceIdAFn =
+    extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdW"))]
+#[no_mangle]
+pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
+    _context: ScardContext,
+    _sz_device_instance_id: LpCWStr,
+    _msz_readers: LpWStr,
+    _pcch_readers: LpDword,
+) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardListReadersWithDeviceInstanceIdWFn =
+    extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardAudit"))]
+#[no_mangle]
+pub extern "system" fn SCardAudit(_context: ScardContext, _dw_event: u32) -> ScardStatus {
+    todo!()
+}
+
+pub type SCardAuditFn = extern "system" fn(ScardContext, u32) -> ScardStatus;
