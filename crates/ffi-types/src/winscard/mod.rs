@@ -1,5 +1,6 @@
-use crate::common::{Handle, Bool, LpVoid, LpWStr, LpStr, LpCStr, LpCWStr, LpCGuid};
+pub mod functions;
 
+use crate::common::{Handle, Bool, LpVoid, LpWStr, LpStr, LpCStr, LpCWStr, LpCGuid};
 
 pub type ScardStatus = u32;
 

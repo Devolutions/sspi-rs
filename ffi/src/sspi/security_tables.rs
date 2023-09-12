@@ -33,7 +33,7 @@ use super::sec_pkg_info::{
     EnumerateSecurityPackagesA, EnumerateSecurityPackagesFnA, EnumerateSecurityPackagesFnW, EnumerateSecurityPackagesW,
     QuerySecurityPackageInfoA, QuerySecurityPackageInfoFnA, QuerySecurityPackageInfoFnW, QuerySecurityPackageInfoW,
 };
-use super::utils::into_raw_ptr;
+use crate::utils::into_raw_ptr;
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {

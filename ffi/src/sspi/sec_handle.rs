@@ -38,7 +38,8 @@ use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
-use super::utils::{c_w_str_to_string, into_raw_ptr, transform_credentials_handle};
+use super::utils::transform_credentials_handle;
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;

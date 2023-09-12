@@ -6,4 +6,5 @@ extern crate tracing;
 
 pub mod logging;
 pub mod sspi;
+mod utils;
 pub mod winscard;
