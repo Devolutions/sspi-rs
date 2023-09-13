@@ -87,4 +87,7 @@ pub mod tlv_tags {
     pub const TAG_LIST: u8 = 0x5C;
     pub const CERTIFICATE: u8 = 0x70;
     pub const CERT_INFO: u8 = 0x71;
+    pub const DYNAMIC_AUTHENTICATION_TEMPLATE: u8 = 0x7C;
+    pub const DAT_CHALLENGE: u8 = 0x81;
+    pub const DAT_RESPONSE: u8 = 0x82;
 }

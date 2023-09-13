@@ -7,7 +7,7 @@ extern crate alloc;
 mod scard_context;
 pub mod winscard;
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::{fmt, result};
@@ -85,6 +85,9 @@ impl SmartCard {
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
             return Ok(Response::new(Status::NotFound, None));
+        } else if self.state == SCardState::PivAppSelected && cmd.instruction() == Instruction::GeneralAuthenticate {
+            // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
+            return Ok(Response::new(Status::SecurityStatusNotSatisfied, None));
         }
         match cmd.instruction() {
             Instruction::Select => self.select(cmd),
@@ -200,8 +203,58 @@ impl SmartCard {
         }
     }
 
-    fn general_authenticate(&self, cmd: Command<1024>) -> Result<Response> {
-        unimplemented!();
+    fn general_authenticate(&mut self, cmd: Command<1024>) -> Result<Response> {
+        if cmd.p1 != 0x07 || cmd.p2 != 0x9A {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                format!("Provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
+            ));
+        }
+        let request = Tlv::from_bytes(cmd.data())?;
+        if request.tag() != &Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?
+            || !request.value().is_constructed()
+        {
+            // wrong TLV request structure
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                "TLV structure is invalid: wrong top-level tag structure".to_string(),
+            ));
+        }
+        let inner_tlv = match request.value() {
+            // we already know that the value is constructed at this point
+            Value::Primitive(_) => unreachable!(),
+            Value::Constructed(tlv_vec) => tlv_vec,
+        };
+        // to avoid constructing the tag on each iteration
+        let challenge_tag = Tag::try_from(tlv_tags::DAT_CHALLENGE)?;
+        let challenge = inner_tlv
+            .iter()
+            .find(|&tlv| tlv.tag() == &challenge_tag)
+            .ok_or(Error::new(
+                ErrorKind::InvalidValue,
+                "TLV structure is invalid: no challenge field is present in the request".to_string(),
+            ))?;
+        let challenge = match challenge.value() {
+            Value::Primitive(challenge) => challenge.clone(),
+            Value::Constructed(_) => {
+                // this tag must contain a primitive value
+                return Err(Error::new(
+                    ErrorKind::InvalidValue,
+                    "TLV structure is invalid: challenge field contains constructed value".to_string(),
+                ));
+            }
+        };
+        let signed_challenge = self.auth_pk.sign_hashed_rsa(challenge)?;
+        let response = Tlv::new(
+            Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
+            Value::Constructed(vec![Tlv::new(
+                Tag::try_from(tlv_tags::DAT_RESPONSE)?,
+                Value::Primitive(signed_challenge),
+            )?]),
+        )?
+        .to_vec();
+        self.pending_response = Some((response, 0));
+        self.get_response()
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(&[u8], usize)> {
