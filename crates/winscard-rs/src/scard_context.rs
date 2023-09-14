@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -6,6 +7,7 @@ use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScar
 use crate::{Error, ErrorKind};
 use crate::WinScardResult as Result;
 
+/// Describes a smart card reader.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
     pub name: String,
@@ -13,11 +15,13 @@ pub struct Reader<'a> {
     pub device_type_id: DeviceTypeId,
 }
 
+/// Represents the resource manager context (the scope).
 pub struct ScardContext<'a> {
     readers: Vec<Reader<'a>>,
 }
 
 impl<'a> ScardContext<'a> {
+    /// Creates a new smart card based on the list of smart card readers
     pub fn new(readers: Vec<Reader<'a>>) -> Self {
         Self { readers }
     }
