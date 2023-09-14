@@ -2,13 +2,15 @@
 
 extern crate alloc;
 
+pub mod winscard;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::{fmt, result};
 
 use iso7816::Aid;
 
-const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
+pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 
 pub type ApduResult<T> = result::Result<T, Error>;
 
@@ -43,7 +45,7 @@ pub struct Error {
 }
 
 impl Error {
-    fn new(error_kind: ErrorKind, description: impl Into<String>) -> Self {
+    pub fn new(error_kind: ErrorKind, description: impl Into<String>) -> Self {
         Error {
             error_kind,
             description: description.into(),
