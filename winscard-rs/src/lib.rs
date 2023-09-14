@@ -349,7 +349,7 @@ impl From<TlvError> for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(u32)]
 pub enum ErrorKind {
     BrokenPipe = 0x00000109,
@@ -422,7 +422,7 @@ pub enum ErrorKind {
     WrongChv = 0x8010006B,
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum SCardState {
     Ready,
     PivAppSelected,
@@ -430,7 +430,7 @@ pub enum SCardState {
     TransactionInProgress,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Status {
     NotFound,
     OK,
@@ -507,5 +507,208 @@ mod tests {
                 assert_eq!(expected_result, Vec::from(arb_response));
             }
         }
+    }
+
+    fn new_scard() -> SmartCard {
+        let rsa_2048_private_key = "-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAiJ/d1/2d1CQYlJfZ02TOH7F/5U53a6IZc8QwTQEsBQbVGfQO
+RN/+b09NzJJZmtyuLdBAXLzP8lEzKcfgn4JNl5G7DuKOxRreE5tq8uA+j2SQCw7m
+Sm6todEOvkWG5Dov3Q9QnlPbvqp871pfbRsfKwOo2RxJIjbjpM5FQnlqOd+3gu2I
+TF8dt+/PY+wl1w6kPTUZg/mzElY95WSnOE9bFlHcVL//Sl3caW85AB0lLUbd96b/
+7PMO6IWJQyvS0ssG0emcyQYllvvSCFSpVWA/e1EGzKrwbtG1Xn9je5L4mIKiSw/p
+gbjnYE9g+pibLJNobBBLkzGdo/KzyCQbMWirkQIDAQABAoIBAEbAm28mXNymkMAq
+31g1BPWuwy/p8bggqxOjjuvh5nz369XT6KvMYAQeyohdZd/n1p/ND/e2o+22FUvW
+wcF5Bluu0XNE6nCymD0JKFp8vIkfp+TCI4p6RJrfG8Z3VQLOC0lsi/BiNxNHUQnX
+AEINYJey/nboygrY6AzJ8V4aaGNtbtnz7tfyALJHUK0qRa+AmyLCzaZR5RSbDgB5
+srCX9J5OCxH2s5tVSfqg48Z0RIiBcDFPYbJDakZWLRNLD8ByW3e0jEFDA1vQPsaj
+CsyY4E6UZwYNZemC60zW0e8BYJYnOAhcmwaYnaxvL5xy0aW5pUGr+FgnO4NrNr33
+pKT2eFECgYEA2LJdjjFGdTsuW8esbTn+9hGyNnUR9gxYGdNhcINhPHMhoR8GkakC
+5sLOlpgCDpdzHDduW2GjhIAUnXt50yZNpkXQuSWdjucbYGc2G5ySc8eHaP+5tHAr
+svyZBchE+Kf4p2nNoXoQxsgxY2Qgz/ctUgCR7SnbgRW0cHDH7HIXlJ0CgYEAoWeY
+rt2q8PFW3sEWy1RK0dxD+7UnuN76x5rd0IUxi2HS5F4tyfiDy3LgVs0XJqF9IN6K
+IQ7pX/0C1g91NbUl8pAnu+k7R/CiynqGAmQumkMscIRO4VoR+v3+Hta9NV6sy/0U
+fDfQSK9AnrFXGCpHPLC+YrmgbVnKqJ526vBxboUCgYEAvx4pJ0TMWI62p1nm+HrD
+JLGc1SzRh4mBll15PeuRsef1DA66E3PVzEKaQ/WTMt1eN8+ntE7cEfuIsxB49MJ+
+j5xZp0HGwYeQ/Khq71VbUWP0SKXqWnrn/7eLGq90LT6wLq9BHh7zdu6PqJJh4iml
+vgIkseBN6X6EIvtFSIOjyn0CgYBRvEiRpSd/xHedbmLArPsGs2ip+t8Wu7R7iG1z
+vz+Lugo2I4tEkFkNmisJSerDYVwgXRHOE+MS/OmGxWUxwX5qC55ThpTCpZWKu+lJ
+JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
+4MpQkQKBgA4vlTf+n8kpOJWls2YMyZaauY48xcNzDdhpBGFCjVm+aiKX5dyIjAQK
+9LX8/iVau8ZRM+qSLpuEP+o8qGR11TbGZrLH/wITc7r9cWnaGDsozmPAnxMcu1zz
+9IRTY9zr9QWzxGiSqr834q5IZIQ/5uDBW/857MP0bpMl6cTdxzg0
+-----END RSA PRIVATE KEY-----";
+        let certificate_stub = vec![0xff; 1024];
+        let pin = vec![0xA9; 8];
+        SmartCard::new(pin, certificate_stub, rsa_2048_private_key).unwrap()
+    }
+
+    #[test]
+    fn scard_invalid_apdu_command() {
+        let mut scard = new_scard();
+        let bad_apdu_command = vec![0x00; 2048];
+        let response = scard.handle_command(bad_apdu_command);
+        assert!(response.is_err_and(|err| err.error_kind == ErrorKind::InternalError
+            && err
+                .description
+                .contains("Error: an error happened while parsing an APDU command")));
+    }
+
+    #[test]
+    fn scard_wrong_command_order() {
+        // Try to issue a verify command when no app was selected
+        let mut scard = new_scard();
+        let mut apdu_verify_cmd = vec![0x00, 0x20, 0x00, 0x80, 0x08];
+        // add pin
+        apdu_verify_cmd.extend_from_slice(&[0xA9; 8]);
+        let response = scard.handle_command(apdu_verify_cmd);
+        assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
+    }
+
+    #[test]
+    fn scard_invalid_select_command() {
+        // Try to issue a SELECT command with unsupported AID
+        let mut scard = new_scard();
+        let mut apdu_select_cmd = vec![0x00, 0xA4, 0x04, 0x00, 0x0B];
+        let bad_aid = vec![0xff; 11];
+        apdu_select_cmd.extend_from_slice(&bad_aid);
+        let response = scard.handle_command(apdu_select_cmd);
+        assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
+    }
+
+    #[test]
+    fn scard_select_command() {
+        // Verify that the SELECT command works as expected and returns expected output
+        let mut expected_response = vec![
+            0x61, 0x17, 0x4F, 0x06, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x79, 0x0D, 0x4F, 0x0B,
+        ];
+        expected_response.extend_from_slice(&PIV_AID);
+
+        let mut scard = new_scard();
+        let mut apdu_select_cmd = vec![0x00, 0xA4, 0x04, 0x00, 0x0B];
+        apdu_select_cmd.extend_from_slice(&PIV_AID);
+        let response = scard.handle_command(apdu_select_cmd);
+        assert!(response.is_ok_and(
+            |resp| resp.status == Status::OK && resp.data.expect("Data should be present") == expected_response
+        ));
+    }
+
+    #[test]
+    fn scard_unsupported_command() {
+        // Try to issue an RESET RETRY COUNTER command that the app doesn't support
+        let mut scard = new_scard();
+        // we set this manually to avoid issuing a SELECT command every time
+        scard.state = SCardState::PivAppSelected;
+        let apdu_reset_retry_cmd = vec![0x00, 0x2C, 0x00, 0x80, 0x00];
+        let response = scard.handle_command(apdu_reset_retry_cmd);
+        assert!(response.is_ok_and(|resp| resp.status == Status::InstructionNotSupported));
+    }
+
+    #[test]
+    fn scard_invalid_verify_commands() {
+        // Verify that the VERIFY command handler correctly handles badly structured or malformed requests
+        let mut scard = new_scard();
+        scard.state = SCardState::PivAppSelected;
+
+        // p1 can only be 0x00 or 0xFF
+        let apdu_verify_bad_p1 = vec![0x00, 0x20, 0xAA, 0x80, 0x00];
+        let response = scard.handle_command(apdu_verify_bad_p1);
+        assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
+
+        // if p1 is 0xFF, the data field should be empty
+        let apdu_verify_bad_p1_data = vec![0x00, 0x20, 0xFF, 0x80, 0x02, 0xFF, 0xFF];
+        let response = scard.handle_command(apdu_verify_bad_p1_data);
+        assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
+
+        // p2 should always be 0x80
+        let apdu_verify_bad_p2 = vec![0x00, 0x20, 0x00, 0x81, 0x02, 0xFF, 0xFF];
+        let response = scard.handle_command(apdu_verify_bad_p2);
+        assert!(response.is_ok_and(|resp| resp.status == Status::KeyReferenceNotFound));
+
+        // PIN should be no shorter than six bytes and no longer than 8
+        let apdu_verify_bad_pin = vec![0x00, 0x20, 0x00, 0x80, 0x02, 0xAA, 0xAA];
+        let response = scard.handle_command(apdu_verify_bad_pin);
+        assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectDataField));
+    }
+
+    #[test]
+    fn scard_verify_command() {
+        // Verify that the VERIFY command handler correctly handles all supported types of requests
+        let mut scard = new_scard();
+        scard.state = SCardState::PivAppSelected;
+
+        // retrieve number of allowed retries by omitting the data field
+        let apdu_verify_no_data = vec![0x00, 0x20, 0x00, 0x80, 0x00];
+        let response = scard.handle_command(apdu_verify_no_data);
+        assert!(response.is_ok_and(|resp| resp.status == Status::VerificationFailedWithRetries));
+
+        // VERIFY command with the wrong PIN code
+        let mut apdu_verify_wrong_pin = vec![0x00, 0x20, 0x00, 0x80, 0x08];
+        apdu_verify_wrong_pin.extend_from_slice(&[0xCC; 8]);
+        let response = scard.handle_command(apdu_verify_wrong_pin);
+        assert!(response.is_ok_and(|resp| resp.status == Status::VerificationFailedWithRetries));
+
+        // VERIFY command with the correct PIN code
+        let mut apdu_verify_correct_pin = vec![0x00, 0x20, 0x00, 0x80, 0x08];
+        apdu_verify_correct_pin.extend_from_slice(&[0xA9; 8]);
+        let response = scard.handle_command(apdu_verify_correct_pin);
+        assert!(response.is_ok_and(|resp| resp.status == Status::OK));
+        assert_eq!(scard.state, SCardState::PinVerified);
+
+        // Reset the security status
+        let apdu_verify_reset = vec![0x00, 0x20, 0xFF, 0x80, 0x00];
+        let response = scard.handle_command(apdu_verify_reset);
+        assert!(response.is_ok_and(|resp| resp.status == Status::OK));
+        assert_eq!(scard.state, SCardState::PivAppSelected);
+    }
+
+    #[test]
+    fn scard_invalid_get_data_command() {
+        // Verify that the GET DATA handler correctly handles invalid requests
+        let mut scard = new_scard();
+        scard.state = SCardState::PivAppSelected;
+
+        // p1 should always be 0x3F; p2 should always be 0xFF
+        let apdu_get_data_bad_p1_p2 = vec![0x00, 0xCB, 0x10, 0x21, 0x00];
+        let response = scard.handle_command(apdu_get_data_bad_p1_p2);
+        assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
+
+        // bad object tag in the data field
+        let apdu_get_data_bad_tag = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x08];
+        let response = scard.handle_command(apdu_get_data_bad_tag);
+        assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
+    }
+
+    #[test]
+    fn scard_get_data_command() {
+        // Verify that the GET DATA handler correctly handles all supported requests and returns correct data
+        let mut scard = new_scard();
+        scard.state = SCardState::PivAppSelected;
+
+        // get CHUID
+        let apdu_get_data_chuid = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x02];
+        let response = scard.handle_command(apdu_get_data_chuid);
+        assert!(
+            response.is_ok_and(|resp| resp.status == Status::OK && resp.data.expect("Expected CHUID") == scard.chuid)
+        );
+
+        // get PIV authentication certificate
+        let apdu_get_data_chuid = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x05];
+        let response = scard.handle_command(apdu_get_data_chuid);
+        // verify the contents
+        assert!(response.is_ok_and(|mut resp| {
+            // as the certificate is larger than 256 bytes, we have to call the GET RESPONSE function a few times
+            let mut complete_response = vec![];
+            while let Status::MoreAvailable(bytes_left) = resp.status {
+                complete_response.extend_from_slice(&resp.data.expect("Data should be present"));
+                let apdu_get_response = vec![0x00, 0xC0, 0x00, 0x00, bytes_left];
+                resp = scard
+                    .handle_command(apdu_get_response)
+                    .expect("Can't retrieve all available data");
+            }
+            assert_eq!(resp.status, Status::OK);
+            // append the last chunk of data
+            complete_response.extend_from_slice(&resp.data.expect("Can't get the last chunk of data"));
+            complete_response == scard.auth_cert
+        }));
     }
 }
