@@ -16,6 +16,7 @@ std = []
 name = "winscard"
 
 [dependencies]
+bitflags = "2.4.0"
 iso7816 = "0.1.1"
 
 [dev-dependencies]

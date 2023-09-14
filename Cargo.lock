@@ -2765,6 +2765,7 @@ dependencies = [
 name = "winscard-rs"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.4.0",
  "iso7816",
  "proptest",
  "proptest-derive",
