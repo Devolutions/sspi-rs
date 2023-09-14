@@ -4,6 +4,8 @@ mod ber_tlv;
 mod chuid;
 mod piv_cert;
 mod scard;
+mod scard_context;
+pub mod winscard;
 pub mod tlv_tags;
 
 extern crate alloc;
