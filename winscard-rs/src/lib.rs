@@ -39,6 +39,7 @@ impl From<Response> for Vec<u8> {
     }
 }
 
+#[derive(Debug)]
 pub struct Error {
     pub error_kind: ErrorKind,
     pub description: String,
