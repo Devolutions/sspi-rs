@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -6,11 +7,21 @@ use crate::Result;
 
 pub type Atr = [u8; 32];
 
-pub struct Icon(Vec<u8>);
+#[derive(Debug, Clone)]
+pub struct Icon<'a>(Cow<'a, [u8]>);
 
-impl AsRef<[u8]> for Icon {
+impl<'a> AsRef<[u8]> for Icon<'a> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct DeviceTypeId(u32);
+
+impl AsRef<u32> for DeviceTypeId {
+    fn as_ref(&self) -> &u32 {
+        &self.0
     }
 }
 
@@ -80,7 +91,7 @@ pub trait WinScardContext {
         protocol: Option<Protocol>,
     ) -> Result<Box<dyn WinScard>>;
     fn list_readers(&self) -> Vec<String>;
-    fn device_type_id(&self, reader_name: &str) -> Result<u32>;
+    fn device_type_id(&self, reader_name: &str) -> Result<DeviceTypeId>;
     fn reader_icon(&self, reader_name: &str) -> Result<Icon>;
     fn is_valid(&self) -> bool;
 }

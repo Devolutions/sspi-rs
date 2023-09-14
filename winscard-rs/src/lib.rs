@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 use core::{fmt, result};
 
 use iso7816::Aid;
+pub use scard_context::{Reader, ScardContext};
 
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 
