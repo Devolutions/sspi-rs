@@ -2,6 +2,7 @@
 
 extern crate alloc;
 
+mod scard_context;
 pub mod winscard;
 
 use alloc::string::String;
@@ -13,6 +14,7 @@ use iso7816::Aid;
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 
 pub type ApduResult<T> = result::Result<T, Error>;
+pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Response {
