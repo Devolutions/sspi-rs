@@ -19,6 +19,8 @@ pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
 use picky::key::KeyError;
 pub use scard::{SmartCard, PIV_AID};
+use iso7816::Aid;
+pub use scard_context::{Reader, ScardContext};
 
 pub type WinScardResult<T> = result::Result<T, Error>;
 
