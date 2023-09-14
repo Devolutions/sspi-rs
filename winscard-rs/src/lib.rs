@@ -134,14 +134,14 @@ impl SmartCard {
         if cmd.p2 != 0x80 {
             return Ok(Response::new(Status::KeyReferenceNotFound, None));
         }
-        if !(6..=8).contains(&cmd.data().len()) {
-            // incorrect PIN length -> do not proceed and return an error
-            return Ok(Response::new(Status::IncorrectDataField, None));
-        }
         match cmd.p1 {
             0x00 => {
                 // PIN was already verified -> return OK
                 if self.state != SCardState::PinVerified {
+                    if !cmd.data().is_empty() && !(6..=8).contains(&cmd.data().len()) {
+                        // Incorrect PIN length -> do not proceed and return an error
+                        return Ok(Response::new(Status::IncorrectDataField, None));
+                    }
                     // Retrieve the number of further allowed retries if the data field is absent
                     // Otherwise just compare the provided PIN with the stored one
                     if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
