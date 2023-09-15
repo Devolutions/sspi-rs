@@ -66,22 +66,21 @@ impl SmartCard {
                 format!("Error: an error happened while parsing an APDU command: {:?}", e),
             )
         })?;
-        let cmd = match self.pending_command.as_mut() {
-            Some(chained) => {
+        let cmd = if let Some(mut chained) = self.pending_command.take() {
                 chained.extend_from_command(&cmd).map_err(|_| {
                     Error::new(
                         ErrorKind::MalformedRequest,
                         "Error: an error happened while trying to build a chained APDU command",
                     )
                 })?;
-                if cmd.class().chain().not_the_last() {
-                    return Ok(Response::new(Status::OK, None));
+            chained
                 } else {
-                    self.pending_command.take().unwrap()
-                }
-            }
-            None => cmd,
+            cmd
         };
+        if cmd.class().chain().not_the_last() {
+            self.pending_command = Some(cmd);
+            return Ok(Response::new(Status::OK, None));
+        }
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
             return Ok(Response::new(Status::NotFound, None));
