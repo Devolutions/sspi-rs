@@ -40,6 +40,18 @@ impl<'a> AsRef<[u8]> for Icon<'a> {
     }
 }
 
+impl<'a> From<&'a [u8]> for Icon<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self(Cow::Borrowed(value))
+    }
+}
+
+impl From<Vec<u8>> for Icon<'_> {
+    fn from(value: Vec<u8>) -> Self {
+        Self(Cow::Owned(value))
+    }
+}
+
 /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
 /// The actual device type identifier. The list of reader types returned
 /// by this function are listed under ReaderType member in the SCARD_READER_CAPABILITIES structure.
