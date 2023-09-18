@@ -1,15 +1,15 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use chrono::{Duration, Utc};
 use iso7816_tlv::simple::{Tag, Tlv};
+use time::{format_description, Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::Result;
+use crate::{Error, ErrorKind, Result};
 
 // The CHUID has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)
-pub(crate) fn build_chuid() -> [u8; 61] {
+pub(crate) fn build_chuid() -> Result<[u8; 61]> {
     // We do this by hand, because iso7816_tlv uses Vecs when constructing a new TLV value
     // By avoiding using Tlv::new(), we can avoid allocating a new Vec for each TLV value and use slices instead
     let mut chuid = Vec::with_capacity(61);
@@ -29,12 +29,24 @@ pub(crate) fn build_chuid() -> [u8; 61] {
     chuid.extend_from_slice(uuid.as_bytes());
     chuid.extend_from_slice(&[tlv_tags::EXPIRATION_DATE, 0x8]);
     // Section 3.1.2 of https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf
-    let year_from_today = Utc::now() + Duration::weeks(48);
-    chuid.extend_from_slice(format!("{}", year_from_today.format("%Y%m%d")).as_bytes());
+    let year_from_today = OffsetDateTime::now_utc() + Duration::weeks(48);
+    let expiration_date_format = format_description::parse("[year][month][day]").map_err(|e| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Error while trying to parse the date format: {}", e),
+        )
+    })?;
+    let expiration_date = year_from_today.format(&expiration_date_format).map_err(|e| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Error while trying to format a date: {}", e),
+        )
+    })?;
+    chuid.extend_from_slice(expiration_date.as_bytes());
     chuid.extend_from_slice(&[tlv_tags::ISSUER_SIGNATURE, 0x0]);
     chuid.extend_from_slice(&[tlv_tags::ERROR_DETECTION_CODE, 0x0]);
     // won't fail, as chuid is of fixed length
-    chuid.try_into().unwrap()
+    Ok(chuid.try_into().unwrap())
 }
 
 // The X.509 Certificate for PIV Authentication has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
