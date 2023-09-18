@@ -1,6 +1,5 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
@@ -144,8 +143,8 @@ pub enum State {
 
 /// This structure described the current status and basic info about the smart card reader.
 #[derive(Debug, Clone)]
-pub struct Status {
-    pub readers: Vec<String>,
+pub struct Status<'a> {
+    pub readers: Vec<Cow<'a, str>>,
     pub state: State,
     pub protocol: Protocol,
     pub atr: Atr,
@@ -248,7 +247,7 @@ pub trait WinScardContext {
     /// [SCardListReadersW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersw)
     ///
     /// Provides the list of readers within a set of named reader groups, eliminating duplicates.
-    fn list_readers(&self) -> Vec<String>;
+    fn list_readers(&self) -> Vec<Cow<str>>;
 
     /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
     ///
