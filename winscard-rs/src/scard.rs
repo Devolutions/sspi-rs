@@ -309,13 +309,12 @@ enum SCardState {
 mod tests {
     extern crate std;
 
+    use picky::hash::HashAlgorithm;
+    use picky::signature::SignatureAlgorithm;
     use rand::distributions::Uniform;
     use rand::Rng;
-    use rsa::pkcs1v15::{Signature, VerifyingKey};
-    use rsa::sha2::{Digest, Sha256};
-    use rsa::signature::Verifier;
     use rsa::traits::PublicKeyParts;
-    use rsa::{BigUint, Pkcs1v15Sign};
+    use rsa::BigUint;
 
     pub use super::*;
     use crate::ber_tlv::ber_tlv_length_encoding;
@@ -655,11 +654,13 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         scard.state = SCardState::PinVerified;
 
         let data = "My message".as_bytes();
-        let hashed_data = Sha256::digest(data);
 
         let rsa_pk = rsa::RsaPrivateKey::try_from(&scard.auth_pk).expect("Can't convert the private key");
         // sign the data using the PKCS1-v1.5 padding scheme
-        let signed_data = rsa_pk.sign(Pkcs1v15Sign::new::<Sha256>(), &hashed_data).unwrap();
+        let signature_algorithm = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA3_512);
+        let signed_data = signature_algorithm
+            .sign(data, &scard.auth_pk)
+            .expect("Error while signing the data");
         // extract the padded hash by decrypting the signature using the public key
         // we need to extract the padded hash to calculate the signature ourselves
         let padded_hash = BigUint::from_bytes_be(&signed_data)
@@ -713,12 +714,16 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
             Value::Constructed(_) => panic!("Response tag should contain a primitive value"),
             Value::Primitive(signed_hash) => signed_hash,
         };
-        let signed =
-            Signature::try_from(&signed_hash[..]).expect("Couldn't create a Signature instance from the provided hash");
-
         // verify that the returned signature can be verified using the corresponding public key
-        assert!(VerifyingKey::<Sha256>::new(rsa_pk.to_public_key())
-            .verify(data, &signed)
-            .is_ok())
+        assert!(signature_algorithm
+            .verify(
+                &scard
+                    .auth_pk
+                    .to_public_key()
+                    .expect("Error while creating public key from a private key"),
+                data,
+                signed_hash
+            )
+            .is_ok());
     }
 }
