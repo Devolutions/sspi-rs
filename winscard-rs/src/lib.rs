@@ -80,8 +80,8 @@ impl std::error::Error for Error {}
 impl From<KeyError> for Error {
     fn from(value: KeyError) -> Self {
         Error::new(
-            ErrorKind::KeyError,
-            format!("Error while parsing a PEM-encoded private key: {}", value),
+            ErrorKind::InternalError,
+            format!("Error: an unexpected KeyError happened: {}", value),
         )
     }
 }
