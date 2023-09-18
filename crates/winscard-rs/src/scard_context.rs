@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
@@ -37,8 +38,11 @@ impl<'a> WinScardContext for ScardContext<'a> {
         todo!()
     }
 
-    fn list_readers(&self) -> Vec<String> {
-        self.readers.iter().map(|reader| reader.name.clone()).collect()
+    fn list_readers(&self) -> Vec<Cow<str>> {
+        self.readers
+            .iter()
+            .map(|reader| Cow::Borrowed(reader.name.as_str()))
+            .collect()
     }
 
     fn device_type_id(&self, reader_name: &str) -> Result<DeviceTypeId> {
