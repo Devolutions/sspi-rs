@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use bitflags::bitflags;
 
-use crate::WinScardResult;
+use crate::Result;
 
 /// ATR string
 ///
@@ -197,32 +197,32 @@ pub trait WinScard {
     /// The SCardStatus function provides the current status of a smart card in a reader.
     /// You can call it any time after a successful call to `SCardConnect` and before a successful
     /// call to `SCardDisconnect`. It does not affect the state of the reader or reader driver.
-    fn status(&self) -> WinScardResult<Status>;
+    fn status(&self) -> Result<Status>;
 
     /// [SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
     ///
     /// The SCardControl function gives you direct control of the reader.
     /// You can call it any time after a successful call to SCardConnect and before a successful call to SCardDisconnect.
     /// The effect on the state of the reader depends on the control code.
-    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<Vec<u8>>;
+    fn control(&mut self, code: ControlCode, input: &[u8]) -> Result<Vec<u8>>;
 
     /// [SCardTransmit](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
     ///
     /// The SCardTransmit function sends a service request to the smart card and expects to receive data back from the card.
-    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData>;
+    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> Result<TransmitOutData>;
 
     /// [SCardBeginTransaction](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardbegintransaction)
     ///
     /// The SCardBeginTransaction function starts a transaction.
     /// The function waits for the completion of all other transactions before it begins.
     /// After the transaction starts, all other applications are blocked from accessing the smart card while the transaction is in progress.
-    fn begin_transaction(&mut self) -> WinScardResult<()>;
+    fn begin_transaction(&mut self) -> Result<()>;
 
     /// [SCardEndTransaction](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardendtransaction)
     ///
     /// The SCardEndTransaction function completes a previously declared transaction,
     /// allowing other applications to resume interactions with the card.
-    fn end_transaction(&mut self) -> WinScardResult<()>;
+    fn end_transaction(&mut self) -> Result<()>;
 }
 
 /// This trait provides interface for all available smart card context (resource manager) related
@@ -242,7 +242,7 @@ pub trait WinScardContext {
         reader_name: &str,
         share_mode: ShareMode,
         protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>>;
+    ) -> Result<Box<dyn WinScard>>;
 
     /// [SCardListReadersW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersw)
     ///
@@ -253,13 +253,13 @@ pub trait WinScardContext {
     ///
     /// Gets the device type identifier of the card reader for the given reader name.
     /// This function does not affect the state of the reader.
-    fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId>;
+    fn device_type_id(&self, reader_name: &str) -> Result<DeviceTypeId>;
 
     /// [SCardGetReaderIconW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericonw)
     ///
     /// The SCardGetReaderIcon function gets an icon of the smart card reader for a given reader's name.
     /// This function does not affect the state of the card reader.
-    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon>;
+    fn reader_icon(&self, reader_name: &str) -> Result<Icon>;
 
     /// [SCardIsValidContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardisvalidcontext)
     ///

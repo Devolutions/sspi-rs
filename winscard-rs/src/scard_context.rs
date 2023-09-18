@@ -5,7 +5,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
-use crate::{Error, ErrorKind, WinScardResult};
+use crate::{Error, ErrorKind, Result};
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         _reader_name: &str,
         _share_mode: ShareMode,
         _protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>> {
+    ) -> Result<Box<dyn WinScard>> {
         todo!()
     }
 
@@ -44,7 +44,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
             .collect()
     }
 
-    fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId> {
+    fn device_type_id(&self, reader_name: &str) -> Result<DeviceTypeId> {
         self.readers
             .iter()
             .find(|reader| reader.name == reader_name)
@@ -52,7 +52,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
             .map(|reader| reader.device_type_id)
     }
 
-    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon> {
+    fn reader_icon(&self, reader_name: &str) -> Result<Icon> {
         self.readers
             .iter()
             .find(|reader| reader.name == reader_name)
