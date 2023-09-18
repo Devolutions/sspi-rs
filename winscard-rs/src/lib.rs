@@ -39,7 +39,7 @@ pub struct SmartCard {
 
 impl SmartCard {
     pub fn new(pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
-        let chuid = build_chuid();
+        let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
         if !(6..=8).contains(&pin.len()) {
