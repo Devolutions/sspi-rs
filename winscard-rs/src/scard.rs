@@ -4,7 +4,7 @@ use alloc::{format, vec};
 
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
-use picky::key::PrivateKey;
+use picky::key::{sign_hashed_rsa, PrivateKey};
 use tracing::error;
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
@@ -265,7 +265,7 @@ impl SmartCard {
                 "TLV structure is invalid: no challenge field is present in the request".to_string(),
             ))?;
         let challenge = match challenge.value() {
-            Value::Primitive(challenge) => challenge.clone(),
+            Value::Primitive(ref challenge) => challenge,
             Value::Constructed(_) => {
                 // this tag must contain a primitive value
                 return Err(Error::new(
@@ -274,7 +274,7 @@ impl SmartCard {
                 ));
             }
         };
-        let signed_challenge = self.auth_pk.sign_hashed_rsa(challenge)?;
+        let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
