@@ -22,7 +22,7 @@ pub struct SmartCard {
     auth_pk: PrivateKey,
     state: SCardState,
     pending_command: Option<Command<1024>>,
-    pending_response: Option<(Vec<u8>, usize)>,
+    pending_response: Option<Vec<u8>>,
 }
 
 impl SmartCard {
@@ -162,7 +162,7 @@ impl SmartCard {
                 [0x5F, 0xC1, 0x02] => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
                 [0x5F, 0xC1, 0x05] => {
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
-                    self.pending_response = Some((self.auth_cert.clone(), 0));
+                    self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()
                 }
                 _ => Ok(Status::NotFound.into()),
@@ -174,7 +174,6 @@ impl SmartCard {
     fn get_response(&mut self) -> Result<Response> {
         match self.get_next_response_chunk() {
             Some((chunk, bytes_left)) => {
-                let chunk = chunk.to_vec();
                 let status = if bytes_left == 0 {
                     self.pending_response = None;
                     Status::OK
@@ -241,28 +240,18 @@ impl SmartCard {
             )?]),
         )?
         .to_vec();
-        self.pending_response = Some((response, 0));
+        self.pending_response = Some(response);
         self.get_response()
     }
 
-    fn get_next_response_chunk(&mut self) -> Option<(&[u8], usize)> {
-        if let Some((ref vec, ref mut current_index)) = self.pending_response {
-            if *current_index == vec.len() {
+    fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
+        let vec = self.pending_response.as_mut()?;
+        if vec.is_empty() {
                 return None;
             }
-            let next_index = *current_index + CHUNK_SIZE.min(vec.len() - *current_index);
-            let chunk = &vec[*current_index..next_index];
-            let bytes_left = if next_index != vec.len() {
-                // update the index if there is still data left
-                *current_index = next_index;
-                vec.len() - next_index
-            } else {
-                0
-            };
-            Some((chunk, bytes_left))
-        } else {
-            None
-        }
+        let next_chunk_length = CHUNK_SIZE.min(vec.len());
+        let chunk = vec.drain(0..next_chunk_length).collect::<Vec<u8>>();
+        Some((chunk, vec.len()))
     }
 }
 
@@ -515,7 +504,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         // get a random Vec<u8> of length 513
         let data: Vec<u8> = (0..513).map(|_| rng.sample(Uniform::new(0, 255))).collect();
         // we will have to make 3 calls to get this data
-        scard.pending_response = Some((data.clone(), 0));
+        scard.pending_response = Some(data.clone());
 
         let mut received_result = vec![];
         // 0 means any valid number in range 0..=256
