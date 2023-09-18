@@ -97,7 +97,7 @@ checksum = "5fd55a5ba1179988837d24ab4c7cc8ed6efdeff578ede0416b4225a5fca35bd0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -108,7 +108,7 @@ checksum = "a66537f1bb974b254c98ed142ff995236e81b9d0fe4db0575f46612cb15eb0f9"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -369,7 +369,7 @@ checksum = "f46882e17999c6cc590af592290432be3bce0428cb0d5f8b6715e4dc7b383eb3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -505,7 +505,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -611,7 +611,7 @@ checksum = "53b153fd91e4b0147f4aced87be237c98248656bb01050b96bf3ee89220a8ddb"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -912,6 +912,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iso7816-tlv"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d47365efc3b4c252f8a3384445c0f7e8a4e0ae5c22bf3bedd2dd16f9bb45016a"
+dependencies = [
+ "untrusted",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1095,7 +1104,7 @@ checksum = "cfb77679af88f8b125209d354a202862602672222e7f2313fdd6dc349bad4712"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -1285,6 +1294,42 @@ checksum = "9b2a4787296e9989611394c33f193f676704af1686e70b8f8033ab5ba9a35a94"
 [[package]]
 name = "picky"
 version = "7.0.0-rc.8"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "aes-kw",
+ "base64",
+ "cbc",
+ "des",
+ "digest",
+ "ed25519-dalek",
+ "hmac",
+ "http",
+ "md-5",
+ "num-bigint-dig",
+ "p256",
+ "p384",
+ "pbkdf2",
+ "picky-asn1 0.8.0",
+ "picky-asn1-der 0.4.1",
+ "picky-asn1-x509 0.12.0",
+ "rand",
+ "rand_core",
+ "rc2",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "sha3",
+ "thiserror",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "picky"
+version = "7.0.0-rc.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52cccdaffd2f361b4b4eb70b4249bd71d89bb66cb84b7f76483ecd1640c543ce"
 dependencies = [
@@ -1303,9 +1348,9 @@ dependencies = [
  "p256",
  "p384",
  "pbkdf2",
- "picky-asn1",
- "picky-asn1-der",
- "picky-asn1-x509",
+ "picky-asn1 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-der 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-x509 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "rand_core",
  "rc2",
@@ -1317,6 +1362,16 @@ dependencies = [
  "sha3",
  "thiserror",
  "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "picky-asn1"
+version = "0.8.0"
+dependencies = [
+ "oid",
+ "serde",
+ "serde_bytes",
  "zeroize",
 ]
 
@@ -1336,12 +1391,34 @@ dependencies = [
 [[package]]
 name = "picky-asn1-der"
 version = "0.4.1"
+dependencies = [
+ "picky-asn1 0.8.0",
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
+name = "picky-asn1-der"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5df7873a9e36d42dadb393bea5e211fe83d793c172afad5fb4ec846ec582793f"
 dependencies = [
- "picky-asn1",
+ "picky-asn1 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_bytes",
+]
+
+[[package]]
+name = "picky-asn1-x509"
+version = "0.12.0"
+dependencies = [
+ "base64",
+ "num-bigint-dig",
+ "oid",
+ "picky-asn1 0.8.0",
+ "picky-asn1-der 0.4.1",
+ "serde",
+ "zeroize",
 ]
 
 [[package]]
@@ -1353,8 +1430,8 @@ dependencies = [
  "base64",
  "num-bigint-dig",
  "oid",
- "picky-asn1",
- "picky-asn1-der",
+ "picky-asn1 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-der 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "widestring",
  "zeroize",
@@ -1375,9 +1452,9 @@ dependencies = [
  "num-bigint-dig",
  "oid",
  "pbkdf2",
- "picky-asn1",
- "picky-asn1-der",
- "picky-asn1-x509",
+ "picky-asn1 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-der 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-x509 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "serde",
  "sha1",
@@ -1499,17 +1576,6 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "proptest-derive"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf16337405ca084e9c78985114633b6827711d22b9e6ef6c6c0d665eb3f0b6e"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1912,7 +1978,7 @@ checksum = "d6c7207fbec9faa48073f3e3074cbe553af6ea512d7c21ba46e434e70ea9fbc1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -2070,10 +2136,10 @@ dependencies = [
  "num-traits",
  "oid",
  "pcsc",
- "picky",
- "picky-asn1",
- "picky-asn1-der",
- "picky-asn1-x509",
+ "picky 7.0.0-rc.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-der 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "picky-asn1-x509 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "picky-krb",
  "portpicker",
  "proptest",
@@ -2140,17 +2206,6 @@ version = "0.0.0"
 
 [[package]]
 name = "syn"
-version = "1.0.109"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
-dependencies = [
- "proc-macro2",
- "quote",
- "unicode-ident",
-]
-
-[[package]]
-name = "syn"
 version = "2.0.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23e78b90f2fcf45d3e842032ce32e3f2d1545ba6636271dcbf24fa306d87be7a"
@@ -2211,7 +2266,7 @@ checksum = "266b2e40bc00e5a6c09c3584011e08b06f123c00362c92b975ba9843aaaa14b8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -2335,7 +2390,7 @@ checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
 
 [[package]]
@@ -2557,7 +2612,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
  "wasm-bindgen-shared",
 ]
 
@@ -2591,7 +2646,7 @@ checksum = "c5353b8dab669f5e10f5bd76df26a9360c748f054f862ff5f3f8aae0c7fb3907"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -2765,10 +2820,14 @@ dependencies = [
 name = "winscard-rs"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "iso7816",
+ "iso7816-tlv",
+ "picky 7.0.0-rc.8",
  "proptest",
- "proptest-derive",
+ "time",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -2800,5 +2859,5 @@ checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.39",
+ "syn",
 ]
