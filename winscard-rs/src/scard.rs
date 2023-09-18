@@ -47,8 +47,8 @@ impl SmartCard {
         })
     }
 
-    pub fn handle_command(&mut self, data: Vec<u8>) -> Result<Response> {
-        let cmd = Command::<1024>::try_from(&data).map_err(|e| {
+    pub fn handle_command(&mut self, data: &[u8]) -> Result<Response> {
+        let cmd = Command::<1024>::try_from(data).map_err(|e| {
             error!("APDU command parsing error: {:?}", e);
             Error::new(
                 ErrorKind::InternalError,
@@ -371,7 +371,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
             complete_response.extend_from_slice(&response.data.expect("Data should be present"));
             let apdu_get_response = vec![0x00, 0xC0, 0x00, 0x00, bytes_left];
             response = scard
-                .handle_command(apdu_get_response)
+                .handle_command(&apdu_get_response)
                 .expect("Can't retrieve all available data");
         }
         assert_eq!(response.status, Status::OK);
@@ -385,7 +385,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let mut scard = new_scard();
 
         let bad_apdu_command = vec![0x00; 2048];
-        let response = scard.handle_command(bad_apdu_command);
+        let response = scard.handle_command(&bad_apdu_command);
         assert!(response.is_err_and(|err| err.error_kind == ErrorKind::InternalError
             && err
                 .description
@@ -400,7 +400,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let mut apdu_verify_cmd = vec![0x00, 0x20, 0x00, 0x80, 0x08];
         // add pin
         apdu_verify_cmd.extend_from_slice(&[0xA9; 8]);
-        let response = scard.handle_command(apdu_verify_cmd);
+        let response = scard.handle_command(&apdu_verify_cmd);
         assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
     }
 
@@ -413,7 +413,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         let mut apdu_select_cmd = vec![0x00, 0xA4, 0x04, 0x00, 0x0B];
         apdu_select_cmd.extend_from_slice(&bad_aid);
-        let response = scard.handle_command(apdu_select_cmd);
+        let response = scard.handle_command(&apdu_select_cmd);
         assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
     }
 
@@ -429,7 +429,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         let mut apdu_select_cmd = vec![0x00, 0xA4, 0x04, 0x00, 0x0B];
         apdu_select_cmd.extend_from_slice(&PIV_AID);
-        let response = scard.handle_command(apdu_select_cmd);
+        let response = scard.handle_command(&apdu_select_cmd);
         assert!(response.is_ok_and(
             |resp| resp.status == Status::OK && resp.data.expect("Data should be present") == expected_response
         ));
@@ -443,7 +443,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // RESET RETRY COUNTER APDU command
         let apdu_reset_retry_cmd = vec![0x00, 0x2C, 0x00, 0x80, 0x00];
-        let response = scard.handle_command(apdu_reset_retry_cmd);
+        let response = scard.handle_command(&apdu_reset_retry_cmd);
         assert!(response.is_ok_and(|resp| resp.status == Status::InstructionNotSupported));
     }
 
@@ -455,22 +455,22 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // p1 can only be 0x00 or 0xFF
         let apdu_verify_bad_p1 = vec![0x00, 0x20, 0xAA, 0x80, 0x00];
-        let response = scard.handle_command(apdu_verify_bad_p1);
+        let response = scard.handle_command(&apdu_verify_bad_p1);
         assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
 
         // if p1 is 0xFF, the data field should be empty
         let apdu_verify_bad_p1_data = vec![0x00, 0x20, 0xFF, 0x80, 0x02, 0xFF, 0xFF];
-        let response = scard.handle_command(apdu_verify_bad_p1_data);
+        let response = scard.handle_command(&apdu_verify_bad_p1_data);
         assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
 
         // p2 should always be 0x80
         let apdu_verify_bad_p2 = vec![0x00, 0x20, 0x00, 0x81, 0x02, 0xFF, 0xFF];
-        let response = scard.handle_command(apdu_verify_bad_p2);
+        let response = scard.handle_command(&apdu_verify_bad_p2);
         assert!(response.is_ok_and(|resp| resp.status == Status::KeyReferenceNotFound));
 
         // PIN should be no shorter than six bytes and no longer than 8
         let apdu_verify_bad_pin = vec![0x00, 0x20, 0x00, 0x80, 0x02, 0xAA, 0xAA];
-        let response = scard.handle_command(apdu_verify_bad_pin);
+        let response = scard.handle_command(&apdu_verify_bad_pin);
         assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectDataField));
     }
 
@@ -482,25 +482,25 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // retrieve number of allowed retries by omitting the data field
         let apdu_verify_no_data = vec![0x00, 0x20, 0x00, 0x80, 0x00];
-        let response = scard.handle_command(apdu_verify_no_data);
+        let response = scard.handle_command(&apdu_verify_no_data);
         assert!(response.is_ok_and(|resp| resp.status == Status::VerificationFailedWithRetries));
 
         // VERIFY command with the wrong PIN code
         let mut apdu_verify_wrong_pin = vec![0x00, 0x20, 0x00, 0x80, 0x08];
         apdu_verify_wrong_pin.extend_from_slice(&[0xCC; 8]);
-        let response = scard.handle_command(apdu_verify_wrong_pin);
+        let response = scard.handle_command(&apdu_verify_wrong_pin);
         assert!(response.is_ok_and(|resp| resp.status == Status::VerificationFailedWithRetries));
 
         // VERIFY command with the correct PIN code
         let mut apdu_verify_correct_pin = vec![0x00, 0x20, 0x00, 0x80, 0x08];
         apdu_verify_correct_pin.extend_from_slice(&[0xA9; 8]);
-        let response = scard.handle_command(apdu_verify_correct_pin);
+        let response = scard.handle_command(&apdu_verify_correct_pin);
         assert!(response.is_ok_and(|resp| resp.status == Status::OK));
         assert_eq!(scard.state, SCardState::PinVerified);
 
         // Reset the security status
         let apdu_verify_reset = vec![0x00, 0x20, 0xFF, 0x80, 0x00];
-        let response = scard.handle_command(apdu_verify_reset);
+        let response = scard.handle_command(&apdu_verify_reset);
         assert!(response.is_ok_and(|resp| resp.status == Status::OK));
         assert_eq!(scard.state, SCardState::PivAppSelected);
     }
@@ -523,7 +523,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let bytes_left = 0;
         let mut apdu_get_response = vec![0x00, 0xC0, 0x00, 0x00, bytes_left];
 
-        let response = scard.handle_command(apdu_get_response.clone());
+        let response = scard.handle_command(&apdu_get_response);
         assert!(response
             .as_ref()
             .is_ok_and(|resp| resp.status == Status::MoreAvailable(0)
@@ -531,7 +531,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
                 && resp.data.as_ref().unwrap() == &data[0..256]));
         received_result.extend_from_slice(&response.unwrap().data.unwrap());
 
-        let response = scard.handle_command(apdu_get_response.clone());
+        let response = scard.handle_command(&apdu_get_response);
         assert!(response
             .as_ref()
             .is_ok_and(|resp| resp.status == Status::MoreAvailable(1)
@@ -541,7 +541,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // set the Le field to 1 so that we get the last remaining byte
         apdu_get_response[4] = 1;
-        let response = scard.handle_command(apdu_get_response);
+        let response = scard.handle_command(&apdu_get_response);
         assert!(response.as_ref().is_ok_and(|resp| resp.status == Status::OK
             && resp.data.is_some()
             && resp.data.as_ref().unwrap() == &data[512..]));
@@ -558,12 +558,12 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // p1 should always be 0x3F; p2 should always be 0xFF
         let apdu_get_data_bad_p1_p2 = vec![0x00, 0xCB, 0x10, 0x21, 0x00];
-        let response = scard.handle_command(apdu_get_data_bad_p1_p2);
+        let response = scard.handle_command(&apdu_get_data_bad_p1_p2);
         assert!(response.is_ok_and(|resp| resp.status == Status::IncorrectP1orP2));
 
         // bad object tag in the data field
         let apdu_get_data_bad_tag = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x08];
-        let response = scard.handle_command(apdu_get_data_bad_tag);
+        let response = scard.handle_command(&apdu_get_data_bad_tag);
         assert!(response.is_ok_and(|resp| resp.status == Status::NotFound));
     }
 
@@ -575,14 +575,14 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // get CHUID
         let apdu_get_data_chuid = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x02];
-        let response = scard.handle_command(apdu_get_data_chuid);
+        let response = scard.handle_command(&apdu_get_data_chuid);
         assert!(
             response.is_ok_and(|resp| resp.status == Status::OK && resp.data.expect("Expected CHUID") == scard.chuid)
         );
 
         // get PIV authentication certificate
         let apdu_get_data_chuid = vec![0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, 0x5F, 0xC1, 0x05];
-        let response = scard.handle_command(apdu_get_data_chuid);
+        let response = scard.handle_command(&apdu_get_data_chuid);
         // verify the contents
         assert!(response.is_ok_and(|resp| {
             // as the certificate is larger than 256 bytes, we have to call the GET RESPONSE function a few times
@@ -598,7 +598,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         scard.state = SCardState::PivAppSelected;
 
         let apdu_general_authenticate = vec![0x00, 0x87, 0x07, 0x9A, 0x00];
-        let response = scard.handle_command(apdu_general_authenticate);
+        let response = scard.handle_command(&apdu_general_authenticate);
         assert!(response.is_ok_and(|resp| resp.status == Status::SecurityStatusNotSatisfied));
     }
 
@@ -610,7 +610,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // p1 should always be 0x07; p2 should always be 0x9A
         let apdu_general_authenticate = vec![0x00, 0x87, 0xFF, 0xCC, 0x00];
-        let response = scard.handle_command(apdu_general_authenticate);
+        let response = scard.handle_command(&apdu_general_authenticate);
         assert!(response.is_err_and(|err| err.error_kind == ErrorKind::UnsupportedFeature));
     }
 
@@ -644,7 +644,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         apdu_general_authenticate.extend_from_slice(&encoded_hash_length);
         apdu_general_authenticate.extend_from_slice(&padded_hash[..248]);
 
-        let response = scard.handle_command(apdu_general_authenticate);
+        let response = scard.handle_command(&apdu_general_authenticate);
         assert!(response.is_ok_and(|resp| resp.status == Status::OK));
 
         // send the remaining data and end command chaining by setting the CLA byte to 0x00
@@ -654,7 +654,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         apdu_general_authenticate.extend_from_slice(&[0x00]);
 
         let response = scard
-            .handle_command(apdu_general_authenticate)
+            .handle_command(&apdu_general_authenticate)
             .expect("Shouldn't have failed");
 
         let complete_response = get_all_available_data(response, &mut scard);
