@@ -186,6 +186,7 @@ pub enum Status {
     InstructionNotSupported,
 }
 
+// ISO/IEC 7816-4, Section 5.1.3, Tables 5-6
 impl From<Status> for [u8; 2] {
     fn from(value: Status) -> Self {
         match value {

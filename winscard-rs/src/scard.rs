@@ -11,10 +11,13 @@ use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
 use crate::{tlv_tags, Error, ErrorKind, Response, Result, Status};
 
+// NIST.SP.800-73-4, part 1, section 2.2
 const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 // the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
 
 pub struct SmartCard {
@@ -103,6 +106,7 @@ impl SmartCard {
     }
 
     fn select(&self, cmd: Command<1024>) -> Result<Response> {
+        // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
         //      CLA - 0x00
         //      INS - 0xA4
@@ -133,6 +137,7 @@ impl SmartCard {
     }
 
     fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
         //      CLA  - 0x00
         //      INS  - 0x20
@@ -175,6 +180,7 @@ impl SmartCard {
     }
 
     fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
         //      CLA  - 0x00
         //      INS  - 0xCB
@@ -207,6 +213,8 @@ impl SmartCard {
     }
 
     fn get_response(&mut self) -> Result<Response> {
+        // ISO/IEC 7816-4, Section 7.6.1
+        // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
         match self.get_next_response_chunk() {
             Some((chunk, bytes_left)) => {
                 let status = if bytes_left == 0 {
@@ -226,6 +234,7 @@ impl SmartCard {
     }
 
     fn general_authenticate(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command
         //      CLA  - 0x00 | 0x10 (command chaining)
         //      INS  - 0x87
@@ -264,6 +273,7 @@ impl SmartCard {
                 ErrorKind::InvalidValue,
                 "TLV structure is invalid: no challenge field is present in the request".to_string(),
             ))?;
+        // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
         let challenge = match challenge.value() {
             Value::Primitive(ref challenge) => challenge,
             Value::Constructed(_) => {
