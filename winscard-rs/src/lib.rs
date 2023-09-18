@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod scard;
+pub mod winscard;
 
 mod ber_tlv;
 mod chuid;
@@ -8,8 +9,6 @@ mod piv_cert;
 mod tlv_tags;
 
 extern crate alloc;
-
-pub mod winscard;
 
 use alloc::format;
 use alloc::string::String;
@@ -89,7 +88,7 @@ impl From<KeyError> for Error {
 impl From<TlvError> for Error {
     fn from(value: TlvError) -> Self {
         Error::new(
-            ErrorKind::TlvError,
+            ErrorKind::InternalError,
             format!(
                 "Error while trying to build or parse a TLV-encoded value or tag: {}",
                 value
