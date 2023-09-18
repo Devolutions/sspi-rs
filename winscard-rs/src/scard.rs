@@ -7,16 +7,18 @@ use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
 use tracing::error;
 
-use crate::chuid::build_chuid;
+use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
 use crate::{tlv_tags, Error, ErrorKind, Response, Result, Status};
 
 const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
+// the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
+const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
+const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
 
 pub struct SmartCard {
-    // chuid will always have a fixed length when excluding optional fields and asymmetric signature
-    chuid: [u8; 61],
+    chuid: [u8; CHUID_LENGTH],
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
     auth_pk: PrivateKey,
@@ -101,6 +103,11 @@ impl SmartCard {
     }
 
     fn select(&self, cmd: Command<1024>) -> Result<Response> {
+        // PIV SELECT command
+        //      CLA - 0x00
+        //      INS - 0xA4
+        //      P1  - 0x04
+        //      P2  - 0x00
         if cmd.p1 != 0x04 || cmd.p2 != 0x00 || !PIV_AID.matches(cmd.data()) {
             return Ok(Status::NotFound.into());
         }
@@ -126,6 +133,14 @@ impl SmartCard {
     }
 
     fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // PIV VERIFY command
+        //      CLA  - 0x00
+        //      INS  - 0x20
+        //      P1   - 0x00 | 0xFF
+        //      P2   - 0x80
+        //      Data - PIN
+        //
+        // If P1 is 0xFF, the Data field should be empty
         if cmd.p1 == 0xFF && !cmd.data().is_empty() {
             return Ok(Status::IncorrectP1orP2.into());
         }
@@ -160,6 +175,16 @@ impl SmartCard {
     }
 
     fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // PIV GET DATA command
+        //      CLA  - 0x00
+        //      INS  - 0xCB
+        //      P1   - 0x3F
+        //      P2   - 0xFF
+        //      Data - a single BER-TLV tag of the data object to be retrieved
+        //
+        // Our PIV smart card only supports:
+        //      5FC102 - Card Holder Unique Identifier
+        //      5FC105 - X.509 Certificate for PIV Authentication
         if cmd.p1 != 0x3F || cmd.p2 != 0xFF {
             return Ok(Status::IncorrectP1orP2.into());
         }
@@ -169,8 +194,8 @@ impl SmartCard {
         }
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
-                [0x5F, 0xC1, 0x02] => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
-                [0x5F, 0xC1, 0x05] => {
+                CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
+                PIV_CERT_TAG => {
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
                     self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()
@@ -201,6 +226,14 @@ impl SmartCard {
     }
 
     fn general_authenticate(&mut self, cmd: Command<1024>) -> Result<Response> {
+        // PIV GENERAL AUTHENTICATE command
+        //      CLA  - 0x00 | 0x10 (command chaining)
+        //      INS  - 0x87
+        //      P1   - 0x07 - RSA
+        //      P2   - 0x9A - PIV Authentication Key
+        //      Data - Dynamic Authentication Template with Challenge inside
+        //
+        // There are many possible P1 and P2 values in this command, but our smart card only supports the RSA algorithm and data signing using the PIV Authentication Key
         if cmd.p1 != 0x07 || cmd.p2 != 0x9A {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
@@ -257,8 +290,8 @@ impl SmartCard {
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
         let vec = self.pending_response.as_mut()?;
         if vec.is_empty() {
-                return None;
-            }
+            return None;
+        }
         let next_chunk_length = CHUNK_SIZE.min(vec.len());
         let chunk = vec.drain(0..next_chunk_length).collect::<Vec<u8>>();
         Some((chunk, vec.len()))
