@@ -68,14 +68,14 @@ impl SmartCard {
         };
         if cmd.class().chain().not_the_last() {
             self.pending_command = Some(cmd);
-            return Ok(Response::new(Status::OK, None));
+            return Ok(Status::OK.into());
         }
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
-            return Ok(Response::new(Status::NotFound, None));
+            return Ok(Status::NotFound.into());
         } else if self.state == SCardState::PivAppSelected && cmd.instruction() == Instruction::GeneralAuthenticate {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
-            return Ok(Response::new(Status::SecurityStatusNotSatisfied, None));
+            return Ok(Status::SecurityStatusNotSatisfied.into());
         }
         match cmd.instruction() {
             Instruction::Select => self.select(cmd),
@@ -85,14 +85,14 @@ impl SmartCard {
             Instruction::GetResponse => self.get_response(),
             _ => {
                 error!("unimplemented instruction {:?}", cmd.instruction());
-                Ok(Response::new(Status::InstructionNotSupported, None))
+                Ok(Status::InstructionNotSupported.into())
             }
         }
     }
 
     fn select(&self, cmd: Command<1024>) -> Result<Response> {
         if cmd.p1 != 0x04 || cmd.p2 != 0x00 || !PIV_AID.matches(cmd.data()) {
-            return Ok(Response::new(Status::NotFound, None));
+            return Ok(Status::NotFound.into());
         }
         let data = Tlv::new(
             Tag::try_from(tlv_tags::APPLICATION_PROPERTY_TEMPLATE)?,
@@ -116,11 +116,11 @@ impl SmartCard {
     }
 
     fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
-        if (cmd.p1 != 0x00 && cmd.p1 != 0xFF) || (cmd.p1 == 0xFF && !cmd.data().is_empty()) {
-            return Ok(Response::new(Status::IncorrectP1orP2, None));
+        if cmd.p1 == 0xFF && !cmd.data().is_empty() {
+            return Ok(Status::IncorrectP1orP2.into());
         }
         if cmd.p2 != 0x80 {
-            return Ok(Response::new(Status::KeyReferenceNotFound, None));
+            return Ok(Status::KeyReferenceNotFound.into());
         }
         match cmd.p1 {
             0x00 => {
@@ -128,12 +128,12 @@ impl SmartCard {
                 if self.state != SCardState::PinVerified {
                     if !cmd.data().is_empty() && !(6..=8).contains(&cmd.data().len()) {
                         // Incorrect PIN length -> do not proceed and return an error
-                        return Ok(Response::new(Status::IncorrectDataField, None));
+                        return Ok(Status::IncorrectDataField.into());
                     }
                     // Retrieve the number of further allowed retries if the data field is absent
                     // Otherwise just compare the provided PIN with the stored one
                     if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
-                        return Ok(Response::new(Status::VerificationFailedWithRetries, None));
+                        return Ok(Status::VerificationFailedWithRetries.into());
                     } else {
                         // data field is present and the provided PIN is correct -> change state and return OK
                         self.state = SCardState::PinVerified;
@@ -144,18 +144,18 @@ impl SmartCard {
                 // p1 is 0xFF and the data field is absent -> reset the security status and return OK
                 self.state = SCardState::PivAppSelected;
             }
-            _ => unreachable!(),
+            _ => return Ok(Status::IncorrectP1orP2.into()),
         };
-        Ok(Response::new(Status::OK, None))
+        Ok(Status::OK.into())
     }
 
     fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
         if cmd.p1 != 0x3F || cmd.p2 != 0xFF {
-            return Ok(Response::new(Status::IncorrectP1orP2, None));
+            return Ok(Status::IncorrectP1orP2.into());
         }
         let request = Tlv::from_bytes(cmd.data())?;
         if request.tag() != &Tag::try_from(tlv_tags::TAG_LIST)? {
-            return Ok(Response::new(Status::NotFound, None));
+            return Ok(Status::NotFound.into());
         }
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
@@ -165,9 +165,9 @@ impl SmartCard {
                     self.pending_response = Some((self.auth_cert.clone(), 0));
                     self.get_response()
                 }
-                _ => Ok(Response::new(Status::NotFound, None)),
+                _ => Ok(Status::NotFound.into()),
             },
-            Value::Constructed(_) => Ok(Response::new(Status::NotFound, None)),
+            Value::Constructed(_) => Ok(Status::NotFound.into()),
         }
     }
 
@@ -180,14 +180,14 @@ impl SmartCard {
                     Status::OK
                 } else if bytes_left < CHUNK_SIZE {
                     // conversion is safe as we know that bytes_left isn't bigger than 256
-                    Status::MoreAvailable(bytes_left as u8)
+                    Status::MoreAvailable(bytes_left.try_into().unwrap())
                 } else {
                     // 0 indicates that we have 256 or more bytes left to be read
                     Status::MoreAvailable(0)
                 };
                 Ok(Response::new(status, Some(chunk)))
             }
-            None => Ok(Response::new(Status::NotFound, None)),
+            None => Ok(Status::NotFound.into()),
         }
     }
 
