@@ -26,15 +26,25 @@ pub struct SmartCard {
 }
 
 impl SmartCard {
-    pub fn new(pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
+    pub fn new(mut pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
+        // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(6..=8).contains(&pin.len()) {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 "PIN should be no shorter than 6 bytes and no longer than 8",
             ));
+        }
+        if pin.iter().any(|byte| !(0x30..=0x39).contains(byte)) {
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                "PIN should consist only of ASCII values representing decimal digits (0x30-0x39)",
+            ));
+        };
+        if pin.len() < 8 {
+            pin.resize(8, 0xFF);
         }
         Ok(SmartCard {
             chuid,
@@ -349,7 +359,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 9IRTY9zr9QWzxGiSqr834q5IZIQ/5uDBW/857MP0bpMl6cTdxzg0
 -----END RSA PRIVATE KEY-----";
         let certificate_stub = vec![0xff; 1024];
-        let pin = vec![0xA9; 8];
+        let pin = vec![0x39; 6];
         SmartCard::new(pin, certificate_stub, rsa_2048_private_key).unwrap()
     }
 
@@ -482,7 +492,9 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         // VERIFY command with the correct PIN code
         let mut apdu_verify_correct_pin = vec![0x00, 0x20, 0x00, 0x80, 0x08];
-        apdu_verify_correct_pin.extend_from_slice(&[0xA9; 8]);
+        apdu_verify_correct_pin.extend_from_slice(&[0x39; 6]);
+        // 0xFF padding
+        apdu_verify_correct_pin.extend_from_slice(&[0xFF; 2]);
         let response = scard.handle_command(&apdu_verify_correct_pin);
         assert!(response.is_ok_and(|resp| resp.status == Status::OK));
         assert_eq!(scard.state, SCardState::PinVerified);
