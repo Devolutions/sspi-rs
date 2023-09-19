@@ -59,12 +59,10 @@ impl SmartCard {
                 "PIN should consist only of ASCII values representing decimal digits (0x30-0x39)",
             ));
         };
-        // NIST.SP.800-73-4 part 2, section 2.4.3
-        const REQUIRED_PADDED_PIN_LENGTH: usize = 8;
-        if pin.len() < REQUIRED_PADDED_PIN_LENGTH {
+        if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
             // NIST.SP.800-73-4 part 2, section 2.4.3
             const PIN_PAD_VALUE: u8 = 0xFF;
-            pin.resize(REQUIRED_PADDED_PIN_LENGTH, PIN_PAD_VALUE);
+            pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
         Ok(SmartCard {
             chuid,
