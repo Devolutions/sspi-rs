@@ -12,7 +12,7 @@ use crate::piv_cert::build_auth_cert;
 use crate::{tlv_tags, Error, ErrorKind, Response, Status, WinScardResult};
 
 // NIST.SP.800-73-4, part 1, section 2.2
-const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
+pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 // the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
@@ -359,6 +359,8 @@ enum SCardState {
 #[cfg(test)]
 mod tests {
     extern crate std;
+
+    use std::dbg;
 
     use picky::hash::HashAlgorithm;
     use picky::signature::SignatureAlgorithm;
