@@ -18,7 +18,7 @@ use core::{fmt, result};
 use iso7816_tlv::TlvError;
 use picky::key::KeyError;
 
-pub type Result<T> = result::Result<T, Error>;
+pub type WinScardResult<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Response {
@@ -89,10 +89,7 @@ impl From<TlvError> for Error {
     fn from(value: TlvError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!(
-                "Error while trying to build or parse a TLV-encoded value or tag: {}",
-                value
-            ),
+            format!("Error: an unexpected TlvError happened: {}", value),
         )
     }
 }

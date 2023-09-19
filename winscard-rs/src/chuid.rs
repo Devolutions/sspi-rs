@@ -4,14 +4,14 @@ use alloc::vec::Vec;
 use time::{format_description, Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::{tlv_tags, Error, ErrorKind, Result};
+use crate::{tlv_tags, Error, ErrorKind, WinScardResult};
 
 // CHUID will always have a fixed length when excluding optional fields and asymmetric signature
 pub const CHUID_LENGTH: usize = 61;
 
 // The CHUID has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)
-pub(crate) fn build_chuid() -> Result<[u8; CHUID_LENGTH]> {
+pub(crate) fn build_chuid() -> WinScardResult<[u8; CHUID_LENGTH]> {
     // We do this by hand, because iso7816_tlv uses Vecs when constructing a new TLV value
     // By avoiding using Tlv::new(), we can avoid allocating a new Vec for each TLV value and use slices instead
     let mut chuid = Vec::with_capacity(CHUID_LENGTH);

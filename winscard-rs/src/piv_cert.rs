@@ -3,11 +3,11 @@ use alloc::vec::Vec;
 use iso7816_tlv::simple::{Tag, Tlv};
 
 use crate::ber_tlv::ber_tlv_length_encoding;
-use crate::{tlv_tags, Result};
+use crate::{tlv_tags, WinScardResult};
 
 // The X.509 Certificate for PIV Authentication has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)
-pub(crate) fn build_auth_cert(auth_cert: Vec<u8>) -> Result<Vec<u8>> {
+pub(crate) fn build_auth_cert(auth_cert: Vec<u8>) -> WinScardResult<Vec<u8>> {
     // SIMPLE-TLV encoding
     // We do use Tlv::new() here to avoid calculating SIMPLE-TLV length ourselves (as a certificate is most certainly > 254 bytes in length)
     let certificate = Tlv::new(Tag::try_from(tlv_tags::CERTIFICATE)?, auth_cert)?.to_vec();
