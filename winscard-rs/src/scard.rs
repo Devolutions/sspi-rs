@@ -9,7 +9,7 @@ use tracing::error;
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::{tlv_tags, Error, ErrorKind, Response, Result, Status};
+use crate::{tlv_tags, Error, ErrorKind, Response, Status, WinScardResult};
 
 // NIST.SP.800-73-4, part 1, section 2.2
 const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
@@ -19,6 +19,10 @@ const CHUNK_SIZE: usize = 256;
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
+// NIST.SP.800-73-4 part 2, section 2.4.3
+const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
+// NIST.SP.800-73-4 part 2, section 2.4.3
+const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
 pub struct SmartCard {
     chuid: [u8; CHUID_LENGTH],
@@ -31,25 +35,36 @@ pub struct SmartCard {
 }
 
 impl SmartCard {
-    pub fn new(mut pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> Result<Self> {
+    pub fn new(mut pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> WinScardResult<Self> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
-        if !(6..=8).contains(&pin.len()) {
+        if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 "PIN should be no shorter than 6 bytes and no longer than 8",
             ));
         }
-        if pin.iter().any(|byte| !(0x30..=0x39).contains(byte)) {
+        // `0` in ASCII
+        const PIN_VALUE_RANGE_LOW_BOUND: u8 = 0x30;
+        // `9` in ASCII
+        const PIN_VALUE_RANGE_HIGH_BOUND: u8 = 0x39;
+        if pin
+            .iter()
+            .any(|byte| !(PIN_VALUE_RANGE_LOW_BOUND..=PIN_VALUE_RANGE_HIGH_BOUND).contains(byte))
+        {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 "PIN should consist only of ASCII values representing decimal digits (0x30-0x39)",
             ));
         };
-        if pin.len() < 8 {
-            pin.resize(8, 0xFF);
+        // NIST.SP.800-73-4 part 2, section 2.4.3
+        const REQUIRED_PADDED_PIN_LENGTH: usize = 8;
+        if pin.len() < REQUIRED_PADDED_PIN_LENGTH {
+            // NIST.SP.800-73-4 part 2, section 2.4.3
+            const PIN_PAD_VALUE: u8 = 0xFF;
+            pin.resize(REQUIRED_PADDED_PIN_LENGTH, PIN_PAD_VALUE);
         }
         Ok(SmartCard {
             chuid,
@@ -62,7 +77,7 @@ impl SmartCard {
         })
     }
 
-    pub fn handle_command(&mut self, data: &[u8]) -> Result<Response> {
+    pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
         let cmd = Command::<1024>::try_from(data).map_err(|e| {
             error!("APDU command parsing error: {:?}", e);
             Error::new(
@@ -105,14 +120,20 @@ impl SmartCard {
         }
     }
 
-    fn select(&self, cmd: Command<1024>) -> Result<Response> {
+    fn select(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
         //      CLA - 0x00
         //      INS - 0xA4
         //      P1  - 0x04
         //      P2  - 0x00
-        if cmd.p1 != 0x04 || cmd.p2 != 0x00 || !PIV_AID.matches(cmd.data()) {
+
+        // ISO/IEC 7816-4, Section 7.1.1, Table 39
+        const APPLICATION_IDENTIFIER: u8 = 0x04;
+        // ISO/IEC 7816-4, Section 7.1.1, Table 40
+        const FIRST_OR_ONLY_OCCURRENCE: u8 = 0x00;
+
+        if cmd.p1 != APPLICATION_IDENTIFIER || cmd.p2 != FIRST_OR_ONLY_OCCURRENCE || !PIV_AID.matches(cmd.data()) {
             return Ok(Status::NotFound.into());
         }
         let data = Tlv::new(
@@ -133,10 +154,11 @@ impl SmartCard {
                 )?,
             ]),
         )?;
+        self.state = SCardState::PivAppSelected;
         Ok(Response::new(Status::OK, Some(data.to_vec())))
     }
 
-    fn verify(&mut self, cmd: Command<1024>) -> Result<Response> {
+    fn verify(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
         //      CLA  - 0x00
@@ -146,17 +168,27 @@ impl SmartCard {
         //      Data - PIN
         //
         // If P1 is 0xFF, the Data field should be empty
-        if cmd.p1 == 0xFF && !cmd.data().is_empty() {
+
+        // ISO/IEC 7816-4, Section 7.5.1
+        const NO_IDENTIFIER: u8 = 0x00;
+        // NIST.SP.800-73-4, Part 2, Section 3.2.1
+        const RESET_SECURITY_STATUS: u8 = 0xFF;
+        // ISO/IEC 7816-4, Section 7.5.1, Table 65
+        const SPECIFIC_REFERENCE_DATA: u8 = 0x80;
+
+        if cmd.p1 == RESET_SECURITY_STATUS && !cmd.data().is_empty() {
             return Ok(Status::IncorrectP1orP2.into());
         }
-        if cmd.p2 != 0x80 {
+        if cmd.p2 != SPECIFIC_REFERENCE_DATA {
             return Ok(Status::KeyReferenceNotFound.into());
         }
         match cmd.p1 {
-            0x00 => {
+            NO_IDENTIFIER => {
                 // PIN was already verified -> return OK
                 if self.state != SCardState::PinVerified {
-                    if !cmd.data().is_empty() && !(6..=8).contains(&cmd.data().len()) {
+                    if !cmd.data().is_empty()
+                        && !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&cmd.data().len())
+                    {
                         // Incorrect PIN length -> do not proceed and return an error
                         return Ok(Status::IncorrectDataField.into());
                     }
@@ -170,7 +202,7 @@ impl SmartCard {
                     }
                 }
             }
-            0xFF => {
+            RESET_SECURITY_STATUS => {
                 // p1 is 0xFF and the data field is absent -> reset the security status and return OK
                 self.state = SCardState::PivAppSelected;
             }
@@ -179,7 +211,7 @@ impl SmartCard {
         Ok(Status::OK.into())
     }
 
-    fn get_data(&mut self, cmd: Command<1024>) -> Result<Response> {
+    fn get_data(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
         //      CLA  - 0x00
@@ -191,7 +223,12 @@ impl SmartCard {
         // Our PIV smart card only supports:
         //      5FC102 - Card Holder Unique Identifier
         //      5FC105 - X.509 Certificate for PIV Authentication
-        if cmd.p1 != 0x3F || cmd.p2 != 0xFF {
+
+        // ISO/IEC 7816-4, Section 7.4.1
+        const FIRST_BYTE_OF_CURRENT_DF: u8 = 0x3F;
+        const SECOND_BYTE_OF_CURRENT_DF: u8 = 0xFF;
+
+        if cmd.p1 != FIRST_BYTE_OF_CURRENT_DF || cmd.p2 != SECOND_BYTE_OF_CURRENT_DF {
             return Ok(Status::IncorrectP1orP2.into());
         }
         let request = Tlv::from_bytes(cmd.data())?;
@@ -212,7 +249,7 @@ impl SmartCard {
         }
     }
 
-    fn get_response(&mut self) -> Result<Response> {
+    fn get_response(&mut self) -> WinScardResult<Response> {
         // ISO/IEC 7816-4, Section 7.6.1
         // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
         match self.get_next_response_chunk() {
@@ -233,7 +270,7 @@ impl SmartCard {
         }
     }
 
-    fn general_authenticate(&mut self, cmd: Command<1024>) -> Result<Response> {
+    fn general_authenticate(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command
         //      CLA  - 0x00 | 0x10 (command chaining)
@@ -243,7 +280,13 @@ impl SmartCard {
         //      Data - Dynamic Authentication Template with Challenge inside
         //
         // There are many possible P1 and P2 values in this command, but our smart card only supports the RSA algorithm and data signing using the PIV Authentication Key
-        if cmd.p1 != 0x07 || cmd.p2 != 0x9A {
+
+        // NIST.SP.800-73-4, Part 1, Table 5
+        const RSA_ALGORITHM: u8 = 0x07;
+        // NIST.SP.800-73-4, Part 1, Table 4b
+        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
+
+        if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
                 format!("Provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
