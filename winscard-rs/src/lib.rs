@@ -1,13 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub mod scard;
+pub mod tlv_tags;
 pub mod winscard;
 
 mod ber_tlv;
 mod chuid;
 mod piv_cert;
+mod scard;
 mod scard_context;
-mod tlv_tags;
 
 extern crate alloc;
 
@@ -16,15 +16,17 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::{fmt, result};
 
+pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
 use picky::key::KeyError;
+pub use scard::{SmartCard, PIV_AID};
 
 pub type WinScardResult<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Response {
-    status: Status,
-    data: Option<Vec<u8>>,
+    pub status: Status,
+    pub data: Option<Vec<u8>>,
 }
 
 impl Response {
