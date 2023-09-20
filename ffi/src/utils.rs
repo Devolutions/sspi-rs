@@ -40,15 +40,13 @@ pub unsafe fn transform_credentials_handle<'a>(
     }
 }
 
+// when encoding an UTF-16 character using two code units, the 16-bit values are chosen from the UTF-16 surrogate range 0xD800–0xDFFF,
+// and thus only \0 is encoded by two consecutive null bytes
 #[cfg(feature = "tsssp")]
 pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
     let mut len = raw_str.len();
-    while len > 2 {
-        if raw_str[len - 2..] == [0, 0] {
-            raw_str.truncate(len - 2);
-            len = raw_str.len();
-        } else {
-            break;
-        }
+    while len > 2 && raw_str[len - 2..] == [0, 0] {
+        raw_str.truncate(len - 2);
+        len = raw_str.len();
     }
 }
