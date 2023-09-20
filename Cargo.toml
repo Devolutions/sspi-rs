@@ -63,7 +63,7 @@ num-bigint-dig = "0.8"
 tracing = "0.1"
 rustls = { version = "0.21", features = ["dangerous_configuration"], optional = true }
 zeroize = { version = "1.6", features = ["zeroize_derive"] }
-tokio = { version = "1.32", features = ["time", "rt"], optional = true }
+tokio = { version = "1.32", features = ["time", "rt", "rt-multi-thread"], optional = true }
 pcsc = { version = "2.8", optional = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -75,7 +75,7 @@ windows-sys = { version = "0.48", features = ["Win32_Security_Cryptography", "Wi
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { version = "1.32", features = ["time", "rt"] }
+tokio = { version = "1.32", features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 static_assertions = "1"
