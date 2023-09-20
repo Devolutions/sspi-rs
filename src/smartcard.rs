@@ -8,6 +8,14 @@ use winscard::{ber_tlv_length_encoding, tlv_tags, SmartCard as PivSmartCard, Sta
 
 use crate::{Error, ErrorKind, Result};
 
+// ISO/IEC 7816-4
+const CLA_BYTE_NO_CHAINING: u8 = 0x00;
+const CLA_BYTE_CHAINING: u8 = 0x10;
+// the max amount of data a one APDU command can contain
+const APDU_COMMAND_DATA_SIZE: usize = 255;
+// tag is always 1 byte in length
+const TLV_TAG_LENGTH: usize = 1;
+
 pub enum SmartCardApi {
     WinSCard(Card),
     PivSmartCard(Box<PivSmartCard>),
@@ -51,10 +59,6 @@ impl SmartCard {
 
     pub fn new_emulated(mut pin: Vec<u8>, private_key_pem: &str, auth_cert_der: Vec<u8>) -> Result<Self> {
         let scard = PivSmartCard::new(pin.clone(), auth_cert_der, private_key_pem)?;
-        if pin.len() < 8 {
-            // pad the PIN just as the smart card would do
-            pin.resize(8, 0xFF);
-        }
         Ok(Self {
             smart_card_type: SmartCardApi::PivSmartCard(Box::new(scard)),
             pin,
@@ -187,9 +191,9 @@ impl SmartCard {
                             ErrorKind::InternalError,
                             format!("Smart card error: {:?} != {:?}", response, Status::OK),
                         ));
-                    } else if response.data.is_some() {
+                    } else if let Some(data) = response.data {
                         // last command in the chain triggers processing of the whole chain and has data in the Response structure
-                        response_data.extend_from_slice(response.data.as_ref().unwrap());
+                        response_data.extend(data);
                     }
                 }
 
@@ -207,13 +211,14 @@ impl SmartCard {
                             ));
                         }
                     };
-                    if response.data.is_none() {
+                    if let Some(data) = response.data {
+                        response_data.extend_from_slice(&data);
+                    } else {
                         return Err(Error::new(
                             ErrorKind::InternalError,
                             format!("Smart card error: {:?} != {:?}", response, Status::OK),
                         ));
                     }
-                    response_data.extend_from_slice(&response.data.unwrap());
                 }
 
                 // The smart card responds with a BER-TLV structure that we need to parse and extract the data from
@@ -288,12 +293,11 @@ fn build_data_sign_apdu(data_to_sign: impl AsRef<[u8]>) -> Result<Vec<u8>> {
 }
 
 /// Creates a GET RESPONSE APDU command as described in ISO/IEC 7816-4, Section 7.6.1
-#[inline]
 fn build_get_response_apdu(bytes_to_read: u8) -> Result<Vec<u8>> {
     // ISO/IEC 7816-4
-    const CLA_BYTE_NO_CHAINING: u8 = 0x00;
     const GET_RESPONSE_INS_BYTE: u8 = 0xC0;
     const GET_RESPONSE_P1_P2: u8 = 0x00;
+
     Ok(vec![
         CLA_BYTE_NO_CHAINING,
         GET_RESPONSE_INS_BYTE,
@@ -305,16 +309,15 @@ fn build_get_response_apdu(bytes_to_read: u8) -> Result<Vec<u8>> {
 
 /// Creates a VERIFY APDU command as described in NIST.SP.800-73-4, Part 2, Section 3.2.1
 /// PIN should already be padded with 0xFF bytes if it is shorter than 8 bytes
-#[inline]
 fn build_verify_apdu(pin: impl AsRef<[u8]>) -> Result<Vec<u8>> {
     // ISO/IEC 7816-4
-    const CLA_BYTE_NO_CHAINING: u8 = 0x00;
     const VERIFY_INS_BYTE: u8 = 0x20;
     // ISO/IEC 7816-4, Section 7.5.1
     const NO_IDENTIFIER: u8 = 0x00;
     // ISO/IEC 7816-4, Section 7.5.1, Table 65
     const SPECIFIC_REFERENCE_DATA: u8 = 0x80;
     const PIN_LENGTH: u8 = 0x08;
+
     let mut apdu_verify = vec![
         CLA_BYTE_NO_CHAINING,
         VERIFY_INS_BYTE,
@@ -327,10 +330,8 @@ fn build_verify_apdu(pin: impl AsRef<[u8]>) -> Result<Vec<u8>> {
 }
 
 /// Creates a SELECT APDU command as described in NIST.SP.800-73-4, Part 2, Section 3.1.1
-#[inline]
 fn build_select_apdu() -> Result<Vec<u8>> {
     // ISO/IEC 7816-4
-    const CLA_BYTE_NO_CHAINING: u8 = 0x00;
     const SELECT_INS_BYTE: u8 = 0xA4;
     // ISO/IEC 7816-4, Section 7.1.1, Table 39
     const APPLICATION_IDENTIFIER: u8 = 0x04;
@@ -338,6 +339,7 @@ fn build_select_apdu() -> Result<Vec<u8>> {
     const FIRST_OR_ONLY_OCCURRENCE: u8 = 0x00;
     // not truncated
     const AID_LENGTH: u8 = 0x0B;
+
     let mut apdu_select = vec![
         CLA_BYTE_NO_CHAINING,
         SELECT_INS_BYTE,
@@ -352,16 +354,8 @@ fn build_select_apdu() -> Result<Vec<u8>> {
 /// Creates a GENERAL AUTHeNTICATE APDU commands as described in NIST.SP.800-73-4, Part 2, Section 3.2.4
 /// Returns multiple commands if `data` is too big to fit into one command
 fn build_general_authenticate_apdu(data: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>>> {
-    // the max amount of data a one APDU command can contain
-    const APDU_COMMAND_DATA_SIZE: usize = 255;
-    // tag is always 1 byte in length
-    const TLV_TAG_LENGTH: usize = 1;
-
     // ISO/IEC 7816-4
-    const CLA_BYTE_NO_CHAINING: u8 = 0x00;
-    const CLA_BYTE_CHAINING: u8 = 0x10;
     const GENERAL_AUTHENTICATE_INS_BYTE: u8 = 0x87;
-
     // NIST.SP.800-73-4, Part 1, Table 5
     const RSA_ALGORITHM: u8 = 0x07;
     // NIST.SP.800-73-4, Part 1, Table 4b
@@ -397,14 +391,24 @@ fn build_general_authenticate_apdu(data: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>
         // enable command chaining
         apdu_general_authenticate[0] = CLA_BYTE_CHAINING;
 
-        let commands_num = (command_size as f64 / APDU_COMMAND_DATA_SIZE as f64).ceil() as usize;
+        let commands_num = {
+            let mut commands_num = command_size / APDU_COMMAND_DATA_SIZE;
+            if command_size % APDU_COMMAND_DATA_SIZE != 0 {
+                commands_num += 1;
+            }
+            commands_num
+        };
         let mut commands = Vec::with_capacity(commands_num);
 
         // the first five bytes of an APDU command are not counted as data
         let remaining_data_size = APDU_COMMAND_DATA_SIZE - apdu_general_authenticate.len() + TLV_TAG_LENGTH * 5;
 
         // Build a vec from the byte slice so that we can drain it
-        let mut data = data.as_ref().to_vec();
+        let mut data = {
+            let mut vec_data = Vec::with_capacity(data.as_ref().len());
+            vec_data.extend(data.as_ref());
+            vec_data
+        };
 
         // Add data to the first command and append it to the command vec
         apdu_general_authenticate.extend_from_slice(data.drain(0..remaining_data_size).as_slice());
