@@ -360,8 +360,6 @@ enum SCardState {
 mod tests {
     extern crate std;
 
-    use std::dbg;
-
     use picky::hash::HashAlgorithm;
     use picky::signature::SignatureAlgorithm;
     use rand::distributions::Uniform;
