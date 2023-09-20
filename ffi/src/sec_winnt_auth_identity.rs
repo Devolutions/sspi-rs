@@ -14,7 +14,7 @@ use winapi::um::wincred::CredIsMarshaledCredentialW;
 use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes, raw_wide_str_trim_nulls};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -472,6 +472,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 }
 
 #[cfg(target_os = "windows")]
+#[instrument(level ="trace", ret)]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
@@ -538,8 +539,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    // remove null
-    username.truncate(username.len() - 2);
+    // remove null chars
+    raw_wide_str_trim_nulls(&mut username);
     auth_identity_buffers.user = username;
 
     if domain_len == 0 {
