@@ -11,17 +11,6 @@ pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
-pub fn vec_into_raw_ptr<T>(v: Vec<T>) -> *mut T {
-    Box::into_raw(v.into_boxed_slice()) as *mut T
-}
-
-pub unsafe fn raw_w_str_to_bytes(raw_buffer: *const u16, len: usize) -> Vec<u8> {
-    from_raw_parts(raw_buffer, len)
-        .iter()
-        .flat_map(|w_char| w_char.to_le_bytes())
-        .collect()
-}
-
 pub unsafe fn c_w_str_to_string(s: *const SecWChar) -> String {
     let mut len = 0;
 
@@ -48,5 +37,16 @@ pub unsafe fn transform_credentials_handle<'a>(
             cred_handle.security_package_name.as_str(),
             &cred_handle.attributes,
         ))
+    }
+}
+
+// when encoding an UTF-16 character using two code units, the 16-bit values are chosen from the UTF-16 surrogate range 0xD800–0xDFFF,
+// and thus only \0 is encoded by two consecutive null bytes
+#[cfg(feature = "tsssp")]
+pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
+    let mut len = raw_str.len();
+    while len > 2 && raw_str[len - 2..] == [0, 0] {
+        raw_str.truncate(len - 2);
+        len = raw_str.len();
     }
 }
