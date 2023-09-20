@@ -43,7 +43,7 @@ pub unsafe fn transform_credentials_handle<'a>(
 pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
     let mut len = raw_str.len();
     while len > 2 {
-        if &raw_str[len - 2..] == &[0, 0] {
+        if raw_str[len - 2..] == [0, 0] {
             raw_str.truncate(len - 2);
             len = raw_str.len();
         } else {

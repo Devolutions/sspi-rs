@@ -472,7 +472,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 }
 
 #[cfg(target_os = "windows")]
-#[instrument(level ="trace", ret)]
+#[instrument(level = "trace", ret)]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
