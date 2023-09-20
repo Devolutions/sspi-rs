@@ -11,17 +11,6 @@ pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
-pub fn vec_into_raw_ptr<T>(v: Vec<T>) -> *mut T {
-    Box::into_raw(v.into_boxed_slice()) as *mut T
-}
-
-pub unsafe fn raw_w_str_to_bytes(raw_buffer: *const u16, len: usize) -> Vec<u8> {
-    from_raw_parts(raw_buffer, len)
-        .iter()
-        .flat_map(|w_char| w_char.to_le_bytes())
-        .collect()
-}
-
 pub unsafe fn c_w_str_to_string(s: *const SecWChar) -> String {
     let mut len = 0;
 
