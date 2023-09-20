@@ -40,6 +40,7 @@ pub unsafe fn transform_credentials_handle<'a>(
     }
 }
 
+#[cfg(feature = "tsssp")]
 pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
     let mut len = raw_str.len();
     while len > 2 {
