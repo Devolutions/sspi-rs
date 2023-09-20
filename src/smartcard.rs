@@ -403,35 +403,29 @@ fn build_general_authenticate_apdu(data: impl AsRef<[u8]>) -> Result<Vec<Vec<u8>
         // the first five bytes of an APDU command are not counted as data
         let remaining_data_size = APDU_COMMAND_DATA_SIZE - apdu_general_authenticate.len() + TLV_TAG_LENGTH * 5;
 
-        // Build a vec from the byte slice so that we can drain it
-        let mut data = {
-            let mut vec_data = Vec::with_capacity(data.as_ref().len());
-            vec_data.extend(data.as_ref());
-            vec_data
-        };
+        let (chunk, remaining_chunks) = data.as_ref().split_at(remaining_data_size);
 
         // Add data to the first command and append it to the command vec
-        apdu_general_authenticate.extend_from_slice(data.drain(0..remaining_data_size).as_slice());
+        apdu_general_authenticate.extend_from_slice(chunk);
         commands.extend_from_slice(&[apdu_general_authenticate]);
 
-        while !data.is_empty() {
-            let chunk_length = APDU_COMMAND_DATA_SIZE.min(data.len());
+        for chunk in remaining_chunks.chunks(APDU_COMMAND_DATA_SIZE) {
             // CLA + INS + P1 + P2 + DATA_LENGTH + DATA
-            let mut chained_apdu_command = Vec::with_capacity(TLV_TAG_LENGTH * 5 + chunk_length);
+            let mut chained_apdu_command = Vec::with_capacity(TLV_TAG_LENGTH * 5 + chunk.len());
             chained_apdu_command.extend_from_slice(&[
                 CLA_BYTE_CHAINING,
                 GENERAL_AUTHENTICATE_INS_BYTE,
                 RSA_ALGORITHM,
                 PIV_AUTHENTICATION_KEY,
             ]);
-            chained_apdu_command.extend_from_slice(&[chunk_length.try_into().unwrap()]);
-            chained_apdu_command.extend_from_slice(data.drain(0..chunk_length).as_slice());
+            chained_apdu_command.extend_from_slice(&[chunk.len().try_into().unwrap()]);
+            chained_apdu_command.extend_from_slice(chunk);
             commands.extend_from_slice(&[chained_apdu_command]);
         }
 
         // disable command chaining for the last command in the chain
-        let last_command = commands.len() - 1;
-        commands[last_command][0] = CLA_BYTE_NO_CHAINING;
+        // won't fail, because we have at least two commands at this point
+        commands.last_mut().unwrap()[0] = CLA_BYTE_NO_CHAINING;
 
         commands
     } else {
