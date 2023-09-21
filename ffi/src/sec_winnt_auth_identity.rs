@@ -1,3 +1,4 @@
+use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
@@ -11,7 +12,7 @@ use symbol_rename_macro::rename_symbol;
 #[cfg(feature = "scard")]
 use winapi::um::wincred::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
-use windows_sys::Win32::Security::Authentication::Identity::SspiIsAuthIdentityEncrypted;
+use winapi::um::wincred::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 #[cfg(feature = "tsssp")]
@@ -168,46 +169,91 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
+// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function
+#[cfg(feature = "tsssp")]
+unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
+
+    // When logging on using the saved (remembered) credentials, the mstsc sets the submit_type to CredSspSubmitType::CredsspSubmitBufferBothOld
+    // and p_spnego_cred to NULL. Then the inner security package should use saved credentials in the Credentials Manager for the authentication.
+    // But, unfortunately, we are unable to read those credentials because they are accessible only for Microsoft's security packages.
+    //
+    // [CRED_TYPE_DOMAIN_PASSWORD](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
+    // The NTLM, Kerberos, and Negotiate authentication packages will automatically use this credential when connecting to the named target.
+    //
+    // In this case, we just asked the user to re-enter the credentials.
+    if credssp_cred.p_spnego_cred.is_null() {
+        // We're unable to load saved credentials\0
+        let message: [u8; 78] = [
+            87, 0, 101, 0, 39, 0, 114, 0, 101, 0, 32, 0, 117, 0, 110, 0, 97, 0, 98, 0, 108, 0, 101, 0, 32, 0, 116, 0,
+            111, 0, 32, 0, 108, 0, 111, 0, 97, 0, 100, 0, 32, 0, 115, 0, 97, 0, 118, 0, 101, 0, 100, 0, 32, 0, 99, 0,
+            114, 0, 101, 0, 100, 0, 101, 0, 110, 0, 116, 0, 105, 0, 97, 0, 108, 0, 115, 0, 0, 0,
+        ];
+        // Enter credentials\0"
+        let caption: [u8; 36] = [
+            69, 0, 110, 0, 116, 0, 101, 0, 114, 0, 32, 0, 99, 0, 114, 0, 101, 0, 100, 0, 101, 0, 110, 0, 116, 0, 105,
+            0, 97, 0, 108, 0, 115, 0, 0, 0,
+        ];
+        let mut cred_ui_info = CREDUI_INFOW {
+            cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
+            hwndParent: null_mut(),
+            pszMessageText: message.as_ptr() as *const _,
+            pszCaptionText: caption.as_ptr() as *const _,
+            hbmBanner: null_mut(),
+        };
+        let mut auth_package_count = 0;
+        let mut out_buffer_size = 1024;
+        let mut out_buffer = null_mut();
+        let result = CredUIPromptForWindowsCredentialsW(
+            &mut cred_ui_info,
+            0,
+            &mut auth_package_count,
+            null_mut(),
+            0,
+            &mut out_buffer,
+            &mut out_buffer_size,
+            null_mut(),
+            0,
+        );
+        debug!(result, out_buffer_size, ?out_buffer);
+
+        return unpack_sec_winnt_auth_identity_ex2_w(out_buffer, Some(out_buffer_size));
+    }
+
+    unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred, None)
+}
+
 // This function determines what format credentials have: ASCII or UNICODE,
 // and then calls an appropriate raw credentials handler function.
 // Why do we need such a function:
 // Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
 // So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
 pub unsafe fn auth_data_to_identity_buffers(
-    security_package_name: &str,
-    p_auth_data: *const c_void,
-    package_list: &mut Option<String>,
-) -> Result<CredentialsBuffers> {
-    let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
-
-    let rawcreds = std::slice::from_raw_parts(p_auth_data as *const u8, 128);
-    debug!(?rawcreds);
-
-    #[cfg(feature = "tsssp")]
-    if SspiIsAuthIdentityEncrypted(p_auth_data) != 0 {
-        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-        return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
-    }
-
-    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_ANSI) != 0 {
-        auth_data_to_identity_buffers_a(security_package_name, p_auth_data, package_list)
-    } else {
-        auth_data_to_identity_buffers_w(security_package_name, p_auth_data, package_list)
-    }
-}
-
-pub unsafe fn auth_data_to_identity_buffers_a(
     _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
+    let rawcreds = std::slice::from_raw_parts(p_auth_data as *const u8, 128);
+    debug!(?rawcreds);
+
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
-        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-
-        return unpack_sec_winnt_auth_identity_ex2_a(credssp_cred.p_spnego_cred);
+        return credssp_auth_data_to_identity_buffers(p_auth_data);
     }
 
+    let (_, auth_flags) = get_auth_data_identity_version_and_flags(p_auth_data);
+
+    if (auth_flags & SEC_WINNT_AUTH_IDENTITY_ANSI) != 0 {
+        auth_data_to_identity_buffers_a(p_auth_data, package_list)
+    } else {
+        auth_data_to_identity_buffers_w(p_auth_data, package_list)
+    }
+}
+
+pub unsafe fn auth_data_to_identity_buffers_a(
+    p_auth_data: *const c_void,
+    package_list: &mut Option<String>,
+) -> Result<CredentialsBuffers> {
     let (auth_version, _) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
@@ -237,17 +283,9 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 }
 
 pub unsafe fn auth_data_to_identity_buffers_w(
-    _security_package_name: &str,
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
-    #[cfg(feature = "tsssp")]
-    if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
-        let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
-
-        return unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred);
-    }
-
     let (auth_version, _) = get_auth_data_identity_version_and_flags(p_auth_data);
 
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
@@ -330,8 +368,6 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
 
 #[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
-    use std::ptr::null_mut;
-
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
@@ -475,7 +511,10 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
 #[cfg(feature = "tsssp")]
 #[instrument(level = "trace", ret)]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(
+    p_auth_data: *const c_void,
+    auth_data_len: Option<u32>,
+) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
@@ -487,7 +526,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         ));
     }
 
-    let auth_data_len = get_sec_winnt_auth_identity_ex2_size(p_auth_data);
+    let auth_data_len = auth_data_len.unwrap_or_else(|| get_sec_winnt_auth_identity_ex2_size(p_auth_data));
 
     let mut username_len = 0;
     let mut domain_len = 0;
