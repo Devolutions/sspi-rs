@@ -180,6 +180,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     //
     // [CRED_TYPE_DOMAIN_PASSWORD](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
     // The NTLM, Kerberos, and Negotiate authentication packages will automatically use this credential when connecting to the named target.
+    // More info: https://blog.gentilkiwi.com/tag/cred_type_domain_password
     //
     // In this case, we just asked the user to re-enter the credentials.
     if credssp_cred.p_spnego_cred.is_null() {
