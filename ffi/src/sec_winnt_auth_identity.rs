@@ -1,3 +1,4 @@
+#[cfg(windows)]
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
