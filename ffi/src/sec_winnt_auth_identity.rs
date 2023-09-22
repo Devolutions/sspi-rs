@@ -13,7 +13,7 @@ use symbol_rename_macro::rename_symbol;
 #[cfg(feature = "scard")]
 use winapi::um::wincred::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
-use winapi::um::wincred::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
+use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use crate::sspi_data_types::{SecWChar, SecurityStatus};
 #[cfg(feature = "tsssp")]
@@ -190,18 +190,18 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     if credssp_cred.p_spnego_cred.is_null() {
         let message = string_to_utf16("We're unable to load saved credentials\0");
         let caption = string_to_utf16("Enter credentials\0");
-        let mut cred_ui_info = CREDUI_INFOW {
+        let cred_ui_info = CREDUI_INFOW {
             cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
-            hwndParent: null_mut(),
+            hwndParent: 0,
             pszMessageText: message.as_ptr() as *const _,
             pszCaptionText: caption.as_ptr() as *const _,
-            hbmBanner: null_mut(),
+            hbmBanner: 0,
         };
         let mut auth_package_count = 0;
         let mut out_buffer_size = 1024;
         let mut out_buffer = null_mut();
         let result = CredUIPromptForWindowsCredentialsW(
-            &mut cred_ui_info,
+            &cred_ui_info,
             0,
             &mut auth_package_count,
             null_mut(),
