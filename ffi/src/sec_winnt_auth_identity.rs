@@ -172,6 +172,9 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 // The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function
 #[cfg(feature = "tsssp")]
 unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    use sspi::string_to_utf16;
+    use winapi::shared::winerror::ERROR_SUCCESS;
+
     let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
 
     // When logging on using the saved (remembered) credentials, the mstsc sets the submit_type to CredSspSubmitType::CredsspSubmitBufferBothOld
@@ -184,17 +187,8 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     //
     // In this case, we just asked the user to re-enter the credentials.
     if credssp_cred.p_spnego_cred.is_null() {
-        // We're unable to load saved credentials\0
-        let message: [u8; 78] = [
-            87, 0, 101, 0, 39, 0, 114, 0, 101, 0, 32, 0, 117, 0, 110, 0, 97, 0, 98, 0, 108, 0, 101, 0, 32, 0, 116, 0,
-            111, 0, 32, 0, 108, 0, 111, 0, 97, 0, 100, 0, 32, 0, 115, 0, 97, 0, 118, 0, 101, 0, 100, 0, 32, 0, 99, 0,
-            114, 0, 101, 0, 100, 0, 101, 0, 110, 0, 116, 0, 105, 0, 97, 0, 108, 0, 115, 0, 0, 0,
-        ];
-        // Enter credentials\0"
-        let caption: [u8; 36] = [
-            69, 0, 110, 0, 116, 0, 101, 0, 114, 0, 32, 0, 99, 0, 114, 0, 101, 0, 100, 0, 101, 0, 110, 0, 116, 0, 105,
-            0, 97, 0, 108, 0, 115, 0, 0, 0,
-        ];
+        let message = string_to_utf16("We're unable to load saved credentials\0");
+        let caption = string_to_utf16("Enter credentials\0");
         let mut cred_ui_info = CREDUI_INFOW {
             cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
             hwndParent: null_mut(),
@@ -216,12 +210,17 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             null_mut(),
             0,
         );
-        debug!(result, out_buffer_size, ?out_buffer);
+        if result != ERROR_SUCCESS {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                format!("Can not get user credentials: {:0x?}", result),
+            ));
+        }
 
-        return unpack_sec_winnt_auth_identity_ex2_w(out_buffer, Some(out_buffer_size));
+        return unpack_sec_winnt_auth_identity_ex2_w_sized(out_buffer, out_buffer_size);
     }
 
-    unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred, None)
+    unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred)
 }
 
 // This function determines what format credentials have: ASCII or UNICODE,
@@ -512,9 +511,24 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
 #[cfg(feature = "tsssp")]
 #[instrument(level = "trace", ret)]
-pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    if p_auth_data.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "Cannot unpack credentials: p_auth_data is null",
+        ));
+    }
+
+    let auth_data_len = get_sec_winnt_auth_identity_ex2_size(p_auth_data);
+
+    unpack_sec_winnt_auth_identity_ex2_w_sized(p_auth_data, auth_data_len)
+}
+
+#[cfg(feature = "tsssp")]
+#[instrument(level = "trace", ret)]
+pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     p_auth_data: *const c_void,
-    auth_data_len: Option<u32>,
+    auth_data_len: u32,
 ) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
@@ -526,8 +540,6 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(
             "Cannot unpack credentials: p_auth_data is null",
         ));
     }
-
-    let auth_data_len = auth_data_len.unwrap_or_else(|| get_sec_winnt_auth_identity_ex2_size(p_auth_data));
 
     let mut username_len = 0;
     let mut domain_len = 0;
