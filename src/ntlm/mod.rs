@@ -87,7 +87,7 @@ pub struct Ntlm {
     send_sealing_key: Option<Rc4>,
     recv_sealing_key: Option<Rc4>,
 
-    pub session_key: Option<[u8; SESSION_KEY_SIZE]>,
+    session_key: Option<[u8; SESSION_KEY_SIZE]>,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +200,10 @@ impl Ntlm {
 
     pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
         self.version = version;
+    }
+
+    pub fn session_key(&self) -> Option<[u8; SESSION_KEY_SIZE]> {
+        self.session_key
     }
 }
 
