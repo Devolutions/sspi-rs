@@ -157,6 +157,7 @@ pub fn write_authenticate(
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
     context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
+    context.session_key = Some(session_key);
 
     context.authenticate_message = Some(AuthenticateMessage::new(
         message,

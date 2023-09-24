@@ -86,6 +86,8 @@ pub struct Ntlm {
     recv_signing_key: [u8; HASH_SIZE],
     send_sealing_key: Option<Rc4>,
     recv_sealing_key: Option<Rc4>,
+
+    pub session_key: Option<[u8; SESSION_KEY_SIZE]>,
 }
 
 #[derive(Debug, Clone)]
@@ -138,6 +140,7 @@ impl Ntlm {
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
             recv_sealing_key: None,
+            session_key: None,
         }
     }
 
@@ -162,6 +165,7 @@ impl Ntlm {
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
             recv_sealing_key: None,
+            session_key: None,
         }
     }
 
@@ -186,6 +190,7 @@ impl Ntlm {
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
             recv_sealing_key: None,
+            session_key: None,
         }
     }
 
