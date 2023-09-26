@@ -5,12 +5,10 @@ use url::Url;
 
 use crate::kdc::detect_kdc_url;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
-use crate::network_client::NetworkClient;
 use crate::{Kerberos, Result};
 
 pub struct KerberosConfig {
     pub url: Option<Url>,
-    pub network_client: Box<dyn NetworkClient>,
     pub hostname: Option<String>,
 }
 
@@ -42,12 +40,11 @@ pub fn parse_kdc_url(mut kdc: String) -> Option<Url> {
 }
 
 impl KerberosConfig {
-    pub fn new(url: &str, network_client: Box<dyn NetworkClient>, hostname: String) -> Self {
+    pub fn new(url: &str, hostname: String) -> Self {
         let kdc_url = parse_kdc_url(url.to_owned());
 
         Self {
             url: kdc_url,
-            network_client,
             hostname: Some(hostname),
         }
     }
@@ -60,34 +57,13 @@ impl KerberosConfig {
         }
     }
 
-    pub fn new_with_network_client(network_client: Box<dyn NetworkClient>) -> Self {
-        Self {
-            url: None,
-            network_client,
-            hostname: None,
-        }
-    }
-
-    #[cfg(feature = "network_client")]
-    pub fn from_env() -> Self {
-        use crate::network_client::reqwest_network_client::ReqwestNetworkClient;
-
-        Self::new_with_network_client(Box::<ReqwestNetworkClient>::default())
-    }
-
-    pub fn from_kdc_url(url: &str, network_client: Box<dyn NetworkClient>) -> Self {
+    pub fn from_kdc_url(url: &str) -> Self {
         let kdc_url = parse_kdc_url(url.to_owned());
 
         Self {
             url: kdc_url,
-            network_client,
             hostname: None,
         }
-    }
-
-    #[cfg(not(feature = "network_client"))]
-    pub fn from_env(network_client: Box<dyn NetworkClient>) -> Self {
-        Self::new_with_network_client(network_client)
     }
 }
 
@@ -95,7 +71,6 @@ impl Clone for KerberosConfig {
     fn clone(&self) -> Self {
         Self {
             url: self.url.clone(),
-            network_client: self.network_client.box_clone(),
             hostname: self.hostname.clone(),
         }
     }

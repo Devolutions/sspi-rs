@@ -37,6 +37,7 @@ use self::generators::{
     generate_server_dh_parameters, WELLKNOWN_REALM,
 };
 use crate::builders::ChangePassword;
+use crate::generator::GeneratorInitSecurityContext;
 use crate::kerberos::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, EncKey, GenerateAsReqOptions,
     GenerateAuthenticatorOptions,
@@ -346,12 +347,12 @@ impl Sspi for Pku2u {
         ))
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _change_password))]
-    fn change_password(&mut self, _change_password: ChangePassword) -> Result<()> {
+    fn change_password(&mut self, _: ChangePassword) -> crate::generator::GeneratorChangePassword {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "change_password is not supported in PKU2U",
+            "Pku2u does not support change pasword",
         ))
+        .into()
     }
 }
 
@@ -380,11 +381,31 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "accept_security_context_impl is not implemented yet",
+        ))
+    }
+
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<InitializeSecurityContextResult> {
+    ) -> GeneratorInitSecurityContext {
+        self.initialize_security_context_impl(builder).into()
+    }
+}
+
+impl Pku2u {
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    pub(crate) fn initialize_security_context_impl(
+        &mut self,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
         let status = match self.state {
@@ -783,17 +804,6 @@ impl SspiImpl for Pku2u {
             flags: ClientResponseFlags::empty(),
             expiry: None,
         })
-    }
-
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
-    ) -> Result<AcceptSecurityContextResult> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "accept_security_context_impl is not implemented yet",
-        ))
     }
 }
 

@@ -12,6 +12,7 @@ use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
+use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
@@ -19,6 +20,7 @@ use crate::{
     Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes, PACKAGE_ID_NONE,
 };
+use async_recursion::async_recursion;
 
 pub const PKG_NAME: &str = "CREDSSP";
 
@@ -259,11 +261,12 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<()> {
+    fn change_password(&mut self, _change_password: builders::ChangePassword) -> GeneratorChangePassword {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "ChangePassword is not supported in SspiCredSsp context",
         ))
+        .into()
     }
 }
 
@@ -295,10 +298,34 @@ impl SspiImpl for SspiCredSsp {
         })
     }
 
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl<'a>(
+        &'a mut self,
+        builder: &'a mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> GeneratorInitSecurityContext<'a> {
+        GeneratorInitSecurityContext::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+    }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> Result<crate::AcceptSecurityContextResult> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "AcceptSecurityContext is not supported in SspiCredSsp context",
+        ))
+    }
+}
+
+impl SspiCredSsp {
+    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[async_recursion]
+    pub(crate) async fn initialize_security_context_impl<'a>(
         &mut self,
-        builder: &mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+        yield_point: &mut YieldPointLocal,
+        builder: &mut builders::FilledInitializeSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         trace!(?builder);
         // In the CredSSP we always set DELEGATE flag
@@ -327,7 +354,7 @@ impl SspiImpl for SspiCredSsp {
                     // delete the previous TLS message
                     builder.input = None;
 
-                    return self.initialize_security_context_impl(builder);
+                    return self.initialize_security_context_impl(yield_point, builder).await;
                 }
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
@@ -369,7 +396,8 @@ impl SspiImpl for SspiCredSsp {
                 let result = self
                     .cred_ssp_context
                     .sspi_context
-                    .initialize_security_context_impl(&mut inner_builder)?;
+                    .initialize_security_context_impl(yield_point, &mut inner_builder)
+                    .await?;
 
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
@@ -469,17 +497,6 @@ impl SspiImpl for SspiCredSsp {
             flags: ClientResponseFlags::empty(),
             expiry: None,
         })
-    }
-
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "AcceptSecurityContext is not supported in SspiCredSsp context",
-        ))
     }
 }
 

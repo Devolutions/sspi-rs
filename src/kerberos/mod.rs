@@ -41,6 +41,7 @@ use self::server::extractors::extract_tgt_ticket;
 use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
+use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{
     generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
@@ -173,7 +174,7 @@ impl Kerberos {
         }
     }
 
-    fn send(&self, data: &[u8]) -> Result<Vec<u8>> {
+    async fn send<'data>(&self, yield_point: &mut YieldPointLocal, data: &'data [u8]) -> Result<Vec<u8>> {
         if let Some((realm, kdc_url)) = self.get_kdc() {
             let protocol = NetworkProtocol::from_url_scheme(kdc_url.scheme()).ok_or_else(|| {
                 Error::new(
@@ -182,20 +183,15 @@ impl Kerberos {
                 )
             })?;
 
-            if !self.config.network_client.is_protocol_supported(protocol) {
-                return Err(Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!(
-                        "Network protocol `{}` is not supported by `{}` network client. Supported protocols are: {:?}",
-                        kdc_url.scheme(),
-                        self.config.network_client.name(),
-                        self.config.network_client.supported_protocols(),
-                    ),
-                ));
-            }
-
             return match protocol {
-                NetworkProtocol::Tcp => self.config.network_client.send(protocol, kdc_url, data),
+                NetworkProtocol::Tcp => {
+                    let request = NetworkRequest {
+                        protocol,
+                        url: kdc_url.clone(),
+                        data: data.to_vec(),
+                    };
+                    yield_point.suspend(request).await
+                }
                 NetworkProtocol::Udp => {
                     if data.len() < 4 {
                         return Err(Error::new(
@@ -208,7 +204,12 @@ impl Kerberos {
                     }
 
                     // First 4 bytes are message length and it’s not included when using UDP
-                    self.config.network_client.send(protocol, kdc_url, &data[4..])
+                    let request = NetworkRequest {
+                        protocol,
+                        url: kdc_url.clone(),
+                        data: data[4..].to_vec(),
+                    };
+                    yield_point.suspend(request).await
                 }
                 NetworkProtocol::Http | NetworkProtocol::Https => {
                     let data = OctetStringAsn1::from(data.to_vec());
@@ -221,7 +222,12 @@ impl Kerberos {
                     };
 
                     let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
-                    let result_bytes = self.config.network_client.send(protocol, kdc_url, &message_request)?;
+                    let request = NetworkRequest {
+                        protocol,
+                        url: kdc_url,
+                        data: message_request,
+                    };
+                    let result_bytes = yield_point.suspend(request).await?;
                     let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
                     Ok(message_response.kerb_message.0 .0)
                 }
@@ -230,30 +236,39 @@ impl Kerberos {
         Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
     }
 
-    pub fn as_exchange(&mut self, kdc_req_body: &KdcReqBody, mut pa_data_options: AsReqPaDataOptions) -> Result<AsRep> {
+    pub async fn as_exchange(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        kdc_req_body: &KdcReqBody,
+        mut pa_data_options: AsReqPaDataOptions<'_>,
+    ) -> Result<AsRep> {
         pa_data_options.with_pre_auth(false);
         let pa_datas = pa_data_options.generate()?;
         let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
 
-        let response = self.send(&serialize_message(&as_req)?)?;
+        let response = self.send(yield_point, &serialize_message(&as_req)?).await?;
 
         // first 4 bytes are message len. skipping them
-        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+        {
+            let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+            let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
-        if as_rep.is_ok() {
-            error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
+            if as_rep.is_ok() {
+                error!(
+                    "KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected."
+                );
 
-            return Err(Error::new(
-                ErrorKind::InvalidToken,
-                "KDC server should not process AS_REQ without the pa-pac data",
-            ));
-        }
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    "KDC server should not process AS_REQ without the pa-pac data",
+                ));
+            }
 
-        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-            debug!("salt extracted successfully from the KRB_ERROR");
+            if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+                debug!("salt extracted successfully from the KRB_ERROR");
 
-            pa_data_options.with_salt(correct_salt.as_bytes().to_vec());
+                pa_data_options.with_salt(correct_salt.as_bytes().to_vec());
+            }
         }
 
         pa_data_options.with_pre_auth(true);
@@ -261,7 +276,7 @@ impl Kerberos {
 
         let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
 
-        let response = self.send(&serialize_message(&as_req)?)?;
+        let response = self.send(yield_point, &serialize_message(&as_req)?).await?;
 
         // first 4 bytes are message len. skipping them
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
@@ -440,8 +455,94 @@ impl Sspi for Kerberos {
         ))
     }
 
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword {
+        GeneratorChangePassword::new(move |mut yield_point| async move {
+            self.change_password(&mut yield_point, change_password).await
+        })
+    }
+}
+
+impl SspiImpl for Kerberos {
+    type CredentialsHandle = Option<CredentialsBuffers>;
+
+    type AuthenticationData = Credentials;
+
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
+    ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+        if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                String::from("The client must specify the auth data"),
+            ));
+        }
+
+        self.auth_identity = builder
+            .auth_data
+            .cloned()
+            .map(|auth_data| auth_data.try_into())
+            .transpose()?;
+
+        Ok(AcquireCredentialsHandleResult {
+            credentials_handle: self.auth_identity.clone(),
+            expiry: None,
+        })
+    }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl(
+        &mut self,
+        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> Result<crate::AcceptSecurityContextResult> {
+        let input = builder
+            .input
+            .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+
+        let status = match &self.state {
+            KerberosState::ApExchange => {
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+
+                let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
+                    .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
+
+                self.state = KerberosState::Final;
+
+                SecurityStatus::Ok
+            }
+            state => {
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    format!("Got wrong Kerberos state: {:?}", state),
+                ))
+            }
+        };
+
+        Ok(AcceptSecurityContextResult {
+            status,
+            flags: ServerResponseFlags::empty(),
+            expiry: None,
+        })
+    }
+
+    fn initialize_security_context_impl<'a>(
+        &'a mut self,
+        builder: &'a mut crate::builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
+    ) -> GeneratorInitSecurityContext {
+        GeneratorInitSecurityContext::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+    }
+}
+
+impl<'a> Kerberos {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, change_password))]
-    fn change_password(&mut self, change_password: ChangePassword) -> Result<()> {
+    pub async fn change_password(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        change_password: ChangePassword<'a>,
+    ) -> Result<()> {
         let username = &change_password.account_name;
         let domain = &change_password.domain_name;
         let password = &change_password.old_password;
@@ -471,7 +572,7 @@ impl Sspi for Kerberos {
             with_pre_auth: false,
         });
 
-        let as_rep = self.as_exchange(&kdc_req_body, pa_data_options)?;
+        let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
 
         info!("AS exchange finished successfully.");
 
@@ -520,7 +621,7 @@ impl Sspi for Kerberos {
                 .set_port(Some(KPASSWD_PORT))
                 .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC URL"))?;
 
-            let response = self.send(&serialize_message(&krb_priv)?)?;
+            let response = self.send(yield_point, &serialize_message(&krb_priv)?).await?;
             trace!(?response, "Change password raw response");
 
             let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
@@ -551,41 +652,11 @@ impl Sspi for Kerberos {
 
         Ok(())
     }
-}
 
-impl SspiImpl for Kerberos {
-    type CredentialsHandle = Option<CredentialsBuffers>;
-
-    type AuthenticationData = Credentials;
-
-    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl(
-        &mut self,
-        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
-    ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
-        if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
-            return Err(Error::new(
-                ErrorKind::NoCredentials,
-                String::from("The client must specify the auth data"),
-            ));
-        }
-
-        self.auth_identity = builder
-            .auth_data
-            .cloned()
-            .map(|auth_data| auth_data.try_into())
-            .transpose()?;
-
-        Ok(AcquireCredentialsHandleResult {
-            credentials_handle: self.auth_identity.clone(),
-            expiry: None,
-        })
-    }
-
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
-    fn initialize_security_context_impl(
-        &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
+    pub async fn initialize_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
         trace!(?builder);
 
@@ -723,7 +794,7 @@ impl SspiImpl for Kerberos {
                     }
                 };
 
-                let as_rep = self.as_exchange(&kdc_req_body, pa_data_options)?;
+                let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
 
                 info!("AS exchange finished successfully.");
 
@@ -776,7 +847,7 @@ impl SspiImpl for Kerberos {
                     context_requirements: builder.context_requirements,
                 })?;
 
-                let response = self.send(&serialize_message(&tgs_req)?)?;
+                let response = self.send(yield_point, &serialize_message(&tgs_req)?).await?;
 
                 // first 4 bytes are message len. skipping them
                 let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
@@ -899,41 +970,6 @@ impl SspiImpl for Kerberos {
             expiry: None,
         })
     }
-
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
-        let input = builder
-            .input
-            .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-
-        let status = match &self.state {
-            KerberosState::ApExchange => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-
-                let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
-                    .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
-
-                self.state = KerberosState::Final;
-
-                SecurityStatus::Ok
-            }
-            state => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("Got wrong Kerberos state: {:?}", state),
-                ))
-            }
-        };
-
-        Ok(AcceptSecurityContextResult {
-            status,
-            flags: ServerResponseFlags::empty(),
-            expiry: None,
-        })
-    }
 }
 
 impl SspiEx for Kerberos {
@@ -951,26 +987,15 @@ mod tests {
     use picky_krb::crypto::CipherSuite;
 
     use super::EncryptionParams;
-    use crate::network_client::{NetworkClient, NetworkProtocol};
+    use crate::generator::NetworkRequest;
+    use crate::network_client::NetworkClient;
     use crate::{EncryptionFlags, Kerberos, KerberosConfig, KerberosState, SecurityBuffer, SecurityBufferType, Sspi};
 
     struct NetworkClientMock;
 
     impl NetworkClient for NetworkClientMock {
-        fn send(&self, _protocol: NetworkProtocol, _url: url::Url, _data: &[u8]) -> crate::Result<Vec<u8>> {
+        fn send(&self, _request: &NetworkRequest) -> crate::Result<Vec<u8>> {
             unreachable!("unsupported protocol")
-        }
-
-        fn box_clone(&self) -> Box<dyn NetworkClient> {
-            Box::new(Self)
-        }
-
-        fn name(&self) -> &'static str {
-            "Mock"
-        }
-
-        fn supported_protocols(&self) -> &[crate::network_client::NetworkProtocol] {
-            &[]
         }
     }
 
@@ -991,7 +1016,6 @@ mod tests {
             state: KerberosState::Final,
             config: KerberosConfig {
                 url: None,
-                network_client: Box::new(NetworkClientMock),
                 hostname: None,
             },
             auth_identity: None,
@@ -1014,7 +1038,6 @@ mod tests {
             state: KerberosState::Final,
             config: KerberosConfig {
                 url: None,
-                network_client: Box::new(NetworkClientMock),
                 hostname: None,
             },
             auth_identity: None,

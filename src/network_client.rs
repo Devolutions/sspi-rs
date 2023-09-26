@@ -1,8 +1,6 @@
 use std::fmt::Debug;
 
-use url::Url;
-
-use crate::Result;
+use crate::{generator::NetworkRequest, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NetworkProtocol {
@@ -26,29 +24,12 @@ impl NetworkProtocol {
     }
 }
 
-pub trait NetworkClientFactory: Debug + Send + Sync {
-    fn network_client(&self) -> Box<dyn NetworkClient>;
-    fn box_clone(&self) -> Box<dyn NetworkClientFactory>;
-}
-
 pub trait NetworkClient: Send + Sync {
-    /// Return the name of the network client instance (for logging/error reporting purposes).
-    fn name(&self) -> &'static str;
-    /// Return list of supported protocols by the network client.
-    fn supported_protocols(&self) -> &[NetworkProtocol];
-    /// Return true if the protocol is supported by the network client.
-    fn is_protocol_supported(&self, protocol: NetworkProtocol) -> bool {
-        self.supported_protocols().contains(&protocol)
-    }
-
-    /// Clone network client instance via trait object.
-    fn box_clone(&self) -> Box<dyn NetworkClient>;
-
     /// Send request to the server and return the response. URL scheme is guaranteed to be
     /// the same as specified by `protocol` argument. `sspi-rs` will call this method only if
     /// `NetworkClient::is_protocol_supported` returned true prior to the call, so unsupported
     /// `protocol` values could be marked as `unreachable!`.
-    fn send(&self, protocol: NetworkProtocol, url: Url, data: &[u8]) -> Result<Vec<u8>>;
+    fn send(&self, request: &NetworkRequest) -> Result<Vec<u8>>;
 }
 
 #[cfg(feature = "network_client")]
@@ -60,17 +41,15 @@ pub mod reqwest_network_client {
     use reqwest::blocking::Client;
     use url::Url;
 
-    use super::{NetworkClient, NetworkClientFactory, NetworkProtocol};
+    use super::{NetworkClient, NetworkProtocol};
+    use crate::generator::NetworkRequest;
     use crate::{Error, ErrorKind, Result};
 
     #[derive(Debug, Clone, Default)]
     pub struct ReqwestNetworkClient;
 
     impl ReqwestNetworkClient {
-        const NAME: &str = "Reqwest";
-        const SUPPORTED_PROTOCOLS: &[NetworkProtocol] = NetworkProtocol::ALL;
-
-        fn send_tcp(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send_tcp(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
             let mut stream = TcpStream::connect(addr)
                 .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
@@ -93,7 +72,7 @@ pub mod reqwest_network_client {
             Ok(buf)
         }
 
-        fn send_udp(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send_udp(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             let port =
                 portpicker::pick_unused_port().ok_or_else(|| Error::new(ErrorKind::InternalError, "No free ports"))?;
             let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), port))?;
@@ -113,11 +92,11 @@ pub mod reqwest_network_client {
             Ok(reply_buf)
         }
 
-        fn send_http(&self, url: Url, data: &[u8]) -> Result<Vec<u8>> {
+        fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             let client = Client::new();
 
             let result_bytes = client
-                .post(url)
+                .post(url.clone())
                 .body(data.to_vec())
                 .send()
                 .map_err(|err| match err {
@@ -144,37 +123,12 @@ pub mod reqwest_network_client {
     }
 
     impl NetworkClient for ReqwestNetworkClient {
-        fn send(&self, protocol: NetworkProtocol, url: Url, data: &[u8]) -> Result<Vec<u8>> {
-            match protocol {
-                NetworkProtocol::Tcp => self.send_tcp(url, data),
-                NetworkProtocol::Udp => self.send_udp(url, data),
-                NetworkProtocol::Http | NetworkProtocol::Https => self.send_http(url, data),
+        fn send(&self, request: &NetworkRequest) -> Result<Vec<u8>> {
+            match request.protocol {
+                NetworkProtocol::Tcp => self.send_tcp(&request.url, &request.data),
+                NetworkProtocol::Udp => self.send_udp(&request.url, &request.data),
+                NetworkProtocol::Http | NetworkProtocol::Https => self.send_http(&request.url, &request.data),
             }
-        }
-
-        fn box_clone(&self) -> Box<dyn NetworkClient> {
-            Box::new(Clone::clone(self))
-        }
-
-        fn name(&self) -> &'static str {
-            Self::NAME
-        }
-
-        fn supported_protocols(&self) -> &[NetworkProtocol] {
-            Self::SUPPORTED_PROTOCOLS
-        }
-    }
-
-    #[derive(Debug, Clone, Default)]
-    pub struct RequestClientFactory;
-
-    impl NetworkClientFactory for RequestClientFactory {
-        fn network_client(&self) -> Box<dyn NetworkClient> {
-            Box::<ReqwestNetworkClient>::default()
-        }
-
-        fn box_clone(&self) -> Box<dyn NetworkClientFactory> {
-            Box::new(Clone::clone(self))
         }
     }
 }

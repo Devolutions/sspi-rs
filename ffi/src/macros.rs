@@ -1,7 +1,5 @@
 macro_rules! try_execute {
     ($x:expr) => {{
-        use num_traits::ToPrimitive;
-
         match $x {
             Ok(value) => value,
             Err(err) => {
