@@ -22,6 +22,9 @@ use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 use self::sspi_cred_ssp::SspiCredSsp;
 use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
 use crate::crypto::compute_sha256;
+use crate::generator::{
+    Generator, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal,
+};
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::{self, Kerberos};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
@@ -228,7 +231,20 @@ impl CredSspClient {
     }
 
     #[instrument(fields(state = ?self.state), skip_all)]
-    pub fn process(&mut self, mut ts_request: TsRequest) -> crate::Result<ClientState> {
+    pub fn process<'a>(
+        &'a mut self,
+        ts_request: TsRequest,
+    ) -> Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>> {
+        Generator::<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>>::new(
+            move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
+        )
+    }
+
+    async fn process_impl(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        mut ts_request: TsRequest,
+    ) -> crate::Result<ClientState> {
         ts_request.check_error()?;
         if let Some(ref mut context) = self.context {
             context.check_peer_version(ts_request.version)?;
@@ -282,7 +298,8 @@ impl CredSspClient {
                     .with_output(&mut output_token);
                 let result = cred_ssp_context
                     .sspi_context
-                    .initialize_security_context_impl(&mut builder)?;
+                    .initialize_security_context_impl(yield_point, &mut builder)
+                    .await?;
                 self.credentials_handle = credentials_handle;
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
@@ -644,41 +661,6 @@ impl SspiImpl for SspiContext {
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn initialize_security_context_impl<'a>(
-        &mut self,
-        builder: &mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> crate::Result<InitializeSecurityContextResult> {
-        match self {
-            SspiContext::Ntlm(ntlm) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
-                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
-                ntlm.initialize_security_context_impl(&mut new_builder)
-            }
-            SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(builder),
-            SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(builder),
-            SspiContext::Pku2u(pku2u) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
-                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
-                pku2u.initialize_security_context_impl(&mut new_builder)
-            }
-            #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.initialize_security_context_impl(builder),
-        }
-    }
-
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
@@ -712,6 +694,69 @@ impl SspiImpl for SspiContext {
             }
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
+        }
+    }
+
+    fn initialize_security_context_impl<'a>(
+        &'a mut self,
+        builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> GeneratorInitSecurityContext {
+        Generator::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+    }
+}
+
+impl<'a> SspiContext {
+    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    async fn change_password_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        change_password: ChangePassword<'a>,
+    ) -> crate::Result<()> {
+        match self {
+            SspiContext::Kerberos(kerberos) => kerberos.change_password(yield_point, change_password).await,
+            SspiContext::Negotiate(negotiate) => negotiate.change_password(yield_point, change_password).await,
+            _ => Err(crate::Error::new(
+                ErrorKind::UnsupportedFunction,
+                "Change password not supported for this protocol",
+            )),
+        }
+    }
+
+    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    async fn initialize_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: &'a mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<InitializeSecurityContextResult> {
+        match self {
+            SspiContext::Ntlm(ntlm) => {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
+                    builder.credentials_handle_mut()
+                {
+                    Some(identity.clone())
+                } else {
+                    None
+                };
+                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
+                ntlm.initialize_security_context_impl(&mut new_builder)
+            }
+            SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(yield_point, builder).await,
+            SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(yield_point, builder).await,
+            SspiContext::Pku2u(pku2u) => {
+                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
+                    builder.credentials_handle_mut()
+                {
+                    Some(identity.clone())
+                } else {
+                    None
+                };
+                let mut new_builder = builder.full_transform(Some(&mut auth_identity));
+                pku2u.initialize_security_context_impl(&mut new_builder)
+            }
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.initialize_security_context_impl(yield_point, builder).await,
         }
     }
 }
@@ -858,16 +903,10 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn change_password(&mut self, change_password: ChangePassword) -> crate::Result<()> {
-        match self {
-            SspiContext::Ntlm(ntlm) => ntlm.change_password(change_password),
-            SspiContext::Kerberos(kerberos) => kerberos.change_password(change_password),
-            SspiContext::Negotiate(negotiate) => negotiate.change_password(change_password),
-            SspiContext::Pku2u(pku2u) => pku2u.change_password(change_password),
-            #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.change_password(change_password),
-        }
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword {
+        GeneratorChangePassword::new(move |mut yield_point| async move {
+            self.change_password_impl(&mut yield_point, change_password).await
+        })
     }
 }
 

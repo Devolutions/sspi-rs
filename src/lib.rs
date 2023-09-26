@@ -55,6 +55,7 @@ extern crate tracing;
 pub mod builders;
 pub mod channel_bindings;
 pub mod credssp;
+pub mod generator;
 pub mod kerberos;
 pub mod negotiate;
 pub mod network_client;
@@ -88,6 +89,7 @@ use std::{error, fmt, io, result, str, string};
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
+use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
@@ -878,7 +880,7 @@ where
     /// # MSDN
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
-    fn change_password(&mut self, change_password: ChangePassword) -> Result<()>;
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword;
 }
 
 /// Protocol used to establish connection.
@@ -993,10 +995,10 @@ pub trait SspiImpl {
         builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
-    fn initialize_security_context_impl(
-        &mut self,
-        builder: &mut FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> Result<InitializeSecurityContextResult>;
+    fn initialize_security_context_impl<'a>(
+        &'a mut self,
+        builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> GeneratorInitSecurityContext;
 
     fn accept_security_context_impl<'a>(
         &'a mut self,

@@ -85,7 +85,9 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_target_name(username.as_str())
         .with_output(&mut output_buffer);
 
-    let _result = ntlm.initialize_security_context_impl(&mut builder)?;
+    let _result = ntlm
+        .initialize_security_context_impl(&mut builder)
+        .resolve_to_result()?;
 
     write_message(&mut stream, &output_buffer[0].buffer)?;
 
@@ -104,7 +106,9 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
             .with_input(&mut input_buffer)
             .with_output(&mut output_buffer);
 
-        let result = ntlm.initialize_security_context_impl(&mut builder)?;
+        let result = ntlm
+            .initialize_security_context_impl(&mut builder)
+            .resolve_to_result()?;
 
         if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
             println!("Completing the token...");

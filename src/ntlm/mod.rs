@@ -14,9 +14,10 @@ use messages::{client, server};
 pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
+use crate::generator::GeneratorInitSecurityContext;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
     SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
@@ -237,10 +238,63 @@ impl SspiImpl for Ntlm {
         })
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> crate::Result<AcceptSecurityContextResult> {
+        let input = builder
+            .input
+            .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+        let status = match self.state {
+            NtlmState::Initial => {
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+
+                self.state = NtlmState::Negotiate;
+                server::read_negotiate(self, input_token.buffer.as_slice())?;
+
+                server::write_challenge(self, &mut output_token.buffer)?
+            }
+            NtlmState::Authenticate => {
+                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+
+                self.identity = builder.credentials_handle.cloned().flatten();
+
+                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
+                }
+
+                server::read_authenticate(self, input_token.buffer.as_slice())?
+            }
+            _ => {
+                return Err(crate::Error::new(
+                    crate::ErrorKind::OutOfSequence,
+                    format!("got wrong NTLM state: {:?}", self.state),
+                ))
+            }
+        };
+
+        Ok(AcceptSecurityContextResult {
+            status,
+            flags: ServerResponseFlags::empty(),
+            expiry: None,
+        })
+    }
+
     #[instrument(ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
+    ) -> GeneratorInitSecurityContext {
+        self.initialize_security_context_impl(builder).into()
+    }
+}
+
+impl Ntlm {
+    pub(crate) fn initialize_security_context_impl(
+        &mut self,
+        builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
@@ -293,50 +347,6 @@ impl SspiImpl for Ntlm {
         Ok(InitializeSecurityContextResult {
             status,
             flags: ClientResponseFlags::empty(),
-            expiry: None,
-        })
-    }
-
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
-    ) -> crate::Result<AcceptSecurityContextResult> {
-        let input = builder
-            .input
-            .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-        let status = match self.state {
-            NtlmState::Initial => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-
-                self.state = NtlmState::Negotiate;
-                server::read_negotiate(self, input_token.buffer.as_slice())?;
-
-                server::write_challenge(self, &mut output_token.buffer)?
-            }
-            NtlmState::Authenticate => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-
-                self.identity = builder.credentials_handle.cloned().flatten();
-
-                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
-                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
-                }
-
-                server::read_authenticate(self, input_token.buffer.as_slice())?
-            }
-            _ => {
-                return Err(crate::Error::new(
-                    crate::ErrorKind::OutOfSequence,
-                    format!("got wrong NTLM state: {:?}", self.state),
-                ))
-            }
-        };
-
-        Ok(AcceptSecurityContextResult {
-            status,
-            flags: ServerResponseFlags::empty(),
             expiry: None,
         })
     }
@@ -451,12 +461,12 @@ impl Sspi for Ntlm {
         ))
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn change_password(&mut self, _change_password: crate::builders::ChangePassword) -> crate::Result<()> {
-        Err(crate::Error::new(
-            crate::ErrorKind::UnsupportedFunction,
-            "change_password is not supported in NTLM",
+    fn change_password(&mut self, _: crate::builders::ChangePassword) -> crate::generator::GeneratorChangePassword {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "NTLM does not support change pasword",
         ))
+        .into()
     }
 }
 

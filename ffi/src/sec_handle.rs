@@ -10,7 +10,6 @@ use sspi::credssp::sspi_cred_ssp;
 use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
 use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
-use sspi::network_client::reqwest_network_client::{RequestClientFactory, ReqwestNetworkClient};
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, CredentialsBuffers, DataRepresentation, Error, ErrorKind,
@@ -91,13 +90,9 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
     let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
 
     if let Some(kdc_url) = attributes.kdc_url() {
-        let kerberos_config = KerberosConfig::new(&kdc_url, Box::<ReqwestNetworkClient>::default(), hostname.clone());
-        let negotiate_config = NegotiateConfig::new(
-            Box::new(kerberos_config),
-            attributes.package_list.clone(),
-            hostname,
-            Box::new(RequestClientFactory),
-        );
+        let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
+        let negotiate_config =
+            NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone(), hostname);
 
         Negotiate::new(negotiate_config)
     } else {
@@ -105,7 +100,6 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
             protocol_config: Box::new(NtlmConfig::new(hostname.clone())),
             package_list: attributes.package_list.clone(),
             hostname,
-            network_client_factory: Box::new(RequestClientFactory),
         };
         Negotiate::new(negotiate_config)
     }
@@ -153,13 +147,13 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
-                        &kdc_url,
-                        Box::<ReqwestNetworkClient>::default(),
-                        hostname,
+                        &kdc_url, hostname,
                     ))?)
                 } else {
-                    let mut krb_config = KerberosConfig::from_env();
-                    krb_config.hostname = Some(hostname);
+                    let krb_config = KerberosConfig {
+                        hostname: Some(hostname),
+                        url: None,
+                    };
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
             }
@@ -380,7 +374,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             .with_target_name(service_principal)
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens);
-        let result_status = sspi_context.initialize_security_context_impl(&mut builder);
+        let result_status = sspi_context.initialize_security_context_impl(&mut builder).resolve_with_default_network_client();
 
         let context_requirements = ClientRequestFlags::from_bits_retain(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
@@ -479,7 +473,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             .with_target_name(&service_principal)
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens);
-        let result_status = sspi_context.initialize_security_context_impl(&mut builder);
+        let result_status = sspi_context.initialize_security_context_impl(&mut builder).resolve_with_default_network_client();
 
         let context_requirements = ClientRequestFlags::from_bits_retain(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
@@ -939,13 +933,14 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     protocol_config: Box::new(NtlmConfig::new(whoami::hostname())),
                     package_list: None,
                     hostname: whoami::hostname(),
-                    network_client_factory: Box::new(RequestClientFactory),
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },
             kerberos::PKG_NAME => {
-                let mut krb_config = KerberosConfig::from_env();
-                krb_config.hostname = Some(whoami::hostname());
+                let krb_config = KerberosConfig{
+                    hostname:Some(whoami::hostname()),
+                    url:None
+                };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
                     krb_config
                 )))
@@ -956,7 +951,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             }
         };
 
-        let result_status = sspi_context.change_password(change_password);
+        let result_status = sspi_context.change_password(change_password).resolve_with_default_network_client();
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 

@@ -112,7 +112,9 @@ where
             .with_input(&mut server_output)
             .with_output(&mut client_output);
 
-        let client_result = client.initialize_security_context_impl(&mut builder)?;
+        let client_result = client
+            .initialize_security_context_impl(&mut builder)
+            .resolve_to_result()?;
         client_status = client_result.status;
 
         if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {
