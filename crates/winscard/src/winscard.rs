@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use bitflags::bitflags;
 
-use crate::WinScardResult;
+use crate::{Error, ErrorKind, WinScardResult};
 
 /// ATR string
 ///
@@ -174,6 +174,17 @@ pub enum ControlCode {
     /// `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
     /// Request features described in the *PC/SC 2.0 Specification Part 10*
     IoCtl = 0x00313520,
+}
+
+impl TryFrom<u32> for ControlCode {
+    type Error = Error;
+
+    fn try_from(value: u32) -> WinScardResult<Self> {
+        match value {
+            0x00313520 => Ok(ControlCode::IoCtl),
+            _ => Err(Error::new(ErrorKind::InvalidParameter, format!("Unsupported control code: {:x?}", value)))
+        }
+    }
 }
 
 /// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)

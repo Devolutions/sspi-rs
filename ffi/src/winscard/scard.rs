@@ -1,3 +1,4 @@
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 use ffi_types::winscard::{
     LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle, LpScardIoRequest,
     ScardContext, ScardHandle, ScardStatus,
@@ -56,8 +57,8 @@ pub extern "system" fn SCardDisconnect(_handle: ScardHandle, _dw_disposition: u3
 #[no_mangle]
 pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
     check_handle!(handle);
-
     let scard = &mut *scard_handle_to_winscard(handle);
+
     try_execute!(scard.begin_transaction());
 
     ErrorKind::Success.into()
@@ -67,8 +68,8 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 #[no_mangle]
 pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
-
     let scard = &mut *scard_handle_to_winscard(handle);
+
     try_execute!(scard.end_transaction());
 
     ErrorKind::Success.into()
@@ -142,16 +143,31 @@ pub extern "system" fn SCardGetTransmitCount(_handle: ScardHandle, pc_transmit_c
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardControl"))]
 #[no_mangle]
-pub extern "system" fn SCardControl(
-    _handle: ScardHandle,
-    _dw_control_code: u32,
-    _lp_in_buffer: LpCVoid,
-    _cb_in_buffer_size: u32,
-    _lp_out_buffer: LpVoid,
-    _cb_out_buffer_size: u32,
-    _lp_bytes_returned: LpDword,
+pub unsafe extern "system" fn SCardControl(
+    handle: ScardHandle,
+    dw_control_code: u32,
+    lp_in_buffer: LpCVoid,
+    cb_in_buffer_size: u32,
+    lp_out_buffer: LpVoid,
+    cb_out_buffer_size: u32,
+    lp_bytes_returned: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(handle);
+    let scard = &mut *scard_handle_to_winscard(handle);
+
+    let in_buffer = from_raw_parts(lp_in_buffer as *const u8, cb_in_buffer_size.try_into().unwrap());
+    let out_buffer = try_execute!(scard.control(try_execute!(dw_control_code.try_into()), in_buffer));
+    let out_buffer_len = out_buffer.len().try_into().unwrap();
+
+    if out_buffer_len > cb_out_buffer_size {
+        return ErrorKind::InsufficientBuffer.into();
+    }
+
+    let lp_out_buffer = from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len());
+    lp_out_buffer.copy_from_slice(&out_buffer);
+    *lp_bytes_returned = out_buffer_len;
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetAttrib"))]
