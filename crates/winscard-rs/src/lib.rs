@@ -10,6 +10,8 @@ pub mod tlv_tags;
 
 extern crate alloc;
 
+pub use scard_context::{ScardContext, Reader};
+
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;

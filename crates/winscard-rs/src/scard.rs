@@ -34,6 +34,9 @@ pub struct SmartCard<'a> {
     #[allow(dead_code)]
     auth_pk: PrivateKey,
     state: SCardState,
+    // We don't need to track actual transactions for the emulated smart card.
+    // We are using this flag to track incorrect smart card usage.
+    transaction: bool,
     pending_command: Option<Command<1024>>,
     pending_response: Option<Vec<u8>>,
 }
@@ -80,6 +83,7 @@ impl SmartCard<'_> {
             auth_cert,
             auth_pk,
             state: SCardState::Ready,
+            transaction: false,
             pending_command: None,
             pending_response: None,
         })
@@ -374,7 +378,7 @@ impl<'a> WinScard for SmartCard<'a> {
             readers: vec![self.reader_name.clone()],
             // The original winscard always returns SCARD_SPECIFIC for a working inserted card
             state: winscard::State::Specific,
-            // We are always using the T1 protocol as the original TPM smart card does
+            // We are always using the T1 protocol as the original Windows TPM smart card does
             protocol: winscard::Protocol::T1,
             // The original winscard ATR is not suitable because it contains AID bytes.
             // So we need to construct our own. Read more about our constructed ATR string:
@@ -400,20 +404,47 @@ impl<'a> WinScard for SmartCard<'a> {
         })
     }
 
-    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<Vec<u8>> {
-        todo!()
+    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<Vec<u8>> {
+        if code != ControlCode::IoCtl {
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                format!("Unsupported control code: {:?}", code),
+            ));
+        }
+
+        Ok(Vec::new())
     }
 
-    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
-        todo!()
+    fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+        let Response { status, data } = self.handle_command(input_apdu)?;
+
+        let mut output_apdu = data.unwrap_or_default();
+        let status_data: [u8; 2] = status.into();
+        output_apdu.extend_from_slice(&status_data);
+
+        Ok(winscard::TransmitOutData {
+            output_apdu,
+            receive_pci: None,
+        })
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
-        todo!()
+        if self.transaction {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "The transaction already in progress",
+            ));
+        }
+        self.transaction = true;
+        Ok(())
     }
 
     fn end_transaction(&mut self) -> WinScardResult<()> {
-        todo!()
+        if !self.transaction {
+            return Err(Error::new(ErrorKind::NotTransacted, "The transaction is not started"));
+        }
+        self.transaction = false;
+        Ok(())
     }
 }
 
@@ -498,7 +529,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 -----END RSA PRIVATE KEY-----";
         let certificate_stub = vec![0xff; 1024];
         let pin = vec![0x39; 6];
-        SmartCard::new(pin, certificate_stub, rsa_2048_private_key).unwrap()
+        SmartCard::new(Cow::Borrowed("Reader 0"), pin, certificate_stub, rsa_2048_private_key).unwrap()
     }
 
     // Helper function that calls the GET RESPONSE handler until there is no more data to read
