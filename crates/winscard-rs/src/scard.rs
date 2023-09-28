@@ -42,15 +42,14 @@ pub struct SmartCard<'a> {
 }
 
 impl SmartCard<'_> {
-    pub fn new<'a>(
-        reader_name: Cow<'a, str>,
+    pub fn new(
+        reader_name: Cow<str>,
         mut pin: Vec<u8>,
         auth_cert_der: Vec<u8>,
-        auth_pk_pem: &str,
-    ) -> WinScardResult<SmartCard<'a>> {
+        auth_pk: PrivateKey,
+    ) -> WinScardResult<SmartCard<'_>> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
-        let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(

@@ -1,8 +1,8 @@
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
 use alloc::format;
-use alloc::string::String;
 use alloc::vec::Vec;
+use picky::key::PrivateKey;
 
 use crate::scard::SmartCard;
 use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
@@ -16,10 +16,11 @@ pub struct Reader<'a> {
     pub device_type_id: DeviceTypeId,
 }
 
+/// Describes smart card info used for the smart card creation
 pub struct SmartCardInfo<'a> {
     pub pin: Vec<u8>,
     pub auth_cert_der: Vec<u8>,
-    pub auth_pk_pem: String,
+    pub auth_pk: PrivateKey,
     pub reader: Reader<'a>,
 }
 
@@ -52,7 +53,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
             Cow::Owned(reader_name.to_owned()),
             smart_card_info.pin.clone(),
             smart_card_info.auth_cert_der.clone(),
-            &smart_card_info.auth_pk_pem,
+            smart_card_info.auth_pk.clone(),
         )?))
     }
 
