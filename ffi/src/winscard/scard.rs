@@ -1,12 +1,14 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+
 use ffi_types::winscard::{
     LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle, LpScardIoRequest,
     ScardContext, ScardHandle, ScardStatus,
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use symbol_rename_macro::rename_symbol;
-use winscard::ErrorKind;
 use winscard::winscard::WinScard;
+use winscard::ErrorKind;
+
 use crate::winscard::scard_handle::scard_handle_to_winscard;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectA"))]

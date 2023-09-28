@@ -182,7 +182,10 @@ impl TryFrom<u32> for ControlCode {
     fn try_from(value: u32) -> WinScardResult<Self> {
         match value {
             0x00313520 => Ok(ControlCode::IoCtl),
-            _ => Err(Error::new(ErrorKind::InvalidParameter, format!("Unsupported control code: {:x?}", value)))
+            _ => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unsupported control code: {:x?}", value),
+            )),
         }
     }
 }

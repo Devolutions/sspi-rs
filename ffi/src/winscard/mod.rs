@@ -8,8 +8,8 @@ use crate::utils::into_raw_ptr;
 mod macros;
 
 pub mod scard;
-mod scard_handle;
 pub mod scard_context;
+mod scard_handle;
 
 pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
     crate::logging::setup_logger();

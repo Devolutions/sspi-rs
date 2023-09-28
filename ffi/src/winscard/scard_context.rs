@@ -4,6 +4,9 @@ use ffi_types::winscard::{
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
 use symbol_rename_macro::rename_symbol;
+use winscard::ErrorKind;
+
+use crate::winscard::scard_handle::scard_context_to_winscard_context;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[no_mangle]
@@ -24,8 +27,18 @@ pub extern "system" fn SCardReleaseContext(_context: ScardContext) -> ScardStatu
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
-pub extern "system" fn SCardIsValidContext(_context: ScardContext) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
+    if context == 0 {
+        return ErrorKind::InvalidHandle.into();
+    }
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    if context.is_valid() {
+        ErrorKind::Success
+    } else {
+        ErrorKind::InvalidHandle
+    }
+    .into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsA"))]

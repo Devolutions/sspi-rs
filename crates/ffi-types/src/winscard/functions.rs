@@ -10,7 +10,7 @@ use crate::{
 
 pub type SCardEstablishContextFn = extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
 pub type SCardReleaseContextFn = extern "system" fn(ScardContext) -> ScardStatus;
-pub type SCardIsValidContextFn = extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardIsValidContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
 pub type SCardListReaderGroupsWFn = extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListReadersAFn = extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
@@ -85,7 +85,8 @@ pub type SCardStatusWFn =
 pub type SCardTransmitFn =
     extern "system" fn(ScardHandle, LpScardIoRequest, LpCByte, u32, LpScardIoRequest, LpByte, LpDword) -> ScardStatus;
 pub type SCardGetTransmitCountFn = extern "system" fn(ScardHandle, LpDword) -> ScardStatus;
-pub type SCardControlFn = unsafe extern "system" fn(ScardHandle, u32, LpCVoid, u32, LpVoid, u32, LpDword) -> ScardStatus;
+pub type SCardControlFn =
+    unsafe extern "system" fn(ScardHandle, u32, LpCVoid, u32, LpVoid, u32, LpDword) -> ScardStatus;
 pub type SCardGetAttribFn = extern "system" fn(ScardHandle, u32, LpByte, LpDword) -> ScardStatus;
 pub type SCardSetAttribFn = extern "system" fn(ScardHandle, u32, LpCByte, u32) -> ScardStatus;
 pub type SCardUIDlgSelectCardAFn = extern "system" fn(LpOpenCardNameExA) -> ScardStatus;
