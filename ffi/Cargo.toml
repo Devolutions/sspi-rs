@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 [features]
 default = []
 tsssp = ["sspi/tsssp"]
-scard = ["sspi/scard", "dep:ffi-types"]
+scard = ["sspi/scard", "dep:ffi-types", "dep:winscard"]
 
 [dependencies]
 cfg-if = "1"
@@ -24,6 +24,8 @@ num-traits = "0.2"
 whoami = "1.4"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
+
+winscard = { path = "../crates/winscard-rs", features = ["std"], optional = true }
 
 # logging
 tracing = { version = "0.1" }

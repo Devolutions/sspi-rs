@@ -4,7 +4,11 @@ use self::scard::*;
 use self::scard_context::*;
 use crate::utils::into_raw_ptr;
 
+#[macro_use]
+mod macros;
+
 pub mod scard;
+mod scard_handle;
 pub mod scard_context;
 
 pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {

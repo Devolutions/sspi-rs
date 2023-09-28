@@ -4,6 +4,9 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use symbol_rename_macro::rename_symbol;
+use winscard::ErrorKind;
+use winscard::winscard::WinScard;
+use crate::winscard::scard_handle::scard_handle_to_winscard;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectA"))]
 #[no_mangle]
@@ -51,14 +54,24 @@ pub extern "system" fn SCardDisconnect(_handle: ScardHandle, _dw_disposition: u3
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardBeginTransaction"))]
 #[no_mangle]
-pub extern "system" fn SCardBeginTransaction(_handle: ScardHandle) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
+    check_handle!(handle);
+
+    let scard = &mut *scard_handle_to_winscard(handle);
+    try_execute!(scard.begin_transaction());
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEndTransaction"))]
 #[no_mangle]
-pub extern "system" fn SCardEndTransaction(_handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
+    check_handle!(handle);
+
+    let scard = &mut *scard_handle_to_winscard(handle);
+    try_execute!(scard.end_transaction());
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancelTransaction"))]
