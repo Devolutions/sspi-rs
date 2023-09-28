@@ -142,7 +142,7 @@ pub enum State {
     Swallowed = 3,
     /// Power is being provided to the card, but the reader driver is unaware of the mode of the card.
     Powered = 4,
-    ///	The card has been reset and is awaiting PTS negotiation.
+    /// The card has been reset and is awaiting PTS negotiation.
     Negotiable = 5,
     /// The card has been reset and specific communication protocols have been established.
     Specific = 6,

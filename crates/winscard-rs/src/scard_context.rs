@@ -1,66 +1,85 @@
-use alloc::borrow::Cow;
+use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::scard::SmartCard;
 use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
 use crate::{Error, ErrorKind, WinScardResult};
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
-    pub name: String,
+    pub name: Cow<'a, str>,
     pub icon: Icon<'a>,
     pub device_type_id: DeviceTypeId,
 }
 
+pub struct SmartCardInfo<'a> {
+    pub pin: Vec<u8>,
+    pub auth_cert_der: Vec<u8>,
+    pub auth_pk_pem: String,
+    pub reader: Reader<'a>,
+}
+
 /// Represents the resource manager context (the scope).
 pub struct ScardContext<'a> {
-    readers: Vec<Reader<'a>>,
+    smart_cards_info: Vec<SmartCardInfo<'a>>,
 }
 
 impl<'a> ScardContext<'a> {
     /// Creates a new smart card based on the list of smart card readers
-    pub fn new(readers: Vec<Reader<'a>>) -> Self {
-        Self { readers }
+    pub fn new(smart_cards_info: Vec<SmartCardInfo<'a>>) -> Self {
+        Self { smart_cards_info }
     }
 }
 
 impl<'a> WinScardContext for ScardContext<'a> {
     fn connect(
         &self,
-        _reader_name: &str,
+        reader_name: &str,
         _share_mode: ShareMode,
         _protocol: Option<Protocol>,
     ) -> WinScardResult<Box<dyn WinScard>> {
-        todo!()
+        let smart_card_info = self
+            .smart_cards_info
+            .iter()
+            .find(|card_info| card_info.reader.name == reader_name)
+            .ok_or_else(|| Error::new(ErrorKind::UnknownReader, format!("reader {} not found", reader_name)))?;
+
+        Ok(Box::new(SmartCard::new(
+            Cow::Owned(reader_name.to_owned()),
+            smart_card_info.pin.clone(),
+            smart_card_info.auth_cert_der.clone(),
+            &smart_card_info.auth_pk_pem,
+        )?))
     }
 
     fn list_readers(&self) -> Vec<Cow<str>> {
-        self.readers
+        self.smart_cards_info
             .iter()
-            .map(|reader| Cow::Borrowed(reader.name.as_str()))
+            .map(|card_info| card_info.reader.name.clone())
             .collect()
     }
 
     fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId> {
-        self.readers
+        self.smart_cards_info
             .iter()
-            .find(|reader| reader.name == reader_name)
+            .find(|card_info| card_info.reader.name == reader_name)
             .ok_or_else(|| Error::new(ErrorKind::UnknownReader, format!("reader {} not found", reader_name)))
-            .map(|reader| reader.device_type_id)
+            .map(|card_info| card_info.reader.device_type_id)
     }
 
     fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon> {
-        self.readers
+        self.smart_cards_info
             .iter()
-            .find(|reader| reader.name == reader_name)
+            .find(|card_info| card_info.reader.name == reader_name)
             .ok_or_else(|| Error::new(ErrorKind::UnknownReader, format!("reader {} not found", reader_name)))
-            .map(|reader| reader.icon.clone())
+            .map(|card_info| card_info.reader.icon.clone())
     }
 
     fn is_valid(&self) -> bool {
-        !self.readers.is_empty()
+        !self.smart_cards_info.is_empty()
     }
 }
