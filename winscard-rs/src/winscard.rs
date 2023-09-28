@@ -14,7 +14,7 @@ use crate::WinScardResult;
 /// [SCardStatusW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw)
 /// `pbAtr` parameter:
 /// A 32-byte buffer that holds the ATR string from the currently inserted card.
-/// Note: 32 is a maximum ATR string len. In reality, the original Windows TPM CS always returns 17-bytes len ATR string.
+/// Note: 32 is a maximum ATR string len. In reality, the original Windows TPM smart card always returns 17-bytes len ATR string.
 #[derive(Debug, Clone)]
 pub struct Atr(Vec<u8>);
 
@@ -157,7 +157,7 @@ pub struct Status<'a> {
     pub state: State,
     /// Current protocol, if any. The returned value is meaningful only if the returned value of pdwState is SCARD_SPECIFICMODE.
     pub protocol: Protocol,
-    /// Pointer to a 32-byte buffer that receives the ATR string from the currently inserted card, if available.
+    /// Buffer that receives the ATR string from the currently inserted card, if available.
     /// [ATR string](https://learn.microsoft.com/en-us/windows/win32/secgloss/a-gly)
     pub atr: Atr,
 }
