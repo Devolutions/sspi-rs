@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -9,7 +10,8 @@ use tracing::error;
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::{tlv_tags, Error, ErrorKind, Response, Status, WinScardResult};
+use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
+use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 // NIST.SP.800-73-4, part 1, section 2.2
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
@@ -24,7 +26,8 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
-pub struct SmartCard {
+pub struct SmartCard<'a> {
+    reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
@@ -34,8 +37,13 @@ pub struct SmartCard {
     pending_response: Option<Vec<u8>>,
 }
 
-impl SmartCard {
-    pub fn new(mut pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> WinScardResult<Self> {
+impl SmartCard<'_> {
+    pub fn new<'a>(
+        reader_name: Cow<'a, str>,
+        mut pin: Vec<u8>,
+        auth_cert_der: Vec<u8>,
+        auth_pk_pem: &str,
+    ) -> WinScardResult<SmartCard<'a>> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
@@ -65,6 +73,7 @@ impl SmartCard {
             pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
         Ok(SmartCard {
+            reader_name,
             chuid,
             pin,
             auth_cert,
@@ -354,6 +363,55 @@ enum SCardState {
     Ready,
     PivAppSelected,
     PinVerified,
+}
+
+impl<'a> WinScard for SmartCard<'a> {
+    fn status(&self) -> WinScardResult<winscard::Status> {
+        Ok(winscard::Status {
+            readers: vec![self.reader_name.clone()],
+            // The original winscard always returns SCARD_SPECIFIC for a working inserted card
+            state: winscard::State::Specific,
+            // We are always using the T1 protocol as the original TPM smart card does
+            protocol: winscard::Protocol::T1,
+            // The original winscard ATR is not suitable because it contains AID bytes.
+            // So we need to construct our own. Read more about our constructed ATR string:
+            // https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+AA+AA+4C
+            #[rustfmt::skip]
+            atr: [
+                // TS. Direct Convention
+                0x3b,
+                // T0. Y(1): b1000, K: 13 (historical bytes)
+                0x8d,
+                // TD. Y(i+1) = b0000, Protocol T=1
+                0x01,
+                // Historical bytes
+                    0x80,
+                    // Tag: 15, Len: 11.
+                    0xfb,
+                    // PIV AID
+                    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0xaa, 0xaa,
+                // TCK (Checksum)
+                0x4c,
+            ]
+            .into(),
+        })
+    }
+
+    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<Vec<u8>> {
+        todo!()
+    }
+
+    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+        todo!()
+    }
+
+    fn begin_transaction(&mut self) -> WinScardResult<()> {
+        todo!()
+    }
+
+    fn end_transaction(&mut self) -> WinScardResult<()> {
+        todo!()
+    }
 }
 
 #[cfg(test)]

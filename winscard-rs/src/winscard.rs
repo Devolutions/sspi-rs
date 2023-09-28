@@ -14,18 +14,25 @@ use crate::WinScardResult;
 /// [SCardStatusW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw)
 /// `pbAtr` parameter:
 /// A 32-byte buffer that holds the ATR string from the currently inserted card.
+/// Note: 32 is a maximum ATR string len. In reality, the original Windows TPM CS always returns 17-bytes len ATR string.
 #[derive(Debug, Clone)]
-pub struct Atr([u8; 32]);
+pub struct Atr(Vec<u8>);
 
-impl AsRef<[u8; 32]> for Atr {
-    fn as_ref(&self) -> &[u8; 32] {
-        &self.0
+impl AsRef<[u8]> for Atr {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }
 
-impl From<[u8; 32]> for Atr {
-    fn from(value: [u8; 32]) -> Self {
+impl From<Vec<u8>> for Atr {
+    fn from(value: Vec<u8>) -> Self {
         Self(value)
+    }
+}
+
+impl From<[u8; 17]> for Atr {
+    fn from(value: [u8; 17]) -> Self {
+        Self(value.into())
     }
 }
 
@@ -144,9 +151,14 @@ pub enum State {
 /// This structure described the current status and basic info about the smart card reader.
 #[derive(Debug, Clone)]
 pub struct Status<'a> {
+    /// List of display names (multiple string) by which the currently connected reader is known.
     pub readers: Vec<Cow<'a, str>>,
+    /// Current state of the smart card in the reader
     pub state: State,
+    /// Current protocol, if any. The returned value is meaningful only if the returned value of pdwState is SCARD_SPECIFICMODE.
     pub protocol: Protocol,
+    /// Pointer to a 32-byte buffer that receives the ATR string from the currently inserted card, if available.
+    /// [ATR string](https://learn.microsoft.com/en-us/windows/win32/secgloss/a-gly)
     pub atr: Atr,
 }
 
