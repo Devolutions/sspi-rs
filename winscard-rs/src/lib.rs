@@ -167,6 +167,12 @@ pub enum ErrorKind {
     WrongChv = 0x8010006B,
 }
 
+impl From<ErrorKind> for u32 {
+    fn from(value: ErrorKind) -> Self {
+        value as u32
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
     NotFound,
