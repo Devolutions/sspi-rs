@@ -379,7 +379,7 @@ impl<'a> WinScard for SmartCard<'a> {
             protocol: winscard::Protocol::T1,
             // The original winscard ATR is not suitable because it contains AID bytes.
             // So we need to construct our own. Read more about our constructed ATR string:
-            // https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+AA+AA+4C
+            // https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D
             #[rustfmt::skip]
             atr: [
                 // TS. Direct Convention
@@ -393,9 +393,9 @@ impl<'a> WinScard for SmartCard<'a> {
                     // Tag: 15, Len: 11.
                     0xfb,
                     // PIV AID
-                    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0xaa, 0xaa,
+                    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
                 // TCK (Checksum)
-                0x4c,
+                0x4d,
             ]
             .into(),
         })
