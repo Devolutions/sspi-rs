@@ -1,7 +1,7 @@
 macro_rules! check_handle {
     ($x:expr) => {{
         if $x == 0 {
-            return u32::from(winscard::ErrorKind::InvalidParameter);
+            return u32::from(winscard::ErrorKind::InvalidHandle);
         }
     }};
 }

@@ -119,7 +119,10 @@ impl TryFrom<u32> for ShareMode {
             1 => Ok(Self::Exclusive),
             2 => Ok(Self::Shared),
             3 => Ok(Self::Direct),
-            _ => Err(Error::new(ErrorKind::InvalidParameter, format!("Invalid ShareMode value: {}", value))),
+            _ => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Invalid ShareMode value: {}", value),
+            )),
         }
     }
 }

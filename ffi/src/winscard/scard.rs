@@ -115,8 +115,13 @@ pub extern "system" fn SCardReconnect(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
 #[no_mangle]
-pub extern "system" fn SCardDisconnect(_handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
+    check_handle!(handle);
+
+    let handle = scard_handle_to_winscard(handle);
+    let _ = Box::from_raw(handle);
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardBeginTransaction"))]
