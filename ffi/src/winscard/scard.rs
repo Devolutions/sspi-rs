@@ -6,7 +6,6 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::WinScard;
 use winscard::ErrorKind;
 
 use crate::winscard::scard_handle::{

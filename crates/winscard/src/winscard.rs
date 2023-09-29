@@ -66,6 +66,7 @@ impl From<Vec<u8>> for Icon<'_> {
 /// [SCARD_READER_CAPABILITIES](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/smclib/ns-smclib-_scard_reader_capabilities)
 /// `ReaderType` parameter:
 /// This member contains the reader type and is required. This member can have one of the values in the following table.
+#[repr(u32)]
 #[derive(Debug, Copy, Clone)]
 pub enum DeviceTypeId {
     /// Serial reader
@@ -86,6 +87,12 @@ pub enum DeviceTypeId {
     Tpm = 0x80,
     /// Reader that uses a proprietary vendor bus
     Vendor = 0xf0,
+}
+
+impl From<DeviceTypeId> for u32 {
+    fn from(value: DeviceTypeId) -> Self {
+        value as u32
+    }
 }
 
 /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)

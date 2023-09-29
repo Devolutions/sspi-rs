@@ -85,6 +85,8 @@ pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
         SCardWriteCacheW,
         SCardGetReaderIconA,
         SCardGetReaderIconW,
+        SCardGetDeviceTypeIdA,
+        SCardGetDeviceTypeIdW,
         SCardGetReaderDeviceInstanceIdA,
         SCardGetReaderDeviceInstanceIdW,
         SCardListReadersWithDeviceInstanceIdA,

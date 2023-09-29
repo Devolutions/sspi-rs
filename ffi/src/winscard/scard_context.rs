@@ -556,6 +556,51 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     ErrorKind::Success.into()
 }
 
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdA"))]
+#[no_mangle]
+pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
+    context: ScardContext,
+    sz_reader_name: LpCStr,
+    pdw_device_type_id: LpDword,
+) -> ScardStatus {
+    check_handle!(context);
+    check_null!(sz_reader_name);
+    check_null!(pdw_device_type_id);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = try_execute!(
+        CStr::from_ptr(sz_reader_name as *const i8).to_str(),
+        ErrorKind::InvalidParameter
+    );
+    debug!(reader_name);
+
+    let type_id = try_execute!(context.device_type_id(&reader_name));
+    *pdw_device_type_id = type_id.into();
+
+    ErrorKind::Success.into()
+}
+
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdW"))]
+#[no_mangle]
+pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
+    context: ScardContext,
+    sz_reader_name: LpCWStr,
+    pdw_device_type_id: LpDword,
+) -> ScardStatus {
+    check_handle!(context);
+    check_null!(sz_reader_name);
+    check_null!(pdw_device_type_id);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = c_w_str_to_string(sz_reader_name);
+    debug!(reader_name);
+
+    let type_id = try_execute!(context.device_type_id(&reader_name));
+    *pdw_device_type_id = type_id.into();
+
+    ErrorKind::Success.into()
+}
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdA"))]
 #[no_mangle]
 pub extern "system" fn SCardGetReaderDeviceInstanceIdA(

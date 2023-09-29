@@ -63,6 +63,8 @@ pub type SCardWriteCacheAFn = extern "system" fn(ScardContext, LpUuid, u32, LpSt
 pub type SCardWriteCacheWFn = extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, u32) -> ScardStatus;
 pub type SCardGetReaderIconAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardGetReaderIconWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpByte, LpDword) -> ScardStatus;
+pub type SCardGetDeviceTypeIdAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpDword) -> ScardStatus;
+pub type SCardGetDeviceTypeIdWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpDword) -> ScardStatus;
 pub type SCardGetReaderDeviceInstanceIdAFn = extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
 pub type SCardGetReaderDeviceInstanceIdWFn = extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListReadersWithDeviceInstanceIdAFn =
@@ -176,6 +178,8 @@ pub struct SCardApiFunctionTable {
     pub SCardWriteCacheW: SCardWriteCacheWFn,
     pub SCardGetReaderIconA: SCardGetReaderIconAFn,
     pub SCardGetReaderIconW: SCardGetReaderIconWFn,
+    pub SCardGetDeviceTypeIdA: SCardGetDeviceTypeIdAFn,
+    pub SCardGetDeviceTypeIdW: SCardGetDeviceTypeIdWFn,
     pub SCardGetReaderDeviceInstanceIdA: SCardGetReaderDeviceInstanceIdAFn,
     pub SCardGetReaderDeviceInstanceIdW: SCardGetReaderDeviceInstanceIdWFn,
     pub SCardListReadersWithDeviceInstanceIdA: SCardListReadersWithDeviceInstanceIdAFn,
