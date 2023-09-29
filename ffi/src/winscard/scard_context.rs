@@ -344,14 +344,13 @@ pub extern "system" fn SCardFreeMemory(_context: ScardContext, _pv_mem: LpCVoid)
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[no_mangle]
 pub extern "system" fn SCardAccessStartedEvent() -> Handle {
-    todo!()
+    // This value has been extracted from the original winscard SCardAccessStartedEvent call.
+    0x0000000000000eb0 as Handle
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
 #[no_mangle]
-pub extern "system" fn SCardReleaseStartedEvent() -> c_void {
-    todo!()
-}
+pub extern "system" fn SCardReleaseStartedEvent() {}
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsA"))]
 #[no_mangle]
