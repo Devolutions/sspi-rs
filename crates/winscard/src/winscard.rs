@@ -156,6 +156,7 @@ bitflags! {
 /// `pdwState` parameter:
 /// Current state of the smart card in the reader. Upon success, it receives one of the following state indicators.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u32)]
 pub enum State {
     /// Unknown smart card status.
     Unknown = 0,
@@ -171,6 +172,12 @@ pub enum State {
     Negotiable = 5,
     /// The card has been reset and specific communication protocols have been established.
     Specific = 6,
+}
+
+impl From<State> for u32 {
+    fn from(value: State) -> Self {
+        value as u32
+    }
 }
 
 /// This structure described the current status and basic info about the smart card reader.

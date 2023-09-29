@@ -1,7 +1,9 @@
+use std::iter::once;
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
+use ffi_types::{LpDword, LpStr, LpWStr};
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
@@ -44,6 +46,56 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     let pci_buffer_ptr = (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>());
     let pci_buffer = from_raw_parts_mut(pci_buffer_ptr, pci_info_len);
     pci_buffer.copy_from_slice(&io_request.pci_info);
+
+    Ok(())
+}
+
+pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
+    let buffer: Vec<u16> = readers
+        .iter()
+        .flat_map(|reader| reader.encode_utf16().chain(once(0)))
+        .chain(once(0))
+        .collect();
+
+    let dest_str_len = (*dest_len).try_into().unwrap();
+    if buffer.len() > dest_str_len {
+        return Err(Error::new(
+            ErrorKind::InsufficientBuffer,
+            format!(
+                "Readers string buffer us too small. Expected at least {} but got {}",
+                buffer.len(),
+                dest_str_len
+            ),
+        ));
+    }
+
+    let dest_buffer = from_raw_parts_mut(dest, buffer.len());
+    dest_buffer.copy_from_slice(&buffer);
+
+    Ok(())
+}
+
+pub unsafe fn write_readers_a(readers: &[&str], dest: LpStr, dest_len: LpDword) -> WinScardResult<()> {
+    let buffer: Vec<u8> = readers
+        .iter()
+        .flat_map(|reader| reader.as_bytes().iter().cloned().chain(once(0)))
+        .chain(once(0))
+        .collect();
+
+    let dest_str_len = (*dest_len).try_into().unwrap();
+    if buffer.len() > dest_str_len {
+        return Err(Error::new(
+            ErrorKind::InsufficientBuffer,
+            format!(
+                "Readers string buffer us too small. Expected at least {} but got {}",
+                buffer.len(),
+                dest_str_len
+            ),
+        ));
+    }
+
+    let dest_buffer = from_raw_parts_mut(dest, buffer.len());
+    dest_buffer.copy_from_slice(&buffer);
 
     Ok(())
 }

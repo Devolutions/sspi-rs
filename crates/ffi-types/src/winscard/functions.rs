@@ -83,9 +83,9 @@ pub type SCardEndTransactionFn = unsafe extern "system" fn(ScardHandle, u32) -> 
 pub type SCardCancelTransactionFn = extern "system" fn(ScardHandle) -> ScardStatus;
 pub type SCardStateFn = extern "system" fn(ScardHandle, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardStatusAFn =
-    extern "system" fn(ScardHandle, LpStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
+    unsafe extern "system" fn(ScardHandle, LpStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardStatusWFn =
-    extern "system" fn(ScardHandle, LpWStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
+    unsafe extern "system" fn(ScardHandle, LpWStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardTransmitFn = unsafe extern "system" fn(
     ScardHandle,
     LpScardIoRequest,

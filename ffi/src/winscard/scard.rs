@@ -13,7 +13,7 @@ use winscard::{ErrorKind, WinScardResult};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
-    scard_io_request_to_io_request,
+    scard_io_request_to_io_request, write_readers_a, write_readers_w,
 };
 
 unsafe fn connect(
@@ -166,30 +166,78 @@ pub extern "system" fn SCardState(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardStatusA"))]
 #[no_mangle]
-pub extern "system" fn SCardStatusA(
-    _handle: ScardHandle,
-    _msz_reader_names: LpStr,
-    _pcch_reader_len: LpDword,
-    _pdw_state: LpDword,
-    _pdw_protocol: LpDword,
-    _pb_atr: LpByte,
-    _pcb_atr_len: LpDword,
+pub unsafe extern "system" fn SCardStatusA(
+    handle: ScardHandle,
+    msz_reader_names: LpStr,
+    pcch_reader_len: LpDword,
+    pdw_state: LpDword,
+    pdw_protocol: LpDword,
+    pb_atr: LpByte,
+    pcb_atr_len: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(handle);
+    check_null!(msz_reader_names);
+    check_null!(pcch_reader_len);
+    check_null!(pdw_state);
+    check_null!(pdw_protocol);
+    check_null!(pb_atr);
+    check_null!(pcb_atr_len);
+
+    let scard = &mut *scard_handle_to_winscard(handle);
+    let status = try_execute!(scard.status());
+    let atr_len = status.atr.as_ref().len();
+
+    let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+    try_execute!(write_readers_a(&readers, msz_reader_names, pcch_reader_len));
+    *pdw_state = status.state.into();
+    *pdw_protocol = status.protocol.bits();
+
+    let out_atr_len = (*pcb_atr_len).try_into().unwrap();
+    if atr_len > out_atr_len {
+        return ErrorKind::InsufficientBuffer.into();
+    }
+    let out_atr = from_raw_parts_mut(pb_atr, atr_len);
+    out_atr.copy_from_slice(status.atr.as_ref());
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardStatusW"))]
 #[no_mangle]
-pub extern "system" fn SCardStatusW(
-    _handle: ScardHandle,
-    _msz_reader_names: LpWStr,
-    _pcch_reader_len: LpDword,
-    _pdw_state: LpDword,
-    _pdw_protocol: LpDword,
-    _pb_atr: LpByte,
-    _pcb_atr_len: LpDword,
+pub unsafe extern "system" fn SCardStatusW(
+    handle: ScardHandle,
+    msz_reader_names: LpWStr,
+    pcch_reader_len: LpDword,
+    pdw_state: LpDword,
+    pdw_protocol: LpDword,
+    pb_atr: LpByte,
+    pcb_atr_len: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(handle);
+    check_null!(msz_reader_names);
+    check_null!(pcch_reader_len);
+    check_null!(pdw_state);
+    check_null!(pdw_protocol);
+    check_null!(pb_atr);
+    check_null!(pcb_atr_len);
+
+    let scard = &mut *scard_handle_to_winscard(handle);
+    let status = try_execute!(scard.status());
+    let atr_len = status.atr.as_ref().len();
+
+    let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+    try_execute!(write_readers_w(&readers, msz_reader_names, pcch_reader_len));
+    *pdw_state = status.state.into();
+    *pdw_protocol = status.protocol.bits();
+
+    let out_atr_len = (*pcb_atr_len).try_into().unwrap();
+    if atr_len > out_atr_len {
+        return ErrorKind::InsufficientBuffer.into();
+    }
+    let out_atr = from_raw_parts_mut(pb_atr, atr_len);
+    out_atr.copy_from_slice(status.atr.as_ref());
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
