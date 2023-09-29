@@ -11,7 +11,7 @@ use winscard::winscard::WinScardContext;
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::utils::c_w_str_to_string;
-use crate::winscard::scard_handle::scard_context_to_winscard_context;
+use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_readers_a, write_readers_w};
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[no_mangle]
@@ -68,24 +68,44 @@ pub extern "system" fn SCardListReaderGroupsW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersA"))]
 #[no_mangle]
-pub extern "system" fn SCardListReadersA(
-    _context: ScardContext,
+pub unsafe extern "system" fn SCardListReadersA(
+    context: ScardContext,
     _msz_groups: LpCStr,
-    _msz_readers: LpStr,
-    _pcch_readers: LpDword,
+    msz_readers: LpStr,
+    pcch_readers: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(msz_readers);
+    check_null!(pcch_readers);
+
+    let context = &*scard_context_to_winscard_context(context);
+    let readers = context.list_readers();
+    let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+
+    try_execute!(write_readers_a(&readers, msz_readers, pcch_readers));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersW"))]
 #[no_mangle]
-pub extern "system" fn SCardListReadersW(
-    _context: ScardContext,
+pub unsafe extern "system" fn SCardListReadersW(
+    context: ScardContext,
     _msz_groups: LpCWStr,
-    _msz_readers: LpWStr,
-    _pcch_readers: LpDword,
+    msz_readers: LpWStr,
+    pcch_readers: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(msz_readers);
+    check_null!(pcch_readers);
+
+    let context = &*scard_context_to_winscard_context(context);
+    let readers = context.list_readers();
+    let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+
+    try_execute!(write_readers_w(&readers, msz_readers, pcch_readers));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
