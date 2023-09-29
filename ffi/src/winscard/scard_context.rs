@@ -26,8 +26,10 @@ pub extern "system" fn SCardEstablishContext(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
 #[no_mangle]
-pub extern "system" fn SCardReleaseContext(_context: ScardContext) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
+    let _ = Box::from_raw(scard_context_to_winscard_context(context));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]

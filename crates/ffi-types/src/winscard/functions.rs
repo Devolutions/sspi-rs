@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub type SCardEstablishContextFn = extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
-pub type SCardReleaseContextFn = extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardReleaseContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardIsValidContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
 pub type SCardListReaderGroupsWFn = extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
