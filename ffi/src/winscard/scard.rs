@@ -125,7 +125,7 @@ pub extern "system" fn SCardStatusW(
     todo!()
 }
 
-// #[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
+#[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardTransmit(
     handle: ScardHandle,

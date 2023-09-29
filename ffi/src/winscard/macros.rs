@@ -16,6 +16,15 @@ macro_rules! try_execute {
             }
         }
     }};
+    ($x:expr, $err_value:expr) => {{
+        match $x {
+            Ok(val) => val,
+            Err(err) => {
+                error!(%err, "an error occurred");
+                return $err_value.into();
+            }
+        }
+    }};
 }
 
 macro_rules! check_null {

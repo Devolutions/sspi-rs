@@ -1,11 +1,16 @@
+use std::ffi::CStr;
+use std::slice::from_raw_parts_mut;
+
 use ffi_types::winscard::{
     LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus,
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
 use symbol_rename_macro::rename_symbol;
-use winscard::ErrorKind;
+use winscard::winscard::WinScardContext;
+use winscard::{Error, ErrorKind, WinScardResult};
 
+use crate::utils::c_w_str_to_string;
 use crate::winscard::scard_handle::scard_context_to_winscard_context;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
@@ -478,26 +483,77 @@ pub extern "system" fn SCardWriteCacheW(
     todo!()
 }
 
+unsafe fn get_reader_icon(
+    context: &dyn WinScardContext,
+    reader_name: &str,
+    pb_icon: LpByte,
+    pcb_icon: LpDword,
+) -> WinScardResult<()> {
+    let icon = context.reader_icon(&reader_name)?;
+    let icon_buffer_len = icon.as_ref().len();
+    let pcb_icon_len = (*pcb_icon).try_into().unwrap();
+
+    if icon_buffer_len > pcb_icon_len {
+        return Err(Error::new(
+            ErrorKind::InsufficientBuffer,
+            format!(
+                "Icon buffer is too small. Expected at least {} but got {}",
+                icon_buffer_len, pcb_icon_len
+            ),
+        ));
+    }
+
+    *pcb_icon = icon_buffer_len.try_into().unwrap();
+
+    let icon_buffer = from_raw_parts_mut(pb_icon, icon_buffer_len);
+    icon_buffer.copy_from_slice(icon.as_ref());
+
+    Ok(())
+}
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
 #[no_mangle]
-pub extern "system" fn SCardGetReaderIconA(
-    _context: ScardContext,
-    _sz_reader_name: LpCStr,
-    _pb_icon: LpByte,
-    _pcb_icon: LpDword,
+pub unsafe extern "system" fn SCardGetReaderIconA(
+    context: ScardContext,
+    sz_reader_name: LpCStr,
+    pb_icon: LpByte,
+    pcb_icon: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(sz_reader_name);
+    check_null!(pb_icon);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = try_execute!(
+        CStr::from_ptr(sz_reader_name as *const i8).to_str(),
+        ErrorKind::InvalidParameter
+    );
+    debug!(reader_name);
+
+    try_execute!(get_reader_icon(context.as_ref(), &reader_name, pb_icon, pcb_icon));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconW"))]
 #[no_mangle]
-pub extern "system" fn SCardGetReaderIconW(
-    _context: ScardContext,
-    _sz_reader_name: LpCWStr,
-    _pb_icon: LpByte,
-    _pcb_icon: LpDword,
+pub unsafe extern "system" fn SCardGetReaderIconW(
+    context: ScardContext,
+    sz_reader_name: LpCWStr,
+    pb_icon: LpByte,
+    pcb_icon: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(sz_reader_name);
+    check_null!(pb_icon);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = c_w_str_to_string(sz_reader_name);
+    debug!(reader_name);
+
+    try_execute!(get_reader_icon(context.as_ref(), &reader_name, pb_icon, pcb_icon));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdA"))]
