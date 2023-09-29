@@ -428,7 +428,11 @@ pub extern "system" fn SCardGetStatusChangeW(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
 #[no_mangle]
 pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
-    todo!()
+    // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel
+    // The SCardCancel function terminates all outstanding actions within a specific resource manager context.
+    //
+    // We do not have such actions in an emulated scard context
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]

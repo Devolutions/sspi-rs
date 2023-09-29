@@ -111,6 +111,19 @@ pub enum ShareMode {
     Direct = 3,
 }
 
+impl TryFrom<u32> for ShareMode {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Exclusive),
+            2 => Ok(Self::Shared),
+            3 => Ok(Self::Direct),
+            _ => Err(Error::new(ErrorKind::InvalidParameter, format!("Invalid ShareMode value: {}", value))),
+        }
+    }
+}
+
 bitflags! {
     /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
     ///

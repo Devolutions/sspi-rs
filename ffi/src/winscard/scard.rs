@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{
@@ -6,36 +7,98 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use symbol_rename_macro::rename_symbol;
-use winscard::ErrorKind;
+use winscard::winscard::{Protocol, WinScardContext};
+use winscard::{ErrorKind, WinScardResult};
 
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
-    copy_io_request_to_scard_io_request, scard_handle_to_winscard, scard_io_request_to_io_request,
+    copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
+    scard_io_request_to_io_request,
 };
+
+unsafe fn connect(
+    context: &mut dyn WinScardContext,
+    reader_name: &str,
+    dw_share_mode: u32,
+    dw_preferred_protocols: u32,
+    ph_card: LpScardHandle,
+    pdw_active_protocol: LpDword,
+) -> WinScardResult<()> {
+    let share_mode = dw_share_mode.try_into()?;
+    let protocol = Protocol::from_bits(dw_preferred_protocols);
+
+    let card_handle = context.connect(&reader_name, share_mode, protocol)?;
+    let protocol = card_handle.status()?.protocol.bits();
+
+    *ph_card = into_raw_ptr(card_handle) as ScardHandle;
+    *pdw_active_protocol = protocol;
+
+    Ok(())
+}
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectA"))]
 #[no_mangle]
-pub extern "system" fn SCardConnectA(
-    _context: ScardContext,
-    _sz_reader: LpCStr,
-    _dw_share_mode: u32,
-    _dw_preferred_protocols: u32,
-    _ph_card: LpScardHandle,
-    _pdw_active_protocol: LpDword,
+pub unsafe extern "system" fn SCardConnectA(
+    context: ScardContext,
+    sz_reader: LpCStr,
+    dw_share_mode: u32,
+    dw_preferred_protocols: u32,
+    ph_card: LpScardHandle,
+    pdw_active_protocol: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(sz_reader);
+    check_null!(ph_card);
+    check_null!(pdw_active_protocol);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = try_execute!(
+        CStr::from_ptr(sz_reader as *const i8).to_str(),
+        ErrorKind::InvalidParameter
+    );
+    debug!(reader_name);
+
+    try_execute!(connect(
+        context.as_mut(),
+        &reader_name,
+        dw_share_mode,
+        dw_preferred_protocols,
+        ph_card,
+        pdw_active_protocol
+    ));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectW"))]
 #[no_mangle]
-pub extern "system" fn SCardConnectW(
-    _context: ScardContext,
-    _sz_reader: LpCWStr,
-    _dw_share_mode: u32,
-    _dw_preferred_protocols: u32,
-    _ph_card: LpScardHandle,
-    _pdw_active_protocol: LpDword,
+pub unsafe extern "system" fn SCardConnectW(
+    context: ScardContext,
+    sz_reader: LpCWStr,
+    dw_share_mode: u32,
+    dw_preferred_protocols: u32,
+    ph_card: LpScardHandle,
+    pdw_active_protocol: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(context);
+    check_null!(sz_reader);
+    check_null!(ph_card);
+    check_null!(pdw_active_protocol);
+
+    let context = &mut *scard_context_to_winscard_context(context);
+    let reader_name = c_w_str_to_string(sz_reader);
+    debug!(reader_name);
+
+    try_execute!(connect(
+        context.as_mut(),
+        &reader_name,
+        dw_share_mode,
+        dw_preferred_protocols,
+        ph_card,
+        pdw_active_protocol
+    ));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReconnect"))]

@@ -72,8 +72,8 @@ pub type SCardListReadersWithDeviceInstanceIdAFn =
 pub type SCardListReadersWithDeviceInstanceIdWFn =
     extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
 pub type SCardAuditFn = extern "system" fn(ScardContext, u32) -> ScardStatus;
-pub type SCardConnectAFn = extern "system" fn(ScardContext, LpCStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
-pub type SCardConnectWFn = extern "system" fn(ScardContext, LpCWStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
+pub type SCardConnectAFn = unsafe extern "system" fn(ScardContext, LpCStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
+pub type SCardConnectWFn = unsafe extern "system" fn(ScardContext, LpCWStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
 pub type SCardReconnectFn = extern "system" fn(ScardHandle, u32, u32, u32, LpDword) -> ScardStatus;
 pub type SCardDisconnectFn = extern "system" fn(ScardHandle, u32) -> ScardStatus;
 pub type SCardBeginTransactionFn = unsafe extern "system" fn(ScardHandle) -> ScardStatus;
