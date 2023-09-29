@@ -98,8 +98,8 @@ pub type LpScardAtrMask = *mut ScardAtrMask;
 /// ```
 #[repr(C)]
 pub struct ScardIoRequest {
-    dw_protocol: u32,
-    cb_pci_length: u32,
+    pub dw_protocol: u32,
+    pub cb_pci_length: u32,
 }
 
 pub type LpScardIoRequest = *mut ScardIoRequest;

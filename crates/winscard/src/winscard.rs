@@ -212,7 +212,8 @@ pub struct IoRequest {
 /// This structure represents the result of the `SCardTransmit` function.
 #[derive(Debug, Clone)]
 pub struct TransmitOutData {
-    /// Output APDU command.
+    /// Data returned from the card. If no data is returned from the card,
+    /// then this buffer will only contain the SW1 and SW2 status bytes.
     pub output_apdu: Vec<u8>,
     /// Returned protocol control information (PCI) specific to the protocol in use.
     pub receive_pci: Option<IoRequest>,

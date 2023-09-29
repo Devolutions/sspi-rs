@@ -9,7 +9,9 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScard;
 use winscard::ErrorKind;
 
-use crate::winscard::scard_handle::scard_handle_to_winscard;
+use crate::winscard::scard_handle::{
+    copy_io_request_to_scard_io_request, scard_handle_to_winscard, scard_io_request_to_io_request,
+};
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectA"))]
 #[no_mangle]
@@ -123,18 +125,42 @@ pub extern "system" fn SCardStatusW(
     todo!()
 }
 
-#[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
+// #[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
 #[no_mangle]
-pub extern "system" fn SCardTransmit(
-    _handle: ScardHandle,
-    _pio_send_pci: LpScardIoRequest,
-    _pb_send_buffer: LpCByte,
-    _cb_send_length: u32,
-    _pio_recv_pci: LpScardIoRequest,
-    _pb_recv_buffer: LpByte,
-    _pcb_recv_length: LpDword,
+pub unsafe extern "system" fn SCardTransmit(
+    handle: ScardHandle,
+    pio_send_pci: LpScardIoRequest,
+    pb_send_buffer: LpCByte,
+    cb_send_length: u32,
+    pio_recv_pci: LpScardIoRequest,
+    pb_recv_buffer: LpByte,
+    pcb_recv_length: LpDword,
 ) -> ScardStatus {
-    todo!()
+    check_handle!(handle);
+    check_null!(pio_send_pci);
+    let scard = &mut *scard_handle_to_winscard(handle);
+
+    let io_request = scard_io_request_to_io_request(pio_send_pci);
+    let input_apdu = from_raw_parts(pb_send_buffer, cb_send_length.try_into().unwrap());
+    let out_data = try_execute!(scard.transmit(io_request, input_apdu));
+
+    let out_apdu_len = out_data.output_apdu.len();
+
+    if out_apdu_len > (*pcb_recv_length).try_into().unwrap() || pb_recv_buffer.is_null() {
+        return ErrorKind::InsufficientBuffer.into();
+    }
+
+    let recv_buffer = from_raw_parts_mut(pb_recv_buffer, out_apdu_len);
+    recv_buffer.copy_from_slice(&out_data.output_apdu);
+
+    if !pio_recv_pci.is_null() && out_data.receive_pci.is_some() {
+        try_execute!(copy_io_request_to_scard_io_request(
+            out_data.receive_pci.as_ref().unwrap(),
+            pio_recv_pci
+        ));
+    }
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetTransmitCount"))]

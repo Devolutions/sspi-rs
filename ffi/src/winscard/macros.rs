@@ -17,3 +17,11 @@ macro_rules! try_execute {
         }
     }};
 }
+
+macro_rules! check_null {
+    ($x:expr) => {{
+        if $x.is_null() {
+            return u32::from(winscard::ErrorKind::InvalidParameter);
+        }
+    }};
+}

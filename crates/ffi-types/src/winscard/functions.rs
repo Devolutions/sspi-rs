@@ -82,8 +82,15 @@ pub type SCardStatusAFn =
     extern "system" fn(ScardHandle, LpStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardStatusWFn =
     extern "system" fn(ScardHandle, LpWStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
-pub type SCardTransmitFn =
-    extern "system" fn(ScardHandle, LpScardIoRequest, LpCByte, u32, LpScardIoRequest, LpByte, LpDword) -> ScardStatus;
+pub type SCardTransmitFn = unsafe extern "system" fn(
+    ScardHandle,
+    LpScardIoRequest,
+    LpCByte,
+    u32,
+    LpScardIoRequest,
+    LpByte,
+    LpDword,
+) -> ScardStatus;
 pub type SCardGetTransmitCountFn = extern "system" fn(ScardHandle, LpDword) -> ScardStatus;
 pub type SCardControlFn =
     unsafe extern "system" fn(ScardHandle, u32, LpCVoid, u32, LpVoid, u32, LpDword) -> ScardStatus;
