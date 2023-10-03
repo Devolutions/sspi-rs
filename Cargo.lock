@@ -2152,6 +2152,7 @@ dependencies = [
  "ffi-types",
  "libc",
  "num-traits",
+ "picky-asn1-der",
  "sspi",
  "symbol-rename-macro",
  "tracing",

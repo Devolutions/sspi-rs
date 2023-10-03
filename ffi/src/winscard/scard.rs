@@ -27,7 +27,7 @@ unsafe fn connect(
     let share_mode = dw_share_mode.try_into()?;
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
-    let card_handle = context.connect(&reader_name, share_mode, protocol)?;
+    let card_handle = context.connect(reader_name, share_mode, protocol)?;
     let protocol = card_handle.status()?.protocol.bits();
 
     *ph_card = into_raw_ptr(card_handle) as ScardHandle;
@@ -362,5 +362,6 @@ pub extern "system" fn GetOpenCardNameW(_p: LpOpenCardNameW) -> ScardStatus {
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDlgExtendedError"))]
 #[no_mangle]
 pub extern "system" fn SCardDlgExtendedError() -> i32 {
-    ErrorKind::UnsupportedFeature.into()
+    // TODO: do we really need it? This function seems to be obsolete
+    todo!()
 }

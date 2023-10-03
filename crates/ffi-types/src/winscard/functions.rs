@@ -8,7 +8,8 @@ use crate::{
     Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpVoid, LpWStr,
 };
 
-pub type SCardEstablishContextFn = extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
+pub type SCardEstablishContextFn =
+    unsafe extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
 pub type SCardReleaseContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardIsValidContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
@@ -54,8 +55,10 @@ pub type SCardLocateCardsByATRAFn =
     extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateA, u32) -> ScardStatus;
 pub type SCardLocateCardsByATRWFn =
     extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateW, u32) -> ScardStatus;
-pub type SCardGetStatusChangeAFn = extern "system" fn(ScardContext, u32, LpScardReaderStateA, u32) -> ScardStatus;
-pub type SCardGetStatusChangeWFn = extern "system" fn(ScardContext, u32, LpScardReaderStateW, u32) -> ScardStatus;
+pub type SCardGetStatusChangeAFn =
+    unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateA, u32) -> ScardStatus;
+pub type SCardGetStatusChangeWFn =
+    unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateW, u32) -> ScardStatus;
 pub type SCardCancelFn = extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardReadCacheAFn = extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardReadCacheWFn = extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, LpDword) -> ScardStatus;

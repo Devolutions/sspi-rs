@@ -6,22 +6,57 @@ use ffi_types::winscard::{
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
+use sspi::cert_utils::extract_certificate_and_pk_from_env;
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
-use winscard::{Error, ErrorKind, WinScardResult};
+use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
-use crate::utils::c_w_str_to_string;
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_readers_a, write_readers_w};
+
+const SCARD_STATE_CHANGED: u32 = 0x00000002;
+const SCARD_STATE_INUSE: u32 = 0x00000100;
+const SCARD_STATE_PRESENT: u32 = 0x00000020;
+// Undocumented constant that appears in all API captures
+const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
+const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[no_mangle]
-pub extern "system" fn SCardEstablishContext(
+pub unsafe extern "system" fn SCardEstablishContext(
     _dw_scope: u32,
     _r1: *const c_void,
     _r2: *const c_void,
-    _context: LpScardContext,
+    context: LpScardContext,
 ) -> ScardStatus {
-    todo!()
+    check_null!(context);
+
+    let pin = try_execute!(std::env::var(WINSCARD_PIN_ENV).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidParameter,
+            format!("Cannot extract PIN from the env variable: {}", e),
+        )
+    }));
+    let (certificate, auth_pk) = try_execute!(extract_certificate_and_pk_from_env().map_err(|e| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!(
+                "Error while extracting certificate and private key from env variables: {}",
+                e
+            ),
+        )
+    }));
+    let certificate = try_execute!(picky_asn1_der::to_vec(&certificate).map_err(|e| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Error while trying to encode certificate using the der format: {}", e),
+        )
+    }));
+    let scard_info = SmartCardInfo::new(pin.into_bytes(), certificate, auth_pk);
+    let established_context = PivCardContext::new(scard_info);
+    *context = into_raw_ptr(established_context) as ScardContext;
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
@@ -429,24 +464,78 @@ pub extern "system" fn SCardLocateCardsByATRW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
 #[no_mangle]
-pub extern "system" fn SCardGetStatusChangeA(
+pub unsafe extern "system" fn SCardGetStatusChangeA(
     _context: ScardContext,
     _dw_timeout: u32,
-    _rg_reader_states: LpScardReaderStateA,
-    _c_readers: u32,
+    rg_reader_states: LpScardReaderStateA,
+    c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    check_null!(rg_reader_states);
+
+    let reader_states = std::slice::from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
+
+    let reader_state = match reader_states.last_mut() {
+        Some(state) => state,
+        None => return ErrorKind::InvalidParameter.into(),
+    };
+
+    if reader_state.cb_atr == 0 {
+        let mut rgb_atr = [0; 36];
+        let captured_atr = &[
+            0x3b, 0x8d, 0x01, 0x80, 0xfb, 0xa0, 0x00, 0x00, 0x03, 0x97, 0x42, 0x54, 0x46, 0x59, 0x04, 0x01, 0xcf,
+        ];
+        rgb_atr[0..captured_atr.len()].clone_from_slice(captured_atr);
+
+        reader_state.cb_atr = captured_atr.len().try_into().unwrap();
+        reader_state.rgb_atr = rgb_atr;
+    }
+
+    reader_state.dw_event_state =
+        SCARD_STATE_CHANGED | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_UNNAMED_CONSTANT;
+
+    if reader_states.len() > 1 {
+        reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+    }
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeW"))]
 #[no_mangle]
-pub extern "system" fn SCardGetStatusChangeW(
+pub unsafe extern "system" fn SCardGetStatusChangeW(
     _context: ScardContext,
     _dw_timeout: u32,
-    _rg_reader_states: LpScardReaderStateW,
-    _c_readers: u32,
+    rg_reader_states: LpScardReaderStateW,
+    c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    check_null!(rg_reader_states);
+
+    let reader_states = std::slice::from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
+
+    let reader_state = match reader_states.last_mut() {
+        Some(state) => state,
+        None => return ErrorKind::InvalidParameter.into(),
+    };
+
+    if reader_state.cb_atr == 0 {
+        let mut rgb_atr = [0; 36];
+        let captured_atr = &[
+            0x3b, 0x8d, 0x01, 0x80, 0xfb, 0xa0, 0x00, 0x00, 0x03, 0x97, 0x42, 0x54, 0x46, 0x59, 0x04, 0x01, 0xcf,
+        ];
+        rgb_atr[0..captured_atr.len()].clone_from_slice(captured_atr);
+
+        reader_state.cb_atr = captured_atr.len().try_into().unwrap();
+        reader_state.rgb_atr = rgb_atr;
+    }
+
+    reader_state.dw_event_state =
+        SCARD_STATE_CHANGED | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_UNNAMED_CONSTANT;
+
+    if reader_states.len() > 1 {
+        reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+    }
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
@@ -517,7 +606,7 @@ unsafe fn get_reader_icon(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> WinScardResult<()> {
-    let icon = context.reader_icon(&reader_name)?;
+    let icon = context.reader_icon(reader_name)?;
     let icon_buffer_len = icon.as_ref().len();
     let pcb_icon_len = (*pcb_icon).try_into().unwrap();
 

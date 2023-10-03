@@ -39,9 +39,9 @@ pub struct ScardReaderStateA {
     sz_reader: LpCStr,
     pv_user_data: LpVoid,
     dw_current_state: u32,
-    dw_event_state: u32,
-    cb_atr: u32,
-    rgb_atr: [u8; 36],
+    pub dw_event_state: u32,
+    pub cb_atr: u32,
+    pub rgb_atr: [u8; 36],
 }
 
 pub type LpScardReaderStateA = *mut ScardReaderStateA;
@@ -63,9 +63,9 @@ pub struct ScardReaderStateW {
     sz_reader: LpCWStr,
     pv_user_data: LpVoid,
     dw_current_state: u32,
-    dw_event_state: u32,
-    cb_atr: u32,
-    rgb_atr: [u8; 36],
+    pub dw_event_state: u32,
+    pub cb_atr: u32,
+    pub rgb_atr: [u8; 36],
 }
 
 pub type LpScardReaderStateW = *mut ScardReaderStateW;
