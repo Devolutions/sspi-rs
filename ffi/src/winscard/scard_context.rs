@@ -55,7 +55,7 @@ pub extern "system" fn SCardListReaderGroupsA(
     _gmsz_groups: LpStr,
     _pcch_groups: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsW"))]
@@ -65,7 +65,7 @@ pub extern "system" fn SCardListReaderGroupsW(
     _gmsz_groups: LpWStr,
     _pcch_groups: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersA"))]
@@ -120,7 +120,7 @@ pub extern "system" fn SCardListCardsA(
     _msz_cards: *mut u8,
     _pcch_cards: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsW"))]
@@ -133,7 +133,7 @@ pub extern "system" fn SCardListCardsW(
     _msz_cards: *mut u16,
     _pcch_cards: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesA"))]
@@ -144,7 +144,7 @@ pub extern "system" fn SCardListInterfacesA(
     _pguid_interfaces: LpGuid,
     _pcguid_interfaces: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesW"))]
@@ -155,7 +155,7 @@ pub extern "system" fn SCardListInterfacesW(
     _pguid_interfaces: LpGuid,
     _pcguid_interfaces: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdA"))]
@@ -165,7 +165,7 @@ pub extern "system" fn SCardGetProviderIdA(
     _sz_card: LpCStr,
     _pguid_provider_id: LpGuid,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdW"))]
@@ -175,7 +175,7 @@ pub extern "system" fn SCardGetProviderIdW(
     _sz_card: LpCWStr,
     _pguid_provider_id: LpGuid,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
@@ -187,7 +187,7 @@ pub extern "system" fn SCardGetCardTypeProviderNameA(
     _szProvider: *mut u8,
     _pcch_provider: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameW"))]
@@ -199,31 +199,31 @@ pub extern "system" fn SCardGetCardTypeProviderNameW(
     _szProvider: *mut u16,
     _pcch_provider: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupA"))]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupW"))]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupA"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupW"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderA"))]
@@ -233,7 +233,7 @@ pub extern "system" fn SCardIntroduceReaderA(
     _sz_reader_name: LpCStr,
     _sz_device_name: LpCStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderW"))]
@@ -243,19 +243,19 @@ pub extern "system" fn SCardIntroduceReaderW(
     _sz_reader_name: LpCWStr,
     _sz_device_name: LpCWStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderA"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderA(_context: ScardContext, _sz_reader_name: LpCStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderW"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderW(_context: ScardContext, _sz_reader_name: LpCWStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupA"))]
@@ -265,7 +265,7 @@ pub extern "system" fn SCardAddReaderToGroupA(
     _sz_reader_name: LpCStr,
     _sz_group_name: LpCStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupW"))]
@@ -275,7 +275,7 @@ pub extern "system" fn SCardAddReaderToGroupW(
     _sz_reader_name: LpCWStr,
     _sz_group_name: LpCWStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupA"))]
@@ -285,7 +285,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupA(
     _sz_reader_name: LpCStr,
     _sz_group_name: LpCStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupW"))]
@@ -295,7 +295,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupW(
     _sz_reader_name: LpCWStr,
     _sz_group_name: LpCWStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeA"))]
@@ -310,7 +310,7 @@ pub extern "system" fn SCardIntroduceCardTypeA(
     _pb_atr_mask: LpCByte,
     _cb_atr_len: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeW"))]
@@ -325,7 +325,7 @@ pub extern "system" fn SCardIntroduceCardTypeW(
     _pb_atr_mask: LpCByte,
     _cb_atr_len: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameA"))]
@@ -336,7 +336,7 @@ pub extern "system" fn SCardSetCardTypeProviderNameA(
     _dw_provider_id: u32,
     _sz_provider: LpCStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameW"))]
@@ -347,19 +347,19 @@ pub extern "system" fn SCardSetCardTypeProviderNameW(
     _dw_provider_id: u32,
     _sz_provider: LpCWStr,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeA"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetCardTypeA(_context: ScardContext, _sz_card_name: LpCStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeW"))]
 #[no_mangle]
 pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_name: LpCWStr) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
@@ -389,7 +389,7 @@ pub extern "system" fn SCardLocateCardsA(
     _rg_reader_states: LpScardReaderStateA,
     _c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsW"))]
@@ -400,7 +400,7 @@ pub extern "system" fn SCardLocateCardsW(
     _rg_reader_states: LpScardReaderStateW,
     _c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRA"))]
@@ -412,7 +412,7 @@ pub extern "system" fn SCardLocateCardsByATRA(
     _rg_reader_states: LpScardReaderStateA,
     _c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRW"))]
@@ -424,7 +424,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
     _rg_reader_states: LpScardReaderStateW,
     _c_readers: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
@@ -469,7 +469,7 @@ pub extern "system" fn SCardReadCacheA(
     _data: LpByte,
     _data_len: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
@@ -482,7 +482,7 @@ pub extern "system" fn SCardReadCacheW(
     _data: LpByte,
     _data_len: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
@@ -495,7 +495,7 @@ pub extern "system" fn SCardWriteCacheA(
     _data: LpByte,
     _data_len: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheW"))]
@@ -508,7 +508,7 @@ pub extern "system" fn SCardWriteCacheW(
     _data: LpByte,
     _data_len: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 unsafe fn get_reader_icon(
@@ -637,7 +637,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
     _sz_device_instance_id: LpStr,
     _pcch_device_instance_id: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdW"))]
@@ -648,7 +648,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
     _sz_device_instance_id: LpWStr,
     _pcch_device_instance_id: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdA"))]
@@ -659,7 +659,7 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
     _msz_readers: LpStr,
     _pcch_readers: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdW"))]
@@ -670,11 +670,11 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
     _msz_readers: LpWStr,
     _pcch_readers: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAudit"))]
 #[no_mangle]
 pub extern "system" fn SCardAudit(_context: ScardContext, _dw_event: u32) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }

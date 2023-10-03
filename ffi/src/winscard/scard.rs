@@ -110,7 +110,7 @@ pub extern "system" fn SCardReconnect(
     _dw_initialization: u32,
     _pdw_active_protocol: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_dispo
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancelTransaction"))]
 #[no_mangle]
 pub extern "system" fn SCardCancelTransaction(_handle: ScardHandle) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardState"))]
@@ -161,7 +161,7 @@ pub extern "system" fn SCardState(
     _pb_atr: LpByte,
     _pcb_atr_len: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardStatusA"))]
@@ -281,7 +281,7 @@ pub unsafe extern "system" fn SCardTransmit(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetTransmitCount"))]
 #[no_mangle]
 pub extern "system" fn SCardGetTransmitCount(_handle: ScardHandle, pc_transmit_count: LpDword) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardControl"))]
@@ -321,7 +321,7 @@ pub extern "system" fn SCardGetAttrib(
     _pb_attr: LpByte,
     _pcb_attrLen: LpDword,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetAttrib"))]
@@ -332,35 +332,35 @@ pub extern "system" fn SCardSetAttrib(
     _pb_attr: LpCByte,
     _cb_attrLen: u32,
 ) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardUIDlgSelectCardA"))]
 #[no_mangle]
 pub extern "system" fn SCardUIDlgSelectCardA(_p: LpOpenCardNameExA) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardUIDlgSelectCardW"))]
 #[no_mangle]
 pub extern "system" fn SCardUIDlgSelectCardW(_p: LpOpenCardNameExW) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_GetOpenCardNameA"))]
 #[no_mangle]
 pub extern "system" fn GetOpenCardNameA(_p: LpOpenCardNameA) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_GetOpenCardNameW"))]
 #[no_mangle]
 pub extern "system" fn GetOpenCardNameW(_p: LpOpenCardNameW) -> ScardStatus {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDlgExtendedError"))]
 #[no_mangle]
 pub extern "system" fn SCardDlgExtendedError() -> i32 {
-    todo!()
+    ErrorKind::UnsupportedFeature.into()
 }
