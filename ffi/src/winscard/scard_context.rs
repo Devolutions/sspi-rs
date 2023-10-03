@@ -364,8 +364,10 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
 #[no_mangle]
-pub extern "system" fn SCardFreeMemory(_context: ScardContext, _pv_mem: LpCVoid) -> ScardStatus {
-    todo!()
+pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
+    let _ = Box::from_raw(pv_mem as *mut u8);
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
