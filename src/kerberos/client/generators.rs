@@ -572,6 +572,33 @@ pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Res
     }))
 }
 
+pub fn generate_neg_ap_req_plain(
+    ap_req: ApReq,
+    mech_id: oid::ObjectIdentifier,
+) -> Result<ApplicationTag0<GssApiNegInit>> {
+    let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
+        krb5_oid: ObjectIdentifierAsn1::from(mech_id),
+        krb5_token_id: AP_REQ_TOKEN_ID,
+        krb_msg: ap_req,
+    });
+
+    let data = ExplicitContextTag0::from(NegTokenInit {
+        mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
+        req_flags: Optional::from(None),
+        mech_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
+            picky_asn1_der::to_vec(&krb_blob)?,
+        )))),
+        mech_list_mic: Optional::from(None),
+    });
+
+    let gss_req = GssApiNegInit {
+        oid: ObjectIdentifierAsn1::from(oids::spnego()),
+        neg_token_init: data,
+    };
+
+    Ok(ApplicationTag0(gss_req))
+}
+
 pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
     NegTokenTarg1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))),
