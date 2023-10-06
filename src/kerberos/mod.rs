@@ -1075,8 +1075,8 @@ impl<'a> Kerberos {
                 let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
                 info!(encoded_ap_req_authenticator = ?encoded_auth);
 
-                // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
-                let mech_id = oids::ms_krb5();
+                // FIXME: properly negotiate mech id - Windows always does KRB5 U2U for Non-HTTP Target
+                let mech_id = oids::krb5_user_to_user();
 
                 let mut context_requirements = builder.context_requirements;
 
