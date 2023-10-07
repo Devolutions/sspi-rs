@@ -10,14 +10,15 @@ authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 
-[[example]]
-name = "kerberos"
-path = "examples/kerberos.rs"
-features = "network_client"
-
 [workspace]
-members = ["ffi", "ffi/symbol-rename-macro"]
-exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile"]
+members = [
+  "ffi",
+  "ffi/symbol-rename-macro",
+]
+exclude = [
+  "tools/sspi-ffi-attacker",
+  "tools/wasm-testcompile",
+]
 
 [features]
 default = []
@@ -69,7 +70,7 @@ async-recursion = "1.0.5"
 [target.'cfg(windows)'.dependencies]
 winreg = "0.51"
 winapi = { version = "0.3", features = ["std", "sspi", "rpcdce", "impl-default", "timezoneapi", "wincrypt"] }
-windows = { version = "0.51", features = ["Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+windows = { version = "0.51", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
 windows-sys = { version = "0.48", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
@@ -81,6 +82,4 @@ tokio = { version = "1.32", features = ["time", "rt"] }
 static_assertions = "1"
 whoami = "1.4"
 picky = { version = "7.0.0-rc.8", features = ["x509"] }
-base64 = "0.21.4"
-hyper = "0.14.27"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
