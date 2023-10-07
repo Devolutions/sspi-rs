@@ -848,7 +848,7 @@ impl<'a> Kerberos {
         let generated_neg_ap_req = generate_neg_ap_req_plain(ap_req, mech_id)?;
         let encoded_neg_ap_req = picky_asn1_der::to_vec(&generated_neg_ap_req)?;
         let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-        // the out put token is already a certificate instead of a contentInfo here, need to figure out why
+        // TODO: the out put token is already a certificate instead of a contentInfo here, need to figure out why
         output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
         self.state = KerberosState::ApExchange;
