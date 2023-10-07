@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG) // Adjust level as needed
         .init();
-    let kdc_url = "kdc.your.domain:88".to_string();
+    let kdc_url = std::env::var("SSPI_KDC_URL").expect("a KDC URL set in SSPI_KDC_URL");
     let client_hostname = whoami::hostname();
     let kerberos_config = KerberosConfig::new(&kdc_url, client_hostname.clone());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();
