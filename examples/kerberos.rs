@@ -13,6 +13,7 @@ use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
 use tracing::debug;
 use tracing::info;
+
 const TARGET_NAME: &'static str = "HTTP/your-server-name.your.domain";
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
