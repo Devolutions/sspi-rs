@@ -51,6 +51,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         })?;
 
     let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
+    info!("{:?}", &ap_rep_enc_part);
 
     Ok(ap_rep_enc_part
         .0
