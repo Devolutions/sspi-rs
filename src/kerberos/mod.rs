@@ -653,7 +653,7 @@ impl<'a> Kerberos {
         Ok(())
     }
 
-    pub async fn initialize_security_context_impl(
+    pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
         builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
