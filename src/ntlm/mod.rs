@@ -17,10 +17,11 @@ use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
+    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -83,6 +84,8 @@ pub struct Ntlm {
 
     send_single_host_data: bool,
 
+    signing: bool, // integrity
+    sealing: bool, // confidentiality
     send_signing_key: [u8; HASH_SIZE],
     recv_signing_key: [u8; HASH_SIZE],
     send_sealing_key: Option<Rc4>,
@@ -137,6 +140,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -162,6 +167,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -187,6 +194,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -302,6 +311,15 @@ impl Ntlm {
             NtlmState::Initial => {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 self.state = NtlmState::Negotiate;
+
+                self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
+                self.sealing = builder
+                    .context_requirements
+                    .contains(ClientRequestFlags::CONFIDENTIALITY);
+
+                if self.sealing {
+                    self.signing = true; // sealing implies signing
+                }
 
                 client::write_negotiate(self, &mut output_token.buffer)?
             }

@@ -75,22 +75,25 @@ pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> cra
 }
 
 fn get_flags(context: &Ntlm) -> NegotiateFlags {
-    // NTLMv2
     let mut flags = NegotiateFlags::NTLM_SSP_NEGOTIATE56
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_LM_KEY
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_OEM
-    // ASC_REQ_CONFIDENTIALITY, ISC_REQ_CONFIDENTIALITY always set in the nla
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
-    // other flags
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH
         | NegotiateFlags::NTLM_SSP_NEGOTIATE128
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_EXTENDED_SESSION_SECURITY
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
+
+    if context.sealing {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL;
+    }
+
+    if context.signing {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN;
+    }
 
     if context.config().workstation.is_some() {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_WORKSTATION_SUPPLIED;
