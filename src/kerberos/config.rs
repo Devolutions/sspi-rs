@@ -7,17 +7,10 @@ use crate::kdc::detect_kdc_url;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::{Kerberos, Result};
 
+#[derive(Debug)]
 pub struct KerberosConfig {
     pub url: Option<Url>,
     pub hostname: Option<String>,
-}
-
-impl Debug for KerberosConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("KerberosConfig")
-            .field("url", &self.url)
-            .finish_non_exhaustive()
-    }
 }
 
 impl ProtocolConfig for KerberosConfig {
