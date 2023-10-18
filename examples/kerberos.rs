@@ -6,7 +6,7 @@ use hyper::StatusCode;
 use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    InitializeSecurityContextResult, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi, KerberosConfig,
+    InitializeSecurityContextResult, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi,
 };
 use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
@@ -17,7 +17,6 @@ static PASSWORD: &'static str = "Passoword";
 static AUTH_METHOD: &'static str = "Negotiate"; // Negotiate or Kerberos
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
     let kerberos_config = KerberosConfig::new(&KDC_URL, HOSTNAME.to_string());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
@@ -32,8 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             &input_token,
         );
         if status == SecurityStatus::ContinueNeeded || status == SecurityStatus::Ok {
-            let (token_from_server, status_code) =
-                process_authentication(&output_token, &mut client)?;
+            let (token_from_server, status_code) = process_authentication(&output_token, &mut client)?;
             if status_code == hyper::StatusCode::OK {
                 println!("authenticated");
                 break Ok(());
@@ -44,7 +42,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 }
-
 
 pub(crate) fn get_cred_handle(kerberos: &mut Kerberos) -> AcquireCredentialsHandleResult<Option<CredentialsBuffers>> {
     let identity = sspi::AuthIdentity {
