@@ -212,7 +212,7 @@ impl Negotiate {
         match &negotiated_protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
                 if !is_pku2u {
-                    let ntlm_config = NtlmConfig::new(pku2u.config().hostname.clone());
+                    let ntlm_config = NtlmConfig::new(pku2u.config().client_hostname.clone());
                     filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config)));
                 }
             }
