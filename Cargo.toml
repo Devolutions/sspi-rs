@@ -10,6 +10,11 @@ authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 
+[[example]]
+name = "kerberos"
+features = ["network_client"]
+required-features = ["network_client"]
+
 [workspace]
 members = [
   "ffi",
@@ -79,6 +84,8 @@ futures = "0.3"
 tokio = { version = "1.32", features = ["time", "rt"] }
 
 [dev-dependencies]
+hyper = "0.14.27"
+base64 = "0.21.4"
 static_assertions = "1"
 whoami = "1.4"
 picky = { version = "7.0.0-rc.8", features = ["x509"] }
