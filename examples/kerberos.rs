@@ -1,8 +1,9 @@
 use base64::Engine;
-use hyper::header::{
+use hyper::header::WWW_AUTHENTICATE;
+use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, HOST, USER_AGENT,
 };
-use hyper::StatusCode;
+use reqwest::StatusCode;
 use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
@@ -11,17 +12,17 @@ use sspi::{
 use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
 
-static HOSTNAME: &'static str = "computer_name.domain";
-static USERNAME: &'static str = "user@domain";
-static PASSWORD: &'static str = "Passoword";
-static AUTH_METHOD: &'static str = "Negotiate"; // Negotiate or Kerberos
-
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let kdc_url = std::env::var("SSPI_KDC_URL").expect("a KDC URL set in SSPI_KDC_URL");
-    let kerberos_config = KerberosConfig::new(&kdc_url, HOSTNAME.to_string());
+    let kdc_url = std::env::var("SSPI_KDC_URL").expect("missing KDC URL set in SSPI_KDC_URL"); //tcp://ad-compter-name.domain:88 
+    let hostname = std::env::var("SSPI_WINRM_HOST").expect("missing host name set in SSPI_WINRM_HOST"); // winrm_server_name.domain
+    let username = std::env::var("SSPI_WINRM_USER").expect("missing username set in SSPI_WINRM_USER"); // username@domain
+    let password = std::env::var("SSPI_WINRM_PASS").expect("missing password set in SSPI_WINRM_PASS"); 
+    let auth_method = std::env::var("SSPI_WINRM_AUTH").expect("missing auth METHOD set in SSPI_WINRM_AUTH"); // Negotiate or Kerberos
+
+    let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
-    let mut acq_creds_handle_result = get_cred_handle(&mut kerberos);
+    let mut acq_creds_handle_result = get_cred_handle(&mut kerberos,username,password);
 
     let mut input_token = String::new();
     let mut client = reqwest::blocking::Client::new(); // super IMPORTANT, KEEP-ALIVE the http connection!
@@ -30,10 +31,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             &mut kerberos,
             &mut acq_creds_handle_result.credentials_handle,
             &input_token,
+            &hostname
         );
         if status == SecurityStatus::ContinueNeeded || status == SecurityStatus::Ok {
-            let (token_from_server, status_code) = process_authentication(&output_token, &mut client)?;
-            if status_code == hyper::StatusCode::OK {
+            let (token_from_server, status_code) = process_authentication(&output_token, &mut client,&auth_method,&hostname)?;
+            if status_code == reqwest::StatusCode::OK {
                 println!("authenticated");
                 break Ok(());
             }
@@ -44,10 +46,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-pub(crate) fn get_cred_handle(kerberos: &mut Kerberos) -> AcquireCredentialsHandleResult<Option<CredentialsBuffers>> {
+pub(crate) fn get_cred_handle(kerberos: &mut Kerberos,username:String,password:String) -> AcquireCredentialsHandleResult<Option<CredentialsBuffers>> {
     let identity = sspi::AuthIdentity {
-        username: crate::USERNAME.to_string(),
-        password: crate::PASSWORD.to_string().into(),
+        username,
+        password: password.into(),
         domain: None,
     };
     let acq_creds_handle_result = kerberos
@@ -62,30 +64,34 @@ pub(crate) fn get_cred_handle(kerberos: &mut Kerberos) -> AcquireCredentialsHand
 pub(crate) fn process_authentication(
     token_neeeds_to_be_sent: &String,
     client: &mut reqwest::blocking::Client,
+    auth_method:&str,
+    hostname:&str
 ) -> Result<(String, StatusCode), Box<dyn std::error::Error + Send + Sync>> {
-    let server_result = send_http(token_neeeds_to_be_sent, client)?;
+    let server_result = send_http(token_neeeds_to_be_sent, client,hostname,auth_method)?;
     if server_result.status() == StatusCode::OK {
         return Ok((String::new(), StatusCode::OK));
     }
     let www_authenticate = server_result
         .headers()
-        .get("www-authenticate")
+        .get(WWW_AUTHENTICATE)
         .ok_or("expecting www-authentication header from server but not found")?;
     let server_token = www_authenticate
         .to_str()
         .unwrap()
-        .replace(format!("{} ", AUTH_METHOD).as_str(), "");
+        .replace(format!("{} ", auth_method).as_str(), "");
     Ok((server_token, server_result.status()))
 }
 
 pub(crate) fn send_http(
     negotiate_token: &String,
     client: &mut reqwest::blocking::Client,
+    hostname:&str,
+    auth_method:&str
 ) -> Result<reqwest::blocking::Response, Box<dyn Error + Send + Sync>> {
     let resp = client
-        .post(format!("http://{}:5985/wsman?PSVersion=7.3.8", HOSTNAME))
-        .header(AUTHORIZATION, format!("{} {}", AUTH_METHOD, negotiate_token))
-        .header(HOST, format!("{}:5985", HOSTNAME))
+        .post(format!("http://{}:5985/wsman?PSVersion=7.3.8", hostname))
+        .header(AUTHORIZATION, format!("{} {}", auth_method, negotiate_token))
+        .header(HOST, format!("{}:5985", hostname))
         .header(CONNECTION, "keep-alive")
         .header(CONTENT_LENGTH, "0")
         .header(
@@ -105,8 +111,9 @@ fn step_helper(
     cred_handle: &mut <Kerberos as SspiImpl>::CredentialsHandle,
     input_buffer: &mut Vec<sspi::SecurityBuffer>,
     output_buffer: &mut Vec<sspi::SecurityBuffer>,
+    hostname:&str
 ) -> Result<InitializeSecurityContextResult, Box<dyn std::error::Error>> {
-    let target_name = format!("HTTP/{}", crate::HOSTNAME);
+    let target_name = format!("HTTP/{}", hostname);
     let mut builder = EmptyInitializeSecurityContext::<<Kerberos as SspiImpl>::CredentialsHandle>::new()
         .with_credentials_handle(cred_handle)
         .with_context_requirements(ClientRequestFlags::MUTUAL_AUTH)
@@ -125,6 +132,7 @@ pub fn step(
     kerberos: &mut Kerberos,
     cred_handle: &mut <Kerberos as SspiImpl>::CredentialsHandle,
     input_token: &String,
+    hostname:&str
 ) -> (String, SecurityStatus) {
     let input_buffer = base64::engine::general_purpose::STANDARD.decode(input_token).unwrap();
     let mut secure_input_buffer = vec![SecurityBuffer::new(input_buffer, SecurityBufferType::Token)];
@@ -134,6 +142,7 @@ pub fn step(
         cred_handle,
         &mut secure_input_buffer,
         &mut secure_output_buffer,
+        hostname
     ) {
         Ok(result) => {
             let output_buffer = secure_output_buffer[0].to_owned();
