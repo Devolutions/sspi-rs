@@ -95,7 +95,7 @@ pub struct GenerateAsPaDataOptions<'a> {
     pub with_pre_auth: bool,
 }
 
-#[instrument(level = "trace", ret)]
+#[instrument(level = "trace", ret, skip_all, fields(options.salt, options.enc_params, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         password,

@@ -76,7 +76,7 @@ pub enum AsRepSessionKeyExtractor<'a> {
 }
 
 impl AsRepSessionKeyExtractor<'_> {
-    #[instrument(level = "trace", ret)]
+    #[instrument(level = "trace", ret, skip(self))]
     pub fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
         match self {
             AsRepSessionKeyExtractor::AuthIdentity {
