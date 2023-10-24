@@ -559,7 +559,7 @@ impl<'a> Kerberos {
             cname_type,
             snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
             // 4 = size of u32
-            nonce: &OsRng.gen::<[u8; 4]>(),
+            nonce: &OsRng.gen::<u32>().to_ne_bytes(),
             hostname: &hostname,
             context_requirements: ClientRequestFlags::empty(),
         };
@@ -581,7 +581,7 @@ impl<'a> Kerberos {
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
         info!(?encryption_type, "Negotiated encryption type");
 
-        self.encryption_params.encryption_type = Some(CipherSuite::try_from(encryption_type as usize)?);
+        self.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);
 
         let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password.as_ref(), &self.encryption_params)?;
 

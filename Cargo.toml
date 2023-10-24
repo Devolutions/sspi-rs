@@ -12,7 +12,6 @@ keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 
 [[example]]
 name = "kerberos"
-features = ["network_client"]
 required-features = ["network_client"]
 
 [workspace]

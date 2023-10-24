@@ -10,6 +10,7 @@ use sspi::{
 };
 use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
+
 static KDC_URL: &'static str = "tcp://computer_name.domain:88";
 static HOSTNAME: &'static str = "computer_name.domain";
 static USERNAME: &'static str = "user@domain";
@@ -38,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             input_token = token_from_server;
         } else {
-            panic!("Having problem contiinue authentication");
+            panic!("Having problem continue authentication");
         }
     }
 }
