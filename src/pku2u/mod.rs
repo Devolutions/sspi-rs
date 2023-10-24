@@ -520,7 +520,7 @@ impl Pku2u {
                     snames: &snames,
                     // we don't need the nonce in Pku2u
                     nonce: &[0],
-                    hostname: &self.config.hostname,
+                    hostname: &self.config.client_hostname,
                     context_requirements: builder.context_requirements,
                 })?;
                 let private_key = self.config.private_key.clone();
@@ -925,7 +925,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             config: Pku2uConfig {
                 p2p_certificate: p2p_certificate.clone(),
                 private_key: private_key.clone().into(),
-                hostname: "hostname".into(),
+                client_hostname: "hostname".into(),
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
@@ -950,7 +950,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             config: Pku2uConfig {
                 p2p_certificate,
                 private_key: private_key.into(),
-                hostname: "hostname".into(),
+                client_hostname: "hostname".into(),
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {

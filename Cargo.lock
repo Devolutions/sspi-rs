@@ -140,9 +140,9 @@ checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
 name = "base64"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "414dcefbc63d77c526a76b3afcf6fbb9b5e2791c19c3aa2297733208750c6e53"
+checksum = "9ba43ea6f343b788c8764558649e08df62f86c6ef251fdaeb1ffd010a9ae50a2"
 
 [[package]]
 name = "base64ct"
@@ -1874,6 +1874,7 @@ version = "0.10.1"
 dependencies = [
  "async-dnssd",
  "async-recursion",
+ "base64",
  "bitflags 2.4.0",
  "byteorder",
  "cfg-if",
@@ -1905,6 +1906,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "trust-dns-resolver",
  "url",
  "uuid",
