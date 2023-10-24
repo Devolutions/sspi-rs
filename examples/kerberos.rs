@@ -10,9 +10,9 @@ use sspi::{
     InitializeSecurityContextResult, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi,
 };
 use sspi::{Kerberos, SspiImpl};
-use tracing_subscriber::{fmt, EnvFilter};
-use tracing_subscriber::prelude::*;
 use std::error::Error;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let kdc_url = std::env::var("SSPI_KDC_URL").expect("missing KDC URL set in SSPI_KDC_URL"); //tcp://ad-compter-name.domain:88
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::from_env("SSPI_LOG"))
+        .with(EnvFilter::from_env("SSPI_LOG_LEVEL"))
         .init();
 
     let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
