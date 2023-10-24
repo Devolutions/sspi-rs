@@ -11,14 +11,14 @@ use sspi::{
 use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
 
-static KDC_URL: &'static str = "tcp://computer_name.domain:88";
 static HOSTNAME: &'static str = "computer_name.domain";
 static USERNAME: &'static str = "user@domain";
 static PASSWORD: &'static str = "Passoword";
 static AUTH_METHOD: &'static str = "Negotiate"; // Negotiate or Kerberos
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let kerberos_config = KerberosConfig::new(&KDC_URL, HOSTNAME.to_string());
+    let kdc_url = std::env::var("SSPI_KDC_URL").expect("a KDC URL set in SSPI_KDC_URL");
+    let kerberos_config = KerberosConfig::new(&kdc_url, HOSTNAME.to_string());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
     let mut acq_creds_handle_result = get_cred_handle(&mut kerberos);
