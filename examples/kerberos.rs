@@ -152,7 +152,7 @@ pub fn step(
             res
         }
         Err(_) => {
-            panic!("error steping");
+            panic!("error stepping");
         }
     }
 }
