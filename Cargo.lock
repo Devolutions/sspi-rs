@@ -1906,6 +1906,7 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "trust-dns-resolver",
  "url",
  "uuid",

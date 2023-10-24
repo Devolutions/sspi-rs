@@ -10,6 +10,8 @@ use sspi::{
     InitializeSecurityContextResult, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi,
 };
 use sspi::{Kerberos, SspiImpl};
+use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::prelude::*;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -18,6 +20,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let username = std::env::var("SSPI_WINRM_USER").expect("missing username set in SSPI_WINRM_USER"); // username@domain
     let password = std::env::var("SSPI_WINRM_PASS").expect("missing password set in SSPI_WINRM_PASS");
     let auth_method = std::env::var("SSPI_WINRM_AUTH").expect("missing auth METHOD set in SSPI_WINRM_AUTH"); // Negotiate or Kerberos
+
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_env("SSPI_LOG"))
+        .init();
 
     let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();

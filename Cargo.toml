@@ -87,3 +87,4 @@ base64 = "0.21.4"
 static_assertions = "1"
 whoami = "1.4"
 picky = { version = "7.0.0-rc.8", features = ["x509"] }
+tracing-subscriber = "0.3.17"
