@@ -83,7 +83,6 @@ futures = "0.3"
 tokio = { version = "1.32", features = ["time", "rt"] }
 
 [dev-dependencies]
-hyper = "0.14.27"
 base64 = "0.21.4"
 static_assertions = "1"
 whoami = "1.4"
