@@ -126,7 +126,7 @@ pub fn write_authenticate(
     context.flags = get_flags(&context, credentials);
 
     if !context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
-        session_key = key_exchange_key;    
+        session_key = key_exchange_key;
     }
 
     let message_fields = AuthenticateMessageFields::new(
