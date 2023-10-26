@@ -118,12 +118,17 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    let session_key = OsRng.gen::<[u8; SESSION_KEY_SIZE]>();
+    let mut session_key = OsRng.gen::<[u8; SESSION_KEY_SIZE]>();
     let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
 
     context.flags = get_flags(&context, credentials);
+
+    if !context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+        session_key = key_exchange_key;    
+    }
+
     let message_fields = AuthenticateMessageFields::new(
         credentials,
         lm_challenge_response.as_ref(),
@@ -194,6 +199,7 @@ fn get_flags(context: &Ntlm, identity: &AuthIdentityBuffers) -> NegotiateFlags {
 
     flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE56
         | NegotiateFlags::NTLM_SSP_NEGOTIATE128
+        | NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_EXTENDED_SESSION_SECURITY
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET
@@ -207,7 +213,6 @@ fn get_flags(context: &Ntlm, identity: &AuthIdentityBuffers) -> NegotiateFlags {
 
     if context.signing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
-        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN;
     }
 
     flags
