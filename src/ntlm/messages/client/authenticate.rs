@@ -123,7 +123,7 @@ pub fn write_authenticate(
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
 
-    context.flags = get_flags(&context, credentials);
+    context.flags = get_flags(context, credentials);
 
     if !context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
         session_key = key_exchange_key;
