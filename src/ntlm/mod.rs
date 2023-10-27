@@ -17,10 +17,11 @@ use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
+    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -83,6 +84,8 @@ pub struct Ntlm {
 
     send_single_host_data: bool,
 
+    signing: bool, // integrity
+    sealing: bool, // confidentiality
     send_signing_key: [u8; HASH_SIZE],
     recv_signing_key: [u8; HASH_SIZE],
     send_sealing_key: Option<Rc4>,
@@ -137,6 +140,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -162,6 +167,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -187,6 +194,8 @@ impl Ntlm {
 
             send_single_host_data: false,
 
+            signing: true,
+            sealing: true,
             send_signing_key: [0x00; HASH_SIZE],
             recv_signing_key: [0x00; HASH_SIZE],
             send_sealing_key: None,
@@ -303,6 +312,15 @@ impl Ntlm {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
+                self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
+                self.sealing = builder
+                    .context_requirements
+                    .contains(ClientRequestFlags::CONFIDENTIALITY);
+
+                if self.sealing {
+                    self.signing = true; // sealing implies signing
+                }
+
                 client::write_negotiate(self, &mut output_token.buffer)?
             }
             NtlmState::Challenge => {
@@ -398,10 +416,26 @@ impl Sspi for Ntlm {
             self.complete_auth_token(&mut [])?;
         }
 
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
+        let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
+            buffer
+        } else {
+            SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Stream)?
+        }
+        .buffer
+        .clone();
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        encrypted.extend_from_slice(&data.buffer);
 
-        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(data.buffer.as_slice());
+        if encrypted.len() < 16 {
+            return Err(crate::Error::new(
+                crate::ErrorKind::MessageAltered,
+                "Invalid encrypted message size!",
+            ));
+        }
+
+        let (signature, encrypted_message) = encrypted.split_at(16);
+
+        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
         let digest = compute_digest(&self.recv_signing_key, sequence_number, data.buffer.as_slice())?;
         let checksum = self
@@ -411,8 +445,7 @@ impl Sspi for Ntlm {
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
         let expected_signature = compute_signature(&checksum, sequence_number);
 
-        let signature = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-        if signature.buffer.as_slice() != expected_signature.as_ref() {
+        if signature != expected_signature.as_ref() {
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
                 "Signature verification failed, something nasty is going on!",

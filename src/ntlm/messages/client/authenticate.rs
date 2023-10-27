@@ -118,12 +118,18 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    let session_key = OsRng.gen::<[u8; SESSION_KEY_SIZE]>();
+    context.flags = get_flags(context, credentials);
+
+    let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+        OsRng.gen::<[u8; SESSION_KEY_SIZE]>()
+    } else {
+        key_exchange_key
+    };
+
     let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
 
-    context.flags = get_flags(context.flags, credentials);
     let message_fields = AuthenticateMessageFields::new(
         credentials,
         lm_challenge_response.as_ref(),
@@ -182,31 +188,35 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
     }
 }
 
-fn get_flags(negotiate_flags: NegotiateFlags, identity: &AuthIdentityBuffers) -> NegotiateFlags {
+fn get_flags(context: &Ntlm, identity: &AuthIdentityBuffers) -> NegotiateFlags {
     // set KEY_EXCH flag if it was in the challenge message
-    let mut negotiate_flags = negotiate_flags & NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
+    let mut flags = context.flags & NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
     if !identity.domain.is_empty() {
-        negotiate_flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_DOMAIN_SUPPLIED;
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_DOMAIN_SUPPLIED;
     }
 
     // will not set workstation because it is not used anywhere
 
-    negotiate_flags
-    // NTLMv2
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE56
-    // ASC_REQ_CONFIDENTIALITY, ISC_REQ_CONFIDENTIALITY always set in the nla
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
-    // other flags
+    flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE56
         | NegotiateFlags::NTLM_SSP_NEGOTIATE128
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_EXTENDED_SESSION_SECURITY
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN
+        | NegotiateFlags::NTLM_SSP_NEGOTIATE_EXTENDED_SESSION_SECURITY
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_NTLM
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_REQUEST_TARGET
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO
-        | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION
+        | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
+
+    if context.sealing {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL;
+    }
+
+    if context.signing {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
+    }
+
+    flags
 }
 
 fn write_header(
