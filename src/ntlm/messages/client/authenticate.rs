@@ -118,16 +118,17 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    let mut session_key = OsRng.gen::<[u8; SESSION_KEY_SIZE]>();
+    context.flags = get_flags(context, credentials);
+
+    let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+        OsRng.gen::<[u8; SESSION_KEY_SIZE]>()
+    } else {
+        key_exchange_key
+    };
+
     let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
-
-    context.flags = get_flags(context, credentials);
-
-    if !context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
-        session_key = key_exchange_key;
-    }
 
     let message_fields = AuthenticateMessageFields::new(
         credentials,

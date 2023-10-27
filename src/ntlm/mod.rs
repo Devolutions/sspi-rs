@@ -426,10 +426,16 @@ impl Sspi for Ntlm {
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
         encrypted.extend_from_slice(&data.buffer);
 
-        let signature = encrypted[0..16].to_vec();
-        let enc = encrypted[16..].to_vec();
+        if encrypted.len() < 16 {
+            return Err(crate::Error::new(
+                crate::ErrorKind::MessageAltered,
+                "Invalid encrypted message size!",
+            ));
+        }
+        
+        let (signature, encrypted_message) = encrypted.split_at(16);
 
-        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(enc.as_slice());
+        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
         let digest = compute_digest(&self.recv_signing_key, sequence_number, data.buffer.as_slice())?;
         let checksum = self
@@ -439,7 +445,7 @@ impl Sspi for Ntlm {
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
         let expected_signature = compute_signature(&checksum, sequence_number);
 
-        if signature.as_slice() != expected_signature.as_ref() {
+        if signature != expected_signature.as_ref() {
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
                 "Signature verification failed, something nasty is going on!",
