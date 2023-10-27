@@ -432,7 +432,7 @@ impl Sspi for Ntlm {
                 "Invalid encrypted message size!",
             ));
         }
-        
+
         let (signature, encrypted_message) = encrypted.split_at(16);
 
         *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
