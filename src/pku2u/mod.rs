@@ -320,11 +320,12 @@ impl Sspi for Pku2u {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        if let Some(ref identity_buffers) = self.auth_identity {
-            let identity: AuthIdentity = identity_buffers.clone().into();
+        if let Some(identity_buffers) = &self.auth_identity {
+            let identity =
+                AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
+
             Ok(ContextNames {
                 username: identity.username,
-                domain: identity.domain,
             })
         } else {
             Err(crate::Error::new(

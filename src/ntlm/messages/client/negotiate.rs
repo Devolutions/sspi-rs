@@ -52,7 +52,7 @@ pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> cra
         NEGO_MESSAGE_OFFSET as u32,
         context
             .config
-            .workstation
+            .client_computer_name
             .as_ref()
             .map(|workstation| workstation.as_bytes().to_vec()),
     );
@@ -95,7 +95,7 @@ fn get_flags(context: &Ntlm) -> NegotiateFlags {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
     }
 
-    if context.config().workstation.is_some() {
+    if context.config().client_computer_name.is_some() {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_WORKSTATION_SUPPLIED;
     }
 

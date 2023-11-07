@@ -4,6 +4,7 @@ use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::test::*;
 use crate::AuthIdentity;
+use crate::Username;
 
 #[test]
 fn get_system_time_as_file_time_test_one_second_diff() {
@@ -221,11 +222,11 @@ fn compute_ntlmv2_hash_password_is_less_than_hash_len_offset() {
 #[test]
 fn compute_ntlmv2_hash_password_local_logon() {
     let identity = AuthIdentity {
-        username: String::from("username"),
+        username: Username::new("username", Some("win7")).unwrap(),
         password: String::from("password").into(),
-        domain: Some(String::from("win7")),
     }
     .into();
+
     let expected = [
         0xef, 0xc2, 0xc0, 0x9f, 0x06, 0x11, 0x3d, 0x71, 0x08, 0xd0, 0xd2, 0x29, 0xfa, 0x4d, 0xe6, 0x98,
     ];
@@ -236,11 +237,11 @@ fn compute_ntlmv2_hash_password_local_logon() {
 #[test]
 fn compute_ntlmv2_hash_password_domain_logon() {
     let identity = AuthIdentity {
-        username: String::from("Administrator"),
+        username: Username::new("Administrator", Some("AWAKECODING")).unwrap(),
         password: String::from("Password123!").into(),
-        domain: Some(String::from("AWAKECODING")),
     }
     .into();
+
     let expected = [
         0xf7, 0x46, 0x48, 0xaa, 0x78, 0x78, 0x2e, 0x92, 0x0f, 0x92, 0x9a, 0xed, 0x7f, 0x1d, 0xd5, 0x23,
     ];
@@ -251,14 +252,15 @@ fn compute_ntlmv2_hash_password_domain_logon() {
 #[test]
 fn compute_ntlmv2_hash_works_on_empty_password() {
     let identity = AuthIdentity {
-        username: String::from("Administrator"),
+        username: Username::new("Administrator", Some("AWAKECODING")).unwrap(),
         password: String::new().into(),
-        domain: Some(String::from("AWAKECODING")),
     }
     .into();
+
     let expected = [
         0xa0, 0x84, 0x29, 0x48, 0xa6, 0xb9, 0xac, 0xa7, 0x6c, 0xf5, 0x54, 0xdb, 0x5e, 0xc3, 0x17, 0x76,
     ];
+
     assert_eq!(compute_ntlm_v2_hash(&identity).unwrap(), expected);
 }
 
@@ -270,9 +272,8 @@ fn compute_ntlmv2_hash_with_large_password() {
     let password = String::from_utf8(password).unwrap();
 
     let identity = AuthIdentity {
-        username: String::from("Administrator"),
+        username: Username::new("Administrator", Some("AWAKECODING")).unwrap(),
         password: password.into(),
-        domain: Some(String::from("AWAKECODING")),
     }
     .into();
 

@@ -119,9 +119,8 @@ lazy_static! {
         result
     };
     pub static ref TEST_CREDENTIALS: AuthIdentityBuffers = AuthIdentity {
-        username: String::from("User"),
+        username: Username::new("User", Some("Domain")).unwrap(),
         password: String::from("Password").into(),
-        domain: Some(String::from("Domain")),
     }
     .into();
 }

@@ -5,15 +5,14 @@ use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
     DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi,
-    SspiEx,
+    SspiEx, Username,
 };
 use time::OffsetDateTime;
 
 lazy_static! {
     pub static ref CREDENTIALS: AuthIdentity = AuthIdentity {
-        username: String::from("Username"),
+        username: Username::new("Username", Some("Domain")).unwrap(),
         password: String::from("Password").into(),
-        domain: Some(String::from("Domain"))
     };
     static ref MESSAGE_TO_CLIENT: Vec<u8> = b"Hello, client!".to_vec();
 }
@@ -31,8 +30,8 @@ impl<'a> CredentialsProxyImpl<'a> {
 impl<'a> credssp::CredentialsProxy for CredentialsProxyImpl<'a> {
     type AuthenticationData = AuthIdentity;
 
-    fn auth_data_by_user(&mut self, username: String, _domain: Option<String>) -> io::Result<Self::AuthenticationData> {
-        assert_eq!(username, self.credentials.username);
+    fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData> {
+        assert_eq!(username.account_name(), self.credentials.username.account_name());
 
         Ok(self.credentials.clone())
     }
@@ -163,8 +162,8 @@ where
 {
     if auth_server_status == SecurityStatus::CompleteNeeded || auth_server_status == SecurityStatus::CompleteAndContinue
     {
-        let ContextNames { username, domain } = server.query_context_names()?;
-        let auth_data = credentials_proxy.auth_data_by_user(username, domain)?;
+        let ContextNames { username } = server.query_context_names()?;
+        let auth_data = credentials_proxy.auth_data_by_user(&username)?;
         server.custom_set_auth_identity(auth_data).unwrap();
 
         let mut token = Vec::new();

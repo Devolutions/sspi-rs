@@ -121,7 +121,7 @@ pub struct Kerberos {
 
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
-        let kdc_url = config.url.clone();
+        let kdc_url = config.kdc_url.clone();
 
         Ok(Self {
             state: KerberosState::Negotiate,
@@ -138,7 +138,7 @@ impl Kerberos {
     }
 
     pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
-        let kdc_url = config.url.clone();
+        let kdc_url = config.kdc_url.clone();
 
         Ok(Self {
             state: KerberosState::Negotiate,
@@ -422,11 +422,12 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        if let Some(CredentialsBuffers::AuthIdentity(ref identity_buffers)) = self.auth_identity {
-            let identity: AuthIdentity = identity_buffers.clone().into();
+        if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = &self.auth_identity {
+            let identity =
+                AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
+
             return Ok(ContextNames {
                 username: identity.username,
-                domain: identity.domain,
             });
         }
         #[cfg(feature = "scard")]
@@ -551,7 +552,7 @@ impl<'a> Kerberos {
 
         let cname_type = get_client_principal_name_type(username, domain);
         let realm = &get_client_principal_realm(username, domain);
-        let hostname = unwrap_hostname(self.config.hostname.as_deref())?;
+        let hostname = unwrap_hostname(self.config.client_computer_name.as_deref())?;
 
         let options = GenerateAsReqOptions {
             realm,
@@ -749,7 +750,7 @@ impl<'a> Kerberos {
                     snames: &[TGT_SERVICE_NAME, &realm],
                     // 4 = size of u32
                     nonce: &OsRng.gen::<[u8; 4]>(),
-                    hostname: &unwrap_hostname(self.config.hostname.as_deref())?,
+                    hostname: &unwrap_hostname(self.config.client_computer_name.as_deref())?,
                     context_requirements: builder.context_requirements,
                 };
                 let kdc_req_body = generate_as_req_kdc_body(&options)?;
@@ -1015,8 +1016,8 @@ mod tests {
         let mut kerberos_server = Kerberos {
             state: KerberosState::Final,
             config: KerberosConfig {
-                url: None,
-                hostname: None,
+                kdc_url: None,
+                client_computer_name: None,
             },
             auth_identity: None,
             encryption_params: EncryptionParams {
@@ -1037,8 +1038,8 @@ mod tests {
         let mut kerberos_client = Kerberos {
             state: KerberosState::Final,
             config: KerberosConfig {
-                url: None,
-                hostname: None,
+                kdc_url: None,
+                client_computer_name: None,
             },
             auth_identity: None,
             encryption_params: EncryptionParams {
