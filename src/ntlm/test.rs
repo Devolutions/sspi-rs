@@ -130,8 +130,7 @@ fn decrypt_message_fails_on_incorrect_version() {
         SecurityBuffer::new(
             vec![
                 0x02, 0x00, 0x00, 0x00, 0x2e, 0xdf, 0xf2, 0x61, 0x29, 0xd6, 0x4d, 0xa9, 0xd2, 0x02, 0x96, 0x49,
-            ]
-            .to_vec(),
+            ],
             SecurityBufferType::Token,
         ),
     ];
@@ -150,8 +149,7 @@ fn decrypt_message_fails_on_incorrect_checksum() {
         SecurityBuffer::new(
             vec![
                 0x01, 0x00, 0x00, 0x00, 0x2e, 0xdf, 0xff, 0x61, 0x29, 0xd6, 0x4d, 0xa9, 0xd2, 0x02, 0x96, 0x49,
-            ]
-            .to_vec(),
+            ],
             SecurityBufferType::Token,
         ),
     ];
@@ -170,8 +168,7 @@ fn decrypt_message_fails_on_incorrect_seq_num() {
         SecurityBuffer::new(
             vec![
                 0x01, 0x00, 0x00, 0x00, 0x2e, 0xdf, 0xf2, 0x61, 0x29, 0xd6, 0x4d, 0xa9, 0xd2, 0x02, 0x96, 0x40,
-            ]
-            .to_vec(),
+            ],
             SecurityBufferType::Token,
         ),
     ];
