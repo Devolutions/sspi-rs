@@ -209,7 +209,7 @@ impl TlsConnection {
                     cipher,
                     cipher_strength,
                     hash: ConnectionHash::CalgSha,
-                    hash_strength: hash_algo.output_len as u32,
+                    hash_strength: hash_algo.output_len() as u32,
                     key_exchange: ConnectionKeyExchange::CalgRsaKeyx,
                     exchange_strength: (self.raw_peer_public_key()?.len() * 8) as u32,
                 })
