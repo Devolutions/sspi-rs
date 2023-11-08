@@ -42,7 +42,7 @@ impl ProtocolConfig for Pku2uConfig {
         ))?))
     }
 
-    fn clone(&self) -> Box<dyn ProtocolConfig> {
+    fn box_clone(&self) -> Box<dyn ProtocolConfig> {
         Box::new(Clone::clone(self))
     }
 }

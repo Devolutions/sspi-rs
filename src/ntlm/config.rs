@@ -3,13 +3,16 @@ use crate::{NegotiatedProtocol, Ntlm, Result};
 
 #[derive(Debug, Clone, Default)]
 pub struct NtlmConfig {
-    pub workstation: Option<String>,
+    /// Computer name, or "workstation name", of the client machine performing the authentication attempt
+    ///
+    /// This is also referred to as the "Source Workstation".
+    pub client_computer_name: Option<String>,
 }
 
 impl NtlmConfig {
-    pub fn new(workstation: String) -> Self {
+    pub fn new(client_machine_name: String) -> Self {
         Self {
-            workstation: Some(workstation),
+            client_computer_name: Some(client_machine_name),
         }
     }
 }
@@ -19,7 +22,7 @@ impl ProtocolConfig for NtlmConfig {
         Ok(NegotiatedProtocol::Ntlm(Ntlm::with_config(Clone::clone(self))))
     }
 
-    fn clone(&self) -> Box<dyn ProtocolConfig> {
+    fn box_clone(&self) -> Box<dyn ProtocolConfig> {
         Box::new(Clone::clone(self))
     }
 }

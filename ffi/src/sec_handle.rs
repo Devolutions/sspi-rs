@@ -87,19 +87,22 @@ pub struct CredentialsHandle {
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
-    let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+    let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
 
     if let Some(kdc_url) = attributes.kdc_url() {
-        let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
-        let negotiate_config =
-            NegotiateConfig::new(Box::new(kerberos_config), attributes.package_list.clone(), hostname);
+        let kerberos_config = KerberosConfig::new(&kdc_url, client_computer_name.clone());
+        let negotiate_config = NegotiateConfig::new(
+            Box::new(kerberos_config),
+            attributes.package_list.clone(),
+            client_computer_name,
+        );
 
         Negotiate::new(negotiate_config)
     } else {
         let negotiate_config = NegotiateConfig {
-            protocol_config: Box::new(NtlmConfig::new(hostname.clone())),
+            protocol_config: Box::new(NtlmConfig::new(client_computer_name.clone())),
             package_list: attributes.package_list.clone(),
-            hostname,
+            client_computer_name,
         };
         Negotiate::new(negotiate_config)
     }
@@ -143,16 +146,17 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 )?)?)
             }
             kerberos::PKG_NAME => {
-                let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+                let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
 
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
-                        &kdc_url, hostname,
+                        &kdc_url,
+                        client_computer_name,
                     ))?)
                 } else {
                     let krb_config = KerberosConfig {
-                        hostname: Some(hostname),
-                        url: None,
+                        client_computer_name: Some(client_computer_name),
+                        kdc_url: None,
                     };
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
@@ -932,14 +936,14 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                 let negotiate_config = NegotiateConfig {
                     protocol_config: Box::new(NtlmConfig::new(whoami::hostname())),
                     package_list: None,
-                    hostname: whoami::hostname(),
+                    client_computer_name: whoami::hostname(),
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
-                    hostname:Some(whoami::hostname()),
-                    url:None
+                    client_computer_name:Some(whoami::hostname()),
+                    kdc_url:None
                 };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
                     krb_config

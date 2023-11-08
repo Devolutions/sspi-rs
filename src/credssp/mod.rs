@@ -35,7 +35,7 @@ use crate::{
     Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -53,9 +53,8 @@ pub trait CredentialsProxy {
     ///
     /// # Arguments
     ///
-    /// * `username` - the username string
-    /// * `domain` - the domain string (optional)
-    fn auth_data_by_user(&mut self, username: String, domain: Option<String>) -> io::Result<Self::AuthenticationData>;
+    /// * `username` - The username in UPN or Down-Level Logon Name format
+    fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData>;
 }
 
 macro_rules! try_cred_ssp_server {
@@ -484,7 +483,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
                 self.state = CredSspState::Final;
 
-                Ok(ServerState::Finished(read_credentials.auth_identity().unwrap().into()))
+                let auth_identity = try_cred_ssp_server!(
+                    AuthIdentity::try_from(read_credentials.auth_identity().unwrap())
+                        .map_err(|e| Error::new(ErrorKind::InvalidParameter, e)),
+                    ts_request
+                );
+
+                Ok(ServerState::Finished(auth_identity))
             }
             CredSspState::NegoToken => {
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
@@ -510,13 +515,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         ts_request.nego_tokens = Some(output_token.remove(0).buffer);
                     }
                     AcceptSecurityContextResult { status, .. } if status == SecurityStatus::CompleteNeeded => {
-                        let ContextNames { username, domain } = try_cred_ssp_server!(
+                        let ContextNames { username } = try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.query_context_names(),
                             ts_request
                         );
                         let auth_data = try_cred_ssp_server!(
                             self.credentials
-                                .auth_data_by_user(username, domain)
+                                .auth_data_by_user(&username)
                                 .map_err(|e| crate::Error::new(crate::ErrorKind::LogonDenied, e.to_string())),
                             ts_request
                         );

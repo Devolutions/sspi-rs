@@ -1,19 +1,154 @@
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 use crate::{utils, Error, Secret};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UsernameError {
+    MixedFormat,
+}
+
+impl std::error::Error for UsernameError {}
+
+impl fmt::Display for UsernameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UsernameError::MixedFormat => write!(f, "mixed username format"),
+        }
+    }
+}
+
+/// Enumeration of the supported [User Name Formats].
+///
+/// [User Name Formats]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum UserNameFormat {
+    /// [User principal name] (UPN) format is used to specify an Internet-style name, such as UserName@Example.Microsoft.com.
+    ///
+    /// [User principal name]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats#user-principal-name
+    UserPrincipalName,
+    /// The [down-level logon name] format is used to specify a domain and a user account in that domain, for example, DOMAIN\UserName.
+    ///
+    /// [down-level logon name]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats#down-level-logon-name
+    DownLevelLogonName,
+}
+
+/// A username formatted as either UPN or Down-Level Logon Name
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Username {
+    value: String,
+    format: UserNameFormat,
+    sep_idx: Option<usize>,
+}
+
+impl Username {
+    /// Builds a user principal name from an account name and an UPN suffix
+    pub fn new_upn(account_name: &str, upn_suffix: &str) -> Result<Self, UsernameError> {
+        // NOTE: AD usernames may contain `@`
+        if account_name.contains(['\\']) {
+            return Err(UsernameError::MixedFormat);
+        }
+
+        if upn_suffix.contains(['\\', '@']) {
+            return Err(UsernameError::MixedFormat);
+        }
+
+        Ok(Self {
+            value: format!("{account_name}@{upn_suffix}"),
+            format: UserNameFormat::UserPrincipalName,
+            sep_idx: Some(account_name.len()),
+        })
+    }
+
+    /// Builds a down-level logon name from an account name and a NetBIOS domain name
+    pub fn new_down_level_logon_name(account_name: &str, netbios_domain_name: &str) -> Result<Self, UsernameError> {
+        if account_name.contains(['\\', '@']) {
+            return Err(UsernameError::MixedFormat);
+        }
+
+        if netbios_domain_name.contains(['\\', '@']) {
+            return Err(UsernameError::MixedFormat);
+        }
+
+        Ok(Self {
+            value: format!("{netbios_domain_name}\\{account_name}"),
+            format: UserNameFormat::DownLevelLogonName,
+            sep_idx: Some(netbios_domain_name.len()),
+        })
+    }
+
+    /// Attempts to guess the right name format for the account name/domain combo
+    ///
+    /// If no netbios domain name is provided, or if it is an empty string, the username will
+    /// be parsed as either a user principal name or a down-level logon name.
+    ///
+    /// It falls back to a down-level logon name when the format can’t be guessed.
+    pub fn new(account_name: &str, netbios_domain_name: Option<&str>) -> Result<Self, UsernameError> {
+        match netbios_domain_name {
+            Some(netbios_domain_name) if !netbios_domain_name.is_empty() => {
+                Self::new_down_level_logon_name(account_name, netbios_domain_name)
+            }
+            _ => Self::parse(account_name),
+        }
+    }
+
+    /// Parses the value in order to find if the value is a user principal name or a down-level logon name
+    ///
+    /// If there is no `\` or `@` separator, the value is considered to be a down-level logon name with
+    /// an empty NetBIOS domain.
+    pub fn parse(value: &str) -> Result<Self, UsernameError> {
+        match (value.split_once('\\'), value.rsplit_once('@')) {
+            (None, None) => Ok(Self {
+                value: value.to_owned(),
+                format: UserNameFormat::DownLevelLogonName,
+                sep_idx: None,
+            }),
+            (Some((netbios_domain_name, account_name)), _) => {
+                Self::new_down_level_logon_name(account_name, netbios_domain_name)
+            }
+            (_, Some((account_name, upn_suffix))) => Self::new_upn(account_name, upn_suffix),
+        }
+    }
+
+    /// Returns the internal representation, as-is
+    pub fn inner(&self) -> &str {
+        &self.value
+    }
+
+    /// Returns the [`UserNameFormat`] for this username
+    pub fn format(&self) -> UserNameFormat {
+        self.format
+    }
+
+    /// May return an UPN suffix or NetBIOS domain name depending on the internal format
+    pub fn domain_name(&self) -> Option<&str> {
+        self.sep_idx.map(|idx| match self.format {
+            UserNameFormat::UserPrincipalName => &self.value[idx + 1..],
+            UserNameFormat::DownLevelLogonName => &self.value[..idx],
+        })
+    }
+
+    /// Returns the account name
+    pub fn account_name(&self) -> &str {
+        if let Some(idx) = self.sep_idx {
+            match self.format {
+                UserNameFormat::UserPrincipalName => &self.value[..idx],
+                UserNameFormat::DownLevelLogonName => &self.value[idx + 1..],
+            }
+        } else {
+            &self.value
+        }
+    }
+}
 
 /// Allows you to pass a particular user name and password to the run-time library for the purpose of authentication
 ///
 /// # MSDN
 ///
 /// * [SEC_WINNT_AUTH_IDENTITY_W structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_w)
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AuthIdentity {
-    pub username: String,
+    pub username: Username,
     pub password: Secret<String>,
-    pub domain: Option<String>,
 }
 
 #[derive(Clone, Eq, PartialEq, Default)]
@@ -52,27 +187,39 @@ impl fmt::Debug for AuthIdentityBuffers {
 impl From<AuthIdentity> for AuthIdentityBuffers {
     fn from(credentials: AuthIdentity) -> Self {
         Self {
-            user: utils::string_to_utf16(credentials.username.as_str()),
+            user: utils::string_to_utf16(credentials.username.account_name()),
             domain: credentials
-                .domain
-                .map(|v| utils::string_to_utf16(v.as_str()))
+                .username
+                .domain_name()
+                .map(utils::string_to_utf16)
                 .unwrap_or_default(),
             password: utils::string_to_utf16(credentials.password.as_ref()).into(),
         }
     }
 }
 
-impl From<AuthIdentityBuffers> for AuthIdentity {
-    fn from(credentials_buffers: AuthIdentityBuffers) -> Self {
-        Self {
-            username: utils::bytes_to_utf16_string(credentials_buffers.user.as_ref()),
-            password: utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()).into(),
-            domain: if credentials_buffers.domain.is_empty() {
-                None
-            } else {
-                Some(utils::bytes_to_utf16_string(credentials_buffers.domain.as_ref()))
-            },
-        }
+impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
+    type Error = UsernameError;
+
+    fn try_from(credentials_buffers: &AuthIdentityBuffers) -> Result<Self, Self::Error> {
+        let account_name = utils::bytes_to_utf16_string(&credentials_buffers.user);
+        let domain_name = credentials_buffers
+            .domain
+            .is_empty()
+            .then(|| utils::bytes_to_utf16_string(&credentials_buffers.domain));
+
+        let username = Username::new(&account_name, domain_name.as_deref())?;
+        let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()).into();
+
+        Ok(Self { username, password })
+    }
+}
+
+impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
+    type Error = UsernameError;
+
+    fn try_from(credentials_buffers: AuthIdentityBuffers) -> Result<Self, Self::Error> {
+        AuthIdentity::try_from(&credentials_buffers)
     }
 }
 
@@ -239,6 +386,68 @@ impl TryFrom<Credentials> for CredentialsBuffers {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
             #[cfg(feature = "scard")]
             Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn username_format_conversion() {
+        proptest!(|(value in "[a-zA-Z0-9.]{1,3}@?\\\\?[a-zA-Z0-9.]{1,3}@?\\\\?[a-zA-Z0-9.]{1,3}")| {
+            let res = Username::parse(&value);
+            prop_assume!(res.is_ok());
+            let initial_username = res.unwrap();
+            assert_eq!(initial_username.inner(), value);
+
+            if let Some(domain_name) = initial_username.domain_name() {
+                let upn = Username::new_upn(initial_username.account_name(), domain_name).expect("UPN");
+                assert_eq!(upn.account_name(), initial_username.account_name());
+                assert_eq!(upn.domain_name(), initial_username.domain_name());
+            }
+
+            // A down-level user name can’t contain a @ in the account name
+            if !initial_username.account_name().contains('@') {
+                let netbios_name = Username::new(initial_username.account_name(), initial_username.domain_name()).expect("NetBIOS");
+                assert_eq!(netbios_name.format(), UserNameFormat::DownLevelLogonName);
+                assert_eq!(netbios_name.account_name(), initial_username.account_name());
+                assert_eq!(netbios_name.domain_name(), initial_username.domain_name());
+            }
+        })
+    }
+
+    fn check_round_trip_property(username: &Username) {
+        let round_trip = Username::parse(username.inner()).expect("round-trip parse");
+        assert_eq!(*username, round_trip);
+    }
+
+    #[test]
+    fn upn_round_trip() {
+        proptest!(|(account_name in "[a-zA-Z0-9@.]{1,3}", domain_name in "[a-z0-9.]{1,3}")| {
+            let username = Username::new_upn(&account_name, &domain_name).expect("UPN");
+
+            assert_eq!(username.account_name(), account_name);
+            assert_eq!(username.domain_name(), Some(domain_name.as_str()));
+            assert_eq!(username.format(), UserNameFormat::UserPrincipalName);
+
+            check_round_trip_property(&username);
+        })
+    }
+
+    #[test]
+    fn down_level_logon_name_round_trip() {
+        proptest!(|(account_name in "[a-zA-Z0-9.]{1,3}", domain_name in "[A-Z0-9.]{1,3}")| {
+            let username = Username::new_down_level_logon_name(&account_name, &domain_name).expect("down-level logon name");
+
+            assert_eq!(username.account_name(), account_name);
+            assert_eq!(username.domain_name(), Some(domain_name.as_str()));
+            assert_eq!(username.format(), UserNameFormat::DownLevelLogonName);
+
+            check_round_trip_property(&username);
         })
     }
 }

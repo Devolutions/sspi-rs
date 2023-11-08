@@ -31,14 +31,17 @@ lazy_static! {
 
 pub trait ProtocolConfig: Debug + Send + Sync {
     fn new_client(&self) -> Result<NegotiatedProtocol>;
-    fn clone(&self) -> Box<dyn ProtocolConfig>;
+    fn box_clone(&self) -> Box<dyn ProtocolConfig>;
 }
 
 #[derive(Debug)]
 pub struct NegotiateConfig {
     pub protocol_config: Box<dyn ProtocolConfig>,
     pub package_list: Option<String>,
-    pub hostname: String,
+    /// Computer name, or "workstation name", of the client machine performing the authentication attempt
+    ///
+    /// This is also referred to as the "Source Workstation", i.e.: the name of the computer attempting to logon.
+    pub client_computer_name: String,
 }
 
 impl NegotiateConfig {
@@ -46,20 +49,20 @@ impl NegotiateConfig {
     pub fn new(
         protocol_config: Box<dyn ProtocolConfig + Send>,
         package_list: Option<String>,
-        hostname: String,
+        client_computer_name: String,
     ) -> Self {
         Self {
             protocol_config,
             package_list,
-            hostname,
+            client_computer_name,
         }
     }
 
-    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>, hostname: String) -> Self {
+    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>, client_computer_name: String) -> Self {
         Self {
             protocol_config,
             package_list: None,
-            hostname,
+            client_computer_name,
         }
     }
 }
@@ -67,9 +70,9 @@ impl NegotiateConfig {
 impl Clone for NegotiateConfig {
     fn clone(&self) -> Self {
         Self {
-            protocol_config: self.protocol_config.clone(),
+            protocol_config: self.protocol_config.box_clone(),
             package_list: None,
-            hostname: self.hostname.clone(),
+            client_computer_name: self.client_computer_name.clone(),
         }
     }
 }
@@ -92,23 +95,12 @@ impl NegotiatedProtocol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Negotiate {
     protocol: NegotiatedProtocol,
     package_list: Option<String>,
     auth_identity: Option<CredentialsBuffers>,
-    hostname: String,
-}
-
-impl Clone for Negotiate {
-    fn clone(&self) -> Self {
-        Self {
-            protocol: self.protocol.clone(),
-            package_list: self.package_list.clone(),
-            auth_identity: self.auth_identity.clone(),
-            hostname: self.hostname.clone(),
-        }
-    }
+    client_computer_name: String,
 }
 
 struct PackageListConfig {
@@ -120,7 +112,9 @@ struct PackageListConfig {
 impl Negotiate {
     pub fn new(config: NegotiateConfig) -> Result<Self> {
         let mut protocol = config.protocol_config.new_client()?;
-        if let Some(filtered_protocol) = Self::filter_protocol(&protocol, &config.package_list, &config.hostname)? {
+        if let Some(filtered_protocol) =
+            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name)?
+        {
             protocol = filtered_protocol;
         }
 
@@ -128,7 +122,7 @@ impl Negotiate {
             protocol,
             package_list: config.package_list,
             auth_identity: None,
-            hostname: config.hostname,
+            client_computer_name: config.client_computer_name,
         })
     }
 
@@ -149,7 +143,7 @@ impl Negotiate {
                 info!("Negotiate: try Pku2u");
 
                 self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(
-                    Pku2uConfig::default_client_config(self.hostname.clone())?,
+                    Pku2uConfig::default_client_config(self.client_computer_name.clone())?,
                 )?);
             }
 
@@ -158,13 +152,15 @@ impl Negotiate {
 
                 self.protocol =
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
-                        url: Some(host),
-                        hostname: Some(self.hostname.clone()),
+                        kdc_url: Some(host),
+                        client_computer_name: Some(self.client_computer_name.clone()),
                     })?);
             }
         }
 
-        if let Some(filtered_protocol) = Self::filter_protocol(&self.protocol, &self.package_list, &self.hostname)? {
+        if let Some(filtered_protocol) =
+            Self::filter_protocol(&self.protocol, &self.package_list, &self.client_computer_name)?
+        {
             self.protocol = filtered_protocol;
         }
 
@@ -200,7 +196,7 @@ impl Negotiate {
     fn filter_protocol(
         negotiated_protocol: &NegotiatedProtocol,
         package_list: &Option<String>,
-        hostname: &str,
+        client_computer_name: &str,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
@@ -220,7 +216,7 @@ impl Negotiate {
                 if !is_kerberos {
                     let ntlm_config = kerberos
                         .config()
-                        .hostname
+                        .client_computer_name
                         .clone()
                         .map(NtlmConfig::new)
                         .unwrap_or_default();
@@ -230,8 +226,8 @@ impl Negotiate {
             NegotiatedProtocol::Ntlm(_) => {
                 if !is_ntlm {
                     let config = KerberosConfig {
-                        hostname: Some(hostname.to_owned()),
-                        url: None,
+                        client_computer_name: Some(client_computer_name.to_owned()),
+                        kdc_url: None,
                     };
 
                     let kerberos_client = Kerberos::new_client_from_config(config)?;
@@ -262,7 +258,7 @@ impl Negotiate {
         let can_downgrade = self.can_downgrade_ntlm();
 
         if can_downgrade && should_downgrade && !self.is_protocol_ntlm() {
-            let ntlm_config = NtlmConfig::new(self.hostname.clone());
+            let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
             self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
         }
     }
@@ -388,12 +384,14 @@ impl SspiImpl for Negotiate {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
-                String::from("The client must specify the auth data"),
+                "The client must specify the auth data",
             ));
         }
 
         if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
-            self.negotiate_protocol(&identity.username, identity.domain.as_deref().unwrap_or_default())?;
+            let account_name = identity.username.account_name();
+            let domain_name = identity.username.domain_name().unwrap_or("");
+            self.negotiate_protocol(account_name, domain_name)?;
         }
 
         self.auth_identity = builder
@@ -505,13 +503,11 @@ impl<'a> Negotiate {
         }
 
         if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-            let auth_identity: AuthIdentity = identity.clone().into();
-
-            if let Some(domain) = &auth_identity.domain {
-                self.negotiate_protocol(&auth_identity.username, domain)?;
-            } else {
-                self.negotiate_protocol(&auth_identity.username, "")?;
-            }
+            let auth_identity =
+                AuthIdentity::try_from(&*identity).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
+            let account_name = auth_identity.username.account_name();
+            let domain_name = auth_identity.username.domain_name().unwrap_or("");
+            self.negotiate_protocol(account_name, domain_name)?;
         }
 
         #[cfg(feature = "scard")]
@@ -541,7 +537,7 @@ impl<'a> Negotiate {
 
                     let ntlm_config = kerberos
                         .config()
-                        .hostname
+                        .client_computer_name
                         .clone()
                         .map(NtlmConfig::new)
                         .unwrap_or_default();

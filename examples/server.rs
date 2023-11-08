@@ -9,7 +9,7 @@ use std::net::{TcpListener, TcpStream};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
     AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi,
+    SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -23,10 +23,14 @@ fn main() -> Result<(), io::Error> {
 
     let mut ntlm = Ntlm::new();
 
+    let account_name = whoami::username();
+    let computer_name = whoami::hostname();
+    let username =
+        Username::new(&account_name, Some(&computer_name)).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
     let identity = AuthIdentity {
-        username: whoami::username(),
+        username,
         password: String::from("password").into(),
-        domain: Some(whoami::hostname()),
     };
 
     do_authentication(&mut ntlm, &identity, &mut stream).expect("Failed to authenticate connection");

@@ -11,6 +11,7 @@
 //!
 //! ```rust
 //! use sspi::Sspi;
+//! use sspi::Username;
 //! use sspi::Ntlm;
 //! use sspi::builders::EmptyInitializeSecurityContext;
 //! use sspi::SspiImpl;
@@ -18,9 +19,8 @@
 //! let mut ntlm = Ntlm::new();
 //!
 //! let identity = sspi::AuthIdentity {
-//!     username: "user".to_string(),
+//!     username: Username::parse("user").unwrap(),
 //!     password: "password".to_string().into(),
-//!     domain: None,
 //! };
 //!
 //! let mut acq_creds_handle_result = ntlm
@@ -99,7 +99,7 @@ use picky_krb::messages::KrbError;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers};
+pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
 use self::builders::{
@@ -221,13 +221,13 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
     /// let identity = sspi::AuthIdentity {
-    ///     username: "user".to_string(),
+    ///     username: Username::parse("user").unwrap(),
     ///     password: "password".to_string().into(),
-    ///     domain: None,
     /// };
     ///
     /// # #[allow(unused_variables)]
@@ -269,15 +269,15 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// # use sspi::builders::EmptyInitializeSecurityContext;
     /// # use sspi::SspiImpl;
     /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// #
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: whoami::username(),
+    /// #     username: Username::new(&whoami::username(), Some(&whoami::hostname())).unwrap(),
     /// #     password: String::from("password").into(),
-    /// #     domain: Some(whoami::hostname()),
     /// # };
     /// #
     /// # let mut acq_cred_result = ntlm
@@ -330,15 +330,15 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// # use sspi::builders::EmptyInitializeSecurityContext;
     /// # use sspi::SspiImpl;
     /// #
     /// # let mut client_ntlm = sspi::Ntlm::new();
     /// #
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: "user".to_string(),
+    /// #     username: Username::parse("user").unwrap(),
     /// #     password: "password".to_string().into(),
-    /// #     domain: None,
     /// # };
     /// #
     /// # let mut client_acq_cred_result = client_ntlm
@@ -410,6 +410,7 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// # use sspi::builders::EmptyInitializeSecurityContext;
     /// # use sspi::SspiImpl;
     /// #
@@ -420,9 +421,8 @@ where
     /// # let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     /// #
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: "user".to_string(),
+    /// #     username: Username::parse("user").unwrap(),
     /// #     password: "password".to_string().into(),
-    /// #     domain: None,
     /// # };
     /// #
     /// # let mut client_acq_cred_result = client_ntlm
@@ -496,6 +496,7 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// # use sspi::builders::EmptyInitializeSecurityContext;
     /// # use sspi::SspiImpl;
     /// #
@@ -506,9 +507,8 @@ where
     /// # let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     /// #
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: "user".to_string(),
+    /// #     username: Username::parse("user").unwrap(),
     /// #     password: "password".to_string().into(),
-    /// #     domain: None,
     /// # };
     /// #
     /// # let mut client_acq_cred_result = client_ntlm
@@ -606,6 +606,7 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
     /// # use sspi::builders::EmptyInitializeSecurityContext;
     /// # use sspi::SspiImpl;
     /// #
@@ -616,9 +617,8 @@ where
     /// # let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     /// #
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: "user".to_string(),
+    /// #     username: Username::parse("user").unwrap(),
     /// #     password: "password".to_string().into(),
-    /// #     domain: None,
     /// # };
     /// #
     /// # let mut client_acq_cred_result = ntlm
@@ -730,11 +730,12 @@ where
     ///
     /// ```
     /// # use sspi::Sspi;
+    /// # use sspi::Username;
+    /// #
     /// # let mut ntlm = sspi::Ntlm::new();
     /// # let identity = sspi::AuthIdentity {
-    /// #     username: "user".to_string(),
+    /// #     username: Username::parse("user").unwrap(),
     /// #     password: "password".to_string().into(),
-    /// #     domain: None,
     /// # };
     /// #
     /// # let _acq_cred_result = ntlm
@@ -744,8 +745,8 @@ where
     /// #     .execute().unwrap();
     /// #
     /// let names = ntlm.query_context_names().unwrap();
-    /// println!("Username: {:?}", names.username);
-    /// println!("Domain: {:?}", names.domain);
+    /// println!("Username: {:?}", names.username.account_name());
+    /// println!("Domain: {:?}", names.username.domain_name());
     /// ```
     ///
     /// # MSDN
@@ -1663,8 +1664,7 @@ bitflags! {
 /// * [SecPkgContext_NamesW structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_namesw)
 #[derive(Debug, Clone)]
 pub struct ContextNames {
-    pub username: String,
-    pub domain: Option<String>,
+    pub username: Username,
 }
 
 /// The kind of an SSPI related error. Enables to specify an error based on its type.
@@ -1777,10 +1777,10 @@ pub enum SecurityStatus {
 
 impl Error {
     /// Allows to fill a new error easily, supplying it with a coherent description.
-    pub fn new(error_type: ErrorKind, description: impl Into<String>) -> Self {
+    pub fn new(error_type: ErrorKind, description: impl ToString) -> Self {
         Self {
             error_type,
-            description: description.into(),
+            description: description.to_string(),
             nstatus: None,
         }
     }

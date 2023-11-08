@@ -1,18 +1,22 @@
 use sspi::ntlm::NtlmConfig;
-use sspi::{credssp, Credentials};
+use sspi::{credssp, AuthIdentity, Credentials, Username};
 use wasm_bindgen::prelude::*;
-
 
 #[wasm_bindgen]
 pub fn credssp_client() {
+    let identity = AuthIdentity {
+        username: Username::parse("NETBIOSDMN\\AccountName").unwrap(),
+        password: String::from("secret").into(),
+    };
+
     let mut cred_ssp_client = credssp::CredSspClient::new(
         Vec::new(),
-        Credentials::AuthIdentity(Default::default()),
+        Credentials::AuthIdentity(identity),
         credssp::CredSspMode::WithCredentials,
         credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
             protocol_config: Box::<NtlmConfig>::default(),
             package_list: None,
-            hostname: "testhostname".into(),
+            client_computer_name: "win2017".into(),
         }),
         String::new(),
     )
