@@ -8,6 +8,7 @@ use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
     InitializeSecurityContextResult, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi,
+    Username,
 };
 use sspi::{Kerberos, SspiImpl};
 use std::error::Error;
@@ -60,9 +61,8 @@ pub(crate) fn get_cred_handle(
     password: String,
 ) -> AcquireCredentialsHandleResult<Option<CredentialsBuffers>> {
     let identity = sspi::AuthIdentity {
-        username,
+        username: Username::parse(&username).expect("username is not in the correct format"),
         password: password.into(),
-        domain: None,
     };
     let acq_creds_handle_result = kerberos
         .acquire_credentials_handle()
