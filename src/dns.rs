@@ -348,24 +348,26 @@ where
 {
     use std::thread;
 
-    use tokio::runtime::{Builder, Handle};
+    use tokio::runtime::{Builder, Handle, Runtime, RuntimeFlavor};
+    use tokio::task;
+
+    fn new_runtime() -> Runtime {
+        Builder::new_current_thread().enable_all().build().unwrap()
+    }
 
     match Handle::try_current() {
         Ok(handle) => {
-            // Tokio runtime already exists, cannot block again on the same thread.
-            // Spawn a new thread to run the blocking code.
-            thread::scope(|s| s.spawn(move || handle.block_on(fut.into_future())).join().unwrap())
-        }
-        Err(err) => {
-            if err.is_missing_context() {
-                // No existing tokio runtime context, block on a new one.
-                let rt = Builder::new_current_thread().enable_all().build().unwrap();
-                return rt.block_on(fut.into_future());
+            match handle.runtime_flavor() {
+                RuntimeFlavor::CurrentThread => thread::scope(|s| {
+                    s.spawn(move || new_runtime().block_on(fut.into_future()))
+                        .join()
+                        .unwrap()
+                }),
+                // block_in_place can't be used in current_thread runtime
+                _ => task::block_in_place(move || handle.block_on(fut.into_future())),
             }
-
-            // ThreadLocalDestroyed error should never happen.
-            panic!("Unexpected error when trying to get current runtime: {}", err);
         }
+        Err(_) => new_runtime().block_on(fut.into_future()),
     }
 }
 

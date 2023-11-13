@@ -27,7 +27,7 @@ exclude = [
 [features]
 default = []
 network_client = ["dep:reqwest", "dep:portpicker"]
-dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
+dns_resolver = ["dep:trust-dns-resolver", "dep:tokio", "tokio/rt-multi-thread"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement
 tsssp = ["dep:rustls"]
 # Turns on Kerberos smart card login (available only on Windows and users WinSCard API)
@@ -81,7 +81,7 @@ windows-sys = { version = "0.48", features = ["Win32_Security_Cryptography", "Wi
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { version = "1.32", features = ["time", "rt"] }
+tokio = { version = "1.32", features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 base64 = "0.21"
