@@ -32,7 +32,7 @@ use self::client::extractors::{
 use self::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request, generate_neg_ap_req,
     generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req, get_client_principal_name_type,
-    get_client_principal_realm, ChecksumOptions,ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
+    get_client_principal_realm, ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions,
 };
 use self::config::KerberosConfig;
@@ -871,7 +871,7 @@ impl<'a> Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
-                // the original flag is 
+                // the original flag is
                 // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
                 // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
                 let flags = builder.context_requirements.into();

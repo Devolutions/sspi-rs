@@ -405,8 +405,8 @@ bitflags::bitflags! {
 
 impl From<ClientRequestFlags> for GssFlags {
     /*
-        the semantics of some of the flags of SSPI are I believe one to one mapped to the GSS flags
-     */
+       the semantics of some of the flags of SSPI are I believe one to one mapped to the GSS flags
+    */
     fn from(value: ClientRequestFlags) -> Self {
         let mut flags = GssFlags::empty();
 
@@ -415,19 +415,19 @@ impl From<ClientRequestFlags> for GssFlags {
         }
 
         if value.contains(ClientRequestFlags::MUTUAL_AUTH) {
-            flags |= GssFlags::GSS_C_MUTUAL_FLAG ;
+            flags |= GssFlags::GSS_C_MUTUAL_FLAG;
         }
 
         if value.contains(ClientRequestFlags::REPLAY_DETECT) {
-            flags |= GssFlags::GSS_C_REPLAY_FLAG ;
+            flags |= GssFlags::GSS_C_REPLAY_FLAG;
         }
 
         if value.contains(ClientRequestFlags::SEQUENCE_DETECT) {
-            flags |= GssFlags::GSS_C_SEQUENCE_FLAG ;
+            flags |= GssFlags::GSS_C_SEQUENCE_FLAG;
         }
-        
+
         if value.contains(ClientRequestFlags::CONFIDENTIALITY) {
-            flags |= GssFlags::GSS_C_CONF_FLAG ;
+            flags |= GssFlags::GSS_C_CONF_FLAG;
         }
 
         if value.contains(ClientRequestFlags::INTEGRITY) {
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(checksum_values.inner[20..24], expected_bytes);
     }
 
-     #[test]
+    #[test]
     fn test_default() {
         // ensure backwards compatibility
         let checksum_values = ChecksumValues::default();
@@ -756,9 +756,13 @@ mod tests {
     #[test]
     fn test_flag_for_sign_and_seal() {
         let mut checksum_values = ChecksumValues::default();
-        let flags = GssFlags::GSS_C_MUTUAL_FLAG | GssFlags::GSS_C_REPLAY_FLAG | GssFlags::GSS_C_SEQUENCE_FLAG | GssFlags::GSS_C_CONF_FLAG | GssFlags::GSS_C_INTEG_FLAG;
+        let flags = GssFlags::GSS_C_MUTUAL_FLAG
+            | GssFlags::GSS_C_REPLAY_FLAG
+            | GssFlags::GSS_C_SEQUENCE_FLAG
+            | GssFlags::GSS_C_CONF_FLAG
+            | GssFlags::GSS_C_INTEG_FLAG;
         checksum_values.set_flags(flags);
-        let expected_bytes = [0x3E, 0x00, 0x00,0x00];
+        let expected_bytes = [0x3E, 0x00, 0x00, 0x00];
         assert_eq!(checksum_values.inner[20..24], expected_bytes);
     }
 }
