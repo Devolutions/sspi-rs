@@ -362,9 +362,9 @@ impl Default for ChecksumValues {
     }
 }
 
-impl Into<Vec<u8>> for ChecksumValues {
-    fn into(self) -> Vec<u8> {
-        self.inner
+impl From<ChecksumValues> for Vec<u8> {
+    fn from(val: ChecksumValues) -> Self {
+        val.inner
     }
 }
 

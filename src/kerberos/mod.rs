@@ -33,7 +33,7 @@ use self::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request, generate_neg_ap_req,
     generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req, get_client_principal_name_type,
     get_client_principal_realm, ChecksumOptions,ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
+    GenerateAuthenticatorOptions,
 };
 use self::config::KerberosConfig;
 use self::pa_datas::AsReqPaDataOptions;
@@ -44,7 +44,7 @@ use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{
-    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, GssFlags,
+    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
@@ -888,7 +888,7 @@ impl<'a> Kerberos {
 
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                        checksum_value: checksum_value,
+                        checksum_value,
                     }),
                     channel_bindings: self.channel_bindings.as_ref(),
                     extensions: Vec::new(),
