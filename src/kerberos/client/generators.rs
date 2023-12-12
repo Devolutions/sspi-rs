@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bitflags;
 use md5::{Digest, Md5};
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
@@ -345,7 +346,100 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
 #[derive(Debug)]
 pub struct ChecksumOptions {
     pub checksum_type: Vec<u8>,
-    pub checksum_value: Vec<u8>,
+    pub checksum_value: ChecksumValues,
+}
+
+#[derive(Debug)]
+pub struct ChecksumValues {
+    inner: Vec<u8>, // use named fields for future extensibility, this is a temporary solution
+}
+
+impl Default for ChecksumValues {
+    fn default() -> Self {
+        Self {
+            inner: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+        }
+    }
+}
+
+impl Into<Vec<u8>> for ChecksumValues {
+    fn into(self) -> Vec<u8> {
+        self.inner
+    }
+}
+
+impl From<[u8; 24]> for ChecksumValues {
+    fn from(bytes: [u8; 24]) -> Self {
+        ChecksumValues {
+            inner: Vec::from(bytes),
+        }
+    }
+}
+
+impl ChecksumValues {
+    pub(crate) fn set_flags(&mut self, flags: GssFlags) {
+        let flag_bits = flags.bits();
+        let flag_bytes = flag_bits.to_le_bytes();
+        self.inner[20..24].copy_from_slice(&flag_bytes);
+    }
+
+    pub(crate) fn get_inner(self) -> Vec<u8> {
+        self.inner
+    }
+}
+
+bitflags::bitflags! {
+    //https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1, this is crutial for LDAPS
+    #[derive(Debug,Clone,Copy)]
+    pub(crate) struct GssFlags: u32 {
+        const GSS_C_DELEG_FLAG      = 0b00000001;
+        const GSS_C_MUTUAL_FLAG     = 0b00000010;
+        const GSS_C_REPLAY_FLAG     = 0b00000100;
+        const GSS_C_SEQUENCE_FLAG   = 0b00001000;
+        const GSS_C_CONF_FLAG       = 0b00010000;
+        const GSS_C_INTEG_FLAG      = 0b00100000;
+        const GSS_C_ANON_FLAG       = 0b01000000;
+        const GSS_C_PROT_READY_FLAG = 0b10000000;
+    }
+}
+
+impl From<ClientRequestFlags> for GssFlags {
+    /*
+        the semantics of some of the flags of SSPI are I believe one to one mapped to the GSS flags
+     */
+    fn from(value: ClientRequestFlags) -> Self {
+        let mut flags = GssFlags::empty();
+
+        if value.contains(ClientRequestFlags::DELEGATE) {
+            flags |= GssFlags::GSS_C_DELEG_FLAG;
+        }
+
+        if value.contains(ClientRequestFlags::MUTUAL_AUTH) {
+            flags |= GssFlags::GSS_C_MUTUAL_FLAG ;
+        }
+
+        if value.contains(ClientRequestFlags::REPLAY_DETECT) {
+            flags |= GssFlags::GSS_C_REPLAY_FLAG ;
+        }
+
+        if value.contains(ClientRequestFlags::SEQUENCE_DETECT) {
+            flags |= GssFlags::GSS_C_SEQUENCE_FLAG ;
+        }
+        
+        if value.contains(ClientRequestFlags::CONFIDENTIALITY) {
+            flags |= GssFlags::GSS_C_CONF_FLAG ;
+        }
+
+        if value.contains(ClientRequestFlags::INTEGRITY) {
+            flags |= GssFlags::GSS_C_INTEG_FLAG;
+        }
+
+        if value.contains(ClientRequestFlags::NO_INTEGRITY) {
+            flags &= !GssFlags::GSS_C_INTEG_FLAG;
+        }
+
+        flags
+    }
 }
 
 #[derive(Debug)]
@@ -396,9 +490,10 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 
     let cksum = if let Some(ChecksumOptions {
         checksum_type,
-        mut checksum_value,
+        checksum_value,
     }) = checksum
     {
+        let mut checksum_value = checksum_value.get_inner();
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
@@ -636,4 +731,34 @@ pub fn generate_krb_priv_request(
         ap_message: ApMessage::ApReq(ap_req),
         krb_priv,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_flags() {
+        let mut checksum_values = ChecksumValues::default();
+        let flags = GssFlags::GSS_C_MUTUAL_FLAG | GssFlags::GSS_C_REPLAY_FLAG;
+        checksum_values.set_flags(flags);
+        let expected_bytes = flags.bits().to_le_bytes();
+        assert_eq!(checksum_values.inner[20..24], expected_bytes);
+    }
+
+     #[test]
+    fn test_default() {
+        // ensure backwards compatibility
+        let checksum_values = ChecksumValues::default();
+        assert_eq!(checksum_values.get_inner(), AUTHENTICATOR_DEFAULT_CHECKSUM);
+    }
+
+    #[test]
+    fn test_flag_for_sign_and_seal() {
+        let mut checksum_values = ChecksumValues::default();
+        let flags = GssFlags::GSS_C_MUTUAL_FLAG | GssFlags::GSS_C_REPLAY_FLAG | GssFlags::GSS_C_SEQUENCE_FLAG | GssFlags::GSS_C_CONF_FLAG | GssFlags::GSS_C_INTEG_FLAG;
+        checksum_values.set_flags(flags);
+        let expected_bytes = [0x3E, 0x00, 0x00,0x00];
+        assert_eq!(checksum_values.inner[20..24], expected_bytes);
+    }
 }

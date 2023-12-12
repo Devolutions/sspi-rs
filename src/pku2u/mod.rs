@@ -665,7 +665,7 @@ impl Pku2u {
                     }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.into(),
                     }),
                     channel_bindings: None,
                     extensions: vec![generate_authenticator_extension(

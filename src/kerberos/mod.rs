@@ -32,7 +32,7 @@ use self::client::extractors::{
 use self::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request, generate_neg_ap_req,
     generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req, get_client_principal_name_type,
-    get_client_principal_realm, ChecksumOptions, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
+    get_client_principal_realm, ChecksumOptions,ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions, AUTHENTICATOR_DEFAULT_CHECKSUM,
 };
 use self::config::KerberosConfig;
@@ -44,7 +44,7 @@ use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{
-    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
+    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, GssFlags,
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
@@ -871,6 +871,13 @@ impl<'a> Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
+                // the original flag is 
+                // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
+                // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
+                let flags = builder.context_requirements.into();
+                let mut checksum_value = ChecksumValues::default();
+                checksum_value.set_flags(flags);
+
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
                     seq_num: Some(seq_num),
@@ -878,9 +885,10 @@ impl<'a> Kerberos {
                         key_type: enc_type.clone(),
                         key_value: authenticator_sub_key,
                     }),
+
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                        checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
+                        checksum_value: checksum_value,
                     }),
                     channel_bindings: self.channel_bindings.as_ref(),
                     extensions: Vec::new(),
