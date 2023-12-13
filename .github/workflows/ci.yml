@@ -36,7 +36,7 @@ jobs:
         include:
           - os: win
             runner: windows-2022
-            additional-args: --features tsssp
+            additional-args: --features tsssp,scard
           - os: osx
             runner: macos-12
           - os: linux
@@ -67,7 +67,7 @@ jobs:
             crate-name: sspi-ffi
           - os: win
             runner: windows-2022
-            additional-args: --features tsssp
+            additional-args: --features tsssp,scard
           - os: osx
             runner: macos-12
           - os: linux
