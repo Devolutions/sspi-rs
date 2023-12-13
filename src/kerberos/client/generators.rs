@@ -389,7 +389,7 @@ impl ChecksumValues {
 }
 
 bitflags::bitflags! {
-    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1, this is crucial for LDAPS
+    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1, this is crutial for LDAPS
     #[derive(Debug,Clone,Copy)]
     pub(crate) struct GssFlags: u32 {
         const GSS_C_DELEG_FLAG      = 0b00000001;
