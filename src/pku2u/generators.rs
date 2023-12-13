@@ -254,7 +254,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         checksum_value,
     }) = checksum
     {
-        let mut checksum_value = checksum_value.get_inner();
+        let mut checksum_value = checksum_value.into_inner();
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
             if checksum_value.len() < 20 {
                 return Err(Error::new(

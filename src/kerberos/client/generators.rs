@@ -383,7 +383,7 @@ impl ChecksumValues {
         self.inner[20..24].copy_from_slice(&flag_bytes);
     }
 
-    pub(crate) fn get_inner(self) -> Vec<u8> {
+    pub(crate) fn into_inner(self) -> Vec<u8> {
         self.inner
     }
 }
@@ -493,7 +493,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         checksum_value,
     }) = checksum
     {
-        let mut checksum_value = checksum_value.get_inner();
+        let mut checksum_value = checksum_value.into_inner();
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
@@ -750,7 +750,7 @@ mod tests {
     fn test_default() {
         // ensure backwards compatibility
         let checksum_values = ChecksumValues::default();
-        assert_eq!(checksum_values.get_inner(), AUTHENTICATOR_DEFAULT_CHECKSUM);
+        assert_eq!(checksum_values.into_inner(), AUTHENTICATOR_DEFAULT_CHECKSUM);
     }
 
     #[test]
