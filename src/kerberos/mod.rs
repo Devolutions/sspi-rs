@@ -432,10 +432,9 @@ impl Sspi for Kerberos {
         }
         #[cfg(feature = "scard")]
         if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
-            return Ok(ContextNames {
-                username: utf16_bytes_to_utf8_string(&identity_buffers.username),
-                domain: None,
-            });
+            let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
+            let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
+            return Ok(ContextNames { username });
         }
         Err(crate::Error::new(
             crate::ErrorKind::NoCredentials,
