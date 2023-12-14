@@ -198,7 +198,8 @@ where
         Generator::new(move |_| async move { value })
     }
 }
-/// Utilitiies for working with network client
+
+/// Utilities for working with network client
 impl<'a, OutTy> Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, OutTy>
 where
     OutTy: 'a + Send,

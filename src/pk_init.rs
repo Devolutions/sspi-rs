@@ -60,7 +60,7 @@ pub struct Wrapper<T> {
     pub content: ExplicitContextTag0<T>,
 }
 
-pub type SignDataFn = Box<dyn Fn(&[u8]) -> Result<Vec<u8>>>;
+pub type SignDataFn = Box<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send>;
 
 pub struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,

@@ -518,12 +518,12 @@ impl<'a> Negotiate {
                     .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
                 info!("Negotiate: try Kerberos");
 
-                self.protocol =
-                    NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
-                        url: Some(host),
-                        network_client: self.network_client_factory.network_client(),
-                        hostname: Some(self.hostname.clone()),
-                    })?);
+                let config = crate::KerberosConfig {
+                    kdc_url: Some(host),
+                    client_computer_name: Some(self.client_computer_name.clone()),
+                };
+
+                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(config)?);
             }
         }
 
