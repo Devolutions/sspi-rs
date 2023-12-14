@@ -5,7 +5,7 @@
     <Description>Portable Rust SSPI library</Description>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
-    <Version>2023.7.24.0</Version>
+    <Version>2023.12.14.0</Version>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
