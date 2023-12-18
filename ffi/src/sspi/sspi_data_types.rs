@@ -98,6 +98,20 @@ pub struct SecPkgContextConnectionInfo {
     pub dw_exch_strength: u32,
 }
 
+/// [_SecPkgContext_SessionKey](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sessionkey)
+///
+/// ```not_rust
+/// typedef struct _SecPkgContext_SessionKey {
+///   unsigned long SessionKeyLength;
+///   unsigned char *SessionKey;
+/// } SecPkgContext_SessionKey, *PSecPkgContext_SessionKey;
+/// ```
+#[repr(C)]
+pub struct SecPkgContextSessionKey {
+    pub session_key_len: u32,
+    pub session_key: *mut u8,
+}
+
 /// [CERT_TRUST_STATUS](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_trust_status)
 ///
 /// ```not_rust

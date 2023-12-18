@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::ptr::{self, NonNull};
+use std::ptr::{self, NonNull, copy_nonoverlapping};
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
 
@@ -43,7 +43,8 @@ use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoI
 use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
 use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
-    SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
+    SecPkgContextFlags, SecPkgContextSessionKey, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar,
+    SecurityStatus,
 };
 use super::utils::{hostname, transform_credentials_handle};
 use crate::utils::into_raw_ptr;
@@ -70,6 +71,8 @@ pub const SECPKG_ATTR_SERVER_AUTH_FLAGS: u32 = 0x80000083;
 pub const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x80000084;
 // detailed information on the established connection
 pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
+// information about the session keys
+pub const SECPKG_ATTR_SESSION_KEY: u32 = 9;
 
 // Sets the name of a credential
 // In our library, we use this attribute to set the workstation for auth identity
@@ -972,9 +975,7 @@ unsafe fn query_context_attributes_common(
                 }
             }
             SECPKG_ATTR_SERVER_AUTH_FLAGS => {
-                let flags = SecPkgContextFlags {
-                    flags: 0,
-                };
+                let flags = SecPkgContextFlags { flags: 0 };
 
                 let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
                 // SAFETY: `sec_context_flags` is non-null because it was cast from a non-null `p_buffer`..
@@ -1010,7 +1011,42 @@ unsafe fn query_context_attributes_common(
 
                 return 0;
             }
-            _ => {},
+            SECPKG_ATTR_SESSION_KEY => {
+                let session_key = try_execute!(sspi_context.query_context_session_key()).session_key;
+                let session_key_len = session_key.as_ref().len();
+
+                let sec_pkg_context_session_key = p_buffer.cast::<SecPkgContextSessionKey>();
+
+                // SAFETY: `sec_pkg_context_session_key` is non-null because it was cast from a non-null `p_buffer`.
+                unsafe {
+                    (*sec_pkg_context_session_key).session_key_len = session_key_len.try_into().expect("session key length should fit into u32");
+                }
+
+                // SAFETY: Memory allocation is safe.
+                let buf = unsafe {
+                    libc::malloc(session_key_len)
+                }.cast::<u8>();
+
+                // SAFETY:
+                // - `session_key.as_ref().as_ptr()` pointer is valid for reads of `session_key_len` bytes,
+                //   because it is Rust-allocated vector of u8 values with size of `session_key_len`.
+                // - `sec_pkg_context_session_key_ptr` is valid for writes of `session_key_len` bytes.
+                // - `session_key` and memory behind `sec_pkg_context_session_key_ptr` are properly-aligned.
+                // - `session_key` and memory behind `sec_pkg_context_session_key_ptr` do not overlap,
+                //   because they are allocated separately.
+                unsafe {
+                    copy_nonoverlapping(session_key.as_ref().as_ptr(), buf, session_key_len);
+                }
+
+                // SAFETY:
+                // - `sec_pkg_context_session_key` is a valid pointer to a `SecPkgContextSessionKey` structure due to a previous check.
+                unsafe {
+                    (*sec_pkg_context_session_key).session_key = buf;
+                }
+
+                return 0;
+            }
+            _ => {}
         };
 
         let package_info = try_execute!(match ul_attribute.try_into().unwrap() {
@@ -1021,8 +1057,11 @@ unsafe fn query_context_attributes_common(
                 sspi_context.query_context_negotiation_package()
             }
             unsupported => {
-                Err(Error::new(ErrorKind::UnsupportedFunction, format!("Unsupported function ID {unsupported}")))
-            },
+                Err(Error::new(
+                    ErrorKind::UnsupportedFunction,
+                    format!("Unsupported function ID {unsupported}"),
+                ))
+            }
         });
 
         if is_wide {
