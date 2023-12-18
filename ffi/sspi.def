@@ -19,6 +19,7 @@ EXPORTS
     QueryContextAttributesW=Rust_QueryContextAttributesW
     ImpersonateSecurityContext=Rust_ImpersonateSecurityContext
     RevertSecurityContext=Rust_RevertSecurityContext
+    RustSspiSetupLogger=RustSspiSetupLogger
     MakeSignature=Rust_MakeSignature
     VerifySignature=Rust_VerifySignature
     FreeContextBuffer=Rust_FreeContextBuffer
