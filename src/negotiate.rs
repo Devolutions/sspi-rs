@@ -508,6 +508,7 @@ impl<'a> Negotiate {
             let account_name = auth_identity.username.account_name();
             let domain_name = auth_identity.username.domain_name().unwrap_or("");
             self.negotiate_protocol(account_name, domain_name)?;
+            self.auth_identity = Some(CredentialsBuffers::AuthIdentity(auth_identity.into()));
         }
 
         #[cfg(feature = "scard")]
