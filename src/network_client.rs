@@ -95,7 +95,7 @@ pub mod reqwest_network_client {
         fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             let client = Client::new();
 
-            let result_bytes = client
+            let response = client
                 .post(url.clone())
                 .body(data.to_vec())
                 .send()
@@ -109,16 +109,20 @@ pub mod reqwest_network_client {
                         format!("Unable to send the data to the KDC Proxy: {:?}", err),
                     ),
                 })?
-                .bytes()
-                .map_err(|err| {
-                    Error::new(
-                        ErrorKind::NoAuthenticatingAuthority,
-                        format!("Unable to read the response data from the KDC Proxy: {:?}", err),
-                    )
-                })?
-                .to_vec();
+                .error_for_status()
+                .map_err(|err| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("KDC Proxy: {err}")))?;
 
-            Ok(result_bytes)
+            let body = response.bytes().map_err(|err| {
+                Error::new(
+                    ErrorKind::NoAuthenticatingAuthority,
+                    format!("Unable to read the response data from the KDC Proxy: {:?}", err),
+                )
+            })?;
+
+            // The type bytes::Bytes has a special From implementation for Vec<u8>.
+            let body = Vec::from(body);
+
+            Ok(body)
         }
     }
 
