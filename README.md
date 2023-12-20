@@ -87,7 +87,7 @@ let mut negotiate = SecurityPackage::from_package_type(
 
 ## Projects that use sspi-rs
 
-* [Jet](https://github.com/Devolutions/devolutions-jet)
+* [Devolutions Gateway](https://github.com/Devolutions/devolutions-gateway)
 * [LDAP client library](https://github.com/kanidm/ldap3/blob/master/proto/examples/sasltest/main.rs)
 
 ## License
