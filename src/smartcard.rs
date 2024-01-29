@@ -57,7 +57,7 @@ impl SmartCard {
         })
     }
 
-    pub fn new_emulated(mut pin: Vec<u8>, private_key_pem: &str, auth_cert_der: Vec<u8>) -> Result<Self> {
+    pub fn new_emulated(pin: Vec<u8>, private_key_pem: &str, auth_cert_der: Vec<u8>) -> Result<Self> {
         let scard = PivSmartCard::new(pin.clone(), auth_cert_der, private_key_pem)?;
         Ok(Self {
             smart_card_type: SmartCardApi::PivSmartCard(Box::new(scard)),
