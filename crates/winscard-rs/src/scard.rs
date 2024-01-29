@@ -4,7 +4,7 @@ use alloc::{format, vec};
 
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
-use picky::key::{sign_hashed_rsa, PrivateKey};
+use picky::key::PrivateKey;
 use tracing::error;
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
@@ -28,6 +28,7 @@ pub struct SmartCard {
     chuid: [u8; CHUID_LENGTH],
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
+    #[allow(dead_code)]
     auth_pk: PrivateKey,
     state: SCardState,
     pending_command: Option<Command<1024>>,
@@ -315,7 +316,7 @@ impl SmartCard {
                 "TLV structure is invalid: no challenge field is present in the request".to_string(),
             ))?;
         // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
-        let challenge = match challenge.value() {
+        let _challenge = match challenge.value() {
             Value::Primitive(ref challenge) => challenge,
             Value::Constructed(_) => {
                 // this tag must contain a primitive value
@@ -325,7 +326,9 @@ impl SmartCard {
                 ));
             }
         };
-        let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
+        // TODO: actually sign the challenge
+        // let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
+        let signed_challenge = vec![1; 256];
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
