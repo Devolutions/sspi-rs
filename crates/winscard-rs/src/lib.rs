@@ -3,8 +3,8 @@
 mod ber_tlv;
 mod chuid;
 mod piv_cert;
-mod tlv_tags;
 mod scard;
+mod tlv_tags;
 
 extern crate alloc;
 
@@ -80,7 +80,7 @@ impl From<KeyError> for Error {
     fn from(value: KeyError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected KeyError happened: {}", value),
+            format!("error: an unexpected KeyError happened: {}", value),
         )
     }
 }
@@ -89,7 +89,7 @@ impl From<TlvError> for Error {
     fn from(value: TlvError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected TlvError happened: {}", value),
+            format!("error: an unexpected TlvError happened: {}", value),
         )
     }
 }

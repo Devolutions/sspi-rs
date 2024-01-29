@@ -77,18 +77,18 @@ impl SmartCard {
     }
 
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
-        let cmd = Command::<1024>::try_from(data).map_err(|e| {
-            error!("APDU command parsing error: {:?}", e);
+        let cmd = Command::<1024>::try_from(data).map_err(|error| {
+            error!(?error, "APDU command parsing error");
             Error::new(
                 ErrorKind::InternalError,
-                format!("Error: an error happened while parsing an APDU command: {:?}", e),
+                format!("error: an error happened while parsing an APDU command: {:?}", error),
             )
         })?;
         let cmd = if let Some(mut chained) = self.pending_command.take() {
             chained.extend_from_command(&cmd).map_err(|_| {
                 Error::new(
                     ErrorKind::InternalError,
-                    "Error: an error happened while trying to build a chained APDU command",
+                    "error: an error happened while trying to build a chained APDU command",
                 )
             })?;
             chained
@@ -113,7 +113,7 @@ impl SmartCard {
             Instruction::GeneralAuthenticate => self.general_authenticate(cmd),
             Instruction::GetResponse => self.get_response(),
             _ => {
-                error!("unimplemented instruction {:?}", cmd.instruction());
+                error!(instruction = ?cmd.instruction(), "unimplemented instruction");
                 Ok(Status::InstructionNotSupported.into())
             }
         }
@@ -288,7 +288,7 @@ impl SmartCard {
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("Provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
+                format!("provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
