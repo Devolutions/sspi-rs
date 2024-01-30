@@ -1,5 +1,5 @@
 [package]
-name = "winscard-rs"
+name = "winscard"
 version = "0.1.0"
 edition = "2021"
 readme = "README.md"
@@ -9,7 +9,6 @@ repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
 
 [features]
-proptest = ["std"]
 std = ["tracing/std"]
 
 [lib]
@@ -28,3 +27,5 @@ uuid = { version = "1.4.1", features = ["v4"], default-features = false }
 
 [dev-dependencies]
 proptest = "1.2.0"
+rand = "0.8.5"
+rsa = "0.9.6"

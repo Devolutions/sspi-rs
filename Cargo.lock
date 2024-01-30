@@ -2101,7 +2101,7 @@ dependencies = [
  "windows",
  "windows-sys 0.48.0",
  "winreg 0.51.0",
- "winscard-rs",
+ "winscard",
  "zeroize",
 ]
 
@@ -2823,7 +2823,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "winscard-rs"
+name = "winscard"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.4.2",
@@ -2831,6 +2831,8 @@ dependencies = [
  "iso7816-tlv",
  "picky",
  "proptest",
+ "rand",
+ "rsa",
  "time",
  "tracing",
  "uuid",
