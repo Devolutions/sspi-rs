@@ -58,11 +58,12 @@ pub type LpScardReaderStateA = *mut ScardReaderStateA;
 ///   BYTE   rgbAtr[36];
 /// } SCARD_READERSTATEW, *PSCARD_READERSTATEW, *LPSCARD_READERSTATEW;
 /// ```
+#[derive(Debug)]
 #[repr(C)]
 pub struct ScardReaderStateW {
-    sz_reader: LpCWStr,
-    pv_user_data: LpVoid,
-    dw_current_state: u32,
+    pub sz_reader: LpCWStr,
+    pub pv_user_data: LpVoid,
+    pub dw_current_state: u32,
     pub dw_event_state: u32,
     pub cb_atr: u32,
     pub rgb_atr: [u8; 36],
