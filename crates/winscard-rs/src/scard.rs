@@ -8,8 +8,9 @@ use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::{sign_hashed_rsa, PrivateKey};
 use picky::sha1::Sha1;
 use picky::{Pkcs1v15Sign, RsaPrivateKey};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
+use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
 use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
@@ -23,6 +24,12 @@ const CHUNK_SIZE: usize = 256;
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const CARD_CAPABILITY_CONTAINER_TAG: &[u8] = &[0x5F, 0xC1, 0x07];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const DIGITAL_SIGNATURE_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0A];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
@@ -31,6 +38,7 @@ const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
+    ccc: Vec<u8>,
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
     #[allow(dead_code)]
@@ -81,6 +89,7 @@ impl SmartCard<'_> {
         Ok(SmartCard {
             reader_name,
             chuid,
+            ccc: build_ccc(),
             pin,
             auth_cert,
             auth_pk,
@@ -92,6 +101,7 @@ impl SmartCard<'_> {
     }
 
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
+        warn!("handle_commend: {:?}", data);
         let cmd = Command::<1024>::try_from(data).map_err(|error| {
             error!(?error, "APDU command parsing error");
             Error::new(
@@ -110,15 +120,26 @@ impl SmartCard<'_> {
         } else {
             cmd
         };
+        debug!("all_parsed!");
         if cmd.class().chain().not_the_last() {
             self.pending_command = Some(cmd);
             return Ok(Status::OK.into());
         }
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
+            warn!(state = ?self.state, instruction = ?cmd.instruction(), "not_selected_so_not_found");
+            if cmd.instruction() == Instruction::GetData {
+                debug!("inner_get_data");
+                return self.get_data(cmd);
+            }
+            if cmd.instruction() == Instruction::Verify {
+                debug!("inner_verify");
+                return self.verify(cmd);
+            }
             return Ok(Status::NotFound.into());
         } else if self.state == SCardState::PivAppSelected && cmd.instruction() == Instruction::GeneralAuthenticate {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
+            warn!(state = ?self.state, instruction = ?cmd.instruction(), "general_authenticate");
             return Ok(Status::SecurityStatusNotSatisfied.into());
         }
         match cmd.instruction() {
@@ -210,12 +231,17 @@ impl SmartCard<'_> {
                     }
                     // Retrieve the number of further allowed retries if the data field is absent
                     // Otherwise just compare the provided PIN with the stored one
+                    // warn!("vpcort: {:?} {:?} {} {}", cmd.data(), self.pin, cmd.data().is_empty(), cmd.data() != self.pin.as_slice());
                     if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
+                        tracing::error!("INVALID_PIN");
                         return Ok(Status::VerificationFailedWithRetries.into());
                     } else {
+                        tracing::info!("GOOD_PIN");
                         // data field is present and the provided PIN is correct -> change state and return OK
                         self.state = SCardState::PinVerified;
                     }
+                } else {
+                    warn!("PIN_already_verified");
                 }
             }
             RESET_SECURITY_STATUS => {
@@ -252,15 +278,27 @@ impl SmartCard<'_> {
         if request.tag() != &Tag::try_from(tlv_tags::TAG_LIST)? {
             return Ok(Status::NotFound.into());
         }
+        warn!("WHATSTAG");
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
-                CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
-                PIV_CERT_TAG => {
+                CHUID_TAG => {
+                    warn!("CHUID_TAG");
+                    Ok(Response::new(Status::OK, Some(self.chuid.to_vec())))
+                },
+                PIV_CERT_TAG | CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG => {
+                    warn!("OTHER CERT. {:?}", tag);
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
                     self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()
-                }
-                _ => Ok(Status::NotFound.into()),
+                },
+                CARD_CAPABILITY_CONTAINER_TAG => {
+                    warn!(?tag, "CARDCAPABILITYCONTAINER");
+                    Ok(Response::new(Status::OK, Some(self.ccc.clone())))
+                },
+                _ => {
+                    warn!(?tag, "TAG NOT FOUND.");
+                    Ok(Status::NotFound.into())
+                },
             },
             Value::Constructed(_) => Ok(Status::NotFound.into()),
         }

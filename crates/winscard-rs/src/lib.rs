@@ -2,6 +2,7 @@
 
 mod ber_tlv;
 mod chuid;
+mod card_capability_container;
 mod piv_cert;
 mod scard;
 mod scard_context;
