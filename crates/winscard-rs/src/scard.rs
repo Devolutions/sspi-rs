@@ -5,7 +5,7 @@ use alloc::{format, vec};
 
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
-use picky::key::{sign_hashed_rsa, PrivateKey};
+use picky::key::PrivateKey;
 use picky::sha1::Sha1;
 use picky::{Pkcs1v15Sign, RsaPrivateKey};
 use tracing::{debug, error, warn};
@@ -341,12 +341,14 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
-        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
+        // const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
+        // TMP DBG FIX:
+        const PIV_AUTHENTICATION_KEY: u8 = 0x9C;
 
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
+                format!("Provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9A", cmd.p1, cmd.p2)
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
@@ -384,9 +386,11 @@ impl SmartCard<'_> {
                 ));
             }
         };
-        // TODO: actually sign the challenge
         // let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
-        let signed_challenge = vec![1; 256];
+        debug!(?challenge);
+        // let challenge_len = challenge.len();
+        let signed_challenge = self.sign_padded(challenge)?;
+        warn!("signed: {:?} {}", signed_challenge, signed_challenge.len());
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
@@ -403,9 +407,22 @@ impl SmartCard<'_> {
         &self.auth_pk
     }
 
-    pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+    pub fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        let data_to_sign = data.as_ref();
+        debug!(?data_to_sign);
         let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
-        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref()).unwrap();
+        // let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data_to_sign).unwrap();
+        let signature = picky::__sign_padded(&pk, data_to_sign).unwrap();
+
+        Ok(signature)
+    }
+
+    pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        let data_to_sign = data.as_ref();
+        debug!(?data_to_sign);
+        let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data_to_sign).unwrap();
+        // let signature = picky::__sign_padded(&pk, data_to_sign).unwrap();
 
         Ok(signature)
     }
@@ -532,6 +549,29 @@ mod tests {
             Just(Status::IncorrectDataField),
             Just(Status::InstructionNotSupported)
         ]
+    }
+
+    #[test]
+    fn sign_padded() {
+        let padded = &[0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+ 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+ 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+ 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+ 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+ 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 48, 33, 48, 9, 6, 5, 43, 14, 3, 2, 26, 5, 0, 4, 20, 9, 54, 86, 155, 83, 163, 136, 46, 6, 16, 39,
+ 82, 166, 84, 142, 21, 55, 176, 136, 228];
+
+        let pk_pem = include_str!(env!("WINSCARD_PK_PATH"));
+        let pk = PrivateKey::from_pem_str(pk_pem).unwrap();
+        let smart_card = SmartCard::new(
+            "reader".into(),
+            b"214653".to_vec(),
+            include_bytes!(env!("WINSCARD_CERT_PATH")).to_vec(),
+            pk,
+        )
+        .unwrap();
+
+        println!("{:?}", smart_card.sign_padded(padded));
     }
 
     prop_compose! {
