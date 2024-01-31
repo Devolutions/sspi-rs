@@ -12,7 +12,7 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
 use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
-use super::scard_handle::{AllocationType, ALLOCATIONS};
+// use super::scard_handle::{AllocationType, ALLOCATIONS};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
 use crate::winscard::scard_handle::{
     null_terminated_lpwstr_to_string, scard_context_to_winscard_context, write_readers_a, write_readers_w,
@@ -27,7 +27,7 @@ const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
 
 const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
 
-pub(crate) static CONTEXTS: Mutex<Vec<usize>> = Mutex::new(vec![]);
+// pub(crate) static CONTEXTS: Mutex<Vec<usize>> = Mutex::new(vec![]);
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
@@ -67,8 +67,8 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let established_context: Box<dyn WinScardContext> = Box::new(PivCardContext::new(scard_info));
 
     let raw_ptr = into_raw_ptr(established_context) as ScardContext;
-    let mut vec = CONTEXTS.lock().unwrap();
-    vec.push(raw_ptr);
+    // let mut vec = CONTEXTS.lock().unwrap();
+    // vec.push(raw_ptr);
     info!(new_established_context = ?raw_ptr);
     *context = raw_ptr;
 
@@ -80,23 +80,24 @@ pub unsafe extern "system" fn SCardEstablishContext(
 #[no_mangle]
 pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
     let _ = Box::from_raw(try_execute!(scard_context_to_winscard_context(context)));
-    let mut ctx = CONTEXTS.lock().unwrap();
+    // let mut ctx = CONTEXTS.lock().unwrap();
     // we know that it is present because scard_context_to_winscard_context didn't fail
-    let idx = ctx.iter().position(|&x| x == context).unwrap();
-    ctx.remove(idx);
+    // let idx = ctx.iter().position(|&x| x == context).unwrap();
+    // ctx.remove(idx);
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
-    let ctx = CONTEXTS.lock().unwrap();
-    if ctx.contains(&context) {
-        ErrorKind::Success
-    } else {
-        ErrorKind::InvalidHandle
-    }
-    .into()
+    // let ctx = CONTEXTS.lock().unwrap();
+    // if ctx.contains(&context) {
+    //     ErrorKind::Success
+    // } else {
+    //     ErrorKind::InvalidHandle
+    // }
+    // .into()
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsA"))]
@@ -503,19 +504,19 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
-    let removed_value = ALLOCATIONS.with(|map| map.borrow_mut().remove(&(pv_mem as usize)));
-    if let Some((ptr, alloc_type)) = removed_value {
-        match alloc_type {
-            AllocationType::U16 => {
-                let _ = Box::from_raw(ptr as *mut [u16]);
-            }
-            AllocationType::U8 => {
-                let _ = Box::from_raw(ptr as *mut [u8]);
-            }
-        };
-    } else {
-        error!("Tried to free an invalid memory chunk: {:?}", pv_mem);
-    }
+    // let removed_value = ALLOCATIONS.with(|map| map.borrow_mut().remove(&(pv_mem as usize)));
+    // if let Some((ptr, alloc_type)) = removed_value {
+    //     match alloc_type {
+    //         AllocationType::U16 => {
+    //             let _ = Box::from_raw(ptr as *mut [u16]);
+    //         }
+    //         AllocationType::U8 => {
+    //             let _ = Box::from_raw(ptr as *mut [u8]);
+    //         }
+    //     };
+    // } else {
+    //     error!("Tried to free an invalid memory chunk: {:?}", pv_mem);
+    // }
 
     ErrorKind::Success.into()
 }

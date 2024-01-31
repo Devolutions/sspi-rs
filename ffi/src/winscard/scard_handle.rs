@@ -9,34 +9,34 @@ use ffi_types::{LpDword, LpStr, LpWStr};
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::scard_context::CONTEXTS;
+// use super::scard_context::CONTEXTS;
 use crate::utils::vec_into_raw_ptr;
 
-thread_local! {
-    // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
-    pub(crate) static ALLOCATIONS: RefCell<HashMap<usize, (*mut [()], AllocationType)>> = RefCell::new(HashMap::new());
-}
+// thread_local! {
+//     // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
+//     pub(crate) static ALLOCATIONS: RefCell<HashMap<usize, (*mut [()], AllocationType)>> = RefCell::new(HashMap::new());
+// }
 
-pub enum AllocationType {
-    U8,
-    U16,
-}
+// pub enum AllocationType {
+//     U8,
+//     U16,
+// }
 
 pub fn scard_handle_to_winscard(handle: ScardHandle) -> *mut Box<dyn WinScard> {
     handle as *mut Box<dyn WinScard>
 }
 
 pub fn scard_context_to_winscard_context(handle: ScardContext) -> WinScardResult<*mut Box<dyn WinScardContext>> {
-    let ctx = CONTEXTS.lock().unwrap();
+    // let ctx = CONTEXTS.lock().unwrap();
 
-    if ctx.contains(&handle) {
+    // if ctx.contains(&handle) {
         Ok(handle as *mut Box<dyn WinScardContext>)
-    } else {
-        Err(Error::new(
-            ErrorKind::InvalidHandle,
-            format!("Invalid ScardContext provided: {}", handle),
-        ))
-    }
+    // } else {
+    //     Err(Error::new(
+    //         ErrorKind::InvalidHandle,
+    //         format!("Invalid ScardContext provided: {}", handle),
+    //     ))
+    // }
 }
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> IoRequest {

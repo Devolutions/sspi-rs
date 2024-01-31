@@ -37,14 +37,17 @@ pub fn setup_logger() {
             .init();
 
         std::panic::set_hook(Box::new(move |panic| {
+            println!("in panic hook");
             if let Some(location) = panic.location() {
-                error!(
-                    message = %panic,
-                    panic.file = location.file(),
-                    panic.line = location.line(),
-                    panic.column = location.column(),
+                println!("panic location is here");
+                println!("{:?} {} {} {}",
+                    panic,
+                    location.file(),
+                    location.line(),
+                    location.column(),
                 );
             } else {
+                println!("panic location is not here");
                 error!(message = %panic);
             }
         }));
