@@ -29,8 +29,8 @@ pub struct SmartCardInfo<'a> {
 
 impl<'a> SmartCardInfo<'a> {
     pub fn new(pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk: PrivateKey) -> Self {
-        // Value from captured API calls
-        let icon = vec![0x50];
+        // Standard Windows Reader Icon
+        let icon: &[u8] = include_bytes!("../assets/reader_icon.bmp");
         let reader: Reader<'_> = Reader {
             name: Cow::Borrowed("Microsoft Virtual Smart Card 2"),
             icon: Icon::from(icon),
@@ -68,6 +68,15 @@ impl<'a> ScardContext<'a> {
         );
         cache.insert(
             "Cached_GeneralFile/mscp/cmapfile".into(),
+            vec![
+                1, 0, 2, 0, 12, 0, 0, 0, 0, 0, 0, 0, 86, 0, 0, 0, 112, 0, 119, 0, 49, 0, 52, 0, 64, 0, 101, 0, 120, 0,
+                97, 0, 109, 0, 112, 0, 108, 0, 101, 0, 46, 0, 99, 0, 111, 0, 109, 0, 45, 0, 53, 0, 56, 0, 54, 0, 57, 0,
+                50, 0, 49, 0, 51, 0, 55, 0, 45, 0, 53, 0, 51, 0, 50, 0, 50, 0, 45, 0, 52, 0, 51, 0, 45, 0, 54, 0, 53,
+                0, 49, 0, 50, 0, 52, 0, 0, 0, 3, 0, 0, 0, 0, 8,
+            ],
+        );
+        cache.insert(
+            "Cached_CardmodFile\\Cached_CMAPFile".into(),
             vec![
                 1, 0, 2, 0, 12, 0, 0, 0, 0, 0, 0, 0, 86, 0, 0, 0, 112, 0, 119, 0, 49, 0, 52, 0, 64, 0, 101, 0, 120, 0,
                 97, 0, 109, 0, 112, 0, 108, 0, 101, 0, 46, 0, 99, 0, 111, 0, 109, 0, 45, 0, 53, 0, 56, 0, 54, 0, 57, 0,
@@ -185,9 +194,37 @@ impl<'a> ScardContext<'a> {
             ],
         );
 
+        cache.insert(
+            "Cached_CardProperty_Key Sizes_2".into(),
+            vec![
+                // header
+                1, 0, 2, 0, 12, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0,
+                // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+                1, 0, 0, 0, // dwVersion
+                0, 4, 0, 0, // dwMinimumBitlen
+                0, 4, 0, 0, // dwDefaultBitlen
+                0, 8, 0, 0, // dwMaximumBitlen
+                0, 4, 0, 0, // dwIncrementalBitlen
+            ],
+        );
+
+        cache.insert(
+            "Cached_CardProperty_Key Sizes_1".into(),
+            vec![
+                // header
+                1, 0, 2, 0, 12, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0,
+                // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+                1, 0, 0, 0, // dwVersion
+                0, 4, 0, 0, // dwMinimumBitlen
+                0, 4, 0, 0, // dwDefaultBitlen
+                0, 8, 0, 0, // dwMaximumBitlen
+                0, 4, 0, 0, // dwIncrementalBitlen
+            ],
+        );
+
         cache.insert("Cached_CardmodFile\\Cached_Pin_Freshness".into(), vec![0, 0]);
-        cache.insert("Cached_CardmodFile\\Cached_File_Freshness".into(), vec![0x0c, 0]);
-        cache.insert("Cached_CardmodFile\\Cached_Container_Freshness".into(), vec![2, 0]);
+        cache.insert("Cached_CardmodFile\\Cached_File_Freshness".into(), vec![0x0c - 1, 0]);
+        cache.insert("Cached_CardmodFile\\Cached_Container_Freshness".into(), vec![2 - 1, 0]);
 
         // cache.insert("Cached_CardmodFile\\Cached_PIV_Authentication_Key".into(), vec![1, 0, 1, 0, 7, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0]);
         // cache.insert("Cached_CardmodFile\\Cached_PIV_Signature_Key".into(), vec![1, 0, 1, 0, 7, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0]);
