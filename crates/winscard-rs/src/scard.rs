@@ -407,7 +407,7 @@ impl<'a> WinScard for SmartCard<'a> {
         if code != ControlCode::IoCtl {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
-                format!("Unsupported control code: {:?}", code),
+                format!("unsupported control code: {:?}", code),
             ));
         }
 
@@ -421,7 +421,7 @@ impl<'a> WinScard for SmartCard<'a> {
         let status_data: [u8; 2] = status.into();
         output_apdu.extend_from_slice(&status_data);
 
-        Ok(winscard::TransmitOutData {
+        Ok(TransmitOutData {
             output_apdu,
             receive_pci: None,
         })
@@ -431,7 +431,7 @@ impl<'a> WinScard for SmartCard<'a> {
         if self.transaction {
             return Err(Error::new(
                 ErrorKind::InternalError,
-                "The transaction already in progress",
+                "the transaction already in progress",
             ));
         }
         self.transaction = true;
@@ -440,7 +440,7 @@ impl<'a> WinScard for SmartCard<'a> {
 
     fn end_transaction(&mut self) -> WinScardResult<()> {
         if !self.transaction {
-            return Err(Error::new(ErrorKind::NotTransacted, "The transaction is not started"));
+            return Err(Error::new(ErrorKind::NotTransacted, "the transaction is not started"));
         }
         self.transaction = false;
         Ok(())

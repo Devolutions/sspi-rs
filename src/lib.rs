@@ -1944,6 +1944,13 @@ impl From<pcsc::Error> for Error {
 }
 
 #[cfg(feature = "scard")]
+impl From<picky::key::KeyError> for Error {
+    fn from(err: picky::key::KeyError) -> Self {
+        Self::new(ErrorKind::InternalError, format!("RSA key error: {:?}", err))
+    }
+}
+
+#[cfg(feature = "scard")]
 impl From<winscard::Error> for Error {
     fn from(value: winscard::Error) -> Self {
         Self::new(
