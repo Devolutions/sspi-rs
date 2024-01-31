@@ -1,7 +1,9 @@
+use std::borrow::Cow;
 use std::fmt;
 
 use iso7816_tlv::ber::{Tag, Tlv, Value};
 use pcsc::{Card, Context, Protocols, Scope, ShareMode};
+use picky::key::PrivateKey;
 use picky_asn1::wrapper::OctetStringAsn1;
 use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
 use winscard::{ber_tlv_length_encoding, tlv_tags, SmartCard as PivSmartCard, Status, PIV_AID};
@@ -18,7 +20,7 @@ const TLV_TAG_LENGTH: usize = 1;
 
 pub enum SmartCardApi {
     WinSCard(Card),
-    PivSmartCard(Box<PivSmartCard>),
+    PivSmartCard(Box<PivSmartCard<'static>>),
 }
 
 impl fmt::Debug for SmartCardApi {
@@ -57,8 +59,18 @@ impl SmartCard {
         })
     }
 
-    pub fn new_emulated(pin: Vec<u8>, private_key_pem: &str, auth_cert_der: Vec<u8>) -> Result<Self> {
-        let scard = PivSmartCard::new(pin.clone(), auth_cert_der, private_key_pem)?;
+    pub fn new_emulated(
+        reader_name: Cow<'_, str>,
+        pin: Vec<u8>,
+        private_key_pem: &str,
+        auth_cert_der: Vec<u8>,
+    ) -> Result<Self> {
+        let owned_reader_name = match reader_name {
+            Cow::Borrowed(name) => Cow::Owned(name.to_owned()),
+            Cow::Owned(name) => Cow::Owned(name),
+        };
+        let private_key = PrivateKey::from_pem_str(private_key_pem)?;
+        let scard = PivSmartCard::new(owned_reader_name, pin.clone(), auth_cert_der, private_key)?;
         Ok(Self {
             smart_card_type: SmartCardApi::PivSmartCard(Box::new(scard)),
             pin,
@@ -472,7 +484,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let auth_cert = vec![0xff; 2048];
         let pin = vec![0x34; 8];
 
-        let mut scard = SmartCard::new_emulated(pin, rsa_2048_private_key, auth_cert)
+        let mut scard = SmartCard::new_emulated(Cow::Borrowed("Reader 0"), pin, rsa_2048_private_key, auth_cert)
             .expect("Failed to initialize a PIV smart card");
         let padded_hash = &[
             1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
