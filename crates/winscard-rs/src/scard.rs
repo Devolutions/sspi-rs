@@ -498,7 +498,7 @@ mod tests {
         }
     }
 
-    fn new_scard() -> SmartCard {
+    fn new_scard() -> SmartCard<'static> {
         let rsa_2048_private_key = "-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAiJ/d1/2d1CQYlJfZ02TOH7F/5U53a6IZc8QwTQEsBQbVGfQO
 RN/+b09NzJJZmtyuLdBAXLzP8lEzKcfgn4JNl5G7DuKOxRreE5tq8uA+j2SQCw7m
@@ -526,9 +526,10 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 9LX8/iVau8ZRM+qSLpuEP+o8qGR11TbGZrLH/wITc7r9cWnaGDsozmPAnxMcu1zz
 9IRTY9zr9QWzxGiSqr834q5IZIQ/5uDBW/857MP0bpMl6cTdxzg0
 -----END RSA PRIVATE KEY-----";
+        let auth_pk = PrivateKey::from_pem_str(rsa_2048_private_key).unwrap();
         let certificate_stub = vec![0xff; 1024];
         let pin = vec![0x39; 6];
-        SmartCard::new(Cow::Borrowed("Reader 0"), pin, certificate_stub, rsa_2048_private_key).unwrap()
+        SmartCard::new(Cow::Borrowed("Reader 0"), pin, certificate_stub, auth_pk).unwrap()
     }
 
     // Helper function that calls the GET RESPONSE handler until there is no more data to read

@@ -2,6 +2,7 @@ use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::vec::Vec;
+
 use picky::key::PrivateKey;
 
 use crate::scard::SmartCard;
