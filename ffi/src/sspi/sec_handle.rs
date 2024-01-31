@@ -28,17 +28,18 @@ cfg_if::cfg_if! {
     }
 }
 
-use crate::credentials_attributes::{
+use super::credentials_attributes::{
     extract_kdc_proxy_settings, CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
 };
-use crate::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
-use crate::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
-use crate::sec_winnt_auth_identity::auth_data_to_identity_buffers;
-use crate::sspi_data_types::{
+use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use super::sec_pkg_info::{SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
+use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
+use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
-use crate::utils::{c_w_str_to_string, into_raw_ptr, transform_credentials_handle};
+use super::utils::transform_credentials_handle;
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;
