@@ -1,0 +1,31 @@
+[package]
+name = "winscard"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/devolutions/sspi-rs"
+repository = "https://github.com/devolutions/sspi-rs"
+authors = ["Devolutions Inc. <infos@devolutions.net>"]
+
+[features]
+std = ["tracing/std"]
+
+[lib]
+name = "winscard"
+
+[dependencies]
+bitflags = "2.4.0"
+iso7816 = "0.1.1"
+iso7816-tlv = "0.4.3"
+picky = { version = "7.0.0-rc.8", default-features = false }
+tracing = { version = "0.1.37", default-features = false }
+time = { version = "0.3.28", default-features = false, features = [
+    "formatting",
+] }
+uuid = { version = "1.4.1", features = ["v4"], default-features = false }
+
+[dev-dependencies]
+proptest = "1.2.0"
+rand = "0.8.5"
+rsa = "0.9.6"
