@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -9,7 +10,8 @@ use tracing::error;
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::{tlv_tags, Error, ErrorKind, Response, Status, WinScardResult};
+use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
+use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 // NIST.SP.800-73-4, part 1, section 2.2
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
@@ -24,22 +26,30 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
-pub struct SmartCard {
+pub struct SmartCard<'a> {
+    reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
     #[allow(dead_code)]
     auth_pk: PrivateKey,
     state: SCardState,
+    // We don't need to track actual transactions for the emulated smart card.
+    // We are using this flag to track incorrect smart card usage.
+    transaction: bool,
     pending_command: Option<Command<1024>>,
     pending_response: Option<Vec<u8>>,
 }
 
-impl SmartCard {
-    pub fn new(mut pin: Vec<u8>, auth_cert_der: Vec<u8>, auth_pk_pem: &str) -> WinScardResult<Self> {
+impl SmartCard<'_> {
+    pub fn new(
+        reader_name: Cow<str>,
+        mut pin: Vec<u8>,
+        auth_cert_der: Vec<u8>,
+        auth_pk: PrivateKey,
+    ) -> WinScardResult<SmartCard<'_>> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
-        let auth_pk = PrivateKey::from_pem_str(auth_pk_pem)?;
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(
@@ -66,11 +76,13 @@ impl SmartCard {
             pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
         Ok(SmartCard {
+            reader_name,
             chuid,
             pin,
             auth_cert,
             auth_pk,
             state: SCardState::Ready,
+            transaction: false,
             pending_command: None,
             pending_response: None,
         })
@@ -359,6 +371,82 @@ enum SCardState {
     PinVerified,
 }
 
+impl<'a> WinScard for SmartCard<'a> {
+    fn status(&self) -> WinScardResult<winscard::Status> {
+        Ok(winscard::Status {
+            readers: vec![self.reader_name.clone()],
+            // The original winscard always returns SCARD_SPECIFIC for a working inserted card
+            state: winscard::State::Specific,
+            // We are always using the T1 protocol as the original Windows TPM smart card does
+            protocol: winscard::Protocol::T1,
+            // The original winscard ATR is not suitable because it contains AID bytes.
+            // So we need to construct our own. Read more about our constructed ATR string:
+            // https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D
+            #[rustfmt::skip]
+            atr: [
+                // TS. Direct Convention
+                0x3b,
+                // T0. Y(1): b1000, K: 13 (historical bytes)
+                0x8d,
+                // TD. Y(i+1) = b0000, Protocol T=1
+                0x01,
+                // Historical bytes
+                    0x80,
+                    // Tag: 15, Len: 11.
+                    0xfb,
+                    // PIV AID
+                    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
+                // TCK (Checksum)
+                0x4d,
+            ]
+            .into(),
+        })
+    }
+
+    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<Vec<u8>> {
+        if code != ControlCode::IoCtl {
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                format!("unsupported control code: {:?}", code),
+            ));
+        }
+
+        Ok(Vec::new())
+    }
+
+    fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+        let Response { status, data } = self.handle_command(input_apdu)?;
+
+        let mut output_apdu = data.unwrap_or_default();
+        let status_data: [u8; 2] = status.into();
+        output_apdu.extend_from_slice(&status_data);
+
+        Ok(TransmitOutData {
+            output_apdu,
+            receive_pci: None,
+        })
+    }
+
+    fn begin_transaction(&mut self) -> WinScardResult<()> {
+        if self.transaction {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "the transaction already in progress",
+            ));
+        }
+        self.transaction = true;
+        Ok(())
+    }
+
+    fn end_transaction(&mut self) -> WinScardResult<()> {
+        if !self.transaction {
+            return Err(Error::new(ErrorKind::NotTransacted, "the transaction is not started"));
+        }
+        self.transaction = false;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -410,7 +498,7 @@ mod tests {
         }
     }
 
-    fn new_scard() -> SmartCard {
+    fn new_scard() -> SmartCard<'static> {
         let rsa_2048_private_key = "-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAiJ/d1/2d1CQYlJfZ02TOH7F/5U53a6IZc8QwTQEsBQbVGfQO
 RN/+b09NzJJZmtyuLdBAXLzP8lEzKcfgn4JNl5G7DuKOxRreE5tq8uA+j2SQCw7m
@@ -438,9 +526,10 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 9LX8/iVau8ZRM+qSLpuEP+o8qGR11TbGZrLH/wITc7r9cWnaGDsozmPAnxMcu1zz
 9IRTY9zr9QWzxGiSqr834q5IZIQ/5uDBW/857MP0bpMl6cTdxzg0
 -----END RSA PRIVATE KEY-----";
+        let auth_pk = PrivateKey::from_pem_str(rsa_2048_private_key).unwrap();
         let certificate_stub = vec![0xff; 1024];
         let pin = vec![0x39; 6];
-        SmartCard::new(pin, certificate_stub, rsa_2048_private_key).unwrap()
+        SmartCard::new(Cow::Borrowed("Reader 0"), pin, certificate_stub, auth_pk).unwrap()
     }
 
     // Helper function that calls the GET RESPONSE handler until there is no more data to read
