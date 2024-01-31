@@ -134,6 +134,7 @@ bitflags! {
 /// Current state of the smart card in the reader. Upon success, it receives one of the following state indicators.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum State {
+    /// Unknown smart card status.
     Unknown = 0,
     /// There is no card in the reader.
     Absent = 1,
@@ -188,14 +189,18 @@ pub enum ControlCode {
 /// ```
 #[derive(Debug, Clone)]
 pub struct IoRequest {
+    /// Protocol in use.
     pub protocol: Protocol,
+    /// PCI-specific information.
     pub pci_info: Vec<u8>,
 }
 
 /// This structure represents the result of the `SCardTransmit` function.
 #[derive(Debug, Clone)]
 pub struct TransmitOutData {
+    /// Output APDU command.
     pub output_apdu: Vec<u8>,
+    /// Returned protocol control information (PCI) specific to the protocol in use.
     pub receive_pci: Option<IoRequest>,
 }
 

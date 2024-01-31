@@ -15,17 +15,25 @@ use crate::{Error, ErrorKind, WinScardResult};
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
+    /// Reader name.
     pub name: Cow<'a, str>,
+    /// Reader icon buff.
     pub icon: Icon<'a>,
+    /// Device Type Id.
     pub device_type_id: DeviceTypeId,
 }
 
 /// Describes smart card info used for the smart card creation
 pub struct SmartCardInfo<'a> {
+    /// Container name which stores the certificate along with its private key.
     pub container_name: Cow<'a, str>,
+    /// Smart card PIN code.
     pub pin: Vec<u8>,
+    /// DER-encoded smart card certificate.
     pub auth_cert_der: Vec<u8>,
+    /// Private key.
     pub auth_pk: PrivateKey,
+    /// Information about smart card reader.
     pub reader: Reader<'a>,
 }
 

@@ -17,7 +17,7 @@ use crate::piv_cert::build_auth_cert;
 use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
-// NIST.SP.800-73-4, part 1, section 2.2
+/// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 // the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
@@ -38,6 +38,7 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
+/// Represents an emulated smart card.
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
@@ -55,6 +56,7 @@ pub struct SmartCard<'a> {
 }
 
 impl SmartCard<'_> {
+    /// Creates a smart card instance based on the provided data.
     pub fn new(
         reader_name: Cow<str>,
         mut pin: Vec<u8>,
@@ -103,6 +105,7 @@ impl SmartCard<'_> {
         })
     }
 
+    /// This functions handles one APDU command.
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
         warn!("handle_commend: {:?}", data);
         let cmd = Command::<1024>::try_from(data).map_err(|error| {
@@ -402,11 +405,7 @@ impl SmartCard<'_> {
         self.get_response()
     }
 
-    pub fn pk(&self) -> &PrivateKey {
-        &self.auth_pk
-    }
-
-    pub fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+    fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
         use rsa::BigUint;
 
         let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
@@ -425,6 +424,8 @@ impl SmartCard<'_> {
         Ok(signature)
     }
 
+    /// Signs the provided data using the smart card private key.
+    /// *Warning 1*. The input data should be a SHA1 hash of the actually you want to sign.
     pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
         let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
         let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
