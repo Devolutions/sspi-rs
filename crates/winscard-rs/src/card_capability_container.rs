@@ -1,14 +1,19 @@
 use alloc::vec::Vec;
 
-use crate::{WinScardResult, tlv_tags};
+use crate::tlv_tags;
 
+// ccc - Card Capability Container
+// Table 8. Card Capability Container
+// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=39
 pub fn build_ccc() -> Vec<u8> {
     let mut ccc = Vec::new();
 
     ccc.extend_from_slice(&[tlv_tags::DATA, 0x33]);
 
     // Card Identifier
-    ccc.extend_from_slice(&[0xf0, 21, 160, 0, 0, 1, 22, 255, 2, 62, 243, 197, 122, 122, 55, 197, 117, 56, 169, 61, 186, 177, 253]);
+    ccc.extend_from_slice(&[
+        0xf0, 21, 160, 0, 0, 1, 22, 255, 2, 62, 243, 197, 122, 122, 55, 197, 117, 56, 169, 61, 186, 177, 253,
+    ]);
     // Capability Container version number
     ccc.extend_from_slice(&[0xf1, 0x01, 0x21]);
     // Capability Grammar version number
@@ -43,9 +48,11 @@ mod tests {
 
     #[test]
     fn test() {
-        let expected = [0x53, 0x33, 0xf0, 0x15, 160, 0, 0, 1, 22, 255, 2, 62, 243, 197, 122, 122, 55, 197, 117, 56, 169, 61, 186, 177, 253, 0xf1, 0x01, 0x21,
-                       0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
-                       0x00, 0xfa, 0x00, 0xfb, 0x00, 0xfc, 0x00, 0xfd, 0x00, 0xfe, 0x00];
+        let expected = [
+            83, 51, 240, 21, 160, 0, 0, 1, 22, 255, 2, 62, 243, 197, 122, 122, 55, 197, 117, 56, 169, 61, 186, 177,
+            253, 241, 1, 33, 242, 1, 33, 243, 0, 244, 1, 0, 245, 1, 16, 246, 0, 247, 0, 250, 0, 251, 0, 252, 0, 253, 0,
+            254, 0,
+        ];
         let actual = build_ccc();
 
         assert_eq!(&actual, &expected);
