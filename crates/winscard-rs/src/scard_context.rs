@@ -62,7 +62,7 @@ pub struct ScardContext<'a> {
 
 impl<'a> ScardContext<'a> {
     /// Creates a new smart card based on the list of smart card readers
-    pub fn new(smart_cards_info: SmartCardInfo<'a>) -> WinScardResult<Self> {
+    pub fn new(smart_card_info: SmartCardInfo<'a>) -> WinScardResult<Self> {
         const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
         const CONTAINER_FRESHNESS: [u8; 2] = [0x01, 0x00];
         const FILE_FRESHNESS: [u8; 2] = [0x0b, 0x00];
@@ -122,7 +122,7 @@ impl<'a> ScardContext<'a> {
             // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
             value.extend_from_slice(&86_u32.to_le_bytes());
             // CONTAINER_MAP_RECORD:
-            let container = smart_cards_info
+            let container = smart_card_info
                 .container_name
                 .as_ref()
                 .encode_utf16()
@@ -188,7 +188,7 @@ impl<'a> ScardContext<'a> {
             value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
 
             // let pub_key = smart_cards_info.
-            let public_key = smart_cards_info
+            let public_key = smart_card_info
                 .auth_pk
                 .to_public_key()
                 .expect("rsa private key to public key");
@@ -226,15 +226,15 @@ impl<'a> ScardContext<'a> {
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
 
-            let mut compressed_cert = vec![0; smart_cards_info.auth_cert_der.len()];
-            let compressed = crate::compression::compress_cert(&smart_cards_info.auth_cert_der, &mut compressed_cert)?;
+            let mut compressed_cert = vec![0; smart_card_info.auth_cert_der.len()];
+            let compressed = crate::compression::compress_cert(&smart_card_info.auth_cert_der, &mut compressed_cert)?;
 
             let total_value_len =
                 (compressed.len() + 2 /* unknown flags */ + 2/* uncompressed certificate len */) as u32;
             value.extend_from_slice(&total_value_len.to_le_bytes());
 
             value.extend_from_slice(&[0x01, 0x00]); // unknown flags
-            value.extend_from_slice(&(smart_cards_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
+            value.extend_from_slice(&(smart_card_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
             value.extend_from_slice(&compressed_cert);
 
             value
@@ -243,10 +243,10 @@ impl<'a> ScardContext<'a> {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
-            // So, we just insert the extracted data from a real smart card
             // actual data len
             value.extend_from_slice(&12_u32.to_le_bytes());
+            // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
+            // So, we just insert the extracted data from a real smart card
             // card capabilities
             value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
 
@@ -304,10 +304,7 @@ impl<'a> ScardContext<'a> {
             CONTAINER_FRESHNESS.to_vec(),
         );
 
-        Ok(Self {
-            smart_card_info: smart_cards_info,
-            cache,
-        })
+        Ok(Self { smart_card_info, cache })
     }
 }
 
@@ -361,5 +358,13 @@ impl<'a> WinScardContext for ScardContext<'a> {
 
     fn is_valid(&self) -> bool {
         true
+    }
+
+    fn read_cache(&self, key: &str) -> Option<&[u8]> {
+        self.cache.get(key).map(|item| item.as_slice())
+    }
+
+    fn write_cache(&mut self, key: String, value: Vec<u8>) {
+        self.cache.insert(key, value);
     }
 }

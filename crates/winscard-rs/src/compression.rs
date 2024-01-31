@@ -1,3 +1,6 @@
+use alloc::format;
+use alloc::vec::Vec;
+
 use flate2::{Compress, Compression, FlushCompress, Status};
 
 use crate::{Error, ErrorKind, WinScardResult};

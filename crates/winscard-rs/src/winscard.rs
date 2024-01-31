@@ -1,6 +1,5 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -279,4 +278,14 @@ pub trait WinScardContext {
     ///
     /// The SCardIsValidContext function determines whether a smart card context handle is valid.
     fn is_valid(&self) -> bool;
+
+    /// [SCardReadCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
+    ///
+    /// The SCardReadCache function retrieves the value portion of a name-value pair from the global cache maintained by the Smart Card Resource Manager.
+    fn read_cache(&self, key: &str) -> Option<&[u8]>;
+
+    /// [SCardWriteCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
+    ///
+    /// The SCardWriteCache function writes a name-value pair from a smart card to the global cache maintained by the Smart Card Resource Manager.
+    fn write_cache(&mut self, key: String, value: Vec<u8>);
 }

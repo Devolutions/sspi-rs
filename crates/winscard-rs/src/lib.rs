@@ -4,6 +4,7 @@ mod ber_tlv;
 mod card_capability_container;
 mod chuid;
 mod compression;
+mod dummy_rng;
 mod piv_cert;
 mod scard;
 mod scard_context;
@@ -86,6 +87,15 @@ impl From<KeyError> for Error {
         Error::new(
             ErrorKind::InternalError,
             format!("error: an unexpected KeyError happened: {}", value),
+        )
+    }
+}
+
+impl From<rsa::Error> for Error {
+    fn from(value: rsa::Error) -> Self {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Error: an unexpected RsaError happened: {}", value),
         )
     }
 }

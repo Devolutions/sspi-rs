@@ -6,8 +6,9 @@ use alloc::{format, vec};
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
-use picky::sha1::Sha1;
-use picky::{Pkcs1v15Sign, RsaPrivateKey};
+use rsa::traits::PublicKeyParts;
+use rsa::{Pkcs1v15Sign, RsaPrivateKey};
+use sha1::Sha1;
 use tracing::{debug, error, warn};
 
 use crate::card_capability_container::build_ccc;
@@ -20,6 +21,8 @@ use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResu
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 // the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const CARD_AUTH_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x01];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
@@ -376,7 +379,7 @@ impl SmartCard<'_> {
                 "TLV structure is invalid: no challenge field is present in the request".to_string(),
             ))?;
         // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
-        let _challenge = match challenge.value() {
+        let challenge = match challenge.value() {
             Value::Primitive(ref challenge) => challenge,
             Value::Constructed(_) => {
                 // this tag must contain a primitive value
@@ -386,11 +389,7 @@ impl SmartCard<'_> {
                 ));
             }
         };
-        // let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
-        debug!(?challenge);
-        // let challenge_len = challenge.len();
         let signed_challenge = self.sign_padded(challenge)?;
-        warn!("signed: {:?} {}", signed_challenge, signed_challenge.len());
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
@@ -408,21 +407,27 @@ impl SmartCard<'_> {
     }
 
     pub fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let data_to_sign = data.as_ref();
-        debug!(?data_to_sign);
+        use rsa::BigUint;
+
         let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
-        // let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data_to_sign).unwrap();
-        let signature = picky::__sign_padded(&pk, data_to_sign).unwrap();
+        let signature = rsa::hazmat::rsa_decrypt_and_check(
+            &pk,
+            None::<&mut crate::dummy_rng::Dummy>,
+            &BigUint::from_bytes_be(data.as_ref()),
+        )?;
+
+        let mut signature = signature.to_bytes_be();
+
+        while signature.len() < pk.size() {
+            signature.insert(0, 0);
+        }
 
         Ok(signature)
     }
 
     pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let data_to_sign = data.as_ref();
-        debug!(?data_to_sign);
         let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
-        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data_to_sign).unwrap();
-        // let signature = picky::__sign_padded(&pk, data_to_sign).unwrap();
+        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
     }
@@ -578,7 +583,7 @@ mod tests {
         )
         .unwrap();
 
-        println!("{:?}", smart_card.sign_padded(padded));
+        smart_card.sign_padded(padded).unwrap();
     }
 
     prop_compose! {
