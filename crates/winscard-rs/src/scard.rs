@@ -6,7 +6,7 @@ use alloc::{format, vec};
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
@@ -132,6 +132,7 @@ impl SmartCard<'_> {
     }
 
     fn select(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
+        debug!("select");
         // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
         //      CLA - 0x00
@@ -170,6 +171,7 @@ impl SmartCard<'_> {
     }
 
     fn verify(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
+        debug!("verify");
         // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
         //      CLA  - 0x00
@@ -223,6 +225,7 @@ impl SmartCard<'_> {
     }
 
     fn get_data(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
+        debug!("get data");
         // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
         //      CLA  - 0x00
@@ -261,6 +264,7 @@ impl SmartCard<'_> {
     }
 
     fn get_response(&mut self) -> WinScardResult<Response> {
+        debug!("get response");
         // ISO/IEC 7816-4, Section 7.6.1
         // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
         match self.get_next_response_chunk() {
@@ -282,6 +286,7 @@ impl SmartCard<'_> {
     }
 
     fn general_authenticate(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
+        debug!("general authenticate");
         // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command
         //      CLA  - 0x00 | 0x10 (command chaining)
