@@ -1,8 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod ber_tlv;
-mod chuid;
 mod card_capability_container;
+mod chuid;
+mod compression;
 mod piv_cert;
 mod scard;
 mod scard_context;
