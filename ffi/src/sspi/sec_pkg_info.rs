@@ -6,7 +6,7 @@ use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
-use crate::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
+use super::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
 use crate::utils::c_w_str_to_string;
 
 #[derive(Debug)]
