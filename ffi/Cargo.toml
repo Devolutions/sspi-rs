@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 [features]
 default = []
 tsssp = ["sspi/tsssp"]
-scard = ["sspi/scard"]
+scard = ["sspi/scard", "dep:ffi-types"]
 
 [dependencies]
 cfg-if = "1"
@@ -23,6 +23,7 @@ libc = "0.2"
 num-traits = "0.2"
 whoami = "1.4"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
+ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
 
 # logging
 tracing = { version = "0.1" }
@@ -30,5 +31,5 @@ tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", 
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
-winapi = "0.3" # FIXME: replace by windows / windows-sys crates
+winapi = { version = "0.3", features = ["winerror"] } # FIXME: replace by windows / windows-sys crates
 windows-sys = { version = "0.48", features = ["Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi"] }

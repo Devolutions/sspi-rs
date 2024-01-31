@@ -3,7 +3,7 @@ use std::slice::from_raw_parts;
 
 use libc::c_void;
 
-use crate::sspi_data_types::{SecChar, SecWChar};
+use super::sspi_data_types::{SecChar, SecWChar};
 
 #[derive(Debug)]
 pub struct KdcProxySettings {
