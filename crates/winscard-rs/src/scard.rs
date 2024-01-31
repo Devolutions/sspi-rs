@@ -5,7 +5,9 @@ use alloc::{format, vec};
 
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
-use picky::key::PrivateKey;
+use picky::key::{sign_hashed_rsa, PrivateKey};
+use picky::sha1::Sha1;
+use picky::{Pkcs1v15Sign, RsaPrivateKey};
 use tracing::{debug, error};
 
 use crate::chuid::{build_chuid, CHUID_LENGTH};
@@ -48,6 +50,7 @@ impl SmartCard<'_> {
         auth_cert_der: Vec<u8>,
         auth_pk: PrivateKey,
     ) -> WinScardResult<SmartCard<'_>> {
+        // pin.resize(8, 0);
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
@@ -356,6 +359,17 @@ impl SmartCard<'_> {
         .to_vec();
         self.pending_response = Some(response);
         self.get_response()
+    }
+
+    pub fn pk(&self) -> &PrivateKey {
+        &self.auth_pk
+    }
+
+    pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref()).unwrap();
+
+        Ok(signature)
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
