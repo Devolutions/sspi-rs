@@ -10,6 +10,7 @@ use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_context::CONTEXTS;
+use crate::utils::vec_into_raw_ptr;
 
 thread_local! {
     // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
@@ -86,38 +87,34 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     Ok(())
 }
 
-pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_readers_w(readers: &[&str], dest: *mut LpWStr, dest_len: LpDword) -> WinScardResult<()> {
     let buffer: Vec<u16> = readers
         .iter()
         .flat_map(|reader| reader.encode_utf16().chain(once(0)))
         .chain(once(0))
         .collect();
 
-    let dest_str_len = (*dest_len).try_into().unwrap();
-    if buffer.len() > dest_str_len {
-        return Err(Error::new(
-            ErrorKind::InsufficientBuffer,
-            format!(
-                "Readers string buffer us too small. Expected at least {} but got {}",
-                buffer.len(),
-                dest_str_len
-            ),
-        ));
-    }
+    // let dest_str_len = (*dest_len).try_into().unwrap();
+    // if buffer.len() > dest_str_len {
+    //     return Err(Error::new(
+    //         ErrorKind::InsufficientBuffer,
+    //         format!(
+    //             "Readers string buffer us too small. Expected at least {} but got {}",
+    //             buffer.len(),
+    //             dest_str_len
+    //         ),
+    //     ));
+    // }
 
-    let buffer = buffer.into_boxed_slice();
     let len = buffer.len();
-    let ptr = buffer.as_ptr() as usize;
+    let buffer = vec_into_raw_ptr(buffer);
 
-    ALLOCATIONS.with(|map| {
-        map.borrow_mut()
-            .insert(ptr, (Box::into_raw(buffer) as *mut [()], AllocationType::U16))
-    });
+    // ALLOCATIONS.with(|map| {
+    //     map.borrow_mut()
+    //         .insert(ptr, (Box::into_raw(buffer) as *mut [()], AllocationType::U16))
+    // });
 
-    let ptr_as_bytes: [u16; 4] = std::mem::transmute(usize::to_le_bytes(ptr));
-
-    let dest_buffer = from_raw_parts_mut(dest, 4);
-    dest_buffer.copy_from_slice(&ptr_as_bytes);
+    *dest = buffer;
     *dest_len = len.try_into().unwrap();
 
     Ok(())

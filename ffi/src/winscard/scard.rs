@@ -37,6 +37,7 @@ unsafe fn connect(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardConnectA(
     context: ScardContext,
@@ -71,6 +72,7 @@ pub unsafe extern "system" fn SCardConnectA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardConnectW(
     context: ScardContext,
@@ -102,6 +104,7 @@ pub unsafe extern "system" fn SCardConnectW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReconnect"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardReconnect(
     _handle: ScardHandle,
@@ -114,6 +117,7 @@ pub extern "system" fn SCardReconnect(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
@@ -125,6 +129,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardBeginTransaction"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
     check_handle!(handle);
@@ -136,6 +141,7 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEndTransaction"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
@@ -147,12 +153,14 @@ pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_dispo
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancelTransaction"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardCancelTransaction(_handle: ScardHandle) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardState"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardState(
     _handle: ScardHandle,
@@ -165,6 +173,7 @@ pub extern "system" fn SCardState(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardStatusA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardStatusA(
     handle: ScardHandle,
@@ -203,6 +212,7 @@ pub unsafe extern "system" fn SCardStatusA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardStatusW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardStatusW(
     handle: ScardHandle,
@@ -218,7 +228,9 @@ pub unsafe extern "system" fn SCardStatusW(
     check_null!(pcch_reader_len);
     check_null!(pdw_state);
     check_null!(pdw_protocol);
-    check_null!(pb_atr);
+    // pb_atr can be null.
+    // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
+    // check_null!(pb_atr);
     check_null!(pcb_atr_len);
 
     let scard = &mut *scard_handle_to_winscard(handle);
@@ -226,21 +238,24 @@ pub unsafe extern "system" fn SCardStatusW(
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_readers_w(&readers, msz_reader_names, pcch_reader_len));
+    try_execute!(write_readers_w(&readers, msz_reader_names as *mut _, pcch_reader_len));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 
-    let out_atr_len = (*pcb_atr_len).try_into().unwrap();
-    if atr_len > out_atr_len {
-        return ErrorKind::InsufficientBuffer.into();
+    if !pb_atr.is_null() {
+        let out_atr_len = (*pcb_atr_len).try_into().unwrap();
+        if atr_len > out_atr_len {
+            return ErrorKind::InsufficientBuffer.into();
+        }
+        let out_atr = from_raw_parts_mut(pb_atr, atr_len);
+        out_atr.copy_from_slice(status.atr.as_ref());
     }
-    let out_atr = from_raw_parts_mut(pb_atr, atr_len);
-    out_atr.copy_from_slice(status.atr.as_ref());
 
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardTransmit"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardTransmit(
     handle: ScardHandle,
@@ -257,7 +272,15 @@ pub unsafe extern "system" fn SCardTransmit(
 
     let io_request = scard_io_request_to_io_request(pio_send_pci);
     let input_apdu = from_raw_parts(pb_send_buffer, cb_send_length.try_into().unwrap());
+    debug!("input_apdu: {:02x?}, {}", input_apdu, input_apdu.len());
+
     let out_data = try_execute!(scard.transmit(io_request, input_apdu));
+
+    debug!(
+        "output_apdu: {:02x?}, {}",
+        out_data.output_apdu,
+        out_data.output_apdu.len()
+    );
 
     let out_apdu_len = out_data.output_apdu.len();
 
@@ -281,12 +304,14 @@ pub unsafe extern "system" fn SCardTransmit(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetTransmitCount"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetTransmitCount(_handle: ScardHandle, pc_transmit_count: LpDword) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardControl"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardControl(
     handle: ScardHandle,
@@ -316,6 +341,7 @@ pub unsafe extern "system" fn SCardControl(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetAttrib"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetAttrib(
     _handle: ScardHandle,
@@ -327,6 +353,7 @@ pub extern "system" fn SCardGetAttrib(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetAttrib"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardSetAttrib(
     _handle: ScardHandle,
@@ -338,30 +365,35 @@ pub extern "system" fn SCardSetAttrib(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardUIDlgSelectCardA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardUIDlgSelectCardA(_p: LpOpenCardNameExA) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardUIDlgSelectCardW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardUIDlgSelectCardW(_p: LpOpenCardNameExW) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_GetOpenCardNameA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn GetOpenCardNameA(_p: LpOpenCardNameA) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_GetOpenCardNameW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn GetOpenCardNameW(_p: LpOpenCardNameW) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDlgExtendedError"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardDlgExtendedError() -> i32 {
     // TODO: do we really need it? This function seems to be obsolete

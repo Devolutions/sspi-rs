@@ -13,7 +13,7 @@ use winscard::winscard::WinScardContext;
 use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
 use super::scard_handle::{AllocationType, ALLOCATIONS};
-use crate::utils::{c_w_str_to_string, into_raw_ptr};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
 use crate::winscard::scard_handle::{
     null_terminated_lpwstr_to_string, scard_context_to_winscard_context, write_readers_a, write_readers_w,
 };
@@ -23,6 +23,7 @@ const SCARD_STATE_INUSE: u32 = 0x00000100;
 const SCARD_STATE_PRESENT: u32 = 0x00000020;
 // Undocumented constant that appears in all API captures
 const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
+
 const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
 
 pub(crate) static CONTEXTS: Mutex<Vec<usize>> = Mutex::new(vec![]);
@@ -67,7 +68,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let raw_ptr = into_raw_ptr(established_context) as ScardContext;
     let mut vec = CONTEXTS.lock().unwrap();
     vec.push(raw_ptr);
-    info!(context = ?raw_ptr);
+    info!(new_established_context = ?raw_ptr);
     *context = raw_ptr;
 
     ErrorKind::Success.into()
@@ -155,12 +156,13 @@ pub unsafe extern "system" fn SCardListReadersW(
     let readers = context.list_readers();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_readers_w(&readers, msz_readers, pcch_readers));
+    try_execute!(write_readers_w(&readers, msz_readers as *mut _, pcch_readers));
 
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardListCardsA(
     _context: ScardContext,
@@ -198,13 +200,17 @@ pub unsafe extern "system" fn SCardListCardsW(
         return ErrorKind::InsufficientBuffer.into();
     }
 
-    let dest_buffer = from_raw_parts_mut(msz_cards, encoded.len());
-    dest_buffer.copy_from_slice(&encoded);
+    // let dest_buffer = from_raw_parts_mut(msz_cards, encoded.len());
+    // dest_buffer.copy_from_slice(&encoded);
+    let buff = msz_cards as *mut *mut u16;
+    let b = vec_into_raw_ptr(encoded);
+    *buff = b;
 
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardListInterfacesA(
     _context: ScardContext,
@@ -216,6 +222,7 @@ pub extern "system" fn SCardListInterfacesA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardListInterfacesW(
     _context: ScardContext,
@@ -227,6 +234,7 @@ pub extern "system" fn SCardListInterfacesW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetProviderIdA(
     _context: ScardContext,
@@ -237,6 +245,7 @@ pub extern "system" fn SCardGetProviderIdA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetProviderIdW(
     _context: ScardContext,
@@ -247,6 +256,7 @@ pub extern "system" fn SCardGetProviderIdW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetCardTypeProviderNameA(
     _context: ScardContext,
@@ -269,57 +279,77 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     pcch_provider: LpDword,
 ) -> ScardStatus {
     check_null!(pcch_provider);
+    debug!("{:08x?}", dw_provide_id);
+
+    let provider = match dw_provide_id {
+        1 => {
+            error!("Unsupported dw_provider_id: SCARD_PROVIDER_PRIMARY");
+            return ErrorKind::UnsupportedFeature.into();
+        }
+        2 => "Microsoft Base Smart Card Crypto Provider",
+        3 => "Microsoft Smart Card Key Storage Provider",
+        // 0x80000001 => "C:\\Users\\pw14\\Documents\\projects\\sspi-rs\\target\\debug\\winscard.dll",
+        0x80000001 => "C:\\Windows\\System32\\msclmd.dll",
+        _ => {
+            error!("Unsupported dw_provider_id: {:x?}", dw_provide_id);
+            return ErrorKind::InvalidParameter.into();
+        }
+    };
+    debug!(?provider, "returned provider name");
+    let encoded: Vec<u16> = provider.encode_utf16().chain([0]).collect();
+    debug!(pcch_provider = encoded.len(), "resulting len");
 
     if szProvider.is_null() {
-        *pcch_provider = 0x2a;
-    } else {
-        let provider = match dw_provide_id {
-            2 => "Microsoft Base Smart Card Crypto Provider",
-            3 => "Microsoft Smart Card Key Storage Provider",
-            _ => {
-                error!("Unsupported dw_provide_id: {}", dw_provide_id);
-                return ErrorKind::UnsupportedFeature.into();
-            }
-        };
-        let encoded: Vec<u16> = provider.encode_utf16().chain([0, 0]).collect();
-
-        let dest_str_len = (*pcch_provider).try_into().unwrap();
-        if encoded.len() > dest_str_len {
-            return ErrorKind::InsufficientBuffer.into();
-        }
-
-        let dest_buffer = from_raw_parts_mut(szProvider, encoded.len());
-        dest_buffer.copy_from_slice(&encoded);
+        *pcch_provider = encoded.len() as u32;
+        return ErrorKind::Success.into();
     }
+
+    let dest_str_len = (*pcch_provider).try_into().unwrap();
+    if encoded.len() > dest_str_len {
+        return ErrorKind::InsufficientBuffer.into();
+    }
+
+    *pcch_provider = dest_str_len as u32;
+
+    let dest_buffer = from_raw_parts_mut(szProvider, encoded.len());
+    dest_buffer.copy_from_slice(&encoded);
+    // let buff = szProvider as *mut *mut u16;
+    // let b = vec_into_raw_ptr(encoded);
+    // *buff = b;
 
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderA(
     _context: ScardContext,
@@ -330,6 +360,7 @@ pub extern "system" fn SCardIntroduceReaderA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceReaderW(
     _context: ScardContext,
@@ -340,18 +371,21 @@ pub extern "system" fn SCardIntroduceReaderW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderA(_context: ScardContext, _sz_reader_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetReaderW(_context: ScardContext, _sz_reader_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardAddReaderToGroupA(
     _context: ScardContext,
@@ -362,6 +396,7 @@ pub extern "system" fn SCardAddReaderToGroupA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardAddReaderToGroupW(
     _context: ScardContext,
@@ -372,6 +407,7 @@ pub extern "system" fn SCardAddReaderToGroupW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardRemoveReaderFromGroupA(
     _context: ScardContext,
@@ -382,6 +418,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardRemoveReaderFromGroupW(
     _context: ScardContext,
@@ -392,6 +429,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceCardTypeA(
     _context: ScardContext,
@@ -407,6 +445,7 @@ pub extern "system" fn SCardIntroduceCardTypeA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardIntroduceCardTypeW(
     _context: ScardContext,
@@ -422,6 +461,7 @@ pub extern "system" fn SCardIntroduceCardTypeW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardSetCardTypeProviderNameA(
     _context: ScardContext,
@@ -433,6 +473,7 @@ pub extern "system" fn SCardSetCardTypeProviderNameA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardSetCardTypeProviderNameW(
     _context: ScardContext,
@@ -444,18 +485,21 @@ pub extern "system" fn SCardSetCardTypeProviderNameW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetCardTypeA(_context: ScardContext, _sz_card_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
     let removed_value = ALLOCATIONS.with(|map| map.borrow_mut().remove(&(pv_mem as usize)));
@@ -476,6 +520,7 @@ pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, pv_mem: Lp
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     // This value has been extracted from the original winscard SCardAccessStartedEvent call.
@@ -483,10 +528,12 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardReleaseStartedEvent() {}
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardLocateCardsA(
     _context: ScardContext,
@@ -498,6 +545,7 @@ pub extern "system" fn SCardLocateCardsA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardLocateCardsW(
     _context: ScardContext,
@@ -509,6 +557,7 @@ pub extern "system" fn SCardLocateCardsW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardLocateCardsByATRA(
     _context: ScardContext,
@@ -521,6 +570,7 @@ pub extern "system" fn SCardLocateCardsByATRA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardLocateCardsByATRW(
     _context: ScardContext,
@@ -533,6 +583,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeA(
     _context: ScardContext,
@@ -571,6 +622,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeW(
     _context: ScardContext,
@@ -599,16 +651,17 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     }
 
     reader_state.dw_event_state =
-        SCARD_STATE_CHANGED | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_UNNAMED_CONSTANT;
+        SCARD_STATE_CHANGED | SCARD_STATE_INUSE | SCARD_STATE_PRESENT /* | SCARD_STATE_UNNAMED_CONSTANT */;
 
-    if reader_states.len() > 1 {
-        reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-    }
+    // if reader_states.len() > 1 {
+    //     reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+    // }
 
     ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
     // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel
@@ -619,6 +672,7 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardReadCacheA(
     _context: ScardContext,
@@ -637,32 +691,53 @@ pub extern "system" fn SCardReadCacheA(
 pub unsafe extern "system" fn SCardReadCacheW(
     context: ScardContext,
     _card_identifier: LpUuid,
-    _freshness_counter: u32,
+    freshness_counter: u32,
     lookup_name: LpWStr,
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
     let context = &*try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = null_terminated_lpwstr_to_string(lookup_name);
-    info!(lookup_name = lookup_name);
+    info!(?lookup_name);
+    info!(freshness_counter, "freshness_counter");
+
+    // if lookup_name == "Cached_CardmodFile\\\\Cached_Container_Freshness" {
+    //     unsafe {
+    //         use std::ptr::null_mut;
+    //         let mut p = null_mut::<u8>();
+    //         *p = 3;
+    //     }
+    //     // panic!("");
+    // } else {
+    //     debug!("other");
+    // }
 
     if let Some(cached_value) = context.read_cache(&lookup_name) {
-        let dest_buffer_len = (*data_len).try_into().unwrap();
-        if cached_value.len() > dest_buffer_len {
-            return ErrorKind::InsufficientBuffer.into();
-        }
+        // let dest_buffer_len = (*data_len).try_into().unwrap();
+        // if cached_value.len() > dest_buffer_len {
+        //     warn!(cache = ?ErrorKind::InsufficientBuffer);
+        //     return ErrorKind::InsufficientBuffer.into();
+        // }
 
-        let dest_buffer = from_raw_parts_mut(data, cached_value.len());
-        dest_buffer.copy_from_slice(cached_value);
-        *data_len = cached_value.len().try_into().unwrap();
+        let cached_len = cached_value.len();
+        let raw_cached_value = libc::malloc(cached_len) as *mut u8;
+        from_raw_parts_mut(raw_cached_value, cached_len).copy_from_slice(cached_value);
 
+        // let dest_buffer = from_raw_parts_mut(data, cached_value.len());
+        // dest_buffer.copy_from_slice(cached_value);
+        *(data as *mut *mut u8) = raw_cached_value;
+        *data_len = cached_len.try_into().unwrap();
+
+        warn!(cache = ?ErrorKind::Success);
         ErrorKind::Success.into()
     } else {
+        warn!(cache = ?ErrorKind::CacheItemNotFound);
         ErrorKind::CacheItemNotFound.into()
     }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardWriteCacheA(
     _context: ScardContext,
@@ -689,7 +764,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = null_terminated_lpwstr_to_string(lookup_name);
     let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
-    info!(lookup_name, ?data);
+    info!(write_lookup_name = lookup_name, ?data);
 
     context.write_cache(lookup_name, data);
 
@@ -725,6 +800,7 @@ unsafe fn get_reader_icon(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetReaderIconA(
     context: ScardContext,
@@ -749,6 +825,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetReaderIconW(
     context: ScardContext,
@@ -770,6 +847,7 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     context: ScardContext,
@@ -794,6 +872,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     context: ScardContext,
@@ -815,6 +894,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
     _context: ScardContext,
@@ -826,6 +906,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
     _context: ScardContext,
@@ -837,6 +918,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdA"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
     _context: ScardContext,
@@ -848,6 +930,7 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdW"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
     _context: ScardContext,
@@ -859,6 +942,7 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAudit"))]
+#[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardAudit(_context: ScardContext, _dw_event: u32) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
