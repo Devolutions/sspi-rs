@@ -784,7 +784,7 @@ impl<'a> Kerberos {
                                 sha1.update(data_to_sign);
                                 let hash = sha1.finalize().to_vec();
 
-                                let smart_card =
+                                let mut smart_card =
                                     SmartCard::new(pin.clone(), &reader_name, private_key_file_index.unwrap_or(1))?;
                                 smart_card.sign(hash)
                             }),

@@ -1942,3 +1942,13 @@ impl From<pcsc::Error> for Error {
         Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }
+
+#[cfg(feature = "scard")]
+impl From<winscard::Error> for Error {
+    fn from(value: winscard::Error) -> Self {
+        Self::new(
+            ErrorKind::InternalError,
+            format!("Error while using a smart card: {}", value),
+        )
+    }
+}
