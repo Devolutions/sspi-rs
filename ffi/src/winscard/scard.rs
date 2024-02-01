@@ -51,7 +51,7 @@ pub unsafe extern "system" fn SCardConnectA(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    let context = &mut *scard_context_to_winscard_context(context);
+    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = try_execute!(
         CStr::from_ptr(sz_reader as *const i8).to_str(),
         ErrorKind::InvalidParameter
@@ -85,7 +85,7 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    let context = &mut *scard_context_to_winscard_context(context);
+    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = c_w_str_to_string(sz_reader);
     debug!(reader_name);
 
@@ -274,6 +274,8 @@ pub unsafe extern "system" fn SCardTransmit(
             pio_recv_pci
         ));
     }
+
+    *pcb_recv_length = out_apdu_len.try_into().unwrap();
 
     ErrorKind::Success.into()
 }

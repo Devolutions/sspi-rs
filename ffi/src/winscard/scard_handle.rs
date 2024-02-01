@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::iter::once;
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -7,11 +9,33 @@ use ffi_types::{LpDword, LpStr, LpWStr};
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
+use super::scard_context::CONTEXTS;
+
+thread_local! {
+    // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
+    pub(crate) static ALLOCATIONS: RefCell<HashMap<usize, (*mut [()], AllocationType)>> = RefCell::new(HashMap::new());
+}
+
+pub enum AllocationType {
+    U8,
+    U16,
+}
+
 pub fn scard_handle_to_winscard(handle: ScardHandle) -> *mut Box<dyn WinScard> {
     handle as *mut Box<dyn WinScard>
 }
-pub fn scard_context_to_winscard_context(handle: ScardContext) -> *mut Box<dyn WinScardContext> {
-    handle as *mut Box<dyn WinScardContext>
+
+pub fn scard_context_to_winscard_context(handle: ScardContext) -> WinScardResult<*mut Box<dyn WinScardContext>> {
+    let ctx = CONTEXTS.lock().unwrap();
+
+    if ctx.contains(&handle) {
+        Ok(handle as *mut Box<dyn WinScardContext>)
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidHandle,
+            format!("Invalid ScardContext provided: {}", handle),
+        ))
+    }
 }
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> IoRequest {
@@ -21,6 +45,18 @@ pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> 
         protocol: Protocol::from_bits((*pio_send_pci).dw_protocol).unwrap_or(Protocol::empty()),
         pci_info: from_raw_parts(buffer, buffer_len).to_vec(),
     }
+}
+
+pub unsafe fn null_terminated_lpwstr_to_string(p_str: LpWStr) -> String {
+    let mut string_length = 0;
+    loop {
+        if *p_str.offset(string_length) != 0 {
+            string_length += 1;
+        } else {
+            break;
+        }
+    }
+    String::from_utf16_lossy(from_raw_parts_mut(p_str, string_length.try_into().unwrap()))
 }
 
 pub unsafe fn copy_io_request_to_scard_io_request(
@@ -69,8 +105,20 @@ pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword)
         ));
     }
 
-    let dest_buffer = from_raw_parts_mut(dest, buffer.len());
-    dest_buffer.copy_from_slice(&buffer);
+    let buffer = buffer.into_boxed_slice();
+    let len = buffer.len();
+    let ptr = buffer.as_ptr() as usize;
+
+    ALLOCATIONS.with(|map| {
+        map.borrow_mut()
+            .insert(ptr, (Box::into_raw(buffer) as *mut [()], AllocationType::U16))
+    });
+
+    let ptr_as_bytes: [u16; 4] = std::mem::transmute(usize::to_le_bytes(ptr));
+
+    let dest_buffer = from_raw_parts_mut(dest, 4);
+    dest_buffer.copy_from_slice(&ptr_as_bytes);
+    *dest_len = len.try_into().unwrap();
 
     Ok(())
 }

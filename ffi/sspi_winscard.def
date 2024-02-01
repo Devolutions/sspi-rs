@@ -119,3 +119,8 @@ EXPORTS
     SCardListReadersWithDeviceInstanceIdA=Rust_SCardListReadersWithDeviceInstanceIdA
     SCardListReadersWithDeviceInstanceIdW=Rust_SCardListReadersWithDeviceInstanceIdW
     SCardAudit=Rust_SCardAudit
+    SCardGetDeviceTypeIdA=Rust_SCardGetDeviceTypeIdA
+    SCardGetDeviceTypeIdW=Rust_SCardGetDeviceTypeIdW
+    g_rgSCardT1Pci=Rust_g_rgSCardT1Pci
+    g_rgSCardT0Pci=Rust_g_rgSCardT0Pci
+    g_rgSCardRawPci=Rust_g_rgSCardRawPci

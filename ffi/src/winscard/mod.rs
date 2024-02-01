@@ -1,4 +1,6 @@
 use ffi_types::winscard::functions::{PSCardApiFunctionTable, SCardApiFunctionTable};
+use ffi_types::winscard::ScardIoRequest;
+use winscard::winscard::Protocol;
 
 use self::scard::*;
 use self::scard_context::*;
@@ -10,6 +12,24 @@ mod macros;
 pub mod scard;
 pub mod scard_context;
 mod scard_handle;
+
+#[no_mangle]
+pub static Rust_g_rgSCardT1Pci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::T1.bits(),
+    cb_pci_length: 8,
+};
+
+#[no_mangle]
+pub static Rust_g_rgSCardT0Pci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::T0.bits(),
+    cb_pci_length: 8,
+};
+
+#[no_mangle]
+pub static Rust_g_rgSCardRawPci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::Raw.bits(),
+    cb_pci_length: 8,
+};
 
 pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
     crate::logging::setup_logger();
