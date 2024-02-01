@@ -233,7 +233,7 @@ impl<'a> ScardContext<'a> {
                     ))
                 }
             };
-            tracing::warn!(?modulus, ?public_exponent);
+
             value.extend_from_slice(&public_exponent); // pubexp
             value.extend_from_slice(&modulus); // public key
 
@@ -264,8 +264,8 @@ impl<'a> ScardContext<'a> {
             // actual data len
             value.extend_from_slice(&12_u32.to_le_bytes());
             // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
-            // So, we just insert the extracted data from a real smart card
-            // card capabilities
+            // So, we just insert the extracted data from a real smart card.
+            // Card capabilities:
             value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
 
             value
