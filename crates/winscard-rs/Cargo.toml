@@ -33,4 +33,3 @@ sha1 = { version = "0.10.6", default-features = false }
 [dev-dependencies]
 proptest = "1.2.0"
 rand = "0.8.5"
-# rsa = { path = "../../RSA", features = ["sha2"] }

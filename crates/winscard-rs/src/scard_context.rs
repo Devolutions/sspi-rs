@@ -72,13 +72,20 @@ pub struct ScardContext<'a> {
 impl<'a> ScardContext<'a> {
     /// Creates a new smart card based on the list of smart card readers
     pub fn new(smart_card_info: SmartCardInfo<'a>) -> WinScardResult<Self> {
+        // Freshness values may vary at different points in time.
+        // We do not need to change them in runtime, so we hardcode them here.
+        // Those values do not mean anything special. They are just extracted from the real TPM smart card.
         const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
         const CONTAINER_FRESHNESS: [u8; 2] = [0x01, 0x00];
         const FILE_FRESHNESS: [u8; 2] = [0x0b, 0x00];
 
+        // The following header is formed based on the extracted information from the Windows Smart Card Minidriver (`msclmd.dll`).
+        // Do not change it unless you know what you are doing.
+        // A broken cache will break the entire authentication.
         const CACHE_ITEM_HEADER: [u8; 6] = {
             let mut header = [0; 6];
 
+            // reference: msclmd!I_GetPIVCache
             header[0] = 1;
             header[1] = PIN_FRESHNESS[1];
             header[2] = CONTAINER_FRESHNESS[0] + 1;
@@ -145,19 +152,21 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert(
-            "Cached_CardmodFile\\Cached_CMAPFile".into(),
-            vec![
-                // 1, 0, 2, 0, 12, 0, 0, 0, 0, 0, 0, 0, 86, 0, 0, 0,
-                // 112, 0, 119, 0, 49, 0, 52, 0, 64, 0, 101, 0, 120, 0,
-                // 97, 0, 109, 0, 112, 0, 108, 0, 101, 0, 46, 0, 99, 0, 111, 0, 109, 0, 45, 0, 53, 0, 56, 0, 54, 0, 57, 0,
-                // 50, 0, 49, 0, 51, 0, 55, 0, 45, 0, 53, 0, 51, 0, 50, 0, 50, 0, 45, 0, 52, 0, 51, 0, 45, 0, 54, 0, 53,
-                // 0, 49, 0, 50, 0, 52, 0, 0, 0, 3, 0, 0, 0, 0, 8,
-                49, 0, 98, 0, 50, 0, 50, 0, 99, 0, 51, 0, 54, 0, 50, 0, 45, 0, 52, 0, 54, 0, 98, 0, 97, 0, 45, 0, 52, 0,
-                56, 0, 56, 0, 57, 0, 45, 0, 97, 0, 100, 0, 53, 0, 99, 0, 45, 0, 48, 0, 49, 0, 102, 0, 55, 0, 102, 0,
-                50, 0, 53, 0, 102, 0, 99, 0, 49, 0, 48, 0, 97, 0, 119, 0, 119, 0, 119, 0, 0, 0, 3, 0, 0, 0, 0, 8,
-            ],
-        );
+        cache.insert("Cached_CardmodFile\\Cached_CMAPFile".into(), {
+            // CONTAINER_MAP_RECORD:
+            let mut value = smart_card_info
+                .container_name
+                .as_ref()
+                .encode_utf16()
+                .chain(core::iter::once(0))
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(); // wszGuid
+            value.extend_from_slice(&[3, 0]); // bFlags
+            value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
+            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+
+            value
+        });
         cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags

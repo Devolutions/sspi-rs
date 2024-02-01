@@ -30,15 +30,15 @@ use picky::key::KeyError;
 pub use scard::{SmartCard, PIV_AID};
 pub use scard_context::{Reader, ScardContext};
 
-/// [WinScardResult] type.
+/// The [WinScardResult] type.
 pub type WinScardResult<T> = result::Result<T, Error>;
 
-/// Represents a response after the APDU command execution
+/// Represents a response after the APDU command execution.
 #[derive(Debug)]
 pub struct Response {
-    /// Resulting APDU status
+    /// Resulting APDU status.
     pub status: Status,
-    /// Output APDU
+    /// Output APDU.
     pub data: Option<Vec<u8>>,
 }
 
@@ -68,7 +68,7 @@ impl From<Response> for Vec<u8> {
     }
 }
 
-/// Represents general WinSCard error
+/// Represents general WinSCard error.
 #[derive(Debug)]
 pub struct Error {
     /// Represents on the defined [Smart Card Return Values](https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values).

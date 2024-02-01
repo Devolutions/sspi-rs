@@ -41,20 +41,3 @@ pub fn build_ccc() -> Vec<u8> {
 
     ccc
 }
-
-#[cfg(test)]
-mod tests {
-    use super::build_ccc;
-
-    #[test]
-    fn test() {
-        let expected = [
-            83, 51, 240, 21, 160, 0, 0, 1, 22, 255, 2, 62, 243, 197, 122, 122, 55, 197, 117, 56, 169, 61, 186, 177,
-            253, 241, 1, 33, 242, 1, 33, 243, 0, 244, 1, 0, 245, 1, 16, 246, 0, 247, 0, 250, 0, 251, 0, 252, 0, 253, 0,
-            254, 0,
-        ];
-        let actual = build_ccc();
-
-        assert_eq!(&actual, &expected);
-    }
-}

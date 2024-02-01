@@ -372,7 +372,9 @@ impl SmartCard<'_> {
     fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
         use rsa::BigUint;
 
-        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
+        // According to the specification, the PIV smart card accepts already padded digest.
+        // So, it's safe to use the `rsa_decrypt_and_check` function here.
         let signature = rsa::hazmat::rsa_decrypt_and_check(
             &rsa_private_key,
             None::<&mut crate::dummy_rng::Dummy>,
@@ -391,7 +393,7 @@ impl SmartCard<'_> {
     /// Signs the provided data using the smart card private key.
     /// *Warning 1*. The input data should be a *SHA1* hash of the actually you want to sign.
     pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
         let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
