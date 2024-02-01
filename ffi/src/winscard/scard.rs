@@ -327,17 +327,23 @@ pub unsafe extern "system" fn SCardControl(
     check_handle!(handle);
     let scard = &mut *scard_handle_to_winscard(handle);
 
-    let in_buffer = from_raw_parts(lp_in_buffer as *const u8, cb_in_buffer_size.try_into().unwrap());
+    let in_buffer = if !lp_in_buffer.is_null() {
+        from_raw_parts(lp_in_buffer as *const u8, cb_in_buffer_size.try_into().unwrap())
+    } else {
+        &[]
+    };
     let out_buffer = try_execute!(scard.control(try_execute!(dw_control_code.try_into()), in_buffer));
     let out_buffer_len = out_buffer.len().try_into().unwrap();
 
-    if out_buffer_len > cb_out_buffer_size {
-        return ErrorKind::InsufficientBuffer.into();
-    }
+    if !lp_out_buffer.is_null() {
+        if out_buffer_len > cb_out_buffer_size {
+            return ErrorKind::InsufficientBuffer.into();
+        }
 
-    let lp_out_buffer = from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len());
-    lp_out_buffer.copy_from_slice(&out_buffer);
-    *lp_bytes_returned = out_buffer_len;
+        let lp_out_buffer = from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len());
+        lp_out_buffer.copy_from_slice(&out_buffer);
+        *lp_bytes_returned = out_buffer_len;
+    }
 
     ErrorKind::Success.into()
 }
