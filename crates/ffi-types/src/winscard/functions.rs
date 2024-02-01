@@ -24,7 +24,7 @@ pub type SCardListInterfacesWFn = extern "system" fn(ScardContext, LpCWStr, LpGu
 pub type SCardGetProviderIdAFn = extern "system" fn(ScardContext, LpCStr, LpGuid) -> ScardStatus;
 pub type SCardGetProviderIdWFn = extern "system" fn(ScardContext, LpCWStr, LpGuid) -> ScardStatus;
 pub type SCardGetCardTypeProviderNameAFn =
-    extern "system" fn(ScardContext, LpCStr, u32, *mut u8, LpDword) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpCStr, u32, *mut u8, LpDword) -> ScardStatus;
 pub type SCardGetCardTypeProviderNameWFn =
     unsafe extern "system" fn(ScardContext, LpCWStr, u32, *mut u16, LpDword) -> ScardStatus;
 pub type SCardIntroduceReaderGroupAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;

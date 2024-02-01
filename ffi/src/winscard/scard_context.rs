@@ -24,6 +24,23 @@ const SCARD_STATE_PRESENT: u32 = 0x00000020;
 // Undocumented constant that appears in all API captures
 const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
 
+const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
+
+// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew
+// `dwProviderId` function parameter::
+// The function retrieves the name of the smart card's primary service provider as a GUID string.
+const SCARD_PROVIDER_PRIMARY: u32 = 1;
+// The function retrieves the name of the cryptographic service provider.
+const SCARD_PROVIDER_CSP: u32 = 2;
+// The function retrieves the name of the smart card key storage provider (KSP).
+const SCARD_PROVIDER_KSP: u32 = 3;
+// The function retrieves the name of the card module.
+const SCARD_PROVIDER_CARD_MODULE: u32 = 0x80000001;
+
+const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
+const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
+
 const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
 
 // pub(crate) static CONTEXTS: Mutex<Vec<usize>> = Mutex::new(vec![]);
@@ -95,14 +112,13 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
-    // let ctx = CONTEXTS.lock().unwrap();
-    // if ctx.contains(&context) {
-    //     ErrorKind::Success
-    // } else {
-    //     ErrorKind::InvalidHandle
-    // }
-    // .into()
-    ErrorKind::Success.into()
+    let context = &*try_execute!(scard_context_to_winscard_context(context));
+
+    if context.is_valid() {
+        ErrorKind::Success.into()
+    } else {
+        ErrorKind::InvalidHandle.into()
+    }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsA"))]
@@ -265,14 +281,33 @@ pub extern "system" fn SCardGetProviderIdW(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardGetCardTypeProviderNameA(
+pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
-    _dw_provide_id: u32,
-    _szProvider: *mut u8,
-    _pcch_provider: LpDword,
+    dw_provide_id: u32,
+    szProvider: *mut u8,
+    pcch_provider: LpDword,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    check_null!(szProvider);
+    check_null!(pcch_provider);
+
+    let provider = match dw_provide_id {
+        SCARD_PROVIDER_PRIMARY => {
+            error!("Unsupported dw_provider_id: SCARD_PROVIDER_PRIMARY");
+            return ErrorKind::UnsupportedFeature.into();
+        }
+        SCARD_PROVIDER_CSP => MICROSOFT_DEFAULT_CSP,
+        SCARD_PROVIDER_KSP => MICROSOFT_DEFAULT_KSP,
+        SCARD_PROVIDER_CARD_MODULE => MICROSOFT_SCARD_DRIVER_LOCATION,
+        _ => {
+            error!(?dw_provide_id, "Unsupported dw_provider_id.");
+            return ErrorKind::InvalidParameter.into();
+        }
+    };
+
+    try_execute!(copy_buff(szProvider, pcch_provider, provider.as_bytes()));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameW"))]
@@ -285,44 +320,36 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     szProvider: *mut u16,
     pcch_provider: LpDword,
 ) -> ScardStatus {
+    check_null!(szProvider);
     check_null!(pcch_provider);
-    debug!("{:08x?}", dw_provide_id);
 
     let provider = match dw_provide_id {
-        1 => {
+        SCARD_PROVIDER_PRIMARY => {
             error!("Unsupported dw_provider_id: SCARD_PROVIDER_PRIMARY");
             return ErrorKind::UnsupportedFeature.into();
         }
-        2 => "Microsoft Base Smart Card Crypto Provider",
-        3 => "Microsoft Smart Card Key Storage Provider",
-        // 0x80000001 => "C:\\Users\\pw14\\Documents\\projects\\sspi-rs\\target\\debug\\winscard.dll",
-        0x80000001 => "C:\\Windows\\System32\\msclmd.dll",
+        SCARD_PROVIDER_CSP => MICROSOFT_DEFAULT_CSP,
+        SCARD_PROVIDER_KSP => MICROSOFT_DEFAULT_KSP,
+        SCARD_PROVIDER_CARD_MODULE => MICROSOFT_SCARD_DRIVER_LOCATION,
         _ => {
-            error!("Unsupported dw_provider_id: {:x?}", dw_provide_id);
+            error!(?dw_provide_id, "Unsupported dw_provider_id.");
             return ErrorKind::InvalidParameter.into();
         }
     };
-    debug!(?provider, "returned provider name");
     let encoded: Vec<u16> = provider.encode_utf16().chain([0]).collect();
-    debug!(pcch_provider = encoded.len(), "resulting len");
+    let encoded_len = encoded.len().try_into().unwrap();
 
-    if szProvider.is_null() {
-        *pcch_provider = encoded.len() as u32;
-        return ErrorKind::Success.into();
+    if *pcch_provider == SCARD_AUTOALLOCATE {
+        *pcch_provider = encoded_len;
+        // allocate a new buffer and write an address into raw_buff
+        *(szProvider as *mut *mut u16) = vec_into_raw_ptr(encoded);
+    } else {
+        if encoded_len > *pcch_provider {
+            return ErrorKind::InsufficientBuffer.into();
+        }
+        *pcch_provider = encoded_len;
+        from_raw_parts_mut(szProvider, encoded.len()).copy_from_slice(encoded.as_slice());
     }
-
-    let dest_str_len = (*pcch_provider).try_into().unwrap();
-    if encoded.len() > dest_str_len {
-        return ErrorKind::InsufficientBuffer.into();
-    }
-
-    *pcch_provider = dest_str_len as u32;
-
-    let dest_buffer = from_raw_parts_mut(szProvider, encoded.len());
-    dest_buffer.copy_from_slice(&encoded);
-    // let buff = szProvider as *mut *mut u16;
-    // let b = vec_into_raw_ptr(encoded);
-    // *buff = b;
 
     ErrorKind::Success.into()
 }
