@@ -674,15 +674,28 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardReadCacheA(
-    _context: ScardContext,
+pub unsafe extern "system" fn SCardReadCacheA(
+    context: ScardContext,
     _card_identifier: LpUuid,
     _freshness_counter: u32,
-    _lookup_lame: LpStr,
-    _data: LpByte,
-    _data_len: LpDword,
+    lookup_name: LpStr,
+    data: LpByte,
+    data_len: LpDword,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let lookup_name = try_execute!(
+        CStr::from_ptr(lookup_name as *const i8).to_str(),
+        ErrorKind::InvalidParameter
+    );
+
+    if let Some(cached_value) = context.read_cache(lookup_name) {
+        try_execute!(copy_buff(data, data_len, cached_value));
+
+        ErrorKind::Success.into()
+    } else {
+        warn!(cache = ?ErrorKind::CacheItemNotFound);
+        ErrorKind::CacheItemNotFound.into()
+    }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
@@ -691,44 +704,17 @@ pub extern "system" fn SCardReadCacheA(
 pub unsafe extern "system" fn SCardReadCacheW(
     context: ScardContext,
     _card_identifier: LpUuid,
-    freshness_counter: u32,
+    _freshness_counter: u32,
     lookup_name: LpWStr,
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
     let context = &*try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = c_w_str_to_string(lookup_name);
-    info!(?lookup_name);
-    info!(freshness_counter, "freshness_counter");
-
-    // if lookup_name == "Cached_CardmodFile\\\\Cached_Container_Freshness" {
-    //     unsafe {
-    //         use std::ptr::null_mut;
-    //         let mut p = null_mut::<u8>();
-    //         *p = 3;
-    //     }
-    //     // panic!("");
-    // } else {
-    //     debug!("other");
-    // }
 
     if let Some(cached_value) = context.read_cache(&lookup_name) {
-        // let dest_buffer_len = (*data_len).try_into().unwrap();
-        // if cached_value.len() > dest_buffer_len {
-        //     warn!(cache = ?ErrorKind::InsufficientBuffer);
-        //     return ErrorKind::InsufficientBuffer.into();
-        // }
+        try_execute!(copy_buff(data, data_len, cached_value));
 
-        let cached_len = cached_value.len();
-        let raw_cached_value = libc::malloc(cached_len) as *mut u8;
-        from_raw_parts_mut(raw_cached_value, cached_len).copy_from_slice(cached_value);
-
-        // let dest_buffer = from_raw_parts_mut(data, cached_value.len());
-        // dest_buffer.copy_from_slice(cached_value);
-        *(data as *mut *mut u8) = raw_cached_value;
-        *data_len = cached_len.try_into().unwrap();
-
-        warn!(cache = ?ErrorKind::Success);
         ErrorKind::Success.into()
     } else {
         warn!(cache = ?ErrorKind::CacheItemNotFound);
