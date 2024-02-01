@@ -71,10 +71,7 @@ impl SmartCard<'_> {
                 "PIN should be no shorter than 6 bytes and no longer than 8",
             ));
         }
-        if pin
-            .iter()
-            .any(|byte| !byte.is_ascii_digit())
-        {
+        if pin.iter().any(|byte| !byte.is_ascii_digit()) {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 "PIN should consist only of ASCII values representing decimal digits (0-9)",
@@ -127,19 +124,9 @@ impl SmartCard<'_> {
         }
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
-            warn!(state = ?self.state, instruction = ?cmd.instruction(), "not_selected_so_not_found");
-            if cmd.instruction() == Instruction::GetData {
-                debug!("inner_get_data");
-                return self.get_data(cmd);
-            }
-            if cmd.instruction() == Instruction::Verify {
-                debug!("inner_verify");
-                return self.verify(cmd);
-            }
             return Ok(Status::NotFound.into());
         } else if self.state == SCardState::PivAppSelected && cmd.instruction() == Instruction::GeneralAuthenticate {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
-            warn!(state = ?self.state, instruction = ?cmd.instruction(), "general_authenticate");
             return Ok(Status::SecurityStatusNotSatisfied.into());
         }
         match cmd.instruction() {
@@ -326,9 +313,7 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
-        // const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
-        // TMP DBG FIX:
-        const PIV_AUTHENTICATION_KEY: u8 = 0x9C;
+        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
 
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
@@ -534,36 +519,6 @@ mod tests {
             Just(Status::IncorrectDataField),
             Just(Status::InstructionNotSupported)
         ]
-    }
-
-    #[test]
-    fn sign_padded() {
-        let padded = &[
-            0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 48, 33, 48, 9, 6, 5, 43, 14, 3, 2, 26, 5, 0, 4, 20, 9, 54,
-            86, 155, 83, 163, 136, 46, 6, 16, 39, 82, 166, 84, 142, 21, 55, 176, 136, 228,
-        ];
-
-        let pk_pem = include_str!(env!("WINSCARD_PK_PATH"));
-        let pk = PrivateKey::from_pem_str(pk_pem).unwrap();
-        let smart_card = SmartCard::new(
-            "reader".into(),
-            b"214653".to_vec(),
-            include_bytes!(env!("WINSCARD_CERT_PATH")).to_vec(),
-            pk,
-        )
-        .unwrap();
-
-        smart_card.sign_padded(padded).unwrap();
     }
 
     prop_compose! {
@@ -933,21 +888,20 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
                 .expect("The inner TLV object should contain a Response tag"),
             Value::Primitive(_) => panic!("Dynamic Authentication Template should contain constructed value"),
         };
-        let _signed_hash = match response_tag.value() {
+        let signed_hash = match response_tag.value() {
             Value::Constructed(_) => panic!("Response tag should contain a primitive value"),
             Value::Primitive(signed_hash) => signed_hash,
         };
         // verify that the returned signature can be verified using the corresponding public key
-        // TODO: see line 329
-        // assert!(signature_algorithm
-        //     .verify(
-        //         &scard
-        //             .auth_pk
-        //             .to_public_key()
-        //             .expect("Error while creating public key from a private key"),
-        //         data,
-        //         signed_hash
-        //     )
-        //     .is_ok());
+        assert!(signature_algorithm
+            .verify(
+                &scard
+                    .auth_pk
+                    .to_public_key()
+                    .expect("Error while creating public key from a private key"),
+                data,
+                signed_hash
+            )
+            .is_ok());
     }
 }
