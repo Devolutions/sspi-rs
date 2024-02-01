@@ -393,11 +393,3 @@ pub extern "system" fn GetOpenCardNameA(_p: LpOpenCardNameA) -> ScardStatus {
 pub extern "system" fn GetOpenCardNameW(_p: LpOpenCardNameW) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
-
-#[cfg_attr(windows, rename_symbol(to = "Rust_SCardDlgExtendedError"))]
-#[instrument(ret)]
-#[no_mangle]
-pub extern "system" fn SCardDlgExtendedError() -> i32 {
-    // TODO: do we really need it? This function seems to be obsolete
-    todo!()
-}

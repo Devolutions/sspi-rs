@@ -98,7 +98,6 @@ pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
         SCardUIDlgSelectCardW,
         GetOpenCardNameA,
         GetOpenCardNameW,
-        SCardDlgExtendedError,
         SCardReadCacheA,
         SCardReadCacheW,
         SCardWriteCacheA,

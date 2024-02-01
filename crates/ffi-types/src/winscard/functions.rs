@@ -109,7 +109,8 @@ pub type SCardUIDlgSelectCardAFn = extern "system" fn(LpOpenCardNameExA) -> Scar
 pub type SCardUIDlgSelectCardWFn = extern "system" fn(LpOpenCardNameExW) -> ScardStatus;
 pub type GetOpenCardNameAFn = extern "system" fn(LpOpenCardNameA) -> ScardStatus;
 pub type GetOpenCardNameWFn = extern "system" fn(LpOpenCardNameW) -> ScardStatus;
-pub type SCardDlgExtendedErrorFn = extern "system" fn() -> i32;
+// Not a part of the standard winscard.h API
+pub type GetSCardApiFunctionTableFn = extern "system" fn() -> PSCardApiFunctionTable;
 
 // https://github.com/FreeRDP/FreeRDP/blob/88f79c5748f4031cb50dfae3ebadcc6619b69f1c/winpr/include/winpr/smartcard.h#L1114
 #[repr(C)]
@@ -178,7 +179,6 @@ pub struct SCardApiFunctionTable {
     pub SCardUIDlgSelectCardW: SCardUIDlgSelectCardWFn,
     pub GetOpenCardNameA: GetOpenCardNameAFn,
     pub GetOpenCardNameW: GetOpenCardNameWFn,
-    pub SCardDlgExtendedError: SCardDlgExtendedErrorFn,
     pub SCardReadCacheA: SCardReadCacheAFn,
     pub SCardReadCacheW: SCardReadCacheWFn,
     pub SCardWriteCacheA: SCardWriteCacheAFn,

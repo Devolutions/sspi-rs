@@ -107,7 +107,6 @@ EXPORTS
     SCardUIDlgSelectCardW=Rust_SCardUIDlgSelectCardW
     GetOpenCardNameA=Rust_GetOpenCardNameA
     GetOpenCardNameW=Rust_GetOpenCardNameW
-    SCardDlgExtendedError=Rust_SCardDlgExtendedError
     SCardReadCacheA=Rust_SCardReadCacheA
     SCardReadCacheW=Rust_SCardReadCacheW
     SCardWriteCacheA=Rust_SCardWriteCacheA
