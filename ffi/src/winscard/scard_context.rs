@@ -181,7 +181,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     let readers = context.list_readers();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_multistring_w(&readers, msz_readers as *mut _, pcch_readers));
+    try_execute!(write_multistring_w(&readers, msz_readers, pcch_readers));
 
     ErrorKind::Success.into()
 }
