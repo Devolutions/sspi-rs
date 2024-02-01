@@ -44,6 +44,7 @@ pub fn scard_context_to_winscard_context(handle: ScardContext) -> WinScardResult
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> IoRequest {
     let buffer_len = (*pio_send_pci).cb_pci_length.try_into().unwrap();
     let buffer = (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>());
+
     IoRequest {
         protocol: Protocol::from_bits((*pio_send_pci).dw_protocol).unwrap_or(Protocol::empty()),
         pci_info: from_raw_parts(buffer, buffer_len).to_vec(),

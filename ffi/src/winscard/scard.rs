@@ -274,18 +274,10 @@ pub unsafe extern "system" fn SCardTransmit(
 
     let io_request = scard_io_request_to_io_request(pio_send_pci);
     let input_apdu = from_raw_parts(pb_send_buffer, cb_send_length.try_into().unwrap());
-    debug!("input_apdu: {:02x?}, {}", input_apdu, input_apdu.len());
 
     let out_data = try_execute!(scard.transmit(io_request, input_apdu));
 
-    debug!(
-        "output_apdu: {:02x?}, {}",
-        out_data.output_apdu,
-        out_data.output_apdu.len()
-    );
-
     let out_apdu_len = out_data.output_apdu.len();
-
     if out_apdu_len > (*pcb_recv_length).try_into().unwrap() || pb_recv_buffer.is_null() {
         return ErrorKind::InsufficientBuffer.into();
     }
