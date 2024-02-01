@@ -15,7 +15,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 // use super::scard_handle::{AllocationType, ALLOCATIONS};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
 use crate::winscard::buff_alloc::copy_buff;
-use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_readers_a, write_readers_w};
+use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_multistring_a, write_multistring_w};
 
 const SCARD_STATE_UNAWARE: u32 = 0x00000000;
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
@@ -40,6 +40,8 @@ const SCARD_PROVIDER_CARD_MODULE: u32 = 0x80000001;
 const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
 const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
+
+const DEFAULT_CARD_NAME: &str = "Cool card";
 
 const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
 
@@ -157,7 +159,7 @@ pub unsafe extern "system" fn SCardListReadersA(
     let readers = context.list_readers();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_readers_a(&readers, msz_readers, pcch_readers));
+    try_execute!(write_multistring_a(&readers, msz_readers, pcch_readers));
 
     ErrorKind::Success.into()
 }
@@ -179,7 +181,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     let readers = context.list_readers();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_readers_w(&readers, msz_readers as *mut _, pcch_readers));
+    try_execute!(write_multistring_w(&readers, msz_readers as *mut _, pcch_readers));
 
     ErrorKind::Success.into()
 }
@@ -187,14 +189,20 @@ pub unsafe extern "system" fn SCardListReadersW(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardListCardsA(
+pub unsafe extern "system" fn SCardListCardsA(
     _context: ScardContext,
     _pb_atr: LpCByte,
     _rgquid_nterfaces: LpCGuid,
     _cguid_interface_count: u32,
-    _msz_cards: *mut u8,
-    _pcch_cards: LpDword,
+    msz_cards: *mut u8,
+    pcch_cards: LpDword,
 ) -> ScardStatus {
+    check_null!(msz_cards);
+    check_null!(pcch_cards);
+
+    // we have only one smart card with only one default name
+    try_execute!(write_multistring_a(&[DEFAULT_CARD_NAME], msz_cards, pcch_cards));
+
     ErrorKind::UnsupportedFeature.into()
 }
 
@@ -209,25 +217,11 @@ pub unsafe extern "system" fn SCardListCardsW(
     msz_cards: *mut u16,
     pcch_cards: LpDword,
 ) -> ScardStatus {
+    check_null!(msz_cards);
     check_null!(pcch_cards);
-    let scard_name = "Cool card";
-    let encoded: Vec<u16> = scard_name.encode_utf16().chain([0, 0]).collect();
 
-    if msz_cards.is_null() {
-        *pcch_cards = encoded.len().try_into().unwrap();
-        return ErrorKind::Success.into();
-    }
-
-    let dest_str_len = (*pcch_cards).try_into().unwrap();
-    if encoded.len() > dest_str_len {
-        return ErrorKind::InsufficientBuffer.into();
-    }
-
-    // let dest_buffer = from_raw_parts_mut(msz_cards, encoded.len());
-    // dest_buffer.copy_from_slice(&encoded);
-    let buff = msz_cards as *mut *mut u16;
-    let b = vec_into_raw_ptr(encoded);
-    *buff = b;
+    // we have only one smart card with only one default name
+    try_execute!(write_multistring_w(&[DEFAULT_CARD_NAME], msz_cards, pcch_cards));
 
     ErrorKind::Success.into()
 }

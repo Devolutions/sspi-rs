@@ -16,7 +16,8 @@ pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDw
 pub type SCardListReaderGroupsWFn = extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListReadersAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
 pub type SCardListReadersWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
-pub type SCardListCardsAFn = extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u8, LpDword) -> ScardStatus;
+pub type SCardListCardsAFn =
+    unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u8, LpDword) -> ScardStatus;
 pub type SCardListCardsWFn =
     unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u16, LpDword) -> ScardStatus;
 pub type SCardListInterfacesAFn = extern "system" fn(ScardContext, LpCStr, LpGuid, LpDword) -> ScardStatus;

@@ -13,7 +13,7 @@ use winscard::{ErrorKind, WinScardResult};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
-    scard_io_request_to_io_request, write_readers_a, write_readers_w,
+    scard_io_request_to_io_request, write_multistring_a, write_multistring_w,
 };
 
 unsafe fn connect(
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn SCardStatusA(
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_readers_a(&readers, msz_reader_names, pcch_reader_len));
+    try_execute!(write_multistring_a(&readers, msz_reader_names, pcch_reader_len));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 
@@ -240,7 +240,7 @@ pub unsafe extern "system" fn SCardStatusW(
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_readers_w(&readers, msz_reader_names, pcch_reader_len));
+    try_execute!(write_multistring_w(&readers, msz_reader_names, pcch_reader_len));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 

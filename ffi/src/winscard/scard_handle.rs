@@ -78,7 +78,7 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     Ok(())
 }
 
-pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_multistring_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
     let buffer: Vec<u16> = readers
         .iter()
         .flat_map(|reader| reader.encode_utf16().chain(once(0)))
@@ -104,7 +104,7 @@ pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword)
     Ok(())
 }
 
-pub unsafe fn write_readers_a(readers: &[&str], dest: LpStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_multistring_a(readers: &[&str], dest: LpStr, dest_len: LpDword) -> WinScardResult<()> {
     let buffer: Vec<u8> = readers
         .iter()
         .flat_map(|reader| reader.as_bytes().iter().cloned().chain(once(0)))
