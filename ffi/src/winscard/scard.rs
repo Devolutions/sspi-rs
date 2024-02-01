@@ -189,7 +189,8 @@ pub unsafe extern "system" fn SCardStatusA(
     check_null!(pcch_reader_len);
     check_null!(pdw_state);
     check_null!(pdw_protocol);
-    check_null!(pb_atr);
+    // pb_atr can be null.
+    // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
     let scard = &mut *scard_handle_to_winscard(handle);
@@ -201,12 +202,14 @@ pub unsafe extern "system" fn SCardStatusA(
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 
-    let out_atr_len = (*pcb_atr_len).try_into().unwrap();
-    if atr_len > out_atr_len {
-        return ErrorKind::InsufficientBuffer.into();
+    if !pb_atr.is_null() {
+        let out_atr_len = (*pcb_atr_len).try_into().unwrap();
+        if atr_len > out_atr_len {
+            return ErrorKind::InsufficientBuffer.into();
+        }
+        let out_atr = from_raw_parts_mut(pb_atr, atr_len);
+        out_atr.copy_from_slice(status.atr.as_ref());
     }
-    let out_atr = from_raw_parts_mut(pb_atr, atr_len);
-    out_atr.copy_from_slice(status.atr.as_ref());
 
     ErrorKind::Success.into()
 }
@@ -237,7 +240,7 @@ pub unsafe extern "system" fn SCardStatusW(
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_readers_w(&readers, msz_reader_names as *mut _, pcch_reader_len));
+    try_execute!(write_readers_w(&readers, msz_reader_names, pcch_reader_len));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 

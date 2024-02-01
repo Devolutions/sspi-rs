@@ -5,7 +5,7 @@ use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::utils::vec_into_raw_ptr;
 
-const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
+pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 
 pub unsafe fn copy_buff(raw_buff: LpByte, raw_buff_len: LpDword, buff_to_copy: &[u8]) -> WinScardResult<()> {
     let buff_to_copy_len = buff_to_copy.len().try_into().unwrap();

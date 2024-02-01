@@ -5,12 +5,14 @@ use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
-use ffi_types::{LpDword, LpStr, LpWStr};
+use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
+use super::buff_alloc::SCARD_AUTOALLOCATE;
 // use super::scard_context::CONTEXTS;
 use crate::utils::vec_into_raw_ptr;
+use crate::winscard::buff_alloc::copy_buff;
 
 // thread_local! {
 //     // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
@@ -87,35 +89,28 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     Ok(())
 }
 
-pub unsafe fn write_readers_w(readers: &[&str], dest: *mut LpWStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_readers_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
     let buffer: Vec<u16> = readers
         .iter()
         .flat_map(|reader| reader.encode_utf16().chain(once(0)))
         .chain(once(0))
         .collect();
+    let buffer_len = buffer.len().try_into().unwrap();
 
-    // let dest_str_len = (*dest_len).try_into().unwrap();
-    // if buffer.len() > dest_str_len {
-    //     return Err(Error::new(
-    //         ErrorKind::InsufficientBuffer,
-    //         format!(
-    //             "Readers string buffer us too small. Expected at least {} but got {}",
-    //             buffer.len(),
-    //             dest_str_len
-    //         ),
-    //     ));
-    // }
-
-    let len = buffer.len();
-    let buffer = vec_into_raw_ptr(buffer);
-
-    // ALLOCATIONS.with(|map| {
-    //     map.borrow_mut()
-    //         .insert(ptr, (Box::into_raw(buffer) as *mut [()], AllocationType::U16))
-    // });
-
-    *dest = buffer;
-    *dest_len = len.try_into().unwrap();
+    if *dest_len == SCARD_AUTOALLOCATE {
+        *dest_len = buffer_len;
+        // allocate a new buffer and write an address into raw_buff
+        *(dest as *mut *mut u16) = vec_into_raw_ptr(buffer);
+    } else {
+        if buffer_len > *dest_len {
+            return Err(Error::new(
+                ErrorKind::InsufficientBuffer,
+                format!("expected at least {} bytes but got {}.", buffer_len, *dest_len),
+            ));
+        }
+        *dest_len = buffer_len;
+        from_raw_parts_mut(dest, buffer.len()).copy_from_slice(buffer.as_slice());
+    }
 
     Ok(())
 }
@@ -127,20 +122,5 @@ pub unsafe fn write_readers_a(readers: &[&str], dest: LpStr, dest_len: LpDword) 
         .chain(once(0))
         .collect();
 
-    let dest_str_len = (*dest_len).try_into().unwrap();
-    if buffer.len() > dest_str_len {
-        return Err(Error::new(
-            ErrorKind::InsufficientBuffer,
-            format!(
-                "Readers string buffer us too small. Expected at least {} but got {}",
-                buffer.len(),
-                dest_str_len
-            ),
-        ));
-    }
-
-    let dest_buffer = from_raw_parts_mut(dest, buffer.len());
-    dest_buffer.copy_from_slice(&buffer);
-
-    Ok(())
+    copy_buff(dest, dest_len, &buffer)
 }
