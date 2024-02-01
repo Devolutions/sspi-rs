@@ -8,7 +8,7 @@ use crate::utils::into_raw_ptr;
 
 #[macro_use]
 mod macros;
-
+mod buff_alloc;
 pub mod scard;
 pub mod scard_context;
 mod scard_handle;

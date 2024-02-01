@@ -14,6 +14,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 
 // use super::scard_handle::{AllocationType, ALLOCATIONS};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
+use crate::winscard::buff_alloc::copy_buff;
 use crate::winscard::scard_handle::{
     null_terminated_lpwstr_to_string, scard_context_to_winscard_context, write_readers_a, write_readers_w,
 };
@@ -62,7 +63,13 @@ pub unsafe extern "system" fn SCardEstablishContext(
             format!("Error while trying to encode certificate using the der format: {}", e),
         )
     }));
-    let scard_info = SmartCardInfo::new("pw14@example.com-58692137-5322-43-65124".into(), "Microsoft Virtual Smart Card 2".into(), pin.into_bytes(), certificate, auth_pk);
+    let scard_info = SmartCardInfo::new(
+        "pw14@example.com-58692137-5322-43-65124".into(),
+        "Microsoft Virtual Smart Card 2".into(),
+        pin.into_bytes(),
+        certificate,
+        auth_pk,
+    );
     // We have only one available reader
     let established_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
 
@@ -608,12 +615,13 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
         );
 
         if supported_readers.contains(&Cow::Borrowed(&reader)) {
-            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
+            reader_state.dw_event_state =
+                SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
             reader_state.cb_atr = ATR.len().try_into().unwrap();
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
         } else if reader == "\\\\?PnP?\\Notification" {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-        } else{
+        } else {
             error!(?reader, "Unsupported reader");
         }
     }
@@ -640,12 +648,13 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     for reader_state in reader_states {
         let reader = c_w_str_to_string(reader_state.sz_reader);
         if supported_readers.contains(&Cow::Borrowed(&reader)) {
-            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
+            reader_state.dw_event_state =
+                SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
             reader_state.cb_atr = ATR.len().try_into().unwrap();
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
         } else if reader == "\\\\?PnP?\\Notification" {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-        } else{
+        } else {
             error!(?reader, "Unsupported reader");
         }
     }
@@ -775,37 +784,8 @@ unsafe fn get_reader_icon(
     pcb_icon: LpDword,
 ) -> WinScardResult<()> {
     let icon = context.reader_icon(reader_name)?;
-    let icon_buffer_len = icon.as_ref().len();
 
-    warn!("{:0x?} {}", *pcb_icon, icon_buffer_len);
-    warn!("{:?}", pb_icon);
-
-    if pb_icon.is_null() {
-        *pcb_icon = icon_buffer_len.try_into().unwrap();
-        return Ok(());
-    }
-
-    let pcb_icon_len = (*pcb_icon).try_into().unwrap();
-
-    if icon_buffer_len > pcb_icon_len {
-        return Err(Error::new(
-            ErrorKind::InsufficientBuffer,
-            format!(
-                "Icon buffer is too small. Expected at least {} but got {}",
-                icon_buffer_len, pcb_icon_len
-            ),
-        ));
-    }
-
-    *pcb_icon = icon_buffer_len.try_into().unwrap();
-
-    let icon_ptr = vec_into_raw_ptr(icon.as_ref().to_vec());
-    warn!(?icon_ptr, "alcicopt");
-    *(pb_icon as *mut *mut u8) = icon_ptr;
-    // let icon_buffer = from_raw_parts_mut(pb_icon, icon_buffer_len);
-    // icon_buffer.copy_from_slice(icon.as_ref());
-
-    Ok(())
+    copy_buff(pb_icon, pcb_icon, icon.as_ref())
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
@@ -819,7 +799,8 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 ) -> ScardStatus {
     check_handle!(context);
     check_null!(sz_reader_name);
-    check_null!(pb_icon);
+    // `pb_icon` can be null.
+    check_null!(pcb_icon);
 
     let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = try_execute!(

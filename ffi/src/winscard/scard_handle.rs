@@ -30,7 +30,7 @@ pub fn scard_context_to_winscard_context(handle: ScardContext) -> WinScardResult
     // let ctx = CONTEXTS.lock().unwrap();
 
     // if ctx.contains(&handle) {
-        Ok(handle as *mut Box<dyn WinScardContext>)
+    Ok(handle as *mut Box<dyn WinScardContext>)
     // } else {
     //     Err(Error::new(
     //         ErrorKind::InvalidHandle,
