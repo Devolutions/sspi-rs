@@ -13,7 +13,8 @@ mod dummy_rng;
 mod piv_cert;
 mod scard;
 mod scard_context;
-mod tlv_tags;
+/// Constants with most popular tags used in this PIV smart card implementation.
+pub mod tlv_tags;
 /// The [winscard] module contains traits for easier interop between WinSCard API and our emulated scard.
 pub mod winscard;
 
