@@ -50,18 +50,6 @@ pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> 
     }
 }
 
-pub unsafe fn null_terminated_lpwstr_to_string(p_str: LpWStr) -> String {
-    let mut string_length = 0;
-    loop {
-        if *p_str.offset(string_length) != 0 {
-            string_length += 1;
-        } else {
-            break;
-        }
-    }
-    String::from_utf16_lossy(from_raw_parts_mut(p_str, string_length.try_into().unwrap()))
-}
-
 pub unsafe fn copy_io_request_to_scard_io_request(
     io_request: &IoRequest,
     scard_io_request: LpScardIoRequest,

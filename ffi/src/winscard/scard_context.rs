@@ -15,9 +15,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 // use super::scard_handle::{AllocationType, ALLOCATIONS};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
 use crate::winscard::buff_alloc::copy_buff;
-use crate::winscard::scard_handle::{
-    null_terminated_lpwstr_to_string, scard_context_to_winscard_context, write_readers_a, write_readers_w,
-};
+use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_readers_a, write_readers_w};
 
 const SCARD_STATE_UNAWARE: u32 = 0x00000000;
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
@@ -699,7 +697,7 @@ pub unsafe extern "system" fn SCardReadCacheW(
     data_len: LpDword,
 ) -> ScardStatus {
     let context = &*try_execute!(scard_context_to_winscard_context(context));
-    let lookup_name = null_terminated_lpwstr_to_string(lookup_name);
+    let lookup_name = c_w_str_to_string(lookup_name);
     info!(?lookup_name);
     info!(freshness_counter, "freshness_counter");
 
@@ -741,15 +739,25 @@ pub unsafe extern "system" fn SCardReadCacheW(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardWriteCacheA(
-    _context: ScardContext,
+pub unsafe extern "system" fn SCardWriteCacheA(
+    context: ScardContext,
     _card_identifier: LpUuid,
     _freshness_counter: u32,
-    _lookup_lame: LpStr,
-    _data: LpByte,
-    _data_len: u32,
+    lookup_name: LpStr,
+    data: LpByte,
+    data_len: u32,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let lookup_name = try_execute!(
+        CStr::from_ptr(lookup_name as *const i8).to_str(),
+        ErrorKind::InvalidParameter
+    );
+    let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
+    info!(write_lookup_name = lookup_name, ?data);
+
+    context.write_cache(lookup_name.to_owned(), data);
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheW"))]
@@ -764,13 +772,9 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     data_len: u32,
 ) -> ScardStatus {
     let context = &mut *try_execute!(scard_context_to_winscard_context(context));
-    let lookup_name = null_terminated_lpwstr_to_string(lookup_name);
+    let lookup_name = c_w_str_to_string(lookup_name);
     let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
     info!(write_lookup_name = lookup_name, ?data);
-
-    // if lookup_name == "Cached_CardProperty_Key Sizes_2" {
-    //     panic!("Cached_CardProperty_Key Sizes_2")
-    // }
 
     context.write_cache(lookup_name, data);
 
