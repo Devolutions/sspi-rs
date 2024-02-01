@@ -854,7 +854,6 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
         CStr::from_ptr(sz_reader_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
-    debug!(reader_name);
 
     let type_id = try_execute!(context.device_type_id(&reader_name));
     *pdw_device_type_id = type_id.into();
@@ -876,12 +875,9 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
 
     let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = c_w_str_to_string(sz_reader_name);
-    debug!(reader_name);
 
     let type_id = try_execute!(context.device_type_id(&reader_name));
-    warn!(?type_id);
     *pdw_device_type_id = type_id.into();
-    warn!("{:0x?}", (*pdw_device_type_id).to_le_bytes());
 
     ErrorKind::Success.into()
 }
