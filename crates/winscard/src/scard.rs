@@ -6,32 +6,45 @@ use alloc::{format, vec};
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
-use tracing::error;
+use rsa::traits::PublicKeyParts;
+use rsa::{Pkcs1v15Sign, RsaPrivateKey};
+use sha1::Sha1;
 
+use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
 use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
-// NIST.SP.800-73-4, part 1, section 2.2
+/// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 // the max amount of data one APDU response can transmit
 const CHUNK_SIZE: usize = 256;
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const CARD_AUTH_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x01];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const CARD_CAPABILITY_CONTAINER_TAG: &[u8] = &[0x5F, 0xC1, 0x07];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const DIGITAL_SIGNATURE_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0A];
+// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
+/// Represents an emulated smart card.
+/// Currently, we support one key container per smart card.
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
+    ccc: Vec<u8>,
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
-    #[allow(dead_code)]
     auth_pk: PrivateKey,
     state: SCardState,
     // We don't need to track actual transactions for the emulated smart card.
@@ -42,6 +55,7 @@ pub struct SmartCard<'a> {
 }
 
 impl SmartCard<'_> {
+    /// Creates a smart card instance based on the provided data.
     pub fn new(
         reader_name: Cow<str>,
         mut pin: Vec<u8>,
@@ -57,17 +71,10 @@ impl SmartCard<'_> {
                 "PIN should be no shorter than 6 bytes and no longer than 8",
             ));
         }
-        // `0` in ASCII
-        const PIN_VALUE_RANGE_LOW_BOUND: u8 = 0x30;
-        // `9` in ASCII
-        const PIN_VALUE_RANGE_HIGH_BOUND: u8 = 0x39;
-        if pin
-            .iter()
-            .any(|byte| !(PIN_VALUE_RANGE_LOW_BOUND..=PIN_VALUE_RANGE_HIGH_BOUND).contains(byte))
-        {
+        if pin.iter().any(|byte| !byte.is_ascii_digit()) {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
-                "PIN should consist only of ASCII values representing decimal digits (0x30-0x39)",
+                "PIN should consist only of ASCII values representing decimal digits (0-9)",
             ));
         };
         if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
@@ -78,6 +85,7 @@ impl SmartCard<'_> {
         Ok(SmartCard {
             reader_name,
             chuid,
+            ccc: build_ccc(),
             pin,
             auth_cert,
             auth_pk,
@@ -88,6 +96,8 @@ impl SmartCard<'_> {
         })
     }
 
+    /// This functions handles one APDU command.
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
         let cmd = Command::<1024>::try_from(data).map_err(|error| {
             error!(?error, "APDU command parsing error");
@@ -107,6 +117,7 @@ impl SmartCard<'_> {
         } else {
             cmd
         };
+
         if cmd.class().chain().not_the_last() {
             self.pending_command = Some(cmd);
             return Ok(Status::OK.into());
@@ -131,6 +142,7 @@ impl SmartCard<'_> {
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn select(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
@@ -169,6 +181,7 @@ impl SmartCard<'_> {
         Ok(Response::new(Status::OK, Some(data.to_vec())))
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn verify(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
@@ -222,6 +235,7 @@ impl SmartCard<'_> {
         Ok(Status::OK.into())
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn get_data(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
@@ -246,20 +260,23 @@ impl SmartCard<'_> {
         if request.tag() != &Tag::try_from(tlv_tags::TAG_LIST)? {
             return Ok(Status::NotFound.into());
         }
+
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
                 CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
-                PIV_CERT_TAG => {
+                PIV_CERT_TAG | CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG => {
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
                     self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()
                 }
+                CARD_CAPABILITY_CONTAINER_TAG => Ok(Response::new(Status::OK, Some(self.ccc.clone()))),
                 _ => Ok(Status::NotFound.into()),
             },
             Value::Constructed(_) => Ok(Status::NotFound.into()),
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn get_response(&mut self) -> WinScardResult<Response> {
         // ISO/IEC 7816-4, Section 7.6.1
         // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
@@ -281,6 +298,7 @@ impl SmartCard<'_> {
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn general_authenticate(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command
@@ -300,7 +318,7 @@ impl SmartCard<'_> {
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("provided algorithm or key reference isn't supported: got algorithm {}, expected 0x07; got key reference {}, expected 0x9A", cmd.p1, cmd.p2)
+                format!("Provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9A", cmd.p1, cmd.p2)
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
@@ -328,7 +346,7 @@ impl SmartCard<'_> {
                 "TLV structure is invalid: no challenge field is present in the request".to_string(),
             ))?;
         // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
-        let _challenge = match challenge.value() {
+        let challenge = match challenge.value() {
             Value::Primitive(ref challenge) => challenge,
             Value::Constructed(_) => {
                 // this tag must contain a primitive value
@@ -338,9 +356,7 @@ impl SmartCard<'_> {
                 ));
             }
         };
-        // TODO: actually sign the challenge
-        // let signed_challenge = sign_hashed_rsa(&self.auth_pk, challenge)?;
-        let signed_challenge = vec![1; 256];
+        let signed_challenge = self.sign_padded(challenge)?;
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
@@ -351,6 +367,36 @@ impl SmartCard<'_> {
         .to_vec();
         self.pending_response = Some(response);
         self.get_response()
+    }
+
+    fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        use rsa::BigUint;
+
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
+        // According to the specification, the PIV smart card accepts already padded digest.
+        // So, it's safe to use the `rsa_decrypt_and_check` function here.
+        let signature = rsa::hazmat::rsa_decrypt_and_check(
+            &rsa_private_key,
+            None::<&mut crate::dummy_rng::Dummy>,
+            &BigUint::from_bytes_be(data.as_ref()),
+        )?;
+
+        let mut signature = signature.to_bytes_be();
+
+        while signature.len() < rsa_private_key.size() {
+            signature.insert(0, 0);
+        }
+
+        Ok(signature)
+    }
+
+    /// Signs the provided data using the smart card private key.
+    /// *Warning 1*. The input data should be a *SHA1* hash of the actually you want to sign.
+    pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
+        let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
+
+        Ok(signature)
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
@@ -844,21 +890,20 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
                 .expect("The inner TLV object should contain a Response tag"),
             Value::Primitive(_) => panic!("Dynamic Authentication Template should contain constructed value"),
         };
-        let _signed_hash = match response_tag.value() {
+        let signed_hash = match response_tag.value() {
             Value::Constructed(_) => panic!("Response tag should contain a primitive value"),
             Value::Primitive(signed_hash) => signed_hash,
         };
         // verify that the returned signature can be verified using the corresponding public key
-        // TODO: see line 329
-        // assert!(signature_algorithm
-        //     .verify(
-        //         &scard
-        //             .auth_pk
-        //             .to_public_key()
-        //             .expect("Error while creating public key from a private key"),
-        //         data,
-        //         signed_hash
-        //     )
-        //     .is_ok());
+        assert!(signature_algorithm
+            .verify(
+                &scard
+                    .auth_pk
+                    .to_public_key()
+                    .expect("Error while creating public key from a private key"),
+                data,
+                signed_hash
+            )
+            .is_ok());
     }
 }
