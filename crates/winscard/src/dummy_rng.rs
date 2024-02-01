@@ -1,6 +1,6 @@
 use rand_core::{CryptoRng, Error, RngCore};
 
-// We don't use this generator only as a type parameter for the `rsa::hazmat::rsa_decrypt_and_check` function.
+// We use this generator only as a type parameter for the `rsa::hazmat::rsa_decrypt_and_check` function.
 pub struct Dummy;
 
 impl RngCore for Dummy {
