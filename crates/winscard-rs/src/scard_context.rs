@@ -63,6 +63,7 @@ impl<'a> SmartCardInfo<'a> {
 }
 
 /// Represents the resource manager context (the scope).
+/// Currently, we support only one smart card per smart card context.
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
     cache: BTreeMap<String, Vec<u8>>,

@@ -2,6 +2,9 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+#[macro_use]
+extern crate tracing;
+
 mod ber_tlv;
 mod card_capability_container;
 mod chuid;

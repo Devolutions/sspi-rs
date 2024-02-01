@@ -9,7 +9,6 @@ use picky::key::PrivateKey;
 use rsa::traits::PublicKeyParts;
 use rsa::{Pkcs1v15Sign, RsaPrivateKey};
 use sha1::Sha1;
-use tracing::{debug, error, warn};
 
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
@@ -39,13 +38,13 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
 /// Represents an emulated smart card.
+/// Currently, we support one key container per smart card.
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
     ccc: Vec<u8>,
     pin: Vec<u8>,
     auth_cert: Vec<u8>,
-    #[allow(dead_code)]
     auth_pk: PrivateKey,
     state: SCardState,
     // We don't need to track actual transactions for the emulated smart card.
@@ -63,7 +62,6 @@ impl SmartCard<'_> {
         auth_cert_der: Vec<u8>,
         auth_pk: PrivateKey,
     ) -> WinScardResult<SmartCard<'_>> {
-        // pin.resize(8, 0);
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
@@ -73,17 +71,13 @@ impl SmartCard<'_> {
                 "PIN should be no shorter than 6 bytes and no longer than 8",
             ));
         }
-        // `0` in ASCII
-        const PIN_VALUE_RANGE_LOW_BOUND: u8 = 0x30;
-        // `9` in ASCII
-        const PIN_VALUE_RANGE_HIGH_BOUND: u8 = 0x39;
         if pin
             .iter()
-            .any(|byte| !(PIN_VALUE_RANGE_LOW_BOUND..=PIN_VALUE_RANGE_HIGH_BOUND).contains(byte))
+            .any(|byte| !byte.is_ascii_digit())
         {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
-                "PIN should consist only of ASCII values representing decimal digits (0x30-0x39)",
+                "PIN should consist only of ASCII values representing decimal digits (0-9)",
             ));
         };
         if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
@@ -106,8 +100,8 @@ impl SmartCard<'_> {
     }
 
     /// This functions handles one APDU command.
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
-        warn!("handle_commend: {:?}", data);
         let cmd = Command::<1024>::try_from(data).map_err(|error| {
             error!(?error, "APDU command parsing error");
             Error::new(
@@ -126,7 +120,7 @@ impl SmartCard<'_> {
         } else {
             cmd
         };
-        debug!("all_parsed!");
+
         if cmd.class().chain().not_the_last() {
             self.pending_command = Some(cmd);
             return Ok(Status::OK.into());
@@ -161,8 +155,8 @@ impl SmartCard<'_> {
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn select(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
-        debug!("select");
         // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
         //      CLA - 0x00
@@ -200,8 +194,8 @@ impl SmartCard<'_> {
         Ok(Response::new(Status::OK, Some(data.to_vec())))
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn verify(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
-        debug!("verify");
         // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
         //      CLA  - 0x00
@@ -237,17 +231,12 @@ impl SmartCard<'_> {
                     }
                     // Retrieve the number of further allowed retries if the data field is absent
                     // Otherwise just compare the provided PIN with the stored one
-                    // warn!("vpcort: {:?} {:?} {} {}", cmd.data(), self.pin, cmd.data().is_empty(), cmd.data() != self.pin.as_slice());
                     if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
-                        tracing::error!("INVALID_PIN");
                         return Ok(Status::VerificationFailedWithRetries.into());
                     } else {
-                        tracing::info!("GOOD_PIN");
                         // data field is present and the provided PIN is correct -> change state and return OK
                         self.state = SCardState::PinVerified;
                     }
-                } else {
-                    warn!("PIN_already_verified");
                 }
             }
             RESET_SECURITY_STATUS => {
@@ -259,8 +248,8 @@ impl SmartCard<'_> {
         Ok(Status::OK.into())
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn get_data(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
-        debug!("get data");
         // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
         //      CLA  - 0x00
@@ -284,34 +273,24 @@ impl SmartCard<'_> {
         if request.tag() != &Tag::try_from(tlv_tags::TAG_LIST)? {
             return Ok(Status::NotFound.into());
         }
-        warn!("WHATSTAG");
+
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
-                CHUID_TAG => {
-                    warn!("CHUID_TAG");
-                    Ok(Response::new(Status::OK, Some(self.chuid.to_vec())))
-                }
+                CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
                 PIV_CERT_TAG | CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG => {
-                    warn!("OTHER CERT. {:?}", tag);
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
                     self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()
                 }
-                CARD_CAPABILITY_CONTAINER_TAG => {
-                    warn!(?tag, "CARDCAPABILITYCONTAINER");
-                    Ok(Response::new(Status::OK, Some(self.ccc.clone())))
-                }
-                _ => {
-                    warn!(?tag, "TAG NOT FOUND.");
-                    Ok(Status::NotFound.into())
-                }
+                CARD_CAPABILITY_CONTAINER_TAG => Ok(Response::new(Status::OK, Some(self.ccc.clone()))),
+                _ => Ok(Status::NotFound.into()),
             },
             Value::Constructed(_) => Ok(Status::NotFound.into()),
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn get_response(&mut self) -> WinScardResult<Response> {
-        debug!("get response");
         // ISO/IEC 7816-4, Section 7.6.1
         // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
         match self.get_next_response_chunk() {
@@ -332,8 +311,8 @@ impl SmartCard<'_> {
         }
     }
 
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn general_authenticate(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
-        debug!("general authenticate");
         // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command
         //      CLA  - 0x00 | 0x10 (command chaining)
@@ -408,16 +387,16 @@ impl SmartCard<'_> {
     fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
         use rsa::BigUint;
 
-        let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
         let signature = rsa::hazmat::rsa_decrypt_and_check(
-            &pk,
+            &rsa_private_key,
             None::<&mut crate::dummy_rng::Dummy>,
             &BigUint::from_bytes_be(data.as_ref()),
         )?;
 
         let mut signature = signature.to_bytes_be();
 
-        while signature.len() < pk.size() {
+        while signature.len() < rsa_private_key.size() {
             signature.insert(0, 0);
         }
 
@@ -425,10 +404,10 @@ impl SmartCard<'_> {
     }
 
     /// Signs the provided data using the smart card private key.
-    /// *Warning 1*. The input data should be a SHA1 hash of the actually you want to sign.
+    /// *Warning 1*. The input data should be a *SHA1* hash of the actually you want to sign.
     pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let pk = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
-        let signature = pk.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
+        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk).unwrap();
+        let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
     }
