@@ -1,5 +1,6 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
@@ -133,6 +134,7 @@ bitflags! {
 /// Current state of the smart card in the reader. Upon success, it receives one of the following state indicators.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum State {
+    /// Unknown smart card status.
     Unknown = 0,
     /// There is no card in the reader.
     Absent = 1,
@@ -187,14 +189,18 @@ pub enum ControlCode {
 /// ```
 #[derive(Debug, Clone)]
 pub struct IoRequest {
+    /// Protocol in use.
     pub protocol: Protocol,
+    /// PCI-specific information.
     pub pci_info: Vec<u8>,
 }
 
 /// This structure represents the result of the `SCardTransmit` function.
 #[derive(Debug, Clone)]
 pub struct TransmitOutData {
+    /// Output APDU command.
     pub output_apdu: Vec<u8>,
+    /// Returned protocol control information (PCI) specific to the protocol in use.
     pub receive_pci: Option<IoRequest>,
 }
 
@@ -277,4 +283,14 @@ pub trait WinScardContext {
     ///
     /// The SCardIsValidContext function determines whether a smart card context handle is valid.
     fn is_valid(&self) -> bool;
+
+    /// [SCardReadCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
+    ///
+    /// The SCardReadCache function retrieves the value portion of a name-value pair from the global cache maintained by the Smart Card Resource Manager.
+    fn read_cache(&self, key: &str) -> Option<&[u8]>;
+
+    /// [SCardWriteCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
+    ///
+    /// The SCardWriteCache function writes a name-value pair from a smart card to the global cache maintained by the Smart Card Resource Manager.
+    fn write_cache(&mut self, key: String, value: Vec<u8>);
 }

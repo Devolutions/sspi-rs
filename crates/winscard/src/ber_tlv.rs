@@ -1,6 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
+/// Encodes the length in BER encoding.
 pub fn ber_tlv_length_encoding(length: usize) -> Vec<u8> {
     // ISO/IEC 7816-4, Section 5.2.2.2
     if length <= 0x7F {
