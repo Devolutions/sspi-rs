@@ -10,7 +10,7 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::Protocol;
 use winscard::{ErrorKind, WinScardResult};
 
-use super::buff_alloc::{write_multistring_a, write_multistring_w};
+use super::buff_alloc::{copy_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
@@ -207,7 +207,6 @@ pub unsafe extern "system" fn SCardStatusA(
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
     let status = try_execute!(scard.scard.status());
     check_handle!(scard.context);
-    let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
     let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
@@ -221,12 +220,7 @@ pub unsafe extern "system" fn SCardStatusA(
     *pdw_protocol = status.protocol.bits();
 
     if !pb_atr.is_null() {
-        let out_atr_len = (*pcb_atr_len).try_into().unwrap();
-        if atr_len > out_atr_len {
-            return ErrorKind::InsufficientBuffer.into();
-        }
-        let out_atr = from_raw_parts_mut(pb_atr, atr_len);
-        out_atr.copy_from_slice(status.atr.as_ref());
+        try_execute!(copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()));
     }
 
     ErrorKind::Success.into()
@@ -256,7 +250,6 @@ pub unsafe extern "system" fn SCardStatusW(
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
     let status = try_execute!(scard.scard.status());
     check_handle!(scard.context);
-    let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
     let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
@@ -270,12 +263,7 @@ pub unsafe extern "system" fn SCardStatusW(
     *pdw_protocol = status.protocol.bits();
 
     if !pb_atr.is_null() {
-        let out_atr_len = (*pcb_atr_len).try_into().unwrap();
-        if atr_len > out_atr_len {
-            return ErrorKind::InsufficientBuffer.into();
-        }
-        let out_atr = from_raw_parts_mut(pb_atr, atr_len);
-        out_atr.copy_from_slice(status.atr.as_ref());
+        try_execute!(copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()));
     }
 
     ErrorKind::Success.into()

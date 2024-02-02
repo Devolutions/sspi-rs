@@ -806,7 +806,6 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
         CStr::from_ptr(sz_reader_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
-    debug!(reader_name);
 
     try_execute!(get_reader_icon(context, &reader_name, pb_icon, pcb_icon));
 
@@ -829,7 +828,6 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
 
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let reader_name = c_w_str_to_string(sz_reader_name);
-    debug!(reader_name);
 
     try_execute!(get_reader_icon(context, &reader_name, pb_icon, pcb_icon));
 
