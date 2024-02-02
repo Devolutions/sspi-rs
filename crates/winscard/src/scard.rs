@@ -79,12 +79,28 @@ impl SmartCard<'_> {
     /// Creates a smart card instance based on the provided data.
     pub fn new(
         reader_name: Cow<str>,
-        mut pin: Vec<u8>,
+        pin: Vec<u8>,
         auth_cert_der: Vec<u8>,
         auth_pk: PrivateKey,
     ) -> WinScardResult<SmartCard<'_>> {
         let chuid = build_chuid()?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
+
+        Ok(SmartCard {
+            reader_name,
+            chuid,
+            ccc: build_ccc(),
+            pin: SmartCard::validate_and_pad_pin(pin)?,
+            auth_cert,
+            auth_pk,
+            state: SCardState::Ready,
+            transaction: false,
+            pending_command: None,
+            pending_response: None,
+        })
+    }
+
+    fn validate_and_pad_pin(mut pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(
@@ -98,23 +114,14 @@ impl SmartCard<'_> {
                 "PIN should consist only of ASCII values representing decimal digits (0-9)",
             ));
         };
+
         if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
             // NIST.SP.800-73-4 part 2, section 2.4.3
             const PIN_PAD_VALUE: u8 = 0xFF;
             pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
-        Ok(SmartCard {
-            reader_name,
-            chuid,
-            ccc: build_ccc(),
-            pin,
-            auth_cert,
-            auth_pk,
-            state: SCardState::Ready,
-            transaction: false,
-            pending_command: None,
-            pending_response: None,
-        })
+
+        Ok(pin)
     }
 
     /// This functions handles one APDU command.

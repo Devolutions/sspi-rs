@@ -7,7 +7,6 @@ use ffi_types::winscard::{
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
-use sspi::cert_utils::extract_certificate_and_pk_from_env;
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
 use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
@@ -59,40 +58,11 @@ pub unsafe extern "system" fn SCardEstablishContext(
     crate::logging::setup_logger();
     check_null!(context);
 
-    let pin = try_execute!(std::env::var(WINSCARD_PIN_ENV).map_err(|e| {
-        Error::new(
-            ErrorKind::InvalidParameter,
-            format!("Cannot extract PIN from the env variable: {}", e),
-        )
-    }));
-    let (certificate, auth_pk) = try_execute!(extract_certificate_and_pk_from_env().map_err(|e| {
-        Error::new(
-            ErrorKind::InternalError,
-            format!(
-                "Error while extracting certificate and private key from env variables: {}",
-                e
-            ),
-        )
-    }));
-    let certificate = try_execute!(picky_asn1_der::to_vec(&certificate).map_err(|e| {
-        Error::new(
-            ErrorKind::InternalError,
-            format!("Error while trying to encode certificate using the der format: {}", e),
-        )
-    }));
-    let scard_info = SmartCardInfo::new(
-        "pw14@example.com-58692137-5322-43-65124".into(),
-        "Microsoft Virtual Smart Card 2".into(),
-        pin.into_bytes(),
-        certificate,
-        auth_pk,
-    );
+    let scard_info = try_execute!(SmartCardInfo::try_from_env());
     // We have only one available reader
     let established_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
 
     let raw_ptr = into_raw_ptr(established_context) as ScardContext;
-    // let mut vec = CONTEXTS.lock().unwrap();
-    // vec.push(raw_ptr);
     info!(new_established_context = ?raw_ptr);
     *context = raw_ptr;
 
@@ -104,10 +74,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
 #[no_mangle]
 pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
     let _ = Box::from_raw(try_execute!(scard_context_to_winscard_context(context)));
-    // let mut ctx = CONTEXTS.lock().unwrap();
-    // we know that it is present because scard_context_to_winscard_context didn't fail
-    // let idx = ctx.iter().position(|&x| x == context).unwrap();
-    // ctx.remove(idx);
+
     ErrorKind::Success.into()
 }
 

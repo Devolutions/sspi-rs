@@ -10,6 +10,9 @@ mod card_capability_container;
 mod chuid;
 mod compression;
 mod dummy_rng;
+/// Contains env variables names that represent smart card credentials.
+#[cfg(feature = "std")]
+pub mod env;
 mod piv_cert;
 mod scard;
 mod scard_context;

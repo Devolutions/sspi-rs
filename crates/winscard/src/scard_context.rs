@@ -38,6 +38,92 @@ pub struct SmartCardInfo<'a> {
 }
 
 impl<'a> SmartCardInfo<'a> {
+    #[cfg(feature = "std")]
+    pub fn try_from_env() -> WinScardResult<Self> {
+        use std::env::var;
+        use std::fs;
+
+        use crate::env::{
+            WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV, WINSCARD_PK_PATH_ENV,
+            WINSCARD_READER_NAME_ENV,
+        };
+
+        let container_name = var(WINSCARD_CONTAINER_NAME_ENV)
+            .map_err(|_| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("The {} env var is not present or invalid", WINSCARD_CONTAINER_NAME_ENV),
+                )
+            })?
+            .into();
+        let reader_name: Cow<'_, str> = var(WINSCARD_READER_NAME_ENV)
+            .map_err(|_| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("The {} env var is not present or invalid", WINSCARD_READER_NAME_ENV),
+                )
+            })?
+            .into();
+        let pin = var(WINSCARD_PIN_ENV)
+            .map_err(|_| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("The {} env var is not present or invalid", WINSCARD_PIN_ENV),
+                )
+            })?
+            .into();
+
+        let cert_path = var(WINSCARD_CERT_PATH_ENV).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("The {} env var is not present or invalid", WINSCARD_PIN_ENV),
+            )
+        })?;
+        let raw_certificate = fs::read(cert_path).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unable to read certificate from the provided file: {}", e),
+            )
+        })?;
+        let pk_path = var(WINSCARD_PK_PATH_ENV).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("The {} env var is not present or invalid", WINSCARD_PK_PATH_ENV),
+            )
+        })?;
+        let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unable to read private key from the provided file: {}", e),
+            )
+        })?;
+        let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Error while trying to read a private key from a pem-encoded string: {}",
+                    e
+                ),
+            )
+        })?;
+
+        // Standard Windows Reader Icon
+        let icon: &[u8] = include_bytes!("../assets/reader_icon.bmp");
+        let reader: Reader<'_> = Reader {
+            name: reader_name,
+            icon: Icon::from(icon),
+            device_type_id: DeviceTypeId::Tpm,
+        };
+
+        Ok(Self {
+            container_name,
+            pin,
+            auth_cert_der: raw_certificate,
+            auth_pk: private_key,
+            reader,
+        })
+    }
+
     pub fn new(
         container_name: Cow<'a, str>,
         reader_name: Cow<'a, str>,
