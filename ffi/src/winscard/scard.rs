@@ -10,13 +10,12 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::Protocol;
 use winscard::{ErrorKind, WinScardResult};
 
+use super::buff_alloc::{write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
     scard_io_request_to_io_request, WinScardContextHandle, WinScardHandle,
 };
-
-use super::buff_alloc::{write_multistring_a, write_multistring_w};
 
 unsafe fn connect(
     context: ScardContext,
@@ -135,7 +134,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected!");
         } else {
-            warn!("ScardHandle is not belongs to the specified context.")
+            warn!("ScardHandle does not belong to the specified context.")
         }
     }
 
@@ -204,7 +203,7 @@ pub unsafe extern "system" fn SCardStatusA(
     check_null!(pdw_state);
     check_null!(pdw_protocol);
     // pb_atr can be null.
-    // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
+    // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
@@ -253,7 +252,7 @@ pub unsafe extern "system" fn SCardStatusW(
     check_null!(pdw_state);
     check_null!(pdw_protocol);
     // pb_atr can be null.
-    // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
+    // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();

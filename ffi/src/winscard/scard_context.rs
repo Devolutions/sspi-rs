@@ -11,16 +11,11 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
-use super::buff_alloc::copy_w_buff;
+use super::buff_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::buff_alloc::copy_buff;
-use crate::winscard::scard_handle::{
-    scard_context_to_winscard_context, WinScardContextHandle,
-};
+use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 
-use super::buff_alloc::{write_multistring_a, write_multistring_w};
-
-// const SCARD_STATE_UNAWARE: u32 = 0x00000000;
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
 const SCARD_STATE_INUSE: u32 = 0x00000100;
 const SCARD_STATE_PRESENT: u32 = 0x00000020;
