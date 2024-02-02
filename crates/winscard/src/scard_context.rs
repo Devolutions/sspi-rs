@@ -46,8 +46,6 @@ impl<'a> SmartCardInfo<'a> {
     pub fn try_from_env() -> WinScardResult<Self> {
         use std::fs;
 
-        const MISSING_ENV_VAR_MGS: &str = "The {} env var is not present or invalid";
-
         use crate::env::{
             WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV, WINSCARD_PK_PATH_ENV,
             WINSCARD_READER_NAME_ENV,

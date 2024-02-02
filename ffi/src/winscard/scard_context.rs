@@ -12,7 +12,7 @@ use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
 use super::buff_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
-use crate::utils::{c_w_str_to_string, into_raw_ptr};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
 use crate::winscard::buff_alloc::copy_buff;
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 
@@ -322,7 +322,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
             return ErrorKind::InvalidParameter.into();
         }
     };
-    let encoded: Vec<u16> = provider.encode_utf16().chain(core::iter::once(0)).collect();
+    let encoded = str_to_w_buff(provider);
 
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     try_execute!(copy_w_buff(context, szProvider, pcch_provider, &encoded));

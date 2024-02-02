@@ -7,7 +7,7 @@ use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
 use symbol_rename_macro::rename_symbol;
 
 use super::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
-use crate::utils::c_w_str_to_string;
+use crate::utils::{c_w_str_to_string, str_to_w_buff};
 
 #[derive(Debug)]
 #[repr(C)]
@@ -25,14 +25,10 @@ pub type PSecPkgInfoW = *mut SecPkgInfoW;
 #[allow(clippy::useless_conversion)]
 impl From<PackageInfo> for &mut SecPkgInfoW {
     fn from(pkg_info: PackageInfo) -> Self {
-        let mut pkg_name = pkg_info.name.to_string().encode_utf16().collect::<Vec<_>>();
-        // null-terminator
-        pkg_name.push(0);
+        let pkg_name = str_to_w_buff(&pkg_info.name.to_string());
         let name_bytes_len = pkg_name.len() * 2;
 
-        let mut pkg_comment = pkg_info.comment.encode_utf16().collect::<Vec<_>>();
-        // null-terminator
-        pkg_comment.push(0);
+        let pkg_comment = str_to_w_buff(&pkg_info.comment);
         let comment_bytes_len = pkg_comment.len() * 2;
 
         let pkg_info_w_size = size_of::<SecPkgInfoW>();
@@ -225,12 +221,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         let mut comments = Vec::with_capacity(packages.len());
 
         for package in &packages {
-            let mut name = package.name.to_string().encode_utf16().collect::<Vec<_>>();
-            // null-terminator
-            name.push(0);
-            let mut comment = package.comment.encode_utf16().collect::<Vec<_>>();
-            // null-terminator
-            comment.push(0);
+            let name = str_to_w_buff(&package.name.to_string());
+            let comment = str_to_w_buff(&package.comment);
 
             size += (name.len() + comment.len()) * 2;
 

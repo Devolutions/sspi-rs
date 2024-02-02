@@ -5,6 +5,7 @@ use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_handle::WinScardContextHandle;
+use crate::utils::str_to_w_buff;
 
 pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 
@@ -103,7 +104,7 @@ pub unsafe fn write_multistring_w(
 ) -> WinScardResult<()> {
     let buffer: Vec<u16> = strings
         .iter()
-        .flat_map(|reader| reader.encode_utf16().chain(once(0)))
+        .flat_map(|reader| str_to_w_buff(reader))
         .chain(once(0))
         .collect();
 

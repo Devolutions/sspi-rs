@@ -19,3 +19,7 @@ pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     from_raw_parts(raw_buffer, len).iter().map(|c| *c as u8).collect()
 }
+
+pub fn str_to_w_buff(data: &str) -> Vec<u16> {
+    data.encode_utf16().chain(std::iter::once(0)).collect()
+}
