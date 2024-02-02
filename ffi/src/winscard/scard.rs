@@ -230,7 +230,6 @@ pub unsafe extern "system" fn SCardStatusW(
     check_null!(pdw_protocol);
     // pb_atr can be null.
     // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
-    // check_null!(pb_atr);
     check_null!(pcb_atr_len);
 
     let scard = &mut *scard_handle_to_winscard(handle);

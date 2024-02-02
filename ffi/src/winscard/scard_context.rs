@@ -1,6 +1,6 @@
+use std::borrow::Cow;
 use std::ffi::CStr;
 use std::slice::from_raw_parts_mut;
-use std::sync::Mutex;
 
 use ffi_types::winscard::{
     LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus,
@@ -10,7 +10,7 @@ use libc::c_void;
 use sspi::cert_utils::extract_certificate_and_pk_from_env;
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
-use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
+use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
 // use super::scard_handle::{AllocationType, ALLOCATIONS};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
@@ -62,9 +62,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
             format!("Error while trying to encode certificate using the der format: {}", e),
         )
     }));
-    let scard_info = SmartCardInfo::new(pin.into_bytes(), certificate, auth_pk);
+    let scard_info = SmartCardInfo::new("pw14@example.com-58692137-5322-43-65124".into(), "Microsoft Virtual Smart Card 2".into(), pin.into_bytes(), certificate, auth_pk);
     // We have only one available reader
-    let established_context: Box<dyn WinScardContext> = Box::new(PivCardContext::new(scard_info));
+    let established_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
 
     let raw_ptr = into_raw_ptr(established_context) as ScardContext;
     // let mut vec = CONTEXTS.lock().unwrap();
@@ -588,36 +588,34 @@ pub extern "system" fn SCardLocateCardsByATRW(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeA(
-    _context: ScardContext,
+    context: ScardContext,
     _dw_timeout: u32,
     rg_reader_states: LpScardReaderStateA,
     c_readers: u32,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(rg_reader_states);
 
-    let reader_states = std::slice::from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
+    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let supported_readers = context.list_readers();
 
-    let reader_state = match reader_states.last_mut() {
-        Some(state) => state,
-        None => return ErrorKind::InvalidParameter.into(),
-    };
+    let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
 
-    if reader_state.cb_atr == 0 {
-        let mut rgb_atr = [0; 36];
-        let captured_atr = &[
-            0x3b, 0x8d, 0x01, 0x80, 0xfb, 0xa0, 0x00, 0x00, 0x03, 0x97, 0x42, 0x54, 0x46, 0x59, 0x04, 0x01, 0xcf,
-        ];
-        rgb_atr[0..captured_atr.len()].clone_from_slice(captured_atr);
+    for reader_state in reader_states {
+        let reader = try_execute!(
+            CStr::from_ptr(reader_state.sz_reader as *const i8).to_str(),
+            ErrorKind::InvalidParameter
+        );
 
-        reader_state.cb_atr = captured_atr.len().try_into().unwrap();
-        reader_state.rgb_atr = rgb_atr;
-    }
-
-    reader_state.dw_event_state =
-        SCARD_STATE_CHANGED | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_UNNAMED_CONSTANT;
-
-    if reader_states.len() > 1 {
-        reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+        if supported_readers.contains(&Cow::Borrowed(&reader)) {
+            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
+            reader_state.cb_atr = ATR.len().try_into().unwrap();
+            reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
+        } else if reader == "\\\\?PnP?\\Notification" {
+            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+        } else{
+            error!(?reader, "Unsupported reader");
+        }
     }
 
     ErrorKind::Success.into()
@@ -627,72 +625,30 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeW(
-    _context: ScardContext,
+    context: ScardContext,
     _dw_timeout: u32,
     rg_reader_states: LpScardReaderStateW,
     c_readers: u32,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(rg_reader_states);
 
-    let reader_states = std::slice::from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
-    // warn!(?reader_states);
+    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let supported_readers = context.list_readers();
 
-    // let reader_state = match reader_states.last_mut() {
-    //     Some(state) => state,
-    //     None => return ErrorKind::InvalidParameter.into(),
-    // };
-
-    // if reader_state.cb_atr == 0 {
+    let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
     for reader_state in reader_states {
-        // warn!(?reader_state, "before");
         let reader = c_w_str_to_string(reader_state.sz_reader);
-        // warn!(?reader);
-
-        match reader.as_str() {
-            "Microsoft Virtual Smart Card 2" => {
-                reader_state.dw_event_state = match reader_state.dw_current_state.to_le_bytes() {
-                    [0x22, 0x04, 0x01, 0x00] => u32::from_le_bytes([0x22, 0x01, 0x01, 0x00]),
-                    [0x22, 0x01, 0x01, 0x00] => u32::from_le_bytes([0x22, 0x00, 0x01, 0x00]),
-                    [0x22, 0x00, 0x01, 0x00] => u32::from_le_bytes([0x22, 0x01, 0x01, 0x00]),
-                    [0x00, 0x00, 0x00, 0x00] => u32::from_le_bytes([0x22, 0x01, 0x01, 0x00]),
-                    [0x10, 0x00, 0x00, 0x00] => u32::from_le_bytes([0x22, 0x04, 0x01, 0x00]),
-                    _ => 0,
-                };
-                reader_state.cb_atr = 17;
-                reader_state.rgb_atr[0..17].copy_from_slice(&[
-                    // 0x3b, 0x8d, 0x01, 0x80, 0xfb, 0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x4d,
-                    // 59, 141, 1, 128, 251, 160, 0, 0, 3, 151, 66, 84, 70, 89, 4, 1, 207
-                    
-                    0x3b,
-                    0x8d,
-                    0x01,
-                        0x80,
-                        0xfb,
-                        0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
-                    0x4d,
-                ]);
-            },
-            "\\\\?PnP?\\Notification" => {
-                reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-            },
-            _ => {
-                error!("Unsupported reader");
-            }
-        };
-        // }
-
-        // reader_state.dw_event_state =
-        //     SCARD_STATE_CHANGED |
-            // SCARD_STATE_INUSE |
-            // SCARD_STATE_PRESENT | SCARD_STATE_UNNAMED_CONSTANT;
-        // reader_state.dw_current_state = SCARD_STATE_UNAWARE;
-
-        // warn!(?reader_state, "after");
+        if supported_readers.contains(&Cow::Borrowed(&reader)) {
+            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
+            reader_state.cb_atr = ATR.len().try_into().unwrap();
+            reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
+        } else if reader == "\\\\?PnP?\\Notification" {
+            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
+        } else{
+            error!(?reader, "Unsupported reader");
+        }
     }
-
-    // if reader_states.len() > 1 {
-    //     reader_states[0].dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-    // }
 
     ErrorKind::Success.into()
 }
@@ -843,7 +799,9 @@ unsafe fn get_reader_icon(
 
     *pcb_icon = icon_buffer_len.try_into().unwrap();
 
-    *(pb_icon as *mut *mut u8) = vec_into_raw_ptr(icon.as_ref().to_vec());
+    let icon_ptr = vec_into_raw_ptr(icon.as_ref().to_vec());
+    warn!(?icon_ptr, "alcicopt");
+    *(pb_icon as *mut *mut u8) = icon_ptr;
     // let icon_buffer = from_raw_parts_mut(pb_icon, icon_buffer_len);
     // icon_buffer.copy_from_slice(icon.as_ref());
 
