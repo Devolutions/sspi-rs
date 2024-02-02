@@ -9,7 +9,7 @@ edition = "2021"
 publish = false
 
 [lib]
-name = "winscard"
+name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
