@@ -38,6 +38,10 @@ pub struct SmartCardInfo<'a> {
 }
 
 impl<'a> SmartCardInfo<'a> {
+    fn reader_icon() -> &'static [u8] {
+        include_bytes!("../assets/reader_icon.bmp")
+    }
+
     #[cfg(feature = "std")]
     pub fn try_from_env() -> WinScardResult<Self> {
         use std::fs;
@@ -78,7 +82,7 @@ impl<'a> SmartCardInfo<'a> {
         })?;
 
         // Standard Windows Reader Icon
-        let icon: &[u8] = include_bytes!("../assets/reader_icon.bmp");
+        let icon: &[u8] = Self::reader_icon();
         let reader: Reader<'_> = Reader {
             name: reader_name,
             icon: Icon::from(icon),
@@ -102,7 +106,7 @@ impl<'a> SmartCardInfo<'a> {
         auth_pk: PrivateKey,
     ) -> Self {
         // Standard Windows Reader Icon
-        let icon: &[u8] = include_bytes!("../assets/reader_icon.bmp");
+        let icon: &[u8] = Self::reader_icon();
         let reader: Reader<'_> = Reader {
             name: reader_name,
             icon: Icon::from(icon),

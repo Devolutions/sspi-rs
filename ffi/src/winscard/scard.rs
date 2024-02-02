@@ -65,7 +65,6 @@ pub unsafe extern "system" fn SCardConnectA(
         CStr::from_ptr(sz_reader as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
-    debug!(reader_name);
 
     try_execute!(connect(
         context,
@@ -96,7 +95,6 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(pdw_active_protocol);
 
     let reader_name = c_w_str_to_string(sz_reader);
-    debug!(reader_name);
 
     try_execute!(connect(
         context,
