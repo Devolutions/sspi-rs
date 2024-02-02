@@ -39,6 +39,11 @@ const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll
 
 const DEFAULT_CARD_NAME: &str = "Cool card";
 
+// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
+// To be notified of the arrival of a new smart card reader,
+// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
+const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -611,7 +616,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
                 SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
             reader_state.cb_atr = ATR.len().try_into().unwrap();
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
-        } else if reader == "\\\\?PnP?\\Notification" {
+        } else if reader == NEW_READER_NOTIFICATION {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
         } else {
             error!(?reader, "Unsupported reader");
@@ -644,7 +649,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
                 SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
             reader_state.cb_atr = ATR.len().try_into().unwrap();
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
-        } else if reader == "\\\\?PnP?\\Notification" {
+        } else if reader == NEW_READER_NOTIFICATION {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
         } else {
             error!(?reader, "Unsupported reader");

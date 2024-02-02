@@ -13,6 +13,8 @@ pub mod scard;
 pub mod scard_context;
 mod scard_handle;
 
+// The constants below are not documented anywhere and were discovered during debugging.
+// Related example: https://github.com/bluetech/pcsc-rust/blob/b397cc8e3834a1dc791631105f37f34d321c8696/pcsc/src/lib.rs#L605-L613
 #[no_mangle]
 pub static Rust_g_rgSCardT1Pci: ScardIoRequest = ScardIoRequest {
     dw_protocol: Protocol::T1.bits(),

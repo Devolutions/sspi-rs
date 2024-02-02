@@ -40,57 +40,27 @@ pub struct SmartCardInfo<'a> {
 impl<'a> SmartCardInfo<'a> {
     #[cfg(feature = "std")]
     pub fn try_from_env() -> WinScardResult<Self> {
-        use std::env::var;
         use std::fs;
+
+        const MISSING_ENV_VAR_MGS: &str = "The {} env var is not present or invalid";
 
         use crate::env::{
             WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV, WINSCARD_PK_PATH_ENV,
             WINSCARD_READER_NAME_ENV,
         };
 
-        let container_name = var(WINSCARD_CONTAINER_NAME_ENV)
-            .map_err(|_| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("The {} env var is not present or invalid", WINSCARD_CONTAINER_NAME_ENV),
-                )
-            })?
-            .into();
-        let reader_name: Cow<'_, str> = var(WINSCARD_READER_NAME_ENV)
-            .map_err(|_| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("The {} env var is not present or invalid", WINSCARD_READER_NAME_ENV),
-                )
-            })?
-            .into();
-        let pin = var(WINSCARD_PIN_ENV)
-            .map_err(|_| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("The {} env var is not present or invalid", WINSCARD_PIN_ENV),
-                )
-            })?
-            .into();
+        let container_name = env!(WINSCARD_CONTAINER_NAME_ENV)?.into();
+        let reader_name: Cow<'_, str> = env!(WINSCARD_READER_NAME_ENV)?.into();
+        let pin = env!(WINSCARD_PIN_ENV)?.into();
 
-        let cert_path = var(WINSCARD_CERT_PATH_ENV).map_err(|_| {
-            Error::new(
-                ErrorKind::InvalidParameter,
-                format!("The {} env var is not present or invalid", WINSCARD_PIN_ENV),
-            )
-        })?;
+        let cert_path = env!(WINSCARD_CERT_PATH_ENV)?;
         let raw_certificate = fs::read(cert_path).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
                 format!("Unable to read certificate from the provided file: {}", e),
             )
         })?;
-        let pk_path = var(WINSCARD_PK_PATH_ENV).map_err(|_| {
-            Error::new(
-                ErrorKind::InvalidParameter,
-                format!("The {} env var is not present or invalid", WINSCARD_PK_PATH_ENV),
-            )
-        })?;
+        let pk_path = env!(WINSCARD_PK_PATH_ENV)?;
         let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
