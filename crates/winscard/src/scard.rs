@@ -37,6 +37,27 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 
+// The original winscard ATR is not suitable because it contains AID bytes.
+// So we need to construct our own. Read more about our constructed ATR string:
+// https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D
+#[rustfmt::skip]
+pub const ATR: [u8; 17] = [
+    // TS. Direct Convention
+    0x3b,
+    // T0. Y(1): b1000, K: 13 (historical bytes)
+    0x8d,
+    // TD. Y(i+1) = b0000, Protocol T=1
+    0x01,
+    // Historical bytes
+    0x80,
+    // Tag: 15, Len: 11.
+    0xfb,
+    // PIV AID
+    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
+    // TCK (Checksum)
+    0x4d,
+];
+
 /// Represents an emulated smart card.
 /// Currently, we support one key container per smart card.
 pub struct SmartCard<'a> {
@@ -425,27 +446,7 @@ impl<'a> WinScard for SmartCard<'a> {
             state: winscard::State::Specific,
             // We are always using the T1 protocol as the original Windows TPM smart card does
             protocol: winscard::Protocol::T1,
-            // The original winscard ATR is not suitable because it contains AID bytes.
-            // So we need to construct our own. Read more about our constructed ATR string:
-            // https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D
-            #[rustfmt::skip]
-            atr: [
-                // TS. Direct Convention
-                0x3b,
-                // T0. Y(1): b1000, K: 13 (historical bytes)
-                0x8d,
-                // TD. Y(i+1) = b0000, Protocol T=1
-                0x01,
-                // Historical bytes
-                    0x80,
-                    // Tag: 15, Len: 11.
-                    0xfb,
-                    // PIV AID
-                    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
-                // TCK (Checksum)
-                0x4d,
-            ]
-            .into(),
+            atr: ATR.into(),
         })
     }
 

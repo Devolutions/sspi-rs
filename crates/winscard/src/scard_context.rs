@@ -324,6 +324,10 @@ impl<'a> ScardContext<'a> {
 
         Ok(Self { smart_card_info, cache })
     }
+
+    pub fn reader_name(&self) -> &str {
+        self.smart_card_info.reader.name.as_ref()
+    }
 }
 
 impl<'a> WinScardContext for ScardContext<'a> {

@@ -36,9 +36,9 @@ pub type LpOcnDscProc = Option<unsafe extern "system" fn(_: ScardContext, _: Sca
 /// ```
 #[repr(C)]
 pub struct ScardReaderStateA {
-    sz_reader: LpCStr,
-    pv_user_data: LpVoid,
-    dw_current_state: u32,
+    pub sz_reader: LpCStr,
+    pub pv_user_data: LpVoid,
+    pub dw_current_state: u32,
     pub dw_event_state: u32,
     pub cb_atr: u32,
     pub rgb_atr: [u8; 36],
