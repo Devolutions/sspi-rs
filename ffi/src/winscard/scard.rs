@@ -32,7 +32,7 @@ unsafe fn connect(
     let scard = scard_context.connect(reader_name, share_mode, protocol)?;
     let protocol = scard.status()?.protocol.bits();
 
-    let scard = WinScardHandle { scard, context };
+    let scard = WinScardHandle::new(scard, context);
 
     let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
 
@@ -128,7 +128,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
     check_handle!(handle);
 
     let scard = Box::from_raw(handle as *mut WinScardHandle);
-    if let Some(context) = (scard.context as *mut WinScardContextHandle).as_mut() {
+    if let Some(context) = (scard.context() as *mut WinScardContextHandle).as_mut() {
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected!");
         } else {
@@ -205,11 +205,11 @@ pub unsafe extern "system" fn SCardStatusA(
     check_null!(pcb_atr_len);
 
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
-    let status = try_execute!(scard.scard.status());
-    check_handle!(scard.context);
+    let status = try_execute!(scard.scard().status());
+    check_handle!(scard.context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
+    let context = (scard.context() as *mut WinScardContextHandle).as_mut().unwrap();
     try_execute!(write_multistring_a(
         context,
         &readers,
@@ -248,11 +248,11 @@ pub unsafe extern "system" fn SCardStatusW(
     check_null!(pcb_atr_len);
 
     let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
-    let status = try_execute!(scard.scard.status());
-    check_handle!(scard.context);
+    let status = try_execute!(scard.scard().status());
+    check_handle!(scard.context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
+    let context = (scard.context() as *mut WinScardContextHandle).as_mut().unwrap();
     try_execute!(write_multistring_w(
         context,
         &readers,

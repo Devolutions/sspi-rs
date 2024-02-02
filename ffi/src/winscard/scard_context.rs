@@ -60,11 +60,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
     // We have only one available reader
     let scard_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
 
-    let scard_context = WinScardContextHandle {
-        scard_context,
-        scards: Vec::new(),
-        allocations: Vec::new(),
-    };
+    let scard_context = WinScardContextHandle::with_scard_context(scard_context);
 
     let raw_ptr = into_raw_ptr(scard_context) as ScardContext;
     info!(new_established_context = ?raw_ptr);
@@ -129,7 +125,7 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(pcch_readers);
 
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
-    let readers = context.scard_context.list_readers();
+    let readers = context.scard_context().list_readers();
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
@@ -152,7 +148,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(pcch_readers);
 
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
-    let readers = context.scard_context.list_readers();
+    let readers = context.scard_context().list_readers();
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
@@ -670,6 +666,18 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
     ErrorKind::Success.into()
 }
 
+unsafe fn read_cache(context: ScardContext, lookup_name: &str, data: LpByte, data_len: LpDword) -> WinScardResult<()> {
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+
+    if let Some(cached_value) = context.scard_context().read_cache(lookup_name) {
+        let cached_value = cached_value.to_vec();
+        copy_buff(context, data, data_len, &cached_value)
+    } else {
+        warn!(cache = ?ErrorKind::CacheItemNotFound);
+        Ok(())
+    }
+}
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -685,21 +693,14 @@ pub unsafe extern "system" fn SCardReadCacheA(
     check_null!(lookup_name);
     check_null!(data_len);
 
-    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let lookup_name = try_execute!(
         CStr::from_ptr(lookup_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
 
-    if let Some(cached_value) = context.scard_context.read_cache(&lookup_name) {
-        let cached_value = cached_value.to_vec();
-        try_execute!(copy_buff(context, data, data_len, &cached_value));
+    try_execute!(read_cache(context, lookup_name, data, data_len));
 
-        ErrorKind::Success.into()
-    } else {
-        warn!(cache = ?ErrorKind::CacheItemNotFound);
-        ErrorKind::CacheItemNotFound.into()
-    }
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
@@ -717,18 +718,11 @@ pub unsafe extern "system" fn SCardReadCacheW(
     check_null!(lookup_name);
     check_null!(data_len);
 
-    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let lookup_name = c_w_str_to_string(lookup_name);
 
-    if let Some(cached_value) = context.scard_context.read_cache(&lookup_name) {
-        let cached_value = cached_value.to_vec();
-        try_execute!(copy_buff(context, data, data_len, &cached_value));
+    try_execute!(read_cache(context, &lookup_name, data, data_len));
 
-        ErrorKind::Success.into()
-    } else {
-        warn!(cache = ?ErrorKind::CacheItemNotFound);
-        ErrorKind::CacheItemNotFound.into()
-    }
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
@@ -782,7 +776,7 @@ unsafe fn get_reader_icon(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> WinScardResult<()> {
-    let icon = context.scard_context.reader_icon(reader_name)?.as_ref().to_vec();
+    let icon = context.scard_context().reader_icon(reader_name)?.as_ref().to_vec();
 
     copy_buff(context, pb_icon, pcb_icon, icon.as_ref())
 }

@@ -11,15 +11,27 @@ use winscard::{Error, ErrorKind, WinScardResult};
 /// We need them because during the smart card context deletion, we need to free all allcated resources.
 pub struct WinScardContextHandle {
     /// Context of the emulated smart card.
-    pub scard_context: Box<dyn WinScardContext>,
+    scard_context: Box<dyn WinScardContext>,
     /// Created smart card handles during the API usage.
-    pub scards: Vec<ScardHandle>,
+    scards: Vec<ScardHandle>,
     /// Allocated buffers in out smart card context.
-    /// All buffers are `[u8], so we need only pointer and don't need to remember its type.
-    pub allocations: Vec<usize>,
+    /// All buffers are `[u8]`, so we need only pointer and don't need to remember its type.
+    allocations: Vec<usize>,
 }
 
 impl WinScardContextHandle {
+    pub fn with_scard_context(scard_context: Box<dyn WinScardContext>) -> Self {
+        Self {
+            scard_context,
+            scards: Vec::new(),
+            allocations: Vec::new(),
+        }
+    }
+
+    pub fn scard_context(&self) -> &dyn WinScardContext {
+        self.scard_context.as_ref()
+    }
+
     pub fn add_scard(&mut self, scard: ScardHandle) -> WinScardResult<()> {
         if scard == 0 {
             return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
@@ -92,9 +104,23 @@ impl Drop for WinScardContextHandle {
 /// It also holds a pointer to the smart card context to which it belongs.
 pub struct WinScardHandle {
     /// The emulated smart card.
-    pub scard: Box<dyn WinScard>,
+    scard: Box<dyn WinScard>,
     /// Pointer to the smart card context to which it belongs.
-    pub context: ScardContext,
+    context: ScardContext,
+}
+
+impl WinScardHandle {
+    pub fn new(scard: Box<dyn WinScard>, context: ScardContext) -> Self {
+        Self { scard, context }
+    }
+
+    pub fn scard(&self) -> &dyn WinScard {
+        self.scard.as_ref()
+    }
+
+    pub fn context(&self) -> ScardContext {
+        self.context
+    }
 }
 
 pub fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
