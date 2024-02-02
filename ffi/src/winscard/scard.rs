@@ -13,8 +13,10 @@ use winscard::{ErrorKind, WinScardResult};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
-    scard_io_request_to_io_request, write_multistring_a, write_multistring_w, WinScardContextHandle, WinScardHandle,
+    scard_io_request_to_io_request, WinScardContextHandle, WinScardHandle,
 };
+
+use super::buff_alloc::{write_multistring_a, write_multistring_w};
 
 unsafe fn connect(
     context: ScardContext,

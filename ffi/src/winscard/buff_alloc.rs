@@ -1,6 +1,7 @@
+use std::iter::once;
 use std::slice::from_raw_parts_mut;
 
-use ffi_types::{LpByte, LpDword, LpWStr};
+use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_handle::WinScardContextHandle;
@@ -77,4 +78,34 @@ pub unsafe fn copy_w_buff(
     }
 
     Ok(())
+}
+
+pub unsafe fn write_multistring_w(
+    context: &mut WinScardContextHandle,
+    readers: &[&str],
+    dest: LpWStr,
+    dest_len: LpDword,
+) -> WinScardResult<()> {
+    let buffer: Vec<u16> = readers
+        .iter()
+        .flat_map(|reader| reader.encode_utf16().chain(once(0)))
+        .chain(once(0))
+        .collect();
+
+    copy_w_buff(context, dest, dest_len, &buffer)
+}
+
+pub unsafe fn write_multistring_a(
+    context: &mut WinScardContextHandle,
+    readers: &[&str],
+    dest: LpStr,
+    dest_len: LpDword,
+) -> WinScardResult<()> {
+    let buffer: Vec<u8> = readers
+        .iter()
+        .flat_map(|reader| reader.as_bytes().iter().cloned().chain(once(0)))
+        .chain(once(0))
+        .collect();
+
+    copy_buff(context, dest, dest_len, &buffer)
 }

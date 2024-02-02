@@ -15,8 +15,10 @@ use super::buff_alloc::copy_w_buff;
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::buff_alloc::copy_buff;
 use crate::winscard::scard_handle::{
-    scard_context_to_winscard_context, write_multistring_a, write_multistring_w, WinScardContextHandle,
+    scard_context_to_winscard_context, WinScardContextHandle,
 };
+
+use super::buff_alloc::{write_multistring_a, write_multistring_w};
 
 // const SCARD_STATE_UNAWARE: u32 = 0x00000000;
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
