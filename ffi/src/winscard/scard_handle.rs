@@ -14,7 +14,7 @@ pub struct WinScardContextHandle {
     scard_context: Box<dyn WinScardContext>,
     /// Created smart card handles during the API usage.
     scards: Vec<ScardHandle>,
-    /// Allocated buffers in out smart card context.
+    /// Allocated buffers in our smart card context.
     /// All buffers are `[u8]`, so we need only pointer and don't need to remember its type.
     allocations: Vec<usize>,
 }
@@ -67,18 +67,18 @@ impl WinScardContextHandle {
 
     pub fn free_buffer(&mut self, buff: LpCVoid) -> bool {
         let buff = buff as usize;
-        if !self.allocations.contains(&buff) {
-            return false;
-        }
-        unsafe {
-            libc::free(buff as _);
-        }
 
-        // safe: checked above
-        let index = self.allocations.iter().position(|x| *x == buff).unwrap();
-        self.allocations.remove(index);
+        if let Some(index) = self.allocations.iter().position(|x| *x == buff) {
+            self.allocations.remove(index);
 
-        true
+            unsafe {
+                libc::free(buff as _);
+            }
+
+            true
+        } else {
+            false
+        }
     }
 }
 

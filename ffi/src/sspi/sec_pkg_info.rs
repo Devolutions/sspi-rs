@@ -25,7 +25,7 @@ pub type PSecPkgInfoW = *mut SecPkgInfoW;
 #[allow(clippy::useless_conversion)]
 impl From<PackageInfo> for &mut SecPkgInfoW {
     fn from(pkg_info: PackageInfo) -> Self {
-        let pkg_name = str_to_w_buff(&pkg_info.name.to_string());
+        let pkg_name = str_to_w_buff(pkg_info.name.as_ref());
         let name_bytes_len = pkg_name.len() * 2;
 
         let pkg_comment = str_to_w_buff(&pkg_info.comment);
@@ -221,7 +221,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         let mut comments = Vec::with_capacity(packages.len());
 
         for package in &packages {
-            let name = str_to_w_buff(&package.name.to_string());
+            let name = str_to_w_buff(package.name.as_ref());
             let comment = str_to_w_buff(&package.comment);
 
             size += (name.len() + comment.len()) * 2;
