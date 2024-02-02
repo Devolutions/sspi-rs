@@ -23,7 +23,7 @@ pub struct Reader<'a> {
     pub device_type_id: DeviceTypeId,
 }
 
-/// Describes smart card info used for the smart card creation
+/// Describes smart card info used for the smart card creation.
 pub struct SmartCardInfo<'a> {
     /// Container name which stores the certificate along with its private key.
     pub container_name: Cow<'a, str>,
@@ -42,6 +42,8 @@ impl<'a> SmartCardInfo<'a> {
         include_bytes!("../assets/reader_icon.bmp")
     }
 
+    /// Tries to create [SmartCardInfo] structure based on environment variables.
+    /// Required environment variables are listed in the `env` module of this crate.
     #[cfg(feature = "std")]
     pub fn try_from_env() -> WinScardResult<Self> {
         use std::fs;
@@ -96,6 +98,7 @@ impl<'a> SmartCardInfo<'a> {
         })
     }
 
+    /// Creates a new [ScardContext] based on the provided data.
     pub fn new(
         container_name: Cow<'a, str>,
         reader_name: Cow<'a, str>,
@@ -383,6 +386,7 @@ impl<'a> ScardContext<'a> {
         Ok(Self { smart_card_info, cache })
     }
 
+    /// Returns available smart card reader name.
     pub fn reader_name(&self) -> &str {
         self.smart_card_info.reader.name.as_ref()
     }
