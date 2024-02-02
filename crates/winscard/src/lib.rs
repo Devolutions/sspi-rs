@@ -29,6 +29,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::num::TryFromIntError;
 use core::{fmt, result};
 
 pub use ber_tlv::ber_tlv_length_encoding;
@@ -127,6 +128,15 @@ impl From<TlvError> for Error {
         Error::new(
             ErrorKind::InternalError,
             format!("error: an unexpected TlvError happened: {}", value),
+        )
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(value: TryFromIntError) -> Self {
+        Error::new(
+            ErrorKind::InsufficientBuffer,
+            format!("error: can not convert integers: {}", value),
         )
     }
 }

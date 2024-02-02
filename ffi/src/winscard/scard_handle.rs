@@ -145,14 +145,14 @@ pub fn scard_context_to_winscard_context<'a>(handle: ScardContext) -> WinScardRe
     }
 }
 
-pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> IoRequest {
-    let buffer_len = (*pio_send_pci).cb_pci_length.try_into().unwrap();
+pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
+    let buffer_len = (*pio_send_pci).cb_pci_length.try_into()?;
     let buffer = (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>());
 
-    IoRequest {
+    Ok(IoRequest {
         protocol: Protocol::from_bits((*pio_send_pci).dw_protocol).unwrap_or(Protocol::empty()),
         pci_info: from_raw_parts(buffer, buffer_len).to_vec(),
-    }
+    })
 }
 
 pub unsafe fn copy_io_request_to_scard_io_request(
@@ -160,7 +160,7 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     scard_io_request: LpScardIoRequest,
 ) -> WinScardResult<()> {
     let pci_info_len = io_request.pci_info.len();
-    let scard_pci_info_len = (*scard_io_request).cb_pci_length.try_into().unwrap();
+    let scard_pci_info_len = (*scard_io_request).cb_pci_length.try_into()?;
 
     if pci_info_len > scard_pci_info_len {
         return Err(Error::new(
@@ -173,7 +173,7 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     }
 
     (*scard_io_request).dw_protocol = io_request.protocol.bits();
-    (*scard_io_request).cb_pci_length = pci_info_len.try_into().unwrap();
+    (*scard_io_request).cb_pci_length = pci_info_len.try_into()?;
 
     let pci_buffer_ptr = (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>());
     let pci_buffer = from_raw_parts_mut(pci_buffer_ptr, pci_info_len);

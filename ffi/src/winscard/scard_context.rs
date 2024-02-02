@@ -124,6 +124,7 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let readers = context.scard_context().list_readers();
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
@@ -147,6 +148,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let readers = context.scard_context().list_readers();
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
@@ -172,6 +174,7 @@ pub unsafe extern "system" fn SCardListCardsA(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     // we have only one smart card with only one default name
     try_execute!(write_multistring_a(
@@ -199,6 +202,7 @@ pub unsafe extern "system" fn SCardListCardsW(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     // we have only one smart card with only one default name
     try_execute!(write_multistring_w(
@@ -285,6 +289,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
         }
     };
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     try_execute!(copy_buff(context, szProvider, pcch_provider, provider.as_bytes()));
 
@@ -320,6 +325,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     };
     let encoded = str_to_w_buff(provider);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     try_execute!(copy_w_buff(context, szProvider, pcch_provider, &encoded));
 
@@ -599,7 +605,10 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     let context = try_execute!(scard_context_to_winscard_context(context));
     let supported_readers = context.list_readers();
 
-    let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
+    let reader_states = from_raw_parts_mut(
+        rg_reader_states,
+        try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
+    );
 
     for reader_state in reader_states {
         let reader = try_execute!(
@@ -610,7 +619,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
         if supported_readers.contains(&Cow::Borrowed(&reader)) {
             reader_state.dw_event_state =
                 SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
-            reader_state.cb_atr = ATR.len().try_into().unwrap();
+            reader_state.cb_atr = try_execute!(ATR.len().try_into(), ErrorKind::InsufficientBuffer);
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
         } else if reader == NEW_READER_NOTIFICATION {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
@@ -637,13 +646,16 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     let context = try_execute!(scard_context_to_winscard_context(context));
     let supported_readers = context.list_readers();
 
-    let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
+    let reader_states = from_raw_parts_mut(
+        rg_reader_states,
+        try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
+    );
     for reader_state in reader_states {
         let reader = c_w_str_to_string(reader_state.sz_reader);
         if supported_readers.contains(&Cow::Borrowed(&reader)) {
             reader_state.dw_event_state =
                 SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
-            reader_state.cb_atr = ATR.len().try_into().unwrap();
+            reader_state.cb_atr = try_execute!(ATR.len().try_into(), ErrorKind::InsufficientBuffer);
             reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
         } else if reader == NEW_READER_NOTIFICATION {
             reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
@@ -741,7 +753,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
         CStr::from_ptr(lookup_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
-    let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
+    let data = from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)).to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
     context.write_cache(lookup_name.to_owned(), data);
@@ -762,7 +774,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
 ) -> ScardStatus {
     let context = try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = c_w_str_to_string(lookup_name);
-    let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
+    let data = from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)).to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
     context.write_cache(lookup_name, data);
@@ -795,6 +807,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     // `pb_icon` can be null.
     check_null!(pcb_icon);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let reader_name = try_execute!(
         CStr::from_ptr(sz_reader_name as *const i8).to_str(),
@@ -820,6 +833,7 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     // `pb_icon` can be null.
     check_null!(pcb_icon);
 
+    // safe: checked above
     let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let reader_name = c_w_str_to_string(sz_reader_name);
 

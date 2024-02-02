@@ -15,7 +15,7 @@ pub unsafe fn copy_buff(
     raw_buff_len: LpDword,
     buff_to_copy: &[u8],
 ) -> WinScardResult<()> {
-    let buff_to_copy_len = buff_to_copy.len().try_into().unwrap();
+    let buff_to_copy_len = buff_to_copy.len().try_into()?;
 
     if raw_buff.is_null() {
         *raw_buff_len = buff_to_copy_len;
@@ -51,7 +51,7 @@ pub unsafe fn copy_w_buff(
     raw_buff_len: LpDword,
     buff_to_copy: &[u16],
 ) -> WinScardResult<()> {
-    let buff_to_copy_len = buff_to_copy.len().try_into().unwrap();
+    let buff_to_copy_len = buff_to_copy.len().try_into()?;
 
     if raw_buff.is_null() {
         *raw_buff_len = buff_to_copy_len;

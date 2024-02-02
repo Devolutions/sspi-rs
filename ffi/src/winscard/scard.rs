@@ -285,13 +285,18 @@ pub unsafe extern "system" fn SCardTransmit(
     check_null!(pio_send_pci);
     let scard = try_execute!(scard_handle_to_winscard(handle));
 
-    let io_request = scard_io_request_to_io_request(pio_send_pci);
-    let input_apdu = from_raw_parts(pb_send_buffer, cb_send_length.try_into().unwrap());
+    let io_request = try_execute!(scard_io_request_to_io_request(pio_send_pci));
+    let input_apdu = from_raw_parts(
+        pb_send_buffer,
+        try_execute!(cb_send_length.try_into(), ErrorKind::InsufficientBuffer),
+    );
 
     let out_data = try_execute!(scard.transmit(io_request, input_apdu));
 
     let out_apdu_len = out_data.output_apdu.len();
-    if out_apdu_len > (*pcb_recv_length).try_into().unwrap() || pb_recv_buffer.is_null() {
+    if out_apdu_len > try_execute!((*pcb_recv_length).try_into(), ErrorKind::InsufficientBuffer)
+        || pb_recv_buffer.is_null()
+    {
         return ErrorKind::InsufficientBuffer.into();
     }
 
@@ -305,7 +310,7 @@ pub unsafe extern "system" fn SCardTransmit(
         ));
     }
 
-    *pcb_recv_length = out_apdu_len.try_into().unwrap();
+    *pcb_recv_length = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
 
     ErrorKind::Success.into()
 }
@@ -333,12 +338,15 @@ pub unsafe extern "system" fn SCardControl(
     let scard = try_execute!(scard_handle_to_winscard(handle));
 
     let in_buffer = if !lp_in_buffer.is_null() {
-        from_raw_parts(lp_in_buffer as *const u8, cb_in_buffer_size.try_into().unwrap())
+        from_raw_parts(
+            lp_in_buffer as *const u8,
+            try_execute!(cb_in_buffer_size.try_into(), ErrorKind::InsufficientBuffer),
+        )
     } else {
         &[]
     };
     let out_buffer = try_execute!(scard.control(try_execute!(dw_control_code.try_into()), in_buffer));
-    let out_buffer_len = out_buffer.len().try_into().unwrap();
+    let out_buffer_len = try_execute!(out_buffer.len().try_into(), ErrorKind::InsufficientBuffer);
 
     if !lp_out_buffer.is_null() {
         if out_buffer_len > cb_out_buffer_size {
