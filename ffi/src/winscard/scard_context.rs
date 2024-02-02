@@ -9,21 +9,21 @@ use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDw
 use libc::c_void;
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
-use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
+use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
-// use super::scard_handle::{AllocationType, ALLOCATIONS};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, vec_into_raw_ptr};
+use super::buff_alloc::copy_w_buff;
+use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::buff_alloc::copy_buff;
-use crate::winscard::scard_handle::{scard_context_to_winscard_context, write_multistring_a, write_multistring_w};
+use crate::winscard::scard_handle::{
+    scard_context_to_winscard_context, write_multistring_a, write_multistring_w, WinScardContextHandle,
+};
 
-const SCARD_STATE_UNAWARE: u32 = 0x00000000;
+// const SCARD_STATE_UNAWARE: u32 = 0x00000000;
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
 const SCARD_STATE_INUSE: u32 = 0x00000100;
 const SCARD_STATE_PRESENT: u32 = 0x00000020;
 // Undocumented constant that appears in all API captures
 const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
-
-const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew
 // `dwProviderId` function parameter::
@@ -42,10 +42,6 @@ const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll
 
 const DEFAULT_CARD_NAME: &str = "Cool card";
 
-const WINSCARD_PIN_ENV: &str = "WINSCARD_SCARD_PIN";
-
-// pub(crate) static CONTEXTS: Mutex<Vec<usize>> = Mutex::new(vec![]);
-
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -60,9 +56,15 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let scard_info = try_execute!(SmartCardInfo::try_from_env());
     // We have only one available reader
-    let established_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
+    let scard_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
 
-    let raw_ptr = into_raw_ptr(established_context) as ScardContext;
+    let scard_context = WinScardContextHandle {
+        scard_context,
+        scards: Vec::new(),
+        allocations: Vec::new(),
+    };
+
+    let raw_ptr = into_raw_ptr(scard_context) as ScardContext;
     info!(new_established_context = ?raw_ptr);
     *context = raw_ptr;
 
@@ -73,7 +75,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
-    let _ = Box::from_raw(try_execute!(scard_context_to_winscard_context(context)));
+    check_handle!(context);
+
+    let _ = Box::from_raw(context as *mut WinScardContextHandle);
 
     ErrorKind::Success.into()
 }
@@ -81,7 +85,7 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
 
     if context.is_valid() {
         ErrorKind::Success.into()
@@ -122,11 +126,12 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
-    let readers = context.list_readers();
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    let readers = context.scard_context.list_readers();
+    let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_multistring_a(&readers, msz_readers, pcch_readers));
+    try_execute!(write_multistring_a(context, &readers, msz_readers, pcch_readers));
 
     ErrorKind::Success.into()
 }
@@ -144,11 +149,12 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
-    let readers = context.list_readers();
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    let readers = context.scard_context.list_readers();
+    let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
-    try_execute!(write_multistring_w(&readers, msz_readers, pcch_readers));
+    try_execute!(write_multistring_w(context, &readers, msz_readers, pcch_readers));
 
     ErrorKind::Success.into()
 }
@@ -157,18 +163,25 @@ pub unsafe extern "system" fn SCardListReadersW(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsA(
-    _context: ScardContext,
+    context: ScardContext,
     _pb_atr: LpCByte,
     _rgquid_nterfaces: LpCGuid,
     _cguid_interface_count: u32,
     msz_cards: *mut u8,
     pcch_cards: LpDword,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     // we have only one smart card with only one default name
-    try_execute!(write_multistring_a(&[DEFAULT_CARD_NAME], msz_cards, pcch_cards));
+    try_execute!(write_multistring_a(
+        context,
+        &[DEFAULT_CARD_NAME],
+        msz_cards,
+        pcch_cards
+    ));
 
     ErrorKind::UnsupportedFeature.into()
 }
@@ -177,18 +190,25 @@ pub unsafe extern "system" fn SCardListCardsA(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsW(
-    _context: ScardContext,
+    context: ScardContext,
     _pb_atr: LpCByte,
     _rgquid_nterfaces: LpCGuid,
     _cguid_interface_count: u32,
     msz_cards: *mut u16,
     pcch_cards: LpDword,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     // we have only one smart card with only one default name
-    try_execute!(write_multistring_w(&[DEFAULT_CARD_NAME], msz_cards, pcch_cards));
+    try_execute!(write_multistring_w(
+        context,
+        &[DEFAULT_CARD_NAME],
+        msz_cards,
+        pcch_cards
+    ));
 
     ErrorKind::Success.into()
 }
@@ -243,12 +263,13 @@ pub extern "system" fn SCardGetProviderIdW(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
-    _context: ScardContext,
+    context: ScardContext,
     _sz_card_name: LpCStr,
     dw_provide_id: u32,
     szProvider: *mut u8,
     pcch_provider: LpDword,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(szProvider);
     check_null!(pcch_provider);
 
@@ -266,7 +287,8 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
         }
     };
 
-    try_execute!(copy_buff(szProvider, pcch_provider, provider.as_bytes()));
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    try_execute!(copy_buff(context, szProvider, pcch_provider, provider.as_bytes()));
 
     ErrorKind::Success.into()
 }
@@ -275,12 +297,13 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
-    _context: ScardContext,
+    context: ScardContext,
     _sz_card_name: LpCWStr,
     dw_provide_id: u32,
     szProvider: *mut u16,
     pcch_provider: LpDword,
 ) -> ScardStatus {
+    check_handle!(context);
     check_null!(szProvider);
     check_null!(pcch_provider);
 
@@ -297,20 +320,10 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
             return ErrorKind::InvalidParameter.into();
         }
     };
-    let encoded: Vec<u16> = provider.encode_utf16().chain([0]).collect();
-    let encoded_len = encoded.len().try_into().unwrap();
+    let encoded: Vec<u16> = provider.encode_utf16().chain(core::iter::once(0)).collect();
 
-    if *pcch_provider == SCARD_AUTOALLOCATE {
-        *pcch_provider = encoded_len;
-        // allocate a new buffer and write an address into raw_buff
-        *(szProvider as *mut *mut u16) = vec_into_raw_ptr(encoded);
-    } else {
-        if encoded_len > *pcch_provider {
-            return ErrorKind::InsufficientBuffer.into();
-        }
-        *pcch_provider = encoded_len;
-        from_raw_parts_mut(szProvider, encoded.len()).copy_from_slice(encoded.as_slice());
-    }
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    try_execute!(copy_w_buff(context, szProvider, pcch_provider, &encoded));
 
     ErrorKind::Success.into()
 }
@@ -496,22 +509,18 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
 #[instrument(ret)]
 #[no_mangle]
-pub unsafe extern "system" fn SCardFreeMemory(_context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
-    // let removed_value = ALLOCATIONS.with(|map| map.borrow_mut().remove(&(pv_mem as usize)));
-    // if let Some((ptr, alloc_type)) = removed_value {
-    //     match alloc_type {
-    //         AllocationType::U16 => {
-    //             let _ = Box::from_raw(ptr as *mut [u16]);
-    //         }
-    //         AllocationType::U8 => {
-    //             let _ = Box::from_raw(ptr as *mut [u8]);
-    //         }
-    //     };
-    // } else {
-    //     error!("Tried to free an invalid memory chunk: {:?}", pv_mem);
-    // }
+pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
+    if let Some(context) = (context as *mut WinScardContextHandle).as_mut() {
+        if context.free_buffer(pv_mem) {
+            info!("Allocated buffer successfully freed.");
+        } else {
+            warn!(?pv_mem, "Attempt to free unknown buffer");
+        }
 
-    ErrorKind::Success.into()
+        ErrorKind::Success.into()
+    } else {
+        ErrorKind::InvalidHandle.into()
+    }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
@@ -589,7 +598,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let supported_readers = context.list_readers();
 
     let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
@@ -627,7 +636,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let supported_readers = context.list_readers();
 
     let reader_states = from_raw_parts_mut(rg_reader_states, c_readers.try_into().unwrap());
@@ -670,14 +679,19 @@ pub unsafe extern "system" fn SCardReadCacheA(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    check_handle!(context);
+    check_null!(lookup_name);
+    check_null!(data_len);
+
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let lookup_name = try_execute!(
         CStr::from_ptr(lookup_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
 
-    if let Some(cached_value) = context.read_cache(lookup_name) {
-        try_execute!(copy_buff(data, data_len, cached_value));
+    if let Some(cached_value) = context.scard_context.read_cache(&lookup_name) {
+        let cached_value = cached_value.to_vec();
+        try_execute!(copy_buff(context, data, data_len, &cached_value));
 
         ErrorKind::Success.into()
     } else {
@@ -697,11 +711,16 @@ pub unsafe extern "system" fn SCardReadCacheW(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    let context = &*try_execute!(scard_context_to_winscard_context(context));
+    check_handle!(context);
+    check_null!(lookup_name);
+    check_null!(data_len);
+
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let lookup_name = c_w_str_to_string(lookup_name);
 
-    if let Some(cached_value) = context.read_cache(&lookup_name) {
-        try_execute!(copy_buff(data, data_len, cached_value));
+    if let Some(cached_value) = context.scard_context.read_cache(&lookup_name) {
+        let cached_value = cached_value.to_vec();
+        try_execute!(copy_buff(context, data, data_len, &cached_value));
 
         ErrorKind::Success.into()
     } else {
@@ -721,7 +740,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = try_execute!(
         CStr::from_ptr(lookup_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
@@ -745,7 +764,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let lookup_name = c_w_str_to_string(lookup_name);
     let data = from_raw_parts_mut(data, data_len.try_into().unwrap()).to_vec();
     info!(write_lookup_name = lookup_name, ?data);
@@ -756,14 +775,14 @@ pub unsafe extern "system" fn SCardWriteCacheW(
 }
 
 unsafe fn get_reader_icon(
-    context: &dyn WinScardContext,
+    context: &mut WinScardContextHandle,
     reader_name: &str,
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> WinScardResult<()> {
-    let icon = context.reader_icon(reader_name)?;
+    let icon = context.scard_context.reader_icon(reader_name)?.as_ref().to_vec();
 
-    copy_buff(pb_icon, pcb_icon, icon.as_ref())
+    copy_buff(context, pb_icon, pcb_icon, icon.as_ref())
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
@@ -780,14 +799,14 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     // `pb_icon` can be null.
     check_null!(pcb_icon);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let reader_name = try_execute!(
         CStr::from_ptr(sz_reader_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
     );
     debug!(reader_name);
 
-    try_execute!(get_reader_icon(context.as_ref(), &reader_name, pb_icon, pcb_icon));
+    try_execute!(get_reader_icon(context, &reader_name, pb_icon, pcb_icon));
 
     ErrorKind::Success.into()
 }
@@ -806,11 +825,11 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     // `pb_icon` can be null.
     check_null!(pcb_icon);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
     let reader_name = c_w_str_to_string(sz_reader_name);
     debug!(reader_name);
 
-    try_execute!(get_reader_icon(context.as_ref(), &reader_name, pb_icon, pcb_icon));
+    try_execute!(get_reader_icon(context, &reader_name, pb_icon, pcb_icon));
 
     ErrorKind::Success.into()
 }
@@ -827,7 +846,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     check_null!(sz_reader_name);
     check_null!(pdw_device_type_id);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let reader_name = try_execute!(
         CStr::from_ptr(sz_reader_name as *const i8).to_str(),
         ErrorKind::InvalidParameter
@@ -851,7 +870,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     check_null!(sz_reader_name);
     check_null!(pdw_device_type_id);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
+    let context = try_execute!(scard_context_to_winscard_context(context));
     let reader_name = c_w_str_to_string(sz_reader_name);
 
     let type_id = try_execute!(context.device_type_id(&reader_name));

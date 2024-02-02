@@ -20,6 +20,6 @@ pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u
     from_raw_parts(raw_buffer, len).iter().map(|c| *c as u8).collect()
 }
 
-pub fn vec_into_raw_ptr<T>(v: Vec<T>) -> *mut T {
-    Box::into_raw(v.into_boxed_slice()) as *mut T
-}
+// pub fn vec_into_raw_ptr<T>(v: Vec<T>) -> *mut T {
+//     Box::into_raw(v.into_boxed_slice()) as *mut T
+// }

@@ -1,44 +1,126 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::iter::once;
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
-use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
+use ffi_types::{LpCVoid, LpDword, LpStr, LpWStr};
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::buff_alloc::SCARD_AUTOALLOCATE;
-// use super::scard_context::CONTEXTS;
-use crate::utils::vec_into_raw_ptr;
+use super::buff_alloc::copy_w_buff;
 use crate::winscard::buff_alloc::copy_buff;
 
-// thread_local! {
-//     // Manages allocations required by the SCARD_AUTOALLOCATE. Data stored in this hashmap is used to free the memory once it's no longer needed
-//     pub(crate) static ALLOCATIONS: RefCell<HashMap<usize, (*mut [()], AllocationType)>> = RefCell::new(HashMap::new());
-// }
-
-// pub enum AllocationType {
-//     U8,
-//     U16,
-// }
-
-pub fn scard_handle_to_winscard(handle: ScardHandle) -> *mut Box<dyn WinScard> {
-    handle as *mut Box<dyn WinScard>
+/// Represents smart card context handle.
+/// Additionally, it holds allocated buffers and created smart card handles.
+/// We need them because during the smart card context deletion, we need to free all allcated resources.
+pub struct WinScardContextHandle {
+    /// Context of the emulated smart card.
+    pub scard_context: Box<dyn WinScardContext>,
+    /// Created smart card handles during the API usage.
+    pub scards: Vec<ScardHandle>,
+    /// Allocated buffers in out smart card context.
+    /// All buffers are `[u8], so we need only pointer and don't need to remember its type.
+    pub allocations: Vec<usize>,
 }
 
-pub fn scard_context_to_winscard_context(handle: ScardContext) -> WinScardResult<*mut Box<dyn WinScardContext>> {
-    // let ctx = CONTEXTS.lock().unwrap();
+impl WinScardContextHandle {
+    pub fn add_scard(&mut self, scard: ScardHandle) -> WinScardResult<()> {
+        if scard == 0 {
+            return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
+        }
 
-    // if ctx.contains(&handle) {
-    Ok(handle as *mut Box<dyn WinScardContext>)
-    // } else {
-    //     Err(Error::new(
-    //         ErrorKind::InvalidHandle,
-    //         format!("Invalid ScardContext provided: {}", handle),
-    //     ))
-    // }
+        self.scards.push(scard);
+
+        Ok(())
+    }
+
+    pub fn remove_scard(&mut self, scard: ScardHandle) -> bool {
+        if let Some(index) = self.scards.iter().position(|x| *x == scard) {
+            self.scards.remove(index);
+
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
+        let buff = unsafe { libc::malloc(size) as *mut u8 };
+        if buff.is_null() {
+            return Err(Error::new(
+                ErrorKind::NoMemory,
+                format!("Can not allocate {} bytes", size),
+            ));
+        }
+        self.allocations.push(buff as usize);
+
+        Ok(buff)
+    }
+
+    pub fn free_buffer(&mut self, buff: LpCVoid) -> bool {
+        let buff = buff as usize;
+        if !self.allocations.contains(&buff) {
+            return false;
+        }
+        unsafe {
+            libc::free(buff as _);
+        }
+
+        // safe: checked above
+        let index = self.allocations.iter().position(|x| *x == buff).unwrap();
+        self.allocations.remove(index);
+
+        true
+    }
+}
+
+impl Drop for WinScardContextHandle {
+    fn drop(&mut self) {
+        // [SCardReleaseContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
+        // ...freeing any resources allocated under that context, including SCARDHANDLE objects
+        unsafe {
+            for scard in &self.scards {
+                let _ = Box::from_raw(*scard as *mut WinScardHandle);
+            }
+        }
+        // ...and memory allocated using the SCARD_AUTOALLOCATE length designator.
+        unsafe {
+            for buff in &self.allocations {
+                libc::free(*buff as _);
+            }
+        }
+    }
+}
+
+/// Represents smart card handle.
+/// It also holds a pointer to the smart card context to which it belongs.
+pub struct WinScardHandle {
+    /// The emulated smart card.
+    pub scard: Box<dyn WinScard>,
+    /// Pointer to the smart card context to which it belongs.
+    pub context: ScardContext,
+}
+
+pub fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
+    if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
+        Ok(scard.scard.as_mut())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidHandle,
+            "Invalid smart card context handle.",
+        ))
+    }
+}
+
+pub fn scard_context_to_winscard_context<'a>(handle: ScardContext) -> WinScardResult<&'a mut dyn WinScardContext> {
+    if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
+        Ok(context.scard_context.as_mut())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidHandle,
+            "Invalid smart card context handle.",
+        ))
+    }
 }
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> IoRequest {
@@ -78,38 +160,32 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     Ok(())
 }
 
-pub unsafe fn write_multistring_w(readers: &[&str], dest: LpWStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_multistring_w(
+    context: &mut WinScardContextHandle,
+    readers: &[&str],
+    dest: LpWStr,
+    dest_len: LpDword,
+) -> WinScardResult<()> {
     let buffer: Vec<u16> = readers
         .iter()
         .flat_map(|reader| reader.encode_utf16().chain(once(0)))
         .chain(once(0))
         .collect();
-    let buffer_len = buffer.len().try_into().unwrap();
 
-    if *dest_len == SCARD_AUTOALLOCATE {
-        *dest_len = buffer_len;
-        // allocate a new buffer and write an address into raw_buff
-        *(dest as *mut *mut u16) = vec_into_raw_ptr(buffer);
-    } else {
-        if buffer_len > *dest_len {
-            return Err(Error::new(
-                ErrorKind::InsufficientBuffer,
-                format!("expected at least {} bytes but got {}.", buffer_len, *dest_len),
-            ));
-        }
-        *dest_len = buffer_len;
-        from_raw_parts_mut(dest, buffer.len()).copy_from_slice(buffer.as_slice());
-    }
-
-    Ok(())
+    copy_w_buff(context, dest, dest_len, &buffer)
 }
 
-pub unsafe fn write_multistring_a(readers: &[&str], dest: LpStr, dest_len: LpDword) -> WinScardResult<()> {
+pub unsafe fn write_multistring_a(
+    context: &mut WinScardContextHandle,
+    readers: &[&str],
+    dest: LpStr,
+    dest_len: LpDword,
+) -> WinScardResult<()> {
     let buffer: Vec<u8> = readers
         .iter()
         .flat_map(|reader| reader.as_bytes().iter().cloned().chain(once(0)))
         .chain(once(0))
         .collect();
 
-    copy_buff(dest, dest_len, &buffer)
+    copy_buff(context, dest, dest_len, &buffer)
 }

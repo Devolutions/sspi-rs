@@ -7,17 +7,17 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::{Protocol, WinScardContext};
+use winscard::winscard::Protocol;
 use winscard::{ErrorKind, WinScardResult};
 
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
-    scard_io_request_to_io_request, write_multistring_a, write_multistring_w,
+    scard_io_request_to_io_request, write_multistring_a, write_multistring_w, WinScardContextHandle, WinScardHandle,
 };
 
 unsafe fn connect(
-    context: &mut dyn WinScardContext,
+    context: ScardContext,
     reader_name: &str,
     dw_share_mode: u32,
     dw_preferred_protocols: u32,
@@ -27,10 +27,18 @@ unsafe fn connect(
     let share_mode = dw_share_mode.try_into()?;
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
-    let card_handle = context.connect(reader_name, share_mode, protocol)?;
-    let protocol = card_handle.status()?.protocol.bits();
+    let scard_context = scard_context_to_winscard_context(context)?;
+    let scard = scard_context.connect(reader_name, share_mode, protocol)?;
+    let protocol = scard.status()?.protocol.bits();
 
-    *ph_card = into_raw_ptr(card_handle) as ScardHandle;
+    let scard = WinScardHandle { scard, context };
+
+    let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
+
+    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    context.add_scard(raw_card_handle)?;
+
+    *ph_card = raw_card_handle;
     *pdw_active_protocol = protocol;
 
     Ok(())
@@ -52,7 +60,6 @@ pub unsafe extern "system" fn SCardConnectA(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = try_execute!(
         CStr::from_ptr(sz_reader as *const i8).to_str(),
         ErrorKind::InvalidParameter
@@ -60,7 +67,7 @@ pub unsafe extern "system" fn SCardConnectA(
     debug!(reader_name);
 
     try_execute!(connect(
-        context.as_mut(),
+        context,
         &reader_name,
         dw_share_mode,
         dw_preferred_protocols,
@@ -87,12 +94,11 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    let context = &mut *try_execute!(scard_context_to_winscard_context(context));
     let reader_name = c_w_str_to_string(sz_reader);
     debug!(reader_name);
 
     try_execute!(connect(
-        context.as_mut(),
+        context,
         &reader_name,
         dw_share_mode,
         dw_preferred_protocols,
@@ -122,8 +128,14 @@ pub extern "system" fn SCardReconnect(
 pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
 
-    let handle = scard_handle_to_winscard(handle);
-    let _ = Box::from_raw(handle);
+    let scard = Box::from_raw(handle as *mut WinScardHandle);
+    if let Some(context) = (scard.context as *mut WinScardContextHandle).as_mut() {
+        if context.remove_scard(handle) {
+            info!(?handle, "Successfully disconnected!");
+        } else {
+            warn!("ScardHandle is not belongs to the specified context.")
+        }
+    }
 
     ErrorKind::Success.into()
 }
@@ -133,7 +145,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
 #[no_mangle]
 pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
     check_handle!(handle);
-    let scard = &mut *scard_handle_to_winscard(handle);
+    let scard = try_execute!(scard_handle_to_winscard(handle));
 
     try_execute!(scard.begin_transaction());
 
@@ -145,7 +157,7 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 #[no_mangle]
 pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
-    let scard = &mut *scard_handle_to_winscard(handle);
+    let scard = try_execute!(scard_handle_to_winscard(handle));
 
     try_execute!(scard.end_transaction());
 
@@ -193,12 +205,19 @@ pub unsafe extern "system" fn SCardStatusA(
     // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = &mut *scard_handle_to_winscard(handle);
-    let status = try_execute!(scard.status());
+    let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
+    let status = try_execute!(scard.scard.status());
+    check_handle!(scard.context);
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_multistring_a(&readers, msz_reader_names, pcch_reader_len));
+    let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
+    try_execute!(write_multistring_a(
+        context,
+        &readers,
+        msz_reader_names,
+        pcch_reader_len
+    ));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 
@@ -235,12 +254,19 @@ pub unsafe extern "system" fn SCardStatusW(
     // it's not specified in a docs, but msclmd.dll can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = &mut *scard_handle_to_winscard(handle);
-    let status = try_execute!(scard.status());
+    let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
+    let status = try_execute!(scard.scard.status());
+    check_handle!(scard.context);
     let atr_len = status.atr.as_ref().len();
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    try_execute!(write_multistring_w(&readers, msz_reader_names, pcch_reader_len));
+    let context = (scard.context as *mut WinScardContextHandle).as_mut().unwrap();
+    try_execute!(write_multistring_w(
+        context,
+        &readers,
+        msz_reader_names,
+        pcch_reader_len
+    ));
     *pdw_state = status.state.into();
     *pdw_protocol = status.protocol.bits();
 
@@ -270,7 +296,7 @@ pub unsafe extern "system" fn SCardTransmit(
 ) -> ScardStatus {
     check_handle!(handle);
     check_null!(pio_send_pci);
-    let scard = &mut *scard_handle_to_winscard(handle);
+    let scard = try_execute!(scard_handle_to_winscard(handle));
 
     let io_request = scard_io_request_to_io_request(pio_send_pci);
     let input_apdu = from_raw_parts(pb_send_buffer, cb_send_length.try_into().unwrap());
@@ -317,7 +343,7 @@ pub unsafe extern "system" fn SCardControl(
     lp_bytes_returned: LpDword,
 ) -> ScardStatus {
     check_handle!(handle);
-    let scard = &mut *scard_handle_to_winscard(handle);
+    let scard = try_execute!(scard_handle_to_winscard(handle));
 
     let in_buffer = if !lp_in_buffer.is_null() {
         from_raw_parts(lp_in_buffer as *const u8, cb_in_buffer_size.try_into().unwrap())
