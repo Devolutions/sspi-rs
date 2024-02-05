@@ -102,7 +102,7 @@ impl SmartCard<'_> {
         })
     }
 
-    fn validate_and_pad_pin(mut pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
+    fn validate_and_pad_pin(pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(
@@ -117,13 +117,17 @@ impl SmartCard<'_> {
             ));
         };
 
+        Ok(Self::pad_pin(pin))
+    }
+
+    fn pad_pin(mut pin: Vec<u8>) -> Vec<u8> {
         if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
             // NIST.SP.800-73-4 part 2, section 2.4.3
             const PIN_PAD_VALUE: u8 = 0xFF;
             pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
 
-        Ok(pin)
+        pin
     }
 
     /// This functions handles one APDU command.
@@ -427,6 +431,20 @@ impl SmartCard<'_> {
         let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
+    }
+
+    /// Verifies the PIN code. This method alters the scard state.
+    pub fn verify_pin(&mut self, pin: &[u8]) -> WinScardResult<()> {
+        if self.pin != Self::pad_pin(pin.into()) {
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                "PIN verification error: Invalid PIN",
+            ));
+        }
+
+        self.state = SCardState::PinVerified;
+
+        Ok(())
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {

@@ -170,7 +170,11 @@ impl SmartCard {
 
                 Ok(signature)
             }
-            SmartCardApi::PivSmartCard(ref mut scard) => Ok(scard.sign_hashed(data)?),
+            SmartCardApi::PivSmartCard(ref mut scard) => {
+                warn!(pin = ?self.pin);
+                scard.verify_pin(&self.pin)?;
+                Ok(scard.sign_hashed(data)?)
+            }
         }
     }
 }
