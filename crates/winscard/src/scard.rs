@@ -58,7 +58,8 @@ pub const ATR: [u8; 17] = [
     0x4d,
 ];
 
-/// Represents an emulated smart card.
+/// Emulated smart card.
+///
 /// Currently, we support one key container per smart card.
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,

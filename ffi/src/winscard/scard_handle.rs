@@ -6,7 +6,8 @@ use ffi_types::LpCVoid;
 use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-/// Represents smart card context handle.
+/// Scard context handle representation.
+///
 /// Additionally, it holds allocated buffers and created smart card handles.
 /// We need them because during the smart card context deletion, we need to free all allcated resources.
 pub struct WinScardContextHandle {
@@ -100,7 +101,8 @@ impl Drop for WinScardContextHandle {
     }
 }
 
-/// Represents smart card handle.
+/// Scard handle representation.
+///
 /// It also holds a pointer to the smart card context to which it belongs.
 pub struct WinScardHandle {
     /// The emulated smart card.

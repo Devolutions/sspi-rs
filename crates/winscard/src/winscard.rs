@@ -8,7 +8,7 @@ use bitflags::bitflags;
 
 use crate::{Error, ErrorKind, WinScardResult};
 
-/// ATR string
+/// ATR string.
 ///
 /// A sequence of bytes returned from a smart card when it is turned on.
 /// These bytes are used to identify the card to the system.
