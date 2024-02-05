@@ -604,7 +604,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
                     reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
                     container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
                     csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
-                    pin: password.into(),
+                    pin: password,
                     private_key_file_index: None,
                     private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
                 }));
