@@ -1,11 +1,37 @@
 use ffi_types::winscard::functions::{PSCardApiFunctionTable, SCardApiFunctionTable};
+use ffi_types::winscard::ScardIoRequest;
+use winscard::winscard::Protocol;
 
 use self::scard::*;
 use self::scard_context::*;
 use crate::utils::into_raw_ptr;
 
+#[macro_use]
+mod macros;
+mod buf_alloc;
 pub mod scard;
 pub mod scard_context;
+mod scard_handle;
+
+// The constants below are not documented anywhere and were discovered during debugging.
+// Related example: https://github.com/bluetech/pcsc-rust/blob/b397cc8e3834a1dc791631105f37f34d321c8696/pcsc/src/lib.rs#L605-L613
+#[no_mangle]
+pub static Rust_g_rgSCardT1Pci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::T1.bits(),
+    cb_pci_length: 8,
+};
+
+#[no_mangle]
+pub static Rust_g_rgSCardT0Pci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::T0.bits(),
+    cb_pci_length: 8,
+};
+
+#[no_mangle]
+pub static Rust_g_rgSCardRawPci: ScardIoRequest = ScardIoRequest {
+    dw_protocol: Protocol::Raw.bits(),
+    cb_pci_length: 8,
+};
 
 pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
     crate::logging::setup_logger();
@@ -74,13 +100,14 @@ pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
         SCardUIDlgSelectCardW,
         GetOpenCardNameA,
         GetOpenCardNameW,
-        SCardDlgExtendedError,
         SCardReadCacheA,
         SCardReadCacheW,
         SCardWriteCacheA,
         SCardWriteCacheW,
         SCardGetReaderIconA,
         SCardGetReaderIconW,
+        SCardGetDeviceTypeIdA,
+        SCardGetDeviceTypeIdW,
         SCardGetReaderDeviceInstanceIdA,
         SCardGetReaderDeviceInstanceIdW,
         SCardListReadersWithDeviceInstanceIdA,

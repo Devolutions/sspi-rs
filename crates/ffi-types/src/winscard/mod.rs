@@ -36,12 +36,12 @@ pub type LpOcnDscProc = Option<unsafe extern "system" fn(_: ScardContext, _: Sca
 /// ```
 #[repr(C)]
 pub struct ScardReaderStateA {
-    sz_reader: LpCStr,
-    pv_user_data: LpVoid,
-    dw_current_state: u32,
-    dw_event_state: u32,
-    cb_atr: u32,
-    rgb_atr: [u8; 36],
+    pub sz_reader: LpCStr,
+    pub pv_user_data: LpVoid,
+    pub dw_current_state: u32,
+    pub dw_event_state: u32,
+    pub cb_atr: u32,
+    pub rgb_atr: [u8; 36],
 }
 
 pub type LpScardReaderStateA = *mut ScardReaderStateA;
@@ -58,14 +58,15 @@ pub type LpScardReaderStateA = *mut ScardReaderStateA;
 ///   BYTE   rgbAtr[36];
 /// } SCARD_READERSTATEW, *PSCARD_READERSTATEW, *LPSCARD_READERSTATEW;
 /// ```
+#[derive(Debug)]
 #[repr(C)]
 pub struct ScardReaderStateW {
-    sz_reader: LpCWStr,
-    pv_user_data: LpVoid,
-    dw_current_state: u32,
-    dw_event_state: u32,
-    cb_atr: u32,
-    rgb_atr: [u8; 36],
+    pub sz_reader: LpCWStr,
+    pub pv_user_data: LpVoid,
+    pub dw_current_state: u32,
+    pub dw_event_state: u32,
+    pub cb_atr: u32,
+    pub rgb_atr: [u8; 36],
 }
 
 pub type LpScardReaderStateW = *mut ScardReaderStateW;
@@ -98,8 +99,8 @@ pub type LpScardAtrMask = *mut ScardAtrMask;
 /// ```
 #[repr(C)]
 pub struct ScardIoRequest {
-    dw_protocol: u32,
-    cb_pci_length: u32,
+    pub dw_protocol: u32,
+    pub cb_pci_length: u32,
 }
 
 pub type LpScardIoRequest = *mut ScardIoRequest;
