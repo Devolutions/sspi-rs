@@ -21,6 +21,7 @@ pub struct WinScardContextHandle {
 }
 
 impl WinScardContextHandle {
+    /// Creates a new [WinScardContextHandle] based on the provided inner scard context.
     pub fn with_scard_context(scard_context: Box<dyn WinScardContext>) -> Self {
         Self {
             scard_context,
@@ -29,10 +30,12 @@ impl WinScardContextHandle {
         }
     }
 
+    /// Returns the shared reference to the inner [WinScardContext].
     pub fn scard_context(&self) -> &dyn WinScardContext {
         self.scard_context.as_ref()
     }
 
+    /// Adds a new [ScardHandle] to the context handles.
     pub fn add_scard(&mut self, scard: ScardHandle) -> WinScardResult<()> {
         if scard == 0 {
             return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
@@ -43,6 +46,7 @@ impl WinScardContextHandle {
         Ok(())
     }
 
+    /// Removes the [ScardHandle] from the scard context.
     pub fn remove_scard(&mut self, scard: ScardHandle) -> bool {
         if let Some(index) = self.scards.iter().position(|x| *x == scard) {
             self.scards.remove(index);
@@ -53,6 +57,7 @@ impl WinScardContextHandle {
         }
     }
 
+    /// Allocated a new buffer inside the scard context.
     pub fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
@@ -66,6 +71,7 @@ impl WinScardContextHandle {
         Ok(buff)
     }
 
+    /// Deletes the buffer inside the scard context.
     pub fn free_buffer(&mut self, buff: LpCVoid) -> bool {
         let buff = buff as usize;
 
@@ -112,14 +118,17 @@ pub struct WinScardHandle {
 }
 
 impl WinScardHandle {
+    /// Creates a new [WinSCardHandle] based on the provided data.
     pub fn new(scard: Box<dyn WinScard>, context: ScardContext) -> Self {
         Self { scard, context }
     }
 
+    /// Returns the [WinScard] handle.
     pub fn scard(&self) -> &dyn WinScard {
         self.scard.as_ref()
     }
 
+    /// Returns the parent [ScardContext] it belongs.
     pub fn context(&self) -> ScardContext {
         self.context
     }

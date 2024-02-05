@@ -11,9 +11,9 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
-use super::buff_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
+use super::buf_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
-use crate::winscard::buff_alloc::copy_buff;
+use crate::winscard::buf_alloc::copy_buff;
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 
 const SCARD_STATE_CHANGED: u32 = 0x00000002;

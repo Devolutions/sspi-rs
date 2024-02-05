@@ -10,7 +10,7 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::Protocol;
 use winscard::{ErrorKind, WinScardResult};
 
-use super::buff_alloc::{copy_buff, write_multistring_a, write_multistring_w};
+use super::buf_alloc::{copy_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
