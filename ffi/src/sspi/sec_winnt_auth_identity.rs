@@ -234,8 +234,8 @@ pub unsafe fn auth_data_to_identity_buffers(
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
-    let rawcreds = std::slice::from_raw_parts(p_auth_data as *const u8, 128);
-    debug!(?rawcreds);
+    let raw_creds = from_raw_parts(p_auth_data as *const u8, 128);
+    debug!(?raw_creds);
 
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
@@ -580,6 +580,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
             ErrorKind::WrongCredentialHandle,
             "Cannot unpack credentials",
         ));
+    }
+
+    #[cfg(feature = "scard")]
+    if true {
+        debug!("handle smart card creds");
+        debug!(?username, ?domain, password = ?password.as_ref());
     }
 
     // only marshaled smart card creds starts with '@' char
