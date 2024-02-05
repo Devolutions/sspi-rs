@@ -2,6 +2,7 @@ mod tls_connection;
 
 use std::sync::Arc;
 
+use async_recursion::async_recursion;
 use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
@@ -20,7 +21,6 @@ use crate::{
     Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes, PACKAGE_ID_NONE,
 };
-use async_recursion::async_recursion;
 
 pub const PKG_NAME: &str = "CREDSSP";
 

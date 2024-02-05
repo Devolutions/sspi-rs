@@ -3,8 +3,7 @@ use time::{Date, Month, OffsetDateTime};
 use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::test::*;
-use crate::AuthIdentity;
-use crate::Username;
+use crate::{AuthIdentity, Username};
 
 #[test]
 fn get_system_time_as_file_time_test_one_second_diff() {
