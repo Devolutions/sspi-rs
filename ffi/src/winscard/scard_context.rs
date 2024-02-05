@@ -33,11 +33,11 @@ const SCARD_PROVIDER_KSP: u32 = 3;
 // The function retrieves the name of the card module.
 const SCARD_PROVIDER_CARD_MODULE: u32 = 0x80000001;
 
-const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
 const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
 
-const DEFAULT_CARD_NAME: &str = "Cool card";
+pub const DEFAULT_CARD_NAME: &str = "Cool card";
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
 // To be notified of the arrival of a new smart card reader,

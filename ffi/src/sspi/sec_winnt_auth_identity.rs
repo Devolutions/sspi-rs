@@ -505,6 +505,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
         container_name: string_to_utf16(key_container_name),
         csp_name: string_to_utf16(csp_name),
         private_key_file_index: Some(private_key_file_index),
+        private_key_pem: None,
     });
 
     Ok(creds)
@@ -582,10 +583,36 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         ));
     }
 
+    // try to collect credentials for the emulated smart card
     #[cfg(feature = "scard")]
-    if true {
-        debug!("handle smart card creds");
-        debug!(?username, ?domain, password = ?password.as_ref());
+    if username.contains(&b'@') {
+        use winscard::SmartCardInfo;
+
+        use crate::utils::str_encode_utf16;
+        use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+
+        match SmartCardInfo::try_from_env() {
+            Ok(smart_card_info) => {
+                // remove null
+                let new_len = password.as_ref().len() - 2;
+                password.as_mut().truncate(new_len);
+
+                return Ok(CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
+                    username,
+                    certificate: smart_card_info.auth_cert_der.clone(),
+                    card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
+                    reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
+                    container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
+                    csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
+                    pin: password.into(),
+                    private_key_file_index: None,
+                    private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
+                }));
+            }
+            Err(err) => {
+                debug!(?err);
+            }
+        };
     }
 
     // only marshaled smart card creds starts with '@' char
