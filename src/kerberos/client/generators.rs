@@ -377,6 +377,7 @@ impl From<[u8; 24]> for ChecksumValues {
 }
 
 impl ChecksumValues {
+    #[allow(dead_code)]
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
         let flag_bytes = flag_bits.to_le_bytes();

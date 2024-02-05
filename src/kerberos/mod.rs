@@ -769,8 +769,16 @@ impl<'a> Kerberos {
                     #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
+                        warn!(?pin, pin2 = ?smart_card.pin);
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
-                        let private_key_file_index = smart_card.private_key_file_index;
+                        let private_key_pem = String::from_utf8(
+                            smart_card
+                                .private_key_pem
+                                .as_ref()
+                                .ok_or_else(|| Error::new(ErrorKind::InternalError, "scard private key is missing"))?
+                                .to_vec(),
+                        )?;
+                        let certificate = smart_card.certificate.clone();
 
                         self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
 
@@ -784,8 +792,12 @@ impl<'a> Kerberos {
                                 sha1.update(data_to_sign);
                                 let hash = sha1.finalize().to_vec();
 
-                                let mut smart_card =
-                                    SmartCard::new(pin.clone(), &reader_name, private_key_file_index.unwrap_or(1))?;
+                                let mut smart_card = SmartCard::new_emulated(
+                                    reader_name.clone().into(),
+                                    pin.clone(),
+                                    private_key_pem.as_ref(),
+                                    certificate.clone(),
+                                )?;
                                 smart_card.sign(hash)
                             }),
                             with_pre_auth: false,
@@ -873,9 +885,9 @@ impl<'a> Kerberos {
                 // the original flag is
                 // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
                 // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
-                let flags = builder.context_requirements.into();
-                let mut checksum_value = ChecksumValues::default();
-                checksum_value.set_flags(flags);
+                // let flags = builder.context_requirements.into();
+                let checksum_value = ChecksumValues::default();
+                // checksum_value.set_flags(flags);
 
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
