@@ -24,6 +24,7 @@ pub struct Reader<'a> {
 }
 
 /// Describes smart card info used for the smart card creation.
+#[derive(Debug, Clone)]
 pub struct SmartCardInfo<'a> {
     /// Container name which stores the certificate along with its private key.
     pub container_name: Cow<'a, str>,
@@ -31,6 +32,8 @@ pub struct SmartCardInfo<'a> {
     pub pin: Vec<u8>,
     /// DER-encoded smart card certificate.
     pub auth_cert_der: Vec<u8>,
+    /// Encoded private key (pem).
+    pub auth_pk_pem: Cow<'a, str>,
     /// Private key.
     pub auth_pk: PrivateKey,
     /// Information about smart card reader.
@@ -93,6 +96,7 @@ impl<'a> SmartCardInfo<'a> {
             container_name,
             pin,
             auth_cert_der: raw_certificate,
+            auth_pk_pem: raw_private_key.into(),
             auth_pk: private_key,
             reader,
         })
@@ -104,6 +108,7 @@ impl<'a> SmartCardInfo<'a> {
         reader_name: Cow<'a, str>,
         pin: Vec<u8>,
         auth_cert_der: Vec<u8>,
+        auth_pk_pem: Cow<'a, str>,
         auth_pk: PrivateKey,
     ) -> Self {
         // Standard Windows Reader Icon
@@ -117,6 +122,7 @@ impl<'a> SmartCardInfo<'a> {
             container_name,
             pin,
             auth_cert_der,
+            auth_pk_pem,
             auth_pk,
             reader,
         }
@@ -126,6 +132,7 @@ impl<'a> SmartCardInfo<'a> {
 /// Represents the resource manager context (the scope).
 ///
 /// Currently, we support only one smart card per smart card context.
+#[derive(Debug, Clone)]
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
     cache: BTreeMap<String, Vec<u8>>,
