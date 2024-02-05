@@ -23,7 +23,7 @@ pub struct Reader<'a> {
     pub device_type_id: DeviceTypeId,
 }
 
-/// Describes smart card info used for the smart card creation
+/// Describes smart card info used for the smart card creation.
 pub struct SmartCardInfo<'a> {
     /// Container name which stores the certificate along with its private key.
     pub container_name: Cow<'a, str>,
@@ -38,6 +38,67 @@ pub struct SmartCardInfo<'a> {
 }
 
 impl<'a> SmartCardInfo<'a> {
+    fn reader_icon() -> &'static [u8] {
+        include_bytes!("../assets/reader_icon.bmp")
+    }
+
+    /// Tries to create [SmartCardInfo] structure based on environment variables.
+    /// Required environment variables are listed in the `env` module of this crate.
+    #[cfg(feature = "std")]
+    pub fn try_from_env() -> WinScardResult<Self> {
+        use std::fs;
+
+        use crate::env::{
+            WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV, WINSCARD_PK_PATH_ENV,
+            WINSCARD_READER_NAME_ENV,
+        };
+
+        let container_name = env!(WINSCARD_CONTAINER_NAME_ENV)?.into();
+        let reader_name: Cow<'_, str> = env!(WINSCARD_READER_NAME_ENV)?.into();
+        let pin = env!(WINSCARD_PIN_ENV)?.into();
+
+        let cert_path = env!(WINSCARD_CERT_PATH_ENV)?;
+        let raw_certificate = fs::read(cert_path).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unable to read certificate from the provided file: {}", e),
+            )
+        })?;
+        let pk_path = env!(WINSCARD_PK_PATH_ENV)?;
+        let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unable to read private key from the provided file: {}", e),
+            )
+        })?;
+        let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!(
+                    "Error while trying to read a private key from a pem-encoded string: {}",
+                    e
+                ),
+            )
+        })?;
+
+        // Standard Windows Reader Icon
+        let icon: &[u8] = Self::reader_icon();
+        let reader: Reader<'_> = Reader {
+            name: reader_name,
+            icon: Icon::from(icon),
+            device_type_id: DeviceTypeId::Tpm,
+        };
+
+        Ok(Self {
+            container_name,
+            pin,
+            auth_cert_der: raw_certificate,
+            auth_pk: private_key,
+            reader,
+        })
+    }
+
+    /// Creates a new [ScardContext] based on the provided data.
     pub fn new(
         container_name: Cow<'a, str>,
         reader_name: Cow<'a, str>,
@@ -46,7 +107,7 @@ impl<'a> SmartCardInfo<'a> {
         auth_pk: PrivateKey,
     ) -> Self {
         // Standard Windows Reader Icon
-        let icon: &[u8] = include_bytes!("../assets/reader_icon.bmp");
+        let icon: &[u8] = Self::reader_icon();
         let reader: Reader<'_> = Reader {
             name: reader_name,
             icon: Icon::from(icon),
@@ -63,6 +124,7 @@ impl<'a> SmartCardInfo<'a> {
 }
 
 /// Represents the resource manager context (the scope).
+///
 /// Currently, we support only one smart card per smart card context.
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
@@ -323,6 +385,11 @@ impl<'a> ScardContext<'a> {
         );
 
         Ok(Self { smart_card_info, cache })
+    }
+
+    /// Returns available smart card reader name.
+    pub fn reader_name(&self) -> &str {
+        self.smart_card_info.reader.name.as_ref()
     }
 }
 

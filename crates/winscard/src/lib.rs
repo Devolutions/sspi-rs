@@ -5,11 +5,17 @@
 #[macro_use]
 extern crate tracing;
 
+#[macro_use]
+mod macros;
+
 mod ber_tlv;
 mod card_capability_container;
 mod chuid;
 mod compression;
 mod dummy_rng;
+/// Contains env variables names that represent smart card credentials.
+#[cfg(feature = "std")]
+pub mod env;
 mod piv_cert;
 mod scard;
 mod scard_context;
@@ -23,13 +29,14 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::num::TryFromIntError;
 use core::{fmt, result};
 
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
 use picky::key::KeyError;
-pub use scard::{SmartCard, PIV_AID};
-pub use scard_context::{Reader, ScardContext};
+pub use scard::{SmartCard, ATR, PIV_AID};
+pub use scard_context::{Reader, ScardContext, SmartCardInfo};
 
 /// The [WinScardResult] type.
 pub type WinScardResult<T> = result::Result<T, Error>;
@@ -121,6 +128,15 @@ impl From<TlvError> for Error {
         Error::new(
             ErrorKind::InternalError,
             format!("error: an unexpected TlvError happened: {}", value),
+        )
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(value: TryFromIntError) -> Self {
+        Error::new(
+            ErrorKind::InsufficientBuffer,
+            format!("error: can not convert integers: {}", value),
         )
     }
 }
