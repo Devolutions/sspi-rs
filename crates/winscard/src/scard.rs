@@ -61,6 +61,7 @@ pub const ATR: [u8; 17] = [
 /// Emulated smart card.
 ///
 /// Currently, we support one key container per smart card.
+#[derive(Debug, Clone)]
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
@@ -342,7 +343,7 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
-        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
+        const PIV_AUTHENTICATION_KEY: u8 = 0x9C;
 
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
             return Err(Error::new(
@@ -439,7 +440,7 @@ impl SmartCard<'_> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum SCardState {
     Ready,
     PivAppSelected,
