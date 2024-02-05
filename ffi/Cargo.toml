@@ -23,21 +23,14 @@ libc = "0.2"
 num-traits = "0.2"
 whoami = "1.4"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
-ffi-types = { path = "../crates/ffi-types", features = [
-    "winscard",
-], optional = true }
+ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
 picky-asn1-der = "0.4"
 
 winscard = { path = "../crates/winscard", features = ["std"], optional = true }
 
 # logging
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3", features = [
-    "std",
-    "fmt",
-    "local-time",
-    "env-filter",
-] }
+tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
