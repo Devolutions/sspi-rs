@@ -1,13 +1,14 @@
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
 
-use crate::WinScardResult;
+use crate::{Error, ErrorKind, WinScardResult};
 
-/// ATR string
+/// ATR string.
 ///
 /// A sequence of bytes returned from a smart card when it is turned on.
 /// These bytes are used to identify the card to the system.
@@ -66,6 +67,7 @@ impl From<Vec<u8>> for Icon<'_> {
 /// [SCARD_READER_CAPABILITIES](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/smclib/ns-smclib-_scard_reader_capabilities)
 /// `ReaderType` parameter:
 /// This member contains the reader type and is required. This member can have one of the values in the following table.
+#[repr(u32)]
 #[derive(Debug, Copy, Clone)]
 pub enum DeviceTypeId {
     /// Serial reader
@@ -88,6 +90,12 @@ pub enum DeviceTypeId {
     Vendor = 0xf0,
 }
 
+impl From<DeviceTypeId> for u32 {
+    fn from(value: DeviceTypeId) -> Self {
+        value as u32
+    }
+}
+
 /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
 ///
 /// `dwShareMode` parameter:
@@ -102,6 +110,22 @@ pub enum ShareMode {
     /// This application is allocating the reader for its private use, and will be controlling it directly.
     /// No other applications are allowed access to it.
     Direct = 3,
+}
+
+impl TryFrom<u32> for ShareMode {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Exclusive),
+            2 => Ok(Self::Shared),
+            3 => Ok(Self::Direct),
+            _ => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Invalid ShareMode value: {}", value),
+            )),
+        }
+    }
 }
 
 bitflags! {
@@ -133,6 +157,7 @@ bitflags! {
 /// `pdwState` parameter:
 /// Current state of the smart card in the reader. Upon success, it receives one of the following state indicators.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u32)]
 pub enum State {
     /// Unknown smart card status.
     Unknown = 0,
@@ -148,6 +173,12 @@ pub enum State {
     Negotiable = 5,
     /// The card has been reset and specific communication protocols have been established.
     Specific = 6,
+}
+
+impl From<State> for u32 {
+    fn from(value: State) -> Self {
+        value as u32
+    }
 }
 
 /// This structure described the current status and basic info about the smart card reader.
@@ -176,6 +207,20 @@ pub enum ControlCode {
     IoCtl = 0x00313520,
 }
 
+impl TryFrom<u32> for ControlCode {
+    type Error = Error;
+
+    fn try_from(value: u32) -> WinScardResult<Self> {
+        match value {
+            0x00313520 => Ok(ControlCode::IoCtl),
+            _ => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Unsupported control code: {:x?}", value),
+            )),
+        }
+    }
+}
+
 /// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)
 ///
 /// The SCARD_IO_REQUEST structure begins a protocol control information structure.
@@ -198,7 +243,8 @@ pub struct IoRequest {
 /// This structure represents the result of the `SCardTransmit` function.
 #[derive(Debug, Clone)]
 pub struct TransmitOutData {
-    /// Output APDU command.
+    /// Data returned from the card. If no data is returned from the card,
+    /// then this buffer will only contain the SW1 and SW2 status bytes.
     pub output_apdu: Vec<u8>,
     /// Returned protocol control information (PCI) specific to the protocol in use.
     pub receive_pci: Option<IoRequest>,
