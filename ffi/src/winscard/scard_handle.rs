@@ -134,7 +134,7 @@ impl WinScardHandle {
     }
 }
 
-pub fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
+pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
     if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
         Ok(scard.scard.as_mut())
     } else {
@@ -145,7 +145,9 @@ pub fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a m
     }
 }
 
-pub fn scard_context_to_winscard_context<'a>(handle: ScardContext) -> WinScardResult<&'a mut dyn WinScardContext> {
+pub unsafe fn scard_context_to_winscard_context<'a>(
+    handle: ScardContext,
+) -> WinScardResult<&'a mut dyn WinScardContext> {
     if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
         Ok(context.scard_context.as_mut())
     } else {
@@ -157,12 +159,13 @@ pub fn scard_context_to_winscard_context<'a>(handle: ScardContext) -> WinScardRe
 }
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
-    let buffer_len = (*pio_send_pci).cb_pci_length.try_into()?;
-    let buffer = (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>());
+    let (cb_pci_length, dw_protocol) = unsafe { ((*pio_send_pci).cb_pci_length, (*pio_send_pci).dw_protocol) };
+    let buffer_len = cb_pci_length.try_into()?;
+    let buffer = unsafe { (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>()) };
 
     Ok(IoRequest {
-        protocol: Protocol::from_bits((*pio_send_pci).dw_protocol).unwrap_or(Protocol::empty()),
-        pci_info: from_raw_parts(buffer, buffer_len).to_vec(),
+        protocol: Protocol::from_bits(dw_protocol).unwrap_or(Protocol::empty()),
+        pci_info: unsafe { from_raw_parts(buffer, buffer_len) }.to_vec(),
     })
 }
 
@@ -171,7 +174,7 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     scard_io_request: LpScardIoRequest,
 ) -> WinScardResult<()> {
     let pci_info_len = io_request.pci_info.len();
-    let scard_pci_info_len = (*scard_io_request).cb_pci_length.try_into()?;
+    let scard_pci_info_len = unsafe { (*scard_io_request).cb_pci_length }.try_into()?;
 
     if pci_info_len > scard_pci_info_len {
         return Err(Error::new(
@@ -183,11 +186,13 @@ pub unsafe fn copy_io_request_to_scard_io_request(
         ));
     }
 
-    (*scard_io_request).dw_protocol = io_request.protocol.bits();
-    (*scard_io_request).cb_pci_length = pci_info_len.try_into()?;
+    unsafe {
+        (*scard_io_request).dw_protocol = io_request.protocol.bits();
+        (*scard_io_request).cb_pci_length = pci_info_len.try_into()?;
+    }
 
-    let pci_buffer_ptr = (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>());
-    let pci_buffer = from_raw_parts_mut(pci_buffer_ptr, pci_info_len);
+    let pci_buffer_ptr = unsafe { (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>()) };
+    let pci_buffer = unsafe { from_raw_parts_mut(pci_buffer_ptr, pci_info_len) };
     pci_buffer.copy_from_slice(&io_request.pci_info);
 
     Ok(())

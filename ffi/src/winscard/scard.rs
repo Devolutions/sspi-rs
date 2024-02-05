@@ -28,7 +28,7 @@ unsafe fn connect(
     let share_mode = dw_share_mode.try_into()?;
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
-    let scard_context = scard_context_to_winscard_context(context)?;
+    let scard_context = unsafe { scard_context_to_winscard_context(context)? };
     let scard = scard_context.connect(reader_name, share_mode, protocol)?;
     let protocol = scard.status()?.protocol.bits();
 
@@ -36,11 +36,13 @@ unsafe fn connect(
 
     let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
 
-    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     context.add_scard(raw_card_handle)?;
 
-    *ph_card = raw_card_handle;
-    *pdw_active_protocol = protocol;
+    unsafe {
+        *ph_card = raw_card_handle;
+        *pdw_active_protocol = protocol;
+    }
 
     Ok(())
 }
@@ -62,7 +64,7 @@ pub unsafe extern "system" fn SCardConnectA(
     check_null!(pdw_active_protocol);
 
     let reader_name = try_execute!(
-        CStr::from_ptr(sz_reader as *const i8).to_str(),
+        unsafe { CStr::from_ptr(sz_reader as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
@@ -94,16 +96,18 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    let reader_name = c_w_str_to_string(sz_reader);
+    let reader_name = unsafe { c_w_str_to_string(sz_reader) };
 
-    try_execute!(connect(
-        context,
-        &reader_name,
-        dw_share_mode,
-        dw_preferred_protocols,
-        ph_card,
-        pdw_active_protocol
-    ));
+    try_execute!(unsafe {
+        connect(
+            context,
+            &reader_name,
+            dw_share_mode,
+            dw_preferred_protocols,
+            ph_card,
+            pdw_active_protocol,
+        )
+    });
 
     ErrorKind::Success.into()
 }
@@ -127,8 +131,8 @@ pub extern "system" fn SCardReconnect(
 pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
 
-    let scard = Box::from_raw(handle as *mut WinScardHandle);
-    if let Some(context) = (scard.context() as *mut WinScardContextHandle).as_mut() {
+    let scard = unsafe { Box::from_raw(handle as *mut WinScardHandle) };
+    if let Some(context) = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() } {
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected!");
         } else {
@@ -144,7 +148,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
 #[no_mangle]
 pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
     check_handle!(handle);
-    let scard = try_execute!(scard_handle_to_winscard(handle));
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
     try_execute!(scard.begin_transaction());
 
@@ -156,7 +160,7 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 #[no_mangle]
 pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
-    let scard = try_execute!(scard_handle_to_winscard(handle));
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
     try_execute!(scard.end_transaction());
 
@@ -204,23 +208,20 @@ pub unsafe extern "system" fn SCardStatusA(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
+    let scard = unsafe { (handle as *mut WinScardHandle).as_ref().unwrap() };
     let status = try_execute!(scard.scard().status());
     check_handle!(scard.context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = (scard.context() as *mut WinScardContextHandle).as_mut().unwrap();
-    try_execute!(write_multistring_a(
-        context,
-        &readers,
-        msz_reader_names,
-        pcch_reader_len
-    ));
-    *pdw_state = status.state.into();
-    *pdw_protocol = status.protocol.bits();
+    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
+    try_execute!(unsafe { write_multistring_a(context, &readers, msz_reader_names, pcch_reader_len) });
+    unsafe {
+        *pdw_state = status.state.into();
+        *pdw_protocol = status.protocol.bits();
+    }
 
     if !pb_atr.is_null() {
-        try_execute!(copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()));
+        try_execute!(unsafe { copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()) });
     }
 
     ErrorKind::Success.into()
@@ -247,23 +248,20 @@ pub unsafe extern "system" fn SCardStatusW(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = (handle as *mut WinScardHandle).as_ref().unwrap();
+    let scard = unsafe { (handle as *mut WinScardHandle).as_ref() }.unwrap();
     let status = try_execute!(scard.scard().status());
     check_handle!(scard.context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = (scard.context() as *mut WinScardContextHandle).as_mut().unwrap();
-    try_execute!(write_multistring_w(
-        context,
-        &readers,
-        msz_reader_names,
-        pcch_reader_len
-    ));
-    *pdw_state = status.state.into();
-    *pdw_protocol = status.protocol.bits();
+    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
+    try_execute!(unsafe { write_multistring_w(context, &readers, msz_reader_names, pcch_reader_len) });
+    unsafe {
+        *pdw_state = status.state.into();
+        *pdw_protocol = status.protocol.bits();
+    }
 
     if !pb_atr.is_null() {
-        try_execute!(copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()));
+        try_execute!(unsafe { copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()) });
     }
 
     ErrorKind::Success.into()
@@ -283,34 +281,37 @@ pub unsafe extern "system" fn SCardTransmit(
 ) -> ScardStatus {
     check_handle!(handle);
     check_null!(pio_send_pci);
-    let scard = try_execute!(scard_handle_to_winscard(handle));
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
-    let io_request = try_execute!(scard_io_request_to_io_request(pio_send_pci));
-    let input_apdu = from_raw_parts(
-        pb_send_buffer,
-        try_execute!(cb_send_length.try_into(), ErrorKind::InsufficientBuffer),
-    );
+    let io_request = try_execute!(unsafe { scard_io_request_to_io_request(pio_send_pci) });
+    let input_apdu = unsafe {
+        from_raw_parts(
+            pb_send_buffer,
+            try_execute!(cb_send_length.try_into(), ErrorKind::InsufficientBuffer),
+        )
+    };
 
     let out_data = try_execute!(scard.transmit(io_request, input_apdu));
 
     let out_apdu_len = out_data.output_apdu.len();
-    if out_apdu_len > try_execute!((*pcb_recv_length).try_into(), ErrorKind::InsufficientBuffer)
+    if out_apdu_len > try_execute!(unsafe { *pcb_recv_length }.try_into(), ErrorKind::InsufficientBuffer)
         || pb_recv_buffer.is_null()
     {
         return ErrorKind::InsufficientBuffer.into();
     }
 
-    let recv_buffer = from_raw_parts_mut(pb_recv_buffer, out_apdu_len);
+    let recv_buffer = unsafe { from_raw_parts_mut(pb_recv_buffer, out_apdu_len) };
     recv_buffer.copy_from_slice(&out_data.output_apdu);
 
     if !pio_recv_pci.is_null() && out_data.receive_pci.is_some() {
-        try_execute!(copy_io_request_to_scard_io_request(
-            out_data.receive_pci.as_ref().unwrap(),
-            pio_recv_pci
-        ));
+        try_execute!(unsafe {
+            copy_io_request_to_scard_io_request(out_data.receive_pci.as_ref().unwrap(), pio_recv_pci)
+        });
     }
 
-    *pcb_recv_length = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
+    unsafe {
+        *pcb_recv_length = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
+    }
 
     ErrorKind::Success.into()
 }
@@ -335,13 +336,15 @@ pub unsafe extern "system" fn SCardControl(
     lp_bytes_returned: LpDword,
 ) -> ScardStatus {
     check_handle!(handle);
-    let scard = try_execute!(scard_handle_to_winscard(handle));
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
     let in_buffer = if !lp_in_buffer.is_null() {
-        from_raw_parts(
-            lp_in_buffer as *const u8,
-            try_execute!(cb_in_buffer_size.try_into(), ErrorKind::InsufficientBuffer),
-        )
+        unsafe {
+            from_raw_parts(
+                lp_in_buffer as *const u8,
+                try_execute!(cb_in_buffer_size.try_into(), ErrorKind::InsufficientBuffer),
+            )
+        }
     } else {
         &[]
     };
@@ -353,9 +356,11 @@ pub unsafe extern "system" fn SCardControl(
             return ErrorKind::InsufficientBuffer.into();
         }
 
-        let lp_out_buffer = from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len());
+        let lp_out_buffer = unsafe { from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len()) };
         lp_out_buffer.copy_from_slice(&out_buffer);
-        *lp_bytes_returned = out_buffer_len;
+        unsafe {
+            *lp_bytes_returned = out_buffer_len;
+        }
     }
 
     ErrorKind::Success.into()
