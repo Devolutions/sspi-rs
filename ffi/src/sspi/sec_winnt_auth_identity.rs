@@ -304,7 +304,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         )
         .into();
 
-        // only marshaled smart card creds starts with '@' char
+        // Only marshaled smart card creds starts with '@' char.
         #[cfg(feature = "scard")]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
@@ -324,7 +324,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         )
         .into();
 
-        // only marshaled smart card creds starts with '@' char
+        // Only marshaled smart card creds starts with '@' char.
         #[cfg(feature = "scard")]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
@@ -351,19 +351,19 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u3
     // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2
     // https://github.com/FreeRDP/FreeRDP/blob/master/winpr/libwinpr/sspi/sspi_winpr.c#L473
 
-    // username length is placed after the first 8 bytes
+    // Username length is placed after the first 8 bytes.
     let user_len_ptr = (p_auth_data as *const u16).add(4);
     let user_buffer_len = *user_len_ptr as u32;
 
-    // domain length is placed after 16 bytes from the username length
+    // Domain length is placed after 16 bytes from the username length.
     let domain_len_ptr = user_len_ptr.add(8);
     let domain_buffer_len = *domain_len_ptr as u32;
 
-    // packet credentials length is placed after 16 bytes from the domain length
+    // Packet credentials length is placed after 16 bytes from the domain length.
     let creds_len_ptr = domain_len_ptr.add(8);
     let creds_buffer_len = *creds_len_ptr as u32;
 
-    // header size + buffers size
+    // The resulting size is queal to header size + buffers size.
     64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len
 }
 
@@ -384,7 +384,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     let mut domain_len = 0;
     let mut password_len = 0;
 
-    // the first call is just to query the username, domain, and password length
+    // The first call is just to query the username, domain, and password lengths.
     CredUnPackAuthenticationBufferA(
         CRED_PACK_PROTECTED_CREDENTIALS,
         p_auth_data,
@@ -401,6 +401,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     let mut domain = vec![0_u8; domain_len as usize];
     let mut password = Secret::new(vec![0_u8; password_len as usize]);
 
+    // Knowing the actual sizes, we can unpack credentials into prepared buffers.
     let result = CredUnPackAuthenticationBufferA(
         CRED_PACK_PROTECTED_CREDENTIALS,
         p_auth_data,
@@ -422,23 +423,23 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    // remove null
+    // The username data is C string. So, we need to delete the NULL terminator.
     username.pop();
     auth_identity_buffers.user = username;
 
     if domain_len == 0 {
-        // sometimes username can be formatted as `DOMAIN\username`
+        // Sometimes username can be formatted as `DOMAIN\username`.
         if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
             auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
             auth_identity_buffers.user = auth_identity_buffers.user[(index + 1)..].to_vec();
         }
     } else {
-        // remove null
+        // The domain data is C string. So, we need to delete the NULL terminator.
         domain.pop();
         auth_identity_buffers.domain = domain;
     }
 
-    // remove null
+    // The password data is C string. So, we need to delete the NULL terminator.
     password.as_mut().pop();
     auth_identity_buffers.password = password;
 
@@ -465,7 +466,8 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     let mut cred_type = 0;
     let mut credential = null_mut();
 
-    // add wide null char
+    // Win API expects the C string as the first input parameter.
+    // So, we need add the NULL terminator.
     username.extend_from_slice(&[0, 0]);
 
     if CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) == 0 {
@@ -547,7 +549,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     let mut domain_len = 0;
     let mut password_len = 0;
 
-    // the first call is just to query the username, domain, and password length
+    // The first call is just to query the username, domain, and password lengths.
     CredUnPackAuthenticationBufferW(
         CRED_PACK_PROTECTED_CREDENTIALS,
         p_auth_data,
@@ -583,7 +585,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         ));
     }
 
-    // try to collect credentials for the emulated smart card
+    // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
     if username.contains(&b'@') {
         use winscard::SmartCardInfo;
@@ -593,7 +595,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
         match SmartCardInfo::try_from_env() {
             Ok(smart_card_info) => {
-                // remove null
+                // Password data is a wide C string. So, we need to delete the NULL terminator.
                 let new_len = password.as_ref().len() - 2;
                 password.as_mut().truncate(new_len);
 
@@ -615,10 +617,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         };
     }
 
-    // only marshaled smart card creds starts with '@' char
+    // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
     if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
-        // remove null
+        // Password data is a C string. So, we need to delete the NULL terminator.
         let new_len = password.as_ref().len() - 2;
         password.as_mut().truncate(new_len);
 
@@ -627,23 +629,23 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    // remove null chars
+    // Username data is a C string. So, we need to delete the NULL terminator.
     raw_wide_str_trim_nulls(&mut username);
     auth_identity_buffers.user = username;
 
     if domain_len == 0 {
-        // sometimes username can be formatted as `DOMAIN\username`
+        // Sometimes username can be formatted as `DOMAIN\username`.
         if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
             auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
             auth_identity_buffers.user = auth_identity_buffers.user[(index + 2)..].to_vec();
         }
     } else {
-        // remove null
+        // Domain data is a C string. So, we need to delete the NULL terminator.
         domain.truncate(domain.len() - 2);
         auth_identity_buffers.domain = domain;
     }
 
-    // remove null
+    // Password data is a C string. So, we need to delete the NULL terminator.
     let new_len = password.as_ref().len() - 2;
     password.as_mut().truncate(new_len);
     auth_identity_buffers.password = password;
