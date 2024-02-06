@@ -769,7 +769,6 @@ impl<'a> Kerberos {
                     #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
-                        warn!(?pin, pin2 = ?smart_card.pin);
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
                         let private_key_pem = String::from_utf8(
                             smart_card
