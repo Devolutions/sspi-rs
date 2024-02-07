@@ -423,7 +423,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    // The username data is C string. So, we need to delete the NULL terminator.
+    // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+    // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+    // So, username data is a C string and we need to delete the NULL terminator.
     username.pop();
     auth_identity_buffers.user = username;
 
@@ -434,12 +436,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
             auth_identity_buffers.user = auth_identity_buffers.user[(index + 1)..].to_vec();
         }
     } else {
-        // The domain data is C string. So, we need to delete the NULL terminator.
+        // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+        // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+        // So, domain data is a C string and we need to delete the NULL terminator.
         domain.pop();
         auth_identity_buffers.domain = domain;
     }
 
-    // The password data is C string. So, we need to delete the NULL terminator.
+    // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+    // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+    // So, password data is a C string and we need to delete the NULL terminator.
     password.as_mut().pop();
     auth_identity_buffers.password = password;
 
@@ -595,7 +601,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
         match SmartCardInfo::try_from_env() {
             Ok(smart_card_info) => {
-                // Password data is a wide C string. So, we need to delete the NULL terminator.
+                // In the `SmartCardIdentityBuffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+                // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+                // So, password data is a wide C string and we need to delete the NULL terminator.
                 let new_len = password.as_ref().len() - 2;
                 password.as_mut().truncate(new_len);
 
@@ -620,7 +628,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
     if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
-        // Password data is a C string. So, we need to delete the NULL terminator.
+        // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
+        // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+        // So, password data is a wide C string and we need to delete the NULL terminator.
         let new_len = password.as_ref().len() - 2;
         password.as_mut().truncate(new_len);
 
@@ -629,7 +639,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
-    // Username data is a C string. So, we need to delete the NULL terminator.
+    // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+    // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+    // So, username data is a wide C string and we need to delete the NULL terminator.
     raw_wide_str_trim_nulls(&mut username);
     auth_identity_buffers.user = username;
 
@@ -640,12 +652,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
             auth_identity_buffers.user = auth_identity_buffers.user[(index + 2)..].to_vec();
         }
     } else {
-        // Domain data is a C string. So, we need to delete the NULL terminator.
+        // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+        // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+        // So, domain data is a wide C string and we need to delete the NULL terminator.
         domain.truncate(domain.len() - 2);
         auth_identity_buffers.domain = domain;
     }
 
-    // Password data is a C string. So, we need to delete the NULL terminator.
+    // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+    // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+    // So, password data is a wide C string and we need to delete the NULL terminator.
     let new_len = password.as_ref().len() - 2;
     password.as_mut().truncate(new_len);
     auth_identity_buffers.password = password;
