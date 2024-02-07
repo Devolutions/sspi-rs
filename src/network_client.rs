@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
-use crate::{generator::NetworkRequest, Result};
+use crate::generator::NetworkRequest;
+use crate::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NetworkProtocol {
