@@ -29,7 +29,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
-#[instrument(level = "trace", ret)]
+#[instrument(level = "trace", ret, skip(password))]
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
     salt: &str,

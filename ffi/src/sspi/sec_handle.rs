@@ -173,7 +173,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             ))?),
             _ => {
                 return Err(Error::new(
-                    ErrorKind::InvalidParameter,
+                    ErrorKind::SecurityPackageNotFound,
                     format!("security package name `{}` is not supported", name),
                 ));
             }
@@ -186,6 +186,18 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     }
 
     Ok((*(*context)).dw_lower as *mut SspiContext)
+}
+
+fn verify_security_package(package_name: &str) -> Result<()> {
+    match package_name {
+        negotiate::PKG_NAME | pku2u::PKG_NAME | kerberos::PKG_NAME | ntlm::PKG_NAME => Ok(()),
+        #[cfg(feature = "tsssp")]
+        sspi_cred_ssp::PKG_NAME => Ok(()),
+        _ => Err(Error::new(
+            ErrorKind::SecurityPackageNotFound,
+            format!("security package name `{}` is not supported", package_name),
+        )),
+    }
 }
 
 #[instrument(skip_all)]
@@ -209,6 +221,8 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let security_package_name =
             try_execute!(CStr::from_ptr(psz_package).to_str(), ErrorKind::InvalidParameter).to_owned();
+        try_execute!(verify_security_package(&security_package_name));
+
         debug!(?security_package_name);
 
         let mut package_list: Option<String> = None;
@@ -257,6 +271,8 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         check_null!(ph_credential);
 
         let security_package_name = c_w_str_to_string(psz_package);
+        try_execute!(verify_security_package(&security_package_name));
+
         debug!(?security_package_name);
 
         let mut package_list: Option<String> = None;
