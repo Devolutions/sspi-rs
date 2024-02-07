@@ -35,6 +35,7 @@ use core::{fmt, result};
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
 use picky::key::KeyError;
+use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, PIV_AID};
 pub use scard_context::{Reader, ScardContext, SmartCardInfo};
 
@@ -138,6 +139,12 @@ impl From<TryFromIntError> for Error {
             ErrorKind::InsufficientBuffer,
             format!("error: can not convert integers: {}", value),
         )
+    }
+}
+
+impl From<CertError> for Error {
+    fn from(value: CertError) -> Self {
+        Error::new(ErrorKind::InsufficientBuffer, format!("certificate error: {}", value))
     }
 }
 

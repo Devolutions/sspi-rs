@@ -47,7 +47,7 @@ impl<T: Zeroize> From<T> for Secret<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct SecretPrivateKey(PrivateKey);
 
 impl SecretPrivateKey {

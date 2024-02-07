@@ -95,7 +95,7 @@ pub struct GenerateAsPaDataOptions<'a> {
     pub with_pre_auth: bool,
 }
 
-#[instrument(level = "trace", ret)]
+#[instrument(level = "trace", ret, skip_all, fields(options.salt, options.enc_params, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         password,
@@ -377,6 +377,9 @@ impl From<[u8; 24]> for ChecksumValues {
 }
 
 impl ChecksumValues {
+    // FIXME: This code is unused because of the comment in the Kerberos implementation.
+    // Currently, we have an authentication error when using flags in the checksum.
+    #[allow(dead_code)]
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
         let flag_bytes = flag_bits.to_le_bytes();

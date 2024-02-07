@@ -225,9 +225,11 @@ impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
 
 #[cfg(feature = "scard")]
 mod scard_credentials {
+    use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
 
-    use crate::{utils, Error, Secret};
+    use crate::secret::SecretPrivateKey;
+    use crate::{utils, Error, ErrorKind, Secret};
 
     /// Represents raw data needed for smart card authentication
     #[derive(Clone, Eq, PartialEq, Debug)]
@@ -249,6 +251,8 @@ mod scard_credentials {
         /// Private key file index
         /// This value is used for the APDU message generation
         pub private_key_file_index: Option<u8>,
+        /// UTF-16 string with PEM-encoded RSA 2048-bit private key
+        pub private_key_pem: Option<Vec<u8>>,
     }
 
     /// Represents data needed for smart card authentication
@@ -271,12 +275,24 @@ mod scard_credentials {
         /// Private key file index
         /// This value is used for the APDU message generation
         pub private_key_file_index: Option<u8>,
+        /// RSA 2048-bit private key
+        pub private_key: Option<SecretPrivateKey>,
     }
 
     impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
         type Error = Error;
 
         fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
+            let private_key = if let Some(key) = value.private_key {
+                Some(utils::string_to_utf16(key.as_ref().to_pem_str().map_err(|e| {
+                    Error::new(
+                        ErrorKind::InternalError,
+                        format!("Unable to serialize a smart card private key: {}", e),
+                    )
+                })?))
+            } else {
+                None
+            };
             Ok(Self {
                 certificate: picky_asn1_der::to_vec(&value.certificate)?,
                 reader_name: utils::string_to_utf16(value.reader_name),
@@ -286,6 +302,7 @@ mod scard_credentials {
                 container_name: utils::string_to_utf16(value.container_name),
                 csp_name: utils::string_to_utf16(value.csp_name),
                 private_key_file_index: value.private_key_file_index,
+                private_key_pem: private_key,
             })
         }
     }
@@ -294,6 +311,18 @@ mod scard_credentials {
         type Error = Error;
 
         fn try_from(value: SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
+            let private_key = if let Some(key) = value.private_key_pem {
+                Some(SecretPrivateKey::new(
+                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(&key)).map_err(|e| {
+                        Error::new(
+                            ErrorKind::InternalError,
+                            format!("Unable to create a PrivateKey from a PEM string: {}", e),
+                        )
+                    })?,
+                ))
+            } else {
+                None
+            };
             Ok(Self {
                 certificate: picky_asn1_der::from_bytes(&value.certificate)?,
                 reader_name: utils::bytes_to_utf16_string(&value.reader_name),
@@ -303,6 +332,7 @@ mod scard_credentials {
                 container_name: utils::bytes_to_utf16_string(&value.container_name),
                 csp_name: utils::bytes_to_utf16_string(&value.csp_name),
                 private_key_file_index: value.private_key_file_index,
+                private_key,
             })
         }
     }

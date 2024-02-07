@@ -25,7 +25,7 @@ pub unsafe fn copy_buff(
     }
 
     if unsafe { *raw_buff_len } == SCARD_AUTOALLOCATE {
-        // allocate a new buffer and write an address into raw_buff
+        // Allocate a new buffer and write an address into raw_buff.
         let allocated = context.allocate_buffer(buff_to_copy.len())?;
         unsafe {
             *(raw_buff as *mut *mut u8) = allocated;
@@ -67,7 +67,7 @@ pub unsafe fn copy_w_buff(
     }
 
     if unsafe { *raw_buf_len } == SCARD_AUTOALLOCATE {
-        // allocate a new buffer and write an address into raw_buff
+        // Allocate a new buffer and write an address into raw_buff.
         let allocated = context.allocate_buffer(buff_to_copy.len() * 2)? as *mut u16;
         unsafe {
             *(raw_buf as *mut *mut u16) = allocated;
