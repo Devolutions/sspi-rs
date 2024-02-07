@@ -61,6 +61,7 @@ pub const ATR: [u8; 17] = [
 /// Emulated smart card.
 ///
 /// Currently, we support one key container per smart card.
+#[derive(Debug, Clone)]
 pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
@@ -101,7 +102,7 @@ impl SmartCard<'_> {
         })
     }
 
-    fn validate_and_pad_pin(mut pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
+    fn validate_and_pad_pin(pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
         // All PIN requirements can be found here: NIST.SP.800-73-4 part 2, section 2.4.3
         if !(PIN_LENGTH_RANGE_LOW_BOUND..=PIN_LENGTH_RANGE_HIGH_BOUND).contains(&pin.len()) {
             return Err(Error::new(
@@ -116,13 +117,17 @@ impl SmartCard<'_> {
             ));
         };
 
+        Ok(Self::pad_pin(pin))
+    }
+
+    fn pad_pin(mut pin: Vec<u8>) -> Vec<u8> {
         if pin.len() < PIN_LENGTH_RANGE_HIGH_BOUND {
             // NIST.SP.800-73-4 part 2, section 2.4.3
             const PIN_PAD_VALUE: u8 = 0xFF;
             pin.resize(PIN_LENGTH_RANGE_HIGH_BOUND, PIN_PAD_VALUE);
         }
 
-        Ok(pin)
+        pin
     }
 
     /// This functions handles one APDU command.
@@ -342,9 +347,9 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
-        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
+        const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9C;
 
-        if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_AUTHENTICATION_KEY {
+        if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
                 format!("Provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9A", cmd.p1, cmd.p2)
@@ -428,6 +433,20 @@ impl SmartCard<'_> {
         Ok(signature)
     }
 
+    /// Verifies the PIN code. This method alters the scard state.
+    pub fn verify_pin(&mut self, pin: &[u8]) -> WinScardResult<()> {
+        if self.pin != Self::pad_pin(pin.into()) {
+            return Err(Error::new(
+                ErrorKind::InvalidValue,
+                "PIN verification error: Invalid PIN",
+            ));
+        }
+
+        self.state = SCardState::PinVerified;
+
+        Ok(())
+    }
+
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
         let vec = self.pending_response.as_mut()?;
         if vec.is_empty() {
@@ -439,7 +458,7 @@ impl SmartCard<'_> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum SCardState {
     Ready,
     PivAppSelected,

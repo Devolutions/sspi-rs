@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use base64::Engine;
 use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, HOST, USER_AGENT,
@@ -7,11 +9,9 @@ use reqwest::StatusCode;
 use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    InitializeSecurityContextResult, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus, Sspi,
-    Username,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus,
+    Sspi, SspiImpl, Username,
 };
-use sspi::{Kerberos, SspiImpl};
-use std::error::Error;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 

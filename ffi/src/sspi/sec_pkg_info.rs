@@ -79,12 +79,12 @@ pub type PSecPkgInfoA = *mut SecPkgInfoA;
 impl From<PackageInfo> for &mut SecPkgInfoA {
     fn from(pkg_info: PackageInfo) -> Self {
         let mut pkg_name = pkg_info.name.to_string().as_bytes().to_vec();
-        // null-terminator
+        // We need to add the null-terminator during the conversion from Rust to C string.
         pkg_name.push(0);
         let name_bytes_len = pkg_name.len();
 
         let mut pkg_comment = pkg_info.comment.as_bytes().to_vec();
-        // null-terminator
+        // We need to add the null-terminator during the conversion from Rust to C string.
         pkg_comment.push(0);
         let comment_bytes_len = pkg_comment.len();
 
@@ -177,14 +177,14 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
             let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
-            // null-terminator
+            // We need to add the null-terminator during the conversion from Rust to C string.
             name.push(0);
             copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len());
             pkg_info_a.name = data_ptr as *mut _;
             data_ptr = data_ptr.add(name.len());
 
             let mut comment = pkg_info.comment.as_bytes().to_vec();
-            // null-terminator
+            // We need to add the null-terminator during the conversion from Rust to C string.
             comment.push(0);
             copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len());
             pkg_info_a.comment = data_ptr as *mut _;
