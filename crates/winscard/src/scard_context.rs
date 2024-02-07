@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use picky::key::PrivateKey;
+use picky::x509::Cert;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 use crate::scard::SmartCard;
@@ -61,12 +62,13 @@ impl<'a> SmartCardInfo<'a> {
         let pin = env!(WINSCARD_PIN_ENV)?.into();
 
         let cert_path = env!(WINSCARD_CERT_PATH_ENV)?;
-        let raw_certificate = fs::read(cert_path).map_err(|e| {
+        let raw_certificate = fs::read_to_string(cert_path).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
                 format!("Unable to read certificate from the provided file: {}", e),
             )
         })?;
+        let auth_cert_der = Cert::from_pem_str(&raw_certificate)?.to_der()?;
         let pk_path = env!(WINSCARD_PK_PATH_ENV)?;
         let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
             Error::new(
@@ -95,7 +97,7 @@ impl<'a> SmartCardInfo<'a> {
         Ok(Self {
             container_name,
             pin,
-            auth_cert_der: raw_certificate,
+            auth_cert_der,
             auth_pk_pem: raw_private_key.into(),
             auth_pk: private_key,
             reader,
