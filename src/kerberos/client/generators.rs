@@ -377,6 +377,8 @@ impl From<[u8; 24]> for ChecksumValues {
 }
 
 impl ChecksumValues {
+    // FIXME: This code is unused because of the comment in the Kerberos implementation.
+    // Currently, we have an authentication error when using flags in the checksum.
     #[allow(dead_code)]
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
