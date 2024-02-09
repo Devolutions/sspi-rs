@@ -885,9 +885,16 @@ impl<'a> Kerberos {
                 // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
                 // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
                 // FIXME: CredSSP fails when flags are included in the checksum.
-                // let flags = builder.context_requirements.into();
-                let checksum_value = ChecksumValues::default();
-                // checksum_value.set_flags(flags);
+                use crate::kerberos::client::generators::GssFlags;
+                let mut flags: GssFlags = builder.context_requirements.into();
+                if flags.contains(GssFlags::GSS_C_DELEG_FLAG) {
+                    warn!("GssFlags::GSS_C_DELEG_FLAG is not supported.");
+                    flags.remove(GssFlags::GSS_C_DELEG_FLAG);
+                }
+                info!(?flags, "ApReq Authenticator checksum flags");
+
+                let mut checksum_value = ChecksumValues::default();
+                checksum_value.set_flags(flags);
 
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
