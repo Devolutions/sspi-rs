@@ -44,7 +44,7 @@ use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{
-    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
+    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, GssFlags,
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
@@ -870,14 +870,20 @@ impl<'a> Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
-                // the original flag is
-                // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
-                // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
-                // FIXME: CredSSP fails when flags are included in the checksum.
-                use crate::kerberos::client::generators::GssFlags;
                 let mut flags: GssFlags = builder.context_requirements.into();
                 if flags.contains(GssFlags::GSS_C_DELEG_FLAG) {
-                    warn!("GssFlags::GSS_C_DELEG_FLAG is not supported.");
+                    // Below are reasons why we turn off the GSS_C_DELEG_FLAG flag.
+                    //
+                    // RFC4121: The Kerberos Version 5 GSS-API. Section 4.1.1:  Authenticator Checksum
+                    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1
+                    //
+                    // "The length of the checksum field MUST be at least 24 octets when GSS_C_DELEG_FLAG is not set,
+                    // and at least 28 octets plus Dlgth octets when GSS_C_DELEG_FLAG is set."
+                    // Out implementation _always_ uses the 24 octets checksum and do not support Kerberos credentials delegation.
+                    //
+                    // "When delegation is used, a ticket-granting ticket will be transferred in a KRB_CRED message."
+                    // We do not support KRB_CRED messages. So, the GSS_C_DELEG_FLAG flags should be turned off.
+                    warn!("Kerberos ApReq Authenticator checksum GSS_C_DELEG_FLAG is not supported. Turning it off...");
                     flags.remove(GssFlags::GSS_C_DELEG_FLAG);
                 }
                 info!(?flags, "ApReq Authenticator checksum flags");
