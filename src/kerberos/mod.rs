@@ -870,6 +870,9 @@ impl<'a> Kerberos {
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
                 let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
 
+                // the original flag is
+                // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
+                // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
                 let mut flags: GssFlags = builder.context_requirements.into();
                 if flags.contains(GssFlags::GSS_C_DELEG_FLAG) {
                     // Below are reasons why we turn off the GSS_C_DELEG_FLAG flag.
