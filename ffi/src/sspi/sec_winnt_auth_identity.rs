@@ -544,6 +544,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
+    use super::utils::raw_wide_str_trim_nulls;
+
     if p_auth_data.is_null() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
@@ -601,6 +603,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
         match SmartCardInfo::try_from_env() {
             Ok(smart_card_info) => {
+                raw_wide_str_trim_nulls(&mut username);
                 // In the `SmartCardIdentityBuffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
                 // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
                 // So, password data is a wide C string and we need to delete the NULL terminator.
