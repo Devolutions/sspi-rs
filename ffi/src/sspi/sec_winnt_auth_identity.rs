@@ -16,8 +16,6 @@ use winapi::um::wincred::CredIsMarshaledCredentialW;
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
-#[cfg(feature = "tsssp")]
-use super::utils::raw_wide_str_trim_nulls;
 use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
