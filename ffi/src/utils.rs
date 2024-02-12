@@ -27,7 +27,7 @@ pub fn str_to_w_buff(data: &str) -> Vec<u16> {
     data.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", feature = "tsssp"))]
 pub fn str_encode_utf16(data: &str) -> Vec<u8> {
     data.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
 }
