@@ -19,12 +19,15 @@ const AES_BLOCK_SIZE: usize = 16;
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
 //
 // This configuration just accepts any certificate
+#[allow(unused)]
 pub mod danger {
     use std::time::SystemTime;
 
-    use rustls::client::{ServerCertVerified, ServerCertVerifier};
-    use rustls::{Certificate, Error, ServerName};
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types::{CertificateDer as Certificate, ServerName, UnixTime};
+    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
 
+    #[derive(Debug)]
     pub struct NoCertificateVerification;
 
     impl ServerCertVerifier for NoCertificateVerification {
@@ -33,11 +36,44 @@ pub mod danger {
             _end_entity: &Certificate,
             _intermediates: &[Certificate],
             _server_name: &ServerName,
-            _scts: &mut dyn Iterator<Item = &[u8]>,
             _ocsp_response: &[u8],
-            _now: SystemTime,
+            _now: UnixTime,
         ) -> Result<ServerCertVerified, Error> {
-            Ok(rustls::client::ServerCertVerified::assertion())
+            Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &Certificate<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            // todo!()
+            warn!("verify_tls12_signature");
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &Certificate<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            // todo!()
+            warn!("verify_tls13_signature");
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+            ]
         }
     }
 }
@@ -117,20 +153,21 @@ impl TlsConnection {
     pub fn stream_sizes(&self) -> Result<StreamSizes> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                let connection_cipher = tls_connection
-                    .negotiated_cipher_suite()
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
-
-                let bulk_cipher = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
-                };
-                let block_size = match bulk_cipher {
-                    rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
-                    rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
-                    // ChaCha20 is a stream cipher
-                    rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
-                };
+                // let connection_cipher = tls_connection
+                //     .negotiated_cipher_suite()
+                //     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
+                //
+                // let bulk_cipher = match connection_cipher {
+                //     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+                //     rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                // };
+                // let block_size = match bulk_cipher {
+                //     rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
+                //     rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
+                //     // ChaCha20 is a stream cipher
+                //     rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
+                // };
+                let block_size = AES_BLOCK_SIZE;
 
                 Ok(StreamSizes {
                     header: TLS_PACKET_HEADER_LEN as u32,
@@ -187,33 +224,34 @@ impl TlsConnection {
                     },
                 };
 
-                let connection_cipher = tls_connection
-                    .negotiated_cipher_suite()
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
+                // let connection_cipher = tls_connection
+                //     .negotiated_cipher_suite()
+                //     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
-                let bulk_cipher = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
-                };
-                let (cipher, cipher_strength) = match bulk_cipher {
-                    rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CalgAes128, 128),
-                    rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
-                    rustls::BulkAlgorithm::Chacha20Poly1305 => {
-                        return Err(Error::new(
-                            ErrorKind::UnsupportedFunction,
-                            "alg_id for CHACHA20_POLY1305 does not exist",
-                        ))
-                    }
-                };
+                // let bulk_cipher = match connection_cipher {
+                //     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+                //     rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                // };
+                // let (cipher, cipher_strength) = match bulk_cipher {
+                //     rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CalgAes128, 128),
+                //     rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
+                //     rustls::BulkAlgorithm::Chacha20Poly1305 => {
+                //         return Err(Error::new(
+                //             ErrorKind::UnsupportedFunction,
+                //             "alg_id for CHACHA20_POLY1305 does not exist",
+                //         ))
+                //     }
+                // };
+                let (cipher, cipher_strength) = (ConnectionCipher::CalgAes256, 256);
 
-                let hash_algo = connection_cipher.hash_algorithm();
+                // let hash_algo = connection_cipher.hash_algorithm();
 
                 Ok(ConnectionInfo {
                     protocol,
                     cipher,
                     cipher_strength,
                     hash: ConnectionHash::CalgSha,
-                    hash_strength: hash_algo.output_len() as u32,
+                    hash_strength: 48 as u32,
                     key_exchange: ConnectionKeyExchange::CalgRsaKeyx,
                     exchange_strength: (self.raw_peer_public_key()?.len() * 8) as u32,
                 })

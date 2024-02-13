@@ -102,13 +102,11 @@ pub use utils::string_to_utf16;
 pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
-use self::builders::{
-    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
-    EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContext,
-};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
+};
+use self::builders::{
+    ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::KerberosConfig;
@@ -242,11 +240,11 @@ where
     /// # MSDN
     ///
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
-    fn acquire_credentials_handle(
-        &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
-        AcquireCredentialsHandle::new(self)
-    }
+    // fn acquire_credentials_handle(
+    //     &mut self,
+    // ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
+    //     AcquireCredentialsHandle::new()
+    // }
 
     /// Initiates the client side, outbound security context from a credential handle.
     /// The function is used to build a security context between the client application and a remote peer. The function returns a token
@@ -306,9 +304,9 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
-        InitializeSecurityContext::new()
-    }
+    // fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
+    //     InitializeSecurityContext::new()
+    // }
 
     /// Lets the server component of a transport application establish a security context between the server and a remote client.
     /// The remote client calls the `initialize_security_context` function to start the process of establishing a security context.
@@ -388,11 +386,11 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(
-        &mut self,
-    ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
-        AcceptSecurityContext::new(self)
-    }
+    // fn accept_security_context(
+    //     &mut self,
+    // ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
+    //     AcceptSecurityContext::new(self)
+    // }
 
     /// Completes an authentication token. This function is used by protocols, such as DCE,
     /// that need to revise the security information after the transport application has updated some message parameters.
@@ -991,9 +989,9 @@ pub trait SspiImpl {
     /// Represents authentication data prepared for the authentication process
     type AuthenticationData;
 
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
     fn initialize_security_context_impl<'a>(
@@ -1001,9 +999,14 @@ pub trait SspiImpl {
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> GeneratorInitSecurityContext;
 
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    // fn initialize_security_context_impl_sync(
+    //     &mut self,
+    //     builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
+    // ) -> GeneratorInitSecurityContext;
+
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult>;
 }
 

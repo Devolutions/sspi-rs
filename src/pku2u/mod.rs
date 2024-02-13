@@ -363,9 +363,9 @@ impl SspiImpl for Pku2u {
     type AuthenticationData = AuthIdentity;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -383,9 +383,9 @@ impl SspiImpl for Pku2u {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,

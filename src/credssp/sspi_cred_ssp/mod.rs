@@ -56,7 +56,7 @@ impl SspiCredSsp {
         // "stub_string" - we don't check the server's certificate validity so we can use any server name
         let example_com = "stub_string".try_into().unwrap();
         let mut client_config = ClientConfig::builder()
-            .with_safe_defaults()
+            .dangerous()
             .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
             .with_no_client_auth();
         client_config.key_log = std::sync::Arc::new(rustls::KeyLogFile::new());
@@ -79,11 +79,14 @@ impl SspiCredSsp {
     /// * `private_key` is a raw private key. it is DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format.
     pub fn new_server(sspi_context: SspiContext, certificates: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self> {
         let server_config = ServerConfig::builder()
-            .with_safe_defaults()
+            // .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(
-                certificates.into_iter().map(rustls::Certificate).collect(),
-                rustls::PrivateKey(private_key),
+                certificates
+                    .into_iter()
+                    .map(rustls::pki_types::CertificateDer::from)
+                    .collect(),
+                rustls::pki_types::PrivateKeyDer::Pkcs1(rustls::pki_types::PrivatePkcs1KeyDer::from(private_key)),
             )
             .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))?;
         let config = Arc::new(server_config);
@@ -274,9 +277,9 @@ impl SspiImpl for SspiCredSsp {
     type AuthenticationData = Credentials;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -307,9 +310,9 @@ impl SspiImpl for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        _builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
