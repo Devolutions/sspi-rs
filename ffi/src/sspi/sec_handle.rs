@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use std::slice::from_raw_parts;
+use std::sync::Mutex;
 
 use libc::{c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -12,8 +13,7 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, CredentialsBuffers, DataRepresentation, Error, ErrorKind,
-    Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl,
+    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Error, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl
 };
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
@@ -72,6 +72,7 @@ const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: u32 = 3;
 
 const SECPKG_CRED_ATTR_KDC_URL: u32 = 501;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecHandle {
     pub dw_lower: c_ulonglong,
@@ -80,6 +81,84 @@ pub struct SecHandle {
 
 pub type PCredHandle = *mut SecHandle;
 pub type PCtxtHandle = *mut SecHandle;
+
+pub struct SspiHandle {
+    sspi_context: Mutex<SspiContext>,
+}
+
+impl SspiHandle {
+    pub fn new(sspi_context: SspiContext) -> Self {
+        Self {
+            sspi_context: Mutex::new(sspi_context),
+        }
+    }
+}
+
+impl SspiImpl for SspiHandle {
+    type CredentialsHandle = Option<CredentialsBuffers>;
+    type AuthenticationData = Credentials;
+
+    fn acquire_credentials_handle_impl<'a>(
+        &'a mut self,
+        builder: sspi::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    ) -> Result<sspi::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+        let mut context = self.sspi_context.lock().unwrap();
+        context.acquire_credentials_handle_impl(builder)
+    }
+
+    fn initialize_security_context_impl<'a>(
+        &'a mut self,
+        builder: &'a mut sspi::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> sspi::generator::GeneratorInitSecurityContext {
+        self.sspi_context.lock().unwrap().initialize_security_context_impl(builder)
+    }
+
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: sspi::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    ) -> Result<sspi::AcceptSecurityContextResult> {
+        self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
+    }
+}
+
+impl Sspi for SspiHandle {
+    fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
+        self.sspi_context.lock().unwrap().complete_auth_token(token)
+    }
+
+    fn encrypt_message(
+        &mut self,
+        flags: sspi::EncryptionFlags,
+        message: &mut [sspi::SecurityBuffer],
+        sequence_number: u32,
+    ) -> Result<sspi::SecurityStatus> {
+        self.sspi_context.lock().unwrap().encrypt_message(flags, message, sequence_number)
+    }
+
+    fn decrypt_message(&mut self, message: &mut [sspi::SecurityBuffer], sequence_number: u32) -> Result<sspi::DecryptionFlags> {
+        self.sspi_context.lock().unwrap().decrypt_message(message, sequence_number)
+    }
+
+    fn query_context_sizes(&mut self) -> Result<sspi::ContextSizes> {
+        self.sspi_context.lock().unwrap().query_context_sizes()
+    }
+
+    fn query_context_names(&mut self) -> Result<sspi::ContextNames> {
+        self.sspi_context.lock().unwrap().query_context_names()
+    }
+
+    fn query_context_package_info(&mut self) -> Result<sspi::PackageInfo> {
+        self.sspi_context.lock().unwrap().query_context_package_info()
+    }
+
+    fn query_context_cert_trust_status(&mut self) -> Result<sspi::CertTrustStatus> {
+        self.sspi_context.lock().unwrap().query_context_cert_trust_status()
+    }
+
+    fn change_password<'a>(&'a mut self, change_password: sspi::builders::ChangePassword<'a>) -> sspi::generator::GeneratorChangePassword {
+        self.sspi_context.lock().unwrap().change_password(change_password)
+    }
+}
 
 pub struct CredentialsHandle {
     pub credentials: CredentialsBuffers,
@@ -114,7 +193,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     context: &mut PCtxtHandle,
     security_package_name: Option<&str>,
     attributes: &CredentialsAttributes,
-) -> Result<*mut SspiContext> {
+) -> Result<*mut SspiHandle> {
     if context.is_null() {
         *context = into_raw_ptr(SecHandle {
             dw_lower: 0,
@@ -133,7 +212,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         info!(?name, "Creating context");
 
-        let sspi_context = match name {
+        let sspi_context = SspiHandle::new(match name {
             negotiate::PKG_NAME => SspiContext::Negotiate(create_negotiate_context(attributes)?),
             pku2u::PKG_NAME => {
                 #[cfg(not(target_os = "windows"))]
@@ -177,7 +256,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     format!("security package name `{}` is not supported", name),
                 ));
             }
-        };
+        });
 
         (*(*context)).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
         if (*(*context)).dw_upper == 0 {
@@ -185,7 +264,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         }
     }
 
-    Ok((*(*context)).dw_lower as *mut SspiContext)
+    Ok((*(*context)).dw_lower as *mut _)
 }
 
 fn verify_security_package(package_name: &str) -> Result<()> {

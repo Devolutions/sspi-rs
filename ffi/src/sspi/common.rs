@@ -2,7 +2,7 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
-use sspi::credssp::SspiContext;
+use crate::sspi::sec_handle::SspiHandle;
 use sspi::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        let _context: Box<SspiContext> = Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
+        let _context: Box<SspiHandle> = Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
@@ -265,6 +265,7 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: u32,
 ) -> SecurityStatus {
+    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -306,6 +307,7 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: u32,
     pf_qop: *mut u32,
 ) -> SecurityStatus {
+    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
