@@ -62,7 +62,7 @@ use crate::{
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
     CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
     PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
-    Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    Sspi, SspiEx, SspiImpl, SspiPackage, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";

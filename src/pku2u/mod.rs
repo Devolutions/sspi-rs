@@ -54,7 +54,7 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, SspiPackage, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
@@ -363,9 +363,9 @@ impl SspiImpl for Pku2u {
     type AuthenticationData = AuthIdentity;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(

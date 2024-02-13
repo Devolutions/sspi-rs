@@ -242,11 +242,11 @@ where
     /// # MSDN
     ///
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
-    fn acquire_credentials_handle(
-        &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
-        AcquireCredentialsHandle::new(self)
-    }
+    // fn acquire_credentials_handle(
+    //     &mut self,
+    // ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
+    //     AcquireCredentialsHandle::new()
+    // }
 
     /// Initiates the client side, outbound security context from a credential handle.
     /// The function is used to build a security context between the client application and a remote peer. The function returns a token
@@ -991,9 +991,9 @@ pub trait SspiImpl {
     /// Represents authentication data prepared for the authentication process
     type AuthenticationData;
 
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
     fn initialize_security_context_impl<'a>(

@@ -2,7 +2,6 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
-use crate::sspi::sec_handle::SspiHandle;
 use sspi::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,
@@ -15,6 +14,7 @@ use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 use super::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use super::sspi_data_types::{PTimeStamp, SecurityStatus};
 use super::utils::transform_credentials_handle;
+use crate::sspi::sec_handle::SspiHandle;
 use crate::utils::into_raw_ptr;
 
 #[instrument(skip_all)]
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: u32,
 ) -> SecurityStatus {
-    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
+    // info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -307,7 +307,7 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: u32,
     pf_qop: *mut u32,
 ) -> SecurityStatus {
-    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
+    // info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);

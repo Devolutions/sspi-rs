@@ -13,7 +13,8 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Error, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl
+    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Error,
+    ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl,
 };
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
@@ -103,21 +104,24 @@ impl SspiImpl for SspiHandle {
         builder: sspi::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<sspi::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         let mut context = self.sspi_context.lock().unwrap();
-        context.acquire_credentials_handle_impl(builder)
+        let result = context.acquire_credentials_handle_impl(builder);
+        result
     }
 
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut sspi::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::generator::GeneratorInitSecurityContext {
-        self.sspi_context.lock().unwrap().initialize_security_context_impl(builder)
+        // self.sspi_context.lock().unwrap().initialize_security_context_impl(builder)
+        todo!()
     }
 
     fn accept_security_context_impl<'a>(
         &'a mut self,
         builder: sspi::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
     ) -> Result<sspi::AcceptSecurityContextResult> {
-        self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
+        // self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
+        todo!()
     }
 }
 
@@ -132,11 +136,21 @@ impl Sspi for SspiHandle {
         message: &mut [sspi::SecurityBuffer],
         sequence_number: u32,
     ) -> Result<sspi::SecurityStatus> {
-        self.sspi_context.lock().unwrap().encrypt_message(flags, message, sequence_number)
+        self.sspi_context
+            .lock()
+            .unwrap()
+            .encrypt_message(flags, message, sequence_number)
     }
 
-    fn decrypt_message(&mut self, message: &mut [sspi::SecurityBuffer], sequence_number: u32) -> Result<sspi::DecryptionFlags> {
-        self.sspi_context.lock().unwrap().decrypt_message(message, sequence_number)
+    fn decrypt_message(
+        &mut self,
+        message: &mut [sspi::SecurityBuffer],
+        sequence_number: u32,
+    ) -> Result<sspi::DecryptionFlags> {
+        self.sspi_context
+            .lock()
+            .unwrap()
+            .decrypt_message(message, sequence_number)
     }
 
     fn query_context_sizes(&mut self) -> Result<sspi::ContextSizes> {
@@ -155,8 +169,12 @@ impl Sspi for SspiHandle {
         self.sspi_context.lock().unwrap().query_context_cert_trust_status()
     }
 
-    fn change_password<'a>(&'a mut self, change_password: sspi::builders::ChangePassword<'a>) -> sspi::generator::GeneratorChangePassword {
-        self.sspi_context.lock().unwrap().change_password(change_password)
+    fn change_password<'a>(
+        &'a mut self,
+        change_password: sspi::builders::ChangePassword<'a>,
+    ) -> sspi::generator::GeneratorChangePassword {
+        // self.sspi_context.lock().unwrap().change_password(change_password)
+        todo!()
     }
 }
 

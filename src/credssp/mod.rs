@@ -20,7 +20,7 @@ use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
 use self::sspi_cred_ssp::SspiCredSsp;
-use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
+use crate::builders::{AcquireCredentialsHandle, ChangePassword, EmptyInitializeSecurityContext, WithoutCredentialUse};
 use crate::crypto::compute_sha256;
 use crate::generator::{
     Generator, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal,
@@ -35,7 +35,7 @@ use crate::{
     Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, SspiPackage, StreamSizes, Username,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -264,15 +264,13 @@ impl CredSspClient {
                 ))),
                 ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
             };
-            let AcquireCredentialsHandleResult { credentials_handle, .. } = self
-                .context
-                .as_mut()
-                .unwrap()
-                .sspi_context
-                .acquire_credentials_handle()
+
+            let sspi_ctx = &mut self.context.as_mut().unwrap().sspi_context;
+            let mut builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+            let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
                 .with_auth_data(&self.credentials)
                 .with_credential_use(CredentialUse::Outbound)
-                .execute()?;
+                .execute(sspi_ctx)?;
             self.credentials_handle = credentials_handle;
         }
 
@@ -451,13 +449,9 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 )))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
-                self.context
-                    .as_mut()
-                    .unwrap()
-                    .sspi_context
-                    .acquire_credentials_handle()
+                AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
                     .with_credential_use(CredentialUse::Inbound)
-                    .execute(),
+                    .execute(&mut self.context.as_mut().unwrap().sspi_context),
                 ts_request
             );
             self.credentials_handle = credentials_handle;
@@ -626,9 +620,9 @@ impl SspiImpl for SspiContext {
     type AuthenticationData = Credentials;
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         Ok(match self {
             SspiContext::Ntlm(ntlm) => {
@@ -641,14 +635,14 @@ impl SspiImpl for SspiContext {
                     ));
                 };
                 builder
-                    .full_transform(ntlm, Some(auth_identity))
-                    .execute()?
+                    .full_transform(Some(auth_identity))
+                    .execute(ntlm)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
                     })
             }
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute()?,
-            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute()?,
+            SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos)?,
+            SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate)?,
             SspiContext::Pku2u(pku2u) => {
                 let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
                     identity
@@ -659,14 +653,14 @@ impl SspiImpl for SspiContext {
                     ));
                 };
                 builder
-                    .full_transform(pku2u, Some(auth_identity))
-                    .execute()?
+                    .full_transform(Some(auth_identity))
+                    .execute(pku2u)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
                     })
             }
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute()?,
+            SspiContext::CredSsp(credssp) => builder.transform().execute(credssp)?,
         })
     }
 

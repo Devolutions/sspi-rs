@@ -14,7 +14,7 @@ use crate::{
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
     Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities,
     PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    SspiPackage, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -376,10 +376,10 @@ impl SspiImpl for Negotiate {
     type CredentialsHandle = Option<CredentialsBuffers>;
     type AuthenticationData = Credentials;
 
-    // #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -410,8 +410,8 @@ impl SspiImpl for Negotiate {
                         "Auth identity is not provided for the Pku2u",
                     ));
                 };
-                let new_builder = builder.full_transform(pku2u, Some(auth_identity));
-                new_builder.execute()?;
+                let new_builder = builder.full_transform(Some(auth_identity));
+                new_builder.execute(pku2u)?;
             }
             NegotiatedProtocol::Kerberos(kerberos) => {
                 kerberos.acquire_credentials_handle_impl(builder)?;
@@ -425,8 +425,8 @@ impl SspiImpl for Negotiate {
                         "Auth identity is not provided for the Pku2u",
                     ));
                 };
-                let new_builder = builder.full_transform(ntlm, Some(auth_identity));
-                new_builder.execute()?;
+                let new_builder = builder.full_transform(Some(auth_identity));
+                new_builder.execute(ntlm)?;
             }
         };
 
