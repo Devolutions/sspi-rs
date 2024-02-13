@@ -15,8 +15,9 @@ use sspi::generator::Generator;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Error,
-    ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, Result, Secret, Sspi, SspiImpl,
+    kerberos, negotiate, ntlm, pku2u, CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers,
+    DataRepresentation, Error, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret,
+    Sspi, SspiImpl, StreamSizes,
 };
 #[cfg(target_os = "windows")]
 use winapi::um::wincrypt::{
@@ -136,6 +137,22 @@ impl SspiImpl for SspiHandle {
 impl Sspi for SspiHandle {
     fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
         self.sspi_context.lock().unwrap().complete_auth_token(token)
+    }
+
+    fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
+        self.sspi_context.lock().unwrap().query_context_stream_sizes()
+    }
+
+    fn query_context_remote_cert(&mut self) -> Result<CertContext> {
+        self.sspi_context.lock().unwrap().query_context_remote_cert()
+    }
+
+    fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
+        self.sspi_context.lock().unwrap().query_context_negotiation_package()
+    }
+
+    fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
+        self.sspi_context.lock().unwrap().query_context_connection_info()
     }
 
     fn encrypt_message(
