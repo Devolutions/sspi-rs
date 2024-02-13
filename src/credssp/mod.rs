@@ -736,6 +736,16 @@ impl<'a> SspiContext {
         }
     }
 
+    pub fn init_sec_ctx_sync(
+        &mut self,
+        builder: &mut FilledInitializeSecurityContext<<Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<InitializeSecurityContextResult> {
+        Generator::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+        .resolve_with_default_network_client()
+    }
+
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
     async fn initialize_security_context_impl(
         &'a mut self,

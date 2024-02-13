@@ -1,4 +1,5 @@
 use std::ffi::CStr;
+use std::ops::DerefMut;
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
 
@@ -10,6 +11,7 @@ use sspi::credssp::sspi_cred_ssp;
 #[cfg(feature = "tsssp")]
 use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
 use sspi::credssp::SspiContext;
+use sspi::generator::Generator;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
@@ -112,8 +114,15 @@ impl SspiImpl for SspiHandle {
         &'a mut self,
         builder: &'a mut sspi::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> sspi::generator::GeneratorInitSecurityContext {
-        // self.sspi_context.lock().unwrap().initialize_security_context_impl(builder)
-        todo!()
+        let mut context = self.sspi_context.lock().unwrap();
+        // let mut context = context.deref_mut();
+        // let result = context.initialize_security_context_impl(builder).resolve_with_default_network_client();
+        //
+        // Generator::new(move |yield_point| async {
+        //     result
+        // })
+        // todo!()
+        context.init_sec_ctx_sync(builder).into()
     }
 
     fn accept_security_context_impl(

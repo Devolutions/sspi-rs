@@ -306,9 +306,9 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
-        InitializeSecurityContext::new()
-    }
+    // fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
+    //     InitializeSecurityContext::new()
+    // }
 
     /// Lets the server component of a transport application establish a security context between the server and a remote client.
     /// The remote client calls the `initialize_security_context` function to start the process of establishing a security context.
@@ -1000,6 +1000,11 @@ pub trait SspiImpl {
         &'a mut self,
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> GeneratorInitSecurityContext;
+
+    // fn initialize_security_context_impl_sync(
+    //     &mut self,
+    //     builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
+    // ) -> GeneratorInitSecurityContext;
 
     fn accept_security_context_impl(
         &mut self,
