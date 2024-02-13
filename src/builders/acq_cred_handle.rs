@@ -9,6 +9,14 @@ use crate::{CredentialUse, Luid, SspiPackage};
 pub type EmptyAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithoutCredentialUse>;
 pub type FilledAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithCredentialUse>;
 
+impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {}
+
+impl<'a, C, A> Default for EmptyAcquireCredentialsHandle<'a, C, A> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Contains data returned by calling the `execute` method of
 /// the `AcquireCredentialsHandleBuilder` structure. The builder is returned by calling
 /// the `acquire_credentials_handle` method.
@@ -42,7 +50,6 @@ pub struct AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) inner: Option<SspiPackage<'a, CredsHandle, AuthData>>,
     pub(crate) phantom_cred_handle: PhantomData<CredsHandle>,
     pub(crate) phantom_cred_use_set: PhantomData<CredentialUseSet>,
 
@@ -75,9 +82,8 @@ impl<'a, CredsHandle, AuthData, CredentialUseSet> AcquireCredentialsHandle<'a, C
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) fn new(inner: SspiPackage<'a, CredsHandle, AuthData>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            inner: Some(inner),
             phantom_cred_handle: PhantomData,
             phantom_cred_use_set: PhantomData,
 
@@ -94,7 +100,6 @@ where
         credential_use: CredentialUse,
     ) -> AcquireCredentialsHandle<'a, CredsHandle, AuthData, WithCredentialUse> {
         AcquireCredentialsHandle {
-            inner: self.inner,
             phantom_cred_handle: PhantomData,
             phantom_cred_use_set: PhantomData,
 
@@ -136,11 +141,9 @@ impl<'b, 'a: 'b, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, Creds
     /// Useful when we need to pass the builder into the security package with other `AuthData` and `CredsHandle` types.
     pub(crate) fn full_transform<NewCredsHandle, NewAuthData>(
         self,
-        inner: SspiPackage<'a, NewCredsHandle, NewAuthData>,
         auth_data: Option<&'b NewAuthData>,
     ) -> FilledAcquireCredentialsHandle<'b, NewCredsHandle, NewAuthData> {
         AcquireCredentialsHandle {
-            inner: Some(inner),
             phantom_cred_handle: PhantomData,
             phantom_cred_use_set: PhantomData,
 
@@ -154,25 +157,11 @@ impl<'b, 'a: 'b, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, Creds
 
 impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
     /// Executes the SSPI function that the builder represents.
-    pub fn execute(mut self) -> crate::Result<AcquireCredentialsHandleResult<CredsHandle>> {
-        let inner = self.inner.take().unwrap();
-        inner.acquire_credentials_handle_impl(self)
-    }
-
-    pub(crate) fn transform(
+    pub fn execute(
         self,
-        inner: SspiPackage<'a, CredsHandle, AuthData>,
-    ) -> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
-        AcquireCredentialsHandle {
-            inner: Some(inner),
-            phantom_cred_handle: PhantomData,
-            phantom_cred_use_set: PhantomData,
-
-            principal_name: self.principal_name,
-            credential_use: self.credential_use,
-            logon_id: self.logon_id,
-            auth_data: self.auth_data,
-        }
+        inner: SspiPackage<'_, CredsHandle, AuthData>,
+    ) -> crate::Result<AcquireCredentialsHandleResult<CredsHandle>> {
+        inner.acquire_credentials_handle_impl(self)
     }
 }
 

@@ -365,10 +365,13 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn change_password<'a>(&'a mut self, change_password: builders::ChangePassword<'a>) -> GeneratorChangePassword {
-        GeneratorChangePassword::new(move |mut yield_point| async move {
+    fn change_password<'a>(
+        &'a mut self,
+        change_password: builders::ChangePassword<'a>,
+    ) -> Result<GeneratorChangePassword> {
+        Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password(&mut yield_point, change_password).await
-        })
+        }))
     }
 }
 
@@ -376,10 +379,10 @@ impl SspiImpl for Negotiate {
     type CredentialsHandle = Option<CredentialsBuffers>;
     type AuthenticationData = Credentials;
 
-    // #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -410,8 +413,8 @@ impl SspiImpl for Negotiate {
                         "Auth identity is not provided for the Pku2u",
                     ));
                 };
-                let new_builder = builder.full_transform(pku2u, Some(auth_identity));
-                new_builder.execute()?;
+                let new_builder = builder.full_transform(Some(auth_identity));
+                new_builder.execute(pku2u)?;
             }
             NegotiatedProtocol::Kerberos(kerberos) => {
                 kerberos.acquire_credentials_handle_impl(builder)?;
@@ -425,8 +428,8 @@ impl SspiImpl for Negotiate {
                         "Auth identity is not provided for the Pku2u",
                     ));
                 };
-                let new_builder = builder.full_transform(ntlm, Some(auth_identity));
-                new_builder.execute()?;
+                let new_builder = builder.full_transform(Some(auth_identity));
+                new_builder.execute(ntlm)?;
             }
         };
 
@@ -437,9 +440,9 @@ impl SspiImpl for Negotiate {
     }
 
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
@@ -448,8 +451,8 @@ impl SspiImpl for Negotiate {
                 } else {
                     None
                 };
-                let new_builder = builder.full_transform(pku2u, Some(&mut creds_handle));
-                new_builder.execute()
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                new_builder.execute(pku2u)
             }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
@@ -458,8 +461,8 @@ impl SspiImpl for Negotiate {
                 } else {
                     None
                 };
-                let new_builder = builder.full_transform(ntlm, Some(&mut creds_handle));
-                new_builder.execute()
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                new_builder.execute(ntlm)
             }
         }
     }
@@ -467,10 +470,10 @@ impl SspiImpl for Negotiate {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext {
-        GeneratorInitSecurityContext::new(move |mut yield_point| async move {
+    ) -> Result<GeneratorInitSecurityContext> {
+        Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
-        })
+        }))
     }
 }
 

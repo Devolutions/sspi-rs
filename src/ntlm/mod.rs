@@ -250,7 +250,7 @@ impl SspiImpl for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         let input = builder
             .input
@@ -295,8 +295,8 @@ impl SspiImpl for Ntlm {
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext {
-        self.initialize_security_context_impl(builder).into()
+    ) -> crate::Result<GeneratorInitSecurityContext> {
+        Ok(self.initialize_security_context_impl(builder).into())
     }
 }
 
@@ -495,12 +495,14 @@ impl Sspi for Ntlm {
         ))
     }
 
-    fn change_password(&mut self, _: crate::builders::ChangePassword) -> crate::generator::GeneratorChangePassword {
+    fn change_password(
+        &mut self,
+        _: crate::builders::ChangePassword,
+    ) -> crate::Result<crate::generator::GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "NTLM does not support change pasword",
         ))
-        .into()
     }
 }
 

@@ -2,7 +2,6 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
-use sspi::credssp::SspiContext;
 use sspi::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,
@@ -15,6 +14,7 @@ use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 use super::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use super::sspi_data_types::{PTimeStamp, SecurityStatus};
 use super::utils::transform_credentials_handle;
+use crate::sspi::sec_handle::SspiHandle;
 use crate::utils::into_raw_ptr;
 
 #[instrument(skip_all)]
@@ -78,14 +78,13 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
         let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-        let result_status = sspi_context
-            .accept_security_context()
+        let result_status = sspi_context.accept_security_context()
             .with_credentials_handle(&mut Some(auth_data))
             .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
             .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens)
-            .execute();
+            .execute(sspi_context);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 
@@ -149,7 +148,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        let _context: Box<SspiContext> = Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
+        let _context: Box<SspiHandle> = Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()

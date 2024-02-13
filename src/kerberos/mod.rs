@@ -455,10 +455,10 @@ impl Sspi for Kerberos {
         ))
     }
 
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword {
-        GeneratorChangePassword::new(move |mut yield_point| async move {
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword> {
+        Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password(&mut yield_point, change_password).await
-        })
+        }))
     }
 }
 
@@ -494,7 +494,7 @@ impl SspiImpl for Kerberos {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         let input = builder
             .input
@@ -529,10 +529,10 @@ impl SspiImpl for Kerberos {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut crate::builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext {
-        GeneratorInitSecurityContext::new(move |mut yield_point| async move {
+    ) -> Result<GeneratorInitSecurityContext> {
+        Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
-        })
+        }))
     }
 }
 

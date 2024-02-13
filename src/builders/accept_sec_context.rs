@@ -8,18 +8,16 @@ use super::{
 };
 use crate::{DataRepresentation, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiPackage};
 
-pub type EmptyAcceptSecurityContext<'a, AuthData, C> = AcceptSecurityContext<
+pub type EmptyAcceptSecurityContext<'a, C> = AcceptSecurityContext<
     'a,
-    AuthData,
     C,
     WithoutCredentialsHandle,
     WithoutContextRequirements,
     WithoutTargetDataRepresentation,
     WithoutOutput,
 >;
-pub type FilledAcceptSecurityContext<'a, AuthData, C> = AcceptSecurityContext<
+pub type FilledAcceptSecurityContext<'a, C> = AcceptSecurityContext<
     'a,
-    AuthData,
     C,
     WithCredentialsHandle,
     WithContextRequirements,
@@ -48,7 +46,6 @@ pub struct AcceptSecurityContextResult {
 /// * [`with_output`](struct.AcceptSecurityContext.html#method.with_output)
 pub struct AcceptSecurityContext<
     'a,
-    AuthData,
     CredsHandle,
     CredsHandleSet,
     ContextRequirementsSet,
@@ -60,7 +57,6 @@ pub struct AcceptSecurityContext<
     TargetDataRepresentationSet: ToAssign,
     OutputSet: ToAssign,
 {
-    inner: Option<SspiPackage<'a, CredsHandle, AuthData>>,
     phantom_creds_use_set: PhantomData<CredsHandleSet>,
     phantom_context_req_set: PhantomData<ContextRequirementsSet>,
     phantom_data_repr_set: PhantomData<TargetDataRepresentationSet>,
@@ -76,7 +72,6 @@ pub struct AcceptSecurityContext<
 
 impl<
         'a,
-        AuthData,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -85,7 +80,6 @@ impl<
     >
     AcceptSecurityContext<
         'a,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -93,9 +87,8 @@ impl<
         OutputSet,
     >
 {
-    pub(crate) fn new(inner: SspiPackage<'a, CredsHandle, AuthData>) -> Self {
-        Self {
-            inner: Some(inner),
+    pub(crate) fn new() -> Self {
+        AcceptSecurityContext {
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -117,7 +110,6 @@ impl<
         credentials_handle: &'a mut CredsHandle,
     ) -> AcceptSecurityContext<
         'a,
-        AuthData,
         CredsHandle,
         WithCredentialsHandle,
         ContextRequirementsSet,
@@ -125,7 +117,6 @@ impl<
         OutputSet,
     > {
         AcceptSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -146,7 +137,6 @@ impl<
         context_requirements: ServerRequestFlags,
     ) -> AcceptSecurityContext<
         'a,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         WithContextRequirements,
@@ -154,7 +144,6 @@ impl<
         OutputSet,
     > {
         AcceptSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -175,7 +164,6 @@ impl<
         target_data_representation: DataRepresentation,
     ) -> AcceptSecurityContext<
         'a,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -183,7 +171,6 @@ impl<
         OutputSet,
     > {
         AcceptSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -207,7 +194,6 @@ impl<
         output: &'a mut [SecurityBuffer],
     ) -> AcceptSecurityContext<
         'a,
-        AuthData,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -215,7 +201,6 @@ impl<
         WithOutput,
     > {
         AcceptSecurityContext {
-            inner: self.inner,
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -240,16 +225,14 @@ impl<
     }
 }
 
-impl<'b, 'a: 'b, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
+impl<'b, 'a: 'b, CredsHandle> FilledAcceptSecurityContext<'a, CredsHandle> {
     /// Transforms the builder into new one with the other `AuthData` and `CredsHandle` types.
     /// Useful when we need to pass the builder into the security package with other `AuthData` and `CredsHandle` types.
-    pub(crate) fn full_transform<CredsHandle2, AuthData2>(
+    pub(crate) fn full_transform<CredsHandle2>(
         self,
-        inner: SspiPackage<'a, CredsHandle2, AuthData2>,
         credentials_handle: Option<&'b mut CredsHandle2>,
-    ) -> FilledAcceptSecurityContext<'b, AuthData2, CredsHandle2> {
+    ) -> FilledAcceptSecurityContext<'b, CredsHandle2> {
         AcceptSecurityContext {
-            inner: Some(inner),
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,
@@ -265,19 +248,17 @@ impl<'b, 'a: 'b, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData
     }
 }
 
-impl<'a, AuthData, CredsHandle> FilledAcceptSecurityContext<'a, AuthData, CredsHandle> {
+impl<'a, CredsHandle> FilledAcceptSecurityContext<'a, CredsHandle> {
     /// Executes the SSPI function that the builder represents.
-    pub fn execute(mut self) -> crate::Result<AcceptSecurityContextResult> {
-        let inner = self.inner.take().unwrap();
+    pub fn execute<AuthData>(
+        self,
+        inner: SspiPackage<'_, CredsHandle, AuthData>,
+    ) -> crate::Result<AcceptSecurityContextResult> {
         inner.accept_security_context_impl(self)
     }
 
-    pub(crate) fn transform<AuthData2>(
-        self,
-        inner: SspiPackage<'a, CredsHandle, AuthData2>,
-    ) -> FilledAcceptSecurityContext<'a, AuthData2, CredsHandle> {
+    pub(crate) fn transform(self) -> FilledAcceptSecurityContext<'a, CredsHandle> {
         AcceptSecurityContext {
-            inner: Some(inner),
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
             phantom_data_repr_set: PhantomData,

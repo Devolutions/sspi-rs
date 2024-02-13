@@ -145,7 +145,7 @@ impl<
         &self.credentials_handle
     }
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             phantom_creds_use_set: PhantomData,
             phantom_context_req_set: PhantomData,
