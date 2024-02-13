@@ -388,11 +388,11 @@ where
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(
-        &mut self,
-    ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
-        AcceptSecurityContext::new(self)
-    }
+    // fn accept_security_context(
+    //     &mut self,
+    // ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
+    //     AcceptSecurityContext::new(self)
+    // }
 
     /// Completes an authentication token. This function is used by protocols, such as DCE,
     /// that need to revise the security information after the transport application has updated some message parameters.
@@ -1001,9 +1001,9 @@ pub trait SspiImpl {
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> GeneratorInitSecurityContext;
 
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult>;
 }
 

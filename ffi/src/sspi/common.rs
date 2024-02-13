@@ -2,6 +2,11 @@ use std::slice::from_raw_parts;
 
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
+use sspi::builders::{
+    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyInitializeSecurityContext,
+    WithoutContextRequirements, WithoutCredentialUse, WithoutCredentialsHandle, WithoutOutput,
+    WithoutTargetDataRepresentation,
+};
 use sspi::{
     DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,
@@ -78,14 +83,20 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
         let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-        let result_status = sspi_context
-            .accept_security_context()
+        let result_status = AcceptSecurityContext::<
+                        '_,
+                        _,
+                        WithoutCredentialsHandle,
+                        WithoutContextRequirements,
+                        WithoutTargetDataRepresentation,
+                        WithoutOutput
+                    >::new()
             .with_credentials_handle(&mut Some(auth_data))
             .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
             .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
             .with_input(&mut input_tokens)
             .with_output(&mut output_tokens)
-            .execute();
+            .execute(sspi_context);
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 

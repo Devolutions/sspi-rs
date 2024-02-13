@@ -20,7 +20,11 @@ use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
 use self::sspi_cred_ssp::SspiCredSsp;
-use crate::builders::{AcquireCredentialsHandle, ChangePassword, EmptyInitializeSecurityContext, WithoutCredentialUse};
+use crate::builders::{
+    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyInitializeSecurityContext,
+    WithoutContextRequirements, WithoutCredentialUse, WithoutCredentialsHandle, WithoutOutput,
+    WithoutTargetDataRepresentation,
+};
 use crate::crypto::compute_sha256;
 use crate::generator::{
     Generator, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal,
@@ -496,18 +500,22 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
+                let sspi_ctx = &mut self.context.as_mut().unwrap().sspi_context;
                 match try_cred_ssp_server!(
-                    self.context
-                        .as_mut()
-                        .unwrap()
-                        .sspi_context
-                        .accept_security_context()
-                        .with_credentials_handle(&mut credentials_handle)
-                        .with_context_requirements(ServerRequestFlags::empty())
-                        .with_target_data_representation(DataRepresentation::Native)
-                        .with_input(&mut [input_token])
-                        .with_output(&mut output_token)
-                        .execute(),
+                    AcceptSecurityContext::<
+                        '_,
+                        _,
+                        WithoutCredentialsHandle,
+                        WithoutContextRequirements,
+                        WithoutTargetDataRepresentation,
+                        WithoutOutput,
+                    >::new()
+                    .with_credentials_handle(&mut credentials_handle)
+                    .with_context_requirements(ServerRequestFlags::empty())
+                    .with_target_data_representation(DataRepresentation::Native)
+                    .with_input(&mut [input_token])
+                    .with_output(&mut output_token)
+                    .execute(sspi_ctx),
                     ts_request
                 ) {
                     AcceptSecurityContextResult { status, .. } if status == SecurityStatus::ContinueNeeded => {
@@ -665,9 +673,9 @@ impl SspiImpl for SspiContext {
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
@@ -680,10 +688,10 @@ impl SspiImpl for SspiContext {
                             "Auth identity is not provided for the Ntlm",
                         ));
                     };
-                builder.full_transform(ntlm, Some(&mut Some(auth_identity))).execute()
+                builder.full_transform(Some(&mut Some(auth_identity))).execute(ntlm)
             }
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
-            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos),
+            SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate),
             SspiContext::Pku2u(pku2u) => {
                 let auth_identity =
                     if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
@@ -694,10 +702,10 @@ impl SspiImpl for SspiContext {
                             "Auth identity is not provided for the Pku2u",
                         ));
                     };
-                builder.full_transform(pku2u, Some(&mut Some(auth_identity))).execute()
+                builder.full_transform(Some(&mut Some(auth_identity))).execute(pku2u)
             }
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
+            SspiContext::CredSsp(credssp) => builder.transform().execute(credssp),
         }
     }
 

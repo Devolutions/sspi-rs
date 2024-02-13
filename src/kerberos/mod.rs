@@ -494,7 +494,7 @@ impl SspiImpl for Kerberos {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         let input = builder
             .input

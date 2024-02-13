@@ -116,12 +116,11 @@ impl SspiImpl for SspiHandle {
         todo!()
     }
 
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: sspi::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: sspi::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<sspi::AcceptSecurityContextResult> {
-        // self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
-        todo!()
+        self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
     }
 }
 

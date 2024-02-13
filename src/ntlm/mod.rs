@@ -250,7 +250,7 @@ impl SspiImpl for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl(
         &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         let input = builder
             .input

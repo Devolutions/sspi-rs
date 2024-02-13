@@ -437,9 +437,9 @@ impl SspiImpl for Negotiate {
     }
 
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
@@ -448,8 +448,8 @@ impl SspiImpl for Negotiate {
                 } else {
                     None
                 };
-                let new_builder = builder.full_transform(pku2u, Some(&mut creds_handle));
-                new_builder.execute()
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                new_builder.execute(pku2u)
             }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
             NegotiatedProtocol::Ntlm(ntlm) => {
@@ -458,8 +458,8 @@ impl SspiImpl for Negotiate {
                 } else {
                     None
                 };
-                let new_builder = builder.full_transform(ntlm, Some(&mut creds_handle));
-                new_builder.execute()
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                new_builder.execute(ntlm)
             }
         }
     }
