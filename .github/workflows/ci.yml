@@ -39,8 +39,10 @@ jobs:
             additional-args: --features tsssp,scard
           - os: osx
             runner: macos-12
+            additional-args: --features scard
           - os: linux
             runner: ubuntu-20.04
+            additional-args: --features scard
 
     steps:
       - uses: actions/checkout@v3
@@ -70,8 +72,10 @@ jobs:
             additional-args: --features tsssp,scard
           - os: osx
             runner: macos-12
+            additional-args: --features scard
           - os: linux
             runner: ubuntu-20.04
+            additional-args: --features scard
 
     steps:
       - uses: actions/checkout@v3
