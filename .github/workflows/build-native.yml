@@ -189,6 +189,10 @@ jobs:
             $CargoArgs += @('--release')
           }
 
+          if ($DotNetOs -Eq 'win') {
+            $CargoArgs += @('--features', 'scard')
+          }
+
           $CargoCmd = $(@('cargo') + $CargoArgs) -Join ' '
           Write-Host $CargoCmd
           & cargo $CargoArgs | Out-Host
