@@ -183,10 +183,14 @@ jobs:
           }
           Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
 
-          $CargoArgs = @('build', '-p', 'sspi-ffi', '--target', $RustTarget, '--features', 'scard')
+          $CargoArgs = @('build', '-p', 'sspi-ffi', '--target', $RustTarget)
 
           if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')
+          }
+
+          if ($DotNetOs -Eq 'win') {
+            $CargoArgs += @('--features', 'scard')
           }
 
           $CargoCmd = $(@('cargo') + $CargoArgs) -Join ' '
