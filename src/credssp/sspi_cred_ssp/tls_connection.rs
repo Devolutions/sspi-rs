@@ -66,17 +66,21 @@ impl TlsConnection {
     pub fn decrypt_tls(&mut self, mut payload: &[u8]) -> Result<Vec<u8>> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                tls_connection.read_tls(&mut payload)?;
+                let mut plain_data = Vec::with_capacity(payload.len());
 
-                let tls_state = tls_connection
-                    .process_new_packets()
-                    .map_err(|err| Error::new(ErrorKind::DecryptFailure, err.to_string()))?;
+                while payload.len() != 0 {
+                    let _tls_bytes_read = tls_connection.read_tls(&mut payload)?;
 
-                let mut reader = tls_connection.reader();
+                    let tls_state = tls_connection
+                        .process_new_packets()
+                        .map_err(|err| Error::new(ErrorKind::DecryptFailure, err.to_string()))?;
 
-                let mut plain_data = vec![0; tls_state.plaintext_bytes_to_read()];
-                let _plain_data_len = reader.read(&mut plain_data)?;
+                    let mut reader = tls_connection.reader();
+                    let mut decrypted = vec![0; tls_state.plaintext_bytes_to_read()];
+                    let _plain_data_len = reader.read(&mut decrypted)?;
 
+                    plain_data.extend_from_slice(&decrypted);
+                }
                 Ok(plain_data)
             }
         }
