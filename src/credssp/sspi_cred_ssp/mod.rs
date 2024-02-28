@@ -12,13 +12,15 @@ use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerCon
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
+use crate::credssp::sspi_cred_ssp::tls_connection::DecryptionResultBuffers;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
-    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptBuffer, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -115,11 +117,15 @@ impl SspiCredSsp {
         Ok(raw_public_key)
     }
 
-    fn decrypt_and_decode_ts_request(&mut self, input: &[SecurityBuffer]) -> Result<TsRequest> {
-        let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-        let raw_ts_request = self.tls_connection.decrypt_tls(&encrypted_ts_request.buffer)?;
+    fn decrypt_and_decode_ts_request(&mut self, input: &mut [SecurityBuffer]) -> Result<TsRequest> {
+        let encrypted_ts_request = SecurityBuffer::find_buffer_mut(input, SecurityBufferType::Token)?;
+        let DecryptionResultBuffers {
+            header: _,
+            decrypted: raw_ts_request,
+            extra: _,
+        } = self.tls_connection.decrypt_tls(&mut encrypted_ts_request.buffer)?;
 
-        let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
+        let ts_request = TsRequest::from_buffer(raw_ts_request)?;
         ts_request.check_error()?;
 
         Ok(ts_request)
@@ -169,7 +175,7 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
@@ -180,25 +186,30 @@ impl Sspi for SspiCredSsp {
             ));
         }
 
-        let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let encrypted_message =
+            std::mem::take(DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?).buffer;
+        let DecryptionResultBuffers {
+            header,
+            decrypted,
+            extra,
+        } = self.tls_connection.decrypt_tls(encrypted_message)?;
 
-        if encrypted_message.buffer.len() < TLS_PACKET_HEADER_LEN {
-            return Err(Error::new(ErrorKind::DecryptFailure, "Input TLS message is too short"));
-        }
-
-        let stream_header_data = encrypted_message.buffer[0..TLS_PACKET_HEADER_LEN].to_vec();
-        let decrypted_data = self.tls_connection.decrypt_tls(&encrypted_message.buffer)?;
-        let stream_trailer_data = encrypted_message.buffer[(TLS_PACKET_HEADER_LEN + decrypted_data.len())..].to_vec();
-
-        // buffers order is important. MSTSC won't work with another buffers order
+        // buffers order is important. MSTSC won't work with another buffers order.
         message[0].buffer_type = SecurityBufferType::StreamHeader;
-        message[0].buffer = stream_header_data;
+        message[0].buffer = header;
 
         message[1].buffer_type = SecurityBufferType::Data;
-        message[1].buffer = decrypted_data;
+        message[1].buffer = decrypted;
 
+        // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
+        // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
+        //
+        // So, we can just set an empty buffer here.
         message[2].buffer_type = SecurityBufferType::StreamTrailer;
-        message[2].buffer = stream_trailer_data;
+        message[2].buffer = &mut [];
+
+        message[3].buffer_type = SecurityBufferType::Extra;
+        message[3].buffer = extra;
 
         Ok(DecryptionFlags::empty())
     }
@@ -276,7 +287,7 @@ impl SspiImpl for SspiCredSsp {
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
-    ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+    ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
@@ -324,7 +335,7 @@ impl SspiCredSsp {
         &mut self,
         yield_point: &mut YieldPointLocal,
         builder: &mut builders::FilledInitializeSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::InitializeSecurityContextResult> {
+    ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
         // In the CredSSP we always set DELEGATE flag
         //
@@ -364,7 +375,7 @@ impl SspiCredSsp {
                 // decrypt and decode TsRequest from input buffers
                 let mut ts_request = builder
                     .input
-                    .as_ref()
+                    .as_mut()
                     .map(|input| self.decrypt_and_decode_ts_request(input))
                     .unwrap_or_else(|| Ok(TsRequest::default()))?;
 
@@ -437,7 +448,7 @@ impl SspiCredSsp {
             CredSspState::AuthInfo => {
                 let mut ts_request = builder
                     .input
-                    .as_ref()
+                    .as_mut()
                     .map(|input| self.decrypt_and_decode_ts_request(input))
                     .unwrap_or_else(|| Ok(TsRequest::default()))?;
 
