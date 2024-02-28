@@ -13,13 +13,15 @@ use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::builders::EmptyInitializeSecurityContext;
+use crate::credssp::sspi_cred_ssp::tls_connection::DecryptionResultBuffers;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
-    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptBuffer, DecryptionFlags,
+    EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -56,10 +58,10 @@ impl SspiCredSsp {
         // "stub_string" - we don't check the server's certificate validity so we can use any server name
         let example_com = "stub_string".try_into().unwrap();
         let mut client_config = ClientConfig::builder()
-            .dangerous()
+            .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
             .with_no_client_auth();
-        client_config.key_log = std::sync::Arc::new(rustls::KeyLogFile::new());
+        client_config.key_log = Arc::new(rustls::KeyLogFile::new());
         let config = Arc::new(client_config);
 
         Ok(Self {
@@ -79,14 +81,11 @@ impl SspiCredSsp {
     /// * `private_key` is a raw private key. it is DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format.
     pub fn new_server(sspi_context: SspiContext, certificates: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self> {
         let server_config = ServerConfig::builder()
-            // .with_safe_defaults()
+            .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(
-                certificates
-                    .into_iter()
-                    .map(rustls::pki_types::CertificateDer::from)
-                    .collect(),
-                rustls::pki_types::PrivateKeyDer::Pkcs1(rustls::pki_types::PrivatePkcs1KeyDer::from(private_key)),
+                certificates.into_iter().map(rustls::Certificate).collect(),
+                rustls::PrivateKey(private_key),
             )
             .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))?;
         let config = Arc::new(server_config);
@@ -119,11 +118,15 @@ impl SspiCredSsp {
         Ok(raw_public_key)
     }
 
-    fn decrypt_and_decode_ts_request(&mut self, input: &[SecurityBuffer]) -> Result<TsRequest> {
-        let encrypted_ts_request = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-        let raw_ts_request = self.tls_connection.decrypt_tls(&encrypted_ts_request.buffer)?;
+    fn decrypt_and_decode_ts_request(&mut self, input: &mut [SecurityBuffer]) -> Result<TsRequest> {
+        let encrypted_ts_request = SecurityBuffer::find_buffer_mut(input, SecurityBufferType::Token)?;
+        let DecryptionResultBuffers {
+            header: _,
+            decrypted: raw_ts_request,
+            extra: _,
+        } = self.tls_connection.decrypt_tls(&mut encrypted_ts_request.buffer)?;
 
-        let ts_request = TsRequest::from_buffer(&raw_ts_request)?;
+        let ts_request = TsRequest::from_buffer(raw_ts_request)?;
         ts_request.check_error()?;
 
         Ok(ts_request)
@@ -173,7 +176,7 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
@@ -184,24 +187,30 @@ impl Sspi for SspiCredSsp {
             ));
         }
 
-        let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        let decrypted_data = self.tls_connection.decrypt_tls(&encrypted_message.buffer)?;
+        let encrypted_message =
+            std::mem::take(DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?).buffer;
+        let DecryptionResultBuffers {
+            header,
+            decrypted,
+            extra,
+        } = self.tls_connection.decrypt_tls(encrypted_message)?;
 
-        // Buffers order is important. MSTSC won't work with another buffers order.
-        //
-        // There is not any guarantee that every buffer passed in the SSPI is a well-formed TLS packet.
-        // The caller can pass half of the TLS packet in the first decrypt_message function call,
-        // and the other half in the second call.
-        // So, we just set an empty buffer in the stream header and trailer. During the testing,
-        // we verified that mstsc works well without them.
+        // buffers order is important. MSTSC won't work with another buffers order.
         message[0].buffer_type = SecurityBufferType::StreamHeader;
-        message[0].buffer = Vec::new();
+        message[0].buffer = header;
 
         message[1].buffer_type = SecurityBufferType::Data;
-        message[1].buffer = decrypted_data;
+        message[1].buffer = decrypted;
 
+        // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
+        // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
+        //
+        // So, we can just set an empty buffer here.
         message[2].buffer_type = SecurityBufferType::StreamTrailer;
-        message[2].buffer = Vec::new();
+        message[2].buffer = &mut [];
+
+        message[3].buffer_type = SecurityBufferType::Extra;
+        message[3].buffer = extra;
 
         Ok(DecryptionFlags::empty())
     }
@@ -328,7 +337,7 @@ impl SspiCredSsp {
         &mut self,
         yield_point: &mut YieldPointLocal,
         builder: &mut builders::FilledInitializeSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::InitializeSecurityContextResult> {
+    ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
         // In the CredSSP we always set DELEGATE flag
         //
@@ -368,7 +377,7 @@ impl SspiCredSsp {
                 // decrypt and decode TsRequest from input buffers
                 let mut ts_request = builder
                     .input
-                    .as_ref()
+                    .as_mut()
                     .map(|input| self.decrypt_and_decode_ts_request(input))
                     .unwrap_or_else(|| Ok(TsRequest::default()))?;
 
@@ -439,7 +448,7 @@ impl SspiCredSsp {
             CredSspState::AuthInfo => {
                 let mut ts_request = builder
                     .input
-                    .as_ref()
+                    .as_mut()
                     .map(|input| self.decrypt_and_decode_ts_request(input))
                     .unwrap_or_else(|| Ok(TsRequest::default()))?;
 

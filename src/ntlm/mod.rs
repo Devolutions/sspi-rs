@@ -15,9 +15,10 @@ pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
+use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags,
     EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
@@ -409,35 +410,26 @@ impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
-        let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
-            buffer
-        } else {
-            SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Stream)?
-        }
-        .buffer
-        .clone();
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        encrypted.extend_from_slice(&data.buffer);
+        let encrypted = extract_encrypted_data(message)?;
 
         if encrypted.len() < 16 {
-            return Err(crate::Error::new(
-                crate::ErrorKind::MessageAltered,
-                "Invalid encrypted message size!",
-            ));
+            return Err(Error::new(ErrorKind::MessageAltered, "Invalid encrypted message size!"));
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
 
-        *data.buffer.as_mut() = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
+        let decrypted = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, data.buffer.as_slice())?;
+        save_decrypted_data(&decrypted, message)?;
+
+        let digest = compute_digest(&self.recv_signing_key, sequence_number, &decrypted)?;
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -446,8 +438,8 @@ impl Sspi for Ntlm {
         let expected_signature = compute_signature(&checksum, sequence_number);
 
         if signature != expected_signature.as_ref() {
-            return Err(crate::Error::new(
-                crate::ErrorKind::MessageAltered,
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
                 "Signature verification failed, something nasty is going on!",
             ));
         }

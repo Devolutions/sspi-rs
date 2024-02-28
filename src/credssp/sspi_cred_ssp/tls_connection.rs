@@ -10,6 +10,19 @@ use crate::{
 
 // type + version + length
 pub const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVersion */ + 2 /* length: uint16 */;
+
+// The Secure Sockets Layer (SSL) Protocol Version 3.0
+// https://datatracker.ietf.org/doc/html/rfc6101#page-14
+//
+// ...Sequence numbers are of type uint64 and may not exceed 2^64-1.
+const TLS_PACKET_SEQUENCE_NUMBER_LEN: usize = std::mem::size_of::<u64>();
+
+// The Secure Sockets Layer (SSL) Protocol Version 3.0
+// https://datatracker.ietf.org/doc/html/rfc6101#appendix-A.1
+//
+// application_data(23)
+const TLS_APPLICATION_CONTENT_TYPE: u8 = 0x17;
+
 // [Block Size and Padding](https://www.rfc-editor.org/rfc/rfc3826#section-3.1.1.3)
 // The block size of the AES cipher is 128 bits
 const AES_BLOCK_SIZE: usize = 16;
@@ -19,15 +32,12 @@ const AES_BLOCK_SIZE: usize = 16;
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
 //
 // This configuration just accepts any certificate
-#[allow(unused)]
 pub mod danger {
     use std::time::SystemTime;
 
-    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::pki_types::{CertificateDer as Certificate, ServerName, UnixTime};
-    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
+    use rustls::client::{ServerCertVerified, ServerCertVerifier};
+    use rustls::{Certificate, Error, ServerName};
 
-    #[derive(Debug)]
     pub struct NoCertificateVerification;
 
     impl ServerCertVerifier for NoCertificateVerification {
@@ -36,46 +46,61 @@ pub mod danger {
             _end_entity: &Certificate,
             _intermediates: &[Certificate],
             _server_name: &ServerName,
+            _scts: &mut dyn Iterator<Item = &[u8]>,
             _ocsp_response: &[u8],
-            _now: UnixTime,
+            _now: SystemTime,
         ) -> Result<ServerCertVerified, Error> {
             Ok(ServerCertVerified::assertion())
         }
+    }
+}
 
-        fn verify_tls12_signature(
-            &self,
-            message: &[u8],
-            cert: &Certificate<'_>,
-            dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, Error> {
-            // todo!()
-            warn!("verify_tls12_signature");
-            Ok(HandshakeSignatureValid::assertion())
-        }
+/// Represents parsed part of the TLS traffic.
+///
+/// The input buffer can contain part of the TLS message, one TLS packet, or even more than one TLS packet.
+/// To decrypt the incoming buffer sometimes we need to split it into parts. If it contains more then one TLS packet,
+/// we should decrypt only first of them. This behavior corresponds to the SChannel behavior.
+#[derive(Debug)]
+struct TlsTrafficParts<'data> {
+    /// TLS packet header with a sequence number.
+    header: &'data mut [u8],
+    /// Decrypted part of the TLS packet.
+    ///
+    /// *Pay attention*: the TLS packet sequence number must be in the [header] buffer.
+    application_data: &'data mut [u8],
+    /// Unprocessed TLS packets.
+    extra: &'data mut [u8],
+}
 
-        fn verify_tls13_signature(
-            &self,
-            message: &[u8],
-            cert: &Certificate<'_>,
-            dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, Error> {
-            // todo!()
-            warn!("verify_tls13_signature");
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-            vec![
-                SignatureScheme::RSA_PKCS1_SHA1,
-                SignatureScheme::RSA_PKCS1_SHA256,
-                SignatureScheme::RSA_PKCS1_SHA384,
-                SignatureScheme::RSA_PKCS1_SHA512,
-                SignatureScheme::RSA_PSS_SHA256,
-                SignatureScheme::RSA_PSS_SHA384,
-                SignatureScheme::RSA_PSS_SHA512,
-            ]
+impl<'a> From<&'a mut [u8]> for TlsTrafficParts<'a> {
+    fn from(value: &'a mut [u8]) -> Self {
+        Self {
+            header: &mut [],
+            application_data: value,
+            extra: &mut [],
         }
     }
+}
+
+/// Represents buffers after the decryption.
+///
+/// We can not return just decrypted data because we also need a TLS header and unprocessed data buffers.
+/// More info: https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
+///
+/// After the decryption, the original SChannel produces four buffers (the order is important):
+/// * SECBUFFER_STREAM_HEADER. It contains TLS packet header with a sequence number.
+/// * SECBUFFER_DATA. It contains a decrypted data.
+/// * SECBUFFER_STREAM_TRAILER. It contains the TLS packet HMAC with all unprocessed data.
+/// * SECBUFFER_EXTRA. It contains the rest of the unprocessed TLS traffic. Usually, the start of this buffer
+///   points to the start of the next TLS packet in the input buffer.
+#[derive(Debug)]
+pub struct DecryptionResultBuffers<'data> {
+    /// TLS packet header with the sequence number.
+    pub header: &'data mut [u8],
+    /// Decrypted data.
+    pub decrypted: &'data mut [u8],
+    /// Unprocessed TLS packets.
+    pub extra: &'data mut [u8],
 }
 
 #[derive(Debug)]
@@ -99,17 +124,111 @@ impl TlsConnection {
         }
     }
 
-    pub fn decrypt_tls(&mut self, mut payload: &[u8]) -> Result<Vec<u8>> {
+    // This function extracts the application data (encrypted part) of the TLS packet.
+    // If the input buffer contains more than one TLS packet, then the application data of
+    // the first one will be returned.
+    // If the input buffer contains less than one TLS packet (only a part of it), then
+    // the whole input buffer will be returned.
+    fn find_tls_data_to_decrypt<'data>(connection: &Connection, payload: &'data mut [u8]) -> Result<&'data mut [u8]> {
+        if payload.len() < TLS_PACKET_HEADER_LEN + TLS_PACKET_SEQUENCE_NUMBER_LEN {
+            return Ok(payload);
+        }
+
+        let mut tls_packet_start = vec![TLS_APPLICATION_CONTENT_TYPE];
+        let tls_version = connection
+            .protocol_version()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
+            .get_u16()
+            .to_be_bytes();
+        tls_packet_start.extend_from_slice(&tls_version);
+
+        // safe: payload length is checked above.
+        if payload[0..3] != tls_packet_start {
+            return Ok(payload);
+        }
+
+        // safe: payload length is checked above.
+        let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
+
+        if payload.len() < TLS_PACKET_HEADER_LEN + encrypted_application_data_len {
+            return Ok(payload);
+        }
+
+        let tls_packet_len = TLS_PACKET_HEADER_LEN + encrypted_application_data_len;
+
+        // safe: payload length is checked above.
+        Ok(&mut payload[0..tls_packet_len])
+    }
+
+    // This function splits the incoming TLS traffic into three parts (if possible):
+    // * header.
+    // * application_data.
+    // * extra.
+    // See the [TlsTrafficParts] documentation for a more detailed explanation of those buffers.
+    fn split_tls_traffic<'a>(connection: &Connection, payload: &'a mut [u8]) -> Result<TlsTrafficParts<'a>> {
+        const TLS_PACKET_PREFIX_LEN: usize = TLS_PACKET_HEADER_LEN + TLS_PACKET_SEQUENCE_NUMBER_LEN;
+        if payload.len() < TLS_PACKET_PREFIX_LEN {
+            return Ok(payload.into());
+        }
+
+        let mut tls_packet_start = vec![TLS_APPLICATION_CONTENT_TYPE];
+        let tls_version = connection
+            .protocol_version()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
+            .get_u16()
+            .to_be_bytes();
+        tls_packet_start.extend_from_slice(&tls_version);
+
+        // safe: payload length is checked above.
+        if payload[0..3] != tls_packet_start {
+            return Ok(payload.into());
+        }
+
+        // safe: payload length is checked above.
+        let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
+
+        if payload.len() < TLS_PACKET_PREFIX_LEN + encrypted_application_data_len {
+            let (header, application_data) = payload.split_at_mut(TLS_PACKET_PREFIX_LEN);
+            return Ok(TlsTrafficParts {
+                header,
+                application_data,
+                extra: &mut [],
+            });
+        }
+
+        // safe: payload length is checked above.
+        let (header, rest) = payload.split_at_mut(TLS_PACKET_PREFIX_LEN);
+        // `encrypted_application_data_len` is a len of the encrypted data with the sequence number.
+        // But here we need the encrypted data WITHOUT a sequence number, so we extract TLS_PACKET_SEQUENCE_NUMBER_LEN
+        // from the overall data length.
+        let (application_data, extra) =
+            rest.split_at_mut(encrypted_application_data_len - TLS_PACKET_SEQUENCE_NUMBER_LEN);
+
+        Ok(TlsTrafficParts {
+            header,
+            application_data,
+            extra,
+        })
+    }
+
+    /// Decrypt a part of the incoming TLS traffic.
+    ///
+    /// If the input buffer contains more than one TLS message,then only the first one will be decrypted.
+    pub fn decrypt_tls<'a>(&mut self, payload: &'a mut [u8]) -> Result<DecryptionResultBuffers<'a>> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                let mut plain_data = Vec::with_capacity(payload.len());
+                let tls_data_to_decrypt = TlsConnection::find_tls_data_to_decrypt(tls_connection, payload)?;
+                let mut tls_packet: &[u8] = tls_data_to_decrypt;
 
-                while payload.len() != 0 {
-                    let _tls_bytes_read = tls_connection.read_tls(&mut payload)?;
+                let mut plain_data = Vec::with_capacity(tls_packet.len());
+
+                while !tls_packet.is_empty() {
+                    let _ = tls_connection.read_tls(&mut tls_packet)?;
 
                     let tls_state = tls_connection
                         .process_new_packets()
                         .map_err(|err| Error::new(ErrorKind::DecryptFailure, err.to_string()))?;
+                    trace!(?tls_state);
 
                     let mut reader = tls_connection.reader();
                     let mut decrypted = vec![0; tls_state.plaintext_bytes_to_read()];
@@ -117,7 +236,28 @@ impl TlsConnection {
 
                     plain_data.extend_from_slice(&decrypted);
                 }
-                Ok(plain_data)
+
+                let TlsTrafficParts {
+                    header,
+                    application_data,
+                    extra,
+                } = TlsConnection::split_tls_traffic(tls_connection, payload)?;
+
+                if application_data.len() < plain_data.len() {
+                    return Err(Error::new(
+                        ErrorKind::DecryptFailure,
+                        "Decrypted data can not be larger then encrypted one.",
+                    ));
+                }
+
+                let decrypted = &mut application_data[0..plain_data.len()];
+                decrypted.copy_from_slice(&plain_data);
+
+                Ok(DecryptionResultBuffers {
+                    header,
+                    decrypted,
+                    extra,
+                })
             }
         }
     }
@@ -153,21 +293,20 @@ impl TlsConnection {
     pub fn stream_sizes(&self) -> Result<StreamSizes> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                // let connection_cipher = tls_connection
-                //     .negotiated_cipher_suite()
-                //     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
-                //
-                // let bulk_cipher = match connection_cipher {
-                //     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                //     rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
-                // };
-                // let block_size = match bulk_cipher {
-                //     rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
-                //     rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
-                //     // ChaCha20 is a stream cipher
-                //     rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
-                // };
-                let block_size = AES_BLOCK_SIZE;
+                let connection_cipher = tls_connection
+                    .negotiated_cipher_suite()
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
+
+                let bulk_cipher = match connection_cipher {
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                };
+                let block_size = match bulk_cipher {
+                    rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
+                    rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
+                    // ChaCha20 is a stream cipher
+                    rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
+                };
 
                 Ok(StreamSizes {
                     header: TLS_PACKET_HEADER_LEN as u32,
@@ -224,34 +363,33 @@ impl TlsConnection {
                     },
                 };
 
-                // let connection_cipher = tls_connection
-                //     .negotiated_cipher_suite()
-                //     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
+                let connection_cipher = tls_connection
+                    .negotiated_cipher_suite()
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
-                // let bulk_cipher = match connection_cipher {
-                //     rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                //     rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
-                // };
-                // let (cipher, cipher_strength) = match bulk_cipher {
-                //     rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CalgAes128, 128),
-                //     rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
-                //     rustls::BulkAlgorithm::Chacha20Poly1305 => {
-                //         return Err(Error::new(
-                //             ErrorKind::UnsupportedFunction,
-                //             "alg_id for CHACHA20_POLY1305 does not exist",
-                //         ))
-                //     }
-                // };
-                let (cipher, cipher_strength) = (ConnectionCipher::CalgAes256, 256);
+                let bulk_cipher = match connection_cipher {
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                };
+                let (cipher, cipher_strength) = match bulk_cipher {
+                    rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CalgAes128, 128),
+                    rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
+                    rustls::BulkAlgorithm::Chacha20Poly1305 => {
+                        return Err(Error::new(
+                            ErrorKind::UnsupportedFunction,
+                            "alg_id for CHACHA20_POLY1305 does not exist",
+                        ))
+                    }
+                };
 
-                // let hash_algo = connection_cipher.hash_algorithm();
+                let hash_algo = connection_cipher.hash_algorithm();
 
                 Ok(ConnectionInfo {
                     protocol,
                     cipher,
                     cipher_strength,
                     hash: ConnectionHash::CalgSha,
-                    hash_strength: 48 as u32,
+                    hash_strength: hash_algo.output_len() as u32,
                     key_exchange: ConnectionKeyExchange::CalgRsaKeyx,
                     exchange_strength: (self.raw_peer_public_key()?.len() * 8) as u32,
                 })

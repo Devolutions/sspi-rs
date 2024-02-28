@@ -64,8 +64,7 @@ trust-dns-resolver = { version = "0.23", optional = true }
 portpicker = { version = "0.1", optional = true }
 num-bigint-dig = "0.8"
 tracing = "0.1"
-rustls = { path = "../deleteIt/rustls/rustls", optional = true }
-#rustls = { version = "0.22.2", optional = true }
+rustls = { version = "0.21", optional = true }
 zeroize = { version = "1.6", features = ["zeroize_derive"] }
 tokio = { version = "1.32", features = ["time", "rt"], optional = true }
 pcsc = { version = "2.8", optional = true }

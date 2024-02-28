@@ -4,7 +4,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{Error, ErrorKind, Result};
+use crate::{DecryptBuffer, Error, ErrorKind, Result, SecurityBufferType};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -239,4 +239,44 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 
         Err(Error::new(ErrorKind::EncryptFailure, "No encryption key provided"))
     }
+}
+
+/// Copies a decrypted data into the [SecurityBufferType::Data].
+///
+/// If the provided buffer is not large enough, then this function will return an error.
+/// If the provided buffers do not contain the [SecurityBufferType::Data] buffer,
+/// then this function will return an error.
+pub fn save_decrypted_data(decrypted: &[u8], buffers: &mut [DecryptBuffer]) -> Result<()> {
+    let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+
+    if data_buffer.buffer.len() < decrypted.len() {
+        return Err(Error::new(
+            ErrorKind::DecryptFailure,
+            "Decrypted data can not be larger then encrypted one.",
+        ));
+    }
+
+    let mut data = std::mem::take(&mut data_buffer.buffer);
+    data = &mut data[0..decrypted.len()];
+    data.copy_from_slice(decrypted);
+    data_buffer.buffer = data;
+
+    Ok(())
+}
+
+/// Extracts data to decrypt from the incoming buffers.
+///
+/// Data to decrypt is `Token`/`Stream` buffers + `Data` buffer concatenated together.
+pub fn extract_encrypted_data(buffers: &[DecryptBuffer]) -> Result<Vec<u8>> {
+    let mut encrypted = if let Ok(buffer) = DecryptBuffer::find_buffer(buffers, SecurityBufferType::Token) {
+        buffer
+    } else {
+        DecryptBuffer::find_buffer(buffers, SecurityBufferType::Stream)?
+    }
+    .buffer
+    .to_vec();
+
+    encrypted.extend_from_slice(DecryptBuffer::find_buffer(buffers, SecurityBufferType::Data)?.buffer);
+
+    Ok(encrypted)
 }

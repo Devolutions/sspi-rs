@@ -143,7 +143,7 @@ impl Sspi for SspiHandle {
 
     fn decrypt_message(
         &mut self,
-        message: &mut [sspi::SecurityBuffer],
+        message: &mut [sspi::DecryptBuffer],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
         self.sspi_context
@@ -200,7 +200,11 @@ pub struct CredentialsHandle {
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
-    let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+    let client_computer_name = if let Some(hostname) = attributes.workstation.clone() {
+        hostname
+    } else {
+        whoami::fallible::hostname()?
+    };
 
     if let Some(kdc_url) = attributes.kdc_url() {
         let kerberos_config = KerberosConfig::new(&kdc_url, client_computer_name.clone());
@@ -255,11 +259,15 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 ));
                 #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
-                    whoami::hostname(),
+                    whoami::fallible::hostname()?,
                 )?)?)
             }
             kerberos::PKG_NAME => {
-                let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+                let client_computer_name = if let Some(hostname) = attributes.workstation.clone() {
+                    hostname
+                } else {
+                    whoami::fallible::hostname()?
+                };
 
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
@@ -275,7 +283,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => {
-                let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+                let hostname = if let Some(hostname) = attributes.workstation.clone() {
+                    hostname
+                } else {
+                    whoami::fallible::hostname()?
+                };
 
                 SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname)))
             }
@@ -1060,25 +1072,29 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             .build()
             .expect("change password builder should never fail");
 
+        let hostname = try_execute!({
+            whoami::fallible::hostname().map_err(|err| Error::from(err))
+        });
+
         let mut sspi_context = match security_package_name {
             negotiate::PKG_NAME => {
                 let negotiate_config = NegotiateConfig {
-                    protocol_config: Box::new(NtlmConfig::new(whoami::hostname())),
+                    protocol_config: Box::new(NtlmConfig::new(hostname.clone())),
                     package_list: None,
-                    client_computer_name: whoami::hostname(),
+                    client_computer_name: hostname,
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
-                    client_computer_name:Some(whoami::hostname()),
+                    client_computer_name:Some(hostname),
                     kdc_url:None
                 };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
                     krb_config
                 )))
             },
-            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(whoami::hostname()))),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname))),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();
             }

@@ -56,13 +56,16 @@ use crate::pk_init::{self, DhParameters};
 use crate::pku2u::generate_client_dh_parameters;
 #[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
-use crate::utils::{generate_random_symmetric_key, get_encryption_key, utf16_bytes_to_utf8_string};
+use crate::utils::{
+    extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, save_decrypted_data,
+    utf16_bytes_to_utf8_string,
+};
 use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
-    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
-    Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    CredentialsBuffers, DecryptBuffer, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -353,23 +356,10 @@ impl Sspi for Kerberos {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBuffer],
-        _sequence_number: u32,
-    ) -> Result<crate::DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
-        let mut encrypted = if let Ok(buffer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token) {
-            buffer
-        } else {
-            SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Stream)?
-        }
-        .buffer
-        .clone();
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-
-        encrypted.extend_from_slice(&data.buffer);
+        let encrypted = extract_encrypted_data(message)?;
 
         let cipher = self
             .encryption_params
@@ -390,23 +380,18 @@ impl Sspi for Kerberos {
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
+        save_decrypted_data(&decrypted, message)?;
+
         match self.state {
             KerberosState::PubKeyAuth => {
                 self.state = KerberosState::Credentials;
-
-                *data.buffer.as_mut() = decrypted;
                 Ok(DecryptionFlags::empty())
             }
             KerberosState::Credentials => {
                 self.state = KerberosState::Final;
-
-                *data.buffer.as_mut() = decrypted;
                 Ok(DecryptionFlags::empty())
             }
-            _ => {
-                *data.buffer.as_mut() = decrypted;
-                Ok(DecryptionFlags::empty())
-            }
+            _ => Ok(DecryptionFlags::empty()),
         }
     }
 

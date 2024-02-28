@@ -36,8 +36,8 @@ use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
-    Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    Credentials, CredentialsBuffers, DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, Error,
+    ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
     SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
@@ -269,7 +269,11 @@ impl CredSspClient {
                 ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
             };
 
-            let sspi_ctx = &mut self.context.as_mut().unwrap().sspi_context;
+            let sspi_ctx = &mut self
+                .context
+                .as_mut()
+                .expect("Should not panic because the CredSSP context is set before")
+                .sspi_context;
             let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
             let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
                 .with_auth_data(&self.credentials)
@@ -455,13 +459,22 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
                 AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
                     .with_credential_use(CredentialUse::Inbound)
-                    .execute(&mut self.context.as_mut().unwrap().sspi_context),
+                    .execute(
+                        &mut self
+                            .context
+                            .as_mut()
+                            .expect("Should not panic because the CredSSP context is set before")
+                            .sspi_context
+                    ),
                 ts_request
             );
             self.credentials_handle = credentials_handle;
         }
         try_cred_ssp_server!(
-            self.context.as_mut().unwrap().check_peer_version(ts_request.version),
+            self.context
+                .as_mut()
+                .expect("Should not panic because the CredSSP context is set before")
+                .check_peer_version(ts_request.version),
             ts_request
         );
 
@@ -821,7 +834,7 @@ impl Sspi for SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         match self {
@@ -1163,19 +1176,20 @@ impl CredSspContext {
     }
 
     fn decrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
-        let (signature, data) = input.split_at(SIGNATURE_SIZE);
+        let mut input = input.to_vec();
+        let (signature, data) = input.split_at_mut(SIGNATURE_SIZE);
         let mut buffers = vec![
-            SecurityBuffer::new(data.to_vec(), SecurityBufferType::Data),
-            SecurityBuffer::new(signature.to_vec(), SecurityBufferType::Token),
+            DecryptBuffer::new(data, SecurityBufferType::Data),
+            DecryptBuffer::new(signature, SecurityBufferType::Token),
         ];
 
         let recv_seq_num = self.recv_seq_num;
 
         self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 
-        let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
+        let output = DecryptBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
             .buffer
-            .clone();
+            .to_vec();
 
         self.recv_seq_num += 1;
 

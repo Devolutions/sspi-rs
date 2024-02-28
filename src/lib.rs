@@ -200,198 +200,6 @@ pub trait Sspi
 where
     Self: Sized + SspiImpl,
 {
-    /// Acquires a handle to preexisting credentials of a security principal. The preexisting credentials are
-    /// available only for `sspi::winapi` module. This handle is required by the `initialize_security_context`
-    /// and `accept_security_context` functions. These can be either preexisting credentials, which are
-    /// established through a system logon, or the caller can provide alternative credentials. Alternative
-    /// credentials are always required to specify when using platform independent SSPs.
-    ///
-    /// # Returns
-    ///
-    /// * `AcquireCredentialsHandle` builder
-    ///
-    /// # Requirements for execution
-    ///
-    /// These methods are required to be called before calling the `execute` method of the `AcquireCredentialsHandle` builder:
-    /// * [`with_credential_use`](builders/struct.AcquireCredentialsHandle.html#method.with_credential_use)
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
-    /// let identity = sspi::AuthIdentity {
-    ///     username: Username::parse("user").unwrap(),
-    ///     password: "password".to_string().into(),
-    /// };
-    ///
-    /// # #[allow(unused_variables)]
-    /// let result = ntlm
-    ///     .acquire_credentials_handle()
-    ///     .with_credential_use(sspi::CredentialUse::Outbound)
-    ///     .with_auth_data(&identity)
-    ///     .execute()
-    ///     .unwrap();
-    /// ```
-    ///
-    /// # MSDN
-    ///
-    /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
-    // fn acquire_credentials_handle(
-    //     &mut self,
-    // ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
-    //     AcquireCredentialsHandle::new()
-    // }
-
-    /// Initiates the client side, outbound security context from a credential handle.
-    /// The function is used to build a security context between the client application and a remote peer. The function returns a token
-    /// that the client must pass to the remote peer, which the peer in turn submits to the local security implementation through the
-    /// `accept_security_context` call.
-    ///
-    /// # Returns
-    ///
-    /// * `InitializeSecurityContext` builder
-    ///
-    /// # Requirements for execution
-    ///
-    /// These methods are required to be called before calling the `execute` method
-    /// * [`with_credentials_handle`](builders/struct.InitializeSecurityContext.html#method.with_credentials_handle)
-    /// * [`with_context_requirements`](builders/struct.InitializeSecurityContext.html#method.with_context_requirements)
-    /// * [`with_target_data_representation`](builders/struct.InitializeSecurityContext.html#method.with_target_data_representation)
-    /// * [`with_output`](builders/struct.InitializeSecurityContext.html#method.with_output)
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::new(&whoami::username(), Some(&whoami::hostname())).unwrap(),
-    /// #     password: String::from("password").into(),
-    /// # };
-    /// #
-    /// # let mut acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut credentials_handle = acq_cred_result.credentials_handle;
-    /// #
-    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    ///
-    /// # #[allow(unused_variables)]
-    /// let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    ///     .with_credentials_handle(&mut credentials_handle)
-    ///     .with_context_requirements(
-    ///         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    ///     )
-    ///     .with_target_data_representation(sspi::DataRepresentation::Native)
-    ///     .with_output(&mut output_buffer);
-    ///
-    /// let result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// ```
-    ///
-    /// # MSDN
-    ///
-    /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    // fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
-    //     InitializeSecurityContext::new()
-    // }
-
-    /// Lets the server component of a transport application establish a security context between the server and a remote client.
-    /// The remote client calls the `initialize_security_context` function to start the process of establishing a security context.
-    /// The server can require one or more reply tokens from the remote client to complete establishing the security context.
-    ///
-    /// # Returns
-    ///
-    /// * `AcceptSecurityContext` builder
-    ///
-    /// # Requirements for execution
-    ///
-    /// These methods are required to be called before calling the `execute` method of the `AcceptSecurityContext` builder:
-    /// * [`with_credentials_handle`](builders/struct.AcceptSecurityContext.html#method.with_credentials_handle)
-    /// * [`with_context_requirements`](builders/struct.AcceptSecurityContext.html#method.with_context_requirements)
-    /// * [`with_target_data_representation`](builders/struct.AcceptSecurityContext.html#method.with_target_data_representation)
-    /// * [`with_output`](builders/struct.AcceptSecurityContext.html#method.with_output)
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut client_ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let mut client_acq_cred_result = client_ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    /// #     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
-    /// #     .with_context_requirements(
-    /// #         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    /// #     )
-    /// #     .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #     .with_target_name("user")
-    /// #     .with_output(&mut client_output_buffer);
-    /// #
-    /// # let _result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// #
-    /// let mut ntlm = sspi::Ntlm::new();
-    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let mut server_acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut credentials_handle = server_acq_cred_result.credentials_handle;
-    ///
-    /// # #[allow(unused_variables)]
-    /// let result = ntlm
-    ///     .accept_security_context()
-    ///     .with_credentials_handle(&mut credentials_handle)
-    ///     .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
-    ///     .with_target_data_representation(sspi::DataRepresentation::Native)
-    ///     .with_input(&mut client_output_buffer)
-    ///     .with_output(&mut output_buffer)
-    ///     .execute()
-    ///     .unwrap();
-    /// ```
-    ///
-    /// # MSDN
-    ///
-    /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    // fn accept_security_context(
-    //     &mut self,
-    // ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
-    //     AcceptSecurityContext::new(self)
-    // }
-
     /// Completes an authentication token. This function is used by protocols, such as DCE,
     /// that need to revise the security information after the transport application has updated some message parameters.
     ///
@@ -691,7 +499,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///
@@ -1302,14 +1110,82 @@ impl SecurityBuffer {
     }
 }
 
+/// A special security buffer type is used for the data decryption. Basically, it's almost the same
+/// as [SecurityBuffer] but for decryption.
+///
+/// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
+/// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
+///
+/// So, the already defined [SecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
+/// We use reference in the [DecryptionBuffer] structure to avoid data cloning as much as possible.
+/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a CREDSSP security package.
+#[derive(Default)]
+pub struct DecryptBuffer<'data> {
+    /// Buffer that contains part of the data to be decrypted.
+    pub buffer: &'data mut [u8],
+    /// Buffer type.
+    pub buffer_type: SecurityBufferType,
+}
+
+impl<'data> DecryptBuffer<'data> {
+    /// Creates a new [DecryptBuffer] based on the input parameters.
+    pub fn new(buffer: &'data mut [u8], buffer_type: SecurityBufferType) -> Self {
+        Self { buffer, buffer_type }
+    }
+
+    /// Returns the immutable reference to the [DecryptBuffer] with specified buffer type.
+    ///
+    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
+    pub fn find_buffer<'a>(
+        buffers: &'a [DecryptBuffer<'data>],
+        buffer_type: SecurityBufferType,
+    ) -> Result<&'a DecryptBuffer<'data>> {
+        buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("No buffer was provided with type {:?}", buffer_type),
+            )
+        })
+    }
+
+    /// Returns the mutable reference to the [DecryptBuffer] with specified buffer type.
+    ///
+    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
+    pub fn find_buffer_mut<'a>(
+        buffers: &'a mut [DecryptBuffer<'data>],
+        buffer_type: SecurityBufferType,
+    ) -> Result<&'a mut DecryptBuffer<'data>> {
+        buffers
+            .iter_mut()
+            .find(|b| b.buffer_type == buffer_type)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("No buffer was provided with type {:?}", buffer_type),
+                )
+            })
+    }
+}
+
+impl fmt::Debug for DecryptBuffer<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DecryptBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
+        self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, " }}")?;
+
+        Ok(())
+    }
+}
+
 /// Bit flags that indicate the type of buffer.
 ///
 /// # MSDN
 ///
 /// * [SecBuffer structure (BufferType parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default, FromPrimitive, ToPrimitive)]
 pub enum SecurityBufferType {
+    #[default]
     Empty = 0,
     /// The buffer contains common data. The security package can read and write this data, for example, to encrypt some or all of it.
     Data = 1,

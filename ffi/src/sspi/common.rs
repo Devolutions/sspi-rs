@@ -1,4 +1,4 @@
-use std::slice::from_raw_parts;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
@@ -7,14 +7,16 @@ use sspi::builders::{
     WithoutTargetDataRepresentation,
 };
 use sspi::{
-    DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
+    DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
     ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
 use super::credentials_attributes::CredentialsAttributes;
-use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use super::sec_buffer::{
+    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc, SecBuffer,
+};
 use super::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
 use super::sspi_data_types::{PTimeStamp, SecurityStatus};
 use super::utils::transform_credentials_handle;
@@ -275,7 +277,6 @@ pub unsafe extern "system" fn EncryptMessage(
     p_message: PSecBufferDesc,
     message_seq_no: u32,
 ) -> SecurityStatus {
-    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -317,7 +318,6 @@ pub unsafe extern "system" fn DecryptMessage(
     message_seq_no: u32,
     pf_qop: *mut u32,
 ) -> SecurityStatus {
-    info!("threadid: {:?} {:?}", std::thread::current().id(), *ph_context);
     catch_panic! {
         check_null!(ph_context);
         check_null!(p_message);
@@ -332,7 +332,7 @@ pub unsafe extern "system" fn DecryptMessage(
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
-        let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
+        let mut message = p_sec_buffers_to_decrypt_buffers(raw_buffers);
 
         let (decryption_flags, result_status) =
             match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
@@ -340,15 +340,7 @@ pub unsafe extern "system" fn DecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
-        // FIXME(@TheBestTvarynka): possible memory leak.
-        // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
-        // According to the docs:
-        // "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
-        // But the `copy_to_c_sec_buffer` function can allocate new memory that likely will never be freed.
-        //
-        // Moreover, all passed buffers are just pointers to the different places in one big buffer. This
-        // is not specified in docs but happens in real life.
-        copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
+        copy_decrypted_buffers((*p_message).p_buffers, &message);
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
             *pf_qop = decryption_flags.bits().try_into().unwrap();
@@ -357,6 +349,36 @@ pub unsafe extern "system" fn DecryptMessage(
         try_execute!(result_status);
 
         0
+    }
+}
+
+#[allow(clippy::useless_conversion)]
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> Vec<DecryptBuffer> {
+    raw_buffers
+        .iter()
+        .map(|raw_buffer| DecryptBuffer {
+            buffer: from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer as usize),
+            buffer_type: SecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
+        })
+        .collect()
+}
+
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: &[DecryptBuffer]) {
+    let to_buffers = from_raw_parts_mut(to_buffers, from_buffers.len());
+
+    let mut buff = to_buffers[0].pv_buffer;
+
+    for i in 0..from_buffers.len() {
+        let from_buffer = from_buffers.get(i).unwrap();
+        let from_buffer_len = from_buffer.buffer.len();
+        let to_buffer = to_buffers.get_mut(i).unwrap();
+
+        to_buffer.pv_buffer = buff;
+        to_buffer.buffer_type = from_buffer.buffer_type.to_u32().unwrap();
+        to_buffer.cb_buffer = from_buffer_len.try_into().unwrap();
+
+        from_raw_parts_mut(buff as *mut _, from_buffer_len).copy_from_slice(from_buffer.buffer);
+        buff = buff.add(from_buffer_len);
     }
 }
 

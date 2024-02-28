@@ -11,10 +11,10 @@ use crate::ntlm::NtlmConfig;
 use crate::utils::is_azure_ad_domain;
 use crate::{
     builders, kerberos, ntlm, pku2u, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities,
-    PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptBuffer,
+    DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm,
+    PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -316,7 +316,11 @@ impl Sspi for Negotiate {
     }
 
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message<'data>(
+        &mut self,
+        message: &mut [DecryptBuffer<'data>],
+        sequence_number: u32,
+    ) -> Result<DecryptionFlags> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
