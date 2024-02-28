@@ -182,24 +182,23 @@ impl Sspi for SspiCredSsp {
         }
 
         let encrypted_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-
-        if encrypted_message.buffer.len() < TLS_PACKET_HEADER_LEN {
-            return Err(Error::new(ErrorKind::DecryptFailure, "Input TLS message is too short"));
-        }
-
-        let stream_header_data = encrypted_message.buffer[0..TLS_PACKET_HEADER_LEN].to_vec();
         let decrypted_data = self.tls_connection.decrypt_tls(&encrypted_message.buffer)?;
-        let stream_trailer_data = encrypted_message.buffer[(TLS_PACKET_HEADER_LEN + decrypted_data.len())..].to_vec();
 
-        // buffers order is important. MSTSC won't work with another buffers order
+        // Buffers order is important. MSTSC won't work with another buffers order.
+        //
+        // There is not any guarantee that every buffer passed in the SSPI is a well-formed TLS packet.
+        // The caller can pass half of the TLS packet in the first decrypt_message function call,
+        // and the other half in the second call.
+        // So, we just set an empty buffer in the stream header and trailer. During the testing,
+        // we verified that mstsc works well without them.
         message[0].buffer_type = SecurityBufferType::StreamHeader;
-        message[0].buffer = stream_header_data;
+        message[0].buffer = Vec::new();
 
         message[1].buffer_type = SecurityBufferType::Data;
         message[1].buffer = decrypted_data;
 
         message[2].buffer_type = SecurityBufferType::StreamTrailer;
-        message[2].buffer = stream_trailer_data;
+        message[2].buffer = Vec::new();
 
         Ok(DecryptionFlags::empty())
     }

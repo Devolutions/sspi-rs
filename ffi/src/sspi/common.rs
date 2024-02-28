@@ -328,6 +328,14 @@ pub unsafe extern "system" fn DecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
+        // FIXME(@TheBestTvarynka): possible memory leak.
+        // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
+        // According to the docs:
+        // "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
+        // But the `copy_to_c_sec_buffer` function can allocate new memory that likely will never be freed.
+        //
+        // Moreover, all passed buffers are just pointers to the different places in one big buffer. This
+        // is not specified in docs but happens in real life.
         copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
