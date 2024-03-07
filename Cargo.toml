@@ -66,6 +66,7 @@ num-bigint-dig = "0.8"
 tracing = "0.1"
 rustls = { version = "0.21", features = ["dangerous_configuration"], optional = true }
 zeroize = { version = "1.6", features = ["zeroize_derive"] }
+# `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.32", features = ["time", "rt", "rt-multi-thread"], optional = true }
 pcsc = { version = "2.8", optional = true }
 async-recursion = "1.0.5"
