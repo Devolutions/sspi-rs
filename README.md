@@ -9,9 +9,11 @@ The purpose of sspi-rs is to clean the original interface from cluttering and pr
 The sspi-rs works in accordance with the MSDN documentation. At the moment, [NT LAN Manager (NTLM)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b38c36ed-2804-4868-a9ff-8dd3182128e4) is implemented and available for platform independent execution. It is also possible to create your own SSPs by implementing the [`SspiImpl`]() trait. More on that in the [Documentation](target/doc/sspi/index.html).
 
 ###### Ease of use
+
 Some SSPI functions tend to be cumbersome, that's why sspi-rs allows to use SSPI in a convenient way by utilizing builders. Examples are available in the [examples](examples), [example section](#example), and [Documentation](target/doc/sspi/index.html).
 
 ## Usage
+
 sspi-rs is included in the Cargo.toml like this:
 ```TOML
 [dependencies]
@@ -85,10 +87,28 @@ let mut negotiate = SecurityPackage::from_package_type(
 );
 ```
 
-## Projects that use sspi-rs
+## Projects using sspi-rs
 
 * [Devolutions Gateway](https://github.com/Devolutions/devolutions-gateway)
+* [IronRDP](https://github.com/Devolutions/IronRDP)
+* [Python SSPI Library](https://github.com/jborean93/sspilib)
+* [NetExec](https://github.com/Pennyw0rth/NetExec)
 * [LDAP client library](https://github.com/kanidm/ldap3/blob/master/proto/examples/sasltest/main.rs)
+* [Remote Desktop Manager](https://devolutions.net/remote-desktop-manager/)
+
+(Feel free to open a PR if you know about other projects!)
 
 ## License
-sspi-rs is licensed under MIT license.
+
+Licensed under either of:
+
+ * [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
+ * [MIT license](http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
