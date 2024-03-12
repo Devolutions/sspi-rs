@@ -241,47 +241,55 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     }
 }
 
-/// Copies a decrypted data into the [SecurityBufferType::Data].
+/// Copies a decrypted data into the [SecurityBufferType::Data] or [SecurityBufferType::Stream].
 ///
-/// If the provided buffer is not large enough, then this function will return an error.
-/// If the provided buffers do not contain the [SecurityBufferType::Data] buffer,
-/// then this function will return an error.
+/// If the provided buffers do not contain the [SecurityBufferType::Data] buffer, then it will try
+/// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
+/// If the inner buffer is not large enough, then this function will return an error.
 pub fn save_decrypted_data(decrypted: &[u8], buffers: &mut [DecryptBuffer]) -> Result<()> {
-    let mut data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
-
-    if data_buffer.buffer.len() < decrypted.len() {
-        let stream_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream)?;
-        if stream_buffer.buffer.len() < decrypted.len() {
+    let buffer = if let Ok(buffer) = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data) {
+        if buffer.data().len() < decrypted.len() {
             return Err(Error::new(
                 ErrorKind::DecryptFailure,
                 "Decrypted data can not be larger then encrypted one.",
             ));
-        } else {
-            data_buffer = stream_buffer;
         }
-    }
+        buffer
+    } else {
+        let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream)?;
+        if buffer.data().len() < decrypted.len() {
+            return Err(Error::new(
+                ErrorKind::DecryptFailure,
+                "Decrypted data can not be larger then encrypted one.",
+            ));
+        }
+        buffer
+    };
 
-    let mut data = std::mem::take(&mut data_buffer.buffer);
-    data = &mut data[0..decrypted.len()];
-    data.copy_from_slice(decrypted);
-    data_buffer.buffer = data;
+    let mut data_buffer = buffer.take_data();
 
-    Ok(())
+    // Safe: checked above.
+    data_buffer = &mut data_buffer[0..decrypted.len()];
+    data_buffer.copy_from_slice(decrypted);
+
+    buffer.set_data(data_buffer)
 }
 
 /// Extracts data to decrypt from the incoming buffers.
 ///
-/// Data to decrypt is `Token`/`Stream` buffers + `Data` buffer concatenated together.
+/// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
 pub fn extract_encrypted_data(buffers: &[DecryptBuffer]) -> Result<Vec<u8>> {
-    let mut encrypted = if let Ok(buffer) = DecryptBuffer::find_buffer(buffers, SecurityBufferType::Token) {
-        buffer
-    } else {
-        DecryptBuffer::find_buffer(buffers, SecurityBufferType::Stream)?
-    }
-    .buffer
-    .to_vec();
+    let mut encrypted = DecryptBuffer::buf_data(buffers, SecurityBufferType::Token)
+        .unwrap_or_default()
+        .to_vec();
 
-    encrypted.extend_from_slice(DecryptBuffer::find_buffer(buffers, SecurityBufferType::Data)?.buffer);
+    encrypted.extend_from_slice(
+        if let Ok(buffer) = DecryptBuffer::buf_data(buffers, SecurityBufferType::Stream) {
+            buffer
+        } else {
+            DecryptBuffer::buf_data(buffers, SecurityBufferType::Data)?
+        },
+    );
 
     Ok(encrypted)
 }

@@ -977,19 +977,10 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
 
         let mut buffer = message[0].buffer.clone();
         buffer.extend_from_slice(&message[1].buffer);
-        let mut message = [
-            DecryptBuffer {
-                buffer: &mut buffer,
-                buffer_type: SecurityBufferType::Stream,
-            },
-            DecryptBuffer {
-                buffer: &mut [],
-                buffer_type: SecurityBufferType::Data,
-            },
-        ];
+        let mut message = [DecryptBuffer::Stream(&mut buffer), DecryptBuffer::Token(&mut [])];
 
         pku2u_client.decrypt_message(&mut message, 0).unwrap();
 
-        assert_eq!(message[0].buffer, plain_message);
+        assert_eq!(message[0].data(), plain_message);
     }
 }
