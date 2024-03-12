@@ -21,7 +21,7 @@ const TLS_PACKET_SEQUENCE_NUMBER_LEN: usize = std::mem::size_of::<u64>();
 // https://datatracker.ietf.org/doc/html/rfc6101#appendix-A.1
 //
 // application_data(23)
-const TLS_APPLICATION_CONTENT_TYPE: u8 = 0x17;
+const TLS_APPLICATION_DATA_CONTENT_TYPE: u8 = 0x17;
 
 // [Block Size and Padding](https://www.rfc-editor.org/rfc/rfc3826#section-3.1.1.3)
 // The block size of the AES cipher is 128 bits
@@ -72,16 +72,6 @@ struct TlsTrafficParts<'data> {
     extra: &'data mut [u8],
 }
 
-impl<'a> From<&'a mut [u8]> for TlsTrafficParts<'a> {
-    fn from(value: &'a mut [u8]) -> Self {
-        Self {
-            header: &mut [],
-            application_data: value,
-            extra: &mut [],
-        }
-    }
-}
-
 /// Represents buffers after the decryption.
 ///
 /// We can not return just decrypted data because we also need a TLS header and unprocessed data buffers.
@@ -103,10 +93,32 @@ pub struct DecryptionResultBuffers<'data> {
     pub extra: &'data mut [u8],
 }
 
+/// Represent a successful [decrypt_message] function result.
+///
+/// This helper structure exists because sometimes the decrypt function can get incomplete TLS packet
+/// and needs more bytes to perform the decryption. Such a situation is not an actual error but,
+/// on the other hand, there is no data to return. So, this is why the [DecryptionResult::IncompleteMessage] exists.
+#[derive(Debug)]
+pub enum DecryptionResult<'data> {
+    /// Indicated successful TLS packet decryption.
+    Success(DecryptionResultBuffers<'data>),
+    /// Indicated that the input buffer is too small to perform the decryption and
+    /// the function needs more bytes to do it.
+    IncompleteMessage(usize),
+}
+
 #[derive(Debug)]
 pub enum TlsConnection {
     Rustls(Connection),
     // Schannel
+}
+
+/// Represents a result of extracting the first TLS packet from the TLS traffic buffer.
+enum FindTlsPacketResult<'data> {
+    /// TLS packet.
+    TlsPacket(&'data mut [u8]),
+    /// Indicated how many bytes the input buffer lacks to represent a complete TLS packet.
+    Missing(usize),
 }
 
 impl TlsConnection {
@@ -124,17 +136,24 @@ impl TlsConnection {
         }
     }
 
-    // This function extracts the application data (encrypted part) of the TLS packet.
-    // If the input buffer contains more than one TLS packet, then the application data of
-    // the first one will be returned.
+    // This function extracts the first TLS packet from the TLS traffic buffer.
     // If the input buffer contains less than one TLS packet (only a part of it), then
-    // the whole input buffer will be returned.
-    fn find_tls_data_to_decrypt<'data>(connection: &Connection, payload: &'data mut [u8]) -> Result<&'data mut [u8]> {
-        if payload.len() < TLS_PACKET_HEADER_LEN + TLS_PACKET_SEQUENCE_NUMBER_LEN {
-            return Ok(payload);
+    // it returns how many bytes the input buffer lacks to represent a complete TLS packet.
+    fn find_tls_data_to_decrypt<'data>(
+        connection: &Connection,
+        payload: &'data mut [u8],
+    ) -> Result<FindTlsPacketResult<'data>> {
+        if payload.len() < TLS_PACKET_HEADER_LEN {
+            // We need at least TLS_PACKET_HEADER_LEN bytes to recognize the TLS packet, its type, and length.
+            return Ok(FindTlsPacketResult::Missing(TLS_PACKET_HEADER_LEN));
         }
 
-        let mut tls_packet_start = vec![TLS_APPLICATION_CONTENT_TYPE];
+        // In the decryption stage, we accept only TLS packets with TLS_APPLICATION_CONTENT_TYPE specified.
+        // Additional info: https://stackoverflow.com/a/65101172:
+        // "...DecryptMessage() only works if the record type is "application data". For any other
+        // record type (such as a TLS handshake "finished message"), DecryptMessage() won't even
+        // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
+        let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
         let tls_version = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
@@ -142,22 +161,23 @@ impl TlsConnection {
             .to_be_bytes();
         tls_packet_start.extend_from_slice(&tls_version);
 
-        // safe: payload length is checked above.
-        if payload[0..3] != tls_packet_start {
-            return Ok(payload);
+        // Safe: payload length is checked above.
+        if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid TLS packet header."));
         }
 
-        // safe: payload length is checked above.
+        // Safe: payload length is checked above.
         let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
 
-        if payload.len() < TLS_PACKET_HEADER_LEN + encrypted_application_data_len {
-            return Ok(payload);
+        let tls_packet_len = TLS_PACKET_HEADER_LEN + encrypted_application_data_len;
+        if payload.len() < tls_packet_len {
+            return Ok(FindTlsPacketResult::Missing(
+                TLS_PACKET_HEADER_LEN + encrypted_application_data_len - payload.len(),
+            ));
         }
 
-        let tls_packet_len = TLS_PACKET_HEADER_LEN + encrypted_application_data_len;
-
-        // safe: payload length is checked above.
-        Ok(&mut payload[0..tls_packet_len])
+        // Safe: payload length is checked above.
+        Ok(FindTlsPacketResult::TlsPacket(&mut payload[0..tls_packet_len]))
     }
 
     // This function splits the incoming TLS traffic into three parts (if possible):
@@ -167,11 +187,17 @@ impl TlsConnection {
     // See the [TlsTrafficParts] documentation for a more detailed explanation of those buffers.
     fn split_tls_traffic<'a>(connection: &Connection, payload: &'a mut [u8]) -> Result<TlsTrafficParts<'a>> {
         const TLS_PACKET_PREFIX_LEN: usize = TLS_PACKET_HEADER_LEN + TLS_PACKET_SEQUENCE_NUMBER_LEN;
+
         if payload.len() < TLS_PACKET_PREFIX_LEN {
-            return Ok(payload.into());
+            return Err(Error::new(ErrorKind::InvalidToken, "Input TLS buffer is too short."));
         }
 
-        let mut tls_packet_start = vec![TLS_APPLICATION_CONTENT_TYPE];
+        // In the decryption stage, we accept only TLS packets with TLS_APPLICATION_CONTENT_TYPE specified.
+        // Additional info: https://stackoverflow.com/a/65101172:
+        // "...DecryptMessage() only works if the record type is "application data". For any other
+        // record type (such as a TLS handshake "finished message"), DecryptMessage() won't even
+        // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
+        let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
         let tls_version = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
@@ -179,27 +205,22 @@ impl TlsConnection {
             .to_be_bytes();
         tls_packet_start.extend_from_slice(&tls_version);
 
-        // safe: payload length is checked above.
-        if payload[0..3] != tls_packet_start {
-            return Ok(payload.into());
+        // Safe: payload length is checked above.
+        if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
+            return Err(Error::new(ErrorKind::InvalidToken, "Invalid TLS packet header."));
         }
 
-        // safe: payload length is checked above.
+        // Safe: payload length is checked above.
         let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
 
-        if payload.len() < TLS_PACKET_PREFIX_LEN + encrypted_application_data_len {
-            let (header, application_data) = payload.split_at_mut(TLS_PACKET_PREFIX_LEN);
-            return Ok(TlsTrafficParts {
-                header,
-                application_data,
-                extra: &mut [],
-            });
+        if payload.len() < TLS_PACKET_HEADER_LEN + encrypted_application_data_len {
+            return Err(Error::new(ErrorKind::InvalidToken, "Input TLS buffer is too short."));
         }
 
-        // safe: payload length is checked above.
+        // Safe: payload length is checked above.
         let (header, rest) = payload.split_at_mut(TLS_PACKET_PREFIX_LEN);
         // `encrypted_application_data_len` is a len of the encrypted data with the sequence number.
-        // But here we need the encrypted data WITHOUT a sequence number, so we extract TLS_PACKET_SEQUENCE_NUMBER_LEN
+        // But here we need the encrypted data *WITHOUT* a sequence number, so we subtract TLS_PACKET_SEQUENCE_NUMBER_LEN
         // from the overall data length.
         let (application_data, extra) =
             rest.split_at_mut(encrypted_application_data_len - TLS_PACKET_SEQUENCE_NUMBER_LEN);
@@ -214,12 +235,15 @@ impl TlsConnection {
     /// Decrypt a part of the incoming TLS traffic.
     ///
     /// If the input buffer contains more than one TLS message,then only the first one will be decrypted.
-    pub fn decrypt_tls<'a>(&mut self, payload: &'a mut [u8]) -> Result<DecryptionResultBuffers<'a>> {
+    pub fn decrypt_tls<'a>(&mut self, payload: &'a mut [u8]) -> Result<DecryptionResult<'a>> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
-                let tls_data_to_decrypt = TlsConnection::find_tls_data_to_decrypt(tls_connection, payload)?;
-                let mut tls_packet: &[u8] = tls_data_to_decrypt;
-
+                let mut tls_packet = match TlsConnection::find_tls_data_to_decrypt(tls_connection, payload)? {
+                    FindTlsPacketResult::TlsPacket(data) => data as &[u8],
+                    FindTlsPacketResult::Missing(needed_bytes_amount) => {
+                        return Ok(DecryptionResult::IncompleteMessage(needed_bytes_amount));
+                    }
+                };
                 let mut plain_data = Vec::with_capacity(tls_packet.len());
 
                 while !tls_packet.is_empty() {
@@ -230,11 +254,11 @@ impl TlsConnection {
                         .map_err(|err| Error::new(ErrorKind::DecryptFailure, err.to_string()))?;
                     trace!(?tls_state);
 
-                    let mut reader = tls_connection.reader();
-                    let mut decrypted = vec![0; tls_state.plaintext_bytes_to_read()];
-                    let _plain_data_len = reader.read(&mut decrypted)?;
+                    let decrypted_data_len = plain_data.len();
+                    plain_data.resize(decrypted_data_len + tls_state.plaintext_bytes_to_read(), 0);
 
-                    plain_data.extend_from_slice(&decrypted);
+                    let mut reader = tls_connection.reader();
+                    let _plain_data_len = reader.read(&mut plain_data[decrypted_data_len..])?;
                 }
 
                 let TlsTrafficParts {
@@ -253,11 +277,11 @@ impl TlsConnection {
                 let decrypted = &mut application_data[0..plain_data.len()];
                 decrypted.copy_from_slice(&plain_data);
 
-                Ok(DecryptionResultBuffers {
+                Ok(DecryptionResult::Success(DecryptionResultBuffers {
                     header,
                     decrypted,
                     extra,
-                })
+                }))
             }
         }
     }

@@ -487,12 +487,14 @@ impl Sspi for Ntlm {
         ))
     }
 
-    fn change_password(&mut self, _: crate::builders::ChangePassword) -> crate::generator::GeneratorChangePassword {
+    fn change_password(
+        &mut self,
+        _: crate::builders::ChangePassword,
+    ) -> crate::Result<crate::generator::GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "NTLM does not support change pasword",
         ))
-        .into()
     }
 }
 

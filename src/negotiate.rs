@@ -369,10 +369,13 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn change_password<'a>(&'a mut self, change_password: builders::ChangePassword<'a>) -> GeneratorChangePassword {
-        GeneratorChangePassword::new(move |mut yield_point| async move {
+    fn change_password<'a>(
+        &'a mut self,
+        change_password: builders::ChangePassword<'a>,
+    ) -> Result<GeneratorChangePassword> {
+        Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password(&mut yield_point, change_password).await
-        })
+        }))
     }
 }
 

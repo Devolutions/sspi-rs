@@ -247,19 +247,19 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 /// If the provided buffers do not contain the [SecurityBufferType::Data] buffer,
 /// then this function will return an error.
 pub fn save_decrypted_data(decrypted: &[u8], buffers: &mut [DecryptBuffer]) -> Result<()> {
-    let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+    let mut data_buffer = DecryptBuffer::take_buf_data_mut(buffers, SecurityBufferType::Data)?;
 
-    if data_buffer.buffer.len() < decrypted.len() {
+    if data_buffer.len() < decrypted.len() {
         return Err(Error::new(
             ErrorKind::DecryptFailure,
             "Decrypted data can not be larger then encrypted one.",
         ));
     }
 
-    let mut data = std::mem::take(&mut data_buffer.buffer);
-    data = &mut data[0..decrypted.len()];
-    data.copy_from_slice(decrypted);
-    data_buffer.buffer = data;
+    data_buffer = &mut data_buffer[0..decrypted.len()];
+    data_buffer.copy_from_slice(decrypted);
+
+    DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?.set_data(data_buffer)?;
 
     Ok(())
 }
@@ -268,15 +268,14 @@ pub fn save_decrypted_data(decrypted: &[u8], buffers: &mut [DecryptBuffer]) -> R
 ///
 /// Data to decrypt is `Token`/`Stream` buffers + `Data` buffer concatenated together.
 pub fn extract_encrypted_data(buffers: &[DecryptBuffer]) -> Result<Vec<u8>> {
-    let mut encrypted = if let Ok(buffer) = DecryptBuffer::find_buffer(buffers, SecurityBufferType::Token) {
+    let mut encrypted = if let Ok(buffer) = DecryptBuffer::buf_data(buffers, SecurityBufferType::Token) {
         buffer
     } else {
-        DecryptBuffer::find_buffer(buffers, SecurityBufferType::Stream)?
+        DecryptBuffer::buf_data(buffers, SecurityBufferType::Stream)?
     }
-    .buffer
     .to_vec();
 
-    encrypted.extend_from_slice(DecryptBuffer::find_buffer(buffers, SecurityBufferType::Data)?.buffer);
+    encrypted.extend_from_slice(DecryptBuffer::buf_data(buffers, SecurityBufferType::Data)?);
 
     Ok(encrypted)
 }

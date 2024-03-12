@@ -332,7 +332,7 @@ pub unsafe extern "system" fn DecryptMessage(
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
-        let mut message = p_sec_buffers_to_decrypt_buffers(raw_buffers);
+        let mut message = try_execute!(p_sec_buffers_to_decrypt_buffers(raw_buffers));
 
         let (decryption_flags, result_status) =
             match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
@@ -340,7 +340,7 @@ pub unsafe extern "system" fn DecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
-        copy_decrypted_buffers((*p_message).p_buffers, &message);
+        try_execute!(copy_decrypted_buffers((*p_message).p_buffers, message));
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
             *pf_qop = decryption_flags.bits().try_into().unwrap();
@@ -352,34 +352,69 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
+/// Creates a vector of [DecryptBuffer]s from the input C buffers.
+///
+/// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
+/// It's because this function creates exclusive (mutable) Rust references to the input buffers.
 #[allow(clippy::useless_conversion)]
-unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> Vec<DecryptBuffer> {
-    raw_buffers
-        .iter()
-        .map(|raw_buffer| DecryptBuffer {
-            buffer: from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer as usize),
-            buffer_type: SecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<DecryptBuffer>> {
+    let mut buffers = Vec::with_capacity(raw_buffers.len());
+
+    for raw_buffer in raw_buffers {
+        let buf = DecryptBuffer::with_security_buffer_type(
+            SecurityBufferType::from_u32(raw_buffer.buffer_type).ok_or_else(|| {
+                sspi::Error::new(
+                    ErrorKind::InternalError,
+                    format!("u32({}) to SecurityBufferType conversion error", raw_buffer.buffer_type),
+                )
+            })?,
+        )?;
+
+        buffers.push(if let DecryptBuffer::Missing(_) = buf {
+            // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
+            // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
+            DecryptBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
+        } else {
+            // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
+            buf.with_data(unsafe {
+                from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?)
+            })?
         })
-        .collect()
+    }
+
+    Ok(buffers)
 }
 
-unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: &[DecryptBuffer]) {
-    let to_buffers = from_raw_parts_mut(to_buffers, from_buffers.len());
+/// Copies Rust-security-buffers into C-security-buffers.
+///
+/// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
+/// not be used after the data is copied into C-buffers.
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<DecryptBuffer>) -> sspi::Result<()> {
+    // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
+    let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
-    let mut buff = to_buffers[0].pv_buffer;
+    for (to_buffer, mut from_buffer) in to_buffers.iter_mut().zip(from_buffers.into_iter()) {
+        let from_buffer_len = from_buffer.buf_len();
 
-    for i in 0..from_buffers.len() {
-        let from_buffer = from_buffers.get(i).unwrap();
-        let from_buffer_len = from_buffer.buffer.len();
-        let to_buffer = to_buffers.get_mut(i).unwrap();
+        to_buffer.buffer_type = from_buffer.security_buffer_type().to_u32().ok_or_else(|| {
+            sspi::Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "SecurityBufferType({:?}) to u32 conversion error",
+                    from_buffer.security_buffer_type()
+                ),
+            )
+        })?;
+        to_buffer.cb_buffer = from_buffer_len.try_into()?;
 
-        to_buffer.pv_buffer = buff;
-        to_buffer.buffer_type = from_buffer.buffer_type.to_u32().unwrap();
-        to_buffer.cb_buffer = from_buffer_len.try_into().unwrap();
-
-        from_raw_parts_mut(buff as *mut _, from_buffer_len).copy_from_slice(from_buffer.buffer);
-        buff = buff.add(from_buffer_len);
+        if !matches!(from_buffer, DecryptBuffer::Missing(_)) {
+            // We don't need to copy the actual content of the buffer because [from_buffer] is created
+            // from the C-input-buffer and all decryption is performed in-place.
+            to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
+        }
     }
+
+    Ok(())
 }
 
 pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;

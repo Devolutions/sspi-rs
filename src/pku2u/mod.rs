@@ -334,12 +334,11 @@ impl Sspi for Pku2u {
         ))
     }
 
-    fn change_password(&mut self, _: ChangePassword) -> crate::generator::GeneratorChangePassword {
+    fn change_password(&mut self, _: ChangePassword) -> Result<crate::generator::GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Pku2u does not support change pasword",
         ))
-        .into()
     }
 }
 

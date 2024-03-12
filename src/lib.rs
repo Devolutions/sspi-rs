@@ -69,6 +69,7 @@ mod ber;
 #[cfg(feature = "scard")]
 pub mod cert_utils;
 mod crypto;
+mod decrypt_buffer;
 mod dns;
 mod kdc;
 mod krb;
@@ -89,6 +90,7 @@ use std::{error, fmt, io, result, str, string};
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
+pub use decrypt_buffer::DecryptBuffer;
 use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
@@ -687,7 +689,7 @@ where
     /// # MSDN
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword;
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword>;
 }
 
 /// Protocol used to establish connection.
@@ -1110,73 +1112,6 @@ impl SecurityBuffer {
     }
 }
 
-/// A special security buffer type is used for the data decryption. Basically, it's almost the same
-/// as [SecurityBuffer] but for decryption.
-///
-/// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
-/// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
-///
-/// So, the already defined [SecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
-/// We use reference in the [DecryptionBuffer] structure to avoid data cloning as much as possible.
-/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a CREDSSP security package.
-#[derive(Default)]
-pub struct DecryptBuffer<'data> {
-    /// Buffer that contains part of the data to be decrypted.
-    pub buffer: &'data mut [u8],
-    /// Buffer type.
-    pub buffer_type: SecurityBufferType,
-}
-
-impl<'data> DecryptBuffer<'data> {
-    /// Creates a new [DecryptBuffer] based on the input parameters.
-    pub fn new(buffer: &'data mut [u8], buffer_type: SecurityBufferType) -> Self {
-        Self { buffer, buffer_type }
-    }
-
-    /// Returns the immutable reference to the [DecryptBuffer] with specified buffer type.
-    ///
-    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
-    pub fn find_buffer<'a>(
-        buffers: &'a [DecryptBuffer<'data>],
-        buffer_type: SecurityBufferType,
-    ) -> Result<&'a DecryptBuffer<'data>> {
-        buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                format!("No buffer was provided with type {:?}", buffer_type),
-            )
-        })
-    }
-
-    /// Returns the mutable reference to the [DecryptBuffer] with specified buffer type.
-    ///
-    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
-    pub fn find_buffer_mut<'a>(
-        buffers: &'a mut [DecryptBuffer<'data>],
-        buffer_type: SecurityBufferType,
-    ) -> Result<&'a mut DecryptBuffer<'data>> {
-        buffers
-            .iter_mut()
-            .find(|b| b.buffer_type == buffer_type)
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
-                )
-            })
-    }
-}
-
-impl fmt::Debug for DecryptBuffer<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DecryptBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
-        self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
-        write!(f, " }}")?;
-
-        Ok(())
-    }
-}
-
 /// Bit flags that indicate the type of buffer.
 ///
 /// # MSDN
@@ -1547,6 +1482,8 @@ pub struct ContextNames {
 }
 
 /// The kind of an SSPI related error. Enables to specify an error based on its type.
+///
+/// [SSPI Status Codes](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-status-codes).
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
 pub enum ErrorKind {
@@ -1818,6 +1755,18 @@ impl From<Error> for io::Error {
             io::ErrorKind::Other,
             format!("{:?}: {}", err.error_type, err.description),
         )
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(_: std::num::TryFromIntError) -> Self {
+        Self::new(ErrorKind::InternalError, "Integers conversion error")
+    }
+}
+
+impl<T> From<std::sync::PoisonError<T>> for Error {
+    fn from(_: std::sync::PoisonError<T>) -> Self {
+        Self::new(ErrorKind::InternalError, "Can not lock SspiHandle mutex")
     }
 }
 

@@ -40,7 +40,7 @@ use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
-use super::utils::transform_credentials_handle;
+use super::utils::{hostname, transform_credentials_handle};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -84,11 +84,15 @@ pub struct SecHandle {
 pub type PCredHandle = *mut SecHandle;
 pub type PCtxtHandle = *mut SecHandle;
 
+/// Synchronized version of the [SspiContext].
+///
+/// All functions are synchronized by wrapping [SspiContext] in [Mutex].
 pub struct SspiHandle {
     sspi_context: Mutex<SspiContext>,
 }
 
 impl SspiHandle {
+    /// Creates a new [SspiHandle] based on the provided [SspiContext].
     pub fn new(sspi_context: SspiContext) -> Self {
         Self {
             sspi_context: Mutex::new(sspi_context),
@@ -120,13 +124,13 @@ impl SspiImpl for SspiHandle {
         &mut self,
         builder: sspi::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<sspi::AcceptSecurityContextResult> {
-        self.sspi_context.lock().unwrap().accept_security_context_impl(builder)
+        self.sspi_context.lock()?.accept_security_context_impl(builder)
     }
 }
 
 impl Sspi for SspiHandle {
     fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
-        self.sspi_context.lock().unwrap().complete_auth_token(token)
+        self.sspi_context.lock()?.complete_auth_token(token)
     }
 
     fn encrypt_message(
@@ -136,8 +140,7 @@ impl Sspi for SspiHandle {
         sequence_number: u32,
     ) -> Result<sspi::SecurityStatus> {
         self.sspi_context
-            .lock()
-            .unwrap()
+            .lock()?
             .encrypt_message(flags, message, sequence_number)
     }
 
@@ -146,50 +149,47 @@ impl Sspi for SspiHandle {
         message: &mut [sspi::DecryptBuffer],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
-        self.sspi_context
-            .lock()
-            .unwrap()
-            .decrypt_message(message, sequence_number)
+        self.sspi_context.lock()?.decrypt_message(message, sequence_number)
     }
 
     fn query_context_sizes(&mut self) -> Result<sspi::ContextSizes> {
-        self.sspi_context.lock().unwrap().query_context_sizes()
+        self.sspi_context.lock()?.query_context_sizes()
     }
 
     fn query_context_names(&mut self) -> Result<sspi::ContextNames> {
-        self.sspi_context.lock().unwrap().query_context_names()
+        self.sspi_context.lock()?.query_context_names()
     }
 
     fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
-        self.sspi_context.lock().unwrap().query_context_stream_sizes()
+        self.sspi_context.lock()?.query_context_stream_sizes()
     }
 
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
-        self.sspi_context.lock().unwrap().query_context_package_info()
+        self.sspi_context.lock()?.query_context_package_info()
     }
 
     fn query_context_cert_trust_status(&mut self) -> Result<sspi::CertTrustStatus> {
-        self.sspi_context.lock().unwrap().query_context_cert_trust_status()
+        self.sspi_context.lock()?.query_context_cert_trust_status()
     }
 
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
-        self.sspi_context.lock().unwrap().query_context_remote_cert()
+        self.sspi_context.lock()?.query_context_remote_cert()
     }
 
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
-        self.sspi_context.lock().unwrap().query_context_negotiation_package()
+        self.sspi_context.lock()?.query_context_negotiation_package()
     }
 
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
-        self.sspi_context.lock().unwrap().query_context_connection_info()
+        self.sspi_context.lock()?.query_context_connection_info()
     }
 
     fn change_password<'a>(
         &'a mut self,
         change_password: sspi::builders::ChangePassword<'a>,
-    ) -> sspi::generator::GeneratorChangePassword {
-        let mut context = self.sspi_context.lock().unwrap();
-        context.change_password_sync(change_password).into()
+    ) -> Result<sspi::generator::GeneratorChangePassword> {
+        let mut context = self.sspi_context.lock()?;
+        Ok(context.change_password_sync(change_password).into())
     }
 }
 
@@ -200,11 +200,7 @@ pub struct CredentialsHandle {
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
-    let client_computer_name = if let Some(hostname) = attributes.workstation.clone() {
-        hostname
-    } else {
-        whoami::fallible::hostname()?
-    };
+    let client_computer_name = hostname(attributes.workstation.clone())?;
 
     if let Some(kdc_url) = attributes.kdc_url() {
         let kerberos_config = KerberosConfig::new(&kdc_url, client_computer_name.clone());
@@ -259,15 +255,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 ));
                 #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
-                    whoami::fallible::hostname()?,
+                    hostname(None)?,
                 )?)?)
             }
             kerberos::PKG_NAME => {
-                let client_computer_name = if let Some(hostname) = attributes.workstation.clone() {
-                    hostname
-                } else {
-                    whoami::fallible::hostname()?
-                };
+                let client_computer_name = hostname(attributes.workstation.clone())?;
 
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
@@ -283,11 +275,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => {
-                let hostname = if let Some(hostname) = attributes.workstation.clone() {
-                    hostname
-                } else {
-                    whoami::fallible::hostname()?
-                };
+                let hostname = hostname(attributes.workstation.clone())?;
 
                 SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname)))
             }
@@ -1072,9 +1060,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             .build()
             .expect("change password builder should never fail");
 
-        let hostname = try_execute!({
-            whoami::fallible::hostname().map_err(|err| Error::from(err))
-        });
+        let hostname = try_execute!(hostname(None));
 
         let mut sspi_context = match security_package_name {
             negotiate::PKG_NAME => {
@@ -1100,7 +1086,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             }
         };
 
-        let result_status = sspi_context.change_password(change_password).resolve_with_default_network_client();
+        let result_status = try_execute!(sspi_context.change_password(change_password)).resolve_with_default_network_client();
 
         copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false);
 

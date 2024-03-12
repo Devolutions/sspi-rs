@@ -749,6 +749,7 @@ impl<'a> SspiContext {
         }
     }
 
+    #[cfg(feature = "network_client")]
     pub fn initialize_security_context_sync(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<<Self as SspiImpl>::CredentialsHandle>,
@@ -759,6 +760,7 @@ impl<'a> SspiContext {
         .resolve_with_default_network_client()
     }
 
+    #[cfg(feature = "network_client")]
     pub fn change_password_sync(&mut self, builder: ChangePassword) -> crate::Result<()> {
         Generator::new(move |mut yield_point| async move { self.change_password_impl(&mut yield_point, builder).await })
             .resolve_with_default_network_client()
@@ -943,10 +945,13 @@ impl Sspi for SspiContext {
         }
     }
 
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword {
-        GeneratorChangePassword::new(move |mut yield_point| async move {
+    fn change_password<'a>(
+        &'a mut self,
+        change_password: ChangePassword<'a>,
+    ) -> crate::Result<GeneratorChangePassword> {
+        Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password_impl(&mut yield_point, change_password).await
-        })
+        }))
     }
 }
 
@@ -1058,8 +1063,8 @@ impl CredSspContext {
                 public_key,
                 encrypted_public_key,
                 hash_magic,
-                &client_nonce.ok_or(crate::Error::new(
-                    crate::ErrorKind::InvalidToken,
+                &client_nonce.ok_or(Error::new(
+                    ErrorKind::InvalidToken,
                     String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
                 ))?,
             )
@@ -1178,18 +1183,13 @@ impl CredSspContext {
     fn decrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
         let mut input = input.to_vec();
         let (signature, data) = input.split_at_mut(SIGNATURE_SIZE);
-        let mut buffers = vec![
-            DecryptBuffer::new(data, SecurityBufferType::Data),
-            DecryptBuffer::new(signature, SecurityBufferType::Token),
-        ];
+        let mut buffers = vec![DecryptBuffer::Data(data), DecryptBuffer::Token(signature)];
 
         let recv_seq_num = self.recv_seq_num;
 
         self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 
-        let output = DecryptBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
-            .buffer
-            .to_vec();
+        let output = DecryptBuffer::buf_data(&buffers, SecurityBufferType::Data)?.to_vec();
 
         self.recv_seq_num += 1;
 
