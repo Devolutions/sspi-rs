@@ -77,7 +77,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .acquire_credentials_handle()
         .with_credential_use(CredentialUse::Inbound)
         .with_auth_data(identity)
-        .execute()?;
+        .execute(ntlm)?;
 
     let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
@@ -92,7 +92,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut input_buffer)
             .with_output(&mut output_buffer)
-            .execute()?;
+            .execute(ntlm)?;
 
         if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
             println!("Completing the token...");

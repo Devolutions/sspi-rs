@@ -8,7 +8,6 @@ use std::io;
 use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, SecurityBuffer, SecurityBufferType,
     SecurityStatus, Sspi, SspiImpl, Username,
@@ -70,19 +69,19 @@ fn main() -> Result<(), io::Error> {
 
     Ok(())
 }
-//
 
 fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut TcpStream) -> Result<(), io::Error> {
     let mut acq_cred_result = ntlm
         .acquire_credentials_handle()
         .with_credential_use(CredentialUse::Outbound)
         .with_auth_data(identity)
-        .execute()?;
+        .execute(ntlm)?;
 
     let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let username = whoami::username();
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = ntlm
+        .initialize_security_context()
         .with_credentials_handle(&mut acq_cred_result.credentials_handle)
         .with_context_requirements(ClientRequestFlags::CONFIDENTIALITY | ClientRequestFlags::ALLOCATE_MEMORY)
         .with_target_data_representation(DataRepresentation::Native)
@@ -90,7 +89,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_output(&mut output_buffer);
 
     let _result = ntlm
-        .initialize_security_context_impl(&mut builder)
+        .initialize_security_context_impl(&mut builder)?
         .resolve_to_result()?;
 
     write_message(&mut stream, &output_buffer[0].buffer)?;
@@ -102,7 +101,8 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
 
         read_message(&mut stream, &mut input_buffer[0].buffer)?;
 
-        let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+        let mut builder = ntlm
+            .initialize_security_context()
             .with_credentials_handle(&mut acq_cred_result.credentials_handle)
             .with_context_requirements(ClientRequestFlags::CONFIDENTIALITY | ClientRequestFlags::ALLOCATE_MEMORY)
             .with_target_data_representation(DataRepresentation::Native)
@@ -111,7 +111,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
             .with_output(&mut output_buffer);
 
         let result = ntlm
-            .initialize_security_context_impl(&mut builder)
+            .initialize_security_context_impl(&mut builder)?
             .resolve_to_result()?;
 
         if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
