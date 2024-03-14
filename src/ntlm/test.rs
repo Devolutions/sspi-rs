@@ -214,7 +214,8 @@ fn initialize_security_context_wrong_state_negotiate() {
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -232,7 +233,8 @@ fn initialize_security_context_wrong_state_authenticate() {
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -250,7 +252,8 @@ fn initialize_security_context_wrong_state_completion() {
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -268,7 +271,8 @@ fn initialize_security_context_wrong_state_final() {
     let mut output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -287,7 +291,8 @@ fn initialize_security_context_writes_negotiate_message() {
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -320,7 +325,8 @@ fn initialize_security_context_reads_challenge_message() {
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -350,7 +356,8 @@ fn initialize_security_context_writes_authenticate_message() {
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -373,7 +380,8 @@ fn initialize_security_context_fails_on_empty_output_on_challenge_state() {
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
-    let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = context
+        .initialize_security_context()
         .with_credentials_handle(&mut credentials)
         .with_context_requirements(ClientRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
@@ -395,7 +403,7 @@ fn accept_security_context_wrong_state_negotiate() {
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .execute()
+        .execute(&mut context)
         .is_err());
     assert_eq!(context.state, NtlmState::Negotiate);
 }
@@ -413,7 +421,7 @@ fn accept_security_context_wrong_state_challenge() {
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .execute()
+        .execute(&mut context)
         .is_err());
     assert_eq!(context.state, NtlmState::Challenge);
 }
@@ -431,7 +439,7 @@ fn accept_security_context_wrong_state_completion() {
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .execute()
+        .execute(&mut context)
         .is_err());
     assert_eq!(context.state, NtlmState::Completion);
 }
@@ -449,7 +457,7 @@ fn accept_security_context_wrong_state_final() {
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .execute()
+        .execute(&mut context)
         .is_err());
     assert_eq!(context.state, NtlmState::Final);
 }
@@ -475,7 +483,7 @@ fn accept_security_context_reads_negotiate_message() {
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
         .with_input(&mut [input])
-        .execute()
+        .execute(&mut context)
         .unwrap();
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
     assert_ne!(context.state, NtlmState::Challenge);
@@ -501,7 +509,7 @@ fn accept_security_context_writes_challenge_message() {
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
         .with_input(&mut [input])
-        .execute()
+        .execute(&mut context)
         .unwrap();
 
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
@@ -555,7 +563,7 @@ fn accept_security_context_reads_authenticate() {
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
         .with_input(&mut [input])
-        .execute()
+        .execute(&mut context)
         .unwrap();
 
     assert_eq!(result.status, SecurityStatus::CompleteNeeded);
@@ -576,7 +584,7 @@ fn accept_security_context_fails_on_empty_output_on_negotiate_state() {
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .execute()
+        .execute(&mut context)
         .is_err());
 }
 

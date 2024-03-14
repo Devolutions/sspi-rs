@@ -6,7 +6,6 @@ use reqwest::header::{
     WWW_AUTHENTICATE,
 };
 use reqwest::StatusCode;
-use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
     InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus,
@@ -68,7 +67,7 @@ pub(crate) fn get_cred_handle(
         .acquire_credentials_handle()
         .with_credential_use(sspi::CredentialUse::Outbound)
         .with_auth_data(&identity.into())
-        .execute()
+        .execute(kerberos)
         .expect("AcquireCredentialsHandle resulted in error");
     acq_creds_handle_result
 }
@@ -121,12 +120,13 @@ pub(crate) fn send_http(
 fn step_helper(
     kerberos: &mut Kerberos,
     cred_handle: &mut <Kerberos as SspiImpl>::CredentialsHandle,
-    input_buffer: &mut Vec<sspi::SecurityBuffer>,
-    output_buffer: &mut Vec<sspi::SecurityBuffer>,
+    input_buffer: &mut [SecurityBuffer],
+    output_buffer: &mut [SecurityBuffer],
     hostname: &str,
 ) -> Result<InitializeSecurityContextResult, Box<dyn std::error::Error>> {
     let target_name = format!("HTTP/{}", hostname);
-    let mut builder = EmptyInitializeSecurityContext::<<Kerberos as SspiImpl>::CredentialsHandle>::new()
+    let mut builder = kerberos
+        .initialize_security_context()
         .with_credentials_handle(cred_handle)
         .with_context_requirements(ClientRequestFlags::MUTUAL_AUTH)
         .with_target_data_representation(DataRepresentation::Native)
@@ -135,8 +135,9 @@ fn step_helper(
         .with_output(output_buffer);
 
     let result = kerberos
-        .initialize_security_context_impl(&mut builder)
+        .initialize_security_context_impl(&mut builder)?
         .resolve_with_default_network_client()?;
+
     Ok(result)
 }
 
@@ -158,11 +159,10 @@ pub fn step(
     ) {
         Ok(result) => {
             let output_buffer = secure_output_buffer[0].to_owned();
-            let res = (
+            (
                 base64::engine::general_purpose::STANDARD.encode(output_buffer.buffer),
                 result.status,
-            );
-            res
+            )
         }
         Err(_) => {
             panic!("error stepping");

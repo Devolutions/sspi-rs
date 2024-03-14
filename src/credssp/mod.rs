@@ -20,7 +20,7 @@ use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
 use self::sspi_cred_ssp::SspiCredSsp;
-use crate::builders::{ChangePassword, EmptyInitializeSecurityContext};
+use crate::builders::{AcquireCredentialsHandle, ChangePassword, WithoutCredentialUse};
 use crate::crypto::compute_sha256;
 use crate::generator::{
     Generator, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal,
@@ -264,15 +264,17 @@ impl CredSspClient {
                 ))),
                 ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
             };
-            let AcquireCredentialsHandleResult { credentials_handle, .. } = self
+
+            let sspi_context = &mut self
                 .context
                 .as_mut()
-                .unwrap()
-                .sspi_context
-                .acquire_credentials_handle()
+                .expect("Should not panic because the CredSSP context is set before")
+                .sspi_context;
+            let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+            let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
                 .with_auth_data(&self.credentials)
                 .with_credential_use(CredentialUse::Outbound)
-                .execute()?;
+                .execute(sspi_context)?;
             self.credentials_handle = credentials_handle;
         }
 
@@ -287,8 +289,13 @@ impl CredSspClient {
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
-                let cred_ssp_context = self.context.as_mut().unwrap();
-                let mut builder = EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
+                let cred_ssp_context = self
+                    .context
+                    .as_mut()
+                    .expect("Should not panic because the CredSSP context is set before");
+                let mut builder = cred_ssp_context
+                    .sspi_context
+                    .initialize_security_context()
                     .with_credentials_handle(&mut credentials_handle)
                     .with_context_requirements(
                         ClientRequestFlags::MUTUAL_AUTH
@@ -314,12 +321,17 @@ impl CredSspClient {
                         self.context.as_ref().unwrap().peer_version.expect(
                             "An encrypt public key client function cannot be fired without any incoming TSRequest",
                         );
-                    ts_request.pub_key_auth = Some(self.context.as_mut().unwrap().encrypt_public_key(
-                        self.public_key.as_ref(),
-                        EndpointType::Client,
-                        &Some(self.client_nonce),
-                        peer_version,
-                    )?);
+                    ts_request.pub_key_auth = Some(
+                        self.context
+                            .as_mut()
+                            .expect("Should not panic because the CredSSP context is set before")
+                            .encrypt_public_key(
+                                self.public_key.as_ref(),
+                                EndpointType::Client,
+                                &Some(self.client_nonce),
+                                peer_version,
+                            )?,
+                    );
                     ts_request.client_nonce = Some(self.client_nonce);
 
                     if let Some(nego_tokens) = &ts_request.nego_tokens {
@@ -345,7 +357,7 @@ impl CredSspClient {
                 let peer_version = self
                     .context
                     .as_ref()
-                    .unwrap()
+                    .expect("Should not panic because the CredSSP context is set before")
                     .peer_version
                     .expect("An decrypt public key client function cannot be fired without any incoming TSRequest");
                 self.context.as_mut().unwrap().decrypt_public_key(
@@ -451,19 +463,24 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 )))),
             };
             let AcquireCredentialsHandleResult { credentials_handle, .. } = try_cred_ssp_server!(
-                self.context
-                    .as_mut()
-                    .unwrap()
-                    .sspi_context
-                    .acquire_credentials_handle()
+                AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
                     .with_credential_use(CredentialUse::Inbound)
-                    .execute(),
+                    .execute(
+                        &mut self
+                            .context
+                            .as_mut()
+                            .expect("Should not panic because the CredSSP context is set before")
+                            .sspi_context
+                    ),
                 ts_request
             );
             self.credentials_handle = credentials_handle;
         }
         try_cred_ssp_server!(
-            self.context.as_mut().unwrap().check_peer_version(ts_request.version),
+            self.context
+                .as_mut()
+                .expect("Should not panic because the CredSSP context is set before")
+                .check_peer_version(ts_request.version),
             ts_request
         );
 
@@ -502,18 +519,16 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
+                let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
                 match try_cred_ssp_server!(
-                    self.context
-                        .as_mut()
-                        .unwrap()
-                        .sspi_context
+                    sspi_context
                         .accept_security_context()
                         .with_credentials_handle(&mut credentials_handle)
                         .with_context_requirements(ServerRequestFlags::empty())
                         .with_target_data_representation(DataRepresentation::Native)
                         .with_input(&mut [input_token])
                         .with_output(&mut output_token)
-                        .execute(),
+                        .execute(sspi_context),
                     ts_request
                 ) {
                     AcceptSecurityContextResult { status, .. } if status == SecurityStatus::ContinueNeeded => {
@@ -626,9 +641,9 @@ impl SspiImpl for SspiContext {
     type AuthenticationData = Credentials;
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         Ok(match self {
             SspiContext::Ntlm(ntlm) => {
@@ -641,14 +656,14 @@ impl SspiImpl for SspiContext {
                     ));
                 };
                 builder
-                    .full_transform(ntlm, Some(auth_identity))
-                    .execute()?
+                    .full_transform(Some(auth_identity))
+                    .execute(ntlm)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
                     })
             }
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute()?,
-            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute()?,
+            SspiContext::Kerberos(kerberos) => builder.execute(kerberos)?,
+            SspiContext::Negotiate(negotiate) => builder.execute(negotiate)?,
             SspiContext::Pku2u(pku2u) => {
                 let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
                     identity
@@ -659,21 +674,21 @@ impl SspiImpl for SspiContext {
                     ));
                 };
                 builder
-                    .full_transform(pku2u, Some(auth_identity))
-                    .execute()?
+                    .full_transform(Some(auth_identity))
+                    .execute(pku2u)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
                     })
             }
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute()?,
+            SspiContext::CredSsp(credssp) => builder.execute(credssp)?,
         })
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
@@ -686,10 +701,10 @@ impl SspiImpl for SspiContext {
                             "Auth identity is not provided for the Ntlm",
                         ));
                     };
-                builder.full_transform(ntlm, Some(&mut Some(auth_identity))).execute()
+                builder.full_transform(Some(&mut Some(auth_identity))).execute(ntlm)
             }
-            SspiContext::Kerberos(kerberos) => builder.transform(kerberos).execute(),
-            SspiContext::Negotiate(negotiate) => builder.transform(negotiate).execute(),
+            SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos),
+            SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate),
             SspiContext::Pku2u(pku2u) => {
                 let auth_identity =
                     if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
@@ -700,27 +715,27 @@ impl SspiImpl for SspiContext {
                             "Auth identity is not provided for the Pku2u",
                         ));
                     };
-                builder.full_transform(pku2u, Some(&mut Some(auth_identity))).execute()
+                builder.full_transform(Some(&mut Some(auth_identity))).execute(pku2u)
             }
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform(credssp).execute(),
+            SspiContext::CredSsp(credssp) => builder.transform().execute(credssp),
         }
     }
 
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext {
-        Generator::new(move |mut yield_point| async move {
+    ) -> crate::Result<GeneratorInitSecurityContext> {
+        Ok(Generator::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
-        })
+        }))
     }
 }
 
 impl<'a> SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
     async fn change_password_impl(
-        &'a mut self,
+        &mut self,
         yield_point: &mut YieldPointLocal,
         change_password: ChangePassword<'a>,
     ) -> crate::Result<()> {
@@ -732,6 +747,23 @@ impl<'a> SspiContext {
                 "Change password not supported for this protocol",
             )),
         }
+    }
+
+    #[cfg(feature = "network_client")]
+    pub fn initialize_security_context_sync(
+        &mut self,
+        builder: &mut FilledInitializeSecurityContext<<Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<InitializeSecurityContextResult> {
+        Generator::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+        .resolve_with_default_network_client()
+    }
+
+    #[cfg(feature = "network_client")]
+    pub fn change_password_sync(&mut self, builder: ChangePassword) -> crate::Result<()> {
+        Generator::new(move |mut yield_point| async move { self.change_password_impl(&mut yield_point, builder).await })
+            .resolve_with_default_network_client()
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
@@ -913,10 +945,13 @@ impl Sspi for SspiContext {
         }
     }
 
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword {
-        GeneratorChangePassword::new(move |mut yield_point| async move {
+    fn change_password<'a>(
+        &'a mut self,
+        change_password: ChangePassword<'a>,
+    ) -> crate::Result<GeneratorChangePassword> {
+        Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password_impl(&mut yield_point, change_password).await
-        })
+        }))
     }
 }
 

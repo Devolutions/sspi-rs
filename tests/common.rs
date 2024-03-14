@@ -1,7 +1,6 @@
 use std::io;
 
 use lazy_static::lazy_static;
-use sspi::builders::EmptyInitializeSecurityContext;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
     DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi,
@@ -52,12 +51,12 @@ where
             .acquire_credentials_handle()
             .with_credential_use(CredentialUse::Outbound)
             .with_auth_data(auth_data)
-            .execute()?
+            .execute(client)?
     } else {
         client
             .acquire_credentials_handle()
             .with_credential_use(CredentialUse::Outbound)
-            .execute()?
+            .execute(client)?
     };
 
     if let Some(expiry) = expiry {
@@ -78,7 +77,7 @@ where
     } = server
         .acquire_credentials_handle()
         .with_credential_use(CredentialUse::Inbound)
-        .execute()?;
+        .execute(server)?;
     if let Some(expiry) = expiry {
         let now = OffsetDateTime::now_utc();
         assert!(now < expiry);
@@ -104,7 +103,8 @@ where
     loop {
         let mut client_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
-        let mut builder = EmptyInitializeSecurityContext::<ClientSspi::CredentialsHandle>::new()
+        let mut builder = client
+            .initialize_security_context()
             .with_credentials_handle(&mut client_creds_handle)
             .with_context_requirements(ClientRequestFlags::ALLOCATE_MEMORY | ClientRequestFlags::CONFIDENTIALITY)
             .with_target_data_representation(DataRepresentation::Native)
@@ -112,7 +112,7 @@ where
             .with_output(&mut client_output);
 
         let client_result = client
-            .initialize_security_context_impl(&mut builder)
+            .initialize_security_context_impl(&mut builder)?
             .resolve_to_result()?;
         client_status = client_result.status;
 
@@ -129,7 +129,7 @@ where
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut client_output)
             .with_output(&mut server_output)
-            .execute()?;
+            .execute(server)?;
         server_status = server_result.status;
 
         if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {

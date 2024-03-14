@@ -27,7 +27,7 @@
 //!     .acquire_credentials_handle()
 //!     .with_credential_use(sspi::CredentialUse::Outbound)
 //!     .with_auth_data(&identity)
-//!     .execute()
+//!     .execute(&mut ntlm)
 //!     .expect("AcquireCredentialsHandle resulted in error");
 //!
 //! let mut output = vec![sspi::SecurityBuffer::new(
@@ -35,7 +35,7 @@
 //!     sspi::SecurityBufferType::Token,
 //! )];
 //!
-//! let mut builder = EmptyInitializeSecurityContext::<<Ntlm as SspiImpl>::CredentialsHandle>::new()
+//! let mut builder = ntlm.initialize_security_context()
 //!     .with_credentials_handle(&mut acq_creds_handle_result.credentials_handle)
 //!     .with_context_requirements(
 //!         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY
@@ -44,6 +44,8 @@
 //!     .with_output(&mut output);
 //!
 //! let result = ntlm.initialize_security_context_impl(&mut builder)
+//!     .expect("InitializeSecurityContext resulted in error")
+//!     .resolve_to_result()
 //!     .expect("InitializeSecurityContext resulted in error");
 //!
 //! println!("Initialized security context with result status: {:?}", result.status);
@@ -102,13 +104,11 @@ pub use utils::string_to_utf16;
 pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
-use self::builders::{
-    AcceptSecurityContext, AcquireCredentialsHandle, ChangePassword, EmptyAcceptSecurityContext,
-    EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext, FilledAcceptSecurityContext,
-    FilledAcquireCredentialsHandle, FilledInitializeSecurityContext, InitializeSecurityContext,
-};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
+};
+use self::builders::{
+    ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::KerberosConfig;
@@ -117,6 +117,10 @@ pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
+use crate::builders::{
+    EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
+    InitializeSecurityContext,
+};
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;
@@ -220,32 +224,32 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    ///
+    /// let mut ntlm = sspi::Ntlm::new();
+    ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
     ///     password: "password".to_string().into(),
     /// };
     ///
-    /// # #[allow(unused_variables)]
+    /// #[allow(unused_variables)]
     /// let result = ntlm
     ///     .acquire_credentials_handle()
     ///     .with_credential_use(sspi::CredentialUse::Outbound)
     ///     .with_auth_data(&identity)
-    ///     .execute()
+    ///     .execute(&mut ntlm)
     ///     .unwrap();
     /// ```
     ///
     /// # MSDN
     ///
     /// * [AcquireCredentialshandleW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
-    fn acquire_credentials_handle(
+    fn acquire_credentials_handle<'a>(
         &mut self,
-    ) -> EmptyAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData> {
-        AcquireCredentialsHandle::new(self)
+    ) -> EmptyAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData> {
+        EmptyAcquireCredentialsHandle::new()
     }
 
     /// Initiates the client side, outbound security context from a credential handle.
@@ -268,31 +272,31 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::new(&whoami::username(), Some(&whoami::hostname())).unwrap(),
-    /// #     password: String::from("password").into(),
-    /// # };
-    /// #
-    /// # let mut acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut credentials_handle = acq_cred_result.credentials_handle;
-    /// #
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut ntlm = sspi::Ntlm::new();
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::new(&whoami::username(), Some(&whoami::hostname())).unwrap(),
+    ///     password: String::from("password").into(),
+    /// };
+    ///
+    /// let mut acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut credentials_handle = acq_cred_result.credentials_handle;
+    ///
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
-    /// # #[allow(unused_variables)]
-    /// let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
+    /// #[allow(unused_variables)]
+    /// let mut builder = ntlm.initialize_security_context()
     ///     .with_credentials_handle(&mut credentials_handle)
     ///     .with_context_requirements(
     ///         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
@@ -300,13 +304,16 @@ where
     ///     .with_target_data_representation(sspi::DataRepresentation::Native)
     ///     .with_output(&mut output_buffer);
     ///
-    /// let result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
+    /// let result = ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
     /// ```
     ///
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context(&mut self) -> EmptyInitializeSecurityContext<'_, Self::CredentialsHandle> {
+    fn initialize_security_context<'a>(&mut self) -> EmptyInitializeSecurityContext<'a, Self::CredentialsHandle> {
         InitializeSecurityContext::new()
     }
 
@@ -329,51 +336,54 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut client_ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let mut client_acq_cred_result = client_ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    /// #     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
-    /// #     .with_context_requirements(
-    /// #         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    /// #     )
-    /// #     .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #     .with_target_name("user")
-    /// #     .with_output(&mut client_output_buffer);
-    /// #
-    /// # let _result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// #
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut client_ntlm = sspi::Ntlm::new();
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = client_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut client_ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let mut builder = client_ntlm.initialize_security_context()
+    ///     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///     .with_context_requirements(
+    ///         sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///     )
+    ///     .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///     .with_target_name("user")
+    ///     .with_output(&mut client_output_buffer);
+    ///
+    /// let _result = client_ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let mut server_acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut credentials_handle = server_acq_cred_result.credentials_handle;
     ///
-    /// # #[allow(unused_variables)]
+    /// let mut server_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut credentials_handle = server_acq_cred_result.credentials_handle;
+    ///
+    /// #[allow(unused_variables)]
     /// let result = ntlm
     ///     .accept_security_context()
     ///     .with_credentials_handle(&mut credentials_handle)
@@ -381,17 +391,15 @@ where
     ///     .with_target_data_representation(sspi::DataRepresentation::Native)
     ///     .with_input(&mut client_output_buffer)
     ///     .with_output(&mut output_buffer)
-    ///     .execute()
+    ///     .execute(&mut ntlm)
     ///     .unwrap();
     /// ```
     ///
     /// # MSDN
     ///
     /// * [AcceptSecurityContext function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
-    fn accept_security_context(
-        &mut self,
-    ) -> EmptyAcceptSecurityContext<'_, Self::AuthenticationData, Self::CredentialsHandle> {
-        AcceptSecurityContext::new(self)
+    fn accept_security_context<'a>(&mut self) -> EmptyAcceptSecurityContext<'a, Self::CredentialsHandle> {
+        EmptyAcceptSecurityContext::new()
     }
 
     /// Completes an authentication token. This function is used by protocols, such as DCE,
@@ -409,69 +417,72 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut client_ntlm = sspi::Ntlm::new();
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// # let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let mut client_acq_cred_result = client_ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut server_acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # loop {
-    /// #     client_output_buffer[0].buffer.clear();
-    /// #
-    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(
-    /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    /// #         )
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_target_name("user")
-    /// #         .with_input(&mut output_buffer)
-    /// #         .with_output(&mut client_output_buffer);
-    /// #
-    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// #
-    /// #     let server_result = ntlm
-    /// #         .accept_security_context()
-    /// #         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_input(&mut client_output_buffer)
-    /// #         .with_output(&mut output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
-    /// #
-    /// #     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
-    /// #         || server_result.status == sspi::SecurityStatus::CompleteNeeded
-    /// #     {
-    /// #         break;
-    /// #     }
-    /// # }
-    /// #
-    /// # #[allow(unused_variables)]
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut client_ntlm = sspi::Ntlm::new();
+    /// let mut ntlm = sspi::Ntlm::new();
+    ///
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = client_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut server_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// loop {
+    ///     client_output_buffer[0].buffer.clear();
+    ///
+    ///     let mut builder = client_ntlm.initialize_security_context()
+    ///         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(
+    ///             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///         )
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_target_name("user")
+    ///         .with_input(&mut output_buffer)
+    ///         .with_output(&mut client_output_buffer);
+    ///
+    ///     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
+    ///     let server_result = ntlm
+    ///         .accept_security_context()
+    ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_input(&mut client_output_buffer)
+    ///         .with_output(&mut output_buffer)
+    ///         .execute(&mut ntlm)
+    ///         .unwrap();
+    ///
+    ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
+    ///         || server_result.status == sspi::SecurityStatus::CompleteNeeded
+    ///     {
+    ///         break;
+    ///     }
+    /// }
+    ///
+    /// #[allow(unused_variables)]
     /// let result = ntlm
     ///     .complete_auth_token(&mut output_buffer)
     ///     .unwrap();
@@ -495,72 +506,75 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut client_ntlm = sspi::Ntlm::new();
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// # let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let mut client_acq_cred_result = client_ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut server_acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # loop {
-    /// #     client_output_buffer[0].buffer.clear();
-    /// #
-    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(
-    /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    /// #         )
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_target_name("user")
-    /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer);
-    /// #
-    /// #     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// #
-    /// #     let server_result = ntlm
-    /// #         .accept_security_context()
-    /// #         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_input(&mut client_output_buffer)
-    /// #         .with_output(&mut server_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
-    /// #
-    /// #     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
-    /// #         || server_result.status == sspi::SecurityStatus::CompleteNeeded
-    /// #     {
-    /// #         break;
-    /// #     }
-    /// # }
-    /// #
-    /// # let _result = ntlm
-    /// #     .complete_auth_token(&mut server_output_buffer)
-    /// #     .unwrap();
-    /// #
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut client_ntlm = sspi::Ntlm::new();
+    /// let mut ntlm = sspi::Ntlm::new();
+    ///
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = client_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut client_ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut server_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// loop {
+    ///     client_output_buffer[0].buffer.clear();
+    ///
+    ///     let mut builder = client_ntlm.initialize_security_context()
+    ///         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(
+    ///             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///         )
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_target_name("user")
+    ///         .with_input(&mut server_output_buffer)
+    ///         .with_output(&mut client_output_buffer);
+    ///
+    ///     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
+    ///     let server_result = ntlm
+    ///         .accept_security_context()
+    ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_input(&mut client_output_buffer)
+    ///         .with_output(&mut server_output_buffer)
+    ///         .execute(&mut ntlm)
+    ///         .unwrap();
+    ///
+    ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
+    ///         || server_result.status == sspi::SecurityStatus::CompleteNeeded
+    ///     {
+    ///         break;
+    ///     }
+    /// }
+    ///
+    /// let _result = ntlm
+    ///     .complete_auth_token(&mut server_output_buffer)
+    ///     .unwrap();
+    ///
     /// let mut msg_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
     ///     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
     ///
@@ -605,84 +619,87 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// # use sspi::builders::EmptyInitializeSecurityContext;
-    /// # use sspi::SspiImpl;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// # let mut server_ntlm = sspi::Ntlm::new();
-    /// #
-    /// # let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// # let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// #
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let mut client_acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Outbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # let mut server_acq_cred_result = server_ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute()
-    /// #     .unwrap();
-    /// #
-    /// # loop {
-    /// #     client_output_buffer[0].buffer.clear();
-    /// #
-    /// #     let mut builder = EmptyInitializeSecurityContext::<<sspi::Ntlm as SspiImpl>::CredentialsHandle>::new()
-    /// #         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(
-    /// #             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
-    /// #         )
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_target_name("user")
-    /// #         .with_input(&mut server_output_buffer)
-    /// #         .with_output(&mut client_output_buffer);
-    /// #
-    /// #     let _client_result = ntlm.initialize_security_context_impl(&mut builder).unwrap();
-    /// #
-    /// #     let server_result = server_ntlm
-    /// #         .accept_security_context()
-    /// #         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
-    /// #         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
-    /// #         .with_target_data_representation(sspi::DataRepresentation::Native)
-    /// #         .with_input(&mut client_output_buffer)
-    /// #         .with_output(&mut server_output_buffer)
-    /// #         .execute()
-    /// #         .unwrap();
-    /// #
-    /// #     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
-    /// #         || server_result.status == sspi::SecurityStatus::CompleteNeeded
-    /// #     {
-    /// #         break;
-    /// #     }
-    /// # }
-    /// #
-    /// # let _result = server_ntlm
-    /// #     .complete_auth_token(&mut server_output_buffer)
-    /// #     .unwrap();
-    /// #
-    /// # let mut msg = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
-    /// #     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
-    /// #
-    /// # let _result = server_ntlm
-    /// #     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
-    /// #
-    /// # let mut msg_buffer = vec![
-    /// #     sspi::SecurityBuffer::new(msg[0].buffer.clone(), sspi::SecurityBufferType::Token),
-    /// #     sspi::SecurityBuffer::new(msg[1].buffer.clone(), sspi::SecurityBufferType::Data),
-    /// # ];
-    /// #
-    /// # #[allow(unused_variables)]
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut ntlm = sspi::Ntlm::new();
+    /// let mut server_ntlm = sspi::Ntlm::new();
+    ///
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut server_acq_cred_result = server_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut server_ntlm)
+    ///     .unwrap();
+    ///
+    /// loop {
+    ///     client_output_buffer[0].buffer.clear();
+    ///
+    ///     let mut builder = ntlm.initialize_security_context()
+    ///         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(
+    ///             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///         )
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_target_name("user")
+    ///         .with_input(&mut server_output_buffer)
+    ///         .with_output(&mut client_output_buffer);
+    ///
+    ///     let _client_result = ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
+    ///     let server_result = server_ntlm
+    ///         .accept_security_context()
+    ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_input(&mut client_output_buffer)
+    ///         .with_output(&mut server_output_buffer)
+    ///         .execute(&mut server_ntlm)
+    ///         .unwrap();
+    ///
+    ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
+    ///         || server_result.status == sspi::SecurityStatus::CompleteNeeded
+    ///     {
+    ///         break;
+    ///     }
+    /// }
+    ///
+    /// let _result = server_ntlm
+    ///     .complete_auth_token(&mut server_output_buffer)
+    ///     .unwrap();
+    ///
+    /// let mut msg = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
+    ///     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
+    ///
+    /// let _result = server_ntlm
+    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
+    ///
+    /// let mut msg_buffer = vec![
+    ///     sspi::SecurityBuffer::new(msg[0].buffer.clone(), sspi::SecurityBufferType::Token),
+    ///     sspi::SecurityBuffer::new(msg[1].buffer.clone(), sspi::SecurityBufferType::Data),
+    /// ];
+    ///
+    /// #[allow(unused_variables)]
     /// let encryption_flags = ntlm
     ///     .decrypt_message(&mut msg_buffer, 0)
     ///     .unwrap();
@@ -705,8 +722,8 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # let mut ntlm = sspi::Ntlm::new();
+    /// use sspi::Sspi;
+    /// let mut ntlm = sspi::Ntlm::new();
     /// let sizes = ntlm.query_context_sizes().unwrap();
     /// println!("Max token: {}", sizes.max_token);
     /// println!("Max signature: {}", sizes.max_signature);
@@ -729,21 +746,21 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # use sspi::Username;
-    /// #
-    /// # let mut ntlm = sspi::Ntlm::new();
-    /// # let identity = sspi::AuthIdentity {
-    /// #     username: Username::parse("user").unwrap(),
-    /// #     password: "password".to_string().into(),
-    /// # };
-    /// #
-    /// # let _acq_cred_result = ntlm
-    /// #     .acquire_credentials_handle()
-    /// #     .with_credential_use(sspi::CredentialUse::Inbound)
-    /// #     .with_auth_data(&identity)
-    /// #     .execute().unwrap();
-    /// #
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    ///
+    /// let mut ntlm = sspi::Ntlm::new();
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let _acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm).unwrap();
+    ///
     /// let names = ntlm.query_context_names().unwrap();
     /// println!("Username: {:?}", names.username.account_name());
     /// println!("Domain: {:?}", names.username.domain_name());
@@ -776,8 +793,8 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # let mut ntlm = sspi::Ntlm::new();
+    /// use sspi::Sspi;
+    /// let mut ntlm = sspi::Ntlm::new();
     /// let info = ntlm.query_context_package_info().unwrap();
     /// println!("Package name: {:?}", info.name);
     /// ```
@@ -796,8 +813,8 @@ where
     /// # Example
     ///
     /// ```
-    /// # use sspi::Sspi;
-    /// # let mut ntlm = sspi::Ntlm::new();
+    /// use sspi::Sspi;
+    /// let mut ntlm = sspi::Ntlm::new();
     /// let cert_info = ntlm.query_context_package_info().unwrap();
     /// ```
     ///
@@ -863,8 +880,8 @@ where
     /// # Example
     ///
     /// ```ignore
-    /// # use sspi::{Sspi, ChangePasswordBuilder};
-    /// # let mut ntlm = sspi::Ntlm::new();
+    /// use sspi::{Sspi, ChangePasswordBuilder};
+    /// let mut ntlm = sspi::Ntlm::new();
     /// let mut output = [];
     /// let cert_info = ntlm.query_context_package_info().unwrap();
     /// let change_password = ChangePasswordBuilder::new()
@@ -881,7 +898,7 @@ where
     /// # MSDN
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> GeneratorChangePassword;
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword>;
 }
 
 /// Protocol used to establish connection.
@@ -991,19 +1008,19 @@ pub trait SspiImpl {
     /// Represents authentication data prepared for the authentication process
     type AuthenticationData;
 
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext;
+    ) -> Result<GeneratorInitSecurityContext>;
 
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        builder: FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult>;
 }
 
@@ -1939,6 +1956,18 @@ impl From<Error> for io::Error {
             io::ErrorKind::Other,
             format!("{:?}: {}", err.error_type, err.description),
         )
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(_: std::num::TryFromIntError) -> Self {
+        Self::new(ErrorKind::InternalError, "Integer conversion error")
+    }
+}
+
+impl<T> From<std::sync::PoisonError<T>> for Error {
+    fn from(_: std::sync::PoisonError<T>) -> Self {
+        Self::new(ErrorKind::InternalError, "Can not lock SspiHandle mutex")
     }
 }
 

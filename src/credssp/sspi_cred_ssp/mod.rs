@@ -12,7 +12,6 @@ use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerCon
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
-use crate::builders::EmptyInitializeSecurityContext;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
@@ -53,13 +52,13 @@ pub struct SspiCredSsp {
 
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
-        // "stub_string" - we don't check the server's certificate validity so we can use any server name
+        // "stub_string" - we don't check the server's certificate validity so we can use any server name.
         let example_com = "stub_string".try_into().unwrap();
         let mut client_config = ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
             .with_no_client_auth();
-        client_config.key_log = std::sync::Arc::new(rustls::KeyLogFile::new());
+        client_config.key_log = Arc::new(rustls::KeyLogFile::new());
         let config = Arc::new(client_config);
 
         Ok(Self {
@@ -261,12 +260,11 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn change_password(&mut self, _change_password: builders::ChangePassword) -> GeneratorChangePassword {
+    fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "ChangePassword is not supported in SspiCredSsp context",
         ))
-        .into()
     }
 }
 
@@ -275,9 +273,9 @@ impl SspiImpl for SspiCredSsp {
     type AuthenticationData = Credentials;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -301,16 +299,16 @@ impl SspiImpl for SspiCredSsp {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext<'a> {
-        GeneratorInitSecurityContext::new(move |mut yield_point| async move {
+    ) -> Result<GeneratorInitSecurityContext<'a>> {
+        Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
-        })
+        }))
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        _builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -379,13 +377,15 @@ impl SspiCredSsp {
 
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
-                let mut inner_builder =
-                    EmptyInitializeSecurityContext::<<SspiContext as SspiImpl>::CredentialsHandle>::new()
-                        .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
-                            Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present")
-                        })?)
-                        .with_context_requirements(builder.context_requirements)
-                        .with_target_data_representation(DataRepresentation::Native);
+                let mut inner_builder = self
+                    .cred_ssp_context
+                    .sspi_context
+                    .initialize_security_context()
+                    .with_credentials_handle(builder.credentials_handle.take().ok_or_else(|| {
+                        Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present")
+                    })?)
+                    .with_context_requirements(builder.context_requirements)
+                    .with_target_data_representation(DataRepresentation::Native);
                 if let Some(target_name) = &builder.target_name {
                     inner_builder = inner_builder.with_target_name(target_name);
                 }

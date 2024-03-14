@@ -348,12 +348,11 @@ impl Sspi for Pku2u {
         ))
     }
 
-    fn change_password(&mut self, _: ChangePassword) -> crate::generator::GeneratorChangePassword {
+    fn change_password(&mut self, _: ChangePassword) -> Result<crate::generator::GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Pku2u does not support change pasword",
         ))
-        .into()
     }
 }
 
@@ -363,9 +362,9 @@ impl SspiImpl for Pku2u {
     type AuthenticationData = AuthIdentity;
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
-    fn acquire_credentials_handle_impl<'a>(
-        &'a mut self,
-        builder: crate::builders::FilledAcquireCredentialsHandle<'a, Self::CredentialsHandle, Self::AuthenticationData>,
+    fn acquire_credentials_handle_impl(
+        &mut self,
+        builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
@@ -383,9 +382,9 @@ impl SspiImpl for Pku2u {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl<'a>(
-        &'a mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'a, Self::AuthenticationData, Self::CredentialsHandle>,
+    fn accept_security_context_impl(
+        &mut self,
+        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -396,8 +395,8 @@ impl SspiImpl for Pku2u {
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> GeneratorInitSecurityContext {
-        self.initialize_security_context_impl(builder).into()
+    ) -> Result<GeneratorInitSecurityContext> {
+        Ok(self.initialize_security_context_impl(builder).into())
     }
 }
 
@@ -406,7 +405,7 @@ impl Pku2u {
     pub(crate) fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> crate::Result<InitializeSecurityContextResult> {
+    ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
         let status = match self.state {

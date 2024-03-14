@@ -37,7 +37,7 @@ pub mod danger {
             _ocsp_response: &[u8],
             _now: SystemTime,
         ) -> Result<ServerCertVerified, Error> {
-            Ok(rustls::client::ServerCertVerified::assertion())
+            Ok(ServerCertVerified::assertion())
         }
     }
 }
@@ -209,9 +209,9 @@ impl TlsConnection {
                     cipher,
                     cipher_strength,
                     hash: ConnectionHash::CalgSha,
-                    hash_strength: hash_algo.output_len() as u32,
+                    hash_strength: hash_algo.output_len().try_into()?,
                     key_exchange: ConnectionKeyExchange::CalgRsaKeyx,
-                    exchange_strength: (self.raw_peer_public_key()?.len() * 8) as u32,
+                    exchange_strength: (self.raw_peer_public_key()?.len() * 8).try_into()?,
                 })
             }
         }
