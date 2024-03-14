@@ -9,8 +9,8 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, Sspi, SspiImpl, Username,
+    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, DecryptBuffer, Ntlm, SecurityBuffer,
+    SecurityBufferType, SecurityStatus, Sspi, SspiImpl, Username,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -53,8 +53,8 @@ fn main() -> Result<(), io::Error> {
     println!("Encrypted message: {:?}", data);
 
     let mut msg_buffer = vec![
-        SecurityBuffer::new(trailer, SecurityBufferType::Token),
-        SecurityBuffer::new(data, SecurityBufferType::Data),
+        DecryptBuffer::new(&mut trailer, SecurityBufferType::Token),
+        DecryptBuffer::new(&mut data, SecurityBufferType::Data),
     ];
 
     let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
@@ -62,7 +62,7 @@ fn main() -> Result<(), io::Error> {
     println!("Decrypting...");
     println!(
         "Decrypted message: [{}]",
-        std::str::from_utf8(msg_buffer[1].buffer.as_slice()).unwrap()
+        std::str::from_utf8(msg_buffer[1].buffer).unwrap()
     );
 
     println!("Communication successfully finished.");

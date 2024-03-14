@@ -688,15 +688,17 @@ where
     ///     .complete_auth_token(&mut server_output_buffer)
     ///     .unwrap();
     ///
-    /// let mut msg = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
+    /// let mut msg = [sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
     ///     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
     ///
     /// let _result = server_ntlm
     ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
     ///
+    /// let [mut token, mut data] = msg;
+    ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::new(msg[0].buffer.clone(), sspi::SecurityBufferType::Token),
-    ///     sspi::SecurityBuffer::new(msg[1].buffer.clone(), sspi::SecurityBufferType::Data),
+    ///     sspi::DecryptBuffer::new(&mut token.buffer, sspi::SecurityBufferType::Token),
+    ///     sspi::DecryptBuffer::new(&mut data.buffer, sspi::SecurityBufferType::Data),
     /// ];
     ///
     /// #[allow(unused_variables)]
@@ -710,7 +712,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///
@@ -1316,14 +1318,82 @@ impl SecurityBuffer {
     }
 }
 
+/// A special security buffer type is used for the data decryption. Basically, it's almost the same
+/// as [SecurityBuffer] but for decryption.
+///
+/// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
+/// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
+///
+/// So, the already defined [SecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
+/// We use reference in the [DecryptionBuffer] structure to avoid data cloning as much as possible.
+/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a CREDSSP security package.
+#[derive(Default)]
+pub struct DecryptBuffer<'data> {
+    /// Buffer that contains part of the data to be decrypted.
+    pub buffer: &'data mut [u8],
+    /// Buffer type.
+    pub buffer_type: SecurityBufferType,
+}
+
+impl<'data> DecryptBuffer<'data> {
+    /// Creates a new [DecryptBuffer] based on the input parameters.
+    pub fn new(buffer: &'data mut [u8], buffer_type: SecurityBufferType) -> Self {
+        Self { buffer, buffer_type }
+    }
+
+    /// Returns the immutable reference to the [DecryptBuffer] with specified buffer type.
+    ///
+    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
+    pub fn find_buffer<'a>(
+        buffers: &'a [DecryptBuffer<'data>],
+        buffer_type: SecurityBufferType,
+    ) -> Result<&'a DecryptBuffer<'data>> {
+        buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("No buffer was provided with type {:?}", buffer_type),
+            )
+        })
+    }
+
+    /// Returns the mutable reference to the [DecryptBuffer] with specified buffer type.
+    ///
+    /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
+    pub fn find_buffer_mut<'a>(
+        buffers: &'a mut [DecryptBuffer<'data>],
+        buffer_type: SecurityBufferType,
+    ) -> Result<&'a mut DecryptBuffer<'data>> {
+        buffers
+            .iter_mut()
+            .find(|b| b.buffer_type == buffer_type)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("No buffer was provided with type {:?}", buffer_type),
+                )
+            })
+    }
+}
+
+impl fmt::Debug for DecryptBuffer<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DecryptBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
+        self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        write!(f, " }}")?;
+
+        Ok(())
+    }
+}
+
 /// Bit flags that indicate the type of buffer.
 ///
 /// # MSDN
 ///
 /// * [SecBuffer structure (BufferType parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default, FromPrimitive, ToPrimitive)]
 pub enum SecurityBufferType {
+    #[default]
     Empty = 0,
     /// The buffer contains common data. The security package can read and write this data, for example, to encrypt some or all of it.
     Data = 1,
