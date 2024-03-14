@@ -52,17 +52,14 @@ fn main() -> Result<(), io::Error> {
 
     println!("Encrypted message: {:?}", data);
 
-    let mut msg_buffer = vec![
-        DecryptBuffer::new(&mut trailer, SecurityBufferType::Token),
-        DecryptBuffer::new(&mut data, SecurityBufferType::Data),
-    ];
+    let mut msg_buffer = vec![DecryptBuffer::Token(&mut trailer), DecryptBuffer::Data(&mut data)];
 
     let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
 
     println!("Decrypting...");
     println!(
         "Decrypted message: [{}]",
-        std::str::from_utf8(msg_buffer[1].buffer).unwrap()
+        std::str::from_utf8(msg_buffer[1].data()).unwrap()
     );
 
     println!("Communication successfully finished.");
