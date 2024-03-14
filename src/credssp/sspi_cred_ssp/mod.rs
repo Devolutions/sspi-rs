@@ -12,7 +12,7 @@ use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerCon
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
-use crate::credssp::sspi_cred_ssp::tls_connection::DecryptionResultBuffers;
+use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
@@ -119,11 +119,14 @@ impl SspiCredSsp {
 
     fn decrypt_and_decode_ts_request(&mut self, input: &mut [SecurityBuffer]) -> Result<TsRequest> {
         let encrypted_ts_request = SecurityBuffer::find_buffer_mut(input, SecurityBufferType::Token)?;
-        let DecryptionResultBuffers {
+        let DecryptionResult::Success(DecryptionResultBuffers {
             header: _,
             decrypted: raw_ts_request,
             extra: _,
-        } = self.tls_connection.decrypt_tls(&mut encrypted_ts_request.buffer)?;
+        }) = self.tls_connection.decrypt_tls(&mut encrypted_ts_request.buffer)?
+        else {
+            return Err(Error::new(ErrorKind::IncompleteMessage, "Input token is too short"));
+        };
 
         let ts_request = TsRequest::from_buffer(raw_ts_request)?;
         ts_request.check_error()?;
@@ -186,32 +189,40 @@ impl Sspi for SspiCredSsp {
             ));
         }
 
-        let encrypted_message =
-            std::mem::take(DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?).buffer;
-        let DecryptionResultBuffers {
-            header,
-            decrypted,
-            extra,
-        } = self.tls_connection.decrypt_tls(encrypted_message)?;
+        match self
+            .tls_connection
+            .decrypt_tls(DecryptBuffer::take_buf_data_mut(message, SecurityBufferType::Data)?)?
+        {
+            DecryptionResult::Success(DecryptionResultBuffers {
+                header,
+                decrypted,
+                extra,
+            }) => {
+                // buffers order is important. MSTSC won't work with another buffers order.
+                message[0] = DecryptBuffer::StreamHeader(header);
+                message[1] = DecryptBuffer::Data(decrypted);
+                // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
+                // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
+                //
+                // So, we can just set an empty buffer here.
+                message[2] = DecryptBuffer::StreamTrailer(&mut []);
+                message[3] = DecryptBuffer::Extra(extra);
 
-        // buffers order is important. MSTSC won't work with another buffers order.
-        message[0].buffer_type = SecurityBufferType::StreamHeader;
-        message[0].buffer = header;
+                Ok(DecryptionFlags::empty())
+            }
+            DecryptionResult::IncompleteMessage(needed_bytes_amount) => {
+                // This behavior is not documented anywhere and was discovered during debugging.
+                // Change it at your risk.
+                // Additional info:
+                // * https://stackoverflow.com/a/6832633/9123725
+                // * https://stackoverflow.com/a/65101172
 
-        message[1].buffer_type = SecurityBufferType::Data;
-        message[1].buffer = decrypted;
+                message[0] = DecryptBuffer::Missing(needed_bytes_amount);
+                message[1] = DecryptBuffer::Missing(needed_bytes_amount);
 
-        // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
-        // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
-        //
-        // So, we can just set an empty buffer here.
-        message[2].buffer_type = SecurityBufferType::StreamTrailer;
-        message[2].buffer = &mut [];
-
-        message[3].buffer_type = SecurityBufferType::Extra;
-        message[3].buffer = extra;
-
-        Ok(DecryptionFlags::empty())
+                Err(Error::new(ErrorKind::IncompleteMessage, "Got incomplete TLS message"))
+            }
+        }
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
