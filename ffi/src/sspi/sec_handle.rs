@@ -146,7 +146,7 @@ impl Sspi for SspiHandle {
 
     fn decrypt_message(
         &mut self,
-        message: &mut [sspi::SecurityBuffer],
+        message: &mut [sspi::DecryptBuffer],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
         self.sspi_context.lock()?.decrypt_message(message, sequence_number)

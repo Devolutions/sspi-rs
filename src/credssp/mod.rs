@@ -32,8 +32,8 @@ use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
     negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
     CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
-    Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    Credentials, CredentialsBuffers, DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, Error,
+    ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
     SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
@@ -836,7 +836,7 @@ impl Sspi for SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         match self {
@@ -1181,19 +1181,20 @@ impl CredSspContext {
     }
 
     fn decrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
-        let (signature, data) = input.split_at(SIGNATURE_SIZE);
+        let mut input = input.to_vec();
+        let (signature, data) = input.split_at_mut(SIGNATURE_SIZE);
         let mut buffers = vec![
-            SecurityBuffer::new(data.to_vec(), SecurityBufferType::Data),
-            SecurityBuffer::new(signature.to_vec(), SecurityBufferType::Token),
+            DecryptBuffer::new(data, SecurityBufferType::Data),
+            DecryptBuffer::new(signature, SecurityBufferType::Token),
         ];
 
         let recv_seq_num = self.recv_seq_num;
 
         self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 
-        let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
+        let output = DecryptBuffer::find_buffer(&buffers, SecurityBufferType::Data)?
             .buffer
-            .clone();
+            .to_vec();
 
         self.recv_seq_num += 1;
 

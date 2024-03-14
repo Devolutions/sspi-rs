@@ -9,14 +9,6 @@ use crate::{CredentialUse, Luid, SspiPackage};
 pub type EmptyAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithoutCredentialUse>;
 pub type FilledAcquireCredentialsHandle<'a, C, A> = AcquireCredentialsHandle<'a, C, A, WithCredentialUse>;
 
-impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {}
-
-impl<'a, C, A> Default for EmptyAcquireCredentialsHandle<'a, C, A> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Contains data returned by calling the `execute` method of
 /// the `AcquireCredentialsHandleBuilder` structure. The builder is returned by calling
 /// the `acquire_credentials_handle` method.
