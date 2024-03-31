@@ -7,17 +7,13 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use num_bigint_dig::BigUint;
 use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
-use winapi::shared::bcrypt::{BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC};
-use winapi::um::ncrypt::NCryptFreeObject;
-use winapi::um::wincrypt::{
+use windows_sys::Win32::Foundation;
+use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
     CryptAcquireCertificatePrivateKey, CERT_CONTEXT, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
-    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
-};
-use windows_sys::Win32::Foundation;
-use windows_sys::Win32::Security::Cryptography::{NCryptExportKey, CERT_KEY_SPEC};
+    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, 
+    NCryptExportKey, NCryptFreeObject, CERT_KEY_SPEC, BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC};
 
-use crate::utils::string_to_utf16;
 use crate::{Error, ErrorKind, Result};
 
 /// [BCRYPT_RSAKEY_BLOB](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob)
@@ -178,17 +174,13 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
 
     let mut private_key_buffer_len = 0;
 
-    let mut blob_type_wide = string_to_utf16(BCRYPT_RSAFULLPRIVATE_BLOB);
-    // add NULL char because the Rust library literal doesn't have it
-    blob_type_wide.extend_from_slice(&[0, 0]);
-
     // The first call need to determine the size of the needed buffer for the private key
     // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptexportkey
     // If pbOutput parameter is NULL, this function will place the required size in the pcbResult parameter.
     let status = NCryptExportKey(
         private_key_handle as _,
         0,
-        blob_type_wide.as_ptr() as *const _,
+        BCRYPT_RSAFULLPRIVATE_BLOB,
         null(),
         null_mut::<u8>(),
         0,
@@ -236,7 +228,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     let status = NCryptExportKey(
         private_key_handle as _,
         0,
-        blob_type_wide.as_ptr() as *const _,
+        BCRYPT_RSAFULLPRIVATE_BLOB,
         null(),
         private_key_blob.as_mut_ptr(),
         private_key_blob.len() as _,
