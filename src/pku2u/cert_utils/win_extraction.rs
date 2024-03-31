@@ -10,9 +10,11 @@ use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, Extens
 use windows_sys::Win32::Foundation;
 use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
-    CryptAcquireCertificatePrivateKey, CERT_CONTEXT, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
-    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, 
-    NCryptExportKey, NCryptFreeObject, CERT_KEY_SPEC, BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC};
+    CryptAcquireCertificatePrivateKey, NCryptExportKey, NCryptFreeObject, BCRYPT_RSAFULLPRIVATE_BLOB,
+    BCRYPT_RSAFULLPRIVATE_MAGIC, CERT_CONTEXT, CERT_KEY_SPEC, CERT_STORE_PROV_SYSTEM_W,
+    CERT_SYSTEM_STORE_CURRENT_USER_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
+    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
+};
 
 use crate::{Error, ErrorKind, Result};
 

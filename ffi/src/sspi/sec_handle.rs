@@ -19,7 +19,7 @@ use sspi::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Security::Cryptography::{
-    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING, 
+    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
     CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
 };
 

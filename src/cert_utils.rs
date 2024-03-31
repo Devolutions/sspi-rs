@@ -9,8 +9,7 @@ use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
     CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, AT_KEYEXCHANGE,
     CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_FIRST,
-    CRYPT_NEXT, CRYPT_SILENT, KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, 
-    PROV_RSA_FULL,
+    CRYPT_NEXT, CRYPT_SILENT, KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
 };
 
 // UTF-16 encoded "Microsoft Base Smart Card Crypto Provider\0"
@@ -23,7 +22,7 @@ const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
 // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
 pub type HCRYPTPROV = usize; // ULONG_PTR
-// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
+                             // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
 pub type HCRYPTKEY = usize; // ULONG_PTR
 
 use crate::{Error, ErrorKind, Result};

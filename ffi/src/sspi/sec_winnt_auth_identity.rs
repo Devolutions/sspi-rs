@@ -465,9 +465,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
     use sspi::string_to_utf16;
-    use windows_sys::Win32::Security::Credentials::{
-        CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO
-    };
+    use windows_sys::Win32::Security::Credentials::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
 
     let mut cred_type = 0;
     let mut credential = null_mut();
