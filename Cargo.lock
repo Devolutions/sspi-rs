@@ -2135,7 +2135,6 @@ dependencies = [
  "url",
  "uuid",
  "whoami",
- "winapi",
  "windows",
  "windows-sys 0.48.0",
  "winreg 0.51.0",
@@ -2157,7 +2156,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "whoami",
- "winapi",
  "windows-sys 0.48.0",
  "winscard",
 ]

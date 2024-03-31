@@ -18,7 +18,7 @@ use sspi::{
     Sspi, SspiImpl, StreamSizes,
 };
 #[cfg(target_os = "windows")]
-use winapi::um::wincrypt::{
+use windows_sys::Win32::Security::Cryptography::{
     CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
     CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
 };
@@ -706,7 +706,7 @@ unsafe fn query_context_attributes_common(
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {
-                        use std::ptr::null;
+                        use std::ptr::{null, null_mut};
 
                         let cert_context = try_execute!(sspi_context.query_context_remote_cert());
 
@@ -716,7 +716,7 @@ unsafe fn query_context_attributes_common(
                             return ErrorKind::InternalError.to_u32().unwrap();
                         }
 
-                        let mut p_cert_context = null();
+                        let mut p_cert_context = null_mut();
 
                         let result = CertAddEncodedCertificateToStore(
                             store,

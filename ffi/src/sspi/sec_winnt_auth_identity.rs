@@ -11,7 +11,7 @@ use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 #[cfg(feature = "scard")]
-use winapi::um::wincred::CredIsMarshaledCredentialW;
+use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
@@ -172,7 +172,7 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 #[cfg(feature = "tsssp")]
 unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use sspi::string_to_utf16;
-    use winapi::shared::winerror::ERROR_SUCCESS;
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
     let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
 
@@ -465,7 +465,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
     use sspi::string_to_utf16;
-    use winapi::um::wincred::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
+    use windows_sys::Win32::Security::Credentials::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
 
     let mut cred_type = 0;
     let mut credential = null_mut();

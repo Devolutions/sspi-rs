@@ -1,16 +1,15 @@
+use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
 use picky_asn1::wrapper::Utf8StringAsn1;
 use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
 use sha1::{Digest, Sha1};
-use winapi::ctypes::c_void;
-use winapi::um::ncrypt::HCRYPTKEY;
-use winapi::um::wincrypt::{
+use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
     CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, AT_KEYEXCHANGE,
     CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_FIRST,
-    CRYPT_NEXT, CRYPT_SILENT, HCRYPTPROV, KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
+    CRYPT_NEXT, CRYPT_SILENT, KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
 };
 
 // UTF-16 encoded "Microsoft Base Smart Card Crypto Provider\0"
@@ -20,6 +19,11 @@ const CSP_NAME_W: &[u8] = &[
     116, 0, 111, 0, 32, 0, 80, 0, 114, 0, 111, 0, 118, 0, 105, 0, 100, 0, 101, 0, 114, 0, 0, 0,
 ];
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
+
+// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
+pub type HCRYPTPROV = usize; // ULONG_PTR
+                             // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
+pub type HCRYPTKEY = usize; // ULONG_PTR
 
 use crate::{Error, ErrorKind, Result};
 
