@@ -13,7 +13,7 @@ use sha1::Sha1;
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
+use crate::winscard::{ControlCode, IoRequest, Protocol, ReconnectInitialization, ShareMode, TransmitOutData, WinScard};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
@@ -36,6 +36,8 @@ const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
+// We are always using the T1 protocol as the original Windows TPM smart card does
+const SUPPORTED_CONNECTION_PROTOCOL: Protocol = Protocol::T1;
 
 /// The original winscard ATR is not suitable because it contains AID bytes.
 /// So we need to construct our own. Read more about our constructed ATR string:
@@ -472,7 +474,7 @@ impl<'a> WinScard for SmartCard<'a> {
             // The original winscard always returns SCARD_SPECIFIC for a working inserted card
             state: winscard::State::Specific,
             // We are always using the T1 protocol as the original Windows TPM smart card does
-            protocol: winscard::Protocol::T1,
+            protocol: SUPPORTED_CONNECTION_PROTOCOL,
             atr: ATR.into(),
         })
     }
@@ -518,6 +520,11 @@ impl<'a> WinScard for SmartCard<'a> {
         }
         self.transaction = false;
         Ok(())
+    }
+
+    fn reconnect(&mut self, _: ShareMode, _: Option<Protocol>, _: ReconnectInitialization) -> WinScardResult<Protocol> {
+        // Because it's an emulated smart card, we do nothing and return success.
+        Ok(SUPPORTED_CONNECTION_PROTOCOL)
     }
 }
 
