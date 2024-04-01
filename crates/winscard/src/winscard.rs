@@ -8,6 +8,9 @@ use bitflags::bitflags;
 
 use crate::{Error, ErrorKind, WinScardResult};
 
+/// Type alias used to represent memory address.
+pub type MemoryPtr = usize;
+
 /// A smart card attribute id.
 ///
 /// This enum represents a scard attribute id. A set of variants is formed by merging `WinSCard` attr ids and `pscsc-lite` attr ids.
@@ -486,4 +489,22 @@ pub trait WinScardContext {
     ///
     /// The SCardWriteCache function writes a name-value pair from a smart card to the global cache maintained by the Smart Card Resource Manager.
     fn write_cache(&mut self, key: String, value: Vec<u8>);
+
+    /// [SCardListReaderGroupsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw)
+    ///
+    /// The SCardListReaderGroups function provides the list of reader groups that have previously been introduced to the system.
+    fn list_reader_groups(&self) -> WinScardResult<Cow<str>>;
+
+    /// [SCardCancel](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
+    ///
+    /// The SCardCancel function terminates all outstanding actions within a specific resource manager context.
+    /// The only requests that you can cancel are those that require waiting for external action by the smart card or user.
+    /// Any such outstanding action requests will terminate with a status indication that the action was canceled.
+    fn cancel(&mut self) -> WinScardResult<()>;
+
+    /// [SCardFreeMemory](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardfreememory)
+    ///
+    /// The SCardFreeMemory function releases memory that has been returned from the resource manager
+    /// using the `SCARD_AUTOALLOCATE` length designator.
+    fn free(&mut self, ptr: MemoryPtr) -> WinScardResult<()>;
 }
