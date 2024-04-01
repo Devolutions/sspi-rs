@@ -8,6 +8,114 @@ use bitflags::bitflags;
 
 use crate::{Error, ErrorKind, WinScardResult};
 
+/// A smart card attribute id.
+///
+/// This enum represents a scard attribute id. A set of variants is formed by merging `WinSCard` attr ids and `pscsc-lite` attr ids.
+/// More info:
+/// * [WinSCard SCardGetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib).
+/// * [pcsc-lite SCardGetAttrib](https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602).
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(u32)]
+pub enum AttributeId {
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a2e87e6925548b9fcca3fa0026b82500d
+    AsyncProtocolTypes = 0x0120,
+    /// Answer to reset (ATR) string.
+    AtrString = 0x0303,
+    /// Channel id.
+    ///
+    /// See [SCardGetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib) for more details.
+    ChannelId = 0x0110,
+    /// DWORD indicating which mechanical characteristics are supported. If zero, no special characteristics are supported.
+    Characteristics = 0x0150,
+    /// Current block waiting time.
+    CurrentBwt = 0x0209,
+    /// Current clock rate, in kHz.
+    CurrentClk = 0x0202,
+    /// Current character waiting time.
+    CurrentCwt = 0x020a,
+    /// Bit rate conversion factor.
+    CurrentD = 0x0204,
+    /// Current error block control encoding.
+    CurrentEbcEncoding = 0x020b,
+    /// Clock conversion factor.
+    CurrentF = 0x0203,
+    /// Current byte size for information field size card.
+    CurrentIfsc = 0x0207,
+    /// Current byte size for information field size device.
+    CurrentIfsd = 0x0208,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a9c6ee3dccc23e924907e3dc2e29a50f6
+    CurrentIoState = 0x0302,
+    /// Current guard time.
+    CurrentN = 0x0205,
+    /// DWORD encoded as 0x0rrrpppp where rrr is RFU and should be 0x000. pppp encodes the current protocol type.
+    /// Whichever bit has been set indicates which ISO protocol is currently in use. (For example, if bit zero is set,
+    /// T=0 protocol is in effect.)
+    CurrentProtocolType = 0x0201,
+    /// Current work waiting time.
+    CurrentW = 0x0206,
+    /// Default clock rate, in kHz.
+    DefaultClk = 0x0121,
+    /// Default data rate, in bps.
+    DefaultDataRate = 0x0123,
+    /// Reader's display name.
+    DeviceFriendlyName = 0x0003,
+    /// Reader's display name but encoded in Wide string.
+    DeviceFriendlyNameW = 0x0005,
+    /// Reserved for future use.
+    DeviceInUse = 0x0002,
+    /// Reader's system name.
+    DeviceSystemName = 0x0004,
+    /// Reader's system name.
+    DeviceSystemNameW = 0x0006,
+    /// Instance of this vendor's reader attached to the computer. The first instance will be device unit 0,
+    /// the next will be unit 1 (if it is the same brand of reader) and so on. Two different brands of readers
+    /// will both have zero for this value.
+    DeviceUnit = 0x0001,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a1a1d31628ec9f49f79d2dda6651658d6
+    EscAuhRequest = 0xA005,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a69d8dd84f5f433efbfa6e0fce2a95528
+    EscCancel = 0xA003,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a55df7896fb65a2a942780d383d815071
+    EscReset = 0xA000,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a5fcd5c979018130c164a64c728f0716d
+    ExtendedBt = 0x020c,
+    /// Single byte. Zero if smart card electrical contact is not active; nonzero if contact is active.
+    IccInterfaceStatus = 0x0301,
+    /// Single byte indicating smart card presence.
+    IccPresence = 0x0300,
+    /// Single byte indicating smart card type.
+    IccTypePerAtr = 0x0304,
+    /// Maximum clock rate, in kHz.
+    MaxClk = 0x0122,
+    /// Maximum data rate, in bps.
+    MaxDataRate = 0x0124,
+    /// Maximum bytes for information file size device.
+    MaxIfsd = 0x0125,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a42ea634deb1ec51e10722b661aa73d01
+    MaxInput = 0xA007,
+    /// Zero if device does not support power down while smart card is inserted. Nonzero otherwise.
+    PowerMgmtSupport = 0x0131,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a62d09db2a45663ea726239aeafaac747
+    SupresT1IfsRequest = 0x0007,
+    /// DWORD encoded as 0x0rrrpppp where rrr is RFU and should be 0x000. pppp encodes the supported
+    /// protocol types. A '1' in a given bit position indicates support for the associated ISO protocol,
+    /// so if bits zero and one are set, both T=0 and T=1 protocols are supported.
+    SyncProtocolTypes = 0x0126,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a86eb3bba6a8a463aa0eac4ada7704785
+    UserAuthInputDevice = 0x0142,
+    /// https://pcsclite.apdu.fr/api/reader_8h.html#a60bf2dbb950d448099314aa86c14b2aa
+    UserToCardAuthDevice = 0x0140,
+    /// Vendor-supplied interface device serial number.
+    VendorIfdSerialNo = 0x0103,
+    /// Vendor-supplied interface device type (model designation of reader).
+    VendorIfdType = 0x0101,
+    /// Vendor-supplied interface device version (DWORD in the form 0xMMmmbbbb where MM = major version,
+    /// mm = minor version, and bbbb = build number).
+    VendorIfdVersion = 0x0102,
+    /// Vendor name.
+    VendorName = 0x0100,
+}
+
 /// ATR string.
 ///
 /// A sequence of bytes returned from a smart card when it is turned on.
@@ -313,6 +421,19 @@ pub trait WinScard {
         preferred_protocol: Option<Protocol>,
         initialization: ReconnectInitialization,
     ) -> WinScardResult<Protocol>;
+
+    /// [SCardGetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib)
+    ///
+    /// The SCardGetAttrib function retrieves the current reader attributes for the given handle.
+    /// It does not affect the state of the reader, driver, or card.
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<&[u8]>;
+
+    /// [SCardSetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib)
+    ///
+    /// The SCardSetAttrib function sets the given reader attribute for the given handle. It does not affect
+    /// the state of the reader, reader driver, or smart card. Not all attributes are supported
+    /// by all readers (nor can they be set at all times) as many of the attributes are under direct control of the transport protocol.
+    fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()>;
 }
 
 /// This trait provides interface for all available smart card context (resource manager) related
