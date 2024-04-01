@@ -1,4 +1,5 @@
 use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -13,7 +14,9 @@ use sha1::Sha1;
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::winscard::{ControlCode, IoRequest, Protocol, ReconnectInitialization, ShareMode, TransmitOutData, WinScard};
+use crate::winscard::{
+    AttributeId, ControlCode, IoRequest, Protocol, ReconnectInitialization, ShareMode, TransmitOutData, WinScard,
+};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
@@ -77,6 +80,9 @@ pub struct SmartCard<'a> {
     transaction: bool,
     pending_command: Option<Command<1024>>,
     pending_response: Option<Vec<u8>>,
+    // We keep it just for compatibility reasons with WinSCard API.
+    // Usually, the mstsc.exe doesn't use scard attributes for connection establishing.
+    attributes: BTreeMap<AttributeId, Cow<'a, [u8]>>,
 }
 
 impl SmartCard<'_> {
@@ -101,6 +107,7 @@ impl SmartCard<'_> {
             transaction: false,
             pending_command: None,
             pending_response: None,
+            attributes: BTreeMap::new(),
         })
     }
 
@@ -525,6 +532,25 @@ impl<'a> WinScard for SmartCard<'a> {
     fn reconnect(&mut self, _: ShareMode, _: Option<Protocol>, _: ReconnectInitialization) -> WinScardResult<Protocol> {
         // Because it's an emulated smart card, we do nothing and return success.
         Ok(SUPPORTED_CONNECTION_PROTOCOL)
+    }
+
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<&[u8]> {
+        self.attributes
+            .get(&attribute_id)
+            .map(|data| data.as_ref())
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("The {:?} attribute id is not present", attribute_id),
+                )
+            })
+    }
+
+    fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()> {
+        self.attributes
+            .insert(attribute_id, Cow::Owned(attribute_data.to_vec()));
+
+        Ok(())
     }
 }
 
