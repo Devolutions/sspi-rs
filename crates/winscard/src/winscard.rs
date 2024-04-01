@@ -250,6 +250,21 @@ pub struct TransmitOutData {
     pub receive_pci: Option<IoRequest>,
 }
 
+/// Type of initialization that should be performed on the card.
+///
+/// [SCardReconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect):
+/// `dwInitialization` parameter.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ReconnectInitialization {
+    /// Do not do anything special on reconnect.
+    Leave,
+    ///  Reset the card (Warm Reset).
+    Reset,
+    ///  Power down the card and reset it (Cold Reset).
+    Unpower,
+}
+
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
 ///
 /// # MSDN
@@ -287,6 +302,17 @@ pub trait WinScard {
     /// The SCardEndTransaction function completes a previously declared transaction,
     /// allowing other applications to resume interactions with the card.
     fn end_transaction(&mut self) -> WinScardResult<()>;
+
+    /// [SCardReconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect)
+    ///
+    /// The SCardReconnect function reestablishes an existing connection between the calling application and a smart card.
+    /// This function moves a card handle from direct access to general access, or acknowledges and clears an error condition that is preventing further access to the card.
+    fn reconnect(
+        &mut self,
+        share_mode: ShareMode,
+        preferred_protocol: Option<Protocol>,
+        initialization: ReconnectInitialization,
+    ) -> WinScardResult<Protocol>;
 }
 
 /// This trait provides interface for all available smart card context (resource manager) related
