@@ -51,6 +51,8 @@ impl<'a> SmartCardInfo<'a> {
     pub fn try_from_env() -> WinScardResult<Self> {
         use std::fs;
 
+        use picky::x509::Cert;
+
         use crate::env::{
             WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV,
             WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV, WINSCARD_READER_NAME_ENV,
