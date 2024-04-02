@@ -2,6 +2,7 @@ use std::ffi::c_void;
 
 pub type LpStr = *mut u8;
 pub type LpCStr = *const u8;
+pub type Dword = u32;
 pub type LpDword = *mut u32;
 pub type LpWStr = *mut u16;
 pub type LpCWStr = *const u16;
