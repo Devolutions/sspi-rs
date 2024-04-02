@@ -1,0 +1,14 @@
+[package]
+name = "pcsc-lite-rs"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/devolutions/sspi-rs"
+repository = "https://github.com/devolutions/sspi-rs"
+authors = ["Devolutions Inc. <infos@devolutions.net>"]
+description = "A Rust bindings to the pcsc-lite library"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
