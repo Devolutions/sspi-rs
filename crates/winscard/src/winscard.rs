@@ -493,7 +493,7 @@ pub trait WinScardContext {
     /// [SCardListReaderGroupsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw)
     ///
     /// The SCardListReaderGroups function provides the list of reader groups that have previously been introduced to the system.
-    fn list_reader_groups(&self) -> WinScardResult<Cow<str>>;
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>>;
 
     /// [SCardCancel](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
     ///
