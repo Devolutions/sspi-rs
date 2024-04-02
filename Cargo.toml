@@ -19,7 +19,8 @@ members = [
   "ffi",
   "ffi/symbol-rename-macro",
   "crates/winscard",
-  "crates/ffi-types"
+  "crates/ffi-types",
+  "crates/pcsc-lite-rs"
 ]
 exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile"]
 
