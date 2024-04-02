@@ -5,12 +5,12 @@ use std::slice::from_raw_parts;
 use libc::{c_char, c_void};
 #[cfg(windows)]
 use sspi::Secret;
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 use sspi::SmartCardIdentityBuffers;
 use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
@@ -315,7 +315,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         .into();
 
         // Only marshaled smart card creds starts with '@' char.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
@@ -335,13 +335,13 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         .into();
 
         // Only marshaled smart card creds starts with '@' char.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
         // Try to collect credentials for the emulated smart card.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
@@ -354,7 +354,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
     if username.contains(&b'@') {
         info!("Trying to collect smart card creds...");
@@ -520,7 +520,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
     ))
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 #[instrument(level = "trace", ret)]
 unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
