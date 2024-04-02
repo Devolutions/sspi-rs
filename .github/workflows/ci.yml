@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Check formatting
         shell: pwsh
@@ -43,7 +43,7 @@ jobs:
             runner: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
@@ -74,7 +74,7 @@ jobs:
             runner: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Test
         run: cargo test --manifest-path ${{ matrix.manifest }} ${{ matrix.additional-args }}
@@ -85,7 +85,7 @@ jobs:
     needs: formatting
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Prepare runner
         run: sudo apt install wabt

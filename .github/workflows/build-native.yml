@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get version
         id: get-version
@@ -66,7 +66,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure Android NDK
         if: matrix.os == 'android'
@@ -207,7 +207,7 @@ jobs:
           Copy-Item $OutputLibrary $(Join-Path $OutputPath $RenamedLibraryName)
 
       - name: Upload native components
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sspi-${{matrix.os}}-${{matrix.arch}}-${{matrix.build}}
           path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
@@ -224,7 +224,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure runner
         run: |
@@ -234,7 +234,7 @@ jobs:
           sudo mv /tmp/cctools-x86_64-ubuntu-20.04/bin/install_name_tool /usr/local/bin
 
       - name: Download native components
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: dependencies/runtimes
 
@@ -296,7 +296,7 @@ jobs:
           ((Get-Content -Path (Join-Path $FrameworkDir "Info.plist") -Raw) -Replace 'PropertyList-1.0.dtd"\[\]', 'PropertyList-1.0.dtd"') | Set-Content -Path (Join-Path $FrameworkDir "Info.plist")
 
       - name: Upload native components
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sspi-${{ matrix.os }}-universal-${{ matrix.build }}
           path: dependencies/runtimes/${{ matrix.os }}-universal

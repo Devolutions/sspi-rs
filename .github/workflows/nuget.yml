@@ -43,7 +43,7 @@ jobs:
 
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Prepare dependencies
         shell: pwsh
@@ -51,7 +51,7 @@ jobs:
           New-Item -ItemType Directory -Path "dependencies/runtimes" | Out-Null
 
       - name: Download native components
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: dependencies/runtimes
 
@@ -72,7 +72,7 @@ jobs:
           dotnet build .\ffi\dotnet\Devolutions.Sspi.sln -o package
 
       - name: Upload managed components
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sspi-nupkg
           path: package/*.nupkg
@@ -88,7 +88,7 @@ jobs:
 
     steps:
       - name: Download NuGet package artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: sspi-nupkg
           path: package
