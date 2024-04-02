@@ -1329,6 +1329,7 @@ dependencies = [
 name = "pcsc-lite-rs"
 version = "0.1.0"
 dependencies = [
+ "ffi-types",
  "pkg-config",
 ]
 
