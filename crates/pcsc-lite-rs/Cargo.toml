@@ -12,6 +12,7 @@ description = "A Rust bindings to the pcsc-lite library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ffi-types = { path = "../ffi-types", features = ["winscard"] }
 
 [build-dependencies]
 pkg-config = "0.3"
