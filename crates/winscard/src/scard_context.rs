@@ -9,7 +9,7 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 use crate::scard::SmartCard;
-use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
+use crate::winscard::{DeviceTypeId, Icon, MemoryPtr, Protocol, ShareMode, WinScard, WinScardContext};
 use crate::{Error, ErrorKind, WinScardResult};
 
 /// Describes a smart card reader.
@@ -500,5 +500,27 @@ impl<'a> WinScardContext for ScardContext<'a> {
 
     fn write_cache(&mut self, key: String, value: Vec<u8>) {
         self.cache.insert(key, value);
+    }
+
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
+        // We don't support configuring or introducing reader groups. So, we just return hardcoded values.
+        //
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
+        // SCARD_DEFAULT_READERS: TEXT("SCard$DefaultReaders\000")
+        // Default group to which all readers are added when introduced into the system.
+        Ok(vec![Cow::Borrowed("SCard$DefaultReaders\u{0}00")])
+    }
+
+    fn cancel(&mut self) -> WinScardResult<()> {
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel
+        // The only requests that you can cancel are those that require waiting for external action by the smart card or user.
+        //
+        // We don't have any external actions, so we just return success.
+        Ok(())
+    }
+
+    fn free(&mut self, ptr: MemoryPtr) -> WinScardResult<()> {
+        // TODO(@TheBestTvarynka): implement in upcoming pull requests.
+        todo!()
     }
 }
