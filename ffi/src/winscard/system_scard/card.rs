@@ -1,10 +1,20 @@
+use ffi_types::winscard::ScardHandle;
+use num_traits::FromPrimitive;
 use winscard::winscard::{
     AttributeId, ControlCode, IoRequest, Protocol, ReconnectInitialization, ShareMode, Status, TransmitOutData,
     WinScard,
 };
-use winscard::WinScardResult;
+use winscard::{Error, ErrorKind, WinScardResult};
 
-pub struct SystemScard {}
+pub struct SystemScard {
+    h_card: ScardHandle,
+}
+
+impl SystemScard {
+    pub fn new(h_card: ScardHandle) -> Self {
+        Self { h_card }
+    }
+}
 
 impl WinScard for SystemScard {
     fn status(&self) -> WinScardResult<Status> {
@@ -20,7 +30,12 @@ impl WinScard for SystemScard {
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
-        todo!()
+        #[cfg(not(target_os = "windows"))]
+        unsafe {
+            try_execute!(pcsc_lite_rs::SCardBeginTransaction(self.h_card))?;
+        }
+        // TODO(@TheBestTvarynka): implement for Windows too.
+        Ok(())
     }
 
     fn end_transaction(&mut self) -> WinScardResult<()> {
