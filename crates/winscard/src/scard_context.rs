@@ -73,8 +73,6 @@ impl<'a> SmartCardInfo<'a> {
 
             cert_der
         } else if let Ok(cert_path) = env!(WINSCARD_CERT_PATH_ENV) {
-            use picky::x509::Cert;
-
             let raw_certificate = fs::read_to_string(cert_path).map_err(|e| {
                 Error::new(
                     ErrorKind::InvalidParameter,
