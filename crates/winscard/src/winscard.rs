@@ -5,11 +5,61 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
+use num_derive::{FromPrimitive, ToPrimitive};
 
 use crate::{Error, ErrorKind, WinScardResult};
 
 /// Type alias used to represent memory address.
 pub type MemoryPtr = usize;
+/// Control code for the `SCardControl` operation.
+///
+/// This value identifies the specific operation to be performed. More info:
+/// * [WinSCard SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
+/// * [pcsc-lite SCardControl](https://pcsclite.apdu.fr/api/group__API.html#gac3454d4657110fd7f753b2d3d8f4e32f)
+pub type ControlCode = u32;
+
+/// Action to be taken on the reader.
+///
+/// More info:
+/// * [SCardEndTransaction](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardendtransaction).
+/// * [SCardReconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect).
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ReaderAction {
+    /// Do not do anything special.
+    LeaveCard = 0,
+    /// Reset the card.
+    ResetCard = 1,
+    /// Power down the card.
+    UnpowerCard = 2,
+    /// Eject the card.
+    EjectCard = 3,
+}
+
+impl TryFrom<u32> for ReaderAction {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => ReaderAction::LeaveCard,
+            1 => ReaderAction::ResetCard,
+            2 => ReaderAction::UnpowerCard,
+            3 => ReaderAction::EjectCard,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("Gow invalid disposition value: {}", value),
+                ))
+            }
+        })
+    }
+}
+
+impl From<ReaderAction> for u32 {
+    fn from(value: ReaderAction) -> Self {
+        value as u32
+    }
+}
 
 /// A smart card attribute id.
 ///
@@ -17,7 +67,7 @@ pub type MemoryPtr = usize;
 /// More info:
 /// * [WinSCard SCardGetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib).
 /// * [pcsc-lite SCardGetAttrib](https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602).
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
 pub enum AttributeId {
     /// https://pcsclite.apdu.fr/api/reader_8h.html#a2e87e6925548b9fcca3fa0026b82500d
@@ -223,6 +273,12 @@ pub enum ShareMode {
     Direct = 3,
 }
 
+impl From<ShareMode> for u32 {
+    fn from(value: ShareMode) -> Self {
+        value as u32
+    }
+}
+
 impl TryFrom<u32> for ShareMode {
     type Error = Error;
 
@@ -245,7 +301,7 @@ bitflags! {
     /// `dwPreferredProtocols` and `pdwActiveProtocol` parameters:
     /// A bitmask of acceptable protocols for the connection.
     /// Possible values may be combined with the OR operation.
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
     pub struct Protocol: u32 {
         /// This parameter may be zero only if dwShareMode is set to SCARD_SHARE_DIRECT.
         /// In this case, no protocol negotiation will be performed by the drivers
@@ -306,32 +362,6 @@ pub struct Status<'a> {
     pub atr: Atr,
 }
 
-/// [SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
-///
-/// `dwControlCode` parameter:
-/// Control code for the operation. This value identifies the specific operation to be performed.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u32)]
-pub enum ControlCode {
-    /// `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
-    /// Request features described in the *PC/SC 2.0 Specification Part 10*
-    IoCtl = 0x00313520,
-}
-
-impl TryFrom<u32> for ControlCode {
-    type Error = Error;
-
-    fn try_from(value: u32) -> WinScardResult<Self> {
-        match value {
-            0x00313520 => Ok(ControlCode::IoCtl),
-            _ => Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!("Unsupported control code: {:x?}", value),
-            )),
-        }
-    }
-}
-
 /// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)
 ///
 /// The SCARD_IO_REQUEST structure begins a protocol control information structure.
@@ -359,21 +389,6 @@ pub struct TransmitOutData {
     pub output_apdu: Vec<u8>,
     /// Returned protocol control information (PCI) specific to the protocol in use.
     pub receive_pci: Option<IoRequest>,
-}
-
-/// Type of initialization that should be performed on the card.
-///
-/// [SCardReconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect):
-/// `dwInitialization` parameter.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u32)]
-pub enum ReconnectInitialization {
-    /// Do not do anything special on reconnect.
-    Leave,
-    ///  Reset the card (Warm Reset).
-    Reset,
-    ///  Power down the card and reset it (Cold Reset).
-    Unpower,
 }
 
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
@@ -412,7 +427,7 @@ pub trait WinScard {
     ///
     /// The SCardEndTransaction function completes a previously declared transaction,
     /// allowing other applications to resume interactions with the card.
-    fn end_transaction(&mut self) -> WinScardResult<()>;
+    fn end_transaction(&mut self, disposition: ReaderAction) -> WinScardResult<()>;
 
     /// [SCardReconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect)
     ///
@@ -422,14 +437,14 @@ pub trait WinScard {
         &mut self,
         share_mode: ShareMode,
         preferred_protocol: Option<Protocol>,
-        initialization: ReconnectInitialization,
+        initialization: ReaderAction,
     ) -> WinScardResult<Protocol>;
 
     /// [SCardGetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib)
     ///
     /// The SCardGetAttrib function retrieves the current reader attributes for the given handle.
     /// It does not affect the state of the reader, driver, or card.
-    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<&[u8]>;
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>>;
 
     /// [SCardSetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib)
     ///
