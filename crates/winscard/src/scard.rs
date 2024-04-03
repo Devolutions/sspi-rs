@@ -15,7 +15,7 @@ use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
 use crate::winscard::{
-    AttributeId, ControlCode, IoRequest, Protocol, ReconnectInitialization, ShareMode, TransmitOutData, WinScard,
+    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard,
 };
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
@@ -41,6 +41,10 @@ const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
 // We are always using the T1 protocol as the original Windows TPM smart card does
 const SUPPORTED_CONNECTION_PROTOCOL: Protocol = Protocol::T1;
+// Only one supported control code.
+// `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
+// Request features described in the *PC/SC 2.0 Specification Part 10*
+const IO_CTL: u32 = 0x00313520;
 
 /// The original winscard ATR is not suitable because it contains AID bytes.
 /// So we need to construct our own. Read more about our constructed ATR string:
@@ -487,7 +491,7 @@ impl<'a> WinScard for SmartCard<'a> {
     }
 
     fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<Vec<u8>> {
-        if code != ControlCode::IoCtl {
+        if code != IO_CTL {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 format!("unsupported control code: {:?}", code),
@@ -521,7 +525,7 @@ impl<'a> WinScard for SmartCard<'a> {
         Ok(())
     }
 
-    fn end_transaction(&mut self) -> WinScardResult<()> {
+    fn end_transaction(&mut self, _disposition: ReaderAction) -> WinScardResult<()> {
         if !self.transaction {
             return Err(Error::new(ErrorKind::NotTransacted, "the transaction is not started"));
         }
@@ -529,21 +533,18 @@ impl<'a> WinScard for SmartCard<'a> {
         Ok(())
     }
 
-    fn reconnect(&mut self, _: ShareMode, _: Option<Protocol>, _: ReconnectInitialization) -> WinScardResult<Protocol> {
+    fn reconnect(&mut self, _: ShareMode, _: Option<Protocol>, _: ReaderAction) -> WinScardResult<Protocol> {
         // Because it's an emulated smart card, we do nothing and return success.
         Ok(SUPPORTED_CONNECTION_PROTOCOL)
     }
 
-    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<&[u8]> {
-        self.attributes
-            .get(&attribute_id)
-            .map(|data| data.as_ref())
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("The {:?} attribute id is not present", attribute_id),
-                )
-            })
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
+        self.attributes.get(&attribute_id).cloned().ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("The {:?} attribute id is not present", attribute_id),
+            )
+        })
     }
 
     fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()> {
