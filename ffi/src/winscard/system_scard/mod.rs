@@ -1,3 +1,8 @@
+#![cfg(feature = "scard")]
+
+#[macro_use]
+mod macros;
+
 mod card;
 mod context;
 
