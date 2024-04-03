@@ -34,6 +34,7 @@ use core::{fmt, result};
 
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
+use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, PIV_AID};
@@ -163,7 +164,7 @@ impl From<CertError> for Error {
 }
 
 /// [Smart Card Return Values](https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, ToPrimitive, FromPrimitive)]
 #[repr(u32)]
 pub enum ErrorKind {
     /// The client attempted a smart card operation in a remote session, such as a client session running on a terminal server,
