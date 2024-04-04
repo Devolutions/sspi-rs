@@ -106,6 +106,20 @@ impl fmt::Display for Error {
 #[cfg(feature = "std")]
 impl std::error::Error for Error {}
 
+#[cfg(feature = "std")]
+impl From<picky_asn1_der::Asn1DerError> for Error {
+    fn from(value: picky_asn1_der::Asn1DerError) -> Self {
+        Self::new(ErrorKind::InvalidValue, value.to_string())
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<base64::DecodeError> for Error {
+    fn from(value: base64::DecodeError) -> Self {
+        Self::new(ErrorKind::InvalidValue, value.to_string())
+    }
+}
+
 impl From<KeyError> for Error {
     fn from(value: KeyError) -> Self {
         Error::new(
