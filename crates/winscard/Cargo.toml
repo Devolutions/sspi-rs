@@ -10,7 +10,7 @@ authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of WinSCard"
 
 [features]
-std = ["tracing/std"]
+std = ["tracing/std", "base64", "picky-asn1-der"]
 
 [lib]
 name = "winscard"
@@ -30,6 +30,8 @@ flate2 = { version = "1.0.28", features = ["zlib", "rust_backend"], default-feat
 rsa = { version = "0.9.6", features = ["hazmat", "sha1"], default-features = false }
 rand_core = "0.6.4"
 sha1 = { version = "0.10.6", default-features = false }
+base64 = { version = "0.21" , optional = true }
+picky-asn1-der = { version = "0.4", optional = true }
 
 [dev-dependencies]
 proptest = "1.2.0"
