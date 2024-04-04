@@ -53,7 +53,7 @@ impl<'a> SmartCardInfo<'a> {
 
         use crate::env::{
             WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV,
-            WINSCARD_PK_PATH_ENV, WINSCARD_READER_NAME_ENV,
+            WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV, WINSCARD_READER_NAME_ENV,
         };
 
         let container_name = env!(WINSCARD_CONTAINER_NAME_ENV)?.into();
@@ -90,22 +90,41 @@ impl<'a> SmartCardInfo<'a> {
             ));
         };
 
-        let pk_path = env!(WINSCARD_PK_PATH_ENV)?;
-        let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidParameter,
-                format!("Unable to read private key from the provided file: {}", e),
-            )
-        })?;
-        let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
-            Error::new(
+        let (raw_private_key, private_key) = if let Ok(private_key_data) = env!(WINSCARD_PK_DATA_ENV) {
+            use base64::Engine;
+
+            let private_key_der = base64::engine::general_purpose::STANDARD.decode(private_key_data)?;
+
+            let private_key = PrivateKey::from_pkcs8(&private_key_der)?;
+            let raw_private_key = private_key.to_pem_str()?;
+
+            (raw_private_key, private_key)
+        } else if let Ok(pk_path) = env!(WINSCARD_PK_PATH_ENV) {
+            let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("Unable to read private key from the provided file: {}", e),
+                )
+            })?;
+            let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
+                Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!(
+                        "Error while trying to read a private key from a pem-encoded string: {}",
+                        e
+                    ),
+                )
+            })?;
+            (raw_private_key, private_key)
+        } else {
+            return Err(Error::new(
                 ErrorKind::InvalidParameter,
                 format!(
-                    "Error while trying to read a private key from a pem-encoded string: {}",
-                    e
+                    "Either \"{}\" or \"{}\" environment variable must be present",
+                    WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV
                 ),
-            )
-        })?;
+            ));
+        };
 
         // Standard Windows Reader Icon
         let icon: &[u8] = Self::reader_icon();
