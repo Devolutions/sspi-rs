@@ -125,7 +125,7 @@ pub struct SecWinntAuthIdentityEx2 {
 ///   CredsspCredEx = 100
 /// } CREDSPP_SUBMIT_TYPE;
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
 pub enum CredSspSubmitType {
     CredsspPasswordCreds = 2,
@@ -176,50 +176,62 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
 
     let credssp_cred = p_auth_data.cast::<CredSspCred>().as_ref().unwrap();
 
-    // When logging on using the saved (remembered) credentials, the mstsc sets the submit_type to CredSspSubmitType::CredsspSubmitBufferBothOld
-    // and p_spnego_cred to NULL. Then the inner security package should use saved credentials in the Credentials Manager for the authentication.
-    // But, unfortunately, we are unable to read those credentials because they are accessible only for Microsoft's security packages.
-    //
-    // [CRED_TYPE_DOMAIN_PASSWORD](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
-    // The NTLM, Kerberos, and Negotiate authentication packages will automatically use this credential when connecting to the named target.
-    // More info: https://blog.gentilkiwi.com/tag/cred_type_domain_password
-    //
-    // In this case, we just asked the user to re-enter the credentials.
-    if credssp_cred.p_spnego_cred.is_null() {
-        let message = string_to_utf16("We're unable to load saved credentials\0");
-        let caption = string_to_utf16("Enter credentials\0");
-        let cred_ui_info = CREDUI_INFOW {
-            cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
-            hwndParent: 0,
-            pszMessageText: message.as_ptr() as *const _,
-            pszCaptionText: caption.as_ptr() as *const _,
-            hbmBanner: 0,
-        };
-        let mut auth_package_count = 0;
-        let mut out_buffer_size = 1024;
-        let mut out_buffer = null_mut();
-        let result = CredUIPromptForWindowsCredentialsW(
-            &cred_ui_info,
-            0,
-            &mut auth_package_count,
-            null_mut(),
-            0,
-            &mut out_buffer,
-            &mut out_buffer_size,
-            null_mut(),
-            0,
-        );
-        if result != ERROR_SUCCESS {
-            return Err(Error::new(
-                ErrorKind::NoCredentials,
-                format!("Can not get user credentials: {:0x?}", result),
-            ));
+    if credssp_cred.submit_type == CredSspSubmitType::CredsspSubmitBufferBothOld {
+        if credssp_cred.p_spnego_cred.is_null() {
+            // When logging on using the saved (remembered) credentials, the mstsc sets the submit_type to CredSspSubmitType::CredsspSubmitBufferBothOld
+            // and p_spnego_cred to NULL. Then the inner security package should use saved credentials in the Credentials Manager for the authentication.
+            // But, unfortunately, we are unable to read those credentials because they are accessible only for Microsoft's security packages.
+            //
+            // [CRED_TYPE_DOMAIN_PASSWORD](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
+            // The NTLM, Kerberos, and Negotiate authentication packages will automatically use this credential when connecting to the named target.
+            // More info: https://blog.gentilkiwi.com/tag/cred_type_domain_password
+            //
+            // In this case, we just asked the user to re-enter the credentials.
+            let message = string_to_utf16("We're unable to load saved credentials\0");
+            let caption = string_to_utf16("Enter credentials\0");
+            let cred_ui_info = CREDUI_INFOW {
+                cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
+                hwndParent: 0,
+                pszMessageText: message.as_ptr() as *const _,
+                pszCaptionText: caption.as_ptr() as *const _,
+                hbmBanner: 0,
+            };
+            let mut auth_package_count = 0;
+            let mut out_buffer_size = 1024;
+            let mut out_buffer = null_mut();
+
+            let result = CredUIPromptForWindowsCredentialsW(
+                &cred_ui_info,
+                0,
+                &mut auth_package_count,
+                null_mut(),
+                0,
+                &mut out_buffer,
+                &mut out_buffer_size,
+                null_mut(),
+                0,
+            );
+
+            if result != ERROR_SUCCESS {
+                return Err(Error::new(
+                    ErrorKind::NoCredentials,
+                    format!("Can not get user credentials: {:0x?}", result),
+                ));
+            }
+
+            unpack_sec_winnt_auth_identity_ex2_w_sized(out_buffer, out_buffer_size)
+        } else {
+            // When we try to pass the plain password in the `ClearTextPassword` .rdp file property,
+            // the CredSSP credentials will have the type `CredsspSubmitBufferBothOld` and
+            // will be packed in the `SEC_WINNT_AUTH_IDENTITY_W` structure.
+            //
+            // Additional info:
+            // * [ClearTextPassword](https://github.com/Devolutions/MsRdpEx/blob/a7978812cb31e363f4b536316bd59e1573e69384/README.md#extended-rdp-file-options)
+            auth_data_to_identity_buffers_w(credssp_cred.p_spnego_cred, &mut None)
         }
-
-        return unpack_sec_winnt_auth_identity_ex2_w_sized(out_buffer, out_buffer_size);
+    } else {
+        unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred)
     }
-
-    unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred)
 }
 
 // This function determines what format credentials have: ASCII or UNICODE,
