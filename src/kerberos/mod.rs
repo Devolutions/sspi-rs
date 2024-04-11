@@ -944,7 +944,11 @@ impl<'a> Kerberos {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
-                let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                let neg_token_targ = {
+                    let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
+                    let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
+                    neg_token_targ
+                };
 
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
 
