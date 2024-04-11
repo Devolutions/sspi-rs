@@ -355,11 +355,12 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
+    // #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
     fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
-
+        info!(?message, "decrypt_message");
         let encrypted = extract_encrypted_data(message)?;
+        info!("we made it here 1");
 
         let cipher = self
             .encryption_params

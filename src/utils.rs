@@ -247,24 +247,25 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 /// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
 /// If the inner buffer is not large enough, then this function will return an error.
 pub fn save_decrypted_data(decrypted: &[u8], buffers: &mut [DecryptBuffer]) -> Result<()> {
-    let buffer = if let Ok(buffer) = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data) {
-        if buffer.data().len() < decrypted.len() {
-            return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "Decrypted data can not be larger then encrypted one.",
-            ));
-        }
-        buffer
-    } else {
-        let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream)?;
-        if buffer.data().len() < decrypted.len() {
-            return Err(Error::new(
-                ErrorKind::DecryptFailure,
-                "Decrypted data can not be larger then encrypted one.",
-            ));
-        }
-        buffer
-    };
+    let buffer = buffers
+        .iter_mut()
+        .find(|b| {
+            b.security_buffer_type() == SecurityBufferType::Data
+                || b.security_buffer_type() == SecurityBufferType::Stream
+        })
+        .filter(|buffer| {
+            if let DecryptBuffer::Data(data) = buffer {
+                decrypted.len() <= data.len()
+            } else if let DecryptBuffer::Stream(data) = buffer {
+                decrypted.len() <= data.len()
+            } else {
+                false
+            }
+        })
+        .ok_or(Error::new(
+            ErrorKind::InvalidToken,
+            "No buffer was provided with type Data or Stream with valid size",
+        ))?;
 
     let mut data_buffer = buffer.take_data();
 
