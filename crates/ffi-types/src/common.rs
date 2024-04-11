@@ -9,7 +9,7 @@ pub type LpCByte = *const u8;
 pub type LpByte = *mut u8;
 pub type LpCVoid = *const c_void;
 pub type LpVoid = *mut c_void;
-pub type Handle = *mut c_void;
+pub type Handle = isize;
 pub type Bool = i32;
 
 /// [Guid](https://learn.microsoft.com/en-us/windows/win32/api/guiddef/ns-guiddef-guid)

@@ -519,18 +519,66 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
     }
 }
 
+// This handle exists up to the end of the program and never freed.
+// We use created event to return its handle from the `SCardAccessStartedEvent` function.
+// Note. If the `SCardAccessStartedEvent` frunction is not be called, the event will not be created.
+#[cfg(target_os = "windows")]
+static START_EVENT_HANDLE: std::sync::OnceLock<windows_sys::Win32::Foundation::HANDLE> = std::sync::OnceLock::new();
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardAccessStartedEvent() -> Handle {
-    // This value has been extracted from the original winscard SCardAccessStartedEvent call.
-    0x0000000000000eb0 as Handle
+    // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardaccessstartedevent
+    // The `SCardAccessStartedEvent` function returns an event handle when an event signals that
+    // the smart card resource manager is started. The event-object handle can be specified in a call
+    // to one of the wait functions.
+    //
+    // We create the event once for the entire process and keep it like a singleton in the "signaled" state.
+    // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
+    // because we are always in a ready (signaled) state and have only one handle for the entire process.
+    #[cfg(target_os = "windows")]
+    {
+        *START_EVENT_HANDLE.get_or_init(|| {
+            use std::ptr::null;
+
+            use windows_sys::Win32::Foundation::GetLastError;
+            use windows_sys::Win32::System::Threading::CreateEventA;
+
+            let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
+            if handle == 0 {
+                error!(
+                    "Unable to create event: returned event handle is null. Last error: {}",
+                    unsafe { GetLastError() }
+                );
+            }
+            handle
+        })
+    }
+    // We support the `SCardAccessStartedEvent` function only on Windows OS. Reason:
+    // On non-Windows OS we use pcsc-lite API that doesn't have the `SCardAccessStartedEvent` function.
+    // Thus, we don't need it there.
+    //
+    // The function returns an event HANDLE if it succeeds or NULL if it fails.
+    #[cfg(not(target_os = "windows"))]
+    {
+        0
+    }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardReleaseStartedEvent() {}
+pub extern "system" fn SCardReleaseStartedEvent() {
+    // In the current implementation, this function does nothing.
+    //
+    // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasestartedevent
+    // The `SCardReleaseStartedEvent` function decrements the reference count for a handle acquired
+    // by a previous call to the `SCardAccessStartedEvent` function.
+    //
+    // But we do not have any reference counters. See comments in [SCardAccessStartedEvent] function
+    // for more details.
+}
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsA"))]
 #[instrument(ret)]
