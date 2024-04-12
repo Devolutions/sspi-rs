@@ -305,10 +305,11 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
                 size: stream_inner_size,
             } = stream_buffer;
 
-            unsafe {
-                let data_slice = std::slice::from_raw_parts_mut(stream_inner_ptr, stream_inner_size);
-                data_buffer.set_data(data_slice)?;
-            }
+            let data_slice = unsafe {
+                // This is safe because the stream buffer is guaranteed to exist and have the correct size.
+                std::slice::from_raw_parts_mut(stream_inner_ptr, stream_inner_size)
+            };
+            data_buffer.set_data(data_slice)?;
         };
     };
 
