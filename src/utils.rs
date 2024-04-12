@@ -284,7 +284,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
         });
 
         inner_stream_buffer = &mut inner_stream_buffer[..decrypted.len()];
-        inner_stream_buffer.copy_from_slice(&decrypted[..]);
+        inner_stream_buffer.copy_from_slice(&decrypted);
         stream_buffer.set_data(inner_stream_buffer)?;
     };
 
@@ -295,7 +295,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
         if data_buffer.data().len() > decrypted.len() {
             let mut inner_data_buffer = data_buffer.take_data();
             inner_data_buffer = &mut inner_data_buffer[..decrypted.len()];
-            inner_data_buffer.copy_from_slice(&decrypted[..]);
+            inner_data_buffer.copy_from_slice(&decrypted);
             data_buffer.set_data(inner_data_buffer)?;
         // Otherwise, if the stream buffer is present, then we set the data buffer to the inner pointer of the stream buffer.
         // This is inherently unsafe, but it is the behavior of the Windows SSPI.
