@@ -358,9 +358,7 @@ impl Sspi for Kerberos {
     // #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
     fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
-        info!(?message, "decrypt_message");
         let encrypted = extract_encrypted_data(message)?;
-        info!("we made it here 1");
 
         let cipher = self
             .encryption_params
@@ -381,7 +379,7 @@ impl Sspi for Kerberos {
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
-        save_decrypted_data(&decrypted, message)?;
+        save_decrypted_data(&mut decrypted, message, WrapToken::header_len())?;
 
         match self.state {
             KerberosState::PubKeyAuth => {
