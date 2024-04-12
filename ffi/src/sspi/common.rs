@@ -370,6 +370,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             })?
         })
     }
+
     Ok(buffers)
 }
 

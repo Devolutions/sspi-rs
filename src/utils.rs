@@ -252,11 +252,11 @@ struct DataBuffer {
 /// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
 /// If the inner buffer is not large enough, then this function will return an error.
 /// 
-/// Fix me !Important: This function does not yet behave the same way as the Windows SSPI.
+/// Fix me !Important: This function does not yet behave the same way as Windows SSPI.
 /// The stream type of SecurityBuffer in the Windows SSPI contains the token + the decrypted data,
 /// and the decrypted stream always has the same length as the input buffer. 
 /// Right now, the decrypted data is written into the stream buffer, and the data buffer is set to the inner pointer of the stream buffer.
-/// This is behavior of reuse the pointer of the stream buffer for the data buffer is expected, as Windows SSPI does this as well.
+/// This is behavior of reusing the pointer of the stream buffer for the data buffer is expected, as Windows SSPI does this as well.
 /// The only problem here we need to fix is that the SecurityBufferType::Stream only has the decrypted data, not the token.
 /// This is a temporary fix until we implement the correct behavior.
 pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
