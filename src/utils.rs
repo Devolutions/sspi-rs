@@ -254,7 +254,6 @@ struct DataBuffer {
 pub fn save_decrypted_data<'a>(
     decrypted: &'a mut [u8],
     buffers: &'a mut [DecryptBuffer],
-    header_len: usize,
 ) -> Result<()> {
     let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream);
 

@@ -427,6 +427,8 @@ impl Sspi for Ntlm {
 
         let decrypted = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
+        save_decrypted_data(&decrypted, message)?;
+
         let digest = compute_digest(&self.recv_signing_key, sequence_number, &decrypted)?;
         let checksum = self
             .recv_sealing_key
@@ -442,10 +444,6 @@ impl Sspi for Ntlm {
             ));
         }
 
-        let mut decrypted_stream = vec![];
-        decrypted_stream.extend_from_slice(&digest);
-        decrypted_stream.extend_from_slice(&decrypted);
-        save_decrypted_data(&mut decrypted_stream, message,16)?;
         Ok(DecryptionFlags::empty())
     }
 

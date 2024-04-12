@@ -276,7 +276,10 @@ impl Sspi for Pku2u {
 
         let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
 
-        save_decrypted_data(&mut decrypted, message, WrapToken::header_len())?;
+        // remove wrap token header
+        decrypted.truncate(decrypted.len() - WrapToken::header_len());
+
+        save_decrypted_data(&decrypted, message)?;
 
         match self.state {
             Pku2uState::PubKeyAuth => {
