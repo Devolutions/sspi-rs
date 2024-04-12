@@ -251,14 +251,21 @@ struct DataBuffer {
 /// If the provided buffers do not contain the [SecurityBufferType::Data] buffer, then it will try
 /// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
 /// If the inner buffer is not large enough, then this function will return an error.
-pub fn save_decrypted_data<'a>(
-    decrypted: &'a mut [u8],
-    buffers: &'a mut [DecryptBuffer],
-) -> Result<()> {
+/// 
+/// Fix me !Important: This function does not yet behave the same way as the Windows SSPI.
+/// The stream type of SecurityBuffer in the Windows SSPI contains the token + the decrypted data,
+/// and the decrypted stream always has the same length as the input buffer. 
+/// Right now, the decrypted data is written into the stream buffer, and the data buffer is set to the inner pointer of the stream buffer.
+/// This is behavior of reuse the pointer of the stream buffer for the data buffer is expected, as Windows SSPI does this as well.
+/// The only problem here we need to fix is that the SecurityBufferType::Stream only has the decrypted data, not the token.
+/// This is a temporary fix until we implement the correct behavior.
+pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
     let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream);
 
+    let mut stream_buffer_inner = None;
+    // If there is a stream buffer, then we will write the decrypted data into it.
     if let Ok(stream_buffer) = buffer {
-        if stream_buffer.data().len() != decrypted.len() {
+        if stream_buffer.data().len() < decrypted.len() {
             return Err(Error::new(
                 ErrorKind::EncryptFailure,
                 format!(
@@ -268,38 +275,44 @@ pub fn save_decrypted_data<'a>(
                 ),
             ));
         }
+
+
         let mut inner_stream_buffer = stream_buffer.take_data();
+
+        stream_buffer_inner = Some(DataBuffer {
+            data: inner_stream_buffer.as_mut_ptr(),
+            size: decrypted.len(),
+        });
+
         inner_stream_buffer = &mut inner_stream_buffer[..decrypted.len()];
         inner_stream_buffer.copy_from_slice(&decrypted[..]);
         stream_buffer.set_data(inner_stream_buffer)?;
+
     };
-    // let stream_buffer_inner = buffer
-    //     .as_ref()
-    //     .map(|b| {
-    //         let ptr = b.data().as_ptr();
-    //         let len = b.data().len();
-    //         DataBuffer {
-    //             data: ptr as *mut u8,
-    //             size: len,
-    //         }
-    //     })
-    //     .ok();
 
-    // let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data);
-    // if let Ok(data_buffer) = buffer {
-    //     if let Some(stream_buffer) = stream_buffer_inner {
-    //         let DataBuffer {
-    //             data: stream_inner_ptr,
-    //             size: stream_inner_size,
-    //         } = stream_buffer;
+    let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data);
+    // If there is a data buffer.
+    if let Ok(data_buffer) = buffer {
+        // and if the data buffer is large enough, then we will write the decrypted data into it as well.
+        if data_buffer.data().len() > decrypted.len() {
+            let mut inner_data_buffer = data_buffer.take_data();
+            inner_data_buffer = &mut inner_data_buffer[..decrypted.len()];
+            inner_data_buffer.copy_from_slice(&decrypted[..]);
+            data_buffer.set_data(inner_data_buffer)?;
+        // Otherwise, if the stream buffer is present, then we set the data buffer to the inner pointer of the stream buffer.
+        // This is inherently unsafe, but it is the behavior of the Windows SSPI.
+        }else if let Some(stream_buffer) = stream_buffer_inner {
+            let DataBuffer {
+                data: stream_inner_ptr,
+                size: stream_inner_size,
+            } = stream_buffer;
 
-    //         unsafe {
-    //             let data_start_ptr = stream_inner_ptr.add(header_len);
-    //             let data_slice = std::slice::from_raw_parts_mut(data_start_ptr, stream_inner_size - header_len);
-    //             data_buffer.set_data(data_slice)?;
-    //         }
-    //     };
-    // };
+            unsafe {
+                let data_slice = std::slice::from_raw_parts_mut(stream_inner_ptr, stream_inner_size);
+                data_buffer.set_data(data_slice)?;
+            }
+        };
+    };
 
     Ok(())
 }
