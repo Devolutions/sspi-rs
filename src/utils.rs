@@ -251,10 +251,10 @@ struct DataBuffer {
 /// If the provided buffers do not contain the [SecurityBufferType::Data] buffer, then it will try
 /// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
 /// If the inner buffer is not large enough, then this function will return an error.
-/// 
+///
 /// Fix me !Important: This function does not yet behave the same way as Windows SSPI.
 /// The stream type of SecurityBuffer in the Windows SSPI contains the token + the decrypted data,
-/// and the decrypted stream always has the same length as the input buffer. 
+/// and the decrypted stream always has the same length as the input buffer.
 /// Right now, the decrypted data is written into the stream buffer, and the data buffer is set to the inner pointer of the stream buffer.
 /// This is behavior of reusing the pointer of the stream buffer for the data buffer is expected, as Windows SSPI does this as well.
 /// The only problem here we need to fix is that the SecurityBufferType::Stream only has the decrypted data, not the token.
@@ -276,7 +276,6 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
             ));
         }
 
-
         let mut inner_stream_buffer = stream_buffer.take_data();
 
         stream_buffer_inner = Some(DataBuffer {
@@ -287,7 +286,6 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
         inner_stream_buffer = &mut inner_stream_buffer[..decrypted.len()];
         inner_stream_buffer.copy_from_slice(&decrypted[..]);
         stream_buffer.set_data(inner_stream_buffer)?;
-
     };
 
     let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data);
@@ -301,7 +299,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
             data_buffer.set_data(inner_data_buffer)?;
         // Otherwise, if the stream buffer is present, then we set the data buffer to the inner pointer of the stream buffer.
         // This is inherently unsafe, but it is the behavior of the Windows SSPI.
-        }else if let Some(stream_buffer) = stream_buffer_inner {
+        } else if let Some(stream_buffer) = stream_buffer_inner {
             let DataBuffer {
                 data: stream_inner_ptr,
                 size: stream_inner_size,
