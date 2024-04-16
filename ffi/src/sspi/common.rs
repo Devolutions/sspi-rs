@@ -383,6 +383,16 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
     for (to_buffer, mut from_buffer) in to_buffers.iter_mut().zip(from_buffers.into_iter()) {
+        // The `SECBUFFER_STREAM` buffer is only used for the data passing during the decryption
+        // when the caller doesn't know the exact `SECBUFFER_TOKEN` and `SECBUFFER_DATA` lengths.
+        // After the decryption, the pointer and length of the SECBUFFER_STREAM are unchanged.
+        // So, we don't need to copy any data and we skip it.
+        //
+        // The `SECBUFFER_STREAM` usage example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
+        if matches!(from_buffer, DecryptBuffer::Stream(_)) {
+            continue;
+        }
+
         let from_buffer_len = from_buffer.buf_len();
 
         to_buffer.buffer_type = from_buffer.security_buffer_type().to_u32().ok_or_else(|| {
@@ -407,3 +417,95 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
 }
 
 pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::null_mut;
+    use std::slice::from_raw_parts;
+
+    use libc::c_ulonglong;
+    use sspi::credssp::SspiContext;
+    use sspi::{EncryptionFlags, SecurityBuffer, SecurityBufferType, Sspi};
+
+    use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
+    use crate::sspi::sec_handle::{SecHandle, SspiHandle};
+    use crate::utils::into_raw_ptr;
+
+    #[test]
+    fn kerberos_stream_buffer_decryption() {
+        // This test simulates decryption when the `SECBUFFER_STREAM` buffer is used.
+        // The expected behavior is the same as for the original Windows SSPI.
+        //
+        // MSDN code example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
+        let plain_message = b"some plain message";
+
+        let kerberos_client = sspi::kerberos::test_client();
+        let mut kerberos_server = sspi::kerberos::test_server();
+
+        let mut message = [
+            SecurityBuffer {
+                buffer: Vec::new(),
+                buffer_type: SecurityBufferType::Token,
+            },
+            SecurityBuffer {
+                buffer: plain_message.to_vec(),
+                buffer_type: SecurityBufferType::Data,
+            },
+        ];
+
+        kerberos_server
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .unwrap();
+
+        let mut kerberos_client_context = SecHandle {
+            dw_lower: {
+                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
+                into_raw_ptr(sspi_context) as c_ulonglong
+            },
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        };
+
+        let mut stream_buffer_data = message[0].buffer.clone();
+        stream_buffer_data.extend_from_slice(&message[1].buffer);
+        let stream_buffer_data_len = stream_buffer_data.len().try_into().unwrap();
+        let mut buffers = [
+            SecBuffer {
+                cb_buffer: stream_buffer_data_len,
+                buffer_type: 10,
+                pv_buffer: stream_buffer_data.as_mut_ptr() as *mut _,
+            },
+            SecBuffer {
+                cb_buffer: 0,
+                buffer_type: 1,
+                pv_buffer: null_mut(),
+            },
+        ];
+        let mut message = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 2,
+            p_buffers: buffers.as_mut_ptr(),
+        };
+
+        let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+
+        assert_eq!(status, 0);
+
+        // Check SECBUFFER_STREAM
+        assert_eq!(buffers[0].buffer_type, 10);
+        assert_eq!(buffers[0].cb_buffer, stream_buffer_data_len);
+
+        // Check SECBUFFER_DATA
+        assert_eq!(buffers[1].buffer_type, 1);
+        assert_eq!(buffers[1].cb_buffer, plain_message.len().try_into().unwrap());
+        // Check that the decrypted data is the same as the initial message
+        assert_eq!(
+            unsafe {
+                from_raw_parts(
+                    buffers[1].pv_buffer as *const u8,
+                    buffers[1].cb_buffer.try_into().unwrap(),
+                )
+            },
+            plain_message
+        );
+    }
+}
