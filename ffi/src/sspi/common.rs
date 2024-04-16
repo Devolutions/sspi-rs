@@ -439,8 +439,8 @@ mod tests {
         // MSDN code example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
         let plain_message = b"some plain message";
 
-        let kerberos_client = sspi::kerberos::test_client();
-        let mut kerberos_server = sspi::kerberos::test_server();
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+        let mut kerberos_server = sspi::kerberos::test_data::fake_server();
 
         let mut message = [
             SecurityBuffer {

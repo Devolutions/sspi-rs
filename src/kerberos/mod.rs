@@ -1007,68 +1007,68 @@ impl SspiEx for Kerberos {
 }
 
 #[cfg(any(feature = "test_data", test))]
-pub fn test_client() -> Kerberos {
+pub mod test_data {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
+    use picky_krb::crypto::CipherSuite;
 
-    Kerberos {
-        state: KerberosState::Final,
-        config: KerberosConfig {
+    use super::{EncryptionParams, KerberosConfig, KerberosState};
+    use crate::Kerberos;
+
+    const SESSION_KEY: &[u8] = &[
+        21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79, 112, 46,
+        73, 182, 117, 0, 35, 91, 24, 66,
+    ];
+    const SUB_SESSION_KEY: &[u8] = &[
+        146, 61, 191, 46, 26, 68, 247, 94, 124, 95, 1, 190, 15, 185, 245, 64, 18, 203, 212, 49, 43, 222, 254, 217, 85,
+        222, 7, 92, 254, 153, 105, 144,
+    ];
+
+    pub fn fake_client() -> Kerberos {
+        Kerberos {
+            state: KerberosState::Final,
+            config: KerberosConfig {
+                kdc_url: None,
+                client_computer_name: None,
+            },
+            auth_identity: None,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(SESSION_KEY.to_vec()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                sspi_encrypt_key_usage: INITIATOR_SEAL,
+                sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+            },
+            seq_number: 1234,
+            realm: None,
             kdc_url: None,
-            client_computer_name: None,
-        },
-        auth_identity: None,
-        encryption_params: EncryptionParams {
-            encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-            session_key: Some(vec![
-                21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79,
-                112, 46, 73, 182, 117, 0, 35, 91, 24, 66,
-            ]),
-            sub_session_key: Some(vec![
-                146, 61, 191, 46, 26, 68, 247, 94, 124, 95, 1, 190, 15, 185, 245, 64, 18, 203, 212, 49, 43, 222, 254,
-                217, 85, 222, 7, 92, 254, 153, 105, 144,
-            ]),
-            sspi_encrypt_key_usage: INITIATOR_SEAL,
-            sspi_decrypt_key_usage: ACCEPTOR_SEAL,
-        },
-        seq_number: 1234,
-        realm: None,
-        kdc_url: None,
-        channel_bindings: None,
-        #[cfg(feature = "scard")]
-        dh_parameters: None,
+            channel_bindings: None,
+            #[cfg(feature = "scard")]
+            dh_parameters: None,
+        }
     }
-}
 
-#[cfg(any(feature = "test_data", test))]
-pub fn test_server() -> Kerberos {
-    use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
-
-    Kerberos {
-        state: KerberosState::Final,
-        config: KerberosConfig {
+    pub fn fake_server() -> Kerberos {
+        Kerberos {
+            state: KerberosState::Final,
+            config: KerberosConfig {
+                kdc_url: None,
+                client_computer_name: None,
+            },
+            auth_identity: None,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(SESSION_KEY.to_vec()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
+                sspi_decrypt_key_usage: INITIATOR_SEAL,
+            },
+            seq_number: 0,
+            realm: None,
             kdc_url: None,
-            client_computer_name: None,
-        },
-        auth_identity: None,
-        encryption_params: EncryptionParams {
-            encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-            session_key: Some(vec![
-                21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79,
-                112, 46, 73, 182, 117, 0, 35, 91, 24, 66,
-            ]),
-            sub_session_key: Some(vec![
-                146, 61, 191, 46, 26, 68, 247, 94, 124, 95, 1, 190, 15, 185, 245, 64, 18, 203, 212, 49, 43, 222, 254,
-                217, 85, 222, 7, 92, 254, 153, 105, 144,
-            ]),
-            sspi_encrypt_key_usage: ACCEPTOR_SEAL,
-            sspi_decrypt_key_usage: INITIATOR_SEAL,
-        },
-        seq_number: 0,
-        realm: None,
-        kdc_url: None,
-        channel_bindings: None,
-        #[cfg(feature = "scard")]
-        dh_parameters: None,
+            channel_bindings: None,
+            #[cfg(feature = "scard")]
+            dh_parameters: None,
+        }
     }
 }
 
@@ -1090,8 +1090,8 @@ mod tests {
     fn stream_buffer_decryption() {
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
 
-        let mut kerberos_server = super::test_server();
-        let mut kerberos_client = super::test_client();
+        let mut kerberos_server = super::test_data::fake_server();
+        let mut kerberos_client = super::test_data::fake_client();
 
         let plain_message = b"some plain message";
 
