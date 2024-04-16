@@ -241,76 +241,55 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     }
 }
 
-struct DataBuffer {
-    data: *mut u8,
-    size: usize,
-}
-
 /// Copies a decrypted data into the [SecurityBufferType::Data] or [SecurityBufferType::Stream].
 ///
-/// If the provided buffers do not contain the [SecurityBufferType::Data] buffer, then it will try
-/// to write the data in the [SecurityBufferType::Stream]. Otherwise, the error will be returned.
-/// If the inner buffer is not large enough, then this function will return an error.
-///
-/// Fix me !Important: This function does not yet behave the same way as Windows SSPI.
-/// The stream type of SecurityBuffer in the Windows SSPI contains the token + the decrypted data,
-/// and the decrypted stream always has the same length as the input buffer.
-/// Right now, the decrypted data is written into the stream buffer, and the data buffer is set to the inner pointer of the stream buffer.
-/// This is behavior of reusing the pointer of the stream buffer for the data buffer is expected, as Windows SSPI does this as well.
-/// The only problem here we need to fix is that the SecurityBufferType::Stream only has the decrypted data, not the token.
-/// This is a temporary fix until we implement the correct behavior.
+/// There are two choices for how we should save the decrypted data in security buffers:
+/// * If the `SECBUFFER_STREAM` is present, we should save all data in the `SECBUFFER_DATA` buffer.
+///   But in such a case, the `SECBUFFER_DATA` buffer is empty. So, we take the inner buffer from
+///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
+/// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
 pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
-    let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream);
-    let mut stream_buffer_inner = None;
-    // If there is a stream buffer, then we will write the decrypted data into it.
-    if let Ok(stream_buffer) = buffer {
-        if stream_buffer.data().len() < decrypted.len() {
+    if let Ok(buffer) = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
+        let stream_buffer = buffer.take_data();
+        let stream_buffer_len = stream_buffer.len();
+        let decrypted_len = decrypted.len();
+
+        if stream_buffer_len < decrypted_len {
             return Err(Error::new(
-                ErrorKind::EncryptFailure,
+                ErrorKind::DecryptFailure,
                 format!(
                     "Decrypted data length ({}) does not match the stream buffer length ({})",
-                    decrypted.len(),
-                    stream_buffer.data().len()
+                    decrypted_len, stream_buffer_len,
                 ),
             ));
         }
 
-        let mut inner_stream_buffer = stream_buffer.take_data();
+        let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
 
-        stream_buffer_inner = Some(DataBuffer {
-            data: inner_stream_buffer.as_mut_ptr(),
-            size: decrypted.len(),
-        });
+        let data = &mut stream_buffer[stream_buffer_len - decrypted_len..];
+        data.copy_from_slice(decrypted);
 
-        inner_stream_buffer = &mut inner_stream_buffer[..decrypted.len()];
-        inner_stream_buffer.copy_from_slice(decrypted);
-        stream_buffer.set_data(inner_stream_buffer)?;
-    };
+        data_buffer.set_data(data)
+    } else {
+        let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let data = data_buffer.take_data();
 
-    let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data);
-    // If there is a data buffer.
-    if let Ok(data_buffer) = buffer {
-        // and if the data buffer is large enough, then we will write the decrypted data into it as well.
-        if data_buffer.data().len() >= decrypted.len() {
-            let mut inner_data_buffer = data_buffer.take_data();
-            inner_data_buffer = &mut inner_data_buffer[..decrypted.len()];
-            inner_data_buffer.copy_from_slice(decrypted);
-            data_buffer.set_data(inner_data_buffer)?;
-        // Otherwise, if the stream buffer is present, then we set the data buffer to the inner pointer of the stream buffer.
-        // This is inherently unsafe, but it is the behavior of the Windows SSPI.
-        } else if let Some(stream_buffer) = stream_buffer_inner {
-            let DataBuffer {
-                data: stream_inner_ptr,
-                size: stream_inner_size,
-            } = stream_buffer;
+        if data.len() < decrypted.len() {
+            return Err(Error::new(
+                ErrorKind::DecryptFailure,
+                format!(
+                    "Decrypted data length ({}) does not match the data buffer length ({})",
+                    decrypted.len(),
+                    data.len(),
+                ),
+            ));
+        }
 
-            // SAFETY: This is safe because the stream buffer is guaranteed to exist and have the correct size.
-            let data_slice = unsafe { std::slice::from_raw_parts_mut(stream_inner_ptr, stream_inner_size) };
-            data_buffer.set_data(data_slice)?;
-        };
-    };
+        let data = &mut data[0..decrypted.len()];
+        data.copy_from_slice(decrypted);
 
-    Ok(())
+        data_buffer.set_data(data)
+    }
 }
 
 /// Extracts data to decrypt from the incoming buffers.
