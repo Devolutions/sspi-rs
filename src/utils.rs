@@ -261,7 +261,6 @@ struct DataBuffer {
 /// This is a temporary fix until we implement the correct behavior.
 pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
     let buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream);
-    println!("decrypted: {:?}", decrypted);
     let mut stream_buffer_inner = None;
     // If there is a stream buffer, then we will write the decrypted data into it.
     if let Ok(stream_buffer) = buffer {
