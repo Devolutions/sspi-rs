@@ -1,4 +1,5 @@
 #![allow(clippy::missing_safety_doc)]
+#![allow(clippy::print_stdout)]
 #![allow(non_snake_case)]
 
 #[macro_use]
