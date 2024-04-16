@@ -1006,7 +1006,7 @@ impl SspiEx for Kerberos {
     }
 }
 
-#[cfg(feature = "test_data")]
+#[cfg(any(feature = "test_data", test))]
 pub fn test_client() -> Kerberos {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
 
@@ -1039,7 +1039,7 @@ pub fn test_client() -> Kerberos {
     }
 }
 
-#[cfg(feature = "test_data")]
+#[cfg(any(feature = "test_data", test))]
 pub fn test_server() -> Kerberos {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
 
