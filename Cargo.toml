@@ -31,6 +31,7 @@ dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
 tsssp = ["dep:rustls"]
 # Turns on Kerberos smart card login (available only on Windows and users WinSCard API)
 scard = ["dep:pcsc", "dep:winscard"]
+test_data = []
 
 [dependencies]
 byteorder = "1.4"
