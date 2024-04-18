@@ -1,5 +1,6 @@
 macro_rules! try_execute {
     ($x:expr) => {{
+        use num_traits::FromPrimitive;
         use winscard::{Error, ErrorKind};
 
         let error_kind = ErrorKind::from_u32($x).unwrap_or(ErrorKind::InternalError);

@@ -4,9 +4,9 @@ use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
 use ffi_types::winscard::{ScardContext, ScardHandle, ScardIoRequest};
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::ToPrimitive;
 use winscard::winscard::{
-    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, State, Status, TransmitOutData, WinScard,
+    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
 use winscard::{Error, ErrorKind, WinScardResult, CHUNK_SIZE};
 

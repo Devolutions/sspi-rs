@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ffi_types::winscard::ScardContext;
-use winscard::winscard::{DeviceTypeId, Icon, MemoryPtr, Protocol, ShareMode, WinScard, WinScardContext};
+use winscard::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 pub struct SystemScardContext {
@@ -70,12 +70,31 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn read_cache(&self, key: &str) -> Option<&[u8]> {
-        todo!()
+    fn read_cache(&self, _key: &str) -> Option<Cow<[u8]>> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            None
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
-    fn write_cache(&mut self, key: String, value: Vec<u8>) {
-        todo!()
+    fn write_cache(&mut self, _key: String, _value: Vec<u8>) -> WinScardResult<()> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardWriteCache function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
