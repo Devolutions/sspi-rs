@@ -37,7 +37,7 @@ use iso7816_tlv::TlvError;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
-pub use scard::{SmartCard, ATR, PIV_AID};
+pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID};
 pub use scard_context::{Reader, ScardContext, SmartCardInfo};
 
 /// The [WinScardResult] type.

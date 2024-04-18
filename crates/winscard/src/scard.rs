@@ -21,8 +21,8 @@ use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResu
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
-// the max amount of data one APDU response can transmit
-const CHUNK_SIZE: usize = 256;
+/// The max amount of data one APDU response can transmit.
+pub const CHUNK_SIZE: usize = 256;
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CARD_AUTH_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x01];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
@@ -501,7 +501,12 @@ impl<'a> WinScard for SmartCard<'a> {
         Ok(Vec::new())
     }
 
-    fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+    fn transmit(
+        &mut self,
+        _send_pci: IoRequest,
+        input_apdu: &[u8],
+        output_apdu: &mut [u8],
+    ) -> WinScardResult<TransmitOutData> {
         let Response { status, data } = self.handle_command(input_apdu)?;
 
         let mut output_apdu = data.unwrap_or_default();
