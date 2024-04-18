@@ -39,8 +39,10 @@ const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
-// We are always using the T1 protocol as the original Windows TPM smart card does
-const SUPPORTED_CONNECTION_PROTOCOL: Protocol = Protocol::T1;
+/// Supported connection protocol in emulated smart cards.
+///
+/// We are always using the T1 protocol as the original Windows TPM smart card does
+pub const SUPPORTED_CONNECTION_PROTOCOL: Protocol = Protocol::T1;
 // Only one supported control code.
 // `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
 // Request features described in the *PC/SC 2.0 Specification Part 10*

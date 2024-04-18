@@ -8,8 +8,8 @@ use alloc::{format, vec};
 use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
-use crate::scard::SmartCard;
-use crate::winscard::{DeviceTypeId, Icon, MemoryPtr, Protocol, ShareMode, WinScard, WinScardContext};
+use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
+use crate::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, WinScardContext};
 use crate::{Error, ErrorKind, WinScardResult};
 
 /// Describes a smart card reader.
@@ -448,7 +448,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         reader_name: &str,
         _share_mode: ShareMode,
         _protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>> {
+    ) -> WinScardResult<ScardConnectData> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
@@ -456,12 +456,15 @@ impl<'a> WinScardContext for ScardContext<'a> {
             ));
         }
 
-        Ok(Box::new(SmartCard::new(
-            Cow::Owned(reader_name.to_owned()),
-            self.smart_card_info.pin.clone(),
-            self.smart_card_info.auth_cert_der.clone(),
-            self.smart_card_info.auth_pk.clone(),
-        )?))
+        Ok(ScardConnectData {
+            scard: Box::new(SmartCard::new(
+                Cow::Owned(reader_name.to_owned()),
+                self.smart_card_info.pin.clone(),
+                self.smart_card_info.auth_cert_der.clone(),
+                self.smart_card_info.auth_pk.clone(),
+            )?),
+            protocol: SUPPORTED_CONNECTION_PROTOCOL,
+        })
     }
 
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
@@ -517,10 +520,5 @@ impl<'a> WinScardContext for ScardContext<'a> {
         //
         // We don't have any external actions, so we just return success.
         Ok(())
-    }
-
-    fn free(&mut self, ptr: MemoryPtr) -> WinScardResult<()> {
-        // TODO(@TheBestTvarynka): implement in upcoming pull requests.
-        todo!()
     }
 }
