@@ -464,8 +464,8 @@ impl<'a> WinScardContext for ScardContext<'a> {
         )?))
     }
 
-    fn list_readers(&self) -> Vec<Cow<str>> {
-        vec![self.smart_card_info.reader.name.clone()]
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+        Ok(vec![self.smart_card_info.reader.name.clone()])
     }
 
     fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId> {
