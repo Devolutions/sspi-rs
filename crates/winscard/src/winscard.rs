@@ -498,7 +498,7 @@ pub trait WinScardContext {
     /// [SCardListReadersW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersw)
     ///
     /// Provides the list of readers within a set of named reader groups, eliminating duplicates.
-    fn list_readers(&self) -> Vec<Cow<str>>;
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>>;
 
     /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
     ///
