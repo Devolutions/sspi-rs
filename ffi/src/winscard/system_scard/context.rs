@@ -197,8 +197,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardCancel(self.h_context) })
         }
     }
 }
