@@ -9,7 +9,7 @@ use ffi_types::winscard::{
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::{AttributeId, Protocol, ScardConnectData};
+use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::buf_alloc::{build_buf_request_type, copy_buff, save_out_buf, write_multistring_a, write_multistring_w};
@@ -128,11 +128,11 @@ pub extern "system" fn SCardReconnect(
     check_handle!(handle);
     check_null!(pdw_active_protocol);
 
-    let share_mode = dw_share_mode.try_into()?;
+    let share_mode = try_execute!(ShareMode::try_from(dw_share_mode));
     let protocol = Protocol::from_bits(dw_preferred_protocols);
     let initialization = try_execute!(dw_initialization.try_into(), ErrorKind::InvalidParameter);
 
-    let mut scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
     let active_protocol = try_execute!(scard.reconnect(share_mode, protocol, initialization));
 
     // SAFETY: `pdw_active_protocol` is checked above, so it is guaranteed not NULL.
@@ -354,6 +354,7 @@ pub unsafe extern "system" fn SCardControl(
     lp_bytes_returned: LpDword,
 ) -> ScardStatus {
     check_handle!(handle);
+
     let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
     let in_buffer = if !lp_in_buffer.is_null() {

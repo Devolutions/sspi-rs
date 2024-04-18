@@ -169,7 +169,7 @@ impl WinScardHandle {
         attribute_id: AttributeId,
         buffer_type: RequestedBufferType,
     ) -> WinScardResult<OutBuffer> {
-        let data = self.scard().get_attribute(attribute_id)?.as_ref();
+        let data = self.scard().get_attribute(attribute_id)?;
 
         Ok(match buffer_type {
             RequestedBufferType::Buff(buf) => {
@@ -185,14 +185,14 @@ impl WinScardHandle {
                     );
                 }
 
-                buf[0..data.len()].copy_from_slice(data);
+                buf[0..data.len()].copy_from_slice(&data);
 
                 OutBuffer::Written(data.len())
             }
             RequestedBufferType::Length => OutBuffer::DataLen(data.len()),
             RequestedBufferType::Allocate => {
                 let allocated = self.context().unwrap().allocate_buffer(data.len())?;
-                let mut buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
+                let buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
 
                 buf.copy_from_slice(&data);
 
@@ -228,7 +228,11 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
     let (cb_pci_length, dw_protocol) = unsafe { ((*pio_send_pci).cb_pci_length, (*pio_send_pci).dw_protocol) };
-    let buffer_len = cb_pci_length.try_into()?;
+    // https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
+    //
+    // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
+    let pci_buf_len: usize = cb_pci_length.try_into()?;
+    let buffer_len = pci_buf_len - size_of::<ScardIoRequest>();
     let buffer = unsafe { (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>()) };
 
     Ok(IoRequest {
