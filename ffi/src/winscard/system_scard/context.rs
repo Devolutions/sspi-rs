@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
 use ffi_types::winscard::ScardContext;
 use winscard::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
@@ -27,8 +27,32 @@ impl WinScardContext for SystemScardContext {
         todo!()
     }
 
-    fn list_readers(&self) -> Vec<Cow<str>> {
-        todo!()
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut readers_buf_len = 0;
+
+            // https://pcsclite.apdu.fr/api/group__API.html#ga93b07815789b3cf2629d439ecf20f0d9
+            //
+            // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
+            // `mszGroups`: List of groups to list readers (not used).
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardListReaders(self.h_context, null(), null_mut(), &mut readers_buf_len)
+            })?;
+
+            let mut readers = vec![0; readers_buf_len.try_into()?];
+
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardListReaders(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
+            })?;
+
+            parse_multi_string_owned(&readers)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn device_type_id(&self, _reader_name: &str) -> WinScardResult<DeviceTypeId> {
@@ -122,9 +146,7 @@ impl WinScardContext for SystemScardContext {
                 )
             })?;
 
-            let reader_groups = parse_multi_string_owned(&reader_groups)?;
-
-            Ok(reader_groups)
+            parse_multi_string_owned(&reader_groups)
         }
         #[cfg(target_os = "windows")]
         {
