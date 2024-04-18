@@ -169,6 +169,12 @@ impl From<core::convert::Infallible> for Error {
     }
 }
 
+impl From<core::str::Utf8Error> for Error {
+    fn from(value: core::str::Utf8Error) -> Self {
+        Error::new(ErrorKind::InternalError, value.to_string())
+    }
+}
+
 /// [Smart Card Return Values](https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values).
 #[derive(Debug, PartialEq, ToPrimitive, FromPrimitive)]
 #[repr(u32)]

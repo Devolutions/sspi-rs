@@ -342,6 +342,28 @@ pub enum State {
     Specific = 6,
 }
 
+impl TryFrom<u32> for State {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => State::Unknown,
+            1 => State::Absent,
+            2 => State::Present,
+            3 => State::Swallowed,
+            4 => State::Powered,
+            5 => State::Negotiable,
+            6 => State::Specific,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    format!("Invalid State value: {}", value),
+                ))
+            }
+        })
+    }
+}
+
 impl From<State> for u32 {
     fn from(value: State) -> Self {
         value as u32
