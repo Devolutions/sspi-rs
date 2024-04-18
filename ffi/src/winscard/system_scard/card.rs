@@ -1,27 +1,93 @@
 use std::borrow::Cow;
 use std::mem::size_of;
 use std::ptr::null_mut;
+use std::slice::from_raw_parts;
 
-use ffi_types::winscard::{ScardHandle, ScardIoRequest};
+use ffi_types::winscard::{ScardContext, ScardHandle, ScardIoRequest};
 use num_traits::{FromPrimitive, ToPrimitive};
 use winscard::winscard::{
-    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
+    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, State, Status, TransmitOutData, WinScard,
 };
 use winscard::{Error, ErrorKind, WinScardResult, CHUNK_SIZE};
 
+use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
+
 pub struct SystemScard {
     h_card: ScardHandle,
+    h_card_context: ScardContext,
 }
 
 impl SystemScard {
-    pub fn new(h_card: ScardHandle) -> Self {
-        Self { h_card }
+    pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> Self {
+        Self { h_card, h_card_context }
     }
 }
 
 impl WinScard for SystemScard {
     fn status(&self) -> WinScardResult<Status> {
-        todo!()
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut reader_name: *mut u8 = null_mut();
+            let mut reader_name_len = SCARD_AUTOALLOCATE;
+            let mut state = 0;
+            let mut protocol = 0;
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
+            //
+            // `pbAtr`: Pointer to a 32-byte buffer that receives the ATR string from the currently inserted card, if available.
+            //
+            // PCSC-lite docs do not specify that ATR buf should be 32 bytes long, but actually, the ATR string can not be longer than 32 bytes.
+            let mut atr = vec![0; 32];
+            let mut atr_len = 0;
+
+            // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
+            //
+            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself the needed memory for szReaderName. Use SCardFreeMemory() to release it.
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardStatus(
+                    self.h_card,
+                    (&mut reader_name as *mut *mut u8) as *mut _,
+                    &mut reader_name_len,
+                    &mut state,
+                    &mut protocol,
+                    atr.as_mut_ptr(),
+                    &mut atr_len,
+                )
+            })?;
+
+            let readers = if let Ok(readers) =
+                parse_multi_string(unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) })
+            {
+                readers.iter().map(|&r| Cow::Owned(r.to_owned())).collect()
+            } else {
+                try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
+
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    "Returned reader is not valid UTF-8",
+                ));
+            };
+
+            try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
+
+            let status = Status {
+                readers,
+                state: state.try_into()?,
+                protocol: Protocol::from_bits(protocol).ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InternalError,
+                        format!("Invalid protocol value: {}", protocol),
+                    )
+                })?,
+                atr: atr.into(),
+            };
+
+            Ok(status)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn control(&mut self, code: ControlCode, input: &[u8], mut output: Option<&mut [u8]>) -> WinScardResult<usize> {
@@ -198,4 +264,14 @@ impl WinScard for SystemScard {
         }
         Ok(())
     }
+}
+
+fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
+    let res: Result<Vec<&str>, _> = buf
+        .split(|&c| c == 0)
+        .filter(|v| v.is_empty())
+        .map(|v| std::str::from_utf8(v))
+        .collect();
+
+    Ok(res?)
 }
