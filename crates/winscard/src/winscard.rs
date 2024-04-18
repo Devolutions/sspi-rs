@@ -409,7 +409,7 @@ pub trait WinScard {
     /// The SCardControl function gives you direct control of the reader.
     /// You can call it any time after a successful call to SCardConnect and before a successful call to SCardDisconnect.
     /// The effect on the state of the reader depends on the control code.
-    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<Vec<u8>>;
+    fn control(&mut self, code: ControlCode, input: &[u8], output: Option<&mut [u8]>) -> WinScardResult<usize>;
 
     /// [SCardTransmit](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
     ///
