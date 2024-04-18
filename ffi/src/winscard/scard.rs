@@ -8,8 +8,8 @@ use ffi_types::winscard::{
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::Protocol;
-use winscard::{ErrorKind, WinScardResult};
+use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
+use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::buf_alloc::{copy_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
@@ -30,8 +30,7 @@ unsafe fn connect(
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
     let scard_context = unsafe { scard_context_to_winscard_context(context)? };
-    let scard = scard_context.connect(reader_name, share_mode, protocol)?;
-    let protocol = scard.handle.status()?.protocol.bits();
+    let ScardConnectData { scard, protocol } = scard_context.connect(reader_name, share_mode, protocol)?;
 
     let scard = WinScardHandle::new(scard.handle, context);
 
@@ -42,7 +41,7 @@ unsafe fn connect(
 
     unsafe {
         *ph_card = raw_card_handle;
-        *pdw_active_protocol = protocol;
+        *pdw_active_protocol = protocol.bits();
     }
 
     Ok(())

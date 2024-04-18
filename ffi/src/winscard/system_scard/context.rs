@@ -1,11 +1,12 @@
 use std::borrow::Cow;
+use std::ffi::CString;
 use std::ptr::{null, null_mut};
 
-use ffi_types::winscard::ScardContext;
-use winscard::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
+use ffi_types::winscard::{ScardContext, ScardHandle};
+use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::parse_multi_string_owned;
+use super::{parse_multi_string_owned, SystemScard};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -23,8 +24,42 @@ impl WinScardContext for SystemScardContext {
         reader_name: &str,
         share_mode: ShareMode,
         protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>> {
-        todo!()
+    ) -> WinScardResult<ScardConnectData> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_string = CString::new(reader_name).expect("Rust string slice should not contain 0 bytes");
+
+            let mut scard: ScardHandle = 0;
+            let mut active_protocol = 0;
+
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardConnect(
+                    self.h_context,
+                    c_string.as_ptr() as *const _,
+                    share_mode.into(),
+                    protocol.unwrap_or_default().bits(),
+                    &mut scard,
+                    &mut active_protocol,
+                )
+            })?;
+
+            let scard = Box::new(SystemScard::new(scard, self.h_context));
+
+            Ok(ScardConnectData {
+                scard,
+                protocol: Protocol::from_bits(active_protocol).unwrap_or_default(),
+            })
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
