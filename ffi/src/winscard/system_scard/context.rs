@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use ffi_types::winscard::ScardContext;
 use winscard::winscard::{DeviceTypeId, Icon, MemoryPtr, Protocol, ShareMode, WinScard, WinScardContext};
-use winscard::WinScardResult;
+use winscard::{Error, ErrorKind, WinScardResult};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -28,16 +28,46 @@ impl WinScardContext for SystemScardContext {
         todo!()
     }
 
-    fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId> {
-        todo!()
+    fn device_type_id(&self, _reader_name: &str) -> WinScardResult<DeviceTypeId> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardGetDeviceTypeId function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
-    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon> {
-        todo!()
+    fn reader_icon(&self, _reader_name: &str) -> WinScardResult<Icon> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardGetReaderIcon function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn is_valid(&self) -> bool {
-        todo!()
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardIsValidContext(self.h_context) }).is_ok()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn read_cache(&self, key: &str) -> Option<&[u8]> {
@@ -53,10 +83,6 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {
-        todo!()
-    }
-
-    fn free(&mut self, ptr: MemoryPtr) -> WinScardResult<()> {
         todo!()
     }
 }
