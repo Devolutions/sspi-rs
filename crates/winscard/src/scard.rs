@@ -490,7 +490,7 @@ impl<'a> WinScard for SmartCard<'a> {
         })
     }
 
-    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<Vec<u8>> {
+    fn control(&mut self, code: ControlCode, _input: &[u8], _output: Option<&mut [u8]>) -> WinScardResult<usize> {
         if code != IO_CTL {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
@@ -498,15 +498,10 @@ impl<'a> WinScard for SmartCard<'a> {
             ));
         }
 
-        Ok(Vec::new())
+        Ok(0)
     }
 
-    fn transmit(
-        &mut self,
-        _send_pci: IoRequest,
-        input_apdu: &[u8],
-        output_apdu: &mut [u8],
-    ) -> WinScardResult<TransmitOutData> {
+    fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
         let Response { status, data } = self.handle_command(input_apdu)?;
 
         let mut output_apdu = data.unwrap_or_default();
