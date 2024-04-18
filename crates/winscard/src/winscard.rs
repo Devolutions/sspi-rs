@@ -413,6 +413,14 @@ pub struct TransmitOutData {
     pub receive_pci: Option<IoRequest>,
 }
 
+/// This structure represents the result of the `SCardConnect` function.
+pub struct ScardConnectData {
+    /// Established smart card handle.
+    pub scard: Box<dyn WinScard>,
+    /// Established protocol to this connection.
+    pub protocol: Protocol,
+}
+
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
 ///
 /// # MSDN
@@ -493,7 +501,7 @@ pub trait WinScardContext {
         reader_name: &str,
         share_mode: ShareMode,
         protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>>;
+    ) -> WinScardResult<ScardConnectData>;
 
     /// [SCardListReadersW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersw)
     ///
