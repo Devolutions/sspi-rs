@@ -421,6 +421,23 @@ pub struct ScardConnectData {
     pub protocol: Protocol,
 }
 
+/// Represents `UUID`/`GUID` identifier.
+///
+/// https://learn.microsoft.com/en-us/windows/win32/api/guiddef/ns-guiddef-guid
+/// At the current project stage, we do not operate with UUIDs. Thus, a simple wrapper type is enough.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Uuid {
+    /// Specifies the first 8 hexadecimal digits of the GUID.
+    pub data1: u32,
+    /// Specifies the first group of 4 hexadecimal digits.
+    pub data2: u16,
+    /// Specifies the second group of 4 hexadecimal digits.
+    pub data3: u16,
+    /// Array of 8 bytes. The first 2 bytes contain the third group of 4 hexadecimal digits.
+    /// The remaining 6 bytes contain the final 12 hexadecimal digits.
+    pub data4: [u8; 8],
+}
+
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
 ///
 /// # MSDN
@@ -533,7 +550,8 @@ pub trait WinScardContext {
     /// [SCardWriteCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
     ///
     /// The SCardWriteCache function writes a name-value pair from a smart card to the global cache maintained by the Smart Card Resource Manager.
-    fn write_cache(&mut self, key: String, value: Vec<u8>);
+    fn write_cache(&mut self, card_id: Uuid, freshness_counter: u32, key: String, value: Vec<u8>)
+        -> WinScardResult<()>;
 
     /// [SCardListReaderGroupsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw)
     ///

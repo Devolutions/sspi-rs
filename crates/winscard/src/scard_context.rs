@@ -9,7 +9,7 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
-use crate::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, WinScardContext};
+use crate::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
 use crate::{Error, ErrorKind, WinScardResult};
 
 /// Describes a smart card reader.
@@ -501,8 +501,10 @@ impl<'a> WinScardContext for ScardContext<'a> {
         self.cache.get(key).map(|item| item.as_slice())
     }
 
-    fn write_cache(&mut self, key: String, value: Vec<u8>) {
+    fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
         self.cache.insert(key, value);
+
+        Ok(())
     }
 
     fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
