@@ -538,10 +538,4 @@ pub trait WinScardContext {
     /// The only requests that you can cancel are those that require waiting for external action by the smart card or user.
     /// Any such outstanding action requests will terminate with a status indication that the action was canceled.
     fn cancel(&mut self) -> WinScardResult<()>;
-
-    /// [SCardFreeMemory](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardfreememory)
-    ///
-    /// The SCardFreeMemory function releases memory that has been returned from the resource manager
-    /// using the `SCARD_AUTOALLOCATE` length designator.
-    fn free(&mut self, ptr: MemoryPtr) -> WinScardResult<()>;
 }
