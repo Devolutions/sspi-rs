@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::mem::size_of;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use ffi_types::winscard::{ScardHandle, ScardIoRequest};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -24,8 +24,35 @@ impl WinScard for SystemScard {
         todo!()
     }
 
-    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<Vec<u8>> {
-        todo!()
+    fn control(&mut self, code: ControlCode, input: &[u8], mut output: Option<&mut [u8]>) -> WinScardResult<usize> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut receive_len = 0;
+            let (output_buf, output_buf_len) = if let Some(buf) = output.as_mut() {
+                (buf.as_mut_ptr(), buf.len().try_into()?)
+            } else {
+                (null_mut(), 0)
+            };
+
+            unsafe {
+                try_execute!(pcsc_lite_rs::SCardControl(
+                    self.h_card,
+                    code,
+                    input.as_ptr() as *const _,
+                    input.len().try_into()?,
+                    output_buf as *mut _,
+                    output_buf_len,
+                    &mut receive_len
+                ))?;
+            }
+
+            Ok(receive_len.try_into()?)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
@@ -43,7 +70,7 @@ impl WinScard for SystemScard {
             let mut scard_io_request = vec![0_u8; length];
             scard_io_request[size_of::<ScardIoRequest>()..].copy_from_slice(&send_pci.pci_info);
 
-            let mut poi_send_pci = scard_io_request.as_mut_ptr() as *mut ScardIoRequest;
+            let poi_send_pci = scard_io_request.as_mut_ptr() as *mut ScardIoRequest;
 
             let mut output_apdu_len = CHUNK_SIZE.try_into()?;
             let mut output_apdu = [0; CHUNK_SIZE];
@@ -63,7 +90,7 @@ impl WinScard for SystemScard {
                     null_mut(),
                     output_apdu.as_mut_ptr(),
                     &mut output_apdu_len
-                ));
+                ))?;
             }
 
             Ok(TransmitOutData {
