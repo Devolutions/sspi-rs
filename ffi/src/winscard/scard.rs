@@ -119,13 +119,28 @@ pub unsafe extern "system" fn SCardConnectW(
 #[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardReconnect(
-    _handle: ScardHandle,
-    _dw_share_mode: u32,
-    _dw_preferred_protocols: u32,
-    _dw_initialization: u32,
-    _pdw_active_protocol: LpDword,
+    handle: ScardHandle,
+    dw_share_mode: u32,
+    dw_preferred_protocols: u32,
+    dw_initialization: u32,
+    pdw_active_protocol: LpDword,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    check_handle!(handle);
+    check_null!(pdw_active_protocol);
+
+    let share_mode = dw_share_mode.try_into()?;
+    let protocol = Protocol::from_bits(dw_preferred_protocols);
+    let initialization = try_execute!(dw_initialization.try_into(), ErrorKind::InvalidParameter);
+
+    let mut scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let active_protocol = try_execute!(scard.reconnect(share_mode, protocol, initialization));
+
+    // SAFETY: `pdw_active_protocol` is checked above, so it is guaranteed not NULL.
+    unsafe {
+        *pdw_active_protocol = active_protocol.bits();
+    }
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
