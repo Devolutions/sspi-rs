@@ -539,12 +539,14 @@ impl<'a> WinScard for SmartCard<'a> {
     }
 
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
-        self.attributes.get(&attribute_id).cloned().ok_or_else(|| {
+        let data = self.attributes.get(&attribute_id).map(AsRef::as_ref).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidParameter,
                 format!("The {:?} attribute id is not present", attribute_id),
             )
-        })
+        })?;
+
+        Ok(Cow::Borrowed(data))
     }
 
     fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()> {
