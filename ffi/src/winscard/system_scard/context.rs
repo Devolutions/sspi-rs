@@ -1,8 +1,11 @@
 use std::borrow::Cow;
+use std::ptr::null_mut;
 
 use ffi_types::winscard::ScardContext;
 use winscard::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
+
+use super::parse_multi_string_owned;
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -98,10 +101,47 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
-        todo!()
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut reader_groups_buf_len = 0;
+
+            // https://pcsclite.apdu.fr/api/group__API.html#ga9d970d086d5218e080d0079d63f9d496
+            //
+            // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardListReaderGroups(self.h_context, null_mut(), &mut reader_groups_buf_len)
+            })?;
+
+            let mut reader_groups = vec![0; reader_groups_buf_len.try_into()?];
+
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardListReaderGroups(
+                    self.h_context,
+                    reader_groups.as_mut_ptr(),
+                    &mut reader_groups_buf_len,
+                )
+            })?;
+
+            let reader_groups = parse_multi_string_owned(&reader_groups)?;
+
+            Ok(reader_groups)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {
-        todo!()
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardCancel(self.h_context) })
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // TODO(@TheBestTvarynka): implement for Windows too.
+            todo!()
+        }
     }
 }
