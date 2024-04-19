@@ -545,7 +545,7 @@ pub trait WinScardContext {
     /// [SCardReadCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
     ///
     /// The SCardReadCache function retrieves the value portion of a name-value pair from the global cache maintained by the Smart Card Resource Manager.
-    fn read_cache(&self, key: &str) -> Option<&[u8]>;
+    fn read_cache(&self, card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<[u8]>>;
 
     /// [SCardWriteCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
     ///
