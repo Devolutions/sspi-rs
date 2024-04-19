@@ -123,30 +123,51 @@ impl WinScard for SystemScard {
     }
 
     fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+        // The SCardTransmit function doesn't support SCARD_AUTOALLOCATE attribute. So, we need to allocate
+        // the buffer for the output APDU by ourselves.
+        // The `msclmd.dll` has `I_ClmdCmdExtendedTransmit` and `I_ClmdCmdShortTransmit` functions.
+        // The first one uses 65538-bytes long buffer for output APDU, and the second one uses 258-bytes long buffer.
+        // We decided to always use the larger one.
+        const OUT_APDU_BUF_LEN: usize = 65538;
+
+        #[cfg(not(target_os = "windows"))]
+        type IoRequest = ScardIoRequest;
+        #[cfg(target_os = "windows")]
+        type IoRequest = windows_sys::Win32::Security::Credentials::SCARD_IO_REQUEST;
+
+        // * https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
+        // * https://pcsclite.apdu.fr/api/structSCARD__IO__REQUEST.html#details
+        //
+        // The SCARD_IO_REQUEST structure begins a protocol control information structure.
+        // Any protocol-specific information then immediately follows this structure.
+        //
+        // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
+        let length = size_of::<IoRequest>() + send_pci.pci_info.len();
+
+        let mut scard_io_request = vec![0_u8; length];
+        scard_io_request[size_of::<IoRequest>()..].copy_from_slice(&send_pci.pci_info);
+
+        let poi_send_pci = scard_io_request.as_mut_ptr() as *mut IoRequest;
+
+        let mut output_apdu_len = OUT_APDU_BUF_LEN.try_into()?;
+        let mut output_apdu = [0; OUT_APDU_BUF_LEN];
+
+        #[cfg(not(target_os = "windows"))]
+        unsafe {
+            (*poi_send_pci).dw_protocol = send_pci.protocol.bits();
+            (*poi_send_pci).cb_pci_length = length.try_into()?;
+        }
+
+        #[cfg(target_os = "windows")]
+        unsafe {
+            (*poi_send_pci).dwProtocol = send_pci.protocol.bits();
+            (*poi_send_pci).cbPciLength = length.try_into()?;
+        }
+
         #[cfg(not(target_os = "windows"))]
         {
-            // * https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
-            // * https://pcsclite.apdu.fr/api/structSCARD__IO__REQUEST.html#details
-            //
-            // The SCARD_IO_REQUEST structure begins a protocol control information structure.
-            // Any protocol-specific information then immediately follows this structure.
-            //
-            // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
-            let length = size_of::<ScardIoRequest>() + send_pci.pci_info.len();
-
-            let mut scard_io_request = vec![0_u8; length];
-            scard_io_request[size_of::<ScardIoRequest>()..].copy_from_slice(&send_pci.pci_info);
-
-            let poi_send_pci = scard_io_request.as_mut_ptr() as *mut ScardIoRequest;
-
-            let mut output_apdu_len = CHUNK_SIZE.try_into()?;
-            let mut output_apdu = [0; CHUNK_SIZE];
-
-            unsafe {
-                (*poi_send_pci).dw_protocol = send_pci.protocol.bits();
-                (*poi_send_pci).cb_pci_length = length.try_into()?;
-
-                try_execute!(pcsc_lite_rs::SCardTransmit(
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardTransmit(
                     self.h_card,
                     poi_send_pci,
                     input_apdu.as_ptr(),
@@ -156,20 +177,32 @@ impl WinScard for SystemScard {
                     // pioRecvPci: This parameter can be NULL if no PCI is returned.
                     null_mut(),
                     output_apdu.as_mut_ptr(),
-                    &mut output_apdu_len
-                ))?;
-            }
-
-            Ok(TransmitOutData {
-                output_apdu: output_apdu[0..output_apdu_len.try_into()?].to_vec(),
-                receive_pci: None,
-            })
+                    &mut output_apdu_len,
+                )
+            })?;
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardTransmit(
+                    self.h_card,
+                    poi_send_pci,
+                    input_apdu.as_ptr(),
+                    input_apdu.len().try_into()?,
+                    // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit
+                    //
+                    // pioRecvPci: This parameter can be NULL if no PCI is returned.
+                    null_mut(),
+                    output_apdu.as_mut_ptr(),
+                    &mut output_apdu_len,
+                )
+            })?;
         }
+
+        Ok(TransmitOutData {
+            output_apdu: output_apdu[0..output_apdu_len.try_into()?].to_vec(),
+            receive_pci: None,
+        })
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
