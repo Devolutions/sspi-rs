@@ -497,8 +497,11 @@ impl<'a> WinScardContext for ScardContext<'a> {
         true
     }
 
-    fn read_cache(&self, key: &str) -> Option<&[u8]> {
-        self.cache.get(key).map(|item| item.as_slice())
+    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
+        self.cache
+            .get(key)
+            .map(|item| Cow::Borrowed(item.as_slice()))
+            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
     }
 
     fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
