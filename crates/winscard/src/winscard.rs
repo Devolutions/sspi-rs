@@ -9,8 +9,6 @@ use num_derive::{FromPrimitive, ToPrimitive};
 
 use crate::{Error, ErrorKind, WinScardResult};
 
-/// Type alias used to represent memory address.
-pub type MemoryPtr = usize;
 /// Control code for the `SCardControl` operation.
 ///
 /// This value identifies the specific operation to be performed. More info:
@@ -229,7 +227,7 @@ impl From<Vec<u8>> for Icon<'_> {
 /// `ReaderType` parameter:
 /// This member contains the reader type and is required. This member can have one of the values in the following table.
 #[repr(u32)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, FromPrimitive, ToPrimitive)]
 pub enum DeviceTypeId {
     /// Serial reader
     Serial = 0x01,
