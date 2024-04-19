@@ -26,18 +26,18 @@ impl WinScardContext for SystemScardContext {
         share_mode: ShareMode,
         protocol: Option<Protocol>,
     ) -> WinScardResult<ScardConnectData> {
+        // SAFETY:
+        // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+        // > This function will return an error if the supplied bytes contain an internal 0 byte.
+        //
+        // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+        let c_string = CString::new(reader_name).expect("Rust string slice should not contain 0 bytes");
+
+        let mut scard: ScardHandle = 0;
+        let mut active_protocol = 0;
+
         #[cfg(not(target_os = "windows"))]
         {
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_string = CString::new(reader_name).expect("Rust string slice should not contain 0 bytes");
-
-            let mut scard: ScardHandle = 0;
-            let mut active_protocol = 0;
-
             try_execute!(unsafe {
                 pcsc_lite_rs::SCardConnect(
                     self.h_context,
@@ -48,26 +48,34 @@ impl WinScardContext for SystemScardContext {
                     &mut active_protocol,
                 )
             })?;
-
-            let scard = Box::new(SystemScard::new(scard, self.h_context));
-
-            Ok(ScardConnectData {
-                scard,
-                protocol: Protocol::from_bits(active_protocol).unwrap_or_default(),
-            })
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardConnectA(
+                    self.h_context,
+                    c_string.as_ptr() as *const _,
+                    share_mode.into(),
+                    protocol.unwrap_or_default().bits(),
+                    &mut scard,
+                    &mut active_protocol,
+                )
+            })?;
         }
+
+        let scard = Box::new(SystemScard::new(scard, self.h_context));
+
+        Ok(ScardConnectData {
+            scard,
+            protocol: Protocol::from_bits(active_protocol).unwrap_or_default(),
+        })
     }
 
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+        let mut readers_buf_len = 0;
+
         #[cfg(not(target_os = "windows"))]
         {
-            let mut readers_buf_len = 0;
-
             // https://pcsclite.apdu.fr/api/group__API.html#ga93b07815789b3cf2629d439ecf20f0d9
             //
             // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
@@ -75,20 +83,45 @@ impl WinScardContext for SystemScardContext {
             try_execute!(unsafe {
                 pcsc_lite_rs::SCardListReaders(self.h_context, null(), null_mut(), &mut readers_buf_len)
             })?;
-
-            let mut readers = vec![0; readers_buf_len.try_into()?];
-
-            try_execute!(unsafe {
-                pcsc_lite_rs::SCardListReaders(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
-            })?;
-
-            parse_multi_string_owned(&readers)
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa
+            //
+            //  If this value is NULL, SCardListReaders ignores the buffer length supplied in pcchReaders,
+            //  writes the length of the buffer that would have been returned if this parameter
+            //  had not been NULL to pcchReaders, and returns a success code.
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardListReadersA(
+                    self.h_context,
+                    null(),
+                    null_mut(),
+                    &mut readers_buf_len,
+                )
+            })?;
         }
+
+        let mut readers = vec![0; readers_buf_len.try_into()?];
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardListReaders(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
+            })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardListReadersA(
+                    self.h_context,
+                    null(),
+                    readers.as_mut_ptr(),
+                    &mut readers_buf_len,
+                )
+            })?;
+        }
+
+        parse_multi_string_owned(&readers)
     }
 
     fn device_type_id(&self, _reader_name: &str) -> WinScardResult<DeviceTypeId> {
@@ -101,8 +134,31 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            use num_traits::FromPrimitive;
+
+            let mut device_type_id = 0;
+
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_reader_name = CString::new(_reader_name).expect("Rust string slice should not contain 0 bytes");
+
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardGetDeviceTypeIdA(
+                    self.h_context,
+                    c_reader_name.as_ptr() as *const _,
+                    &mut device_type_id,
+                )
+            })?;
+
+            DeviceTypeId::from_u32(device_type_id).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InternalError,
+                    format!("WinSCard has returned invalid device type id: {}", device_type_id),
+                )
+            })
         }
     }
 
@@ -116,8 +172,41 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_reader_name = CString::new(_reader_name).expect("Rust string slice should not contain 0 bytes");
+
+            let mut icon_buf_len = 0;
+
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericona
+            //
+            // If this value is NULL, the function ignores the buffer length supplied in the pcbIcon parameter,
+            // writes the length of the buffer that would have been returned to pcbIcon if this parameter
+            // had not been NULL, and returns a success code.
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardGetReaderIconA(
+                    self.h_context,
+                    c_reader_name.as_ptr() as *const _,
+                    null_mut(),
+                    &mut icon_buf_len,
+                )
+            })?;
+
+            let mut icon_buf = vec![0; icon_buf_len.try_into()?];
+
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardGetReaderIconA(
+                    self.h_context,
+                    c_reader_name.as_ptr() as *const _,
+                    icon_buf.as_mut_ptr(),
+                    &mut icon_buf_len,
+                )
+            })?;
+
+            Ok(icon_buf.into())
         }
     }
 
