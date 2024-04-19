@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
+use std::slice::from_raw_parts;
 
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::{parse_multi_string_owned, SystemScard};
+use super::{parse_multi_string_owned, uuid_to_c_guid, SystemScard};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -127,20 +128,63 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardIsValidContext(self.h_context) })
+                .is_ok()
         }
     }
 
-    fn read_cache(&self, _key: &str) -> Option<Cow<[u8]>> {
+    fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, _key: &str) -> WinScardResult<Cow<[u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
             None
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
+
+            let mut data_len = SCARD_AUTOALLOCATE;
+
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_cache_key = CString::new(_key).expect("Rust string slice should not contain 0 bytes");
+            let card_id = uuid_to_c_guid(_card_id);
+
+            let mut data: *mut *mut u8 = null_mut();
+
+            // It's not specified in the `SCardReadCacheA` function documentation, but after some
+            // `msclmd.dll` reversing, we found out that this function supports the `SCARD_AUTOALLOCATE`.
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardReadCacheA(
+                    self.h_context,
+                    &card_id,
+                    _freshness_counter,
+                    c_cache_key.as_ptr() as *const _,
+                    ((&mut data) as *mut *mut *mut u8) as *mut _,
+                    &mut data_len,
+                )
+            })?;
+
+            let data_len: usize = if let Ok(len) = data_len.try_into() {
+                len
+            } else {
+                try_execute!(unsafe {
+                    windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_context, *data as *const _)
+                })?;
+
+                return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
+            };
+
+            let mut cache_item = vec![0; data_len];
+            cache_item.copy_from_slice(unsafe { from_raw_parts(*data, data_len) });
+
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_context, *data as *const _)
+            })?;
+
+            Ok(Cow::Owned(cache_item))
         }
     }
 
