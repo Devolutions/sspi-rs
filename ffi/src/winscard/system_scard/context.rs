@@ -7,7 +7,7 @@ use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::{parse_multi_string_owned, uuid_to_c_guid, SystemScard};
+use super::{parse_multi_string_owned, SystemScard};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -229,6 +229,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
+            use super::uuid_to_c_guid;
             use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 
             let mut data_len = SCARD_AUTOALLOCATE;

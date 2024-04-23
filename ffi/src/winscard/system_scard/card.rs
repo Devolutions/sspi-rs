@@ -3,12 +3,12 @@ use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
-use ffi_types::winscard::{ScardContext, ScardHandle, ScardIoRequest};
+use ffi_types::winscard::{ScardContext, ScardHandle};
 use num_traits::ToPrimitive;
 use winscard::winscard::{
     AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
-use winscard::{Error, ErrorKind, WinScardResult, CHUNK_SIZE};
+use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::parse_multi_string_owned;
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
@@ -26,23 +26,26 @@ impl SystemScard {
 
 impl WinScard for SystemScard {
     fn status(&self) -> WinScardResult<Status> {
+        let mut reader_name: *mut u8 = null_mut();
+        let mut reader_name_len = SCARD_AUTOALLOCATE;
+        let mut state = 0;
+        let mut protocol = 0;
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
+        //
+        // `pbAtr`: Pointer to a 32-byte buffer that receives the ATR string from the currently
+        // inserted card, if available.
+        //
+        // PCSC-lite docs do not specify that ATR buf should be 32 bytes long, but actually,
+        // the ATR string can not be longer than 32 bytes.
+        let mut atr = vec![0; 32];
+        let mut atr_len = 0;
+
         #[cfg(not(target_os = "windows"))]
         {
-            let mut reader_name: *mut u8 = null_mut();
-            let mut reader_name_len = SCARD_AUTOALLOCATE;
-            let mut state = 0;
-            let mut protocol = 0;
-            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
-            //
-            // `pbAtr`: Pointer to a 32-byte buffer that receives the ATR string from the currently inserted card, if available.
-            //
-            // PCSC-lite docs do not specify that ATR buf should be 32 bytes long, but actually, the ATR string can not be longer than 32 bytes.
-            let mut atr = vec![0; 32];
-            let mut atr_len = 0;
-
             // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
             //
-            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself the needed memory for szReaderName. Use SCardFreeMemory() to release it.
+            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
+            // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
             try_execute!(unsafe {
                 pcsc_lite_rs::SCardStatus(
                     self.h_card,
@@ -54,72 +57,115 @@ impl WinScard for SystemScard {
                     &mut atr_len,
                 )
             })?;
-
-            let readers = if let Ok(readers) =
-                parse_multi_string_owned(unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) })
-            {
-                readers
-            } else {
-                try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
-
-                return Err(Error::new(
-                    ErrorKind::InternalError,
-                    "Returned reader is not valid UTF-8",
-                ));
-            };
-
-            try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
-
-            let status = Status {
-                readers,
-                state: state.try_into()?,
-                protocol: Protocol::from_bits(protocol).ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::InternalError,
-                        format!("Invalid protocol value: {}", protocol),
-                    )
-                })?,
-                atr: atr.into(),
-            };
-
-            Ok(status)
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
+            //
+            // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
+            // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardStatusA(
+                    self.h_card,
+                    (&mut reader_name as *mut *mut u8) as *mut _,
+                    &mut reader_name_len,
+                    &mut state,
+                    &mut protocol,
+                    atr.as_mut_ptr(),
+                    &mut atr_len,
+                )
+            })?;
         }
+
+        let readers = if let Ok(readers) =
+            parse_multi_string_owned(unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) })
+        {
+            readers
+        } else {
+            #[cfg(not(target_os = "windows"))]
+            {
+                try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                try_execute!(unsafe {
+                    windows_sys::Win32::Security::Credentials::SCardFreeMemory(
+                        self.h_card_context,
+                        reader_name as *const _,
+                    )
+                })?;
+            }
+
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "Returned reader is not valid UTF-8",
+            ));
+        };
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardFreeMemory(self.h_card_context, reader_name as *const _) })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_card_context, reader_name as *const _)
+            })?;
+        }
+
+        let status = Status {
+            readers,
+            state: state.try_into()?,
+            protocol: Protocol::from_bits(protocol).ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InternalError,
+                    format!("Invalid protocol value: {}", protocol),
+                )
+            })?,
+            atr: atr.into(),
+        };
+
+        Ok(status)
     }
 
     fn control(&mut self, code: ControlCode, input: &[u8], mut output: Option<&mut [u8]>) -> WinScardResult<usize> {
+        let mut receive_len = 0;
+        let (output_buf, output_buf_len) = if let Some(buf) = output.as_mut() {
+            (buf.as_mut_ptr(), buf.len().try_into()?)
+        } else {
+            (null_mut(), 0)
+        };
+
         #[cfg(not(target_os = "windows"))]
         {
-            let mut receive_len = 0;
-            let (output_buf, output_buf_len) = if let Some(buf) = output.as_mut() {
-                (buf.as_mut_ptr(), buf.len().try_into()?)
-            } else {
-                (null_mut(), 0)
-            };
-
-            unsafe {
-                try_execute!(pcsc_lite_rs::SCardControl(
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardControl(
                     self.h_card,
                     code,
                     input.as_ptr() as *const _,
                     input.len().try_into()?,
                     output_buf as *mut _,
                     output_buf_len,
-                    &mut receive_len
-                ))?;
-            }
-
-            Ok(receive_len.try_into()?)
+                    &mut receive_len,
+                )
+            })?;
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardControl(
+                    self.h_card,
+                    code,
+                    input.as_ptr() as *const _,
+                    input.len().try_into()?,
+                    output_buf as *mut _,
+                    output_buf_len,
+                    &mut receive_len,
+                )
+            })?;
         }
+
+        Ok(receive_len.try_into()?)
     }
 
     fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
