@@ -1,9 +1,10 @@
+use std::iter::once;
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
-use winscard::winscard::{AttributeId, IoRequest, Protocol, Uuid, WinScard, WinScardContext};
+use winscard::winscard::{AttributeId, IoRequest, Protocol, State, Uuid, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 /// Scard context handle representation.
@@ -94,6 +95,28 @@ impl WinScardContextHandle {
         self.write_to_out_buf(&reader_icon, buffer_type)
     }
 
+    pub fn list_readers(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+        let readers: Vec<_> = self
+            .scard_context()
+            .list_readers()?
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect();
+
+        self.write_multi_string(&readers, buffer_type)
+    }
+
+    pub fn list_readers_wide(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+        let readers: Vec<_> = self
+            .scard_context()
+            .list_readers()?
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect();
+
+        self.write_multi_string_wide(&readers, buffer_type)
+    }
+
     pub fn read_cache(
         &mut self,
         card_id: Uuid,
@@ -109,7 +132,45 @@ impl WinScardContextHandle {
         self.write_to_out_buf(cached_value.as_ref(), buffer_type)
     }
 
-    pub fn write_to_out_buf(&mut self, data: &[u8], buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub fn write_multi_string(
+        &mut self,
+        values: &[String],
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer<'static>> {
+        let data: Vec<_> = values
+            .iter()
+            .flat_map(|reader| reader.as_bytes().iter().cloned().chain(once(0)))
+            .chain(once(0))
+            .collect();
+
+        self.write_to_out_buf(&data, buffer_type)
+    }
+
+    pub fn write_multi_string_wide(
+        &mut self,
+        values: &[String],
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer<'static>> {
+        let data: Vec<_> = values
+            .iter()
+            .flat_map(|reader| {
+                reader
+                    .as_bytes()
+                    .iter()
+                    .chain(once(&0))
+                    .flat_map(|i| i.to_le_bytes().to_vec())
+            })
+            .chain([0, 0].into_iter())
+            .collect();
+
+        self.write_to_out_buf(&data, buffer_type)
+    }
+
+    pub fn write_to_out_buf(
+        &mut self,
+        data: &[u8],
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer<'static>> {
         Ok(match buffer_type {
             RequestedBufferType::Buff(buf) => {
                 if buf.len() < data.len() {
@@ -185,6 +246,13 @@ pub enum OutBuffer<'data> {
     Allocated(&'data mut [u8]),
 }
 
+pub struct FfiScardStatus<'data> {
+    pub readers: OutBuffer<'data>,
+    pub atr: OutBuffer<'data>,
+    pub state: State,
+    pub protocol: Protocol,
+}
+
 /// Scard handle representation.
 ///
 /// It also holds a pointer to the smart card context to which it belongs.
@@ -224,6 +292,46 @@ impl WinScardHandle {
         let data = self.scard().get_attribute(attribute_id)?;
 
         self.context().unwrap().write_to_out_buf(data.as_ref(), buffer_type)
+    }
+
+    pub fn status(
+        &mut self,
+        readers_buf_type: RequestedBufferType,
+        atr_but_type: RequestedBufferType,
+    ) -> WinScardResult<FfiScardStatus> {
+        let status = self.scard().status()?;
+        let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
+        let context = self.context().unwrap();
+
+        let readers = context.write_multi_string(&readers, readers_buf_type)?;
+        let atr = context.write_to_out_buf(status.atr.as_ref(), atr_but_type)?;
+
+        Ok(FfiScardStatus {
+            readers,
+            atr,
+            state: status.state,
+            protocol: status.protocol,
+        })
+    }
+
+    pub fn status_wide(
+        &mut self,
+        readers_buf_type: RequestedBufferType,
+        atr_but_type: RequestedBufferType,
+    ) -> WinScardResult<FfiScardStatus> {
+        let status = self.scard().status()?;
+        let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
+        let context = self.context().unwrap();
+
+        let readers = context.write_multi_string_wide(&readers, readers_buf_type)?;
+        let atr = context.write_to_out_buf(status.atr.as_ref(), atr_but_type)?;
+
+        Ok(FfiScardStatus {
+            readers,
+            atr,
+            state: status.state,
+            protocol: status.protocol,
+        })
     }
 }
 

@@ -12,7 +12,7 @@ use symbol_rename_macro::rename_symbol;
 use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::buf_alloc::{build_buf_request_type, copy_buff, save_out_buf, write_multistring_a, write_multistring_w};
+use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
@@ -226,20 +226,21 @@ pub unsafe extern "system" fn SCardStatusA(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = unsafe { (handle as *mut WinScardHandle).as_ref().unwrap() };
-    let status = try_execute!(scard.scard().status());
-    check_handle!(scard.raw_context());
+    let scard = unsafe { (handle as *mut WinScardHandle).as_mut().unwrap() };
+    let readers_buf_type = try_execute!(unsafe { build_buf_request_type(msz_reader_names, pcch_reader_len) });
+    let atr_buf_type = try_execute!(unsafe { build_buf_request_type(pb_atr, pcb_atr_len) });
 
-    let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = scard.context().unwrap();
-    try_execute!(unsafe { write_multistring_a(context, &readers, msz_reader_names, pcch_reader_len) });
+    let status = try_execute!(scard.status(readers_buf_type, atr_buf_type));
+
     unsafe {
         *pdw_state = status.state.into();
         *pdw_protocol = status.protocol.bits();
     }
 
+    try_execute!(unsafe { save_out_buf(status.readers, msz_reader_names, pcch_reader_len) });
+
     if !pb_atr.is_null() {
-        try_execute!(unsafe { copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()) });
+        try_execute!(unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) });
     }
 
     ErrorKind::Success.into()
@@ -266,20 +267,21 @@ pub unsafe extern "system" fn SCardStatusW(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    let scard = unsafe { (handle as *mut WinScardHandle).as_ref() }.unwrap();
-    let status = try_execute!(scard.scard().status());
-    check_handle!(scard.raw_context());
+    let scard = unsafe { (handle as *mut WinScardHandle).as_mut() }.unwrap();
+    let readers_buf_type = try_execute!(unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) });
+    let atr_buf_type = try_execute!(unsafe { build_buf_request_type(pb_atr, pcb_atr_len) });
 
-    let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = scard.context().unwrap();
-    try_execute!(unsafe { write_multistring_w(context, &readers, msz_reader_names, pcch_reader_len) });
+    let status = try_execute!(scard.status_wide(readers_buf_type, atr_buf_type));
+
     unsafe {
         *pdw_state = status.state.into();
         *pdw_protocol = status.protocol.bits();
     }
 
+    try_execute!(unsafe { save_out_buf_wide(status.readers, msz_reader_names, pcch_reader_len) });
+
     if !pb_atr.is_null() {
-        try_execute!(unsafe { copy_buff(context, pb_atr, pcb_atr_len, status.atr.as_ref()) });
+        try_execute!(unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) });
     }
 
     ErrorKind::Success.into()

@@ -17,7 +17,6 @@ use super::buf_alloc::{
     build_buf_request_type, build_buf_request_type_wide, c_uuid_to_uuid, save_out_buf, save_out_buf_wide,
 };
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
-use crate::winscard::buf_alloc::copy_buff;
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 use crate::winscard::system_scard::SystemScardContext;
 
@@ -151,11 +150,11 @@ pub unsafe extern "system" fn SCardListReadersA(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    let readers = try_execute!(context.scard_context().list_readers());
-    let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
-    let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_readers, pcch_readers) });
 
-    try_execute!(unsafe { write_multistring_a(context, &readers, msz_readers, pcch_readers) });
+    let out_buf = try_execute!(context.list_readers(buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, msz_readers, pcch_readers) });
 
     ErrorKind::Success.into()
 }
@@ -175,11 +174,11 @@ pub unsafe extern "system" fn SCardListReadersW(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    let readers = try_execute!(context.scard_context().list_readers());
-    let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
-    let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
+    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_readers, pcch_readers) });
 
-    try_execute!(unsafe { write_multistring_w(context, &readers, msz_readers, pcch_readers) });
+    let out_buf = try_execute!(context.list_readers_wide(buffer_type));
+
+    try_execute!(unsafe { save_out_buf_wide(out_buf, msz_readers, pcch_readers) });
 
     ErrorKind::Success.into()
 }
@@ -201,8 +200,12 @@ pub unsafe extern "system" fn SCardListCardsA(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_cards, pcch_cards) });
+
     // we have only one smart card with only one default name
-    try_execute!(unsafe { write_multistring_a(context, &[DEFAULT_CARD_NAME], msz_cards, pcch_cards) });
+    let out_buf = try_execute!(context.write_multi_string(&[DEFAULT_CARD_NAME.to_string()], buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) });
 
     ErrorKind::UnsupportedFeature.into()
 }
@@ -224,8 +227,12 @@ pub unsafe extern "system" fn SCardListCardsW(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_cards, pcch_cards) });
+
     // we have only one smart card with only one default name
-    try_execute!(unsafe { write_multistring_w(context, &[DEFAULT_CARD_NAME], msz_cards, pcch_cards) });
+    let out_buf = try_execute!(context.write_multi_string_wide(&[DEFAULT_CARD_NAME.to_string()], buffer_type));
+
+    try_execute!(unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) });
 
     ErrorKind::Success.into()
 }
@@ -306,7 +313,11 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    try_execute!(unsafe { copy_buff(context, szProvider, pcch_provider, provider.as_bytes()) });
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
+
+    let out_buf = try_execute!(context.write_to_out_buf(provider.as_bytes(), buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, szProvider, pcch_provider) });
 
     ErrorKind::Success.into()
 }
@@ -342,7 +353,11 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    try_execute!(unsafe { copy_w_buff(context, szProvider, pcch_provider, &encoded) });
+    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(szProvider, pcch_provider) });
+
+    let out_buf = try_execute!(context.write_to_out_buf(provider.as_bytes(), buffer_type));
+
+    try_execute!(unsafe { save_out_buf_wide(out_buf, szProvider, pcch_provider) });
 
     ErrorKind::Success.into()
 }
