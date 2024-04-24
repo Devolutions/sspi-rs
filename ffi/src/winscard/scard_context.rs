@@ -13,7 +13,9 @@ use uuid::Uuid;
 use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
-use super::buf_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
+use super::buf_alloc::{
+    build_buf_request_type, build_buf_request_type_wide, c_uuid_to_uuid, save_out_buf, save_out_buf_wide,
+};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
 use crate::winscard::buf_alloc::copy_buff;
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
@@ -905,17 +907,6 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     ErrorKind::Success.into()
 }
 
-unsafe fn get_reader_icon(
-    context: &mut WinScardContextHandle,
-    reader_name: &str,
-    pb_icon: LpByte,
-    pcb_icon: LpDword,
-) -> WinScardResult<()> {
-    let icon = context.scard_context().reader_icon(reader_name)?.as_ref().to_vec();
-
-    unsafe { copy_buff(context, pb_icon, pcb_icon, icon.as_ref()) }
-}
-
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -936,8 +927,11 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
         unsafe { CStr::from_ptr(sz_reader_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_icon, pcb_icon) });
 
-    try_execute!(unsafe { get_reader_icon(context, reader_name, pb_icon, pcb_icon) });
+    let out_buf = try_execute!(context.get_reader_icon(&reader_name, buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) });
 
     ErrorKind::Success.into()
 }
@@ -963,8 +957,11 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
             c_w_str_to_string(sz_reader_name),
         )
     };
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_icon, pcb_icon) });
 
-    try_execute!(unsafe { get_reader_icon(context, &reader_name, pb_icon, pcb_icon) });
+    let out_buf = try_execute!(context.get_reader_icon(&reader_name, buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) });
 
     ErrorKind::Success.into()
 }

@@ -87,6 +87,43 @@ impl WinScardContextHandle {
             false
         }
     }
+
+    pub fn get_reader_icon(&mut self, reader: &str, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+        let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
+
+        self.write_to_out_buf(&reader_icon, buffer_type)
+    }
+
+    pub fn write_to_out_buf(&mut self, data: &[u8], buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+        Ok(match buffer_type {
+            RequestedBufferType::Buff(buf) => {
+                if buf.len() < data.len() {
+                    return Err(
+                        Error::new(
+                            ErrorKind::InsufficientBuffer, format!(
+                                "Provided buffer is too small to fill the requested attribute into. Buffer len: {}. Attribute data len: {}.",
+                                buf.len(),
+                                data.len()
+                            )
+                        )
+                    );
+                }
+
+                buf[0..data.len()].copy_from_slice(&data);
+
+                OutBuffer::Written(data.len())
+            }
+            RequestedBufferType::Length => OutBuffer::DataLen(data.len()),
+            RequestedBufferType::Allocate => {
+                let allocated = self.allocate_buffer(data.len())?;
+                let buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
+
+                buf.copy_from_slice(&data);
+
+                OutBuffer::Allocated(buf)
+            }
+        })
+    }
 }
 
 impl Drop for WinScardContextHandle {
@@ -171,34 +208,7 @@ impl WinScardHandle {
     ) -> WinScardResult<OutBuffer> {
         let data = self.scard().get_attribute(attribute_id)?;
 
-        Ok(match buffer_type {
-            RequestedBufferType::Buff(buf) => {
-                if buf.len() < data.len() {
-                    return Err(
-                        Error::new(
-                            ErrorKind::InsufficientBuffer, format!(
-                                "Provided buffer is too small to fill the requested attribute into. Buffer len: {}. Attribute data len: {}.",
-                                buf.len(),
-                                data.len()
-                            )
-                        )
-                    );
-                }
-
-                buf[0..data.len()].copy_from_slice(&data);
-
-                OutBuffer::Written(data.len())
-            }
-            RequestedBufferType::Length => OutBuffer::DataLen(data.len()),
-            RequestedBufferType::Allocate => {
-                let allocated = self.context().unwrap().allocate_buffer(data.len())?;
-                let buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
-
-                buf.copy_from_slice(&data);
-
-                OutBuffer::Allocated(buf)
-            }
-        })
+        self.context().unwrap().write_to_out_buf(data.as_ref(), buffer_type)
     }
 }
 
