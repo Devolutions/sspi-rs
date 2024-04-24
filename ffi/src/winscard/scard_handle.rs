@@ -3,7 +3,7 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
-use winscard::winscard::{AttributeId, IoRequest, Protocol, WinScard, WinScardContext};
+use winscard::winscard::{AttributeId, IoRequest, Protocol, Uuid, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 /// Scard context handle representation.
@@ -92,6 +92,21 @@ impl WinScardContextHandle {
         let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
 
         self.write_to_out_buf(&reader_icon, buffer_type)
+    }
+
+    pub fn read_cache(
+        &mut self,
+        card_id: Uuid,
+        freshness_counter: u32,
+        key: &str,
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer> {
+        let cached_value = self
+            .scard_context()
+            .read_cache(card_id, freshness_counter, key)?
+            .to_vec();
+
+        self.write_to_out_buf(cached_value.as_ref(), buffer_type)
     }
 
     pub fn write_to_out_buf(&mut self, data: &[u8], buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {

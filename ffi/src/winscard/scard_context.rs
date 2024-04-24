@@ -745,28 +745,6 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
     ErrorKind::Success.into()
 }
 
-unsafe fn read_cache(
-    context: ScardContext,
-    card_id: Uuid,
-    freshness_counter: u32,
-    lookup_name: &str,
-    data: LpByte,
-    data_len: LpDword,
-) -> WinScardResult<()> {
-    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-
-    if let Ok(cached_value) = context
-        .scard_context()
-        .read_cache(card_id, freshness_counter, lookup_name)
-    {
-        let cached_value = cached_value.to_vec();
-        unsafe { copy_buff(context, data, data_len, &cached_value) }
-    } else {
-        warn!(cache = ?ErrorKind::CacheItemNotFound);
-        Ok(())
-    }
-}
-
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -783,6 +761,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
     check_null!(lookup_name);
     check_null!(data_len);
 
+    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     let lookup_name = try_execute!(
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
@@ -795,8 +774,11 @@ pub unsafe extern "system" fn SCardReadCacheA(
             &(*card_identifier).data4,
         )
     };
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(data, data_len) });
 
-    try_execute!(unsafe { read_cache(context, card_id, freshness_counter, lookup_name, data, data_len) });
+    let out_buf = try_execute!(context.read_cache(card_id, freshness_counter, lookup_name, buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, data, data_len) });
 
     ErrorKind::Success.into()
 }
@@ -817,6 +799,7 @@ pub unsafe extern "system" fn SCardReadCacheW(
     check_null!(lookup_name);
     check_null!(data_len);
 
+    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
     let card_id = unsafe {
         Uuid::from_fields(
@@ -826,8 +809,11 @@ pub unsafe extern "system" fn SCardReadCacheW(
             &(*card_identifier).data4,
         )
     };
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(data, data_len) });
 
-    try_execute!(unsafe { read_cache(context, card_id, freshness_counter, &lookup_name, data, data_len) });
+    let out_buf = try_execute!(context.read_cache(card_id, freshness_counter, &lookup_name, buffer_type));
+
+    try_execute!(unsafe { save_out_buf(out_buf, data, data_len) });
 
     ErrorKind::Success.into()
 }
