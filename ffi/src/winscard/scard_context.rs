@@ -571,27 +571,36 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     // The `SCardAccessStartedEvent` function returns an event handle when an event signals that
     // the smart card resource manager is started. The event-object handle can be specified in a call
     // to one of the wait functions.
-    //
-    // We create the event once for the entire process and keep it like a singleton in the "signaled" state.
-    // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
-    // because we are always in a ready (signaled) state and have only one handle for the entire process.
     #[cfg(target_os = "windows")]
     {
-        *START_EVENT_HANDLE.get_or_init(|| {
-            use std::ptr::null;
+        if std::env::var(SMART_CARD_TYPE)
+            .and_then(|use_system_card| Ok(use_system_card == "true"))
+            .unwrap_or_default()
+        {
+            // Use system-provided smart card.
+            unsafe { windows_sys::Win32::Security::Credentials::SCardAccessStartedEvent() }
+        } else {
+            // Use emulated smart card.
+            //
+            // We create the event once for the entire process and keep it like a singleton in the "signaled" state.
+            // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
+            // because we are always in a ready (signaled) state and have only one handle for the entire process.
+            *START_EVENT_HANDLE.get_or_init(|| {
+                use std::ptr::null;
 
-            use windows_sys::Win32::Foundation::GetLastError;
-            use windows_sys::Win32::System::Threading::CreateEventA;
+                use windows_sys::Win32::Foundation::GetLastError;
+                use windows_sys::Win32::System::Threading::CreateEventA;
 
-            let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
-            if handle == 0 {
-                error!(
-                    "Unable to create event: returned event handle is null. Last error: {}",
-                    unsafe { GetLastError() }
-                );
-            }
-            handle
-        })
+                let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
+                if handle == 0 {
+                    error!(
+                        "Unable to create event: returned event handle is null. Last error: {}",
+                        unsafe { GetLastError() }
+                    );
+                }
+                handle
+            })
+        }
     }
     // We support the `SCardAccessStartedEvent` function only on Windows OS. Reason:
     // On non-Windows OS we use pcsc-lite API that doesn't have the `SCardAccessStartedEvent` function.
