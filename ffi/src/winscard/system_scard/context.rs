@@ -180,6 +180,7 @@ impl WinScardContext for SystemScardContext {
                 "SCardListReadersA failed"
             )?;
         }
+        debug!(?readers, "Raw readers buffer");
 
         parse_multi_string_owned(&readers)
     }

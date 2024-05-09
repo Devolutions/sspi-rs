@@ -162,13 +162,14 @@ impl WinScardContextHandle {
             .iter()
             .flat_map(|reader| {
                 reader
-                    .as_bytes()
-                    .iter()
-                    .chain(once(&0))
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
                     .flat_map(|i| i.to_le_bytes().to_vec())
             })
             .chain([0, 0].into_iter())
             .collect();
+
+        debug!(?data);
 
         self.write_to_out_buf(&data, buffer_type)
     }
