@@ -12,8 +12,8 @@ use crate::{Error, ErrorKind, WinScardResult};
 /// Control code for the `SCardControl` operation.
 ///
 /// This value identifies the specific operation to be performed. More info:
-/// * [WinSCard SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
-/// * [pcsc-lite SCardControl](https://pcsclite.apdu.fr/api/group__API.html#gac3454d4657110fd7f753b2d3d8f4e32f)
+/// * [WinSCard SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol).
+/// * [pcsc-lite SCardControl](https://pcsclite.apdu.fr/api/group__API.html#gac3454d4657110fd7f753b2d3d8f4e32f).
 pub type ControlCode = u32;
 
 /// Action to be taken on the reader.
@@ -436,6 +436,68 @@ pub struct Uuid {
     pub data4: [u8; 8],
 }
 
+bitflags! {
+    /// [SCardGetStatusChangeW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
+    ///
+    /// Current state of the reader, as seen by the application. This field can take on any of the following values,
+    /// in combination, as a bitmask.
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    pub struct CurrentState: u32 {
+        /// The application is unaware of the current state, and would like to know.
+        const SCARD_STATE_UNAWARE = 0;
+        /// The application is not interested in this reader, and it should not be considered during monitoring operations.
+        /// If this bit value is set, all other bits are ignored.
+        const SCARD_STATE_IGNORE = 1;
+        /// There is a difference between the state believed by the application, and the state known by the resource manager.
+        /// When this bit is set, the application may assume a significant state change has occurred on this reader.
+        const SCARD_STATE_CHANGED = 2;
+        /// The given reader name is not recognized by the resource manager. If this bit is set, then SCARD_STATE_CHANGED
+        /// and SCARD_STATE_IGNORE will also be set.
+        const SCARD_STATE_UNKNOWN = 4;
+        /// The application expects that this reader is not available for use. If this bit is set,
+        /// then all the following bits are ignored.
+        const SCARD_STATE_UNAVAILABLE = 8;
+        /// The application expects that there is no card in the reader. If this bit is set, all the following bits are ignored.
+        const SCARD_STATE_EMPTY = 16;
+        /// The application expects that there is a card in the reader.
+        const SCARD_STATE_PRESENT = 32;
+        /// The application expects that there is a card in the reader with an ATR that matches one of the target cards.
+        /// If this bit is set, SCARD_STATE_PRESENT is assumed. This bit has no meaning to SCardGetStatusChange beyond
+        /// SCARD_STATE_PRESENT.
+        const SCARD_STATE_ATRMATCH = 64;
+        /// The application expects that the card in the reader is allocated for exclusive use by another application.
+        /// If this bit is set, SCARD_STATE_PRESENT is assumed.
+        const SCARD_STATE_EXCLUSIVE = 128;
+        /// The application expects that the card in the reader is in use by one or more other applications,
+        /// but may be connected to in shared mode. If this bit is set, SCARD_STATE_PRESENT is assumed.
+        const SCARD_STATE_INUSE = 256;
+        /// The application expects that there is an unresponsive card in the reader.
+        const SCARD_STATE_MUTE = 512;
+        /// This implies that the card in the reader has not been powered up.
+        const SCARD_STATE_UNPOWERED = 1024;
+        /// Undocumented constant that appears in all API captures.
+        const SCARD_STATE_UNNAMED_CONSTANT = 0x00010000;
+    }
+}
+
+/// The `SCARD_READERSTATEW` structure is used by functions for tracking smart cards within readers.
+///
+/// [SCARD_READERSTATEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatew).
+pub struct ReaderState<'data> {
+    /// The name of the reader being monitored.
+    pub reader_name: Cow<'data, str>,
+    /// Not used by the smart card subsystem. This member is used by the application.
+    pub user_data: usize,
+    /// Current state of the reader, as seen by the application.
+    pub current_state: CurrentState,
+    /// Current state of the reader, as known by the smart card resource manager.
+    pub event_state: CurrentState,
+    /// Number of bytes in the returned ATR.
+    pub atr_len: usize,
+    /// ATR of the inserted card, with extra alignment bytes.
+    pub atr: [u8; 36],
+}
+
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
 ///
 /// # MSDN
@@ -562,4 +624,9 @@ pub trait WinScardContext {
     /// The only requests that you can cancel are those that require waiting for external action by the smart card or user.
     /// Any such outstanding action requests will terminate with a status indication that the action was canceled.
     fn cancel(&mut self) -> WinScardResult<()>;
+
+    /// [SCardGetStatusChangeW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
+    ///
+    /// The SCardGetStatusChange function blocks execution until the current availability of the cards in a specific set of readers changes.
+    fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
 }
