@@ -9,8 +9,15 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
-use crate::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
+use crate::winscard::{
+    CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
+};
 use crate::{Error, ErrorKind, WinScardResult};
+
+// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
+// To be notified of the arrival of a new smart card reader,
+// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
+const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
@@ -524,6 +531,29 @@ impl<'a> WinScardContext for ScardContext<'a> {
         // The only requests that you can cancel are those that require waiting for external action by the smart card or user.
         //
         // We don't have any external actions, so we just return success.
+        Ok(())
+    }
+
+    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+        use crate::ATR;
+
+        let supported_readers = self.list_readers()?;
+
+        for reader_state in reader_states {
+            if supported_readers.contains(&reader_state.reader_name) {
+                reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT
+                    | CurrentState::SCARD_STATE_INUSE
+                    | CurrentState::SCARD_STATE_PRESENT
+                    | CurrentState::SCARD_STATE_CHANGED;
+                reader_state.atr[0..ATR.len()].copy_from_slice(&ATR);
+                reader_state.atr_len = ATR.len();
+            } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
+                reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
+            } else {
+                error!(?reader_state.reader_name, "Unsupported reader");
+            }
+        }
+
         Ok(())
     }
 }
