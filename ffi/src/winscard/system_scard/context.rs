@@ -4,7 +4,9 @@ use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
 use ffi_types::winscard::{ScardContext, ScardHandle};
-use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
+use winscard::winscard::{
+    CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
+};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::{parse_multi_string_owned, SystemScard};
@@ -397,6 +399,64 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardCancel(self.h_context) })
+        }
+    }
+
+    fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardGetStatusChangeW function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::Security::Credentials::SCARD_READERSTATEA;
+
+            let mut states = Vec::with_capacity(reader_states.len());
+            let c_readers: Vec<_> = reader_states
+                .iter()
+                .map(|reader_state| {
+                    // SAFETY:
+                    // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+                    // > This function will return an error if the supplied bytes contain an internal 0 byte.
+                    //
+                    // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+                    CString::new(reader_state.reader_name.as_ref())
+                        .expect("Rust string slice should not contain 0 bytes")
+                })
+                .collect();
+
+            for (index, reader_state) in reader_states.iter_mut().enumerate() {
+                states.push(SCARD_READERSTATEA {
+                    szReader: c_readers.get(index).unwrap().as_ptr() as *const _,
+                    pvUserData: reader_state.user_data as _,
+                    dwCurrentState: reader_state.current_state.bits(),
+                    dwEventState: reader_state.event_state.bits(),
+                    cbAtr: reader_state.atr_len.try_into()?,
+                    rgbAtr: reader_state.atr.clone(),
+                });
+            }
+
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardGetStatusChangeA(
+                    self.h_context,
+                    timeout,
+                    states.as_mut_ptr(),
+                    reader_states.len().try_into()?,
+                )
+            })?;
+
+            // We do not need to change all fields. Only event state and atr values can be changed.
+            for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
+                reader_state.event_state = CurrentState::from_bits(state.dwEventState)
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Invalid dwEventState"))?;
+                reader_state.atr_len = state.cbAtr.try_into()?;
+                reader_state.atr = state.rgbAtr.clone();
+            }
+
+            Ok(())
         }
     }
 }
