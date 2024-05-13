@@ -10,21 +10,15 @@ use libc::c_void;
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use uuid::Uuid;
-use winscard::winscard::WinScardContext;
-use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
+use winscard::winscard::{CurrentState, ReaderState, WinScardContext};
+use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
 use super::buf_alloc::{
-    build_buf_request_type, build_buf_request_type_wide, c_uuid_to_uuid, save_out_buf, save_out_buf_wide,
+    build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide,
 };
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 use crate::winscard::system_scard::SystemScardContext;
-
-const SCARD_STATE_CHANGED: u32 = 0x00000002;
-const SCARD_STATE_INUSE: u32 = 0x00000100;
-const SCARD_STATE_PRESENT: u32 = 0x00000020;
-// Undocumented constant that appears in all API captures
-const SCARD_STATE_UNNAMED_CONSTANT: u32 = 0x00010000;
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew
 // `dwProviderId` function parameter::
@@ -42,11 +36,6 @@ const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
 const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
 
 pub const DEFAULT_CARD_NAME: &str = "Cool card";
-
-// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
-// To be notified of the arrival of a new smart card reader,
-// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
-const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 // Environment variable that indicates what smart card type use. It can have the following values:
 // `true` - use a system-provided smart card.
@@ -682,7 +671,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeA(
     context: ScardContext,
-    _dw_timeout: u32,
+    dw_timeout: u32,
     rg_reader_states: LpScardReaderStateA,
     c_readers: u32,
 ) -> ScardStatus {
@@ -690,31 +679,30 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_null!(rg_reader_states);
 
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
-    let supported_readers = try_execute!(context.list_readers());
 
-    let reader_states = unsafe {
+    let c_reader_states = unsafe {
         from_raw_parts_mut(
             rg_reader_states,
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
+    let mut reader_states: Vec<_> = c_reader_states
+        .iter()
+        .map(|c_reader| ReaderState {
+            reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader as *const _) }.to_string_lossy(),
+            user_data: c_reader.pv_user_data as usize,
+            current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+            event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+            atr_len: c_reader.cb_atr.try_into().unwrap(),
+            atr: c_reader.rgb_atr.clone(),
+        })
+        .collect();
+    try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
-    for reader_state in reader_states {
-        let reader = try_execute!(
-            unsafe { CStr::from_ptr(reader_state.sz_reader as *const i8) }.to_str(),
-            ErrorKind::InvalidParameter
-        );
-
-        if supported_readers.contains(&Cow::Borrowed(reader)) {
-            reader_state.dw_event_state =
-                SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
-            reader_state.cb_atr = try_execute!(ATR.len().try_into(), ErrorKind::InsufficientBuffer);
-            reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
-        } else if reader == NEW_READER_NOTIFICATION {
-            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-        } else {
-            error!(?reader, "Unsupported reader");
-        }
+    for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
+        c_reader_state.dw_event_state = reader_state.event_state.bits();
+        c_reader_state.cb_atr = try_execute!(reader_state.atr_len.try_into(), ErrorKind::InternalError);
+        c_reader_state.rgb_atr.copy_from_slice(&reader_state.atr);
     }
 
     ErrorKind::Success.into()
@@ -725,7 +713,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetStatusChangeW(
     context: ScardContext,
-    _dw_timeout: u32,
+    dw_timeout: u32,
     rg_reader_states: LpScardReaderStateW,
     c_readers: u32,
 ) -> ScardStatus {
@@ -733,26 +721,30 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_null!(rg_reader_states);
 
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
-    let supported_readers = try_execute!(context.list_readers());
 
-    let reader_states = unsafe {
+    let c_reader_states = unsafe {
         from_raw_parts_mut(
             rg_reader_states,
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
-    for reader_state in reader_states {
-        let reader = unsafe { c_w_str_to_string(reader_state.sz_reader) };
-        if supported_readers.contains(&Cow::Borrowed(&reader)) {
-            reader_state.dw_event_state =
-                SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
-            reader_state.cb_atr = try_execute!(ATR.len().try_into(), ErrorKind::InsufficientBuffer);
-            reader_state.rgb_atr[0..ATR.len()].copy_from_slice(ATR.as_slice());
-        } else if reader == NEW_READER_NOTIFICATION {
-            reader_state.dw_event_state = SCARD_STATE_UNNAMED_CONSTANT;
-        } else {
-            error!(?reader, "Unsupported reader");
-        }
+    let mut reader_states: Vec<_> = c_reader_states
+        .iter()
+        .map(|c_reader| ReaderState {
+            reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
+            user_data: c_reader.pv_user_data as usize,
+            current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+            event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+            atr_len: c_reader.cb_atr.try_into().unwrap(),
+            atr: c_reader.rgb_atr.clone(),
+        })
+        .collect();
+    try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
+
+    for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
+        c_reader_state.dw_event_state = reader_state.event_state.bits();
+        c_reader_state.cb_atr = try_execute!(reader_state.atr_len.try_into(), ErrorKind::InternalError);
+        c_reader_state.rgb_atr.copy_from_slice(&reader_state.atr);
     }
 
     ErrorKind::Success.into()
