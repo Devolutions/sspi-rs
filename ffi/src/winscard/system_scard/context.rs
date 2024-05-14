@@ -39,6 +39,21 @@ impl SystemScardContext {
     }
 }
 
+impl Drop for SystemScardContext {
+    fn drop(&mut self) {
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardReleaseContext(self.h_context) })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardReleaseContext(self.h_context)
+            })?;
+        }
+    }
+}
+
 impl WinScardContext for SystemScardContext {
     fn connect(
         &self,

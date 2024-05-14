@@ -24,6 +24,27 @@ impl SystemScard {
     }
 }
 
+impl Drop for SystemScard {
+    fn drop(&mut self) {
+        // The smart card handle can be explicitly disconnected before. So, there is no point
+        // in double disconnecting.
+        // Hint: It's always better to explicitly disconnect the card because the user can not pass
+        // the custom `dwDisposition` parameter in `SCardDisconnect` function.
+        if self.h_card != 0 {
+            #[cfg(not(target_os = "windows"))]
+            {
+                try_execute!(unsafe { pcsc_lite_rs::SCardDisconnect(self.h_card, 0) })?;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                try_execute!(unsafe {
+                    windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, 0)
+                })?;
+            }
+        }
+    }
+}
+
 impl WinScard for SystemScard {
     fn status(&self) -> WinScardResult<Status> {
         let mut reader_name: *mut u8 = null_mut();
