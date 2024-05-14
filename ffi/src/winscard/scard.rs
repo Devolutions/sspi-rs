@@ -146,10 +146,14 @@ pub extern "system" fn SCardReconnect(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
 #[instrument(ret)]
 #[no_mangle]
-pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
+pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
 
-    let scard = unsafe { Box::from_raw(handle as *mut WinScardHandle) };
+    let mut scard = unsafe { Box::from_raw(handle as *mut WinScardHandle) };
+    try_execute!(scard
+        .scard_mut()
+        .disconnect(try_execute!(dw_disposition.try_into(), ErrorKind::InvalidParameter)));
+
     if let Some(context) = scard.context() {
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected!");
