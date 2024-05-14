@@ -33,13 +33,17 @@ impl Drop for SystemScard {
         if self.h_card != 0 {
             #[cfg(not(target_os = "windows"))]
             {
-                try_execute!(unsafe { pcsc_lite_rs::SCardDisconnect(self.h_card, 0) })?;
+                if let Err(err) = try_execute!(unsafe { pcsc_lite_rs::SCardDisconnect(self.h_card, 0) }) {
+                    error!(?err, "Cannot disconnect the card");
+                }
             }
             #[cfg(target_os = "windows")]
             {
-                try_execute!(unsafe {
-                    windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, 0)
-                })?;
+                if let Err(err) =
+                    try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, 0) })
+                {
+                    error!(?err, "Cannot disconnect the card");
+                }
             }
         }
     }
@@ -409,5 +413,23 @@ impl WinScard for SystemScard {
                 )
             })
         }
+    }
+
+    fn disconnect(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardDisconnect(self.h_card, disposition.into()) })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, disposition.into())
+            })?;
+        }
+
+        // Mark the current card handle as disconnected.
+        self.h_card = 0;
+
+        Ok(())
     }
 }
