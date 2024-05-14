@@ -292,6 +292,11 @@ impl WinScardHandle {
         self.scard.as_ref()
     }
 
+    /// Returns the mutable [WinScard] handle.
+    pub fn scard_mut(&mut self) -> &mut dyn WinScard {
+        self.scard.as_mut()
+    }
+
     /// Returns the parent [ScardContext] it belongs.
     pub fn raw_context(&self) -> ScardContext {
         self.context
