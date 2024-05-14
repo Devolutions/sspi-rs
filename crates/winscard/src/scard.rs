@@ -557,6 +557,13 @@ impl<'a> WinScard for SmartCard<'a> {
 
         Ok(())
     }
+
+    fn disconnect(&mut self, _disposition: ReaderAction) -> WinScardResult<()> {
+        // We don't need any actions during the disconnection in emulated smart cards.
+        // It's enough just to drop the card object.
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -559,6 +559,12 @@ pub trait WinScard {
     /// the state of the reader, reader driver, or smart card. Not all attributes are supported
     /// by all readers (nor can they be set at all times) as many of the attributes are under direct control of the transport protocol.
     fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()>;
+
+    /// [SCardDisconnect](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scarddisconnect)
+    ///
+    /// The SCardDisconnect function terminates a connection previously opened between the calling application and
+    /// a smart card in the target reader.
+    fn disconnect(&mut self, disposition: ReaderAction) -> WinScardResult<()>;
 }
 
 /// This trait provides interface for all available smart card context (resource manager) related
