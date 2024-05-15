@@ -120,8 +120,14 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
     debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
 
-    let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
-    release_context(context);
+    if is_present(context) {
+        let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
+        release_context(context);
+
+        info!("Scard context has been successfully released.");
+    } else {
+        warn!("Scard context is invalid or has been released.");
+    }
 
     ErrorKind::Success.into()
 }
