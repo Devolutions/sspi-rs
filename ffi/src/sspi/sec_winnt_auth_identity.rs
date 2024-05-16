@@ -327,23 +327,64 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-        let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
-        let password = raw_str_into_bytes(
+        let mut user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
+        let mut password = raw_str_into_bytes(
             (*auth_data).password as *const _,
             (*auth_data).password_length as usize * 2,
-        )
-        .into();
+        ).to_vec();
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(feature = "scard")]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
-            return handle_smart_card_creds(user, password);
+            return handle_smart_card_creds(user, password.into());
+        }
+
+        // Try to collect credentials for the emulated smart card.
+        #[cfg(feature = "scard")]
+        if user.contains(&b'@') {
+            info!("Trying to collect smart card creds...");
+            use winscard::SmartCardInfo;
+
+            use crate::utils::str_encode_utf16;
+            use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+            use crate::sspi::utils::raw_wide_str_trim_nulls;
+
+            match SmartCardInfo::try_from_env() {
+                Ok(smart_card_info) => {
+                    raw_wide_str_trim_nulls(&mut user);
+                    raw_wide_str_trim_nulls(&mut password);
+                    // In the `SmartCardIdentityBuffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
+                    // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
+                    // So, password data is a wide C string and we need to delete the NULL terminator.
+                    // trace!("epafronrawcrebf: {:?}", password.as_ref());
+                    // let new_len = password.as_ref().len() - 2;
+                    // password.as_mut().truncate(new_len);
+                    // trace!("epafronrawafter: {:?}", password.as_ref());
+
+                    info!("Smart card credentials have been collected. Process with scard-based logon.");
+
+                    return Ok(CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
+                        username: user,
+                        certificate: smart_card_info.auth_cert_der.clone(),
+                        card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
+                        reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
+                        container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
+                        csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
+                        pin: password.into(),
+                        private_key_file_index: None,
+                        private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
+                    }));
+                }
+                Err(err) => {
+                    warn!(?err, "Failed to collect smart card credentials. Process with password-based logon.");
+                }
+            };
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
-            password,
+            password: password.into(),
         }))
     }
 }
