@@ -340,12 +340,62 @@ pub unsafe fn auth_data_to_identity_buffers_w(
             return handle_smart_card_creds(user, password);
         }
 
+        // Try to collect credentials for the emulated smart card.
+        #[cfg(feature = "scard")]
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
+            return Ok(CredentialsBuffers::SmartCard(scard_creds));
+        }
+
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
             domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
             password,
         }))
     }
+}
+
+#[cfg(feature = "scard")]
+fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
+    if username.contains(&b'@') {
+        info!("Trying to collect smart card creds...");
+        use winscard::SmartCardInfo;
+
+        use crate::sspi::utils::raw_wide_str_trim_nulls;
+        use crate::utils::str_encode_utf16;
+        use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+
+        match SmartCardInfo::try_from_env() {
+            Ok(smart_card_info) => {
+                let mut username = username.to_vec();
+                let mut pin = password.to_vec();
+
+                raw_wide_str_trim_nulls(&mut username);
+                raw_wide_str_trim_nulls(&mut pin);
+
+                info!("Smart card credentials have been collected. Process with scard-based logon.");
+
+                return Ok(SmartCardIdentityBuffers {
+                    username,
+                    certificate: smart_card_info.auth_cert_der.clone(),
+                    card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
+                    reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
+                    container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
+                    csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
+                    pin: pin.into(),
+                    private_key_file_index: None,
+                    private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
+                });
+            }
+            Err(err) => {
+                warn!(?err);
+            }
+        }
+    }
+
+    Err(Error::new(
+        ErrorKind::NoCredentials,
+        "Failed to collect smart card credentials. Process with password-based logon.",
+    ))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -605,37 +655,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
-    if username.contains(&b'@') {
-        use winscard::SmartCardInfo;
-
-        use crate::utils::str_encode_utf16;
-        use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
-
-        match SmartCardInfo::try_from_env() {
-            Ok(smart_card_info) => {
-                raw_wide_str_trim_nulls(&mut username);
-                // In the `SmartCardIdentityBuffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
-                // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
-                // So, password data is a wide C string and we need to delete the NULL terminator.
-                let new_len = password.as_ref().len() - 2;
-                password.as_mut().truncate(new_len);
-
-                return Ok(CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
-                    username,
-                    certificate: smart_card_info.auth_cert_der.clone(),
-                    card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
-                    reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
-                    container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
-                    csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
-                    pin: password,
-                    private_key_file_index: None,
-                    private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
-                }));
-            }
-            Err(err) => {
-                debug!(?err);
-            }
-        };
+    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
+        return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     // Only marshaled smart card creds starts with '@' char.
