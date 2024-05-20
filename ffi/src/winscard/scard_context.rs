@@ -125,11 +125,13 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
         release_context(context);
 
         info!("Scard context has been successfully released.");
+
+        ErrorKind::Success.into()
     } else {
         warn!("Scard context is invalid or has been released.");
-    }
 
-    ErrorKind::Success.into()
+        6
+    }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
@@ -145,12 +147,14 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
         if context.is_valid() {
             ErrorKind::Success.into()
         } else {
-            ErrorKind::InvalidHandle.into()
+            // ErrorKind::InvalidHandle.into()
+            6
         }
     } else {
         debug!("Current context is not present in active contexts.");
 
-        ErrorKind::InvalidHandle.into()
+        // ErrorKind::InvalidHandle.into()
+        6
     }
 }
 
@@ -788,13 +792,18 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     };
     let mut reader_states: Vec<_> = c_reader_states
         .iter()
-        .map(|c_reader| ReaderState {
-            reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
-            user_data: c_reader.pv_user_data as usize,
-            current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
-            event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
-            atr_len: c_reader.cb_atr.try_into().unwrap(),
-            atr: c_reader.rgb_atr.clone(),
+        .map(|c_reader| {
+            if CurrentState::from_bits(c_reader.dw_current_state).is_none() || CurrentState::from_bits(c_reader.dw_event_state).is_none() {
+                trace!(c_reader.dw_current_state, c_reader.dw_event_state, "ptatjhdsgcfrj");
+            }
+            ReaderState {
+                reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
+                user_data: c_reader.pv_user_data as usize,
+                current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+                event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+                atr_len: c_reader.cb_atr.try_into().unwrap(),
+                atr: c_reader.rgb_atr.clone(),
+            }
         })
         .collect();
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));

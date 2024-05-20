@@ -42,6 +42,8 @@ impl WinScardContextHandle {
             return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
         }
 
+        info!("Add new scard context: {}", scard);
+
         self.scards.push(scard);
 
         Ok(())
@@ -215,6 +217,7 @@ impl Drop for WinScardContextHandle {
     fn drop(&mut self) {
         // [SCardReleaseContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
         // ...freeing any resources allocated under that context, including SCARDHANDLE objects
+        trace!("scards to disconnect: {:?}", self.scards);
         unsafe {
             for scard in &self.scards {
                 let _ = Box::from_raw(*scard as *mut WinScardHandle);
