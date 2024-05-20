@@ -3,24 +3,26 @@ use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
-use ffi_types::winscard::{ScardContext, ScardHandle};
+use ffi_types::winscard::{ScardContext, ScardHandle, ScardIoRequest};
 use num_traits::ToPrimitive;
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use winscard::winscard::{
     AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::parse_multi_string_owned;
+use super::{init_scard_api_table, parse_multi_string_owned};
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 
 pub struct SystemScard {
     h_card: ScardHandle,
     h_card_context: ScardContext,
+    api: SCardApiFunctionTable,
 }
 
 impl SystemScard {
     pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> Self {
-        Self { h_card, h_card_context }
+        Self { h_card, h_card_context, api: init_scard_api_table(), }
     }
 }
 
@@ -90,7 +92,7 @@ impl WinScard for SystemScard {
             // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
             // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardStatusA(
+                (self.api.SCardStatusA)(
                     self.h_card,
                     (&mut reader_name as *mut *mut u8) as *mut _,
                     &mut reader_name_len,
@@ -114,7 +116,7 @@ impl WinScard for SystemScard {
             #[cfg(target_os = "windows")]
             {
                 try_execute!(unsafe {
-                    windows_sys::Win32::Security::Credentials::SCardFreeMemory(
+                    (self.api.SCardFreeMemory)(
                         self.h_card_context,
                         reader_name as *const _,
                     )
@@ -134,7 +136,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_card_context, reader_name as *const _)
+                (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _)
             })?;
         }
 
@@ -178,7 +180,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardControl(
+                (self.api.SCardControl)(
                     self.h_card,
                     code,
                     input.as_ptr() as *const _,
@@ -213,12 +215,12 @@ impl WinScard for SystemScard {
         // Any protocol-specific information then immediately follows this structure.
         //
         // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
-        let length = size_of::<IoRequest>() + send_pci.pci_info.len();
+        let length = size_of::<ScardIoRequest>() + send_pci.pci_info.len();
 
         let mut scard_io_request = vec![0_u8; length];
-        scard_io_request[size_of::<IoRequest>()..].copy_from_slice(&send_pci.pci_info);
+        scard_io_request[size_of::<ScardIoRequest>()..].copy_from_slice(&send_pci.pci_info);
 
-        let poi_send_pci = scard_io_request.as_mut_ptr() as *mut IoRequest;
+        let poi_send_pci = scard_io_request.as_mut_ptr() as *mut ScardIoRequest;
 
         let mut output_apdu_len = OUT_APDU_BUF_LEN.try_into()?;
         let mut output_apdu = [0; OUT_APDU_BUF_LEN];
@@ -231,8 +233,8 @@ impl WinScard for SystemScard {
 
         #[cfg(target_os = "windows")]
         unsafe {
-            (*poi_send_pci).dwProtocol = send_pci.protocol.bits();
-            (*poi_send_pci).cbPciLength = length.try_into()?;
+            (*poi_send_pci).dw_protocol = send_pci.protocol.bits();
+            (*poi_send_pci).cb_pci_length = length.try_into()?;
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -255,7 +257,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardTransmit(
+                (self.api.SCardTransmit)(
                     self.h_card,
                     poi_send_pci,
                     input_apdu.as_ptr(),
@@ -283,7 +285,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardBeginTransaction(self.h_card) })
+            try_execute!(unsafe { (self.api.SCardBeginTransaction)(self.h_card) })
         }
     }
 
@@ -295,7 +297,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardEndTransaction(self.h_card, disposition.into())
+                (self.api.SCardEndTransaction)(self.h_card, disposition.into())
             })
         }
     }
@@ -324,7 +326,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardReconnect(
+                (self.api.SCardReconnect)(
                     self.h_card,
                     share_mode.into(),
                     dw_preferred_protocols,
@@ -359,7 +361,7 @@ impl WinScard for SystemScard {
             // writes the length of the buffer that would have been returned if this parameter
             // had not been NULL to pcbAttrLen, and returns a success code.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetAttrib(
+                (self.api.SCardGetAttrib)(
                     self.h_card,
                     attr_id,
                     null_mut(),
@@ -379,7 +381,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetAttrib(
+                (self.api.SCardGetAttrib)(
                     self.h_card,
                     attr_id,
                     data.as_mut_ptr(),
@@ -405,7 +407,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardSetAttrib(
+                (self.api.SCardSetAttrib)(
                     self.h_card,
                     attr_id,
                     attribute_data.as_ptr(),

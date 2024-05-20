@@ -7,17 +7,22 @@ use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
 };
+use ffi_types::winscard::functions::SCardApiFunctionTable;
+
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::{parse_multi_string_owned, SystemScard};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
+    api: SCardApiFunctionTable,
 }
 
 impl SystemScardContext {
     pub fn establish(dw_scope: u32) -> WinScardResult<Self> {
         let mut h_context = 0;
+
+        let api = super::init_scard_api_table();
 
         #[cfg(not(target_os = "windows"))]
         {
@@ -26,7 +31,7 @@ impl SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardEstablishContext(
+                (api.SCardEstablishContext)(
                     dw_scope,
                     null(),
                     null(),
@@ -35,7 +40,7 @@ impl SystemScardContext {
             })?;
         }
 
-        Ok(Self { h_context })
+        Ok(Self { h_context, api })
     }
 }
 
@@ -91,7 +96,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardConnectA(
+                (self.api.SCardConnectA)(
                     self.h_context,
                     c_string.as_ptr() as *const _,
                     share_mode.into(),
@@ -131,7 +136,7 @@ impl WinScardContext for SystemScardContext {
             //  writes the length of the buffer that would have been returned if this parameter
             //  had not been NULL to pcchReaders, and returns a success code.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardListReadersA(
+                (self.api.SCardListReadersA)(
                     self.h_context,
                     null(),
                     null_mut(),
@@ -151,7 +156,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardListReadersA(
+                (self.api.SCardListReadersA)(
                     self.h_context,
                     null(),
                     readers.as_mut_ptr(),
@@ -185,7 +190,7 @@ impl WinScardContext for SystemScardContext {
             let c_reader_name = CString::new(_reader_name).expect("Rust string slice should not contain 0 bytes");
 
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetDeviceTypeIdA(
+                (self.api.SCardGetDeviceTypeIdA)(
                     self.h_context,
                     c_reader_name.as_ptr() as *const _,
                     &mut device_type_id,
@@ -226,7 +231,7 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned to pcbIcon if this parameter
             // had not been NULL, and returns a success code.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetReaderIconA(
+                (self.api.SCardGetReaderIconA)(
                     self.h_context,
                     c_reader_name.as_ptr() as *const _,
                     null_mut(),
@@ -237,7 +242,7 @@ impl WinScardContext for SystemScardContext {
             let mut icon_buf = vec![0; icon_buf_len.try_into()?];
 
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetReaderIconA(
+                (self.api.SCardGetReaderIconA)(
                     self.h_context,
                     c_reader_name.as_ptr() as *const _,
                     icon_buf.as_mut_ptr(),
@@ -256,7 +261,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardIsValidContext(self.h_context) })
+            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) })
                 .is_ok()
         }
     }
@@ -279,18 +284,18 @@ impl WinScardContext for SystemScardContext {
             //
             // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
             let c_cache_key = CString::new(_key).expect("Rust string slice should not contain 0 bytes");
-            let card_id = uuid_to_c_guid(_card_id);
+            let mut card_id = uuid_to_c_guid(_card_id);
 
             let mut data: *mut u8 = null_mut();
 
             // It's not specified in the `SCardReadCacheA` function documentation, but after some
             // `msclmd.dll` reversing, we found out that this function supports the `SCARD_AUTOALLOCATE`.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardReadCacheA(
+                (self.api.SCardReadCacheA)(
                     self.h_context,
-                    &card_id,
+                    &mut card_id,
                     _freshness_counter,
-                    c_cache_key.as_ptr() as *const _,
+                    c_cache_key.into_raw() as *mut _,
                     ((&mut data) as *mut *mut u8) as *mut _,
                     &mut data_len,
                 )
@@ -300,7 +305,7 @@ impl WinScardContext for SystemScardContext {
                 len
             } else {
                 try_execute!(unsafe {
-                    windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_context, *data as *const _)
+                    (self.api.SCardFreeMemory)(self.h_context, *data as *const _)
                 })?;
 
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
@@ -310,7 +315,7 @@ impl WinScardContext for SystemScardContext {
             cache_item.copy_from_slice(unsafe { from_raw_parts(data, data_len) });
 
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_context, *data as *const _)
+                (self.api.SCardFreeMemory)(self.h_context, *data as *const _)
             })?;
 
             Ok(Cow::Owned(cache_item))
@@ -322,7 +327,7 @@ impl WinScardContext for SystemScardContext {
         _card_id: Uuid,
         _freshness_counter: u32,
         _key: String,
-        _value: Vec<u8>,
+        mut _value: Vec<u8>,
     ) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
@@ -341,15 +346,15 @@ impl WinScardContext for SystemScardContext {
             //
             // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
             let c_cache_key = CString::new(_key.as_str()).expect("Rust string slice should not contain 0 bytes");
-            let card_id = uuid_to_c_guid(_card_id);
+            let mut card_id = uuid_to_c_guid(_card_id);
 
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardWriteCacheA(
+                (self.api.SCardWriteCacheA)(
                     self.h_context,
-                    &card_id,
+                    &mut card_id,
                     _freshness_counter,
-                    c_cache_key.as_ptr() as *const _,
-                    _value.as_ptr(),
+                    c_cache_key.into_raw() as *mut _,
+                    _value.as_mut_ptr(),
                     _value.len().try_into()?,
                 )
             })
@@ -376,7 +381,7 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned if this parameter had not been
             // NULL to pcchGroups, and returns a success code.
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardListReaderGroupsA(
+                (self.api.SCardListReaderGroupsA)(
                     self.h_context,
                     null_mut(),
                     &mut reader_groups_buf_len,
@@ -399,7 +404,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardListReaderGroupsA(
+                (self.api.SCardListReaderGroupsA)(
                     self.h_context,
                     reader_groups.as_mut_ptr(),
                     &mut reader_groups_buf_len,
@@ -417,7 +422,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardCancel(self.h_context) })
+            try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
         }
     }
 

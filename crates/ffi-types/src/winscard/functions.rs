@@ -115,6 +115,7 @@ pub type GetOpenCardNameWFn = extern "system" fn(LpOpenCardNameW) -> ScardStatus
 pub type GetSCardApiFunctionTableFn = extern "system" fn() -> PSCardApiFunctionTable;
 
 // https://github.com/FreeRDP/FreeRDP/blob/88f79c5748f4031cb50dfae3ebadcc6619b69f1c/winpr/include/winpr/smartcard.h#L1114
+#[derive(Debug)]
 #[repr(C)]
 #[allow(non_snake_case)]
 pub struct SCardApiFunctionTable {
