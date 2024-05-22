@@ -498,6 +498,48 @@ pub struct ReaderState<'data> {
     pub atr: [u8; 36],
 }
 
+/// Identifier for the provider associated with the card type.
+///
+/// [SCardGetCardTypeProviderNameW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
+/// `dwProviderId` parameter.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ProviderId {
+    /// `SCARD_PROVIDER_PRIMARY`: The function retrieves the name of the smart card's primary service provider as a GUID string.
+    Primary = 1,
+    /// `SCARD_PROVIDER_CSP`: The function retrieves the name of the cryptographic service provider.
+    Csp = 2,
+    /// `SCARD_PROVIDER_KSP`: The function retrieves the name of the smart card key storage provider (KSP).
+    Ksp = 3,
+    /// `SCARD_PROVIDER_CARD_MODULE`: The function retrieves the name of the card module.
+    CardModule = 0x80000001,
+}
+
+impl TryFrom<u32> for ProviderId {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => ProviderId::Primary,
+            2 => ProviderId::Csp,
+            3 => ProviderId::Ksp,
+            0x80000001 => ProviderId::CardModule,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("Invalid provider id: {}", value),
+                ))
+            }
+        })
+    }
+}
+
+impl From<ProviderId> for u32 {
+    fn from(value: ProviderId) -> Self {
+        value as u32
+    }
+}
+
 /// This trait provides interface for all available smart card related functions in the `winscard.h`.
 ///
 /// # MSDN
@@ -641,4 +683,10 @@ pub trait WinScardContext {
     ///
     /// The SCardGetStatusChange function blocks execution until the current availability of the cards in a specific set of readers changes.
     fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
+
+    /// [SCardGetCardTypeProviderNameW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
+    ///
+    /// The SCardGetCardTypeProviderName function returns the name of the module (dynamic link library) that contains the provider for
+    /// a given card name and provider type.
+    fn get_card_type_provider_name(&self, card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>>;
 }

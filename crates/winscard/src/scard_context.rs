@@ -10,7 +10,8 @@ use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
 use crate::winscard::{
-    CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
+    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, Uuid,
+    WinScardContext,
 };
 use crate::{Error, ErrorKind, WinScardResult};
 
@@ -21,6 +22,10 @@ const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 // Default name of the emulated smart card.
 const DEFAULT_CARD_NAME: &str = "Cool card";
+
+const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
+const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
@@ -563,5 +568,19 @@ impl<'a> WinScardContext for ScardContext<'a> {
     fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
         // we have only one smart card with only one default name
         Ok(vec![DEFAULT_CARD_NAME.into()])
+    }
+
+    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+        Ok(match provider_id {
+            ProviderId::Primary => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "ProviderId::Primary is not supported for emulated smart card",
+                ))
+            }
+            ProviderId::Csp => MICROSOFT_DEFAULT_CSP.into(),
+            ProviderId::Ksp => MICROSOFT_DEFAULT_KSP.into(),
+            ProviderId::CardModule => MICROSOFT_SCARD_DRIVER_LOCATION.into(),
+        })
     }
 }
