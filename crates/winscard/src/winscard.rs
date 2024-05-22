@@ -591,6 +591,12 @@ pub trait WinScardContext {
     /// Provides the list of readers within a set of named reader groups, eliminating duplicates.
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>>;
 
+    /// [SCardListCardsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw)
+    ///
+    /// The SCardListCards function searches the smart card database and provides a list of named cards previously
+    /// introduced to the system by the user.
+    fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>>;
+
     /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
     ///
     /// Gets the device type identifier of the card reader for the given reader name.

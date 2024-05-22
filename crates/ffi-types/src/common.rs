@@ -34,3 +34,4 @@ pub type LpCGuid = *const Guid;
 pub type LpGuid = *mut Guid;
 pub type Uuid = Guid;
 pub type LpUuid = *mut Uuid;
+pub type LpCUuid = *const Uuid;

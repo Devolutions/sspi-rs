@@ -19,6 +19,9 @@ use crate::{Error, ErrorKind, WinScardResult};
 // set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
+// Default name of the emulated smart card.
+const DEFAULT_CARD_NAME: &str = "Cool card";
+
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
@@ -555,5 +558,10 @@ impl<'a> WinScardContext for ScardContext<'a> {
         }
 
         Ok(())
+    }
+
+    fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+        // we have only one smart card with only one default name
+        Ok(vec![DEFAULT_CARD_NAME.into()])
     }
 }
