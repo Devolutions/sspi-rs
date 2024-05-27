@@ -190,7 +190,7 @@ jobs:
           }
 
           if ($DotNetOs -Eq 'win') {
-            $CargoArgs += @('--features', 'scard')
+            $CargoArgs += @('--features', 'scard,tsssp')
           }
 
           $CargoCmd = $(@('cargo') + $CargoArgs) -Join ' '
