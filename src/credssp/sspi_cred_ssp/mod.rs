@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rustls::{ClientConfig, ClientConnection, Connection, ServerConfig, ServerConnection};
+use rustls::{ClientConfig, ClientConnection, Connection};
 
 use self::tls_connection::{danger, TlsConnection, TLS_PACKET_HEADER_LEN};
 use super::ts_request::NONCE_SIZE;
@@ -48,54 +48,30 @@ pub struct SspiCredSsp {
     state: CredSspState,
     cred_ssp_context: Box<CredSspContext>,
     auth_identity: Option<CredentialsBuffers>,
-    tls_connection: TlsConnection,
+    // The TLS connection object will be set on the first initialize security context function call.
+    // We need to specify the correct hostname which we'll know only during actual auth.
+    tls_connection: Option<TlsConnection>,
     nonce: Option<[u8; NONCE_SIZE]>,
 }
 
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
-        // "stub_string" - we don't check the server's certificate validity so we can use any server name.
-        let example_com = "stub_string".try_into().unwrap();
-        let mut client_config = ClientConfig::builder()
-            .with_safe_defaults()
-            .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
-            .with_no_client_auth();
-        client_config.key_log = Arc::new(rustls::KeyLogFile::new());
-        let config = Arc::new(client_config);
-
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
             auth_identity: None,
-            tls_connection: TlsConnection::Rustls(Connection::Client(
-                ClientConnection::new(config, example_com)
-                    .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
-            )),
+            tls_connection: None,
             nonce: Some(OsRng.gen::<[u8; NONCE_SIZE]>()),
         })
     }
 
     /// * `sspi_context` is a security package that will be used for authorization
-    /// * `certificates` is a vector of DER-encoded X.509 certificates
-    /// * `private_key` is a raw private key. it is DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format.
-    pub fn new_server(sspi_context: SspiContext, certificates: Vec<Vec<u8>>, private_key: Vec<u8>) -> Result<Self> {
-        let server_config = ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(
-                certificates.into_iter().map(rustls::Certificate).collect(),
-                rustls::PrivateKey(private_key),
-            )
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))?;
-        let config = Arc::new(server_config);
-
+    pub fn new_server(sspi_context: SspiContext) -> Result<Self> {
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
             auth_identity: None,
-            tls_connection: TlsConnection::Rustls(Connection::Server(
-                ServerConnection::new(config).map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
-            )),
+            tls_connection: None,
             // nonce for the server will be in the incoming TsRequest
             nonce: None,
         })
@@ -123,7 +99,9 @@ impl SspiCredSsp {
             header: _,
             decrypted: raw_ts_request,
             extra: _,
-        }) = self.tls_connection.decrypt_tls(&mut encrypted_ts_request.buffer)?
+        }) = self
+            .tls_connection_mut()?
+            .decrypt_tls(&mut encrypted_ts_request.buffer)?
         else {
             return Err(Error::new(ErrorKind::IncompleteMessage, "Input token is too short"));
         };
@@ -132,6 +110,18 @@ impl SspiCredSsp {
         ts_request.check_error()?;
 
         Ok(ts_request)
+    }
+
+    fn tls_connection_mut(&mut self) -> Result<&mut TlsConnection> {
+        self.tls_connection
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::OutOfSequence, "TLS connection is not yet established"))
+    }
+
+    fn tls_connection(&mut self) -> Result<&TlsConnection> {
+        self.tls_connection
+            .as_ref()
+            .ok_or_else(|| Error::new(ErrorKind::OutOfSequence, "TLS connection is not yet established"))
     }
 }
 
@@ -151,7 +141,7 @@ impl Sspi for SspiCredSsp {
         let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
         let plain_message_len = plain_message.buffer.len();
 
-        let mut stream_header_data = self.tls_connection.encrypt_tls(&plain_message.buffer)?;
+        let mut stream_header_data = self.tls_connection_mut()?.encrypt_tls(&plain_message.buffer)?;
         let mut stream_data = stream_header_data.split_off(TLS_PACKET_HEADER_LEN);
         let stream_trailer_data = stream_data.split_off(plain_message_len);
 
@@ -190,7 +180,7 @@ impl Sspi for SspiCredSsp {
         }
 
         match self
-            .tls_connection
+            .tls_connection_mut()?
             .decrypt_tls(DecryptBuffer::take_buf_data_mut(message, SecurityBufferType::Data)?)?
         {
             DecryptionResult::Success(DecryptionResultBuffers {
@@ -237,7 +227,7 @@ impl Sspi for SspiCredSsp {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_stream_sizes(&mut self) -> Result<StreamSizes> {
-        self.tls_connection.stream_sizes()
+        self.tls_connection()?.stream_sizes()
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
@@ -257,7 +247,7 @@ impl Sspi for SspiCredSsp {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
-        let certificates = self.tls_connection.peer_certificates()?;
+        let certificates = self.tls_connection()?.peer_certificates()?;
         let raw_server_certificate = certificates
             .get(0)
             .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "Can not acquire server certificate"))?;
@@ -278,7 +268,7 @@ impl Sspi for SspiCredSsp {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_connection_info(&mut self) -> Result<ConnectionInfo> {
-        self.tls_connection.connection_info()
+        self.tls_connection()?.connection_info()
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
@@ -359,6 +349,22 @@ impl SspiCredSsp {
 
         let status = match &self.state {
             CredSspState::Tls => {
+                if self.tls_connection.is_none() {
+                    // "stub_string" - we don't check the server's certificate validity so we can use any server name.
+                    let example_com = "stub_string".try_into().unwrap();
+                    let mut client_config = ClientConfig::builder()
+                        .with_safe_defaults()
+                        .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
+                        .with_no_client_auth();
+                    client_config.key_log = Arc::new(rustls::KeyLogFile::new());
+                    let config = Arc::new(client_config);
+
+                    self.tls_connection = Some(TlsConnection::Rustls(Connection::Client(
+                        ClientConnection::new(config, example_com)
+                            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
+                    )));
+                }
+
                 // input token can not present on the first call
                 let input_token = builder
                     .input
@@ -366,7 +372,7 @@ impl SspiCredSsp {
                     .and_then(|buffers| SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Token).ok())
                     .map(|sec_buffer| sec_buffer.buffer.as_slice())
                     .unwrap_or_default();
-                let (bytes_written, tls_buffer) = self.tls_connection.process_tls_packets(input_token)?;
+                let (bytes_written, tls_buffer) = self.tls_connection_mut()?.process_tls_packets(input_token)?;
 
                 if bytes_written == 0 {
                     self.state = CredSspState::NegoToken;
@@ -452,7 +458,7 @@ impl SspiCredSsp {
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token.buffer = self.tls_connection.encrypt_tls(&encoded_ts_request)?;
+                output_token.buffer = self.tls_connection_mut()?.encrypt_tls(&encoded_ts_request)?;
 
                 SecurityStatus::ContinueNeeded
             }
@@ -498,7 +504,7 @@ impl SspiCredSsp {
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
-                output_token.buffer = self.tls_connection.encrypt_tls(&encoded_ts_request)?;
+                output_token.buffer = self.tls_connection_mut()?.encrypt_tls(&encoded_ts_request)?;
 
                 self.state = CredSspState::Final;
 
