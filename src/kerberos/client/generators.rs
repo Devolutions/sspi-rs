@@ -43,8 +43,8 @@ use time::{Duration, OffsetDateTime};
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
-use crate::kerberos::utils::parse_target_name;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
+use crate::utils::parse_target_name;
 use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;

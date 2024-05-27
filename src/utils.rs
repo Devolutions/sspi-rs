@@ -310,3 +310,46 @@ pub fn extract_encrypted_data(buffers: &[DecryptBuffer]) -> Result<Vec<u8>> {
 
     Ok(encrypted)
 }
+
+pub fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
+    let divider = target_name.find('/').ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidParameter,
+            "Invalid service principal name: missing '/'",
+        )
+    })?;
+
+    if divider == 0 || divider == target_name.len() - 1 {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "Invalid service principal name",
+        ));
+    }
+
+    let service_name = &target_name[0..divider];
+    // `divider + 1` - do not include '/' char
+    let service_principal_name = &target_name[(divider + 1)..];
+
+    Ok((service_name, service_principal_name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_target_name;
+
+    #[test]
+    fn parse_valid_target_name() {
+        assert_eq!(("EXAMPLE", "p10"), parse_target_name("EXAMPLE/p10").unwrap());
+        assert_eq!(("E", "p10"), parse_target_name("E/p10").unwrap());
+        assert_eq!(("EXAMPLE", "p"), parse_target_name("EXAMPLE/p").unwrap());
+    }
+
+    #[test]
+    fn parse_invalid_target_name() {
+        assert!(parse_target_name("EXAMPLEp10").is_err());
+        assert!(parse_target_name("EXAMPLE/").is_err());
+        assert!(parse_target_name("/p10").is_err());
+        assert!(parse_target_name("/").is_err());
+        assert!(parse_target_name("").is_err());
+    }
+}
