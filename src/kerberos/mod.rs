@@ -48,7 +48,7 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
-use crate::kerberos::utils::{generate_initiator_raw, parse_target_name, validate_mic_token};
+use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
 use crate::pk_init::{self, DhParameters};
@@ -57,7 +57,7 @@ use crate::pku2u::generate_client_dh_parameters;
 #[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
 use crate::utils::{
-    extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, save_decrypted_data,
+    extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, parse_target_name, save_decrypted_data,
     utf16_bytes_to_utf8_string,
 };
 use crate::{
