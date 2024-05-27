@@ -284,7 +284,7 @@ impl WinScardContext for SystemScardContext {
             let data_len: usize = if let Ok(len) = data_len.try_into() {
                 len
             } else {
-                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) })?;
 
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
@@ -292,7 +292,7 @@ impl WinScardContext for SystemScardContext {
             let mut cache_item = vec![0; data_len];
             cache_item.copy_from_slice(unsafe { from_raw_parts(data, data_len) });
 
-            try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+            try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) })?;
 
             Ok(Cow::Owned(cache_item))
         }
@@ -537,7 +537,7 @@ impl WinScardContext for SystemScardContext {
             let data_len: usize = if let Ok(len) = data_len.try_into() {
                 len
             } else {
-                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) })?;
 
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
@@ -554,7 +554,7 @@ impl WinScardContext for SystemScardContext {
             ) {
                 name
             } else {
-                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) })?;
 
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
