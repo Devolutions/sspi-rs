@@ -350,8 +350,14 @@ impl SspiCredSsp {
         let status = match &self.state {
             CredSspState::Tls => {
                 if self.tls_connection.is_none() {
-                    // "stub_string" - we don't check the server's certificate validity so we can use any server name.
-                    let example_com = "stub_string".try_into().unwrap();
+                    let (_, target_hostname) =
+                        crate::utils::parse_target_name(builder.target_name.ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::NoCredentials,
+                                "Service target name (service principal name) is not provided",
+                            )
+                        })?)?;
+
                     let mut client_config = ClientConfig::builder()
                         .with_safe_defaults()
                         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
@@ -360,8 +366,16 @@ impl SspiCredSsp {
                     let config = Arc::new(client_config);
 
                     self.tls_connection = Some(TlsConnection::Rustls(Connection::Client(
-                        ClientConnection::new(config, example_com)
-                            .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
+                        ClientConnection::new(
+                            config,
+                            target_hostname.try_into().map_err(|err| {
+                                Error::new(
+                                    ErrorKind::InvalidParameter,
+                                    format!("Provided target name is not valid DNS name: {:?}", err),
+                                )
+                            })?,
+                        )
+                        .map_err(|err| Error::new(ErrorKind::InternalError, err.to_string()))?,
                     )));
                 }
 
