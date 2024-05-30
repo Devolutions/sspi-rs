@@ -21,7 +21,7 @@ members = [
   "crates/winscard",
   "crates/ffi-types"
 ]
-exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile", "crates/pcsc-lite-rs"]
+exclude = ["tools/sspi-ffi-attacker", "tools/wasm-testcompile", "crates/pcsc-lite-sys"]
 
 [features]
 default = []
