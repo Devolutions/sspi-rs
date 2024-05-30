@@ -4,9 +4,7 @@
 #[cfg(target_os = "windows")]
 compile_error!("The pcsc-lite-rs crate should be used only on Linux/MacOS. Use windows/windows-sys crated to interact with Windows API.");
 
-use ffi_types::winscard::{
-    ScardIoRequest, ScardReaderStateA, ScardStatus,
-};
+use ffi_types::winscard::{ScardIoRequest, ScardReaderStateA, ScardStatus};
 use ffi_types::{Dword, LpByte, LpCByte, LpCStr, LpCVoid, LpDword, LpStr, LpVoid};
 
 /// `hContext` returned by `SCardEstablishContext()`.
