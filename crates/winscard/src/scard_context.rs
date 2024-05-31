@@ -25,7 +25,7 @@ const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
 
 const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
-const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
+const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
