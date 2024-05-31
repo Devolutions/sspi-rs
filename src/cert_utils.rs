@@ -1,3 +1,5 @@
+#![cfg(all(feature = "scard", target_os = "windows"))]
+
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
