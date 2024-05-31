@@ -21,7 +21,7 @@ use crate::{Error, ErrorKind, WinScardResult};
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 // Default name of the emulated smart card.
-const DEFAULT_CARD_NAME: &str = "Cool card";
+const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
 
 const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
