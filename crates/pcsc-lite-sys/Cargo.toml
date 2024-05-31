@@ -13,6 +13,3 @@ description = "A Rust bindings to the pcsc-lite library"
 
 [dependencies]
 ffi-types = { path = "../ffi-types", features = ["winscard"] }
-
-[build-dependencies]
-pkg-config = "0.3"
