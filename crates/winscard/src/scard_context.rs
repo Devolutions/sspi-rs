@@ -7,11 +7,11 @@ use alloc::{format, vec};
 
 use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
+use uuid::Uuid;
 
 use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
 use crate::winscard::{
-    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, Uuid,
-    WinScardContext,
+    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
 };
 use crate::{Error, ErrorKind, WinScardResult};
 
