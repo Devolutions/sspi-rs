@@ -7,6 +7,7 @@ use ffi_types::winscard::{
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
+#[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
@@ -177,7 +178,7 @@ pub unsafe extern "system" fn SCardListCardsA(
     check_null!(pcch_cards);
 
     // safe: checked above
-    let context = (context as *mut WinScardContextHandle).as_mut().unwrap();
+    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     // we have only one smart card with only one default name
     try_execute!(unsafe { write_multistring_a(context, &[DEFAULT_CARD_NAME], msz_cards, pcch_cards) });
 
@@ -658,7 +659,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
             ErrorKind::InvalidParameter
         );
 
-        if supported_readers.contains(&Cow::Borrowed(&reader)) {
+        if supported_readers.contains(&Cow::Borrowed(reader)) {
             reader_state.dw_event_state =
                 SCARD_STATE_UNNAMED_CONSTANT | SCARD_STATE_INUSE | SCARD_STATE_PRESENT | SCARD_STATE_CHANGED;
             reader_state.cb_atr = try_execute!(ATR.len().try_into(), ErrorKind::InsufficientBuffer);
@@ -797,7 +798,8 @@ pub unsafe extern "system" fn SCardWriteCacheA(
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    let data = from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)).to_vec();
+    let data =
+        unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
     context.write_cache(lookup_name.to_owned(), data);
@@ -818,7 +820,8 @@ pub unsafe extern "system" fn SCardWriteCacheW(
 ) -> ScardStatus {
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
-    let data = from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)).to_vec();
+    let data =
+        unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
     context.write_cache(lookup_name, data);
@@ -858,7 +861,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
         ErrorKind::InvalidParameter
     );
 
-    try_execute!(unsafe { get_reader_icon(context, &reader_name, pb_icon, pcb_icon) });
+    try_execute!(unsafe { get_reader_icon(context, reader_name, pb_icon, pcb_icon) });
 
     ErrorKind::Success.into()
 }
@@ -885,7 +888,7 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
         )
     };
 
-    try_execute!(get_reader_icon(context, &reader_name, pb_icon, pcb_icon));
+    try_execute!(unsafe { get_reader_icon(context, &reader_name, pb_icon, pcb_icon) });
 
     ErrorKind::Success.into()
 }
@@ -908,7 +911,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
         ErrorKind::InvalidParameter
     );
 
-    let type_id = try_execute!(context.device_type_id(&reader_name));
+    let type_id = try_execute!(context.device_type_id(reader_name));
     unsafe {
         *pdw_device_type_id = type_id.into();
     }
