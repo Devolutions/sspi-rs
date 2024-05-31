@@ -68,7 +68,6 @@ pub mod pku2u;
 #[allow(unreachable_patterns)]
 mod auth_identity;
 mod ber;
-#[cfg(feature = "scard")]
 pub mod cert_utils;
 mod crypto;
 mod decrypt_buffer;
@@ -76,16 +75,11 @@ mod dns;
 mod kdc;
 mod krb;
 mod secret;
-#[cfg(feature = "scard")]
-#[allow(dead_code)]
 mod smartcard;
 mod utils;
 
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
-
-#[cfg(all(feature = "scard", not(target_os = "windows")))]
-compile_error!("scard feature should be used only on Windows");
 
 use std::{error, fmt, io, result, str, string};
 
