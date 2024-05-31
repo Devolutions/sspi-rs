@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 
 use bitflags::bitflags;
 use num_derive::{FromPrimitive, ToPrimitive};
+use uuid::Uuid;
 
 use crate::{Error, ErrorKind, WinScardResult};
 
@@ -417,23 +418,6 @@ pub struct ScardConnectData {
     pub scard: Box<dyn WinScard>,
     /// Established protocol to this connection.
     pub protocol: Protocol,
-}
-
-/// Represents `UUID`/`GUID` identifier.
-///
-/// https://learn.microsoft.com/en-us/windows/win32/api/guiddef/ns-guiddef-guid
-/// At the current project stage, we do not operate with UUIDs. Thus, a simple wrapper type is enough.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Uuid {
-    /// Specifies the first 8 hexadecimal digits of the GUID.
-    pub data1: u32,
-    /// Specifies the first group of 4 hexadecimal digits.
-    pub data2: u16,
-    /// Specifies the second group of 4 hexadecimal digits.
-    pub data3: u16,
-    /// Array of 8 bytes. The first 2 bytes contain the third group of 4 hexadecimal digits.
-    /// The remaining 6 bytes contain the final 12 hexadecimal digits.
-    pub data4: [u8; 8],
 }
 
 bitflags! {
