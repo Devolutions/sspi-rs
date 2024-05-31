@@ -374,12 +374,13 @@ impl From<State> for u32 {
 pub struct Status<'a> {
     /// List of display names (multiple string) by which the currently connected reader is known.
     pub readers: Vec<Cow<'a, str>>,
-    /// Current state of the smart card in the reader
+    /// Current state of the smart card in the reader.
     pub state: State,
-    /// Current protocol, if any. The returned value is meaningful only if the returned value of pdwState is SCARD_SPECIFICMODE.
+    /// Current protocol, if any. The returned value is meaningful only if the returned value of pdwState is `SCARD_SPECIFICMODE`.
     pub protocol: Protocol,
     /// Buffer that receives the ATR string from the currently inserted card, if available.
-    /// [ATR string](https://learn.microsoft.com/en-us/windows/win32/secgloss/a-gly)
+    ///
+    /// [ATR string](https://learn.microsoft.com/en-us/windows/win32/secgloss/a-gly).
     pub atr: Atr,
 }
 
@@ -542,13 +543,13 @@ pub trait WinScard {
     /// The SCardControl function gives you direct control of the reader.
     /// You can call it any time after a successful call to SCardConnect and before a successful call to SCardDisconnect.
     /// The effect on the state of the reader depends on the control code.
+    /// This method assumes that there is no output data. Otherwise, then use the [WinScard::control_with_output] method.
     fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()>;
 
     /// [SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
     ///
-    /// The SCardControl function gives you direct control of the reader.
-    /// You can call it any time after a successful call to SCardConnect and before a successful call to SCardDisconnect.
-    /// The effect on the state of the reader depends on the control code.
+    /// This function does the same as the [WinScard::control] but allows the used to pass a buffer for
+    /// the operation's output data. The returned value is the number of bytes written to the output buffer.
     fn control_with_output(&mut self, code: ControlCode, input: &[u8], output: &mut [u8]) -> WinScardResult<usize>;
 
     /// [SCardTransmit](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
