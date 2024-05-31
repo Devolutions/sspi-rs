@@ -492,13 +492,19 @@ impl<'a> WinScard for SmartCard<'a> {
         })
     }
 
-    fn control(&mut self, code: ControlCode, _input: &[u8], _output: Option<&mut [u8]>) -> WinScardResult<usize> {
+    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<()> {
         if code != IO_CTL {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 format!("unsupported control code: {:?}", code),
             ));
         }
+
+        Ok(())
+    }
+
+    fn control_with_output(&mut self, code: ControlCode, input: &[u8], _output: &mut [u8]) -> WinScardResult<usize> {
+        self.control(code, input)?;
 
         Ok(0)
     }
