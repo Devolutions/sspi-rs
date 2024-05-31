@@ -6,6 +6,7 @@ use ffi_types::winscard::{
     ScardContext, ScardHandle, ScardStatus,
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
+#[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::Protocol;
 use winscard::{ErrorKind, WinScardResult};
@@ -68,14 +69,16 @@ pub unsafe extern "system" fn SCardConnectA(
         ErrorKind::InvalidParameter
     );
 
-    try_execute!(connect(
-        context,
-        &reader_name,
-        dw_share_mode,
-        dw_preferred_protocols,
-        ph_card,
-        pdw_active_protocol
-    ));
+    try_execute!(unsafe {
+        connect(
+            context,
+            reader_name,
+            dw_share_mode,
+            dw_preferred_protocols,
+            ph_card,
+            pdw_active_protocol,
+        )
+    });
 
     ErrorKind::Success.into()
 }
