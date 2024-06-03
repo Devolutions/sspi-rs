@@ -1,9 +1,18 @@
 use std::borrow::Cow;
 
+use ffi_types::winscard::ScardContext;
 use winscard::winscard::{DeviceTypeId, Icon, MemoryPtr, Protocol, ShareMode, WinScard, WinScardContext};
 use winscard::WinScardResult;
 
-pub struct SystemScardContext {}
+pub struct SystemScardContext {
+    h_context: ScardContext,
+}
+
+impl SystemScardContext {
+    pub fn new(h_context: ScardContext) -> Self {
+        Self { h_context }
+    }
+}
 
 impl WinScardContext for SystemScardContext {
     fn connect(
