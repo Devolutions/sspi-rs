@@ -20,24 +20,9 @@ use super::buf_alloc::{
 };
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16, str_to_w_buff};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
-use crate::winscard::system_scard::{init_scard_api_table, SystemScardContext};
-
-// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew
-// `dwProviderId` function parameter::
-// The function retrieves the name of the smart card's primary service provider as a GUID string.
-const SCARD_PROVIDER_PRIMARY: u32 = 1;
-// The function retrieves the name of the cryptographic service provider.
-const SCARD_PROVIDER_CSP: u32 = 2;
-// The function retrieves the name of the smart card key storage provider (KSP).
-const SCARD_PROVIDER_KSP: u32 = 3;
-// The function retrieves the name of the card module.
-const SCARD_PROVIDER_CARD_MODULE: u32 = 0x80000001;
+use crate::winscard::system_scard::SystemScardContext;
 
 pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
-const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
-const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "C:\\Windows\\System32\\msclmd.dll";
-
-pub const DEFAULT_CARD_NAME: &str = "Cool card";
 
 // Environment variable that indicates what smart card type use. It can have the following values:
 // `true` - use a system-provided smart card.
@@ -265,7 +250,7 @@ pub unsafe extern "system" fn SCardListCardsA(
                 )
             }
             .iter()
-            .map(|id| c_uuid_to_uuid(id))
+            .map(|id| unsafe { c_uuid_to_uuid(id) })
             .collect::<Vec<_>>(),
         )
     };
@@ -318,7 +303,7 @@ pub unsafe extern "system" fn SCardListCardsW(
                 )
             }
             .iter()
-            .map(|id| c_uuid_to_uuid(id))
+            .map(|id| unsafe { c_uuid_to_uuid(id) })
             .collect::<Vec<_>>(),
         )
     };
@@ -663,6 +648,8 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     // to one of the wait functions.
     #[cfg(target_os = "windows")]
     {
+        use crate::winscard::system_scard::init_scard_api_table;
+
         if std::env::var(SMART_CARD_TYPE)
             .and_then(|use_system_card| Ok(use_system_card == "true"))
             .unwrap_or_default()
