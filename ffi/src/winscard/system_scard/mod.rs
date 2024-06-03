@@ -10,6 +10,8 @@ use std::borrow::Cow;
 
 pub use card::SystemScard;
 pub use context::SystemScardContext;
+#[cfg(target_os = "windows")]
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
@@ -30,12 +32,14 @@ fn parse_multi_string_owned(buf: &[u8]) -> WinScardResult<Vec<Cow<'static, str>>
 }
 
 #[cfg(target_os = "windows")]
-fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> ffi_types::Uuid {
+fn uuid_to_c_guid(id: uuid::Uuid) -> ffi_types::Uuid {
+    let (data1, data2, data3, data4) = id.as_fields();
+
     ffi_types::Uuid {
-        data1: id.data1,
-        data2: id.data2,
-        data3: id.data3,
-        data4: id.data4,
+        data1,
+        data2,
+        data3,
+        data4: *data4,
     }
 }
 
@@ -43,13 +47,12 @@ fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> ffi_types::Uuid {
 pub fn init_scard_api_table() -> SCardApiFunctionTable {
     use std::mem::transmute;
 
-    use ffi_types::winscard::functions::SCardApiFunctionTable;
     use windows_sys::s;
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
     let winscard_module = unsafe { LoadLibraryA(s!("C:\\Windows\\System32\\WinSCardOriginal.dll")) };
 
-    if winscard_module.is_zero() {
+    if winscard_module == 0 {
         error!("Can not load the original winscard module.");
     } else {
         info!("Original winscard.dll has been loaded!");
@@ -61,7 +64,7 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
         }};
     }
 
-    let api_table = SCardApiFunctionTable {
+    SCardApiFunctionTable {
         dw_version: 0,
         dw_flags: 0,
         SCardEstablishContext: load_fn!(winscard_module, "SCardEstablishContext"),
@@ -137,7 +140,5 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
         SCardListReadersWithDeviceInstanceIdA: load_fn!(winscard_module, "SCardListReadersWithDeviceInstanceIdA"),
         SCardListReadersWithDeviceInstanceIdW: load_fn!(winscard_module, "SCardListReadersWithDeviceInstanceIdW"),
         SCardAudit: load_fn!(winscard_module, "SCardAudit"),
-    };
-
-    api_table
+    }
 }

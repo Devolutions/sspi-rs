@@ -74,23 +74,40 @@ impl WinScard for SystemScard {
         let mut atr_len = 32;
 
         // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
+        //
         // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
         // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
-        //
-        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
-        // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
-        // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
-        try_execute!(unsafe {
-            (self.api.SCardStatus)(
-                self.h_card,
-                (&mut reader_name as *mut *mut u8) as *mut _,
-                &mut reader_name_len,
-                &mut state,
-                &mut protocol,
-                atr.as_mut_ptr(),
-                &mut atr_len,
-            )
-        })?;
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe {
+                (self.api.SCardStatus)(
+                    self.h_card,
+                    (&mut reader_name as *mut *mut u8) as *mut _,
+                    &mut reader_name_len,
+                    &mut state,
+                    &mut protocol,
+                    atr.as_mut_ptr(),
+                    &mut atr_len,
+                )
+            })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
+            // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
+            // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
+            try_execute!(unsafe {
+                (self.api.SCardStatusA)(
+                    self.h_card,
+                    (&mut reader_name as *mut *mut u8) as *mut _,
+                    &mut reader_name_len,
+                    &mut state,
+                    &mut protocol,
+                    atr.as_mut_ptr(),
+                    &mut atr_len,
+                )
+            })?;
+        }
 
         let readers = if let Ok(readers) =
             parse_multi_string_owned(unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) })
