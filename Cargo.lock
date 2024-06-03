@@ -2155,6 +2155,7 @@ dependencies = [
  "symbol-rename-macro",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "whoami",
  "windows-sys 0.48.0",
  "winscard",
