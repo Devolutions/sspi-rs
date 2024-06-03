@@ -6,7 +6,8 @@ use std::slice::from_raw_parts;
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{
-    CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
+    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, Uuid,
+    WinScardContext,
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
@@ -498,6 +499,65 @@ impl WinScardContext for SystemScardContext {
             debug!(?cards, "Raw card names buffer");
 
             parse_multi_string_owned(&cards)
+        }
+    }
+
+    fn get_card_type_provider_name(&self, card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardGetCardTypeProviderNameW function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
+
+            let mut data_len = SCARD_AUTOALLOCATE;
+            let mut data: *mut *mut u8 = null_mut();
+
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_card_name = CString::new(card_name).expect("Rust string slice should not contain 0 bytes");
+
+            try_execute!(unsafe {
+                (self.api.SCardGetCardTypeProviderNameA)(
+                    self.h_context,
+                    c_card_name.as_ptr() as *const _,
+                    provider_id.into(),
+                    data as *mut u8,
+                    &mut data_len,
+                )
+            })?;
+
+            let data_len: usize = if let Ok(len) = data_len.try_into() {
+                len
+            } else {
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+
+                return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
+            };
+
+            let name = if let Ok(name) = String::from_utf8(
+                unsafe {
+                    let raw_name = from_raw_parts(*data, data_len);
+                    debug!(?raw_name);
+                    raw_name
+                }
+                .to_vec(),
+            ) {
+                name
+            } else {
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
+
+                return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
+            };
+
+            Ok(Cow::Owned(name))
         }
     }
 }
