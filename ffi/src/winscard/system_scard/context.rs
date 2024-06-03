@@ -515,7 +515,7 @@ impl WinScardContext for SystemScardContext {
             use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 
             let mut data_len = SCARD_AUTOALLOCATE;
-            let mut data: *mut *mut u8 = null_mut();
+            let mut data: *mut u8 = null_mut();
 
             // SAFETY:
             // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
@@ -529,7 +529,7 @@ impl WinScardContext for SystemScardContext {
                     self.h_context,
                     c_card_name.as_ptr() as *const _,
                     provider_id.into(),
-                    data as *mut u8,
+                    ((&mut data) as *mut *mut u8) as *mut _,
                     &mut data_len,
                 )
             })?;
@@ -542,9 +542,11 @@ impl WinScardContext for SystemScardContext {
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
 
+            debug!(?data);
+
             let name = if let Ok(name) = String::from_utf8(
                 unsafe {
-                    let raw_name = from_raw_parts(*data, data_len);
+                    let raw_name = from_raw_parts(data, data_len);
                     debug!(?raw_name);
                     raw_name
                 }
