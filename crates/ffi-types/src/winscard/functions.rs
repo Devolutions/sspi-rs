@@ -105,8 +105,8 @@ pub type SCardTransmitFn = unsafe extern "system" fn(
 pub type SCardGetTransmitCountFn = extern "system" fn(ScardHandle, LpDword) -> ScardStatus;
 pub type SCardControlFn =
     unsafe extern "system" fn(ScardHandle, u32, LpCVoid, u32, LpVoid, u32, LpDword) -> ScardStatus;
-pub type SCardGetAttribFn = extern "system" fn(ScardHandle, u32, LpByte, LpDword) -> ScardStatus;
-pub type SCardSetAttribFn = extern "system" fn(ScardHandle, u32, LpCByte, u32) -> ScardStatus;
+pub type SCardGetAttribFn = unsafe extern "system" fn(ScardHandle, u32, LpByte, LpDword) -> ScardStatus;
+pub type SCardSetAttribFn = unsafe extern "system" fn(ScardHandle, u32, LpCByte, u32) -> ScardStatus;
 pub type SCardUIDlgSelectCardAFn = extern "system" fn(LpOpenCardNameExA) -> ScardStatus;
 pub type SCardUIDlgSelectCardWFn = extern "system" fn(LpOpenCardNameExW) -> ScardStatus;
 pub type GetOpenCardNameAFn = extern "system" fn(LpOpenCardNameA) -> ScardStatus;
