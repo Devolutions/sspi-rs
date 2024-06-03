@@ -31,9 +31,9 @@ unsafe fn connect(
 
     let scard_context = unsafe { scard_context_to_winscard_context(context)? };
     let scard = scard_context.connect(reader_name, share_mode, protocol)?;
-    let protocol = scard.status()?.protocol.bits();
+    let protocol = scard.handle.status()?.protocol.bits();
 
-    let scard = WinScardHandle::new(scard, context);
+    let scard = WinScardHandle::new(scard.handle, context);
 
     let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
 
@@ -161,11 +161,11 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEndTransaction"))]
 #[instrument(ret)]
 #[no_mangle]
-pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, _dw_disposition: u32) -> ScardStatus {
+pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
     let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
-    try_execute!(scard.end_transaction());
+    try_execute!(scard.end_transaction(try_execute!(dw_disposition.try_into())));
 
     ErrorKind::Success.into()
 }
@@ -351,19 +351,23 @@ pub unsafe extern "system" fn SCardControl(
     } else {
         &[]
     };
-    let out_buffer = try_execute!(scard.control(try_execute!(dw_control_code.try_into()), in_buffer));
-    let out_buffer_len = try_execute!(out_buffer.len().try_into(), ErrorKind::InsufficientBuffer);
 
     if !lp_out_buffer.is_null() {
-        if out_buffer_len > cb_out_buffer_size {
-            return ErrorKind::InsufficientBuffer.into();
-        }
+        let lp_out_buffer = unsafe {
+            from_raw_parts_mut(
+                lp_out_buffer as *mut u8,
+                try_execute!(cb_out_buffer_size.try_into(), ErrorKind::InvalidParameter),
+            )
+        };
 
-        let lp_out_buffer = unsafe { from_raw_parts_mut(lp_out_buffer as *mut u8, out_buffer.len()) };
-        lp_out_buffer.copy_from_slice(&out_buffer);
-        unsafe {
-            *lp_bytes_returned = out_buffer_len;
+        let out_bytes_count = try_execute!(scard.control_with_output(dw_control_code, in_buffer, lp_out_buffer));
+        if !lp_bytes_returned.is_null() {
+            unsafe {
+                *lp_bytes_returned = try_execute!(out_bytes_count.try_into(), ErrorKind::InternalError);
+            }
         }
+    } else {
+        try_execute!(scard.control(dw_control_code, in_buffer));
     }
 
     ErrorKind::Success.into()

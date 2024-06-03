@@ -9,6 +9,7 @@ use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDw
 use libc::c_void;
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
+use uuid::Uuid;
 use winscard::winscard::WinScardContext;
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult, ATR};
 
@@ -129,7 +130,7 @@ pub unsafe extern "system" fn SCardListReadersA(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    let readers = context.scard_context().list_readers();
+    let readers = try_execute!(context.scard_context().list_readers());
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
@@ -153,7 +154,7 @@ pub unsafe extern "system" fn SCardListReadersW(
 
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
-    let readers = context.scard_context().list_readers();
+    let readers = try_execute!(context.scard_context().list_readers());
     let readers = readers.iter().map(|reader| reader.to_string()).collect::<Vec<_>>();
     let readers = readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
 
@@ -644,7 +645,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_null!(rg_reader_states);
 
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
-    let supported_readers = context.list_readers();
+    let supported_readers = try_execute!(context.list_readers());
 
     let reader_states = unsafe {
         from_raw_parts_mut(
@@ -687,7 +688,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_null!(rg_reader_states);
 
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
-    let supported_readers = context.list_readers();
+    let supported_readers = try_execute!(context.list_readers());
 
     let reader_states = unsafe {
         from_raw_parts_mut(
@@ -723,10 +724,20 @@ pub extern "system" fn SCardCancel(_context: ScardContext) -> ScardStatus {
     ErrorKind::Success.into()
 }
 
-unsafe fn read_cache(context: ScardContext, lookup_name: &str, data: LpByte, data_len: LpDword) -> WinScardResult<()> {
+unsafe fn read_cache(
+    context: ScardContext,
+    card_id: Uuid,
+    freshness_counter: u32,
+    lookup_name: &str,
+    data: LpByte,
+    data_len: LpDword,
+) -> WinScardResult<()> {
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
 
-    if let Some(cached_value) = context.scard_context().read_cache(lookup_name) {
+    if let Ok(cached_value) = context
+        .scard_context()
+        .read_cache(card_id, freshness_counter, lookup_name)
+    {
         let cached_value = cached_value.to_vec();
         unsafe { copy_buff(context, data, data_len, &cached_value) }
     } else {
@@ -740,13 +751,14 @@ unsafe fn read_cache(context: ScardContext, lookup_name: &str, data: LpByte, dat
 #[no_mangle]
 pub unsafe extern "system" fn SCardReadCacheA(
     context: ScardContext,
-    _card_identifier: LpUuid,
-    _freshness_counter: u32,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
     lookup_name: LpStr,
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
     check_handle!(context);
+    check_null!(card_identifier);
     check_null!(lookup_name);
     check_null!(data_len);
 
@@ -754,8 +766,16 @@ pub unsafe extern "system" fn SCardReadCacheA(
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
+    let card_id = unsafe {
+        Uuid::from_fields(
+            (*card_identifier).data1,
+            (*card_identifier).data2,
+            (*card_identifier).data3,
+            &(*card_identifier).data4,
+        )
+    };
 
-    try_execute!(unsafe { read_cache(context, lookup_name, data, data_len) });
+    try_execute!(unsafe { read_cache(context, card_id, freshness_counter, lookup_name, data, data_len) });
 
     ErrorKind::Success.into()
 }
@@ -765,19 +785,28 @@ pub unsafe extern "system" fn SCardReadCacheA(
 #[no_mangle]
 pub unsafe extern "system" fn SCardReadCacheW(
     context: ScardContext,
-    _card_identifier: LpUuid,
-    _freshness_counter: u32,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
     lookup_name: LpWStr,
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
     check_handle!(context);
+    check_null!(card_identifier);
     check_null!(lookup_name);
     check_null!(data_len);
 
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
+    let card_id = unsafe {
+        Uuid::from_fields(
+            (*card_identifier).data1,
+            (*card_identifier).data2,
+            (*card_identifier).data3,
+            &(*card_identifier).data4,
+        )
+    };
 
-    try_execute!(unsafe { read_cache(context, &lookup_name, data, data_len) });
+    try_execute!(unsafe { read_cache(context, card_id, freshness_counter, &lookup_name, data, data_len) });
 
     ErrorKind::Success.into()
 }
@@ -787,12 +816,26 @@ pub unsafe extern "system" fn SCardReadCacheW(
 #[no_mangle]
 pub unsafe extern "system" fn SCardWriteCacheA(
     context: ScardContext,
-    _card_identifier: LpUuid,
-    _freshness_counter: u32,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
     lookup_name: LpStr,
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
+    check_handle!(context);
+    check_null!(card_identifier);
+    check_null!(lookup_name);
+    check_null!(data);
+
+    let card_id = unsafe {
+        Uuid::from_fields(
+            (*card_identifier).data1,
+            (*card_identifier).data2,
+            (*card_identifier).data3,
+            &(*card_identifier).data4,
+        )
+    };
+
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     let lookup_name = try_execute!(
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
@@ -802,7 +845,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
         unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
-    context.write_cache(lookup_name.to_owned(), data);
+    try_execute!(context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data));
 
     ErrorKind::Success.into()
 }
@@ -812,19 +855,33 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 #[no_mangle]
 pub unsafe extern "system" fn SCardWriteCacheW(
     context: ScardContext,
-    _card_identifier: LpUuid,
-    _freshness_counter: u32,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
     lookup_name: LpWStr,
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
+    check_handle!(context);
+    check_null!(card_identifier);
+    check_null!(lookup_name);
+    check_null!(data);
+
+    let card_id = unsafe {
+        Uuid::from_fields(
+            (*card_identifier).data1,
+            (*card_identifier).data2,
+            (*card_identifier).data3,
+            &(*card_identifier).data4,
+        )
+    };
+
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
     let data =
         unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
     info!(write_lookup_name = lookup_name, ?data);
 
-    context.write_cache(lookup_name, data);
+    try_execute!(context.write_cache(card_id, freshness_counter, lookup_name, data));
 
     ErrorKind::Success.into()
 }
