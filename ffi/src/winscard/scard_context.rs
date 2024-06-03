@@ -18,7 +18,7 @@ use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScar
 use super::buf_alloc::{
     build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide,
 };
-use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16, str_to_w_buff};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 use crate::winscard::system_scard::{init_scard_api_table, SystemScardContext};
 
@@ -385,7 +385,7 @@ pub extern "system" fn SCardGetProviderIdW(
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     context: ScardContext,
-    _sz_card_name: LpCStr,
+    sz_card_name: LpCStr,
     dw_provide_id: u32,
     szProvider: *mut u8,
     pcch_provider: LpDword,
@@ -395,25 +395,22 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     check_null!(szProvider);
     check_null!(pcch_provider);
 
-    let provider = match dw_provide_id {
-        SCARD_PROVIDER_PRIMARY => {
-            error!("Unsupported dw_provider_id: SCARD_PROVIDER_PRIMARY");
-            return ErrorKind::UnsupportedFeature.into();
-        }
-        SCARD_PROVIDER_CSP => MICROSOFT_DEFAULT_CSP,
-        SCARD_PROVIDER_KSP => MICROSOFT_DEFAULT_KSP,
-        SCARD_PROVIDER_CARD_MODULE => MICROSOFT_SCARD_DRIVER_LOCATION,
-        _ => {
-            error!(?dw_provide_id, "Unsupported dw_provider_id.");
-            return ErrorKind::InvalidParameter.into();
-        }
-    };
+    let card_name = try_execute!(
+        unsafe { CStr::from_ptr(sz_card_name as *const i8) }.to_str(),
+        ErrorKind::InvalidParameter
+    );
 
     // safe: checked above
-    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let context_handle = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+
+    let context = context_handle.scard_context();
+    let provider_name =
+        try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())))
+            .to_string();
+
     let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
 
-    let out_buf = try_execute!(context.write_to_out_buf(provider.as_bytes(), buffer_type));
+    let out_buf = try_execute!(context_handle.write_to_out_buf(provider_name.as_bytes(), buffer_type));
 
     try_execute!(unsafe { save_out_buf(out_buf, szProvider, pcch_provider) });
 
@@ -425,7 +422,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 #[no_mangle]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     context: ScardContext,
-    _sz_card_name: LpCWStr,
+    sz_card_name: LpCWStr,
     dw_provide_id: u32,
     szProvider: *mut u16,
     pcch_provider: LpDword,
@@ -435,26 +432,19 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     check_null!(szProvider);
     check_null!(pcch_provider);
 
-    let provider = match dw_provide_id {
-        SCARD_PROVIDER_PRIMARY => {
-            error!("Unsupported dw_provider_id: SCARD_PROVIDER_PRIMARY");
-            return ErrorKind::UnsupportedFeature.into();
-        }
-        SCARD_PROVIDER_CSP => MICROSOFT_DEFAULT_CSP,
-        SCARD_PROVIDER_KSP => MICROSOFT_DEFAULT_KSP,
-        SCARD_PROVIDER_CARD_MODULE => MICROSOFT_SCARD_DRIVER_LOCATION,
-        _ => {
-            error!(?dw_provide_id, "Unsupported dw_provider_id.");
-            return ErrorKind::InvalidParameter.into();
-        }
-    };
-    let encoded = str_to_w_buff(provider);
+    let card_name = unsafe { c_w_str_to_string(sz_card_name) };
 
     // safe: checked above
-    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let context_handle = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+
+    let context = context_handle.scard_context();
+    let provider_name =
+        try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())));
+    let wide_provider_name = str_encode_utf16(provider_name.as_ref());
+
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(szProvider, pcch_provider) });
 
-    let out_buf = try_execute!(context.write_to_out_buf(provider.as_bytes(), buffer_type));
+    let out_buf = try_execute!(context_handle.write_to_out_buf(&wide_provider_name, buffer_type));
 
     try_execute!(unsafe { save_out_buf_wide(out_buf, szProvider, pcch_provider) });
 
