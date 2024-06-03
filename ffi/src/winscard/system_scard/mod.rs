@@ -10,9 +10,7 @@ use std::borrow::Cow;
 
 pub use card::SystemScard;
 pub use context::SystemScardContext;
-use ffi_types::winscard::functions::SCardApiFunctionTable;
 use num_traits::Zero;
-use windows_sys::s;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
@@ -34,12 +32,6 @@ fn parse_multi_string_owned(buf: &[u8]) -> WinScardResult<Vec<Cow<'static, str>>
 
 #[cfg(target_os = "windows")]
 fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> ffi_types::Uuid {
-    // windows_sys::core::GUID {
-    //     data1: id.data1,
-    //     data2: id.data2,
-    //     data3: id.data3,
-    //     data4: id.data4,
-    // }
     ffi_types::Uuid {
         data1: id.data1,
         data2: id.data2,
@@ -48,9 +40,12 @@ fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> ffi_types::Uuid {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn init_scard_api_table() -> SCardApiFunctionTable {
     use std::mem::transmute;
 
+    use ffi_types::winscard::functions::SCardApiFunctionTable;
+    use windows_sys::s;
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
     let winscard_module = unsafe { LoadLibraryA(s!("C:\\Windows\\System32\\WinSCardOriginal.dll")) };

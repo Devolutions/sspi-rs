@@ -11,12 +11,13 @@ use winscard::winscard::{
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::{init_scard_api_table, parse_multi_string_owned};
+use super::parse_multi_string_owned;
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 
 pub struct SystemScard {
     h_card: ScardHandle,
     h_card_context: ScardContext,
+    #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
 }
 
@@ -25,7 +26,8 @@ impl SystemScard {
         Self {
             h_card,
             h_card_context,
-            api: init_scard_api_table(),
+            #[cfg(target_os = "windows")]
+            api: super::init_scard_api_table(),
         }
     }
 }

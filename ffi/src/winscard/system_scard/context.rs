@@ -15,6 +15,7 @@ use super::{parse_multi_string_owned, SystemScard};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
+    #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
 }
 
@@ -22,18 +23,25 @@ impl SystemScardContext {
     pub fn establish(dw_scope: u32) -> WinScardResult<Self> {
         let mut h_context = 0;
 
+        #[cfg(target_os = "windows")]
         let api = super::init_scard_api_table();
 
         #[cfg(not(target_os = "windows"))]
         {
-            try_execute!(unsafe { pcsc_lite_rs::SCardEstablishContext(dw_scope, null(), null(), &mut h_context,) })?;
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardEstablishContext(dw_scope, null_mut(), null_mut(), &mut h_context)
+            })?;
         }
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null(), null(), &mut h_context,) })?;
         }
 
-        Ok(Self { h_context, api })
+        Ok(Self {
+            h_context,
+            #[cfg(target_os = "windows")]
+            api,
+        })
     }
 }
 
@@ -249,7 +257,10 @@ impl WinScardContext for SystemScardContext {
     fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, _key: &str) -> WinScardResult<Cow<[u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
-            None
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardReadCache function is not supported in PCSC-lite API",
+            ))
         }
         #[cfg(target_os = "windows")]
         {
