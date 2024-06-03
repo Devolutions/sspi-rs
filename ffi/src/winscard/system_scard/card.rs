@@ -42,7 +42,7 @@ impl Drop for SystemScard {
             #[cfg(target_os = "windows")]
             {
                 if let Err(err) =
-                    try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, 0) })
+                    try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, 0) })
                 {
                     error!(?err, "Cannot disconnect the card");
                 }
@@ -425,7 +425,7 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardDisconnect(self.h_card, disposition.into())
+                (self.api.SCardDisconnect)(self.h_card, disposition.into())
             })?;
         }
 

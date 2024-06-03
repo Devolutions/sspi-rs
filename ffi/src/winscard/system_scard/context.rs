@@ -55,7 +55,7 @@ impl Drop for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             if let Err(err) =
-                try_execute!(unsafe { windows_sys::Win32::Security::Credentials::SCardReleaseContext(self.h_context) })
+                try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) })
             {
                 error!(?err, "Can not release the scard context");
             }
@@ -436,7 +436,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            use windows_sys::Win32::Security::Credentials::SCARD_READERSTATEA;
+            use ffi_types::winscard::ScardReaderStateA;
 
             let mut states = Vec::with_capacity(reader_states.len());
             let c_readers: Vec<_> = reader_states
@@ -453,18 +453,18 @@ impl WinScardContext for SystemScardContext {
                 .collect();
 
             for (index, reader_state) in reader_states.iter_mut().enumerate() {
-                states.push(SCARD_READERSTATEA {
-                    szReader: c_readers.get(index).unwrap().as_ptr() as *const _,
-                    pvUserData: reader_state.user_data as _,
-                    dwCurrentState: reader_state.current_state.bits(),
-                    dwEventState: reader_state.event_state.bits(),
-                    cbAtr: reader_state.atr_len.try_into()?,
-                    rgbAtr: reader_state.atr.clone(),
+                states.push(ScardReaderStateA {
+                    sz_reader: c_readers.get(index).unwrap().as_ptr() as *const _,
+                    pv_user_data: reader_state.user_data as _,
+                    dw_current_state: reader_state.current_state.bits(),
+                    dw_event_state: reader_state.event_state.bits(),
+                    cb_atr: reader_state.atr_len.try_into()?,
+                    rgb_atr: reader_state.atr.clone(),
                 });
             }
 
-            try_execute!(unsafe {
-                windows_sys::Win32::Security::Credentials::SCardGetStatusChangeA(
+            let r = try_execute!(unsafe {
+                (self.api.SCardGetStatusChangeA)(
                     self.h_context,
                     timeout,
                     states.as_mut_ptr(),
@@ -474,10 +474,10 @@ impl WinScardContext for SystemScardContext {
 
             // We do not need to change all fields. Only event state and atr values can be changed.
             for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
-                reader_state.event_state = CurrentState::from_bits(state.dwEventState)
+                reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Invalid dwEventState"))?;
-                reader_state.atr_len = state.cbAtr.try_into()?;
-                reader_state.atr = state.rgbAtr.clone();
+                reader_state.atr_len = state.cb_atr.try_into()?;
+                reader_state.atr = state.rgb_atr.clone();
             }
 
             Ok(())

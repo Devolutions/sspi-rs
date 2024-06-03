@@ -55,11 +55,13 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
     use windows_sys::Win32::System::LibraryLoader::LoadLibraryA;
 
     let winscard_module = unsafe {
-        LoadLibraryA(s!("C:\\Windows\\System32\\WinSCard.dll"))
+        LoadLibraryA(s!("C:\\Windows\\System32\\WinSCardOriginal.dll"))
     };
 
     if winscard_module.is_zero() {
         error!("Can not load the original winscard module.");
+    } else {
+        info!("Original winscard.dll has been loaded!");
     }
 
     // let f1: SCardEstablishContextFn = unsafe {
