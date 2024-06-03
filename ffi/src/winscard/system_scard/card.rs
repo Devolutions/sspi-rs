@@ -3,9 +3,9 @@ use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use ffi_types::winscard::{ScardContext, ScardHandle, ScardIoRequest};
 use num_traits::ToPrimitive;
-use ffi_types::winscard::functions::SCardApiFunctionTable;
 use winscard::winscard::{
     AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
@@ -22,7 +22,11 @@ pub struct SystemScard {
 
 impl SystemScard {
     pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> Self {
-        Self { h_card, h_card_context, api: init_scard_api_table(), }
+        Self {
+            h_card,
+            h_card_context,
+            api: init_scard_api_table(),
+        }
     }
 }
 
@@ -41,9 +45,7 @@ impl Drop for SystemScard {
             }
             #[cfg(target_os = "windows")]
             {
-                if let Err(err) =
-                    try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, 0) })
-                {
+                if let Err(err) = try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, 0) }) {
                     error!(?err, "Cannot disconnect the card");
                 }
             }
@@ -115,12 +117,7 @@ impl WinScard for SystemScard {
             }
             #[cfg(target_os = "windows")]
             {
-                try_execute!(unsafe {
-                    (self.api.SCardFreeMemory)(
-                        self.h_card_context,
-                        reader_name as *const _,
-                    )
-                })?;
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _,) })?;
             }
 
             return Err(Error::new(
@@ -135,9 +132,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _)
-            })?;
+            try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) })?;
         }
 
         let status = Status {
@@ -296,9 +291,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (self.api.SCardEndTransaction)(self.h_card, disposition.into())
-            })
+            try_execute!(unsafe { (self.api.SCardEndTransaction)(self.h_card, disposition.into()) })
         }
     }
 
@@ -360,14 +353,7 @@ impl WinScard for SystemScard {
             // If this value is NULL, SCardGetAttrib ignores the buffer length supplied in pcbAttrLen,
             // writes the length of the buffer that would have been returned if this parameter
             // had not been NULL to pcbAttrLen, and returns a success code.
-            try_execute!(unsafe {
-                (self.api.SCardGetAttrib)(
-                    self.h_card,
-                    attr_id,
-                    null_mut(),
-                    &mut data_len,
-                )
-            })?;
+            try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card, attr_id, null_mut(), &mut data_len,) })?;
         }
 
         let mut data = vec![0; data_len.try_into()?];
@@ -380,14 +366,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (self.api.SCardGetAttrib)(
-                    self.h_card,
-                    attr_id,
-                    data.as_mut_ptr(),
-                    &mut data_len,
-                )
-            })?;
+            try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card, attr_id, data.as_mut_ptr(), &mut data_len) })?;
         }
 
         Ok(Cow::Owned(data))
@@ -406,14 +385,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (self.api.SCardSetAttrib)(
-                    self.h_card,
-                    attr_id,
-                    attribute_data.as_ptr(),
-                    len,
-                )
-            })
+            try_execute!(unsafe { (self.api.SCardSetAttrib)(self.h_card, attr_id, attribute_data.as_ptr(), len,) })
         }
     }
 
@@ -424,9 +396,7 @@ impl WinScard for SystemScard {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (self.api.SCardDisconnect)(self.h_card, disposition.into())
-            })?;
+            try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, disposition.into()) })?;
         }
 
         // Mark the current card handle as disconnected.

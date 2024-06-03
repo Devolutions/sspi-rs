@@ -3,12 +3,11 @@ use std::ffi::CString;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ReaderState, ScardConnectData, ShareMode, Uuid, WinScardContext,
 };
-use ffi_types::winscard::functions::SCardApiFunctionTable;
-
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::{parse_multi_string_owned, SystemScard};
@@ -30,14 +29,7 @@ impl SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe {
-                (api.SCardEstablishContext)(
-                    dw_scope,
-                    null(),
-                    null(),
-                    &mut h_context,
-                )
-            })?;
+            try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null(), null(), &mut h_context,) })?;
         }
 
         Ok(Self { h_context, api })
@@ -54,9 +46,7 @@ impl Drop for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            if let Err(err) =
-                try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) })
-            {
+            if let Err(err) = try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) }) {
                 error!(?err, "Can not release the scard context");
             }
         }
@@ -136,12 +126,7 @@ impl WinScardContext for SystemScardContext {
             //  writes the length of the buffer that would have been returned if this parameter
             //  had not been NULL to pcchReaders, and returns a success code.
             try_execute!(unsafe {
-                (self.api.SCardListReadersA)(
-                    self.h_context,
-                    null(),
-                    null_mut(),
-                    &mut readers_buf_len,
-                )
+                (self.api.SCardListReadersA)(self.h_context, null(), null_mut(), &mut readers_buf_len)
             })?;
         }
 
@@ -156,12 +141,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(unsafe {
-                (self.api.SCardListReadersA)(
-                    self.h_context,
-                    null(),
-                    readers.as_mut_ptr(),
-                    &mut readers_buf_len,
-                )
+                (self.api.SCardListReadersA)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
             })?;
         }
 
@@ -261,8 +241,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) })
-                .is_ok()
+            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) }).is_ok()
         }
     }
 
@@ -304,9 +283,7 @@ impl WinScardContext for SystemScardContext {
             let data_len: usize = if let Ok(len) = data_len.try_into() {
                 len
             } else {
-                try_execute!(unsafe {
-                    (self.api.SCardFreeMemory)(self.h_context, *data as *const _)
-                })?;
+                try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
 
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
@@ -314,9 +291,7 @@ impl WinScardContext for SystemScardContext {
             let mut cache_item = vec![0; data_len];
             cache_item.copy_from_slice(unsafe { from_raw_parts(data, data_len) });
 
-            try_execute!(unsafe {
-                (self.api.SCardFreeMemory)(self.h_context, *data as *const _)
-            })?;
+            try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_context, *data as *const _) })?;
 
             Ok(Cow::Owned(cache_item))
         }
@@ -381,11 +356,7 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned if this parameter had not been
             // NULL to pcchGroups, and returns a success code.
             try_execute!(unsafe {
-                (self.api.SCardListReaderGroupsA)(
-                    self.h_context,
-                    null_mut(),
-                    &mut reader_groups_buf_len,
-                )
+                (self.api.SCardListReaderGroupsA)(self.h_context, null_mut(), &mut reader_groups_buf_len)
             })?;
         }
 
@@ -481,6 +452,52 @@ impl WinScardContext for SystemScardContext {
             }
 
             Ok(())
+        }
+    }
+
+    fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "SCardGetStatusChangeW function is not supported in PCSC-lite API",
+            ))
+        }
+        #[cfg(target_os = "windows")]
+        {
+            use crate::winscard::system_scard::uuid_to_c_guid;
+
+            let mut cards_buf_len = 0;
+            let atr = atr.map(|a| a.as_ptr()).unwrap_or(null());
+            let uuids = required_interfaces.map(|uuids| uuids.iter().map(|id| uuid_to_c_guid(*id)).collect::<Vec<_>>());
+            let uuids_len = uuids.as_ref().map(|uuids| uuids.len()).unwrap_or_default().try_into()?;
+            let c_uuids = uuids.as_ref().map(|uuids| uuids.as_ptr()).unwrap_or(null());
+
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw
+            //
+            // mszCards: If this value is NULL, SCardListCards ignores the buffer length supplied in
+            // pcchCards, returning the length of the buffer that would have been returned if this
+            // parameter had not been NULL to pcchCards and a success code.
+            try_execute!(unsafe {
+                (self.api.SCardListCardsA)(self.h_context, atr, c_uuids, uuids_len, null_mut(), &mut cards_buf_len)
+            })?;
+
+            let mut cards = vec![0; cards_buf_len.try_into()?];
+
+            try_execute!(unsafe {
+                (self.api.SCardListCardsA)(
+                    self.h_context,
+                    atr,
+                    c_uuids,
+                    uuids_len,
+                    cards.as_mut_ptr(),
+                    &mut cards_buf_len,
+                )
+            })?;
+
+            debug!(?cards, "Raw card names buffer");
+
+            parse_multi_string_owned(&cards)
         }
     }
 }

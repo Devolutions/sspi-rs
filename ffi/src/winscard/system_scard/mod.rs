@@ -7,12 +7,12 @@ mod card;
 mod context;
 
 use std::borrow::Cow;
-use num_traits::Zero;
-use windows_sys::s;
 
 pub use card::SystemScard;
 pub use context::SystemScardContext;
 use ffi_types::winscard::functions::SCardApiFunctionTable;
+use num_traits::Zero;
+use windows_sys::s;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
@@ -51,12 +51,9 @@ fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> ffi_types::Uuid {
 pub fn init_scard_api_table() -> SCardApiFunctionTable {
     use std::mem::transmute;
 
-    use windows_sys::Win32::System::LibraryLoader::GetProcAddress;
-    use windows_sys::Win32::System::LibraryLoader::LoadLibraryA;
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
-    let winscard_module = unsafe {
-        LoadLibraryA(s!("C:\\Windows\\System32\\WinSCardOriginal.dll"))
-    };
+    let winscard_module = unsafe { LoadLibraryA(s!("C:\\Windows\\System32\\WinSCardOriginal.dll")) };
 
     if winscard_module.is_zero() {
         error!("Can not load the original winscard module.");
@@ -70,9 +67,7 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
 
     macro_rules! load_fn {
         ($module:expr, $func_name:literal) => {{
-            unsafe {
-                transmute(GetProcAddress($module, s!($func_name)))
-            }
+            unsafe { transmute(GetProcAddress($module, s!($func_name))) }
         }};
     }
 
