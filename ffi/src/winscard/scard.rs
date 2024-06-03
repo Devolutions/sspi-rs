@@ -135,7 +135,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, _dw_dispositi
     check_handle!(handle);
 
     let scard = unsafe { Box::from_raw(handle as *mut WinScardHandle) };
-    if let Some(context) = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() } {
+    if let Some(context) = scard.context() {
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected!");
         } else {
@@ -213,10 +213,10 @@ pub unsafe extern "system" fn SCardStatusA(
 
     let scard = unsafe { (handle as *mut WinScardHandle).as_ref().unwrap() };
     let status = try_execute!(scard.scard().status());
-    check_handle!(scard.context());
+    check_handle!(scard.raw_context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let context = scard.context().unwrap();
     try_execute!(unsafe { write_multistring_a(context, &readers, msz_reader_names, pcch_reader_len) });
     unsafe {
         *pdw_state = status.state.into();
@@ -253,10 +253,10 @@ pub unsafe extern "system" fn SCardStatusW(
 
     let scard = unsafe { (handle as *mut WinScardHandle).as_ref() }.unwrap();
     let status = try_execute!(scard.scard().status());
-    check_handle!(scard.context());
+    check_handle!(scard.raw_context());
 
     let readers = status.readers.iter().map(|reader| reader.as_ref()).collect::<Vec<_>>();
-    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let context = scard.context().unwrap();
     try_execute!(unsafe { write_multistring_w(context, &readers, msz_reader_names, pcch_reader_len) });
     unsafe {
         *pdw_state = status.state.into();
@@ -395,9 +395,7 @@ pub extern "system" fn SCardGetAttrib(
 
     let out_buf = try_execute!(scard.get_attribute(attr_id, buffer_type));
 
-    check_handle!(scard.context());
-    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
-    try_execute!(unsafe { save_out_buf(context, out_buf, pb_attr, pcb_attrLen) });
+    try_execute!(unsafe { save_out_buf(out_buf, pb_attr, pcb_attrLen) });
 
     ErrorKind::Success.into()
 }

@@ -3,7 +3,7 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
-use winscard::winscard::{IoRequest, Protocol, WinScard, WinScardContext};
+use winscard::winscard::{AttributeId, IoRequest, Protocol, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 /// Scard context handle representation.
@@ -107,6 +107,32 @@ impl Drop for WinScardContextHandle {
     }
 }
 
+/// Represents how and what data the user want to extract.
+pub enum RequestedBufferType<'data> {
+    /// This means the user wants the data filled in the provided buffer.
+    Buff(&'data mut [u8]),
+    /// The user want to query only the data length.
+    Length,
+    /// The user wants the data to be allocated by the library and returned from the function.
+    Allocate,
+}
+
+/// Represent the requested data buffer from the smart card.
+///
+/// The user can request some data from the smart card. For example, `SCardReadCache` or `SCardGetAttrib` functions.
+/// However, buffer handling can be tricky in such situations. The user may want to allocate the memory
+/// or ask us to do it. This enum aimed to solve this complexity.
+pub enum OutBuffer<'data> {
+    /// The data has been written into provided buffer by [RequestedBufferType::Buff].
+    Written(usize),
+    /// The user wants to know the requested data length to allocate the corresponding buffer in the future.
+    DataLen(usize),
+    /// Allocated buffer.
+    ///
+    /// The inner buffer is leaked and the user should free it using the `SCardFreeMemory` function.
+    Allocated(&'data mut [u8]),
+}
+
 /// Scard handle representation.
 ///
 /// It also holds a pointer to the smart card context to which it belongs.
@@ -129,8 +155,50 @@ impl WinScardHandle {
     }
 
     /// Returns the parent [ScardContext] it belongs.
-    pub fn context(&self) -> ScardContext {
+    pub fn raw_context(&self) -> ScardContext {
         self.context
+    }
+
+    /// Returns mutable reference to the parent [WinScardContextHandle].
+    pub fn context<'context>(&self) -> Option<&'context mut WinScardContextHandle> {
+        unsafe { (self.raw_context() as *mut WinScardContextHandle).as_mut() }
+    }
+
+    pub fn get_attribute(
+        &self,
+        attribute_id: AttributeId,
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer> {
+        let data = self.scard().get_attribute(attribute_id)?.as_ref();
+
+        Ok(match buffer_type {
+            RequestedBufferType::Buff(buf) => {
+                if buf.len() < data.len() {
+                    return Err(
+                        Error::new(
+                            ErrorKind::InsufficientBuffer, format!(
+                                "Provided buffer is too small to fill the requested attribute into. Buffer len: {}. Attribute data len: {}.",
+                                buf.len(),
+                                data.len()
+                            )
+                        )
+                    );
+                }
+
+                buf[0..data.len()].copy_from_slice(data);
+
+                OutBuffer::Written(data.len())
+            }
+            RequestedBufferType::Length => OutBuffer::DataLen(data.len()),
+            RequestedBufferType::Allocate => {
+                let allocated = self.context().unwrap().allocate_buffer(data.len())?;
+                let mut buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
+
+                buf.copy_from_slice(&data);
+
+                OutBuffer::Allocated(buf)
+            }
+        })
     }
 }
 

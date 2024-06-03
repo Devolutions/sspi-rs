@@ -2,10 +2,9 @@ use std::iter::once;
 use std::slice::from_raw_parts_mut;
 
 use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
-use winscard::winscard::{OutBuffer, RequestedBufferType};
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::scard_handle::WinScardContextHandle;
+use super::scard_handle::{OutBuffer, RequestedBufferType, WinScardContextHandle};
 use crate::utils::str_to_w_buff;
 
 pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
@@ -143,26 +142,14 @@ pub unsafe fn build_buf_request_type<'data>(
 }
 
 // TODO: write proper comments.
-pub unsafe fn save_out_buf(
-    context: &mut WinScardContextHandle,
-    out_buf: OutBuffer,
-    p_buf: LpByte,
-    pcb_buf: LpDword,
-) -> WinScardResult<()> {
+pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
     match out_buf {
         OutBuffer::Written(len) => unsafe { *pcb_buf = len.try_into()? },
         OutBuffer::DataLen(len) => unsafe { *pcb_buf = len.try_into()? },
-        OutBuffer::Allocated(data) => {
-            let allocated = context.allocate_buffer(data.len())?;
-
-            let mut buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
-            buf.copy_from_slice(&data);
-
-            unsafe {
-                *(p_buf as *mut *mut u8) = allocated;
-                *pcb_buf = data.len().try_into()?;
-            }
-        }
+        OutBuffer::Allocated(data) => unsafe {
+            *(p_buf as *mut *mut u8) = data.as_mut_ptr();
+            *pcb_buf = data.len().try_into()?;
+        },
     }
 
     Ok(())
