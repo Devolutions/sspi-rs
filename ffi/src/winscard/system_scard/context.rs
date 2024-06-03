@@ -3,7 +3,7 @@ use std::ffi::CString;
 use std::ptr::{null, null_mut};
 
 use ffi_types::winscard::{ScardContext, ScardHandle};
-use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, WinScardContext};
+use winscard::winscard::{DeviceTypeId, Icon, Protocol, ScardConnectData, ShareMode, Uuid, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::{parse_multi_string_owned, SystemScard};
@@ -144,7 +144,13 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn write_cache(&mut self, _key: String, _value: Vec<u8>) -> WinScardResult<()> {
+    fn write_cache(
+        &mut self,
+        _card_id: Uuid,
+        _freshness_counter: u32,
+        _key: String,
+        _value: Vec<u8>,
+    ) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
             Err(Error::new(
@@ -154,25 +160,61 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            use super::uuid_to_c_guid;
+
+            // SAFETY:
+            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
+            // > This function will return an error if the supplied bytes contain an internal 0 byte.
+            //
+            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
+            let c_cache_key = CString::new(_key.as_str()).expect("Rust string slice should not contain 0 bytes");
+            let card_id = uuid_to_c_guid(_card_id);
+
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardWriteCacheA(
+                    self.h_context,
+                    &card_id,
+                    _freshness_counter,
+                    c_cache_key.as_ptr() as *const _,
+                    _value.as_ptr(),
+                    _value.len().try_into()?,
+                )
+            })
         }
     }
 
     fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
+        let mut reader_groups_buf_len = 0;
+
         #[cfg(not(target_os = "windows"))]
         {
-            let mut reader_groups_buf_len = 0;
-
             // https://pcsclite.apdu.fr/api/group__API.html#ga9d970d086d5218e080d0079d63f9d496
             //
             // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
             try_execute!(unsafe {
                 pcsc_lite_rs::SCardListReaderGroups(self.h_context, null_mut(), &mut reader_groups_buf_len)
             })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
+            //
+            // If this value is NULL, SCardListReaderGroups ignores the buffer length supplied in pcchGroups,
+            // writes the length of the buffer that would have been returned if this parameter had not been
+            // NULL to pcchGroups, and returns a success code.
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardListReaderGroupsA(
+                    self.h_context,
+                    null_mut(),
+                    &mut reader_groups_buf_len,
+                )
+            })?;
+        }
 
-            let mut reader_groups = vec![0; reader_groups_buf_len.try_into()?];
+        let mut reader_groups = vec![0; reader_groups_buf_len.try_into()?];
 
+        #[cfg(not(target_os = "windows"))]
+        {
             try_execute!(unsafe {
                 pcsc_lite_rs::SCardListReaderGroups(
                     self.h_context,
@@ -180,14 +222,19 @@ impl WinScardContext for SystemScardContext {
                     &mut reader_groups_buf_len,
                 )
             })?;
-
-            parse_multi_string_owned(&reader_groups)
         }
         #[cfg(target_os = "windows")]
         {
-            // TODO(@TheBestTvarynka): implement for Windows too.
-            todo!()
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardListReaderGroupsA(
+                    self.h_context,
+                    reader_groups.as_mut_ptr(),
+                    &mut reader_groups_buf_len,
+                )
+            })?;
         }
+
+        parse_multi_string_owned(&reader_groups)
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {

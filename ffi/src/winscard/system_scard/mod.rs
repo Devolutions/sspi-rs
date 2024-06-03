@@ -28,3 +28,13 @@ fn parse_multi_string_owned(buf: &[u8]) -> WinScardResult<Vec<Cow<'static, str>>
         .map(|&r| Cow::Owned(r.to_owned()))
         .collect())
 }
+
+#[cfg(target_os = "windows")]
+fn uuid_to_c_guid(id: winscard::winscard::Uuid) -> windows_sys::core::GUID {
+    windows_sys::core::GUID {
+        data1: id.data1,
+        data2: id.data2,
+        data3: id.data3,
+        data4: id.data4,
+    }
+}
