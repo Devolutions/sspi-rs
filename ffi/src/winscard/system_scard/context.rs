@@ -260,7 +260,7 @@ impl WinScardContext for SystemScardContext {
             let c_cache_key = CString::new(_key).expect("Rust string slice should not contain 0 bytes");
             let card_id = uuid_to_c_guid(_card_id);
 
-            let mut data: *mut *mut u8 = null_mut();
+            let mut data: *mut u8 = null_mut();
 
             // It's not specified in the `SCardReadCacheA` function documentation, but after some
             // `msclmd.dll` reversing, we found out that this function supports the `SCARD_AUTOALLOCATE`.
@@ -270,7 +270,7 @@ impl WinScardContext for SystemScardContext {
                     &card_id,
                     _freshness_counter,
                     c_cache_key.as_ptr() as *const _,
-                    ((&mut data) as *mut *mut *mut u8) as *mut _,
+                    ((&mut data) as *mut *mut u8) as *mut _,
                     &mut data_len,
                 )
             })?;
@@ -286,7 +286,7 @@ impl WinScardContext for SystemScardContext {
             };
 
             let mut cache_item = vec![0; data_len];
-            cache_item.copy_from_slice(unsafe { from_raw_parts(*data, data_len) });
+            cache_item.copy_from_slice(unsafe { from_raw_parts(data, data_len) });
 
             try_execute!(unsafe {
                 windows_sys::Win32::Security::Credentials::SCardFreeMemory(self.h_context, *data as *const _)
