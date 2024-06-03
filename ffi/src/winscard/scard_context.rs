@@ -17,6 +17,7 @@ use super::buf_alloc::{copy_w_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
 use crate::winscard::buf_alloc::copy_buff;
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
+use crate::winscard::system_scard::SystemScardContext;
 
 const SCARD_STATE_CHANGED: u32 = 0x00000002;
 const SCARD_STATE_INUSE: u32 = 0x00000100;
@@ -46,11 +47,20 @@ pub const DEFAULT_CARD_NAME: &str = "Cool card";
 // set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
+// Environment variable that indicates what smart card type use. It can have the following values:
+// `true` - use a system-provided smart card.
+// `false` (or unset) - use an emulated smart card.
+const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
+
+fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContext>> {
+    Ok(Box::new(PivCardContext::new(SmartCardInfo::try_from_env()?)?))
+}
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardEstablishContext(
-    _dw_scope: u32,
+    dw_scope: u32,
     _r1: *const c_void,
     _r2: *const c_void,
     context: LpScardContext,
@@ -58,9 +68,18 @@ pub unsafe extern "system" fn SCardEstablishContext(
     crate::logging::setup_logger();
     check_null!(context);
 
-    let scard_info = try_execute!(SmartCardInfo::try_from_env());
-    // We have only one available reader
-    let scard_context: Box<dyn WinScardContext> = Box::new(try_execute!(PivCardContext::new(scard_info)));
+    let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
+        if use_system_card == "true" {
+            info!("Creating system-provided smart card context...");
+            Box::new(try_execute!(SystemScardContext::establish(dw_scope)))
+        } else {
+            info!("Creating emulated smart card context...");
+            try_execute!(create_emulated_smart_card_context())
+        }
+    } else {
+        info!("Creating emulated smart card context...");
+        try_execute!(create_emulated_smart_card_context())
+    };
 
     let scard_context = WinScardContextHandle::with_scard_context(scard_context);
 
