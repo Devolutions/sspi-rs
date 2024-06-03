@@ -12,56 +12,58 @@ pub type SCardEstablishContextFn =
     unsafe extern "system" fn(u32, *const c_void, *const c_void, LpScardContext) -> ScardStatus;
 pub type SCardReleaseContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardIsValidContextFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
-pub type SCardListReaderGroupsAFn = extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
-pub type SCardListReaderGroupsWFn = extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
+pub type SCardListReaderGroupsAFn = unsafe extern "system" fn(ScardContext, LpStr, LpDword) -> ScardStatus;
+pub type SCardListReaderGroupsWFn = unsafe extern "system" fn(ScardContext, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListReadersAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
 pub type SCardListReadersWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListCardsAFn =
     unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u8, LpDword) -> ScardStatus;
 pub type SCardListCardsWFn =
     unsafe extern "system" fn(ScardContext, LpCByte, LpCGuid, u32, *mut u16, LpDword) -> ScardStatus;
-pub type SCardListInterfacesAFn = extern "system" fn(ScardContext, LpCStr, LpGuid, LpDword) -> ScardStatus;
-pub type SCardListInterfacesWFn = extern "system" fn(ScardContext, LpCWStr, LpGuid, LpDword) -> ScardStatus;
-pub type SCardGetProviderIdAFn = extern "system" fn(ScardContext, LpCStr, LpGuid) -> ScardStatus;
-pub type SCardGetProviderIdWFn = extern "system" fn(ScardContext, LpCWStr, LpGuid) -> ScardStatus;
+pub type SCardListInterfacesAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpGuid, LpDword) -> ScardStatus;
+pub type SCardListInterfacesWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpGuid, LpDword) -> ScardStatus;
+pub type SCardGetProviderIdAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpGuid) -> ScardStatus;
+pub type SCardGetProviderIdWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpGuid) -> ScardStatus;
 pub type SCardGetCardTypeProviderNameAFn =
     unsafe extern "system" fn(ScardContext, LpCStr, u32, *mut u8, LpDword) -> ScardStatus;
 pub type SCardGetCardTypeProviderNameWFn =
     unsafe extern "system" fn(ScardContext, LpCWStr, u32, *mut u16, LpDword) -> ScardStatus;
-pub type SCardIntroduceReaderGroupAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
-pub type SCardIntroduceReaderGroupWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
-pub type SCardForgetReaderGroupAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
-pub type SCardForgetReaderGroupWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
-pub type SCardIntroduceReaderAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
-pub type SCardIntroduceReaderWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
-pub type SCardForgetReaderAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
-pub type SCardForgetReaderWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
-pub type SCardAddReaderToGroupAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
-pub type SCardAddReaderToGroupWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
-pub type SCardRemoveReaderFromGroupAFn = extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
-pub type SCardRemoveReaderFromGroupWFn = extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardIntroduceReaderGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardIntroduceReaderGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardForgetReaderGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardForgetReaderGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardIntroduceReaderAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardIntroduceReaderWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardForgetReaderAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardForgetReaderWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+pub type SCardAddReaderToGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardAddReaderToGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
+pub type SCardRemoveReaderFromGroupAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpCStr) -> ScardStatus;
+pub type SCardRemoveReaderFromGroupWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpCWStr) -> ScardStatus;
 pub type SCardIntroduceCardTypeAFn =
-    extern "system" fn(ScardContext, LpCStr, LpCGuid, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpCStr, LpCGuid, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardStatus;
 pub type SCardIntroduceCardTypeWFn =
-    extern "system" fn(ScardContext, LpCWStr, LpCGuid, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardStatus;
-pub type SCardSetCardTypeProviderNameAFn = extern "system" fn(ScardContext, LpCStr, u32, LpCStr) -> ScardStatus;
-pub type SCardSetCardTypeProviderNameWFn = extern "system" fn(ScardContext, LpCWStr, u32, LpCWStr) -> ScardStatus;
-pub type SCardForgetCardTypeAFn = extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
-pub type SCardForgetCardTypeWFn = extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpCWStr, LpCGuid, LpCGuid, u32, LpCByte, LpCByte, u32) -> ScardStatus;
+pub type SCardSetCardTypeProviderNameAFn = unsafe extern "system" fn(ScardContext, LpCStr, u32, LpCStr) -> ScardStatus;
+pub type SCardSetCardTypeProviderNameWFn =
+    unsafe extern "system" fn(ScardContext, LpCWStr, u32, LpCWStr) -> ScardStatus;
+pub type SCardForgetCardTypeAFn = unsafe extern "system" fn(ScardContext, LpCStr) -> ScardStatus;
+pub type SCardForgetCardTypeWFn = unsafe extern "system" fn(ScardContext, LpCWStr) -> ScardStatus;
 pub type SCardFreeMemoryFn = unsafe extern "system" fn(ScardContext, LpCVoid) -> ScardStatus;
-pub type SCardAccessStartedEventFn = extern "system" fn() -> Handle;
-pub type SCardReleaseStartedEventFn = extern "system" fn();
-pub type SCardLocateCardsAFn = extern "system" fn(ScardContext, LpCStr, LpScardReaderStateA, u32) -> ScardStatus;
-pub type SCardLocateCardsWFn = extern "system" fn(ScardContext, LpCWStr, LpScardReaderStateW, u32) -> ScardStatus;
+pub type SCardAccessStartedEventFn = unsafe extern "system" fn() -> Handle;
+pub type SCardReleaseStartedEventFn = unsafe extern "system" fn();
+pub type SCardLocateCardsAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpScardReaderStateA, u32) -> ScardStatus;
+pub type SCardLocateCardsWFn =
+    unsafe extern "system" fn(ScardContext, LpCWStr, LpScardReaderStateW, u32) -> ScardStatus;
 pub type SCardLocateCardsByATRAFn =
-    extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateA, u32) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateA, u32) -> ScardStatus;
 pub type SCardLocateCardsByATRWFn =
-    extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateW, u32) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpScardAtrMask, u32, LpScardReaderStateW, u32) -> ScardStatus;
 pub type SCardGetStatusChangeAFn =
     unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateA, u32) -> ScardStatus;
 pub type SCardGetStatusChangeWFn =
     unsafe extern "system" fn(ScardContext, u32, LpScardReaderStateW, u32) -> ScardStatus;
-pub type SCardCancelFn = extern "system" fn(ScardContext) -> ScardStatus;
+pub type SCardCancelFn = unsafe extern "system" fn(ScardContext) -> ScardStatus;
 pub type SCardReadCacheAFn =
     unsafe extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardReadCacheWFn =
@@ -72,23 +74,25 @@ pub type SCardGetReaderIconAFn = unsafe extern "system" fn(ScardContext, LpCStr,
 pub type SCardGetReaderIconWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardGetDeviceTypeIdAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpDword) -> ScardStatus;
 pub type SCardGetDeviceTypeIdWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpDword) -> ScardStatus;
-pub type SCardGetReaderDeviceInstanceIdAFn = extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
-pub type SCardGetReaderDeviceInstanceIdWFn = extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
+pub type SCardGetReaderDeviceInstanceIdAFn =
+    unsafe extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
+pub type SCardGetReaderDeviceInstanceIdWFn =
+    unsafe extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
 pub type SCardListReadersWithDeviceInstanceIdAFn =
-    extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpCStr, LpStr, LpDword) -> ScardStatus;
 pub type SCardListReadersWithDeviceInstanceIdWFn =
-    extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
-pub type SCardAuditFn = extern "system" fn(ScardContext, u32) -> ScardStatus;
+    unsafe extern "system" fn(ScardContext, LpCWStr, LpWStr, LpDword) -> ScardStatus;
+pub type SCardAuditFn = unsafe extern "system" fn(ScardContext, u32) -> ScardStatus;
 pub type SCardConnectAFn =
     unsafe extern "system" fn(ScardContext, LpCStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
 pub type SCardConnectWFn =
     unsafe extern "system" fn(ScardContext, LpCWStr, u32, u32, LpScardHandle, LpDword) -> ScardStatus;
-pub type SCardReconnectFn = extern "system" fn(ScardHandle, u32, u32, u32, LpDword) -> ScardStatus;
+pub type SCardReconnectFn = unsafe extern "system" fn(ScardHandle, u32, u32, u32, LpDword) -> ScardStatus;
 pub type SCardDisconnectFn = unsafe extern "system" fn(ScardHandle, u32) -> ScardStatus;
 pub type SCardBeginTransactionFn = unsafe extern "system" fn(ScardHandle) -> ScardStatus;
 pub type SCardEndTransactionFn = unsafe extern "system" fn(ScardHandle, u32) -> ScardStatus;
-pub type SCardCancelTransactionFn = extern "system" fn(ScardHandle) -> ScardStatus;
-pub type SCardStateFn = extern "system" fn(ScardHandle, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
+pub type SCardCancelTransactionFn = unsafe extern "system" fn(ScardHandle) -> ScardStatus;
+pub type SCardStateFn = unsafe extern "system" fn(ScardHandle, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardStatusAFn =
     unsafe extern "system" fn(ScardHandle, LpStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardStatusWFn =
@@ -102,17 +106,17 @@ pub type SCardTransmitFn = unsafe extern "system" fn(
     LpByte,
     LpDword,
 ) -> ScardStatus;
-pub type SCardGetTransmitCountFn = extern "system" fn(ScardHandle, LpDword) -> ScardStatus;
+pub type SCardGetTransmitCountFn = unsafe extern "system" fn(ScardHandle, LpDword) -> ScardStatus;
 pub type SCardControlFn =
     unsafe extern "system" fn(ScardHandle, u32, LpCVoid, u32, LpVoid, u32, LpDword) -> ScardStatus;
 pub type SCardGetAttribFn = unsafe extern "system" fn(ScardHandle, u32, LpByte, LpDword) -> ScardStatus;
 pub type SCardSetAttribFn = unsafe extern "system" fn(ScardHandle, u32, LpCByte, u32) -> ScardStatus;
-pub type SCardUIDlgSelectCardAFn = extern "system" fn(LpOpenCardNameExA) -> ScardStatus;
-pub type SCardUIDlgSelectCardWFn = extern "system" fn(LpOpenCardNameExW) -> ScardStatus;
-pub type GetOpenCardNameAFn = extern "system" fn(LpOpenCardNameA) -> ScardStatus;
-pub type GetOpenCardNameWFn = extern "system" fn(LpOpenCardNameW) -> ScardStatus;
+pub type SCardUIDlgSelectCardAFn = unsafe extern "system" fn(LpOpenCardNameExA) -> ScardStatus;
+pub type SCardUIDlgSelectCardWFn = unsafe extern "system" fn(LpOpenCardNameExW) -> ScardStatus;
+pub type GetOpenCardNameAFn = unsafe extern "system" fn(LpOpenCardNameA) -> ScardStatus;
+pub type GetOpenCardNameWFn = unsafe extern "system" fn(LpOpenCardNameW) -> ScardStatus;
 // Not a part of the standard winscard.h API
-pub type GetSCardApiFunctionTableFn = extern "system" fn() -> PSCardApiFunctionTable;
+pub type GetSCardApiFunctionTableFn = unsafe extern "system" fn() -> PSCardApiFunctionTable;
 
 // https://github.com/FreeRDP/FreeRDP/blob/88f79c5748f4031cb50dfae3ebadcc6619b69f1c/winpr/include/winpr/smartcard.h#L1114
 #[derive(Debug)]
