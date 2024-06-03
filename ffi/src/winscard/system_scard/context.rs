@@ -14,8 +14,26 @@ pub struct SystemScardContext {
 }
 
 impl SystemScardContext {
-    pub fn new(h_context: ScardContext) -> Self {
-        Self { h_context }
+    pub fn establish(dw_scope: u32) -> WinScardResult<Self> {
+        let mut h_context = 0;
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            try_execute!(unsafe { pcsc_lite_rs::SCardEstablishContext(dw_scope, null(), null(), &mut h_context,) })?;
+        }
+        #[cfg(target_os = "windows")]
+        {
+            try_execute!(unsafe {
+                windows_sys::Win32::Security::Credentials::SCardEstablishContext(
+                    dw_scope,
+                    null(),
+                    null(),
+                    &mut h_context,
+                )
+            })?;
+        }
+
+        Ok(Self { h_context })
     }
 }
 
