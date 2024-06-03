@@ -231,6 +231,7 @@ impl WinScardContextHandle {
                 }
 
                 buf[0..data.len()].copy_from_slice(&data);
+                info!("data has been copied... {:?}", data);
 
                 OutBuffer::Written(data.len())
             }
@@ -267,6 +268,7 @@ impl Drop for WinScardContextHandle {
 }
 
 /// Represents how and what data the user want to extract.
+#[derive(Debug)]
 pub enum RequestedBufferType<'data> {
     /// This means the user wants the data filled in the provided buffer.
     Buff(&'data mut [u8]),
@@ -281,6 +283,7 @@ pub enum RequestedBufferType<'data> {
 /// The user can request some data from the smart card. For example, `SCardReadCache` or `SCardGetAttrib` functions.
 /// However, buffer handling can be tricky in such situations. The user may want to allocate the memory
 /// or ask us to do it. This enum aimed to solve this complexity.
+#[derive(Debug)]
 pub enum OutBuffer<'data> {
     /// The data has been written into provided buffer by [RequestedBufferType::Buff].
     Written(usize),
@@ -295,6 +298,7 @@ pub enum OutBuffer<'data> {
 /// Represents the smart card status.
 ///
 /// This structure is aimed to represent smart card status data on the FFI layer.
+#[derive(Debug)]
 pub struct FfiScardStatus<'data> {
     /// List of display names (multi-string) by which the currently connected reader is known.
     pub readers: OutBuffer<'data>,
@@ -383,6 +387,7 @@ impl WinScardHandle {
         atr_but_type: RequestedBufferType,
     ) -> WinScardResult<FfiScardStatus> {
         let status = self.scard().status()?;
+        debug!(?status);
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
         let context = self.context().unwrap();
 
