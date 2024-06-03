@@ -122,13 +122,25 @@ impl WinScard for SystemScard {
         Ok(status)
     }
 
-    fn control(&mut self, code: ControlCode, input: &[u8], mut output: Option<&mut [u8]>) -> WinScardResult<usize> {
+    fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()> {
+        try_execute!(unsafe {
+            (self.api.SCardControl)(
+                self.h_card,
+                code,
+                input.as_ptr() as *const _,
+                input.len().try_into()?,
+                null_mut(),
+                0,
+                null_mut(),
+            )
+        })?;
+
+        Ok(())
+    }
+
+    fn control_with_output(&mut self, code: ControlCode, input: &[u8], output: &mut [u8]) -> WinScardResult<usize> {
         let mut receive_len = 0;
-        let (output_buf, output_buf_len) = if let Some(buf) = output.as_mut() {
-            (buf.as_mut_ptr(), buf.len().try_into()?)
-        } else {
-            (null_mut(), 0)
-        };
+        let output_buf_len = output.len().try_into()?;
 
         try_execute!(unsafe {
             (self.api.SCardControl)(
@@ -136,7 +148,7 @@ impl WinScard for SystemScard {
                 code,
                 input.as_ptr() as *const _,
                 input.len().try_into()?,
-                output_buf as *mut _,
+                output.as_mut_ptr() as *mut _,
                 output_buf_len,
                 &mut receive_len,
             )
@@ -152,11 +164,6 @@ impl WinScard for SystemScard {
         // The first one uses 65538-bytes long buffer for output APDU, and the second one uses 258-bytes long buffer.
         // We decided to always use the larger one.
         const OUT_APDU_BUF_LEN: usize = 65538;
-
-        #[cfg(not(target_os = "windows"))]
-        type IoRequest = ScardIoRequest;
-        #[cfg(target_os = "windows")]
-        type IoRequest = windows_sys::Win32::Security::Credentials::SCARD_IO_REQUEST;
 
         // * https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
         // * https://pcsclite.apdu.fr/api/structSCARD__IO__REQUEST.html#details

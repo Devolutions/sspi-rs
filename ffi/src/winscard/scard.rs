@@ -8,8 +8,8 @@ use ffi_types::winscard::{
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
-use winscard::{Error, ErrorKind, WinScardResult};
+use winscard::winscard::{Protocol, ScardConnectData};
+use winscard::{ErrorKind, WinScardResult};
 
 use super::buf_alloc::{copy_buff, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};

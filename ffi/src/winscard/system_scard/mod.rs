@@ -10,14 +10,13 @@ use std::borrow::Cow;
 
 pub use card::SystemScard;
 pub use context::SystemScardContext;
-use num_traits::Zero;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
     let res: Result<Vec<&str>, _> = buf
         .split(|&c| c == 0)
         .filter(|v| !v.is_empty())
-        .map(|v| std::str::from_utf8(v))
+        .map(std::str::from_utf8)
         .collect();
 
     Ok(res?)
@@ -55,10 +54,6 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
     } else {
         info!("Original winscard.dll has been loaded!");
     }
-
-    // let f1: SCardEstablishContextFn = unsafe {
-    //     transmute(GetProcAddress(winscard_module, s!("SCardEstablishContext")))
-    // };
 
     macro_rules! load_fn {
         ($module:expr, $func_name:literal) => {{
@@ -143,6 +138,6 @@ pub fn init_scard_api_table() -> SCardApiFunctionTable {
         SCardListReadersWithDeviceInstanceIdW: load_fn!(winscard_module, "SCardListReadersWithDeviceInstanceIdW"),
         SCardAudit: load_fn!(winscard_module, "SCardAudit"),
     };
-    debug!(?api_table);
+
     api_table
 }

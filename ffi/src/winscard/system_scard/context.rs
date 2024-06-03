@@ -1,15 +1,16 @@
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
+#[cfg(target_os = "windows")]
 use std::slice::from_raw_parts;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
+use uuid::Uuid;
 use winscard::winscard::{
-    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, Uuid,
-    WinScardContext,
+    DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
@@ -27,6 +28,7 @@ pub struct SystemScardContext {
 }
 
 impl SystemScardContext {
+    #[allow(dead_code)]
     pub fn establish(dw_scope: u32) -> WinScardResult<Self> {
         let mut h_context = 0;
 
@@ -37,11 +39,7 @@ impl SystemScardContext {
 
         try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null_mut(), null_mut(), &mut h_context) })?;
 
-        Ok(Self {
-            h_context,
-            #[cfg(target_os = "windows")]
-            api,
-        })
+        Ok(Self { h_context, api })
     }
 }
 
@@ -81,7 +79,7 @@ impl WinScardContext for SystemScardContext {
             )
         })?;
 
-        let scard = Box::new(SystemScard::new(scard, self.h_context));
+        let scard = Box::new(SystemScard::new(scard, self.h_context)?);
 
         Ok(ScardConnectData {
             scard,
@@ -335,7 +333,7 @@ impl WinScardContext for SystemScardContext {
         try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
     }
 
-    fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&self, _timeout: u32, _reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
             Err(Error::new(
@@ -346,9 +344,10 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             use ffi_types::winscard::ScardReaderStateA;
+            use winscard::winscard::CurrentState;
 
-            let mut states = Vec::with_capacity(reader_states.len());
-            let c_readers: Vec<_> = reader_states
+            let mut states = Vec::with_capacity(_reader_states.len());
+            let c_readers: Vec<_> = _reader_states
                 .iter()
                 .map(|reader_state| {
                     // SAFETY:
@@ -361,7 +360,7 @@ impl WinScardContext for SystemScardContext {
                 })
                 .collect();
 
-            for (index, reader_state) in reader_states.iter_mut().enumerate() {
+            for (index, reader_state) in _reader_states.iter_mut().enumerate() {
                 states.push(ScardReaderStateA {
                     sz_reader: c_readers.get(index).unwrap().as_ptr() as *const _,
                     pv_user_data: reader_state.user_data as _,
@@ -375,14 +374,14 @@ impl WinScardContext for SystemScardContext {
             let r = try_execute!(unsafe {
                 (self.api.SCardGetStatusChangeA)(
                     self.h_context,
-                    timeout,
+                    _timeout,
                     states.as_mut_ptr(),
-                    reader_states.len().try_into()?,
+                    _reader_states.len().try_into()?,
                 )
             })?;
 
             // We do not need to change all fields. Only event state and atr values can be changed.
-            for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
+            for (state, reader_state) in states.iter().zip(_reader_states.iter_mut()) {
                 reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Invalid dwEventState"))?;
                 reader_state.atr_len = state.cb_atr.try_into()?;
@@ -393,7 +392,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
         #[cfg(not(target_os = "windows"))]
         {
             Err(Error::new(
@@ -406,8 +405,9 @@ impl WinScardContext for SystemScardContext {
             use crate::winscard::system_scard::uuid_to_c_guid;
 
             let mut cards_buf_len = 0;
-            let atr = atr.map(|a| a.as_ptr()).unwrap_or(null());
-            let uuids = required_interfaces.map(|uuids| uuids.iter().map(|id| uuid_to_c_guid(*id)).collect::<Vec<_>>());
+            let atr = _atr.map(|a| a.as_ptr()).unwrap_or(null());
+            let uuids =
+                _required_interfaces.map(|uuids| uuids.iter().map(|id| uuid_to_c_guid(*id)).collect::<Vec<_>>());
             let uuids_len = uuids.as_ref().map(|uuids| uuids.len()).unwrap_or_default().try_into()?;
             let c_uuids = uuids.as_ref().map(|uuids| uuids.as_ptr()).unwrap_or(null());
 
@@ -439,7 +439,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn get_card_type_provider_name(&self, card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+    fn get_card_type_provider_name(&self, _card_name: &str, _provider_id: ProviderId) -> WinScardResult<Cow<str>> {
         #[cfg(not(target_os = "windows"))]
         {
             Err(Error::new(
@@ -459,13 +459,13 @@ impl WinScardContext for SystemScardContext {
             // > This function will return an error if the supplied bytes contain an internal 0 byte.
             //
             // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_card_name = CString::new(card_name).expect("Rust string slice should not contain 0 bytes");
+            let c_card_name = CString::new(_card_name).expect("Rust string slice should not contain 0 bytes");
 
             try_execute!(unsafe {
                 (self.api.SCardGetCardTypeProviderNameA)(
                     self.h_context,
                     c_card_name.as_ptr() as *const _,
-                    provider_id.into(),
+                    _provider_id.into(),
                     ((&mut data) as *mut *mut u8) as *mut _,
                     &mut data_len,
                 )
