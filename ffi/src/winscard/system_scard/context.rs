@@ -3,7 +3,9 @@ use std::ffi::CString;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
+#[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
+#[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use winscard::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, Uuid,
@@ -12,11 +14,16 @@ use winscard::winscard::{
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::{parse_multi_string_owned, SystemScard};
+use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
+#[cfg(not(target_os = "windows"))]
+use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
 pub struct SystemScardContext {
     h_context: ScardContext,
     #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
+    #[cfg(not(target_os = "windows"))]
+    api: PcscLiteApiFunctionTable,
 }
 
 impl SystemScardContext {
@@ -25,12 +32,12 @@ impl SystemScardContext {
 
         #[cfg(target_os = "windows")]
         let api = super::init_scard_api_table();
+        #[cfg(not(target_os = "windows"))]
+        let api = initialize_pcsc_lite_api()?;
 
         #[cfg(not(target_os = "windows"))]
         {
-            try_execute!(unsafe {
-                pcsc_lite_rs::SCardEstablishContext(dw_scope, null_mut(), null_mut(), &mut h_context)
-            })?;
+            try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null_mut(), null_mut(), &mut h_context) })?;
         }
         #[cfg(target_os = "windows")]
         {
@@ -49,7 +56,7 @@ impl Drop for SystemScardContext {
     fn drop(&mut self) {
         #[cfg(not(target_os = "windows"))]
         {
-            if let Err(err) = try_execute!(unsafe { pcsc_lite_rs::SCardReleaseContext(self.h_context) }) {
+            if let Err(err) = try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) }) {
                 error!(?err, "Can not release the scard context");
             }
         }
@@ -82,7 +89,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(unsafe {
-                pcsc_lite_rs::SCardConnect(
+                (self.api.SCardConnect)(
                     self.h_context,
                     c_string.as_ptr() as *const _,
                     share_mode.into(),
@@ -124,7 +131,7 @@ impl WinScardContext for SystemScardContext {
             // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
             // `mszGroups`: List of groups to list readers (not used).
             try_execute!(unsafe {
-                pcsc_lite_rs::SCardListReaders(self.h_context, null(), null_mut(), &mut readers_buf_len)
+                (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len)
             })?;
         }
         #[cfg(target_os = "windows")]
@@ -144,7 +151,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(unsafe {
-                pcsc_lite_rs::SCardListReaders(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
+                (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
             })?;
         }
         #[cfg(target_os = "windows")]
@@ -246,7 +253,7 @@ impl WinScardContext for SystemScardContext {
     fn is_valid(&self) -> bool {
         #[cfg(not(target_os = "windows"))]
         {
-            try_execute!(unsafe { pcsc_lite_rs::SCardIsValidContext(self.h_context) }).is_ok()
+            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) }).is_ok()
         }
         #[cfg(target_os = "windows")]
         {
@@ -357,7 +364,7 @@ impl WinScardContext for SystemScardContext {
             //
             // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
             try_execute!(unsafe {
-                pcsc_lite_rs::SCardListReaderGroups(self.h_context, null_mut(), &mut reader_groups_buf_len)
+                (self.api.SCardListReaderGroups)(self.h_context, null_mut(), &mut reader_groups_buf_len)
             })?;
         }
         #[cfg(target_os = "windows")]
@@ -377,11 +384,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(unsafe {
-                pcsc_lite_rs::SCardListReaderGroups(
-                    self.h_context,
-                    reader_groups.as_mut_ptr(),
-                    &mut reader_groups_buf_len,
-                )
+                (self.api.SCardListReaderGroups)(self.h_context, reader_groups.as_mut_ptr(), &mut reader_groups_buf_len)
             })?;
         }
         #[cfg(target_os = "windows")]
@@ -401,7 +404,7 @@ impl WinScardContext for SystemScardContext {
     fn cancel(&mut self) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
-            try_execute!(unsafe { pcsc_lite_rs::SCardCancel(self.h_context) })
+            try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
         }
         #[cfg(target_os = "windows")]
         {
