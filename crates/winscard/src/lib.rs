@@ -171,6 +171,7 @@ impl From<core::convert::Infallible> for Error {
 
 impl From<core::str::Utf8Error> for Error {
     fn from(value: core::str::Utf8Error) -> Self {
+        #[cfg(not(feature = "std"))]
         use alloc::string::ToString;
 
         Error::new(ErrorKind::InternalError, value.to_string())
