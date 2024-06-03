@@ -1,10 +1,10 @@
+use std::borrow::Cow;
 use std::ptr::null_mut;
 
 use ffi_types::winscard::ScardHandle;
 use num_traits::{FromPrimitive, ToPrimitive};
 use winscard::winscard::{
-    AttributeId, ControlCode, IoRequest, OutBuffer, Protocol, ReaderAction, RequestedBufferType, ShareMode, Status,
-    TransmitOutData, WinScard,
+    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
@@ -79,55 +79,27 @@ impl WinScard for SystemScard {
         }
     }
 
-    fn get_attribute(&self, attribute_id: AttributeId, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
         let attr_id = attribute_id
             .to_u32()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "Cannot convert AttributeId -> u32"))?;
 
         #[cfg(not(target_os = "windows"))]
         {
-            Ok(match buffer_type {
-                RequestedBufferType::Length => {
-                    let mut data_len = 0;
+            let mut data_len = 0;
 
-                    // [SCardGetAttrib](https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602)
-                    //
-                    // If this value is NULL, SCardGetAttrib() ignores the buffer length supplied in pcbAttrLen, writes the length of the buffer
-                    // that would have been returned if this parameter had not been NULL to pcbAttrLen, and returns a success code.
-                    try_execute!(unsafe {
-                        pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, null_mut(), &mut data_len)
-                    })?;
+            // [SCardGetAttrib](https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602)
+            //
+            // If this value is NULL, SCardGetAttrib() ignores the buffer length supplied in pcbAttrLen, writes the length of the buffer
+            // that would have been returned if this parameter had not been NULL to pcbAttrLen, and returns a success code.
+            try_execute!(unsafe { pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, null_mut(), &mut data_len) })?;
 
-                    OutBuffer::DataLen(data_len.try_into()?)
-                }
-                RequestedBufferType::Buff(buf) => {
-                    let mut data_len = buf.len().try_into()?;
+            let mut data = vec![0; data_len.try_into()?];
+            try_execute!(unsafe {
+                pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, data.as_mut_ptr(), &mut data_len)
+            })?;
 
-                    try_execute!(unsafe {
-                        pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, buf.as_mut_ptr(), &mut data_len)
-                    })?;
-
-                    OutBuffer::Written(data_len.try_into()?)
-                }
-                RequestedBufferType::Allocate => {
-                    let mut data_len = 0;
-
-                    // [SCardGetAttrib](https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602)
-                    //
-                    // If this value is NULL, SCardGetAttrib() ignores the buffer length supplied in pcbAttrLen, writes the length of the buffer
-                    // that would have been returned if this parameter had not been NULL to pcbAttrLen, and returns a success code.
-                    try_execute!(unsafe {
-                        pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, null_mut(), &mut data_len)
-                    })?;
-
-                    let mut data = vec![0; data_len.try_into().unwrap()];
-                    try_execute!(unsafe {
-                        pcsc_lite_rs::SCardGetAttrib(self.h_card, attr_id, data.as_mut_ptr(), &mut data_len)
-                    })?;
-
-                    OutBuffer::Allocated(data)
-                }
-            })
+            Ok(Cow::Owned(data))
         }
         #[cfg(target_os = "windows")]
         {
