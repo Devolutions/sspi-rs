@@ -2,6 +2,7 @@ use std::iter::once;
 use std::slice::from_raw_parts_mut;
 
 use ffi_types::{LpByte, LpDword, LpStr, LpWStr};
+use winscard::winscard::{OutBuffer, RequestedBufferType};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_handle::WinScardContextHandle;
@@ -118,4 +119,51 @@ pub unsafe fn write_multistring_w(
         .collect();
 
     unsafe { copy_w_buff(context, dest, dest_len, &buffer) }
+}
+
+// TODO: write proper comments.
+pub unsafe fn build_buf_request_type<'data>(
+    p_buf: LpByte,
+    pcb_buf: LpDword,
+) -> WinScardResult<RequestedBufferType<'data>> {
+    Ok(if p_buf.is_null() {
+        // If this value is NULL, SCardGetAttrib ignores the buffer length supplied in pcbAttrLen,
+        // writes the length of the buffer that would have been returned if this parameter had not been NULL
+        // to pcbAttrLen, and returns a success code.
+        RequestedBufferType::Length
+    } else if unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib
+        //
+        // If the buffer length is specified as SCARD_AUTOALLOCATE, then pbAttr is converted to a pointer
+        // to a byte pointer, and receives the address of a block of memory containing the attribute.
+        RequestedBufferType::Allocate
+    } else {
+        RequestedBufferType::Buff(unsafe { from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?) })
+    })
+}
+
+// TODO: write proper comments.
+pub unsafe fn save_out_buf(
+    context: &mut WinScardContextHandle,
+    out_buf: OutBuffer,
+    p_buf: LpByte,
+    pcb_buf: LpDword,
+) -> WinScardResult<()> {
+    match out_buf {
+        OutBuffer::Written(len) => unsafe { *pcb_buf = len.try_into()? },
+        OutBuffer::DataLen(len) => unsafe { *pcb_buf = len.try_into()? },
+        OutBuffer::Allocated(data) => {
+            let allocated = context.allocate_buffer(data.len())?;
+
+            let mut buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
+            buf.copy_from_slice(&data);
+
+            unsafe {
+                *(p_buf as *mut *mut u8) = allocated;
+                *pcb_buf = data.len().try_into()?;
+            }
+        }
+    }
+
+    Ok(())
 }

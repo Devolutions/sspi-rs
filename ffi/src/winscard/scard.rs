@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+use num_traits::FromPrimitive;
 
 use ffi_types::winscard::{
     LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle, LpScardIoRequest,
@@ -8,10 +9,10 @@ use ffi_types::winscard::{
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
-use winscard::winscard::{Protocol, ScardConnectData};
-use winscard::{ErrorKind, WinScardResult};
+use winscard::winscard::{AttributeId, Protocol, ScardConnectData};
+use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::buf_alloc::{copy_buff, write_multistring_a, write_multistring_w};
+use super::buf_alloc::{build_buf_request_type, copy_buff, save_out_buf, write_multistring_a, write_multistring_w};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, scard_context_to_winscard_context, scard_handle_to_winscard,
@@ -376,12 +377,29 @@ pub unsafe extern "system" fn SCardControl(
 #[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardGetAttrib(
-    _handle: ScardHandle,
-    _dw_attr_id: u32,
-    _pb_attr: LpByte,
-    _pcb_attrLen: LpDword,
+    handle: ScardHandle,
+    dw_attr_id: u32,
+    pb_attr: LpByte,
+    pcb_attrLen: LpDword,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    check_handle!(handle);
+    check_null!(pcb_attrLen);
+
+    let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
+        ErrorKind::InvalidParameter,
+        format!("Invalid attribute id: {}", dw_attr_id)
+    )));
+
+    let scard = unsafe { (handle as *mut WinScardHandle).as_ref().unwrap() };
+    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_attr, pcb_attrLen) });
+
+    let out_buf = try_execute!(scard.get_attribute(attr_id, buffer_type));
+
+    check_handle!(scard.context());
+    let context = unsafe { (scard.context() as *mut WinScardContextHandle).as_mut() }.unwrap();
+    try_execute!(unsafe { save_out_buf(context, out_buf, pb_attr, pcb_attrLen) });
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetAttrib"))]
