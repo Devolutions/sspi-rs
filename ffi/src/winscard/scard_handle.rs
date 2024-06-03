@@ -89,12 +89,14 @@ impl WinScardContextHandle {
         }
     }
 
+    /// Returns the icon of the specified reader.
     pub fn get_reader_icon(&mut self, reader: &str, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
 
         self.write_to_out_buf(&reader_icon, buffer_type)
     }
 
+    /// Lists readers.
     pub fn list_readers(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let readers: Vec<_> = self
             .scard_context()
@@ -106,6 +108,7 @@ impl WinScardContextHandle {
         self.write_multi_string(&readers, buffer_type)
     }
 
+    /// Lists readers but the resulting buffers contain wide strings.
     pub fn list_readers_wide(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let readers: Vec<_> = self
             .scard_context()
@@ -117,6 +120,7 @@ impl WinScardContextHandle {
         self.write_multi_string_wide(&readers, buffer_type)
     }
 
+    /// Reads smart card cache.
     pub fn read_cache(
         &mut self,
         card_id: Uuid,
@@ -132,6 +136,7 @@ impl WinScardContextHandle {
         self.write_to_out_buf(cached_value.as_ref(), buffer_type)
     }
 
+    /// Converts provided strings to the C-multi-string and saves it.
     pub fn write_multi_string(
         &mut self,
         values: &[String],
@@ -146,6 +151,8 @@ impl WinScardContextHandle {
         self.write_to_out_buf(&data, buffer_type)
     }
 
+    /// Converts provided strings to the C-multi-string and saves it but the resulting buffers contain
+    /// wide strings.
     pub fn write_multi_string_wide(
         &mut self,
         values: &[String],
@@ -166,6 +173,7 @@ impl WinScardContextHandle {
         self.write_to_out_buf(&data, buffer_type)
     }
 
+    /// Saves the provided data in the [OutBuffer] based on the [RequestedBufferType].
     pub fn write_to_out_buf(
         &mut self,
         data: &[u8],
@@ -246,10 +254,19 @@ pub enum OutBuffer<'data> {
     Allocated(&'data mut [u8]),
 }
 
+/// Represents the smart card status.
+///
+/// This structure is aimed to represent smart card status data on the FFI layer.
 pub struct FfiScardStatus<'data> {
+    /// List of display names (multi-string) by which the currently connected reader is known.
     pub readers: OutBuffer<'data>,
+    /// Buffer that receives the ATR string from the currently inserted card, if available.
+    ///
+    /// [ATR string](https://learn.microsoft.com/en-us/windows/win32/secgloss/a-gly).
     pub atr: OutBuffer<'data>,
+    /// Current state of the smart card in the reader.
     pub state: State,
+    /// Current protocol, if any. The returned value is meaningful only if the returned value of pdwState is SCARD_SPECIFICMODE.
     pub protocol: Protocol,
 }
 
@@ -284,6 +301,7 @@ impl WinScardHandle {
         unsafe { (self.raw_context() as *mut WinScardContextHandle).as_mut() }
     }
 
+    /// Returns the requested smart card attribute.
     pub fn get_attribute(
         &self,
         attribute_id: AttributeId,
@@ -294,6 +312,7 @@ impl WinScardHandle {
         self.context().unwrap().write_to_out_buf(data.as_ref(), buffer_type)
     }
 
+    /// Returns smart card status.
     pub fn status(
         &mut self,
         readers_buf_type: RequestedBufferType,
@@ -314,6 +333,7 @@ impl WinScardHandle {
         })
     }
 
+    /// Returns smart card status but all strings are wide.
     pub fn status_wide(
         &mut self,
         readers_buf_type: RequestedBufferType,
