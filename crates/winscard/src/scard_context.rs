@@ -472,7 +472,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         }
 
         Ok(ScardConnectData {
-            scard: Box::new(SmartCard::new(
+            handle: Box::new(SmartCard::new(
                 Cow::Owned(reader_name.to_owned()),
                 self.smart_card_info.pin.clone(),
                 self.smart_card_info.auth_cert_der.clone(),

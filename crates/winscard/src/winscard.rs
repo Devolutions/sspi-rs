@@ -416,7 +416,7 @@ pub struct TransmitOutData {
 /// This structure represents the result of the `SCardConnect` function.
 pub struct ScardConnectData {
     /// Established smart card handle.
-    pub scard: Box<dyn WinScard>,
+    pub handle: Box<dyn WinScard>,
     /// Established protocol to this connection.
     pub protocol: Protocol,
 }
