@@ -34,9 +34,10 @@ use core::{fmt, result};
 
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
+use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
-pub use scard::{SmartCard, ATR, PIV_AID};
+pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID, SUPPORTED_CONNECTION_PROTOCOL};
 pub use scard_context::{Reader, ScardContext, SmartCardInfo};
 
 /// The [WinScardResult] type.
@@ -162,8 +163,23 @@ impl From<CertError> for Error {
     }
 }
 
+impl From<core::convert::Infallible> for Error {
+    fn from(_: core::convert::Infallible) -> Self {
+        Error::new(ErrorKind::InternalError, "Infallible")
+    }
+}
+
+impl From<core::str::Utf8Error> for Error {
+    fn from(value: core::str::Utf8Error) -> Self {
+        #[cfg(not(feature = "std"))]
+        use alloc::string::ToString;
+
+        Error::new(ErrorKind::InternalError, value.to_string())
+    }
+}
+
 /// [Smart Card Return Values](https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, ToPrimitive, FromPrimitive)]
 #[repr(u32)]
 pub enum ErrorKind {
     /// The client attempted a smart card operation in a remote session, such as a client session running on a terminal server,
