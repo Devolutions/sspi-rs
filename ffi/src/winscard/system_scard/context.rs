@@ -35,14 +35,7 @@ impl SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         let api = initialize_pcsc_lite_api()?;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null_mut(), null_mut(), &mut h_context) })?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null(), null(), &mut h_context,) })?;
-        }
+        try_execute!(unsafe { (api.SCardEstablishContext)(dw_scope, null_mut(), null_mut(), &mut h_context) })?;
 
         Ok(Self {
             h_context,
@@ -54,17 +47,8 @@ impl SystemScardContext {
 
 impl Drop for SystemScardContext {
     fn drop(&mut self) {
-        #[cfg(not(target_os = "windows"))]
-        {
-            if let Err(err) = try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) }) {
-                error!(?err, "Can not release the scard context");
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            if let Err(err) = try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) }) {
-                error!(?err, "Can not release the scard context");
-            }
+        if let Err(err) = try_execute!(unsafe { (self.api.SCardReleaseContext)(self.h_context) }) {
+            error!(?err, "Can not release the scard context");
         }
     }
 }
@@ -86,32 +70,16 @@ impl WinScardContext for SystemScardContext {
         let mut scard: ScardHandle = 0;
         let mut active_protocol = 0;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            try_execute!(unsafe {
-                (self.api.SCardConnect)(
-                    self.h_context,
-                    c_string.as_ptr() as *const _,
-                    share_mode.into(),
-                    protocol.unwrap_or_default().bits(),
-                    &mut scard,
-                    &mut active_protocol,
-                )
-            })?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            try_execute!(unsafe {
-                (self.api.SCardConnectA)(
-                    self.h_context,
-                    c_string.as_ptr() as *const _,
-                    share_mode.into(),
-                    protocol.unwrap_or_default().bits(),
-                    &mut scard,
-                    &mut active_protocol,
-                )
-            })?;
-        }
+        try_execute!(unsafe {
+            (self.api.SCardConnect)(
+                self.h_context,
+                c_string.as_ptr() as *const _,
+                share_mode.into(),
+                protocol.unwrap_or_default().bits(),
+                &mut scard,
+                &mut active_protocol,
+            )
+        })?;
 
         let scard = Box::new(SystemScard::new(scard, self.h_context));
 
@@ -124,42 +92,21 @@ impl WinScardContext for SystemScardContext {
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
         let mut readers_buf_len = 0;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // https://pcsclite.apdu.fr/api/group__API.html#ga93b07815789b3cf2629d439ecf20f0d9
-            //
-            // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
-            // `mszGroups`: List of groups to list readers (not used).
-            try_execute!(unsafe {
-                (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len)
-            })?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa
-            //
-            //  If this value is NULL, SCardListReaders ignores the buffer length supplied in pcchReaders,
-            //  writes the length of the buffer that would have been returned if this parameter
-            //  had not been NULL to pcchReaders, and returns a success code.
-            try_execute!(unsafe {
-                (self.api.SCardListReadersA)(self.h_context, null(), null_mut(), &mut readers_buf_len)
-            })?;
-        }
+        // https://pcsclite.apdu.fr/api/group__API.html#ga93b07815789b3cf2629d439ecf20f0d9
+        // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
+        // `mszGroups`: List of groups to list readers (not used).
+        //
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa
+        //  If this value is NULL, SCardListReaders ignores the buffer length supplied in pcchReaders,
+        //  writes the length of the buffer that would have been returned if this parameter
+        //  had not been NULL to pcchReaders, and returns a success code.
+        try_execute!(unsafe { (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len) })?;
 
         let mut readers = vec![0; readers_buf_len.try_into()?];
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            try_execute!(unsafe {
-                (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
-            })?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            try_execute!(unsafe {
-                (self.api.SCardListReadersA)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
-            })?;
-        }
+        try_execute!(unsafe {
+            (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
+        })?;
 
         parse_multi_string_owned(&readers)
     }
@@ -251,14 +198,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn is_valid(&self) -> bool {
-        #[cfg(not(target_os = "windows"))]
-        {
-            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) }).is_ok()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) }).is_ok()
-        }
+        try_execute!(unsafe { (self.api.SCardIsValidContext)(self.h_context) }).is_ok()
     }
 
     fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, _key: &str) -> WinScardResult<Cow<[u8]>> {
@@ -358,26 +298,16 @@ impl WinScardContext for SystemScardContext {
     fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
         let mut reader_groups_buf_len = 0;
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            // https://pcsclite.apdu.fr/api/group__API.html#ga9d970d086d5218e080d0079d63f9d496
-            //
-            // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
-            try_execute!(unsafe {
-                (self.api.SCardListReaderGroups)(self.h_context, null_mut(), &mut reader_groups_buf_len)
-            })?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
-            //
-            // If this value is NULL, SCardListReaderGroups ignores the buffer length supplied in pcchGroups,
-            // writes the length of the buffer that would have been returned if this parameter had not been
-            // NULL to pcchGroups, and returns a success code.
-            try_execute!(unsafe {
-                (self.api.SCardListReaderGroupsA)(self.h_context, null_mut(), &mut reader_groups_buf_len)
-            })?;
-        }
+        // https://pcsclite.apdu.fr/api/group__API.html#ga9d970d086d5218e080d0079d63f9d496
+        // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
+        //
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
+        // If this value is NULL, SCardListReaderGroups ignores the buffer length supplied in pcchGroups,
+        // writes the length of the buffer that would have been returned if this parameter had not been
+        // NULL to pcchGroups, and returns a success code.
+        try_execute!(unsafe {
+            (self.api.SCardListReaderGroups)(self.h_context, null_mut(), &mut reader_groups_buf_len)
+        })?;
 
         let mut reader_groups = vec![0; reader_groups_buf_len.try_into()?];
 
@@ -402,14 +332,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {
-        #[cfg(not(target_os = "windows"))]
-        {
-            try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
-        }
-        #[cfg(target_os = "windows")]
-        {
-            try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
-        }
+        try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) })
     }
 
     fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
