@@ -3,6 +3,7 @@ use std::ffi::CStr;
 use std::slice::from_raw_parts_mut;
 use std::sync::{Mutex, OnceLock};
 
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use ffi_types::winscard::{
     LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus,
 };
@@ -19,7 +20,7 @@ use super::buf_alloc::{
 };
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_to_w_buff};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
-use crate::winscard::system_scard::SystemScardContext;
+use crate::winscard::system_scard::{init_scard_api_table, SystemScardContext};
 
 // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew
 // `dwProviderId` function parameter::
@@ -232,12 +233,14 @@ pub unsafe extern "system" fn SCardListReadersW(
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsA(
     context: ScardContext,
-    _pb_atr: LpCByte,
-    _rgquid_nterfaces: LpCGuid,
-    _cguid_interface_count: u32,
+    pb_atr: LpCByte,
+    rgquid_nterfaces: LpCGuid,
+    cguid_interface_count: u32,
     msz_cards: *mut u8,
     pcch_cards: LpDword,
 ) -> ScardStatus {
+    use std::slice::from_raw_parts;
+
     debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_cards);
@@ -246,9 +249,32 @@ pub unsafe extern "system" fn SCardListCardsA(
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_cards, pcch_cards) });
+    let atr = if pb_atr.is_null() {
+        None
+    } else {
+        Some(unsafe { from_raw_parts(pb_atr, 32) })
+    };
+    let mut required_interfaces = if rgquid_nterfaces.is_null() {
+        None
+    } else {
+        Some(
+            unsafe {
+                from_raw_parts(
+                    rgquid_nterfaces,
+                    try_execute!(cguid_interface_count.try_into(), ErrorKind::InvalidParameter),
+                )
+            }
+            .iter()
+            .map(|id| c_uuid_to_uuid(id))
+            .collect::<Vec<_>>(),
+        )
+    };
 
-    // we have only one smart card with only one default name
-    let out_buf = try_execute!(context.write_multi_string(&[DEFAULT_CARD_NAME.to_string()], buffer_type));
+    let out_buf = try_execute!(context.list_cards(
+        atr,
+        required_interfaces.as_ref().map(|uuids| uuids.as_slice()),
+        buffer_type
+    ));
 
     try_execute!(unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) });
 
@@ -260,12 +286,14 @@ pub unsafe extern "system" fn SCardListCardsA(
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsW(
     context: ScardContext,
-    _pb_atr: LpCByte,
-    _rgquid_nterfaces: LpCGuid,
-    _cguid_interface_count: u32,
+    pb_atr: LpCByte,
+    rgquid_nterfaces: LpCGuid,
+    cguid_interface_count: u32,
     msz_cards: *mut u16,
     pcch_cards: LpDword,
 ) -> ScardStatus {
+    use std::slice::from_raw_parts;
+
     debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_cards);
@@ -274,9 +302,32 @@ pub unsafe extern "system" fn SCardListCardsW(
     // safe: checked above
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_cards, pcch_cards) });
+    let atr = if pb_atr.is_null() {
+        None
+    } else {
+        Some(unsafe { from_raw_parts(pb_atr, 32) })
+    };
+    let mut required_interfaces = if rgquid_nterfaces.is_null() {
+        None
+    } else {
+        Some(
+            unsafe {
+                from_raw_parts(
+                    rgquid_nterfaces,
+                    try_execute!(cguid_interface_count.try_into(), ErrorKind::InvalidParameter),
+                )
+            }
+            .iter()
+            .map(|id| c_uuid_to_uuid(id))
+            .collect::<Vec<_>>(),
+        )
+    };
 
-    // we have only one smart card with only one default name
-    let out_buf = try_execute!(context.write_multi_string_wide(&[DEFAULT_CARD_NAME.to_string()], buffer_type));
+    let out_buf = try_execute!(context.list_cards_wide(
+        atr,
+        required_interfaces.as_ref().map(|uuids| uuids.as_slice()),
+        buffer_type
+    ));
 
     try_execute!(unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) });
 
@@ -793,7 +844,9 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     let mut reader_states: Vec<_> = c_reader_states
         .iter()
         .map(|c_reader| {
-            if CurrentState::from_bits(c_reader.dw_current_state).is_none() || CurrentState::from_bits(c_reader.dw_event_state).is_none() {
+            if CurrentState::from_bits(c_reader.dw_current_state).is_none()
+                || CurrentState::from_bits(c_reader.dw_event_state).is_none()
+            {
                 trace!(c_reader.dw_current_state, c_reader.dw_event_state, "ptatjhdsgcfrj");
             }
             ReaderState {

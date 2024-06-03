@@ -122,6 +122,40 @@ impl WinScardContextHandle {
         self.write_multi_string_wide(&readers, buffer_type)
     }
 
+    /// Lists cards.
+    pub fn list_cards(
+        &mut self,
+        atr: Option<&[u8]>,
+        required_interfaces: Option<&[Uuid]>,
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer> {
+        let cards: Vec<_> = self
+            .scard_context()
+            .list_cards(atr, required_interfaces)?
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect();
+
+        self.write_multi_string(&cards, buffer_type)
+    }
+
+    /// Lists readers but the resulting buffers contain wide strings.
+    pub fn list_cards_wide(
+        &mut self,
+        atr: Option<&[u8]>,
+        required_interfaces: Option<&[Uuid]>,
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer> {
+        let cards: Vec<_> = self
+            .scard_context()
+            .list_cards(atr, required_interfaces)?
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect();
+
+        self.write_multi_string_wide(&cards, buffer_type)
+    }
+
     /// Reads smart card cache.
     pub fn read_cache(
         &mut self,
