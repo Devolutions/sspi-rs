@@ -1,4 +1,5 @@
 use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -13,13 +14,15 @@ use sha1::Sha1;
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::winscard::{ControlCode, IoRequest, TransmitOutData, WinScard};
+use crate::winscard::{
+    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard,
+};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
-// the max amount of data one APDU response can transmit
-const CHUNK_SIZE: usize = 256;
+/// The max amount of data one APDU response can transmit.
+pub const CHUNK_SIZE: usize = 256;
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CARD_AUTH_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x01];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
@@ -36,6 +39,14 @@ const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_HIGH_BOUND: usize = 8;
+/// Supported connection protocol in emulated smart cards.
+///
+/// We are always using the T1 protocol as the original Windows TPM smart card does
+pub const SUPPORTED_CONNECTION_PROTOCOL: Protocol = Protocol::T1;
+// Only one supported control code.
+// `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
+// Request features described in the *PC/SC 2.0 Specification Part 10*
+const IO_CTL: u32 = 0x00313520;
 
 /// The original winscard ATR is not suitable because it contains AID bytes.
 /// So we need to construct our own. Read more about our constructed ATR string:
@@ -75,6 +86,9 @@ pub struct SmartCard<'a> {
     transaction: bool,
     pending_command: Option<Command<1024>>,
     pending_response: Option<Vec<u8>>,
+    // We keep it just for compatibility reasons with WinSCard API.
+    // Usually, the mstsc.exe doesn't use scard attributes for connection establishing.
+    attributes: BTreeMap<AttributeId, Cow<'a, [u8]>>,
 }
 
 impl SmartCard<'_> {
@@ -99,6 +113,7 @@ impl SmartCard<'_> {
             transaction: false,
             pending_command: None,
             pending_response: None,
+            attributes: BTreeMap::new(),
         })
     }
 
@@ -472,20 +487,26 @@ impl<'a> WinScard for SmartCard<'a> {
             // The original winscard always returns SCARD_SPECIFIC for a working inserted card
             state: winscard::State::Specific,
             // We are always using the T1 protocol as the original Windows TPM smart card does
-            protocol: winscard::Protocol::T1,
+            protocol: SUPPORTED_CONNECTION_PROTOCOL,
             atr: ATR.into(),
         })
     }
 
-    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<Vec<u8>> {
-        if code != ControlCode::IoCtl {
+    fn control(&mut self, code: ControlCode, _input: &[u8]) -> WinScardResult<()> {
+        if code != IO_CTL {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 format!("unsupported control code: {:?}", code),
             ));
         }
 
-        Ok(Vec::new())
+        Ok(())
+    }
+
+    fn control_with_output(&mut self, code: ControlCode, input: &[u8], _output: &mut [u8]) -> WinScardResult<usize> {
+        self.control(code, input)?;
+
+        Ok(0)
     }
 
     fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
@@ -512,11 +533,41 @@ impl<'a> WinScard for SmartCard<'a> {
         Ok(())
     }
 
-    fn end_transaction(&mut self) -> WinScardResult<()> {
+    fn end_transaction(&mut self, _disposition: ReaderAction) -> WinScardResult<()> {
         if !self.transaction {
             return Err(Error::new(ErrorKind::NotTransacted, "the transaction is not started"));
         }
         self.transaction = false;
+        Ok(())
+    }
+
+    fn reconnect(&mut self, _: ShareMode, _: Option<Protocol>, _: ReaderAction) -> WinScardResult<Protocol> {
+        // Because it's an emulated smart card, we do nothing and return success.
+        Ok(SUPPORTED_CONNECTION_PROTOCOL)
+    }
+
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
+        let data = self.attributes.get(&attribute_id).map(AsRef::as_ref).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("The {:?} attribute id is not present", attribute_id),
+            )
+        })?;
+
+        Ok(Cow::Borrowed(data))
+    }
+
+    fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()> {
+        self.attributes
+            .insert(attribute_id, Cow::Owned(attribute_data.to_vec()));
+
+        Ok(())
+    }
+
+    fn disconnect(&mut self, _disposition: ReaderAction) -> WinScardResult<()> {
+        // We don't need any actions during the disconnection in emulated smart cards.
+        // It's enough just to drop the card object.
+
         Ok(())
     }
 }
