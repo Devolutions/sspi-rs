@@ -30,9 +30,9 @@ unsafe fn connect(
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
     let scard_context = unsafe { scard_context_to_winscard_context(context)? };
-    let ScardConnectData { scard, protocol } = scard_context.connect(reader_name, share_mode, protocol)?;
+    let ScardConnectData { handle, protocol } = scard_context.connect(reader_name, share_mode, protocol)?;
 
-    let scard = WinScardHandle::new(scard.handle, context);
+    let scard = WinScardHandle::new(handle, context);
 
     let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
 

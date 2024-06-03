@@ -36,7 +36,7 @@ impl SystemScard {
             h_card,
             h_card_context,
             #[cfg(target_os = "windows")]
-            api: super::init_scard_api_table(),
+            api: super::init_scard_api_table()?,
             #[cfg(not(target_os = "windows"))]
             api: initialize_pcsc_lite_api()?,
         })

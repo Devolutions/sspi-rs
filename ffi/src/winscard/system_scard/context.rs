@@ -34,7 +34,7 @@ impl SystemScardContext {
         let mut h_context = 0;
 
         #[cfg(target_os = "windows")]
-        let api = super::init_scard_api_table();
+        let api = super::init_scard_api_table()?;
         #[cfg(not(target_os = "windows"))]
         let api = initialize_pcsc_lite_api()?;
 
@@ -96,10 +96,10 @@ impl WinScardContext for SystemScardContext {
             })?;
         }
 
-        let scard = Box::new(SystemScard::new(scard, self.h_context)?);
+        let handle = Box::new(SystemScard::new(scard, self.h_context)?);
 
         Ok(ScardConnectData {
-            scard,
+            handle,
             protocol: Protocol::from_bits(active_protocol).unwrap_or_default(),
         })
     }
