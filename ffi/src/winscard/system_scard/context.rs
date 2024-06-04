@@ -515,9 +515,9 @@ impl WinScardContext for SystemScardContext {
                 })
                 .collect();
 
-            for (index, reader_state) in _reader_states.iter_mut().enumerate() {
+            for (reader_state, c_reader) in _reader_states.iter_mut().zip(c_readers.iter()) {
                 states.push(ScardReaderStateA {
-                    sz_reader: c_readers.get(index).unwrap().as_ptr() as *const _,
+                    sz_reader: c_reader.as_ptr() as *const _,
                     pv_user_data: reader_state.user_data as _,
                     dw_current_state: reader_state.current_state.bits(),
                     dw_event_state: reader_state.event_state.bits(),
@@ -566,10 +566,14 @@ impl WinScardContext for SystemScardContext {
 
             let mut cards_buf_len = 0;
             let atr = _atr.map(|a| a.as_ptr()).unwrap_or(null());
-            let uuids =
-                _required_interfaces.map(|uuids| uuids.iter().map(|id| uuid_to_c_guid(*id)).collect::<Vec<_>>());
-            let uuids_len = uuids.as_ref().map(|uuids| uuids.len()).unwrap_or_default().try_into()?;
-            let c_uuids = uuids.as_ref().map(|uuids| uuids.as_ptr()).unwrap_or(null());
+            let uuids = _required_interfaces
+                .into_iter()
+                .flatten()
+                .cloned()
+                .map(uuid_to_c_guid)
+                .collect::<Vec<ffi_types::Uuid>>();
+            let uuids_len = uuids.len().try_into()?;
+            let c_uuids = if uuids.is_empty() { null() } else { uuids.as_ptr() };
 
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw
             //
@@ -657,14 +661,7 @@ impl WinScardContext for SystemScardContext {
                 return Err(Error::new(ErrorKind::InternalError, "u32 to usize conversion error"));
             };
 
-            let name = if let Ok(name) = String::from_utf8(
-                unsafe {
-                    let raw_name = from_raw_parts(data, data_len);
-                    debug!(?raw_name);
-                    raw_name
-                }
-                .to_vec(),
-            ) {
+            let name = if let Ok(name) = String::from_utf8(unsafe { from_raw_parts(data, data_len) }.to_vec()) {
                 name
             } else {
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.

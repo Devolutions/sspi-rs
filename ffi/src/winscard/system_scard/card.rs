@@ -41,10 +41,17 @@ pub struct SystemScard {
 
 impl SystemScard {
     pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> WinScardResult<Self> {
+        if h_card == 0 {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "Scard handle can not be a zero.",
+            ));
+        }
+
         if h_card_context == 0 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Scard context handle can not be zero.",
+                "Scard context handle can not be a zero.",
             ));
         }
 
