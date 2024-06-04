@@ -51,6 +51,7 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
 
     use windows_sys::s;
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    use winscard::{Error, ErrorKind};
 
     /// Path to the `winscard` module.
     ///
@@ -64,16 +65,23 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
     })
     .expect("Rust string should not contain zero bytes");
 
+    // SAFETY: This function is safe to call because the `file_name.as_ptr()` is guaranteed to be
+    // the null-terminated C string by `CString` type.
     let winscard_module = unsafe { LoadLibraryA(file_name.as_ptr() as *const _) };
 
     if winscard_module == 0 {
-        error!("Can not load the winscard module.");
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "Can not load the winscard module: LoadLibrary function has returned NULL",
+        ));
     } else {
         info!("The winscard module has been loaded!");
     }
 
     macro_rules! load_fn {
         ($func_name:literal) => {{
+            // SAFETY: This function is safe to call because we've checked the `winscard_mofule`
+            // handle above and the `$func_name` is correct and hardcoded in the code.
             unsafe { transmute(GetProcAddress(winscard_module, s!($func_name))) }
         }};
     }

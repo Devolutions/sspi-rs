@@ -21,8 +21,17 @@ use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
+/// Represents a state of the current `SystemScard`.
+#[derive(Copy, Clone)]
+enum HandleState {
+    /// The card is not connected or has been disconnected.
+    Disconnected,
+    /// The card is connected and ready to use.
+    Connected(ScardHandle),
+}
+
 pub struct SystemScard {
-    h_card: ScardHandle,
+    h_card: HandleState,
     h_card_context: ScardContext,
     #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
@@ -32,14 +41,32 @@ pub struct SystemScard {
 
 impl SystemScard {
     pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> WinScardResult<Self> {
+        if h_card_context == 0 {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "Scard context handle can not be zero.",
+            ));
+        }
+
         Ok(Self {
-            h_card,
+            h_card: HandleState::Connected(h_card),
             h_card_context,
             #[cfg(target_os = "windows")]
             api: super::init_scard_api_table()?,
             #[cfg(not(target_os = "windows"))]
             api: initialize_pcsc_lite_api()?,
         })
+    }
+
+    fn h_card(&self) -> WinScardResult<ScardHandle> {
+        if let HandleState::Connected(handle) = self.h_card {
+            Ok(handle)
+        } else {
+            Err(Error::new(
+                ErrorKind::InvalidHandle,
+                "Smart card is not connected or has been disconnected.",
+            ))
+        }
     }
 }
 
@@ -49,8 +76,9 @@ impl Drop for SystemScard {
         // in double disconnecting.
         // Hint: It's always better to explicitly disconnect the card because the user can not pass
         // the custom `dwDisposition` parameter in `SCardDisconnect` function.
-        if self.h_card != 0 {
-            if let Err(err) = try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, 0) }) {
+        if let HandleState::Connected(handle) = self.h_card {
+            // SAFETY: This function is safe to call because the `handle` is valid.
+            if let Err(err) = try_execute!(unsafe { (self.api.SCardDisconnect)(handle, 0) }) {
                 error!(?err, "Cannot disconnect the card");
             }
         }
@@ -73,15 +101,18 @@ impl WinScard for SystemScard {
         let mut atr = vec![0; 32];
         let mut atr_len = 32;
 
-        // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
-        //
-        // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
-        // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
         #[cfg(not(target_os = "windows"))]
         {
+            // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
+            //
+            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
+            // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
+            //
+            // SAFETY: This function is safe to call because `self.h_card` is checked
+            // and all other values is type checked.
             try_execute!(unsafe {
                 (self.api.SCardStatus)(
-                    self.h_card,
+                    self.h_card()?,
                     (&mut reader_name as *mut *mut u8) as *mut _,
                     &mut reader_name_len,
                     &mut state,
@@ -96,9 +127,12 @@ impl WinScard for SystemScard {
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
             // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
             // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
+            //
+            // SAFETY: This function is safe to call because `self.h_card` is checked
+            // and all other values is type checked.
             try_execute!(unsafe {
                 (self.api.SCardStatusA)(
-                    self.h_card,
+                    self.h_card()?,
                     (&mut reader_name as *mut *mut u8) as *mut _,
                     &mut reader_name_len,
                     &mut state,
@@ -114,6 +148,7 @@ impl WinScard for SystemScard {
         {
             readers
         } else {
+            // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
             try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) })?;
 
             return Err(Error::new(
@@ -122,6 +157,7 @@ impl WinScard for SystemScard {
             ));
         };
 
+        // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
         try_execute!(unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) })?;
 
         let status = Status {
@@ -140,9 +176,11 @@ impl WinScard for SystemScard {
     }
 
     fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()> {
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
         try_execute!(unsafe {
             (self.api.SCardControl)(
-                self.h_card,
+                self.h_card()?,
                 code,
                 input.as_ptr() as *const _,
                 input.len().try_into()?,
@@ -159,9 +197,11 @@ impl WinScard for SystemScard {
         let mut receive_len = 0;
         let output_buf_len = output.len().try_into()?;
 
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
         try_execute!(unsafe {
             (self.api.SCardControl)(
-                self.h_card,
+                self.h_card()?,
                 code,
                 input.as_ptr() as *const _,
                 input.len().try_into()?,
@@ -204,9 +244,11 @@ impl WinScard for SystemScard {
             (*poi_send_pci).cb_pci_length = length.try_into()?;
         }
 
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
         try_execute!(unsafe {
             (self.api.SCardTransmit)(
-                self.h_card,
+                self.h_card()?,
                 poi_send_pci,
                 input_apdu.as_ptr(),
                 input_apdu.len().try_into()?,
@@ -227,11 +269,14 @@ impl WinScard for SystemScard {
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
-        try_execute!(unsafe { (self.api.SCardBeginTransaction)(self.h_card) })
+        // SAFETY: This function is safe to call because `self.h_card` is checked.
+        try_execute!(unsafe { (self.api.SCardBeginTransaction)(self.h_card()?) })
     }
 
     fn end_transaction(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
-        try_execute!(unsafe { (self.api.SCardEndTransaction)(self.h_card, disposition.into()) })
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and the `disposition` parameter is type checked.
+        try_execute!(unsafe { (self.api.SCardEndTransaction)(self.h_card()?, disposition.into()) })
     }
 
     fn reconnect(
@@ -243,9 +288,11 @@ impl WinScard for SystemScard {
         let dw_preferred_protocols = preferred_protocol.unwrap_or_default().bits();
         let mut active_protocol = 0;
 
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
         try_execute!(unsafe {
             (self.api.SCardReconnect)(
-                self.h_card,
+                self.h_card()?,
                 share_mode.into(),
                 dw_preferred_protocols,
                 initialization.into(),
@@ -270,11 +317,14 @@ impl WinScard for SystemScard {
         // If this value is NULL, SCardGetAttrib ignores the buffer length supplied in pcbAttrLen,
         // writes the length of the buffer that would have been returned if this parameter
         // had not been NULL to pcbAttrLen, and returns a success code.
-        try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card, attr_id, null_mut(), &mut data_len) })?;
+        //
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
+        try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, null_mut(), &mut data_len) })?;
 
         let mut data = vec![0; data_len.try_into()?];
 
-        try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card, attr_id, data.as_mut_ptr(), &mut data_len) })?;
+        try_execute!(unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, data.as_mut_ptr(), &mut data_len) })?;
 
         Ok(Cow::Owned(data))
     }
@@ -286,14 +336,18 @@ impl WinScard for SystemScard {
 
         let len = attribute_data.len().try_into()?;
 
-        try_execute!(unsafe { (self.api.SCardSetAttrib)(self.h_card, attr_id, attribute_data.as_ptr(), len) })
+        // SAFETY: This function is safe to call because `self.h_card` is checked
+        // and other function parameters are type checked.
+        try_execute!(unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id, attribute_data.as_ptr(), len) })
     }
 
     fn disconnect(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
-        try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card, disposition.into()) })?;
+        // SAFETY: This function is safe to call because `self.h_card` is always a valid handle
+        // and the `disposition` parameter is type checked.
+        try_execute!(unsafe { (self.api.SCardDisconnect)(self.h_card()?, disposition.into()) })?;
 
         // Mark the current card handle as disconnected.
-        self.h_card = 0;
+        self.h_card = HandleState::Disconnected;
 
         Ok(())
     }
