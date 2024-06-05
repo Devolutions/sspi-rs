@@ -43,8 +43,6 @@ impl WinScardContextHandle {
             return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
         }
 
-        info!("Add new scard context: {}", scard);
-
         self.scards.push(scard);
 
         Ok(())
@@ -67,7 +65,7 @@ impl WinScardContextHandle {
         if buff.is_null() {
             return Err(Error::new(
                 ErrorKind::NoMemory,
-                format!("Can not allocate {} bytes", size),
+                format!("cannot allocate {} bytes", size),
             ));
         }
         self.allocations.push(buff as usize);
@@ -206,8 +204,6 @@ impl WinScardContextHandle {
             .chain([0, 0])
             .collect();
 
-        debug!(?data);
-
         self.write_to_out_buf(&data, buffer_type)
     }
 
@@ -223,7 +219,7 @@ impl WinScardContextHandle {
                     return Err(
                         Error::new(
                             ErrorKind::InsufficientBuffer, format!(
-                                "Provided buffer is too small to fill the requested attribute into. Buffer len: {}. Attribute data len: {}.",
+                                "provided buffer is too small to fill the requested attribute into: buffer len: {}, attribute data len: {}.",
                                 buf.len(),
                                 data.len()
                             )
@@ -232,7 +228,6 @@ impl WinScardContextHandle {
                 }
 
                 buf[0..data.len()].copy_from_slice(data);
-                info!("data has been copied... {:?}", data);
 
                 OutBuffer::Written(data.len())
             }
@@ -253,7 +248,6 @@ impl Drop for WinScardContextHandle {
     fn drop(&mut self) {
         // [SCardReleaseContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
         // ...freeing any resources allocated under that context, including SCARDHANDLE objects
-        trace!("scards to disconnect: {:?}", self.scards);
         unsafe {
             for scard in &self.scards {
                 let _ = Box::from_raw(*scard as *mut WinScardHandle);
@@ -410,7 +404,7 @@ pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResul
     } else {
         Err(Error::new(
             ErrorKind::InvalidHandle,
-            "Invalid smart card context handle.",
+            "invalid smart card context handle",
         ))
     }
 }
@@ -423,7 +417,7 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
     } else {
         Err(Error::new(
             ErrorKind::InvalidHandle,
-            "Invalid smart card context handle.",
+            "invalid smart card context handle",
         ))
     }
 }

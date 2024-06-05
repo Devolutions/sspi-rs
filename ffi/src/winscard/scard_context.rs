@@ -21,7 +21,6 @@ use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 use crate::winscard::system_scard::SystemScardContext;
 
-pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const ERROR_INVALID_HANDLE: u32 = 6;
 
 // Environment variable that indicates what smart card type use. It can have the following values:
@@ -29,7 +28,16 @@ const ERROR_INVALID_HANDLE: u32 = 6;
 // `false` (or unset) - use an emulated smart card.
 const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
 
+// We need to store all active smart card contexts in one collection.
+// The `SCardIsValidContext` function can be called with already released context. So, with the heplp
+// of `SCARD_CONTEXTS` we can track all active contexts and correctly check is the passed context is valid.
+// The same applies to the `SCardReleaseContext`. We need to ensure that the passed context handle was not
+// released before.
 static SCARD_CONTEXTS: OnceLock<Mutex<Vec<ScardContext>>> = OnceLock::new();
+// This API table instance is only needed for the `SCardAccessStartedEvent` function. This function
+// doesn't accept any parameters, so we need a separate initialized API table to call the system API.
+#[cfg(target_os = "windows")]
+static WINSCARD_API: OnceLock<SCardApiFunctionTable> = OnceLock::new();
 
 fn save_context(context: ScardContext) {
     SCARD_CONTEXTS
@@ -70,6 +78,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
     context: LpScardContext,
 ) -> ScardStatus {
     crate::logging::setup_logger();
+
     check_null!(context);
 
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
@@ -635,7 +644,10 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
             .unwrap_or_default()
         {
             // Use system-provided smart card.
-            unsafe { windows_sys::Win32::Security::Credentials::SCardAccessStartedEvent() }
+            let api =
+                WINSCARD_API.get_or_init(|| init_scard_api_table().expect("winscard module loading should not fail"));
+
+            unsafe { (api.SCardAccessStartedEvent)() }
         } else {
             // Use emulated smart card.
             //
