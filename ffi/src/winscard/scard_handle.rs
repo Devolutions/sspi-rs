@@ -4,7 +4,8 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
-use winscard::winscard::{AttributeId, IoRequest, Protocol, State, Uuid, WinScard, WinScardContext};
+use uuid::Uuid;
+use winscard::winscard::{AttributeId, IoRequest, Protocol, State, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 /// Scard context handle representation.
@@ -202,7 +203,7 @@ impl WinScardContextHandle {
                     .chain(std::iter::once(0))
                     .flat_map(|i| i.to_le_bytes().to_vec())
             })
-            .chain([0, 0].into_iter())
+            .chain([0, 0])
             .collect();
 
         debug!(?data);
@@ -230,7 +231,7 @@ impl WinScardContextHandle {
                     );
                 }
 
-                buf[0..data.len()].copy_from_slice(&data);
+                buf[0..data.len()].copy_from_slice(data);
                 info!("data has been copied... {:?}", data);
 
                 OutBuffer::Written(data.len())
@@ -240,7 +241,7 @@ impl WinScardContextHandle {
                 let allocated = self.allocate_buffer(data.len())?;
                 let buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
 
-                buf.copy_from_slice(&data);
+                buf.copy_from_slice(data);
 
                 OutBuffer::Allocated(buf)
             }

@@ -3,6 +3,7 @@ use std::ffi::CStr;
 use std::slice::from_raw_parts_mut;
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 use ffi_types::winscard::{
     LpScardAtrMask, LpScardContext, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardStatus,
@@ -15,10 +16,8 @@ use uuid::Uuid;
 use winscard::winscard::{CurrentState, ReaderState, WinScardContext};
 use winscard::{ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
-use super::buf_alloc::{
-    build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide,
-};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16, str_to_w_buff};
+use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
+use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16};
 use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardContextHandle};
 use crate::winscard::system_scard::SystemScardContext;
 
@@ -45,8 +44,7 @@ fn is_present(context: ScardContext) -> bool {
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
         .iter()
-        .find(|ctx| **ctx == context)
-        .is_some()
+        .any(|ctx| *ctx == context)
 }
 
 fn release_context(context: ScardContext) {
@@ -76,7 +74,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
         if use_system_card == "true" {
             info!("Creating system-provided smart card context...");
-            Box::new(try_execute!(SystemScardContext::establish(dw_scope)))
+            Box::new(try_execute!(SystemScardContext::establish(try_execute!(
+                dw_scope.try_into()
+            ))))
         } else {
             info!("Creating emulated smart card context...");
             try_execute!(create_emulated_smart_card_context())
@@ -239,7 +239,7 @@ pub unsafe extern "system" fn SCardListCardsA(
     } else {
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
-    let mut required_interfaces = if rgquid_nterfaces.is_null() {
+    let required_interfaces = if rgquid_nterfaces.is_null() {
         None
     } else {
         Some(
@@ -250,16 +250,12 @@ pub unsafe extern "system" fn SCardListCardsA(
                 )
             }
             .iter()
-            .map(|id| unsafe { c_uuid_to_uuid(id) })
+            .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
             .collect::<Vec<_>>(),
         )
     };
 
-    let out_buf = try_execute!(context.list_cards(
-        atr,
-        required_interfaces.as_ref().map(|uuids| uuids.as_slice()),
-        buffer_type
-    ));
+    let out_buf = try_execute!(context.list_cards(atr, required_interfaces.as_deref(), buffer_type));
 
     try_execute!(unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) });
 
@@ -292,7 +288,7 @@ pub unsafe extern "system" fn SCardListCardsW(
     } else {
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
-    let mut required_interfaces = if rgquid_nterfaces.is_null() {
+    let required_interfaces = if rgquid_nterfaces.is_null() {
         None
     } else {
         Some(
@@ -303,16 +299,12 @@ pub unsafe extern "system" fn SCardListCardsW(
                 )
             }
             .iter()
-            .map(|id| unsafe { c_uuid_to_uuid(id) })
+            .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
             .collect::<Vec<_>>(),
         )
     };
 
-    let out_buf = try_execute!(context.list_cards_wide(
-        atr,
-        required_interfaces.as_ref().map(|uuids| uuids.as_slice()),
-        buffer_type
-    ));
+    let out_buf = try_execute!(context.list_cards_wide(atr, required_interfaces.as_deref(), buffer_type));
 
     try_execute!(unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) });
 
@@ -390,7 +382,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 
     let context = context_handle.scard_context();
     let provider_name =
-        try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())))
+        try_execute!(context.get_card_type_provider_name(card_name, try_execute!(dw_provide_id.try_into())))
             .to_string();
 
     let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
@@ -783,7 +775,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
             current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
             event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
             atr_len: c_reader.cb_atr.try_into().unwrap(),
-            atr: c_reader.rgb_atr.clone(),
+            atr: c_reader.rgb_atr,
         })
         .collect();
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
@@ -832,7 +824,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
                 current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
                 event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
                 atr_len: c_reader.cb_atr.try_into().unwrap(),
-                atr: c_reader.rgb_atr.clone(),
+                atr: c_reader.rgb_atr,
             }
         })
         .collect();
@@ -1033,7 +1025,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     );
     let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_icon, pcb_icon) });
 
-    let out_buf = try_execute!(context.get_reader_icon(&reader_name, buffer_type));
+    let out_buf = try_execute!(context.get_reader_icon(reader_name, buffer_type));
 
     try_execute!(unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) });
 

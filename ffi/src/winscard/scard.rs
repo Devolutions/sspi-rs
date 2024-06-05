@@ -1,12 +1,12 @@
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use num_traits::FromPrimitive;
 
 use ffi_types::winscard::{
     LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle, LpScardIoRequest,
     ScardContext, ScardHandle, ScardStatus,
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
+use num_traits::FromPrimitive;
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn SCardConnectW(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReconnect"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardReconnect(
+pub unsafe extern "system" fn SCardReconnect(
     handle: ScardHandle,
     dw_share_mode: u32,
     dw_preferred_protocols: u32,
@@ -399,7 +399,7 @@ pub unsafe extern "system" fn SCardControl(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetAttrib"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardGetAttrib(
+pub unsafe extern "system" fn SCardGetAttrib(
     handle: ScardHandle,
     dw_attr_id: u32,
     pb_attr: LpByte,
