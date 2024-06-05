@@ -1,4 +1,5 @@
 #![cfg(feature = "scard")]
+#![warn(clippy::undocumented_unsafe_blocks)]
 
 #[macro_use]
 mod macros;
