@@ -63,8 +63,7 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         lib_path.into_bytes()
     } else {
         "WinSCard.dll".as_bytes().to_vec()
-    })
-    .expect("Rust string should not contain zero bytes");
+    })?;
 
     // SAFETY: This function is safe to call because the `file_name.as_ptr()` is guaranteed to be
     // the null-terminated C string by `CString` type.

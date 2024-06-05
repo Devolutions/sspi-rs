@@ -75,12 +75,7 @@ impl WinScardContext for SystemScardContext {
         share_mode: ShareMode,
         protocol: Option<Protocol>,
     ) -> WinScardResult<ScardConnectData> {
-        // SAFETY:
-        // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-        // > This function will return an error if the supplied bytes contain an internal 0 byte.
-        //
-        // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-        let c_string = CString::new(reader_name).expect("Rust string slice should not contain 0 bytes");
+        let c_string = CString::new(reader_name)?;
 
         let mut scard: ScardHandle = 0;
         let mut active_protocol = 0;
@@ -203,12 +198,7 @@ impl WinScardContext for SystemScardContext {
 
             let mut device_type_id = 0;
 
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_reader_name = CString::new(_reader_name).expect("Rust string slice should not contain 0 bytes");
+            let c_reader_name = CString::new(_reader_name)?;
 
             try_execute!(
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
@@ -242,12 +232,7 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_reader_name = CString::new(_reader_name).expect("Rust string slice should not contain 0 bytes");
+            let c_reader_name = CString::new(_reader_name)?;
 
             let mut icon_buf_len = 0;
 
@@ -314,12 +299,7 @@ impl WinScardContext for SystemScardContext {
 
             let mut data_len = SCARD_AUTOALLOCATE;
 
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_cache_key = CString::new(_key).expect("Rust string slice should not contain 0 bytes");
+            let c_cache_key = CString::new(_key)?;
             let mut card_id = uuid_to_c_guid(_card_id);
 
             let mut data: *mut u8 = null_mut();
@@ -389,12 +369,7 @@ impl WinScardContext for SystemScardContext {
         {
             use super::uuid_to_c_guid;
 
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_cache_key = CString::new(_key.as_str()).expect("Rust string slice should not contain 0 bytes");
+            let c_cache_key = CString::new(_key.as_str())?;
             let mut card_id = uuid_to_c_guid(_card_id);
 
             try_execute!(
@@ -496,22 +471,16 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
+            use std::ffi::NulError;
+
             use ffi_types::winscard::ScardReaderStateA;
             use winscard::winscard::CurrentState;
 
             let mut states = Vec::with_capacity(_reader_states.len());
-            let c_readers: Vec<_> = _reader_states
+            let c_readers = _reader_states
                 .iter()
-                .map(|reader_state| {
-                    // SAFETY:
-                    // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-                    // > This function will return an error if the supplied bytes contain an internal 0 byte.
-                    //
-                    // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-                    CString::new(reader_state.reader_name.as_ref())
-                        .expect("Rust string slice should not contain 0 bytes")
-                })
-                .collect();
+                .map(|reader_state| CString::new(reader_state.reader_name.as_ref()))
+                .collect::<Result<Vec<CString>, NulError>>()?;
 
             for (reader_state, c_reader) in _reader_states.iter_mut().zip(c_readers.iter()) {
                 states.push(ScardReaderStateA {
@@ -624,12 +593,7 @@ impl WinScardContext for SystemScardContext {
             let mut data_len = SCARD_AUTOALLOCATE;
             let mut data: *mut u8 = null_mut();
 
-            // SAFETY:
-            // https://doc.rust-lang.org/std/ffi/struct.CString.html#method.new
-            // > This function will return an error if the supplied bytes contain an internal 0 byte.
-            //
-            // The Rust string slice cannot contain 0 bytes. So, it's safe to unwrap it.
-            let c_card_name = CString::new(_card_name).expect("Rust string slice should not contain 0 bytes");
+            let c_card_name = CString::new(_card_name)?;
 
             try_execute!(
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
