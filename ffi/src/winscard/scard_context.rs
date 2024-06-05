@@ -22,6 +22,7 @@ use crate::winscard::scard_handle::{scard_context_to_winscard_context, WinScardC
 use crate::winscard::system_scard::SystemScardContext;
 
 pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+const ERROR_INVALID_HANDLE: u32 = 6;
 
 // Environment variable that indicates what smart card type use. It can have the following values:
 // `true` - use a system-provided smart card.
@@ -73,16 +74,16 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
         if use_system_card == "true" {
-            info!("Creating system-provided smart card context...");
+            info!("Creating system-provided smart card context");
             Box::new(try_execute!(SystemScardContext::establish(try_execute!(
                 dw_scope.try_into()
             ))))
         } else {
-            info!("Creating emulated smart card context...");
+            info!("Creating emulated smart card context");
             try_execute!(create_emulated_smart_card_context())
         }
     } else {
-        info!("Creating emulated smart card context...");
+        info!("Creating emulated smart card context");
         try_execute!(create_emulated_smart_card_context())
     };
 
@@ -94,7 +95,6 @@ pub unsafe extern "system" fn SCardEstablishContext(
         *context = raw_ptr;
     }
     save_context(raw_ptr);
-    debug!(?raw_ptr, thread_id = ?std::thread::current().id(), "ctxwinscar");
 
     ErrorKind::Success.into()
 }
@@ -103,28 +103,25 @@ pub unsafe extern "system" fn SCardEstablishContext(
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
 
     if is_present(context) {
         let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
         release_context(context);
 
-        info!("Scard context has been successfully released.");
+        info!("Scard context has been successfully released");
 
         ErrorKind::Success.into()
     } else {
-        warn!("Scard context is invalid or has been released.");
+        warn!("Scard context is invalid or has been released");
 
-        6
+        ERROR_INVALID_HANDLE
     }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
-
     if is_present(context) {
         check_handle!(context);
 
@@ -133,14 +130,12 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
         if context.is_valid() {
             ErrorKind::Success.into()
         } else {
-            // ErrorKind::InvalidHandle.into()
-            6
+            ERROR_INVALID_HANDLE
         }
     } else {
-        debug!("Current context is not present in active contexts.");
+        debug!("Provided context is not present in active contexts");
 
-        // ErrorKind::InvalidHandle.into()
-        6
+        ERROR_INVALID_HANDLE
     }
 }
 
@@ -172,7 +167,6 @@ pub unsafe extern "system" fn SCardListReadersA(
     msz_readers: LpStr,
     pcch_readers: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_readers);
     check_null!(pcch_readers);
@@ -197,7 +191,6 @@ pub unsafe extern "system" fn SCardListReadersW(
     msz_readers: LpWStr,
     pcch_readers: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_readers);
     check_null!(pcch_readers);
@@ -226,7 +219,6 @@ pub unsafe extern "system" fn SCardListCardsA(
 ) -> ScardStatus {
     use std::slice::from_raw_parts;
 
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_cards);
     check_null!(pcch_cards);
@@ -275,7 +267,6 @@ pub unsafe extern "system" fn SCardListCardsW(
 ) -> ScardStatus {
     use std::slice::from_raw_parts;
 
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(msz_cards);
     check_null!(pcch_cards);
@@ -367,7 +358,6 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     szProvider: *mut u8,
     pcch_provider: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(szProvider);
     check_null!(pcch_provider);
@@ -404,7 +394,6 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     szProvider: *mut u16,
     pcch_provider: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(szProvider);
     check_null!(pcch_provider);
@@ -610,10 +599,9 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     if let Some(context) = unsafe { (context as *mut WinScardContextHandle).as_mut() } {
         if context.free_buffer(pv_mem) {
-            info!("Allocated buffer successfully freed.");
+            info!("Allocated buffer successfully freed");
         } else {
             warn!(?pv_mem, "Attempt to free unknown buffer");
         }
@@ -755,7 +743,6 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     rg_reader_states: LpScardReaderStateA,
     c_readers: u32,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(rg_reader_states);
 
@@ -798,7 +785,6 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     rg_reader_states: LpScardReaderStateW,
     c_readers: u32,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(rg_reader_states);
 
@@ -843,7 +829,6 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 #[instrument(ret)]
 #[no_mangle]
 pub extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     try_execute!(context.cancel());
 
@@ -861,7 +846,6 @@ pub unsafe extern "system" fn SCardReadCacheA(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(card_identifier);
     check_null!(lookup_name);
@@ -900,7 +884,6 @@ pub unsafe extern "system" fn SCardReadCacheW(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(card_identifier);
     check_null!(lookup_name);
@@ -936,7 +919,6 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(card_identifier);
     check_null!(lookup_name);
@@ -976,7 +958,6 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(card_identifier);
     check_null!(lookup_name);
@@ -1011,7 +992,6 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(sz_reader_name);
     // `pb_icon` can be null.
@@ -1041,7 +1021,6 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(sz_reader_name);
     // `pb_icon` can be null.
@@ -1071,7 +1050,6 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     sz_reader_name: LpCStr,
     pdw_device_type_id: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(sz_reader_name);
     check_null!(pdw_device_type_id);
@@ -1098,7 +1076,6 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     sz_reader_name: LpCWStr,
     pdw_device_type_id: LpDword,
 ) -> ScardStatus {
-    debug!(?context, thread_id = ?std::thread::current().id(), "ctxwinscar");
     check_handle!(context);
     check_null!(sz_reader_name);
     check_null!(pdw_device_type_id);

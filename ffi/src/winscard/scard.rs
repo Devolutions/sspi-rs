@@ -156,9 +156,9 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_dispositio
 
     if let Some(context) = scard.context() {
         if context.remove_scard(handle) {
-            info!(?handle, "Successfully disconnected!");
+            info!(?handle, "Successfully disconnected");
         } else {
-            warn!("ScardHandle does not belong to the specified context.")
+            warn!("ScardHandle does not belong to the specified context")
         }
     }
 
@@ -274,10 +274,8 @@ pub unsafe extern "system" fn SCardStatusW(
     let scard = unsafe { (handle as *mut WinScardHandle).as_mut() }.unwrap();
     let readers_buf_type = try_execute!(unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) });
     let atr_buf_type = try_execute!(unsafe { build_buf_request_type(pb_atr, pcb_atr_len) });
-    debug!(?atr_buf_type);
 
     let status = try_execute!(scard.status_wide(readers_buf_type, atr_buf_type));
-    debug!(?status);
 
     unsafe {
         *pdw_state = status.state.into();
@@ -286,7 +284,6 @@ pub unsafe extern "system" fn SCardStatusW(
 
     try_execute!(unsafe { save_out_buf_wide(status.readers, msz_reader_names, pcch_reader_len) });
 
-    debug!("pb_atr: {:?} {} {}", pb_atr, !pb_atr.is_null(), unsafe { *pcb_atr_len });
     try_execute!(unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) });
 
     ErrorKind::Success.into()
@@ -410,7 +407,7 @@ pub unsafe extern "system" fn SCardGetAttrib(
 
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
         ErrorKind::InvalidParameter,
-        format!("Invalid attribute id: {}", dw_attr_id)
+        format!("invalid attribute id: {}", dw_attr_id)
     )));
 
     let scard = unsafe { (handle as *mut WinScardHandle).as_ref().unwrap() };
