@@ -73,10 +73,10 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
     if winscard_module == 0 {
         return Err(Error::new(
             ErrorKind::InternalError,
-            "Can not load the winscard module: LoadLibrary function has returned NULL",
+            "can not load the winscard module: LoadLibrary function has returned NULL",
         ));
     } else {
-        info!("The winscard module has been loaded!");
+        info!("The winscard module has been loaded");
     }
 
     macro_rules! load_fn {

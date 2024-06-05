@@ -53,14 +53,14 @@ impl SystemScard {
         if h_card == 0 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Scard handle can not be a zero.",
+                "scard handle can not be a zero",
             ));
         }
 
         if h_card_context == 0 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
-                "Scard context handle can not be a zero.",
+                "scard context handle can not be a zero",
             ));
         }
 
@@ -80,7 +80,7 @@ impl SystemScard {
         } else {
             Err(Error::new(
                 ErrorKind::InvalidHandle,
-                "smart card is not connected or has been disconnected.",
+                "smart card is not connected or has been disconnected",
             ))
         }
     }
@@ -178,7 +178,7 @@ impl WinScard for SystemScard {
 
             return Err(Error::new(
                 ErrorKind::InternalError,
-                "Returned reader is not valid UTF-8",
+                "returned reader is not valid UTF-8",
             ));
         };
 
@@ -354,7 +354,7 @@ impl WinScard for SystemScard {
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
         let attr_id = attribute_id
             .to_u32()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Cannot convert AttributeId -> u32"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "cannot convert AttributeId -> u32"))?;
         let mut data_len = 0;
 
         // https://pcsclite.apdu.fr/api/group__API.html#gaacfec51917255b7a25b94c5104961602
@@ -387,7 +387,7 @@ impl WinScard for SystemScard {
     fn set_attribute(&mut self, attribute_id: AttributeId, attribute_data: &[u8]) -> WinScardResult<()> {
         let attr_id = attribute_id
             .to_u32()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Cannot convert AttributeId -> u32"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "cannot convert AttributeId -> u32"))?;
 
         let len = attribute_data.len().try_into()?;
 

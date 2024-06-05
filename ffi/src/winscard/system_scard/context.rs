@@ -48,7 +48,7 @@ impl SystemScardContext {
         if h_context == 0 {
             return Err(Error::new(
                 ErrorKind::InternalError,
-                "Can not establish context: SCardEstablishContext did not set the context handle",
+                "can not establish context: SCardEstablishContext did not set the context handle",
             ));
         }
 
@@ -541,7 +541,7 @@ impl WinScardContext for SystemScardContext {
             // We do not need to change all fields. Only event state and atr values can be changed.
             for (state, reader_state) in states.iter().zip(_reader_states.iter_mut()) {
                 reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Invalid dwEventState"))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "invalid dwEventState"))?;
                 reader_state.atr_len = state.cb_atr.try_into()?;
                 reader_state.atr = state.rgb_atr;
             }
