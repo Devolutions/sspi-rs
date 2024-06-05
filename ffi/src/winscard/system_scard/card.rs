@@ -30,6 +30,11 @@ enum HandleState {
     Connected(ScardHandle),
 }
 
+/// Represents a system-provided smart card.
+///
+/// _Hint:_ It's **always better** to explicitly disconnect the card using the [SystemScard::disconnect] method.
+/// Otherwise, the card will be disconnected automatically on the drop. But in such a case,
+/// the user is unable to pass the custom `dwDisposition` parameter in `SCardDisconnect` function.
 pub struct SystemScard {
     h_card: HandleState,
     h_card_context: ScardContext,
@@ -40,6 +45,10 @@ pub struct SystemScard {
 }
 
 impl SystemScard {
+    /// Creates a new instance of the [SystemScard].
+    ///
+    /// _Note._ `h_card` and `h_card_context` parameters (handles) must be initialized using
+    /// the corresponding methods.
     pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> WinScardResult<Self> {
         if h_card == 0 {
             return Err(Error::new(
@@ -71,7 +80,7 @@ impl SystemScard {
         } else {
             Err(Error::new(
                 ErrorKind::InvalidHandle,
-                "Smart card is not connected or has been disconnected.",
+                "smart card is not connected or has been disconnected.",
             ))
         }
     }
@@ -79,10 +88,6 @@ impl SystemScard {
 
 impl Drop for SystemScard {
     fn drop(&mut self) {
-        // The smart card handle can be explicitly disconnected before. So, there is no point
-        // in double disconnecting.
-        // Hint: It's always better to explicitly disconnect the card because the user can not pass
-        // the custom `dwDisposition` parameter in `SCardDisconnect` function.
         if let HandleState::Connected(handle) = self.h_card {
             if let Err(err) = try_execute!(
                 // SAFETY: This function is safe to call because the `handle` is valid.
