@@ -256,6 +256,43 @@ impl From<DeviceTypeId> for u32 {
     }
 }
 
+/// [SCardEstablishContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardestablishcontext)
+///
+/// `dwScope` parameter:
+/// Scope of the resource manager context.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ScardScope {
+    /// Database operations are performed within the domain of the user.
+    User = 0,
+    /// Database operations are performed within the domain of the system.
+    /// The calling application must have appropriate access permissions for any database actions.
+    System = 2,
+}
+
+impl TryFrom<u32> for ScardScope {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => Self::User,
+            2 => Self::System,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!("Invalid ScardScope value: {}", value),
+                ))
+            }
+        })
+    }
+}
+
+impl From<ScardScope> for u32 {
+    fn from(value: ScardScope) -> Self {
+        value as u32
+    }
+}
+
 /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
 ///
 /// `dwShareMode` parameter:
