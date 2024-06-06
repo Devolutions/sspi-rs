@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::num::TryFromIntError;
-use std::slice::from_raw_parts_mut;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(target_os = "windows")]
@@ -227,6 +227,20 @@ pub unsafe extern "system" fn SCardListReadersW(
     ErrorKind::Success.into()
 }
 
+unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<Uuid>>> {
+    Ok(if guids.is_null() {
+        None
+    } else {
+        Some(
+            // SAFETY: The `guids` parameter is not null (checked above).
+            unsafe { from_raw_parts(guids, len.try_into()?) }
+                .iter()
+                .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
+                .collect::<Vec<_>>(),
+        )
+    })
+}
+
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -254,22 +268,11 @@ pub unsafe extern "system" fn SCardListCardsA(
         // SAFETY: The `pb_atr` parameter is not null (checked above).
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
-    let required_interfaces = if rgquid_nterfaces.is_null() {
-        None
-    } else {
-        Some(
-            // SAFETY: The `rgquid_nterfaces` parameter is not null (checked above).
-            unsafe {
-                from_raw_parts(
-                    rgquid_nterfaces,
-                    try_execute!(cguid_interface_count.try_into(), ErrorKind::InvalidParameter),
-                )
-            }
-            .iter()
-            .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
-            .collect::<Vec<_>>(),
-        )
-    };
+    let required_interfaces = try_execute!(
+        // SAFETY: The `rgquid_nterfaces` parameter is checked inside the function.
+        // All other guarantees should be provided by the user.
+        unsafe { guids_to_uuids(rgquid_nterfaces, cguid_interface_count) }
+    );
 
     let out_buf = try_execute!(context.list_cards(atr, required_interfaces.as_deref(), buffer_type));
 
@@ -303,25 +306,14 @@ pub unsafe extern "system" fn SCardListCardsW(
     let atr = if pb_atr.is_null() {
         None
     } else {
-        // // SAFETY: The `pb_atr` parameter is not null (checked above).
+        // SAFETY: The `pb_atr` parameter is not null (checked above).
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
-    let required_interfaces = if rgquid_nterfaces.is_null() {
-        None
-    } else {
-        Some(
-            // SAFETY: The `rgquid_nterfaces` parameter is not null (checked above).
-            unsafe {
-                from_raw_parts(
-                    rgquid_nterfaces,
-                    try_execute!(cguid_interface_count.try_into(), ErrorKind::InvalidParameter),
-                )
-            }
-            .iter()
-            .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
-            .collect::<Vec<_>>(),
-        )
-    };
+    let required_interfaces = try_execute!(
+        // SAFETY: The `rgquid_nterfaces` parameter is checked inside the function.
+        // All other guarantees should be provided by the user.
+        unsafe { guids_to_uuids(rgquid_nterfaces, cguid_interface_count) }
+    );
 
     let out_buf = try_execute!(context.list_cards_wide(atr, required_interfaces.as_deref(), buffer_type));
 
@@ -409,7 +401,6 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 
     // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
     let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
-
     let out_buf = try_execute!(context_handle.write_to_out_buf(provider_name.as_bytes(), buffer_type));
 
     // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
@@ -446,7 +437,6 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
 
     // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(szProvider, pcch_provider) });
-
     let out_buf = try_execute!(context_handle.write_to_out_buf(&wide_provider_name, buffer_type));
 
     // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
@@ -879,11 +869,45 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 pub extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
     check_handle!(context);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY: The `context` value is not zero (checked above). All other guarantees should be provided by the user.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     try_execute!(context.cancel());
 
     ErrorKind::Success.into()
+}
+
+fn read_cache(
+    context: ScardContext,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
+    lookup_name: &str,
+    data: LpByte,
+    data_len: LpDword,
+) -> WinScardResult<()> {
+    check_handle!(context, "scard context handle");
+    check_null!(card_identifier, "scard card identifier");
+    check_null!(data_len, "data buffer length");
+
+    // SAFETY: The `context` value is not zero (checked above).
+    let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
+
+    // SAFETY: The `card_identifier` parameter is not null (checked above).
+    let card_id = unsafe {
+        Uuid::from_fields(
+            (*card_identifier).data1,
+            (*card_identifier).data2,
+            (*card_identifier).data3,
+            &(*card_identifier).data4,
+        )
+    };
+    // SAFETY: It's safe to call this function because the `data` parameter is allowed to be null
+    // and the `data_len` parameter cannot be null (checked above).
+    let buffer_type = unsafe { build_buf_request_type(data, data_len) }?;
+
+    let out_buf = context.read_cache(card_id, freshness_counter, lookup_name, buffer_type)?;
+
+    // SAFETY: It's safe to call this function because all parameters are checked above.
+    unsafe { save_out_buf(out_buf, data, data_len) }
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
@@ -897,35 +921,15 @@ pub unsafe extern "system" fn SCardReadCacheA(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
-    check_null!(card_identifier);
     check_null!(lookup_name);
-    check_null!(data_len);
 
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     let lookup_name = try_execute!(
         // SAFETY: The `lookup_name` parameter is not null (checked above).
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY: The `card_identifier` parameter is not null (checked above).
-    let card_id = unsafe {
-        Uuid::from_fields(
-            (*card_identifier).data1,
-            (*card_identifier).data2,
-            (*card_identifier).data3,
-            &(*card_identifier).data4,
-        )
-    };
-    // SAFETY: It's safe to call this function because the `data` parameter is allowed to be null
-    // and the `data_len` parameter cannot be null (checked above).
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(data, data_len) });
-
-    let out_buf = try_execute!(context.read_cache(card_id, freshness_counter, lookup_name, buffer_type));
-
-    // SAFETY: It's safe to call this function because all parameters are checked above.
-    try_execute!(unsafe { save_out_buf(out_buf, data, data_len) });
+    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
+    try_execute!(unsafe { read_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
 
     ErrorKind::Success.into()
 }
@@ -941,15 +945,37 @@ pub unsafe extern "system" fn SCardReadCacheW(
     data: LpByte,
     data_len: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
-    check_null!(card_identifier);
     check_null!(lookup_name);
-    check_null!(data_len);
 
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     // SAFETY: The `lookup_name` parameter is not null (checked above).
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
+    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
+    try_execute!(unsafe {
+        read_cache(
+            context,
+            card_identifier,
+            freshness_counter,
+            &lookup_name,
+            data,
+            data_len,
+        )
+    });
+
+    ErrorKind::Success.into()
+}
+
+unsafe fn write_cache(
+    context: ScardContext,
+    card_identifier: LpUuid,
+    freshness_counter: u32,
+    lookup_name: &str,
+    data: LpByte,
+    data_len: u32,
+) -> WinScardResult<()> {
+    check_handle!(context, "scard context handle");
+    check_null!(card_identifier, "card identified");
+    check_null!(data, "cache data buffer");
+
     // SAFETY: The `card_identifier` parameter is not null (checked above).
     let card_id = unsafe {
         Uuid::from_fields(
@@ -959,16 +985,13 @@ pub unsafe extern "system" fn SCardReadCacheW(
             &(*card_identifier).data4,
         )
     };
-    // SAFETY: It's safe to call this function because the `data` parameter is allowed to be null
-    // and the `data_len` parameter cannot be null (checked above).
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(data, data_len) });
 
-    let out_buf = try_execute!(context.read_cache(card_id, freshness_counter, &lookup_name, buffer_type));
+    // SAFETY: The `context` value is not zero (checked above).
+    let context = unsafe { scard_context_to_winscard_context(context) }?;
+    // SAFETY: The `data` parameter is not null (checked above).
+    let data = unsafe { from_raw_parts_mut(data, data_len.try_into()?) }.to_vec();
 
-    // SAFETY: It's safe to call this function because all parameters are checked above.
-    try_execute!(unsafe { save_out_buf(out_buf, data, data_len) });
-
-    ErrorKind::Success.into()
+    context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
@@ -982,34 +1005,15 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    check_handle!(context);
-    check_null!(card_identifier);
     check_null!(lookup_name);
-    check_null!(data);
 
-    // SAFETY: The `card_identifier` parameter is not null (checked above).
-    let card_id = unsafe {
-        Uuid::from_fields(
-            (*card_identifier).data1,
-            (*card_identifier).data2,
-            (*card_identifier).data3,
-            &(*card_identifier).data4,
-        )
-    };
-
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     let lookup_name = try_execute!(
         // SAFETY: The `lookup_name` parameter is not null (checked above).
         unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY: The `data` parameter is not null (checked above).
-    let data =
-        unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
-    info!(write_lookup_name = lookup_name, ?data);
-
-    try_execute!(context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data));
+    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function
+    try_execute!(unsafe { write_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
 
     ErrorKind::Success.into()
 }
@@ -1025,33 +1029,48 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     data: LpByte,
     data_len: u32,
 ) -> ScardStatus {
-    check_handle!(context);
-    check_null!(card_identifier);
     check_null!(lookup_name);
-    check_null!(data);
 
-    // SAFETY: The `card_id` parameter is not null (checked above).
-    let card_id = unsafe {
-        Uuid::from_fields(
-            (*card_identifier).data1,
-            (*card_identifier).data2,
-            (*card_identifier).data3,
-            &(*card_identifier).data4,
-        )
-    };
-
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     // SAFETY: The `lookup_name` parameter is not null (checked above).
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
-    // SAFETY: The `data` parameter is not null (checked above).
-    let data =
-        unsafe { from_raw_parts_mut(data, try_execute!(data_len.try_into(), ErrorKind::InsufficientBuffer)) }.to_vec();
-    info!(write_lookup_name = lookup_name, ?data);
-
-    try_execute!(context.write_cache(card_id, freshness_counter, lookup_name, data));
+    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function
+    try_execute!(unsafe {
+        write_cache(
+            context,
+            card_identifier,
+            freshness_counter,
+            &lookup_name,
+            data,
+            data_len,
+        )
+    });
 
     ErrorKind::Success.into()
+}
+
+unsafe fn get_reader_icon(
+    context: ScardContext,
+    reader_name: &str,
+    pb_icon: LpByte,
+    pcb_icon: LpDword,
+) -> WinScardResult<()> {
+    check_handle!(context, "scard context handle");
+    // `pb_icon` can be null.
+    check_null!(pcb_icon, "pcb_icon");
+
+    // SAFETY: The `context` value is not zero (checked above). All other guarantees should be provided by the user.
+    let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
+
+    // SAFETY: It's safe to call this function because the `pb_icon` parameter is allowed to be null
+    // and the `pcb_icon` parameter cannot be null (checked above).
+    let buffer_type = unsafe { build_buf_request_type(pb_icon, pcb_icon) }?;
+
+    let out_buf = context.get_reader_icon(reader_name, buffer_type)?;
+
+    // SAFETY: It's safe to call this function because all parameters are checked above.
+    unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) }?;
+
+    Ok(())
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
@@ -1063,26 +1082,18 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
     check_null!(sz_reader_name);
-    // `pb_icon` can be null.
-    check_null!(pcb_icon);
 
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     let reader_name = try_execute!(
         // SAFETY: The `sz_reader_name` parameter is not null (checked above).
         unsafe { CStr::from_ptr(sz_reader_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY: It's safe to call this function because the `pb_icon` parameter is allowed to be null
-    // and the `pcb_icon` parameter cannot be null (checked above).
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_icon, pcb_icon) });
 
-    let out_buf = try_execute!(context.get_reader_icon(reader_name, buffer_type));
-
-    // SAFETY: It's safe to call this function because all parameters are checked above.
-    try_execute!(unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) });
+    try_execute!(
+        // SAFETY: The `reader_name` parameter is type checked. All other parameters are checked inside the function
+        unsafe { get_reader_icon(context, reader_name, pb_icon, pcb_icon) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -1096,29 +1107,36 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     pb_icon: LpByte,
     pcb_icon: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
     check_null!(sz_reader_name);
-    // `pb_icon` can be null.
-    check_null!(pcb_icon);
 
-    // SAFETY: The `context` value is not zero (checked above). The `sz_reader_name` parameter is not null (checked above).
-    let (context, reader_name) = unsafe {
-        (
-            // safe: checked above
-            try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) }),
-            c_w_str_to_string(sz_reader_name),
-        )
-    };
-    // SAFETY: It's safe to call this function because the `pb_icon` parameter is allowed to be null
-    // and the `pcb_icon` parameter cannot be null (checked above).
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_icon, pcb_icon) });
+    // SAFETY: The `sz_reader_name` parameter is not null (checked above).
+    let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };
 
-    let out_buf = try_execute!(context.get_reader_icon(&reader_name, buffer_type));
-
-    // SAFETY: It's safe to call this function because all parameters are checked above.
-    try_execute!(unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) });
+    try_execute!(
+        // SAFETY: The `reader_name` parameter is type checked. All other parameters are checked inside the function.
+        unsafe { get_reader_icon(context, &reader_name, pb_icon, pcb_icon) }
+    );
 
     ErrorKind::Success.into()
+}
+
+unsafe fn get_device_type_id(
+    context: ScardContext,
+    reader_name: &str,
+    pdw_device_type_id: LpDword,
+) -> WinScardResult<()> {
+    check_handle!(context, "scard context handle");
+    check_null!(pdw_device_type_id, "pdw_device_type_id");
+
+    // SAFETY: The `context` value is not zero (checked above).
+    let context = unsafe { scard_context_to_winscard_context(context) }?;
+
+    // SAFETY: The `pdw_device_type_id` parameter is not null (checked above).
+    unsafe {
+        *pdw_device_type_id = context.device_type_id(reader_name)?.into();
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdA"))]
@@ -1129,23 +1147,19 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     sz_reader_name: LpCStr,
     pdw_device_type_id: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
     check_null!(sz_reader_name);
-    check_null!(pdw_device_type_id);
 
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     let reader_name = try_execute!(
         // SAFETY: The `sz_reader_name` parameter is not null (checked above).
         unsafe { CStr::from_ptr(sz_reader_name as *const i8) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
-    let type_id = try_execute!(context.device_type_id(reader_name));
-    // SAFETY: The `pdw_device_type_id` parameter is not null (checked above).
-    unsafe {
-        *pdw_device_type_id = type_id.into();
-    }
+    try_execute!(
+        // SAFETY: `context` and `pdw_device_type_id` parameters are checked inside the function.
+        // `reader_name` is type checked.
+        unsafe { get_device_type_id(context, reader_name, pdw_device_type_id) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -1158,20 +1172,16 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     sz_reader_name: LpCWStr,
     pdw_device_type_id: LpDword,
 ) -> ScardStatus {
-    check_handle!(context);
     check_null!(sz_reader_name);
-    check_null!(pdw_device_type_id);
 
-    // SAFETY: The `context` value is not zero (checked above).
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     // SAFETY: The `sz_reader_name` parameter is not null (checked above).
     let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };
 
-    let type_id = try_execute!(context.device_type_id(&reader_name));
-    // SAFETY: The `pdw_device_type_id` parameter is not null (checked above).
-    unsafe {
-        *pdw_device_type_id = type_id.into();
-    }
+    try_execute!(
+        // SAFETY: `context` and `pdw_device_type_id` parameters are checked inside the function.
+        // `reader_name` is type checked.
+        unsafe { get_device_type_id(context, &reader_name, pdw_device_type_id) }
+    );
 
     ErrorKind::Success.into()
 }

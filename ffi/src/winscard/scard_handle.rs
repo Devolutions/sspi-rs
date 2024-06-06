@@ -198,12 +198,7 @@ impl WinScardContextHandle {
     ) -> WinScardResult<OutBuffer<'static>> {
         let data: Vec<_> = values
             .iter()
-            .flat_map(|reader| {
-                reader
-                    .encode_utf16()
-                    .chain(std::iter::once(0))
-                    .flat_map(|i| i.to_le_bytes().to_vec())
-            })
+            .flat_map(|reader| reader.encode_utf16().chain(once(0)).flat_map(|i| i.to_le_bytes()))
             .chain([0, 0])
             .collect();
 

@@ -4,6 +4,13 @@ macro_rules! check_handle {
             return u32::from(winscard::ErrorKind::InvalidHandle);
         }
     }};
+    ($x:expr, $name:expr) => {{
+        use winscard::{Error, ErrorKind};
+
+        if $x == 0 {
+            return Err(Error::new(ErrorKind::InvalidHandle, $name));
+        }
+    }};
 }
 
 macro_rules! try_execute {
@@ -31,6 +38,13 @@ macro_rules! check_null {
     ($x:expr) => {{
         if $x.is_null() {
             return u32::from(winscard::ErrorKind::InvalidParameter);
+        }
+    }};
+    ($x:expr, $name:expr) => {{
+        use winscard::{Error, ErrorKind};
+
+        if $x.is_null() {
+            return Err(Error::new(ErrorKind::InvalidParameter, $name));
         }
     }};
 }
