@@ -405,10 +405,12 @@ impl WinScardHandle {
     }
 }
 
+/// Tries to convert the raw scard handle to the `&mut dyn WinScard`.
 pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
     if handle == 0 {
         return Err(Error::new(ErrorKind::InvalidHandle, "scard handle cannot be zero"));
     }
+
     // SAFETY: We've checked above that the scard handle is not a zero. All other guarantees are provided by the user.
     if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
         Ok(scard.scard.as_mut())
@@ -420,6 +422,24 @@ pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResul
     }
 }
 
+/// Tries to convert the raw scard context handle to the [&mut WinScardHandle].
+pub unsafe fn scard_context_handle_to_scard_context<'a>(
+    h_context: ScardContext,
+) -> WinScardResult<&'a mut WinScardHandle> {
+    if h_context == 0 {
+        return Err(Error::new(
+            ErrorKind::InvalidHandle,
+            "scard context handle cannot be zero",
+        ));
+    }
+
+    // SAFETY: It should be safe to cast the value. The `h_context` is not null (checked above).
+    // All other guarantees should be provided by the user.
+    unsafe { (h_context as *mut WinScardHandle).as_mut() }
+        .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
+}
+
+/// Tries to convert the raw scard context handle to the `&mut dyn WinScardContext`.
 pub unsafe fn scard_context_to_winscard_context<'a>(
     handle: ScardContext,
 ) -> WinScardResult<&'a mut dyn WinScardContext> {
@@ -429,6 +449,7 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
             "scard context handle cannot be zero",
         ));
     }
+
     // SAFETY: We've checked above that the scard context handle is not a zero. All other guarantees are provided by the user.
     if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
         Ok(context.scard_context.as_mut())
@@ -440,6 +461,7 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
     }
 }
 
+/// Converts the C `SCARD_IO_REQUEST` ([LpScardIoRequest]) to Rust [IoRequest].
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
     if pio_send_pci.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pio_send_pci cannot be null"));
@@ -463,6 +485,7 @@ pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> 
     })
 }
 
+/// Copies data from the Rust [IoRequest] to the C `SCARD_IO_REQUEST` ([LpScardIoRequest]).
 pub unsafe fn copy_io_request_to_scard_io_request(
     io_request: &IoRequest,
     scard_io_request: LpScardIoRequest,
