@@ -422,10 +422,25 @@ pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResul
     }
 }
 
-/// Tries to convert the raw scard context handle to the [&mut WinScardHandle].
-pub unsafe fn scard_context_handle_to_scard_context<'a>(
+/// Tries to convert the raw scard handle to the [&mut WinScardHandle].
+pub unsafe fn raw_scard_handle_to_scard_handle<'a>(h_card: ScardHandle) -> WinScardResult<&'a mut WinScardHandle> {
+    if h_card == 0 {
+        return Err(Error::new(
+            ErrorKind::InvalidHandle,
+            "scard context handle cannot be zero",
+        ));
+    }
+
+    // SAFETY: It should be safe to cast the value. The `h_card` is not null (checked above).
+    // All other guarantees should be provided by the user.
+    unsafe { (h_card as *mut WinScardHandle).as_mut() }
+        .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
+}
+
+/// Tries to convert the raw scard context handle to the [&mut WinScardContextHandle].
+pub unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
     h_context: ScardContext,
-) -> WinScardResult<&'a mut WinScardHandle> {
+) -> WinScardResult<&'a mut WinScardContextHandle> {
     if h_context == 0 {
         return Err(Error::new(
             ErrorKind::InvalidHandle,
@@ -435,7 +450,7 @@ pub unsafe fn scard_context_handle_to_scard_context<'a>(
 
     // SAFETY: It should be safe to cast the value. The `h_context` is not null (checked above).
     // All other guarantees should be provided by the user.
-    unsafe { (h_context as *mut WinScardHandle).as_mut() }
+    unsafe { (h_context as *mut WinScardContextHandle).as_mut() }
         .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
 }
 

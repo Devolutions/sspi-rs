@@ -15,7 +15,7 @@ use winscard::{Error, ErrorKind, WinScardResult};
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
-    copy_io_request_to_scard_io_request, scard_context_handle_to_scard_context, scard_context_to_winscard_context,
+    copy_io_request_to_scard_io_request, raw_scard_handle_to_scard_handle, scard_context_to_winscard_context,
     scard_handle_to_winscard, scard_io_request_to_io_request, WinScardContextHandle, WinScardHandle,
 };
 
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn SCardStatusA(
     check_null!(pcb_atr_len);
 
     // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
-    let scard = try_execute!(unsafe { scard_context_handle_to_scard_context(handle) });
+    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: The `msz_reader_names` and `pcch_reader_len` parameters are not null (cheked above).
     let readers_buf_type = try_execute!(unsafe { build_buf_request_type(msz_reader_names, pcch_reader_len) });
     // SAFETY: It's safe to call this function because the `pb_atr` parameter is allowed to be null
@@ -308,7 +308,7 @@ pub unsafe extern "system" fn SCardStatusW(
     check_null!(pcb_atr_len);
 
     // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
-    let scard = try_execute!(unsafe { scard_context_handle_to_scard_context(handle) });
+    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: The `msz_reader_names` and `pcch_reader_len` parameters are not null (cheked above).
     let readers_buf_type = try_execute!(unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) });
     // SAFETY: It's safe to call this function because the `pb_atr` parameter is allowed to be null
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn SCardGetAttrib(
     )));
 
     // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
-    let scard = try_execute!(unsafe { scard_context_handle_to_scard_context(handle) });
+    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: It's safe to call this function because the `pb_atr` parameter is allowed to be null
     // and the `pcb_atr_len` parameter cannot be null (checked above).
     let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_attr, pcb_attr_len) });
