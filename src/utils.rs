@@ -86,7 +86,7 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
             ErrorKind::TooManyPrincipals,
             "Multiple principal entries database".into(),
         ),
-        KDC_ERR_NULL_KEY => (ErrorKind::EncryptFailure, "The client or server has a null key".into()),
+        KDC_ERR_NULL_KEY => (ErrorKind::EncryptFailure, "The client or server has null key".into()),
         KDC_ERR_CANNOT_POSTDATE => (
             ErrorKind::KdcInvalidRequest,
             "Ticket not eligible for postdating".into(),

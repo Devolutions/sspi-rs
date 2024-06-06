@@ -9,7 +9,7 @@ pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 
 /// This function decides how to treat the provided buffer by the user and how to return the requested data.
 ///
-/// When the user requests some data from the smart card using the WinSCard API, we have three causes
+/// When the user requests some data from the smart card using the WinSCard API, we have three ways
 /// how to handle it:
 /// * write data in the provided buffer.
 /// * write data length of the requested data in the provided length pointer.
@@ -19,7 +19,7 @@ pub unsafe fn build_buf_request_type<'data>(
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
     if pcb_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
 
     Ok(if p_buf.is_null() {
@@ -27,7 +27,7 @@ pub unsafe fn build_buf_request_type<'data>(
         // would have been returned if this parameter had not been NULL, and returns a success code.
         RequestedBufferType::Length
     } else if
-    // SAFETY: The `pcb_buf` parameter cannot be a null. We've checked for it above.
+    // SAFETY: The `pcb_buf` parameter cannot be null. We've checked for it above.
     unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // If the buffer length is specified as SCARD_AUTOALLOCATE, then data pointer is
         // converted to a pointer to a byte pointer, and receives the address of a block of memory
@@ -46,7 +46,7 @@ pub unsafe fn build_buf_request_type_wide<'data>(
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
     if pcb_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
 
     Ok(if p_buf.is_null() {
@@ -55,7 +55,7 @@ pub unsafe fn build_buf_request_type_wide<'data>(
         // to pcbAttrLen, and returns a success code.
         RequestedBufferType::Length
     } else if
-    // SAFETY: The `pcb_buf` parameter cannot be a null. We've checked for it above.
+    // SAFETY: The `pcb_buf` parameter cannot be null. We've checked for it above.
     unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib
         //
@@ -71,11 +71,11 @@ pub unsafe fn build_buf_request_type_wide<'data>(
 /// Saves the resulting data after the [RequestedBufferType] processing.
 pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
     if p_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be null"));
     }
 
     if pcb_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
 
     match out_buf {
@@ -104,11 +104,11 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
 /// to the `u16` buffer instead of `u8`. So, the buffer length is divided by two.
 pub unsafe fn save_out_buf_wide(out_buf: OutBuffer, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
     if p_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be null"));
     }
 
     if pcb_buf.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
 
     match out_buf {
