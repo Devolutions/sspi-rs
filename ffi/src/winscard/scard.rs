@@ -308,7 +308,7 @@ pub unsafe extern "system" fn SCardStatusW(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
+    // SAFETY: The `handle` is not zero. All other guarantees should be provided by the user.
     let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: The `msz_reader_names` and `pcch_reader_len` parameters are not null (cheked above).
     let readers_buf_type = try_execute!(unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) });
@@ -500,13 +500,25 @@ pub unsafe extern "system" fn SCardGetAttrib(
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetAttrib"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardSetAttrib(
-    _handle: ScardHandle,
-    _dw_attr_id: u32,
-    _pb_attr: LpCByte,
-    _cb_attrLen: u32,
+pub unsafe extern "system" fn SCardSetAttrib(
+    handle: ScardHandle,
+    dw_attr_id: u32,
+    pb_attr: LpCByte,
+    cb_attr_len: u32,
 ) -> ScardStatus {
-    ErrorKind::UnsupportedFeature.into()
+    check_handle!(handle);
+    check_null!(pb_attr);
+
+    let attr_data = unsafe { from_raw_parts(pb_attr, cb_attr_len.try_into().unwrap()) };
+    let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
+        ErrorKind::InvalidParameter,
+        format!("Invalid attribute id: {}", dw_attr_id)
+    )));
+    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+
+    try_execute!(scard.set_attribute(attr_id, attr_data));
+
+    ErrorKind::Success.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardUIDlgSelectCardA"))]
