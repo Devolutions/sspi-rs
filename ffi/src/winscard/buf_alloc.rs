@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts_mut;
 
 use ffi_types::{LpByte, LpDword, LpWStr};
-use winscard::WinScardResult;
+use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_handle::{OutBuffer, RequestedBufferType};
 
@@ -18,16 +18,23 @@ pub unsafe fn build_buf_request_type<'data>(
     p_buf: LpByte,
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
+    if pcb_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+    }
+
     Ok(if p_buf.is_null() {
         // If this value is NULL, we ignore the buffer length, writes the length of the buffer that
         // would have been returned if this parameter had not been NULL, and returns a success code.
         RequestedBufferType::Length
-    } else if unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
+    } else if
+    // SAFETY: The `pcb_buf` parameter cannot be a null. We've checked for it above.
+    unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // If the buffer length is specified as SCARD_AUTOALLOCATE, then data pointer is
         // converted to a pointer to a byte pointer, and receives the address of a block of memory
         // containing the attribute.
         RequestedBufferType::Allocate
     } else {
+        // SAFETY: `p_buf` and `pcb_buf` parameters can't be null. We've checked for it above.
         RequestedBufferType::Buff(unsafe { from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?) })
     })
 }
@@ -38,33 +45,51 @@ pub unsafe fn build_buf_request_type_wide<'data>(
     p_buf: LpWStr,
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
+    if pcb_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+    }
+
     Ok(if p_buf.is_null() {
         // If this value is NULL, SCardGetAttrib ignores the buffer length supplied in pcbAttrLen,
         // writes the length of the buffer that would have been returned if this parameter had not been NULL
         // to pcbAttrLen, and returns a success code.
         RequestedBufferType::Length
-    } else if unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
+    } else if
+    // SAFETY: The `pcb_buf` parameter cannot be a null. We've checked for it above.
+    unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib
         //
         // If the buffer length is specified as SCARD_AUTOALLOCATE, then pbAttr is converted to a pointer
         // to a byte pointer, and receives the address of a block of memory containing the attribute.
         RequestedBufferType::Allocate
     } else {
+        // SAFETY: `p_buf` and `pcb_buf` parameters can't be null. We've checked for it above.
         RequestedBufferType::Buff(unsafe { from_raw_parts_mut(p_buf as *mut u8, usize::try_from(*pcb_buf)? * 2) })
     })
 }
 
 /// Saves the resulting data after the [RequestedBufferType] processing.
 pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
+    if p_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be a null"));
+    }
+
+    if pcb_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+    }
+
     match out_buf {
+        // SAFETY: We've checked for null above.
         OutBuffer::Written(len) => unsafe {
             // We already wrote the requested data in the provided buffer, so we only need to write the data length.
             *pcb_buf = len.try_into()?
         },
+        // SAFETY: We've checked for null above.
         OutBuffer::DataLen(len) => unsafe {
             // The user requested only the requested data length, so we just return it.
             *pcb_buf = len.try_into()?
         },
+        // SAFETY: We've checked for null above.
         OutBuffer::Allocated(data) => unsafe {
             // We allocated a new memory for the requested data, so we need to save the buffer and buffer length.
             *(p_buf as *mut *mut u8) = data.as_mut_ptr();
@@ -78,9 +103,20 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
 /// This function behaves as the [save_out_buf] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is divided by two.
 pub unsafe fn save_out_buf_wide(out_buf: OutBuffer, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
+    if p_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be a null"));
+    }
+
+    if pcb_buf.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be a null"));
+    }
+
     match out_buf {
+        // SAFETY: We've checked for null above.
         OutBuffer::Written(len) => unsafe { *pcb_buf = u32::try_from(len)? / 2 },
+        // SAFETY: We've checked for null above.
         OutBuffer::DataLen(len) => unsafe { *pcb_buf = u32::try_from(len)? / 2 },
+        // SAFETY: We've checked for null above.
         OutBuffer::Allocated(data) => unsafe {
             *(p_buf as *mut *mut u8) = data.as_mut_ptr();
             *pcb_buf = u32::try_from(data.len())? / 2;

@@ -61,6 +61,7 @@ impl WinScardContextHandle {
 
     /// Allocated a new buffer inside the scard context.
     pub fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
+        // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
             return Err(Error::new(
@@ -80,6 +81,8 @@ impl WinScardContextHandle {
         if let Some(index) = self.allocations.iter().position(|x| *x == buff) {
             self.allocations.remove(index);
 
+            // SAFETY: The `allocations` collection contains only allocated memory pointers, so it's
+            // safe to deallocate them using the `libc::free` function.
             unsafe {
                 libc::free(buff as _);
             }
@@ -234,6 +237,8 @@ impl WinScardContextHandle {
             RequestedBufferType::Length => OutBuffer::DataLen(data.len()),
             RequestedBufferType::Allocate => {
                 let allocated = self.allocate_buffer(data.len())?;
+                // SAFETY: The `allocated` pointer has been returned from the [WinScarfdContextHandle]
+                // internal method, so it's safe to create a slice.
                 let buf = unsafe { from_raw_parts_mut(allocated, data.len()) };
 
                 buf.copy_from_slice(data);
@@ -248,14 +253,16 @@ impl Drop for WinScardContextHandle {
     fn drop(&mut self) {
         // [SCardReleaseContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
         // ...freeing any resources allocated under that context, including SCARDHANDLE objects
-        unsafe {
-            for scard in &self.scards {
-                let _ = Box::from_raw(*scard as *mut WinScardHandle);
-            }
+        for scard in &self.scards {
+            // SAFETY: The `WinScardContextHandle` contains only valid scard handles, and it should
+            // be safe to cast them to `WinScardHandle` pointer.
+            let _ = unsafe { Box::from_raw(*scard as *mut WinScardHandle) };
         }
         // ...and memory allocated using the SCARD_AUTOALLOCATE length designator.
-        unsafe {
-            for buff in &self.allocations {
+        for buff in &self.allocations {
+            // SAFETY: It's safe to call the `free` function because the `WinScardContextHandle`
+            // contains only allocated memory pointers.
+            unsafe {
                 libc::free(*buff as _);
             }
         }
@@ -340,6 +347,7 @@ impl WinScardHandle {
 
     /// Returns mutable reference to the parent [WinScardContextHandle].
     pub fn context<'context>(&self) -> Option<&'context mut WinScardContextHandle> {
+        // SAFETY: The WinScardHandle should not contain an invalid context handle.
         unsafe { (self.raw_context() as *mut WinScardContextHandle).as_mut() }
     }
 
@@ -382,7 +390,6 @@ impl WinScardHandle {
         atr_but_type: RequestedBufferType,
     ) -> WinScardResult<FfiScardStatus> {
         let status = self.scard().status()?;
-        debug!(?status);
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
         let context = self.context().unwrap();
 
@@ -399,6 +406,10 @@ impl WinScardHandle {
 }
 
 pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
+    if handle == 0 {
+        return Err(Error::new(ErrorKind::InvalidHandle, "scard handle cannot be zero"));
+    }
+    // SAFETY: We've checked above that the scard handle is not a zero. All other guarantees are provided by the user.
     if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
         Ok(scard.scard.as_mut())
     } else {
@@ -412,6 +423,13 @@ pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResul
 pub unsafe fn scard_context_to_winscard_context<'a>(
     handle: ScardContext,
 ) -> WinScardResult<&'a mut dyn WinScardContext> {
+    if handle == 0 {
+        return Err(Error::new(
+            ErrorKind::InvalidHandle,
+            "scard context handle cannot be zero",
+        ));
+    }
+    // SAFETY: We've checked above that the scard context handle is not a zero. All other guarantees are provided by the user.
     if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
         Ok(context.scard_context.as_mut())
     } else {
@@ -423,16 +441,24 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
 }
 
 pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
+    if pio_send_pci.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "pio_send_pci cannot be null"));
+    }
+
+    // SAFETY: it's safe to deref because we've checked for null value above.
     let (cb_pci_length, dw_protocol) = unsafe { ((*pio_send_pci).cb_pci_length, (*pio_send_pci).dw_protocol) };
     // https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
     //
     // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
     let pci_buf_len: usize = cb_pci_length.try_into()?;
     let buffer_len = pci_buf_len - size_of::<ScardIoRequest>();
+    // SAFETY: it should be safe to cast a pointer. According to the documentation, the `pci_buffer` data
+    // is placed right after the `ScardIoRequest` structure.
     let buffer = unsafe { (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>()) };
 
     Ok(IoRequest {
         protocol: Protocol::from_bits(dw_protocol).unwrap_or(Protocol::empty()),
+        // SAFETY: According to the documentation, it's safe to create a slice of the pci data.
         pci_info: unsafe { from_raw_parts(buffer, buffer_len) }.to_vec(),
     })
 }
@@ -441,7 +467,15 @@ pub unsafe fn copy_io_request_to_scard_io_request(
     io_request: &IoRequest,
     scard_io_request: LpScardIoRequest,
 ) -> WinScardResult<()> {
+    if scard_io_request.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "scard_io_request cannot be null",
+        ));
+    }
+
     let pci_info_len = io_request.pci_info.len();
+    // SAFETY: it's safe to deref because we've checked for null value above.
     let scard_pci_info_len = unsafe { (*scard_io_request).cb_pci_length }.try_into()?;
 
     if pci_info_len > scard_pci_info_len {
@@ -454,12 +488,16 @@ pub unsafe fn copy_io_request_to_scard_io_request(
         ));
     }
 
+    // SAFETY: it's safe to deref because we check for null value above.
     unsafe {
         (*scard_io_request).dw_protocol = io_request.protocol.bits();
         (*scard_io_request).cb_pci_length = pci_info_len.try_into()?;
     }
 
+    // SAFETY: it should be safe to cast a pointer. According to the documentation, the `pci_buffer` data
+    // is placed right after the `ScardIoRequest` structure.
     let pci_buffer_ptr = unsafe { (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>()) };
+    // SAFETY: According to the documentation, it's safe to create a slice of the pci data.
     let pci_buffer = unsafe { from_raw_parts_mut(pci_buffer_ptr, pci_info_len) };
     pci_buffer.copy_from_slice(&io_request.pci_info);
 

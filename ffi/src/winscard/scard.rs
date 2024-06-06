@@ -27,9 +27,21 @@ unsafe fn connect(
     ph_card: LpScardHandle,
     pdw_active_protocol: LpDword,
 ) -> WinScardResult<()> {
+    if ph_card.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "ph_card cannot be null"));
+    }
+    if pdw_active_protocol.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "pdw_active_protocol cannot be null",
+        ));
+    }
+
     let share_mode = dw_share_mode.try_into()?;
     let protocol = Protocol::from_bits(dw_preferred_protocols);
 
+    // SAFETY: The user should provide a valid context handle. If it's equal to zero, then
+    // the `scard_context_to_winscard_context` will return an error.
     let scard_context = unsafe { scard_context_to_winscard_context(context)? };
     let ScardConnectData { handle, protocol } = scard_context.connect(reader_name, share_mode, protocol)?;
 
@@ -37,9 +49,12 @@ unsafe fn connect(
 
     let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
 
+    // SAFETY: The user should provide a valid context handle. The `context` can't be a zero, because
+    // the `scard_context_to_winscard_context` function didn't return an error.
     let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
     context.add_scard(raw_card_handle)?;
 
+    // SAFETY: We've checked for null above.
     unsafe {
         *ph_card = raw_card_handle;
         *pdw_active_protocol = protocol.bits();
