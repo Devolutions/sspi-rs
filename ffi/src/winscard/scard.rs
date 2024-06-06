@@ -15,8 +15,9 @@ use winscard::{Error, ErrorKind, WinScardResult};
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
-    copy_io_request_to_scard_io_request, raw_scard_handle_to_scard_handle, scard_context_to_winscard_context,
-    scard_handle_to_winscard, scard_io_request_to_io_request, WinScardContextHandle, WinScardHandle,
+    copy_io_request_to_scard_io_request, raw_scard_context_handle_to_scard_context_handle,
+    raw_scard_handle_to_scard_handle, scard_context_to_winscard_context, scard_handle_to_winscard,
+    scard_io_request_to_io_request, WinScardHandle,
 };
 
 unsafe fn connect(
@@ -51,7 +52,7 @@ unsafe fn connect(
 
     // SAFETY: The user should provide a valid context handle. The `context` can't be a zero, because
     // the `scard_context_to_winscard_context` function didn't return an error.
-    let context = unsafe { (context as *mut WinScardContextHandle).as_mut() }.unwrap();
+    let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
     context.add_scard(raw_card_handle)?;
 
     // SAFETY: We've checked for null above.
@@ -181,7 +182,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_dispositio
         .scard_mut()
         .disconnect(try_execute!(dw_disposition.try_into(), ErrorKind::InvalidParameter)));
 
-    if let Some(context) = scard.context() {
+    if let Ok(context) = scard.context() {
         if context.remove_scard(handle) {
             info!(?handle, "Successfully disconnected");
         } else {

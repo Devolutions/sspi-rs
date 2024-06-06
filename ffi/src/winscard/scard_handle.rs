@@ -340,15 +340,10 @@ impl WinScardHandle {
         self.scard.as_mut()
     }
 
-    /// Returns the parent [ScardContext] it belongs.
-    pub fn raw_context(&self) -> ScardContext {
-        self.context
-    }
-
     /// Returns mutable reference to the parent [WinScardContextHandle].
-    pub fn context<'context>(&self) -> Option<&'context mut WinScardContextHandle> {
+    pub fn context<'context>(&self) -> WinScardResult<&'context mut WinScardContextHandle> {
         // SAFETY: The WinScardHandle should not contain an invalid context handle.
-        unsafe { (self.raw_context() as *mut WinScardContextHandle).as_mut() }
+        unsafe { raw_scard_context_handle_to_scard_context_handle(self.context) }
     }
 
     /// Returns the requested smart card attribute.
@@ -359,7 +354,7 @@ impl WinScardHandle {
     ) -> WinScardResult<OutBuffer> {
         let data = self.scard().get_attribute(attribute_id)?;
 
-        self.context().unwrap().write_to_out_buf(data.as_ref(), buffer_type)
+        self.context()?.write_to_out_buf(data.as_ref(), buffer_type)
     }
 
     /// Returns smart card status.
@@ -370,7 +365,7 @@ impl WinScardHandle {
     ) -> WinScardResult<FfiScardStatus> {
         let status = self.scard().status()?;
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
-        let context = self.context().unwrap();
+        let context = self.context()?;
 
         let readers = context.write_multi_string(&readers, readers_buf_type)?;
         let atr = context.write_to_out_buf(status.atr.as_ref(), atr_but_type)?;
@@ -391,7 +386,7 @@ impl WinScardHandle {
     ) -> WinScardResult<FfiScardStatus> {
         let status = self.scard().status()?;
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
-        let context = self.context().unwrap();
+        let context = self.context()?;
 
         let readers = context.write_multi_string_wide(&readers, readers_buf_type)?;
         let atr = context.write_to_out_buf(status.atr.as_ref(), atr_but_type)?;

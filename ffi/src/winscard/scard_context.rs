@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
+use std::num::TryFromIntError;
 use std::slice::from_raw_parts_mut;
 use std::sync::{Mutex, OnceLock};
 
@@ -31,7 +32,7 @@ const ERROR_INVALID_HANDLE: u32 = 6;
 const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
 
 // We need to store all active smart card contexts in one collection.
-// The `SCardIsValidContext` function can be called with already released context. So, with the heplp
+// The `SCardIsValidContext` function can be called with already released context. So, with the help
 // of `SCARD_CONTEXTS` we can track all active contexts and correctly check is the passed context is valid.
 // The same applies to the `SCardReleaseContext`. We need to ensure that the passed context handle was not
 // released before.
@@ -802,18 +803,19 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
-    let mut reader_states: Vec<_> = c_reader_states
+    let mut reader_states = try_execute!(c_reader_states
         .iter()
-        .map(|c_reader| ReaderState {
+        .map(|c_reader| Ok(ReaderState {
             // SAFETY: The reader name should not be null. All other guarantees should be provided by the user.
             reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader as *const _) }.to_string_lossy(),
             user_data: c_reader.pv_user_data as usize,
             current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
             event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
-            atr_len: c_reader.cb_atr.try_into().unwrap(),
+            atr_len: c_reader.cb_atr.try_into()?,
             atr: c_reader.rgb_atr,
-        })
-        .collect();
+        }))
+        .collect::<Result<Vec<_>, TryFromIntError>>()
+        .map_err(|err| winscard::Error::from(err)));
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
@@ -847,25 +849,19 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
-    let mut reader_states: Vec<_> = c_reader_states
+    let mut reader_states = try_execute!(c_reader_states
         .iter()
-        .map(|c_reader| {
-            if CurrentState::from_bits(c_reader.dw_current_state).is_none()
-                || CurrentState::from_bits(c_reader.dw_event_state).is_none()
-            {
-                trace!(c_reader.dw_current_state, c_reader.dw_event_state, "ptatjhdsgcfrj");
-            }
-            ReaderState {
-                // SAFETY: The reader name should not be null. All other guarantees should be provided by the user.
-                reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
-                user_data: c_reader.pv_user_data as usize,
-                current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
-                event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
-                atr_len: c_reader.cb_atr.try_into().unwrap(),
-                atr: c_reader.rgb_atr,
-            }
-        })
-        .collect();
+        .map(|c_reader| Ok(ReaderState {
+            // SAFETY: The reader name should not be null. All other guarantees should be provided by the user.
+            reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
+            user_data: c_reader.pv_user_data as usize,
+            current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+            event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+            atr_len: c_reader.cb_atr.try_into()?,
+            atr: c_reader.rgb_atr,
+        }))
+        .collect::<Result<Vec<_>, TryFromIntError>>()
+        .map_err(|err| winscard::Error::from(err)));
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
