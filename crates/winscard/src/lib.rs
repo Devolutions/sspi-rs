@@ -178,6 +178,13 @@ impl From<core::str::Utf8Error> for Error {
     }
 }
 
+#[cfg(feature = "std")]
+impl From<std::ffi::NulError> for Error {
+    fn from(value: std::ffi::NulError) -> Self {
+        Error::new(ErrorKind::InvalidParameter, value.to_string())
+    }
+}
+
 /// [Smart Card Return Values](https://learn.microsoft.com/en-us/windows/win32/secauthn/authentication-return-values).
 #[derive(Debug, PartialEq, ToPrimitive, FromPrimitive)]
 #[repr(u32)]
