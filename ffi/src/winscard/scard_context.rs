@@ -832,8 +832,8 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     // SAFETY: The `context` value is not zero (checked above).
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
 
+    // SAFETY: The `rg_reader_states` parameter is not null (checked above).
     let c_reader_states = unsafe {
-        // SAFETY: The `rg_reader_states` parameter is not null (checked above).
         from_raw_parts_mut(
             rg_reader_states,
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
@@ -930,7 +930,7 @@ pub extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
     ErrorKind::Success.into()
 }
 
-fn read_cache(
+unsafe fn read_cache(
     context: ScardContext,
     card_identifier: LpUuid,
     freshness_counter: u32,
@@ -1003,17 +1003,19 @@ pub unsafe extern "system" fn SCardReadCacheW(
 
     // SAFETY: The `lookup_name` parameter is not null (checked above).
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
-    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
-    try_execute!(unsafe {
-        read_cache(
-            context,
-            card_identifier,
-            freshness_counter,
-            &lookup_name,
-            data,
-            data_len,
-        )
-    });
+    try_execute!(
+        // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
+        unsafe {
+            read_cache(
+                context,
+                card_identifier,
+                freshness_counter,
+                &lookup_name,
+                data,
+                data_len,
+            )
+        }
+    );
 
     ErrorKind::Success.into()
 }

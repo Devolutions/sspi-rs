@@ -482,7 +482,7 @@ pub unsafe extern "system" fn SCardGetAttrib(
         format!("invalid attribute id: {}", dw_attr_id)
     )));
 
-    // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
+    // SAFETY: The `handle` is not zero. All other guarantees should be provided by the user.
     let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: It's safe to call this function because the `pb_atr` parameter is allowed to be null
     // and the `pcb_atr_len` parameter cannot be null (checked above).
@@ -509,11 +509,13 @@ pub unsafe extern "system" fn SCardSetAttrib(
     check_handle!(handle);
     check_null!(pb_attr);
 
+    // SAFETY: The `pb_attr` parameter is not null (checked above).
     let attr_data = unsafe { from_raw_parts(pb_attr, cb_attr_len.try_into().unwrap()) };
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
         ErrorKind::InvalidParameter,
         format!("Invalid attribute id: {}", dw_attr_id)
     )));
+    // SAFETY: The `handle` is not zero (checked above). All other guarantees should be provided by the user.
     let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
     try_execute!(scard.set_attribute(attr_id, attr_data));
