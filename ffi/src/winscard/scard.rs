@@ -87,7 +87,13 @@ pub unsafe extern "system" fn SCardConnectA(
     );
 
     try_execute!(
-        // SAFETY: All parameters are validated and/or type checked.
+        // SAFETY: All parameters are validated and/or type checked:
+        // * `context`: it's not a zero. All other guarantees should be provided by the user.
+        // * `reader_name`: it's a `&str`. So, it's a valid string slice.
+        // * `dw_share_mode`: we just pass it. I'll be validated later when transforming into a concrete Rust-type.
+        // * `dw_preferred_protocols`: the sme situation as for `dw_share_mode`.
+        // * `ph_card`: We've checked that it's not null. That's enough. We only write a value to it. Never read.
+        // * `pdw_active_protocol`: We've checked that it's not null. That's enough. We only write a value to it. Never read.
         unsafe {
             connect(
                 context,
@@ -123,7 +129,13 @@ pub unsafe extern "system" fn SCardConnectW(
     let reader_name = unsafe { c_w_str_to_string(sz_reader) };
 
     try_execute!(
-        // SAFETY: All parameters are validated and/or type checked.
+        // SAFETY: All parameters are validated and/or type checked:
+        // * `context`: it's not a zero. All other guarantees should be provided by the user.
+        // * `reader_name`: it's a `String`. So, it's a valid string.
+        // * `dw_share_mode`: we just pass it. I'll be validated later when transforming into a concrete Rust-type.
+        // * `dw_preferred_protocols`: the sme situation as for `dw_share_mode`.
+        // * `ph_card`: We've checked that it's not null. That's enough. We only write a value to it. Never read.
+        // * `pdw_active_protocol`: We've checked that it's not null. That's enough. We only write a value to it. Never read.
         unsafe {
             connect(
                 context,
@@ -157,7 +169,7 @@ pub unsafe extern "system" fn SCardReconnect(
     let initialization = try_execute!(dw_initialization.try_into(), ErrorKind::InvalidParameter);
 
     let scard = try_execute!(
-        // SAFETY: The `handle` is not equal to zero (checked above).
+        // SAFETY: The `handle` is not equal to zero (checked above). All other guarantees should be provided by the user.
         unsafe { scard_handle_to_winscard(handle) }
     );
     let active_protocol = try_execute!(scard.reconnect(share_mode, protocol, initialization));
@@ -176,8 +188,10 @@ pub unsafe extern "system" fn SCardReconnect(
 pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
 
-    // SAFETY: The `handle` is not equal to zero (checked above).
-    let mut scard = unsafe { Box::from_raw(handle as *mut WinScardHandle) };
+    let scard = try_execute!(
+        // SAFETY: The `handle` is not equal to zero (checked above).
+        unsafe { raw_scard_handle_to_scard_handle(handle) }
+    );
     try_execute!(scard
         .scard_mut()
         .disconnect(try_execute!(dw_disposition.try_into(), ErrorKind::InvalidParameter)));
@@ -262,7 +276,7 @@ pub unsafe extern "system" fn SCardStatusA(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
+    // SAFETY: The `handle` is not zero. All other guarantees should be provided by the user.
     let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
     // SAFETY: The `msz_reader_names` and `pcch_reader_len` parameters are not null (cheked above).
     let readers_buf_type = try_execute!(unsafe { build_buf_request_type(msz_reader_names, pcch_reader_len) });

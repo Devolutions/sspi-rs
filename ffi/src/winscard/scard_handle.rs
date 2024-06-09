@@ -212,7 +212,7 @@ impl WinScardContextHandle {
         buffer_type: RequestedBufferType,
     ) -> WinScardResult<OutBuffer<'static>> {
         Ok(match buffer_type {
-            RequestedBufferType::Buff(buf) => {
+            RequestedBufferType::Buf(buf) => {
                 if buf.len() < data.len() {
                     return Err(
                         Error::new(
@@ -268,7 +268,7 @@ impl Drop for WinScardContextHandle {
 #[derive(Debug)]
 pub enum RequestedBufferType<'data> {
     /// This means the user wants the data filled in the provided buffer.
-    Buff(&'data mut [u8]),
+    Buf(&'data mut [u8]),
     /// The user want to query only the data length.
     Length,
     /// The user wants the data to be allocated by the library and returned from the function.
@@ -282,7 +282,7 @@ pub enum RequestedBufferType<'data> {
 /// or ask us to do it. This enum aimed to solve this complexity.
 #[derive(Debug)]
 pub enum OutBuffer<'data> {
-    /// The data has been written into provided buffer by [RequestedBufferType::Buff].
+    /// The data has been written into provided buffer by [RequestedBufferType::Buf].
     Written(usize),
     /// The user wants to know the requested data length to allocate the corresponding buffer in the future.
     DataLen(usize),

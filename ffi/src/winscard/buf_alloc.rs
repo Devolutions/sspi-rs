@@ -22,21 +22,23 @@ pub unsafe fn build_buf_request_type<'data>(
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
 
-    Ok(if p_buf.is_null() {
+    if p_buf.is_null() {
         // If this value is NULL, we ignore the buffer length, writes the length of the buffer that
         // would have been returned if this parameter had not been NULL, and returns a success code.
-        RequestedBufferType::Length
-    } else if
+        return Ok(RequestedBufferType::Length);
+    }
     // SAFETY: The `pcb_buf` parameter cannot be null. We've checked for it above.
-    unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
+    if unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // If the buffer length is specified as SCARD_AUTOALLOCATE, then data pointer is
         // converted to a pointer to a byte pointer, and receives the address of a block of memory
         // containing the attribute.
-        RequestedBufferType::Allocate
+        Ok(RequestedBufferType::Allocate)
     } else {
         // SAFETY: `p_buf` and `pcb_buf` parameters can't be null. We've checked for it above.
-        RequestedBufferType::Buff(unsafe { from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?) })
-    })
+        Ok(RequestedBufferType::Buf(unsafe {
+            from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?)
+        }))
+    }
 }
 
 /// This function behaves as the [build_buf_request_type] but here it expects a pointer
@@ -64,7 +66,7 @@ pub unsafe fn build_buf_request_type_wide<'data>(
         RequestedBufferType::Allocate
     } else {
         // SAFETY: `p_buf` and `pcb_buf` parameters can't be null. We've checked for it above.
-        RequestedBufferType::Buff(unsafe { from_raw_parts_mut(p_buf as *mut u8, usize::try_from(*pcb_buf)? * 2) })
+        RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf as *mut u8, usize::try_from(*pcb_buf)? * 2) })
     })
 }
 
