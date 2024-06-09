@@ -10,4 +10,5 @@ pub mod sspi;
 mod utils;
 #[cfg(feature = "scard")]
 #[deny(unsafe_op_in_unsafe_fn)]
+#[warn(clippy::undocumented_unsafe_blocks)]
 pub mod winscard;

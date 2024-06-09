@@ -38,9 +38,9 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     } else {
         Cow::Borrowed("libpcsclite")
     };
-    // SAFE: Rust string cannot contain `0` bytes.
-    let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref()).expect("CString creation should not fail");
+    let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
 
+    // SAFETY: The library path is type checked.
     let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), 0) };
     if handle.is_null() {
         return Err(Error::new(ErrorKind::InternalError, "Can not load pcsc-lite library"));
@@ -49,6 +49,8 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     macro_rules! load_fn {
         ($func_name:literal) => {{
             let fn_name = CString::new($func_name).expect("CString creation should not fail");
+            // SAFETY: The `handle` is initialized and checked above. The function name should be correct
+            // because it's hardcoded in the code.
             unsafe { std::mem::transmute(dlsym(handle, fn_name.as_ptr())) }
         }};
     }

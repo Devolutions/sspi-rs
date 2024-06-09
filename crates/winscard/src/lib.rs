@@ -38,7 +38,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID, SUPPORTED_CONNECTION_PROTOCOL};
-pub use scard_context::{Reader, ScardContext, SmartCardInfo};
+pub use scard_context::{Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
 /// The [WinScardResult] type.
 pub type WinScardResult<T> = result::Result<T, Error>;
