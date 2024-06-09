@@ -358,11 +358,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
     if username.contains(&b'@') {
         info!("Trying to collect smart card creds...");
-        use winscard::SmartCardInfo;
+        use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
         use crate::sspi::utils::raw_wide_str_trim_nulls;
         use crate::utils::str_encode_utf16;
-        use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
         match SmartCardInfo::try_from_env() {
             Ok(smart_card_info) => {

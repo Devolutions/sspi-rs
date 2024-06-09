@@ -17,17 +17,14 @@ pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
 }
 
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
-    unsafe { from_raw_parts(raw_buffer, len) }
-        .iter()
-        .map(|c| *c as u8)
-        .collect()
+    unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
 }
 
 pub fn str_to_w_buff(data: &str) -> Vec<u16> {
     data.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-#[cfg(all(feature = "scard", target_os = "windows"))]
+#[cfg(any(feature = "scard", feature = "tsssp"))]
 pub fn str_encode_utf16(data: &str) -> Vec<u8> {
     data.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
 }

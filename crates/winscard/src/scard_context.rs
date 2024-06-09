@@ -20,10 +20,10 @@ use crate::{Error, ErrorKind, WinScardResult};
 // set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
-// Default name of the emulated smart card.
-const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
-
-const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+/// Default name of the emulated smart card.
+pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
+/// Default CSP name.
+pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
 const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll";
 
