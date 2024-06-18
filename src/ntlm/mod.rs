@@ -381,19 +381,23 @@ impl Sspi for Ntlm {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
+        let data = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.buffer.as_slice())?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
 
-        *data.buffer.as_mut() = self.send_sealing_key.as_mut().unwrap().process(data.buffer.as_slice());
+        let encrypted_data = self.send_sealing_key.as_mut().unwrap().process(data.data());
+        if encrypted_data.len() < data.buf_len() {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "The Data buffer is too small"));
+        }
+        data.write_data(&encrypted_data)?;
 
         let checksum = self
             .send_sealing_key
@@ -401,8 +405,12 @@ impl Sspi for Ntlm {
             .unwrap()
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
 
-        let signature = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-        *signature.buffer.as_mut() = compute_signature(&checksum, sequence_number).to_vec();
+        let signature_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        if signature_buffer.buf_len() < SIGNATURE_SIZE {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
+        }
+        let signature = compute_signature(&checksum, sequence_number);
+        signature_buffer.write_data(signature.as_slice())?;
 
         Ok(SecurityStatus::Ok)
     }

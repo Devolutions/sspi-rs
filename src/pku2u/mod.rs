@@ -197,14 +197,14 @@ impl Sspi for Pku2u {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = DecryptBuffer::find_buffer(message, SecurityBufferType::Token)?;
+        let data_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -222,7 +222,7 @@ impl Sspi for Pku2u {
             Pku2uMode::Server => SERVER_WRAP_TOKEN_FLAGS,
         };
 
-        let mut payload = data.buffer.to_vec();
+        let mut payload = data_buffer.data().to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
         let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
@@ -240,9 +240,10 @@ impl Sspi for Pku2u {
                     return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
                 }
 
-                *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
-                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-                *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
+                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                data_buffer.write_data(data)?;
+                let token_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                token_buffer.write_data(token)?;
             }
             _ => {
                 return Err(Error::new(

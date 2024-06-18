@@ -305,7 +305,7 @@ impl Sspi for Negotiate {
     fn encrypt_message(
         &mut self,
         flags: crate::EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         match &mut self.protocol {
