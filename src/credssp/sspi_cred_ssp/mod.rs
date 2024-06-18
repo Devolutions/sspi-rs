@@ -135,34 +135,34 @@ impl Sspi for SspiCredSsp {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
-        let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        let plain_message_len = plain_message.buffer.len();
-
-        let mut stream_header_data = self.tls_connection_mut()?.encrypt_tls(&plain_message.buffer)?;
-        let mut stream_data = stream_header_data.split_off(TLS_PACKET_HEADER_LEN);
-        let stream_trailer_data = stream_data.split_off(plain_message_len);
-
-        if let Ok(stream_header) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader) {
-            stream_header.buffer = stream_header_data;
-        } else {
-            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
-            empty_buffer.buffer_type = SecurityBufferType::StreamHeader;
-            empty_buffer.buffer = stream_header_data;
+        // CredSsp decrypt_message function just calls corresponding function from the Schannel
+        // MSDN: message must contain four buffers
+        // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
+        if message.len() < 4 {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "Input message must contain four buffers",
+            ));
         }
 
-        let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        plain_message.buffer = stream_data;
+        let plain_message = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        if let Ok(trailer) = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer) {
-            trailer.buffer = stream_trailer_data;
-        } else {
-            let empty_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Empty)?;
-            empty_buffer.buffer_type = SecurityBufferType::StreamTrailer;
-            empty_buffer.buffer = stream_trailer_data;
-        }
+        let encrypted_data = self.tls_connection_mut()?.encrypt_tls(&plain_message.data())?;
+        let encrypted_data = encrypted_data.as_slice();
+
+        let stream_header_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader)?;
+        let (stream_header_data, encrypted_data) = encrypted_data.split_at(stream_header_buffer.buf_len());
+        stream_header_buffer.write_data(stream_header_data)?;
+
+        let data_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let (data_data, encrypted_data) = encrypted_data.split_at(data_buffer.buf_len());
+        data_buffer.write_data(data_data)?;
+
+        let stream_trailer_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer)?;
+        stream_trailer_buffer.write_data(encrypted_data)?;
 
         Ok(SecurityStatus::Ok)
     }

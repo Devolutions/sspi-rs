@@ -820,7 +820,7 @@ impl Sspi for SspiContext {
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [DecryptBuffer],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         match self {
@@ -1160,9 +1160,12 @@ impl CredSspContext {
     }
 
     fn encrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
+        let mut token = [0; 1024];
+        let mut data = input.to_vec();
+
         let mut buffers = vec![
-            SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token),
-            SecurityBuffer::new(input.to_vec(), SecurityBufferType::Data),
+            DecryptBuffer::Token(token.as_mut_slice()),
+            DecryptBuffer::Data(data.as_mut_slice()),
         ];
 
         let send_seq_num = self.send_seq_num;
@@ -1170,10 +1173,10 @@ impl CredSspContext {
         self.sspi_context
             .encrypt_message(EncryptionFlags::empty(), &mut buffers, send_seq_num)?;
 
-        let mut output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token)?
-            .buffer
-            .clone();
-        output.append(&mut SecurityBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.buffer);
+        let mut output = DecryptBuffer::find_buffer(&buffers, SecurityBufferType::Token)?
+            .data()
+            .to_vec();
+        output.extend_from_slice(DecryptBuffer::find_buffer_mut(&mut buffers, SecurityBufferType::Data)?.data());
 
         self.send_seq_num += 1;
 
