@@ -250,19 +250,21 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
 pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
     if let Ok(buffer) = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
-        let stream_buffer = buffer.take_data();
-        let stream_buffer_len = stream_buffer.len();
         let decrypted_len = decrypted.len();
 
-        if stream_buffer_len < decrypted_len {
+        if buffer.buf_len() < decrypted_len {
             return Err(Error::new(
                 ErrorKind::DecryptFailure,
                 format!(
                     "decrypted data length ({}) does not match the stream buffer length ({})",
-                    decrypted_len, stream_buffer_len,
+                    decrypted_len,
+                    buffer.buf_len(),
                 ),
             ));
         }
+
+        let stream_buffer = buffer.take_data();
+        let stream_buffer_len = stream_buffer.len();
 
         let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
 
@@ -272,20 +274,19 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuf
         data_buffer.set_data(data)
     } else {
         let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
-        let data = data_buffer.take_data();
 
-        if data.len() < decrypted.len() {
+        if data_buffer.buf_len() < decrypted.len() {
             return Err(Error::new(
                 ErrorKind::DecryptFailure,
                 format!(
                     "decrypted data length ({}) does not match the data buffer length ({})",
                     decrypted.len(),
-                    data.len(),
+                    data_buffer.buf_len(),
                 ),
             ));
         }
 
-        let data = &mut data[0..decrypted.len()];
+        let data = &mut data_buffer.take_data()[0..decrypted.len()];
         data.copy_from_slice(decrypted);
 
         data_buffer.set_data(data)
