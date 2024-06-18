@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem::take;
 
-use crate::{Error, ErrorKind, SecurityBufferType};
+use crate::{Error, ErrorKind, SecurityBufferType, Result};
 
 /// A special security buffer type is used for the data decryption. Basically, it's almost the same
 /// as [SecurityBuffer] but for decryption.
@@ -11,7 +11,8 @@ use crate::{Error, ErrorKind, SecurityBufferType};
 ///
 /// So, the already defined [SecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
 /// We use reference in the [DecryptionBuffer] structure to avoid data cloning as much as possible.
-/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a CREDSSP security package.
+/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
+/// security package.
 pub enum DecryptBuffer<'data> {
     Data(&'data mut [u8]),
     Token(&'data mut [u8]),
@@ -191,6 +192,20 @@ impl<'data> DecryptBuffer<'data> {
             DecryptBuffer::Missing(_) => &mut [],
             DecryptBuffer::Empty => &mut [],
         }
+    }
+
+    pub fn write_data(&mut self, data: &[u8]) -> Result<()> {
+        let data_len = data.len();
+
+        if self.buf_len() < data_len {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "provided data can not fit in the destination buffer"));
+        }
+
+        let mut buf = self.take_data();
+        buf = &mut buf[0..data_len];
+        buf.copy_from_slice(data);
+
+        self.set_data(buf)
     }
 }
 
