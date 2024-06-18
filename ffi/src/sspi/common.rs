@@ -280,7 +280,7 @@ pub unsafe extern "system" fn EncryptMessage(
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
-        let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
+        let mut message = try_execute!(p_sec_buffers_to_decrypt_buffers(raw_buffers));
 
         let result_status = sspi_context.encrypt_message(
             EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
@@ -288,7 +288,7 @@ pub unsafe extern "system" fn EncryptMessage(
             message_seq_no.try_into().unwrap(),
         );
 
-        copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
+        try_execute!(copy_decrypted_buffers((*p_message).p_buffers, message));
 
         let result = try_execute!(result_status);
         result.to_u32().unwrap()
