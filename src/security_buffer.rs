@@ -28,7 +28,7 @@ impl<'data> SecurityBuffer<'data> {
     /// Created a [SecurityBuffer] from based on provided [SecurityBufferType].
     ///
     /// Inner buffers will be empty.
-    pub fn with_security_buffer_type(security_buffer_type: SecurityBufferType) -> crate::Result<Self> {
+    pub fn with_security_buffer_type(security_buffer_type: SecurityBufferType) -> Result<Self> {
         match security_buffer_type {
             SecurityBufferType::Empty => Ok(SecurityBuffer::Empty),
             SecurityBufferType::Data => Ok(SecurityBuffer::Data(&mut [])),
@@ -45,7 +45,7 @@ impl<'data> SecurityBuffer<'data> {
     /// Creates a new [SecurityBuffer] with the provided buffer data saving the old buffer type.
     ///
     /// *Attention*: the buffer type must not be [SecurityBufferType::Missing].
-    pub fn with_data(self, data: &'data mut [u8]) -> crate::Result<Self> {
+    pub fn with_data(self, data: &'data mut [u8]) -> Result<Self> {
         Ok(match self {
             SecurityBuffer::Data(_) => SecurityBuffer::Data(data),
             SecurityBuffer::Token(_) => SecurityBuffer::Token(data),
@@ -66,7 +66,7 @@ impl<'data> SecurityBuffer<'data> {
     /// Sets the buffer data.
     ///
     /// *Attention*: the buffer type must not be [SecurityBufferType::Missing].
-    pub fn set_data(&mut self, buf: &'data mut [u8]) -> crate::Result<()> {
+    pub fn set_data(&mut self, buf: &'data mut [u8]) -> Result<()> {
         match self {
             SecurityBuffer::Data(data) => *data = buf,
             SecurityBuffer::Token(data) => *data = buf,
@@ -105,7 +105,7 @@ impl<'data> SecurityBuffer<'data> {
     pub fn find_buffer<'a>(
         buffers: &'a [SecurityBuffer<'data>],
         buffer_type: SecurityBufferType,
-    ) -> crate::Result<&'a SecurityBuffer<'data>> {
+    ) -> Result<&'a SecurityBuffer<'data>> {
         buffers
             .iter()
             .find(|b| b.security_buffer_type() == buffer_type)
@@ -123,7 +123,7 @@ impl<'data> SecurityBuffer<'data> {
     pub fn find_buffer_mut<'a>(
         buffers: &'a mut [SecurityBuffer<'data>],
         buffer_type: SecurityBufferType,
-    ) -> crate::Result<&'a mut SecurityBuffer<'data>> {
+    ) -> Result<&'a mut SecurityBuffer<'data>> {
         buffers
             .iter_mut()
             .find(|b| b.security_buffer_type() == buffer_type)
@@ -136,7 +136,7 @@ impl<'data> SecurityBuffer<'data> {
     }
 
     /// Returns the immutable reference to the inner buffer data.
-    pub fn buf_data<'a>(buffers: &'a [SecurityBuffer<'a>], buffer_type: SecurityBufferType) -> crate::Result<&'a [u8]> {
+    pub fn buf_data<'a>(buffers: &'a [SecurityBuffer<'a>], buffer_type: SecurityBufferType) -> Result<&'a [u8]> {
         Ok(SecurityBuffer::find_buffer(buffers, buffer_type)?.data())
     }
 
@@ -174,7 +174,7 @@ impl<'data> SecurityBuffer<'data> {
     pub fn take_buf_data_mut<'a>(
         buffers: &'a mut [SecurityBuffer<'data>],
         buffer_type: SecurityBufferType,
-    ) -> crate::Result<&'data mut [u8]> {
+    ) -> Result<&'data mut [u8]> {
         Ok(SecurityBuffer::find_buffer_mut(buffers, buffer_type)?.take_data())
     }
 
@@ -194,6 +194,10 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Writes the provided data into the inner buffer.
+    ///
+    /// Returns error if the inner buffer is not big enough. If the inner buffer is larger than
+    /// provided data, then it'll be shrunk to the size of the data.
     pub fn write_data(&mut self, data: &[u8]) -> Result<()> {
         let data_len = data.len();
 

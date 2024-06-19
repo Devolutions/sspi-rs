@@ -286,10 +286,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
             ));
         }
 
-        let data = &mut data_buffer.take_data()[0..decrypted.len()];
-        data.copy_from_slice(decrypted);
-
-        data_buffer.set_data(data)
+        data_buffer.write_data(decrypted)
     }
 }
 
