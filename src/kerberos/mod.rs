@@ -1082,7 +1082,7 @@ pub mod test_data {
 mod tests {
     use crate::generator::NetworkRequest;
     use crate::network_client::NetworkClient;
-    use crate::{EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, Sspi};
+    use crate::{EncryptionFlags, SecurityBuffer, Sspi};
 
     struct NetworkClientMock;
 
@@ -1101,23 +1101,19 @@ mod tests {
 
         let plain_message = b"some plain message";
 
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
         let mut message = [
-            OwnedSecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            OwnedSecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         kerberos_server
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut buffer = message[0].buffer.clone();
-        buffer.extend_from_slice(&message[1].buffer);
+        let mut buffer = message[0].data().to_vec();
+        buffer.extend_from_slice(&message[1].data());
 
         let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 

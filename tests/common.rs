@@ -177,26 +177,27 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let server_sizes = server.query_context_sizes()?;
     let sequence_number = 0;
 
+    let mut token = vec![0; server_sizes.security_trailer as usize];
+    let mut data = MESSAGE_TO_CLIENT.to_vec();
     let mut messages = [
-        OwnedSecurityBuffer::new(MESSAGE_TO_CLIENT.clone(), SecurityBufferType::Data),
-        OwnedSecurityBuffer::new(
-            vec![0; server_sizes.security_trailer as usize],
-            SecurityBufferType::Token,
-        ),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
     server.encrypt_message(EncryptionFlags::empty(), &mut messages, sequence_number)?;
-    assert_ne!(*MESSAGE_TO_CLIENT, messages[0].buffer);
+    assert_ne!(*MESSAGE_TO_CLIENT, messages[1].data());
 
     println!(
         "Message to client: {:x?}, encrypted message: {:x?}, token: {:x?}",
-        *MESSAGE_TO_CLIENT, messages[0].buffer, messages[1].buffer
+        *MESSAGE_TO_CLIENT,
+        messages[0].data(),
+        messages[1].data()
     );
 
-    let [mut data, mut token] = messages;
+    let [mut token, mut data] = messages;
 
     let mut messages = vec![
-        SecurityBuffer::Data(&mut data.buffer),
-        SecurityBuffer::Token(&mut token.buffer),
+        SecurityBuffer::Data(data.take_data()),
+        SecurityBuffer::Token(token.take_data()),
     ];
 
     client.decrypt_message(&mut messages, sequence_number)?;

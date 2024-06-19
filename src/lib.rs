@@ -571,16 +571,20 @@ where
     ///     .complete_auth_token(&mut server_output_buffer)
     ///     .unwrap();
     ///
-    /// let mut msg_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
-    ///     sspi::OwnedSecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
+    /// let mut token = [0; 128];
+    /// let mut data = "This is a message".as_bytes().to_vec();
+    /// let mut msg_buffer = vec![
+    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    /// ];
     ///
-    /// println!("Unencrypted: {:?}", msg_buffer[1].buffer);
+    /// println!("Unencrypted: {:?}", msg_buffer[1].data());
     ///
     /// # #[allow(unused_variables)]
     /// let result = ntlm
     ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg_buffer, 0).unwrap();
     ///
-    /// println!("Encrypted: {:?}", msg_buffer[1].buffer);
+    /// println!("Encrypted: {:?}", msg_buffer[1].data());
     /// ```
     ///
     /// # Returns
@@ -684,8 +688,12 @@ where
     ///     .complete_auth_token(&mut server_output_buffer)
     ///     .unwrap();
     ///
-    /// let mut msg = [sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
-    ///     sspi::OwnedSecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
+    /// let mut token = [0; 128];
+    /// let mut data = "This is a message".as_bytes().to_vec();
+    /// let mut msg = [
+    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    /// ];
     ///
     /// let _result = server_ntlm
     ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
@@ -693,8 +701,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(&mut token.buffer),
-    ///     sspi::SecurityBuffer::Data(&mut data.buffer),
+    ///     sspi::SecurityBuffer::Token(token.take_data()),
+    ///     sspi::SecurityBuffer::Data(data.take_data()),
     /// ];
     ///
     /// #[allow(unused_variables)]

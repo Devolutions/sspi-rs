@@ -425,11 +425,21 @@ mod tests {
 
     use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
-    use sspi::{EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, Sspi};
+    use sspi::{EncryptionFlags, Kerberos, SecurityBuffer, Sspi};
 
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{SecHandle, SspiHandle};
     use crate::utils::into_raw_ptr;
+
+    fn kerberos_sec_handle(kerberos: Kerberos) -> SecHandle {
+        SecHandle {
+            dw_lower: {
+                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos));
+                into_raw_ptr(sspi_context) as c_ulonglong
+            },
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        }
+    }
 
     #[test]
     fn kerberos_stream_buffer_decryption() {
@@ -453,13 +463,7 @@ mod tests {
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut kerberos_client_context = SecHandle {
-            dw_lower: {
-                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-                into_raw_ptr(sspi_context) as c_ulonglong
-            },
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
-        };
+        let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
 
         let mut stream_buffer_data = message[0].data().to_vec();
         stream_buffer_data.extend_from_slice(message[1].data());
@@ -513,15 +517,9 @@ mod tests {
         let plain_message = b"some plain message";
 
         let kerberos_client = sspi::kerberos::test_data::fake_client();
-        let mut kerberos_server = sspi::kerberos::test_data::fake_server();
+        let kerberos_server = sspi::kerberos::test_data::fake_server();
 
-        let mut kerberos_server_context = SecHandle {
-            dw_lower: {
-                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_server));
-                into_raw_ptr(sspi_context) as c_ulonglong
-            },
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
-        };
+        let mut kerberos_server_context = kerberos_sec_handle(kerberos_server);
 
         let mut token = [0_u8; 1024];
         let mut data = plain_message.to_vec();
@@ -547,13 +545,7 @@ mod tests {
 
         assert_eq!(status, 0);
 
-        let mut kerberos_client_context = SecHandle {
-            dw_lower: {
-                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-                into_raw_ptr(sspi_context) as c_ulonglong
-            },
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
-        };
+        let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
 
         let mut token =
             unsafe { from_raw_parts(buffers[0].pv_buffer as *const u8, buffers[0].cb_buffer as usize) }.to_vec();

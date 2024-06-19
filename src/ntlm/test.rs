@@ -30,19 +30,21 @@ fn encrypt_message_crypts_data() {
     let mut context = Ntlm::new();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
+    let mut token = [0; 100];
+    let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        OwnedSecurityBuffer::new(TEST_DATA.clone(), SecurityBufferType::Data),
-        OwnedSecurityBuffer::new(Vec::with_capacity(100), SecurityBufferType::Token),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
     let expected = &*ENCRYPTED_TEST_DATA;
 
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)
         .unwrap();
-    let output = OwnedSecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();
+    let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
-    assert_eq!(expected.as_slice(), output.buffer.as_slice());
+    assert_eq!(expected.as_slice(), output.data());
 }
 
 #[test]
@@ -51,19 +53,21 @@ fn encrypt_message_correct_computes_digest() {
     context.send_signing_key = SIGNING_KEY;
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
+    let mut token = [0; 100];
+    let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        OwnedSecurityBuffer::new(TEST_DATA.clone(), SecurityBufferType::Data),
-        OwnedSecurityBuffer::new(Vec::with_capacity(100), SecurityBufferType::Token),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
     let expected = &*DIGEST_FOR_TEST_DATA;
 
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
         .unwrap();
-    let signature = OwnedSecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
+    let signature = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
-    assert_eq!(expected.as_slice(), &signature.buffer[4..12]);
+    assert_eq!(expected.as_slice(), &signature.data()[4..12]);
 }
 
 #[test]
@@ -72,19 +76,21 @@ fn encrypt_message_writes_seq_num_to_signature() {
     context.send_signing_key = SIGNING_KEY;
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
+    let mut token = [0; 100];
+    let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        OwnedSecurityBuffer::new(TEST_DATA.clone(), SecurityBufferType::Data),
-        OwnedSecurityBuffer::new(Vec::with_capacity(100), SecurityBufferType::Token),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
     let expected = TEST_SEQ_NUM.to_le_bytes();
 
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
         .unwrap();
-    let signature = OwnedSecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
+    let signature = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
-    assert_eq!(expected, signature.buffer[12..SIGNATURE_SIZE]);
+    assert_eq!(expected, signature.data()[12..SIGNATURE_SIZE]);
 }
 
 #[test]

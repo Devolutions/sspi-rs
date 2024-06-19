@@ -817,9 +817,7 @@ mod tests {
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
     use super::Pku2uMode;
     use crate::kerberos::EncryptionParams;
-    use crate::{
-        EncryptionFlags, OwnedSecurityBuffer, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, SecurityBufferType, Sspi,
-    };
+    use crate::{EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -961,23 +959,19 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
 
         let plain_message = b"some plain message";
 
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
         let mut message = [
-            OwnedSecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            OwnedSecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         pku2u_server
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut buffer = message[0].buffer.clone();
-        buffer.extend_from_slice(&message[1].buffer);
+        let mut buffer = message[0].data().to_vec();
+        buffer.extend_from_slice(&message[1].data());
 
         let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
