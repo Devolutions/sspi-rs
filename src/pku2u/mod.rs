@@ -52,8 +52,8 @@ use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
@@ -197,14 +197,14 @@ impl Sspi for Pku2u {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = DecryptBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -242,7 +242,7 @@ impl Sspi for Pku2u {
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
                 data_buffer.write_data(data)?;
-                let token_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
             _ => {
@@ -257,7 +257,7 @@ impl Sspi for Pku2u {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -818,7 +818,7 @@ mod tests {
     use super::Pku2uMode;
     use crate::kerberos::EncryptionParams;
     use crate::{
-        DecryptBuffer, EncryptionFlags, OwnedSecurityBuffer, Pku2u, Pku2uConfig, Pku2uState, SecurityBufferType, Sspi,
+        EncryptionFlags, OwnedSecurityBuffer, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, SecurityBufferType, Sspi,
     };
 
     #[test]
@@ -979,7 +979,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut buffer = message[0].buffer.clone();
         buffer.extend_from_slice(&message[1].buffer);
 
-        let mut message = [DecryptBuffer::Stream(&mut buffer), DecryptBuffer::Data(&mut [])];
+        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
         pku2u_client.decrypt_message(&mut message, 0).unwrap();
 

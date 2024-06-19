@@ -70,11 +70,11 @@ mod auth_identity;
 mod ber;
 pub mod cert_utils;
 mod crypto;
-mod decrypt_buffer;
 mod dns;
 mod kdc;
 mod krb;
 mod secret;
+mod security_buffer;
 mod smartcard;
 mod utils;
 
@@ -86,7 +86,6 @@ use std::{error, fmt, io, result, str, string};
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
-pub use decrypt_buffer::DecryptBuffer;
 use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
@@ -94,6 +93,7 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
+pub use security_buffer::SecurityBuffer;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
@@ -594,7 +594,7 @@ where
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
@@ -693,8 +693,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::DecryptBuffer::Token(&mut token.buffer),
-    ///     sspi::DecryptBuffer::Data(&mut data.buffer),
+    ///     sspi::SecurityBuffer::Token(&mut token.buffer),
+    ///     sspi::SecurityBuffer::Data(&mut data.buffer),
     /// ];
     ///
     /// #[allow(unused_variables)]
@@ -708,7 +708,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///

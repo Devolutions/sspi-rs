@@ -18,11 +18,11 @@ use crate::generator::GeneratorInitSecurityContext;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
     EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
-    PackageInfo, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
+    SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -382,15 +382,15 @@ impl Sspi for Ntlm {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
-        DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
-        let data = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
+        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
 
@@ -406,7 +406,7 @@ impl Sspi for Ntlm {
             .unwrap()
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
 
-        let signature_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
             return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
         }
@@ -419,7 +419,7 @@ impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {

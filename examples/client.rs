@@ -9,7 +9,7 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, DecryptBuffer, Ntlm, OwnedSecurityBuffer,
+    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, OwnedSecurityBuffer, SecurityBuffer,
     SecurityBufferType, SecurityStatus, Sspi, SspiImpl, Username,
 };
 
@@ -52,7 +52,7 @@ fn main() -> Result<(), io::Error> {
 
     println!("Encrypted message: {:?}", data);
 
-    let mut msg_buffer = vec![DecryptBuffer::Token(&mut trailer), DecryptBuffer::Data(&mut data)];
+    let mut msg_buffer = vec![SecurityBuffer::Token(&mut trailer), SecurityBuffer::Data(&mut data)];
 
     let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
 

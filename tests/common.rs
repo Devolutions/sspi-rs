@@ -3,7 +3,7 @@ use std::io;
 use lazy_static::lazy_static;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
-    DataRepresentation, DecryptBuffer, EncryptionFlags, OwnedSecurityBuffer, SecurityBufferType, SecurityStatus,
+    DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
     ServerRequestFlags, Sspi, SspiEx, Username,
 };
 use time::OffsetDateTime;
@@ -195,8 +195,8 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let [mut data, mut token] = messages;
 
     let mut messages = vec![
-        DecryptBuffer::Data(&mut data.buffer),
-        DecryptBuffer::Token(&mut token.buffer),
+        SecurityBuffer::Data(&mut data.buffer),
+        SecurityBuffer::Token(&mut token.buffer),
     ];
 
     client.decrypt_message(&mut messages, sequence_number)?;

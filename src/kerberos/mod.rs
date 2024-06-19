@@ -63,9 +63,9 @@ use crate::utils::{
 use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
-    CredentialsBuffers, DecryptBuffer, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
-    OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result, SecurityBufferType, SecurityPackageType,
-    SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -302,14 +302,14 @@ impl Sspi for Kerberos {
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = DecryptBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -346,7 +346,7 @@ impl Sspi for Kerberos {
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
                 data_buffer.write_data(data)?;
-                let token_buffer = DecryptBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
             _ => {
@@ -361,7 +361,7 @@ impl Sspi for Kerberos {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -1082,7 +1082,7 @@ pub mod test_data {
 mod tests {
     use crate::generator::NetworkRequest;
     use crate::network_client::NetworkClient;
-    use crate::{DecryptBuffer, EncryptionFlags, OwnedSecurityBuffer, SecurityBufferType, Sspi};
+    use crate::{EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, Sspi};
 
     struct NetworkClientMock;
 
@@ -1119,7 +1119,7 @@ mod tests {
         let mut buffer = message[0].buffer.clone();
         buffer.extend_from_slice(&message[1].buffer);
 
-        let mut message = [DecryptBuffer::Stream(&mut buffer), DecryptBuffer::Data(&mut [])];
+        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
         kerberos_client.decrypt_message(&mut message, 0).unwrap();
 

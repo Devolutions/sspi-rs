@@ -3,7 +3,7 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
-    DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer,
+    DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer, SecurityBuffer,
     SecurityBufferType, ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
@@ -78,7 +78,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         let mut input_tokens =
             p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
 
-        let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+        let mut output_tokens = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
         let result_status = sspi_context.accept_security_context()
             .with_credentials_handle(&mut Some(auth_data))
@@ -341,16 +341,16 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
-/// Creates a vector of [DecryptBuffer]s from the input C buffers.
+/// Creates a vector of [SecurityBuffer]s from the input C buffers.
 ///
 /// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.
 #[allow(clippy::useless_conversion)]
-unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<DecryptBuffer>> {
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBuffer>> {
     let mut buffers = Vec::with_capacity(raw_buffers.len());
 
     for raw_buffer in raw_buffers {
-        let buf = DecryptBuffer::with_security_buffer_type(
+        let buf = SecurityBuffer::with_security_buffer_type(
             SecurityBufferType::from_u32(raw_buffer.buffer_type).ok_or_else(|| {
                 sspi::Error::new(
                     ErrorKind::InternalError,
@@ -359,10 +359,10 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             })?,
         )?;
 
-        buffers.push(if let DecryptBuffer::Missing(_) = buf {
+        buffers.push(if let SecurityBuffer::Missing(_) = buf {
             // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
-            DecryptBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
+            SecurityBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
         } else {
             // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
             buf.with_data(unsafe {
@@ -378,7 +378,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 ///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.
-unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<DecryptBuffer>) -> sspi::Result<()> {
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBuffer>) -> sspi::Result<()> {
     // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
@@ -389,7 +389,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
         // So, we don't need to copy any data and we skip it.
         //
         // The `SECBUFFER_STREAM` usage example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
-        if matches!(from_buffer, DecryptBuffer::Stream(_)) {
+        if matches!(from_buffer, SecurityBuffer::Stream(_)) {
             continue;
         }
 
@@ -406,7 +406,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
         })?;
         to_buffer.cb_buffer = from_buffer_len.try_into()?;
 
-        if !matches!(from_buffer, DecryptBuffer::Missing(_)) {
+        if !matches!(from_buffer, SecurityBuffer::Missing(_)) {
             // We don't need to copy the actual content of the buffer because [from_buffer] is created
             // from the C-input-buffer and all decryption is performed in-place.
             to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
