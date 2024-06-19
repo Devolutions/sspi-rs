@@ -425,7 +425,7 @@ mod tests {
 
     use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
-    use sspi::{EncryptionFlags, OwnedSecurityBuffer, SecurityBufferType, Sspi};
+    use sspi::{EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, Sspi};
 
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{SecHandle, SspiHandle};
@@ -442,15 +442,11 @@ mod tests {
         let kerberos_client = sspi::kerberos::test_data::fake_client();
         let mut kerberos_server = sspi::kerberos::test_data::fake_server();
 
-        let mut message = [
-            OwnedSecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            OwnedSecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
+        let mut message = vec![
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         kerberos_server
@@ -465,8 +461,8 @@ mod tests {
             dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
         };
 
-        let mut stream_buffer_data = message[0].buffer.clone();
-        stream_buffer_data.extend_from_slice(&message[1].buffer);
+        let mut stream_buffer_data = message[0].data().to_vec();
+        stream_buffer_data.extend_from_slice(message[1].data());
         let stream_buffer_data_len = stream_buffer_data.len().try_into().unwrap();
         let mut buffers = [
             SecBuffer {
@@ -505,6 +501,89 @@ mod tests {
                     buffers[1].cb_buffer.try_into().unwrap(),
                 )
             },
+            plain_message
+        );
+    }
+
+    #[test]
+    fn kerberos_encryption_decryption() {
+        // This test simulates decryption and decryption. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let plain_message = b"some plain message";
+
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+        let mut kerberos_server = sspi::kerberos::test_data::fake_server();
+
+        let mut kerberos_server_context = SecHandle {
+            dw_lower: {
+                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_server));
+                into_raw_ptr(sspi_context) as c_ulonglong
+            },
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        };
+
+        let mut token = [0_u8; 1024];
+        let mut data = plain_message.to_vec();
+        let mut buffers = [
+            SecBuffer {
+                cb_buffer: token.len().try_into().unwrap(),
+                buffer_type: 2, // Token
+                pv_buffer: token.as_mut_ptr() as *mut _,
+            },
+            SecBuffer {
+                cb_buffer: data.len().try_into().unwrap(),
+                buffer_type: 1, // Data
+                pv_buffer: data.as_mut_ptr() as *mut _,
+            },
+        ];
+        let mut message = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 2,
+            p_buffers: buffers.as_mut_ptr(),
+        };
+
+        let status = unsafe { super::EncryptMessage(&mut kerberos_server_context, 0, &mut message, 0) };
+
+        assert_eq!(status, 0);
+
+        let mut kerberos_client_context = SecHandle {
+            dw_lower: {
+                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
+                into_raw_ptr(sspi_context) as c_ulonglong
+            },
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        };
+
+        let mut token =
+            unsafe { from_raw_parts(buffers[0].pv_buffer as *const u8, buffers[0].cb_buffer as usize) }.to_vec();
+        let mut data =
+            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize) }.to_vec();
+        let mut buffers = [
+            SecBuffer {
+                cb_buffer: token.len().try_into().unwrap(),
+                buffer_type: 2, // Token
+                pv_buffer: token.as_mut_ptr() as *mut _,
+            },
+            SecBuffer {
+                cb_buffer: data.len().try_into().unwrap(),
+                buffer_type: 1, // Data
+                pv_buffer: data.as_mut_ptr() as *mut _,
+            },
+        ];
+        let mut message = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 2,
+            p_buffers: buffers.as_mut_ptr(),
+        };
+
+        let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+
+        assert_eq!(status, 0);
+
+        // Check that the decrypted data is the same as the initial message
+        assert_eq!(
+            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize,) },
             plain_message
         );
     }
