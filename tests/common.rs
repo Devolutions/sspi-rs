@@ -3,7 +3,7 @@ use std::io;
 use lazy_static::lazy_static;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
-    DataRepresentation, DecryptBuffer, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus,
+    DataRepresentation, DecryptBuffer, EncryptionFlags, OwnedSecurityBuffer, SecurityBufferType, SecurityStatus,
     ServerRequestFlags, Sspi, SspiEx, Username,
 };
 use time::OffsetDateTime;
@@ -101,7 +101,7 @@ where
     let mut server_status = SecurityStatus::ContinueNeeded;
 
     loop {
-        let mut client_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        let mut client_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
         let mut builder = client
             .initialize_security_context()
@@ -120,7 +120,7 @@ where
             return Ok((client_status, server_status));
         }
 
-        server_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        server_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
         let server_result = server
             .accept_security_context()
@@ -178,8 +178,8 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let sequence_number = 0;
 
     let mut messages = [
-        SecurityBuffer::new(MESSAGE_TO_CLIENT.clone(), SecurityBufferType::Data),
-        SecurityBuffer::new(
+        OwnedSecurityBuffer::new(MESSAGE_TO_CLIENT.clone(), SecurityBufferType::Data),
+        OwnedSecurityBuffer::new(
             vec![0; server_sizes.security_trailer as usize],
             SecurityBufferType::Token,
         ),

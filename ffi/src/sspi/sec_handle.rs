@@ -129,7 +129,7 @@ impl SspiImpl for SspiHandle {
 }
 
 impl Sspi for SspiHandle {
-    fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [sspi::OwnedSecurityBuffer]) -> Result<sspi::SecurityStatus> {
         self.sspi_context.lock()?.complete_auth_token(token)
     }
 

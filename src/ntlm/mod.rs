@@ -20,8 +20,8 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags,
     EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
+    PackageInfo, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
     PACKAGE_ID_NONE,
 };
 
@@ -258,8 +258,8 @@ impl SspiImpl for Ntlm {
             .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
@@ -267,11 +267,11 @@ impl SspiImpl for Ntlm {
                 server::write_challenge(self, &mut output_token.buffer)?
             }
             NtlmState::Authenticate => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 self.identity = builder.credentials_handle.cloned().flatten();
 
-                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -310,7 +310,7 @@ impl Ntlm {
 
         let status = match self.state {
             NtlmState::Initial => {
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
                 self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
@@ -331,12 +331,13 @@ impl Ntlm {
                         "Input buffers must be specified on subsequent calls",
                     )
                 })?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
-                if let Ok(sec_buffer) =
-                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
-                {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
+                    builder.input.as_ref().unwrap(),
+                    SecurityBufferType::ChannelBindings,
+                ) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -373,7 +374,7 @@ impl Ntlm {
 
 impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> crate::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 

@@ -3,8 +3,8 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
-    DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
-    ServerRequestFlags, Sspi,
+    DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer,
+    SecurityBufferType, ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -425,7 +425,7 @@ mod tests {
 
     use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
-    use sspi::{EncryptionFlags, SecurityBuffer, SecurityBufferType, Sspi};
+    use sspi::{EncryptionFlags, OwnedSecurityBuffer, SecurityBufferType, Sspi};
 
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{SecHandle, SspiHandle};
@@ -443,11 +443,11 @@ mod tests {
         let mut kerberos_server = sspi::kerberos::test_data::fake_server();
 
         let mut message = [
-            SecurityBuffer {
+            OwnedSecurityBuffer {
                 buffer: Vec::new(),
                 buffer_type: SecurityBufferType::Token,
             },
-            SecurityBuffer {
+            OwnedSecurityBuffer {
                 buffer: plain_message.to_vec(),
                 buffer_type: SecurityBufferType::Data,
             },

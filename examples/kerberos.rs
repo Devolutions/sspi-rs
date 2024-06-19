@@ -8,7 +8,7 @@ use reqwest::header::{
 use reqwest::StatusCode;
 use sspi::{
     AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityBufferType, SecurityStatus,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, OwnedSecurityBuffer, SecurityBufferType, SecurityStatus,
     Sspi, SspiImpl, Username,
 };
 use tracing_subscriber::prelude::*;
@@ -120,8 +120,8 @@ pub(crate) fn send_http(
 fn step_helper(
     kerberos: &mut Kerberos,
     cred_handle: &mut <Kerberos as SspiImpl>::CredentialsHandle,
-    input_buffer: &mut [SecurityBuffer],
-    output_buffer: &mut [SecurityBuffer],
+    input_buffer: &mut [OwnedSecurityBuffer],
+    output_buffer: &mut [OwnedSecurityBuffer],
     hostname: &str,
 ) -> Result<InitializeSecurityContextResult, Box<dyn std::error::Error>> {
     let target_name = format!("HTTP/{}", hostname);
@@ -148,8 +148,8 @@ pub fn step(
     hostname: &str,
 ) -> (String, SecurityStatus) {
     let input_buffer = base64::engine::general_purpose::STANDARD.decode(input_token).unwrap();
-    let mut secure_input_buffer = vec![SecurityBuffer::new(input_buffer, SecurityBufferType::Token)];
-    let mut secure_output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut secure_input_buffer = vec![OwnedSecurityBuffer::new(input_buffer, SecurityBufferType::Token)];
+    let mut secure_output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     match step_helper(
         kerberos,
         cred_handle,

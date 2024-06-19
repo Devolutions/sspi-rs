@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem::take;
 
-use crate::{Error, ErrorKind, SecurityBufferType, Result};
+use crate::{Error, ErrorKind, Result, SecurityBufferType};
 
 /// A special security buffer type is used for the data decryption. Basically, it's almost the same
 /// as [SecurityBuffer] but for decryption.
@@ -198,7 +198,10 @@ impl<'data> DecryptBuffer<'data> {
         let data_len = data.len();
 
         if self.buf_len() < data_len {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "provided data can not fit in the destination buffer"));
+            return Err(Error::new(
+                ErrorKind::BufferTooSmall,
+                "provided data can not fit in the destination buffer",
+            ));
         }
 
         let mut buf = self.take_data();

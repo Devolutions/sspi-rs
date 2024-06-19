@@ -13,8 +13,8 @@ use crate::{
     builders, kerberos, ntlm, pku2u, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptBuffer,
     DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm,
-    PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
-    SspiImpl, PACKAGE_ID_NONE,
+    OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityPackageType, SecurityStatus, Sspi,
+    SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -293,7 +293,7 @@ impl SspiEx for Negotiate {
 
 impl Sspi for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
-    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.complete_auth_token(token),

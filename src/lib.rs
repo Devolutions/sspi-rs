@@ -30,7 +30,7 @@
 //!     .execute(&mut ntlm)
 //!     .expect("AcquireCredentialsHandle resulted in error");
 //!
-//! let mut output = vec![sspi::SecurityBuffer::new(
+//! let mut output = vec![sspi::OwnedSecurityBuffer::new(
 //!     Vec::new(),
 //!     sspi::SecurityBufferType::Token,
 //! )];
@@ -289,7 +289,7 @@ where
     ///
     /// let mut credentials_handle = acq_cred_result.credentials_handle;
     ///
-    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// #[allow(unused_variables)]
     /// let mut builder = ntlm.initialize_security_context()
@@ -351,7 +351,7 @@ where
     ///     .execute(&mut client_ntlm)
     ///     .unwrap();
     ///
-    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// let mut builder = client_ntlm.initialize_security_context()
     ///     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
@@ -368,7 +368,7 @@ where
     ///         .unwrap();
     ///
     /// let mut ntlm = sspi::Ntlm::new();
-    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// let mut server_acq_cred_result = ntlm
     ///     .acquire_credentials_handle()
@@ -421,8 +421,8 @@ where
     /// let mut client_ntlm = sspi::Ntlm::new();
     /// let mut ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -487,7 +487,7 @@ where
     /// # MSDN
     ///
     /// * [CompleteAuthToken function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
-    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus>;
+    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus>;
 
     /// Encrypts a message to provide privacy. The function allows the application to choose among cryptographic algorithms supported by the chosen mechanism.
     /// Some packages do not have messages to be encrypted or decrypted but rather provide an integrity hash that can be checked.
@@ -510,8 +510,8 @@ where
     /// let mut client_ntlm = sspi::Ntlm::new();
     /// let mut ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -571,8 +571,8 @@ where
     ///     .complete_auth_token(&mut server_output_buffer)
     ///     .unwrap();
     ///
-    /// let mut msg_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
-    ///     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
+    /// let mut msg_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
+    ///     sspi::OwnedSecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
     ///
     /// println!("Unencrypted: {:?}", msg_buffer[1].buffer);
     ///
@@ -623,8 +623,8 @@ where
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut server_ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -684,8 +684,8 @@ where
     ///     .complete_auth_token(&mut server_output_buffer)
     ///     .unwrap();
     ///
-    /// let mut msg = [sspi::SecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
-    ///     sspi::SecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
+    /// let mut msg = [sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token),
+    ///     sspi::OwnedSecurityBuffer::new(Vec::from("This is a message".as_bytes()), sspi::SecurityBufferType::Data)];
     ///
     /// let _result = server_ntlm
     ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
@@ -1269,12 +1269,12 @@ pub enum DataRepresentation {
 ///
 /// * [SecBuffer structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[derive(Clone)]
-pub struct SecurityBuffer {
+pub struct OwnedSecurityBuffer {
     pub buffer: Vec<u8>,
     pub buffer_type: SecurityBufferType,
 }
 
-impl fmt::Debug for SecurityBuffer {
+impl fmt::Debug for OwnedSecurityBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SecurityBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
         self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
@@ -1284,12 +1284,15 @@ impl fmt::Debug for SecurityBuffer {
     }
 }
 
-impl SecurityBuffer {
+impl OwnedSecurityBuffer {
     pub fn new(buffer: Vec<u8>, buffer_type: SecurityBufferType) -> Self {
         Self { buffer, buffer_type }
     }
 
-    pub fn find_buffer(buffers: &[SecurityBuffer], buffer_type: SecurityBufferType) -> Result<&SecurityBuffer> {
+    pub fn find_buffer(
+        buffers: &[OwnedSecurityBuffer],
+        buffer_type: SecurityBufferType,
+    ) -> Result<&OwnedSecurityBuffer> {
         buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidToken,
@@ -1299,9 +1302,9 @@ impl SecurityBuffer {
     }
 
     pub fn find_buffer_mut(
-        buffers: &mut [SecurityBuffer],
+        buffers: &mut [OwnedSecurityBuffer],
         buffer_type: SecurityBufferType,
-    ) -> Result<&mut SecurityBuffer> {
+    ) -> Result<&mut OwnedSecurityBuffer> {
         buffers
             .iter_mut()
             .find(|b| b.buffer_type == buffer_type)

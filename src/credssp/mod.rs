@@ -34,7 +34,7 @@ use crate::{
     CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
     Credentials, CredentialsBuffers, DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, Error,
     ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferType,
+    InitializeSecurityContextResult, Negotiate, NegotiateConfig, OwnedSecurityBuffer, PackageInfo, SecurityBufferType,
     SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
 
@@ -282,11 +282,14 @@ impl CredSspClient {
 
         match self.state {
             CredSspState::NegoToken => {
-                let mut input_token = [SecurityBuffer::new(
+                let mut input_token = [OwnedSecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
                     SecurityBufferType::Token,
                 )];
-                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+                let mut output_token = vec![OwnedSecurityBuffer::new(
+                    Vec::with_capacity(1024),
+                    SecurityBufferType::Token,
+                )];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let cred_ssp_context = self
@@ -515,8 +518,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             }
             CredSspState::NegoToken => {
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
-                let input_token = SecurityBuffer::new(input, SecurityBufferType::Token);
-                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+                let input_token = OwnedSecurityBuffer::new(input, SecurityBufferType::Token);
+                let mut output_token = vec![OwnedSecurityBuffer::new(
+                    Vec::with_capacity(1024),
+                    SecurityBufferType::Token,
+                )];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
@@ -805,7 +811,7 @@ impl<'a> SspiContext {
 
 impl Sspi for SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
-    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> crate::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
             SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),

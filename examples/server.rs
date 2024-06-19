@@ -8,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer, SecurityBufferType,
+    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, OwnedSecurityBuffer, SecurityBufferType,
     SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
@@ -47,11 +47,11 @@ fn main() -> Result<(), io::Error> {
     // By agreement, the server places the trailer at the beginning
     // of the message, and the data comes after the trailer.
     let mut msg_buffer = vec![
-        SecurityBuffer::new(
+        OwnedSecurityBuffer::new(
             vec![0u8; ntlm.query_context_sizes()?.security_trailer as usize],
             SecurityBufferType::Token,
         ),
-        SecurityBuffer::new(Vec::from(msg.as_bytes()), SecurityBufferType::Data),
+        OwnedSecurityBuffer::new(Vec::from(msg.as_bytes()), SecurityBufferType::Data),
     ];
 
     println!("Unencrypted message: [{}]", msg);
@@ -79,8 +79,8 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_auth_data(identity)
         .execute(ntlm)?;
 
-    let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
-    let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
     loop {
         read_message(&mut stream, &mut input_buffer[0].buffer)?;
