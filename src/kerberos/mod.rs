@@ -755,13 +755,14 @@ impl<'a> Kerberos {
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
-                        let private_key_pem = String::from_utf8(
+
+                        let private_key_pem = utf16_bytes_to_utf8_string(
                             smart_card
                                 .private_key_pem
                                 .as_ref()
                                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "scard private key is missing"))?
-                                .to_vec(),
-                        )?;
+                                .to_vec().as_slice(),
+                        );
                         let certificate = smart_card.certificate.clone();
 
                         self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);

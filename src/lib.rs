@@ -84,8 +84,8 @@ mod utils;
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
 
-#[cfg(all(feature = "scard", not(target_os = "windows")))]
-compile_error!("scard feature should be used only on Windows");
+#[cfg(all(feature = "winscard", not(target_os = "windows")))]
+compile_error!("winscard feature should be used only on Windows");
 
 use std::{error, fmt, io, result, str, string};
 
@@ -1978,7 +1978,7 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
-#[cfg(feature = "scard")]
+#[cfg(feature = "winscard")]
 impl From<pcsc::Error> for Error {
     fn from(_value: pcsc::Error) -> Self {
         Self::new(ErrorKind::InternalError, "pcsc error".to_owned())

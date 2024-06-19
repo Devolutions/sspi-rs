@@ -293,10 +293,11 @@ mod scard_credentials {
             } else {
                 None
             };
+            let pin = utils::string_to_utf16(String::from_utf8_lossy(value.pin.as_ref())).into();
             Ok(Self {
                 certificate: picky_asn1_der::to_vec(&value.certificate)?,
                 reader_name: utils::string_to_utf16(value.reader_name),
-                pin: value.pin.as_ref().clone().into(),
+                pin,
                 username: utils::string_to_utf16(value.username),
                 card_name: value.card_name.map(utils::string_to_utf16),
                 container_name: utils::string_to_utf16(value.container_name),
