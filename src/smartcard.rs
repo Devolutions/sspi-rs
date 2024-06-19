@@ -1,13 +1,12 @@
 use std::borrow::Cow;
 use std::fmt;
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 use pcsc::{Card, Context, Protocols, Scope, ShareMode};
 use picky::key::PrivateKey;
 use picky_asn1::wrapper::OctetStringAsn1;
 use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
 
-#[cfg(feature = "scard")]
 use winscard::SmartCard as PivSmartCard;
 
 use crate::{Error, ErrorKind, Result};
@@ -20,9 +19,9 @@ const APDU_COMMAND_DATA_SIZE: usize = 255;
 // tag is always 1 byte in length
 const TLV_TAG_LENGTH: usize = 1;
 
-// #[cfg(feature = "winscard")]
+// #[cfg(feature = "scard")]
 pub enum SmartCardApi {
-    #[cfg(feature = "winscard")]
+    #[cfg(feature = "scard")]
     WinSCard(Card),
     PivSmartCard(Box<PivSmartCard<'static>>),
 }
@@ -30,7 +29,7 @@ pub enum SmartCardApi {
 impl fmt::Debug for SmartCardApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            #[cfg(feature = "winscard")]
+            #[cfg(feature = "scard")]
             Self::WinSCard { .. } => f.write_str("SmartCardApi::WinSCard"),
             Self::PivSmartCard { .. } => f.write_str("SmartCardApi::PivSmartCard"),
         }
@@ -45,7 +44,7 @@ pub struct SmartCard {
 }
 
 impl SmartCard {
-    #[cfg(feature = "winscard")]
+    #[cfg(feature = "scard")]
     pub fn new(pin: Vec<u8>, scard_reader_name: &str, private_key_file_index: u8) -> Result<Self> {
         let context = Context::establish(Scope::User)?;
         let readers_len = context.list_readers_len()?;
@@ -87,7 +86,7 @@ impl SmartCard {
 
     pub fn sign(&mut self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
         match self.smart_card_type {
-            #[cfg(feature = "winscard")]
+            #[cfg(feature = "scard")]
             SmartCardApi::WinSCard(ref scard) => {
                 // https://www.eftlab.com/knowledge-base/complete-list-of-apdu-responses
                 const APDU_RESPONSE_OK: [u8; 2] = [0x90, 0x00];

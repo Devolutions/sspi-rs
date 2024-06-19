@@ -30,8 +30,7 @@ dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CREDSSP replacement
 tsssp = ["dep:rustls"]
 # Turns on Kerberos smart card login (available only on Windows and users WinSCard API)
-scard = ["dep:winscard"]
-winscard = ["scard", "dep:pcsc"]
+scard = ["dep:pcsc"]
 test_data = []
 
 [dependencies]
@@ -72,7 +71,7 @@ zeroize = { version = "1.6", features = ["zeroize_derive"] }
 tokio = { version = "1.32", features = ["time", "rt", "rt-multi-thread"], optional = true }
 pcsc = { version = "2.8", optional = true }
 async-recursion = "1.0.5"
-winscard = { version = "0.1", path = "./crates/winscard", optional = true }
+winscard = { version = "0.1", path = "./crates/winscard" }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.51"

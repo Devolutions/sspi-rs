@@ -68,7 +68,6 @@ pub mod pku2u;
 #[allow(unreachable_patterns)]
 mod auth_identity;
 mod ber;
-#[cfg(feature = "scard")]
 pub mod cert_utils;
 mod crypto;
 mod decrypt_buffer;
@@ -76,7 +75,6 @@ mod dns;
 mod kdc;
 mod krb;
 mod secret;
-#[cfg(feature = "scard")]
 #[allow(dead_code)]
 mod smartcard;
 mod utils;
@@ -104,7 +102,6 @@ use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
 pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
-#[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
@@ -1978,21 +1975,19 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 impl From<pcsc::Error> for Error {
     fn from(_value: pcsc::Error) -> Self {
         Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }
 
-#[cfg(feature = "scard")]
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
         Self::new(ErrorKind::InternalError, format!("RSA key error: {:?}", err))
     }
 }
 
-#[cfg(feature = "scard")]
 impl From<winscard::Error> for Error {
     fn from(value: winscard::Error) -> Self {
         Self::new(

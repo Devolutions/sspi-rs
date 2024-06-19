@@ -6,7 +6,7 @@ use picky_asn1::wrapper::Utf8StringAsn1;
 use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
 use sha1::{Digest, Sha1};
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
     CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, AT_KEYEXCHANGE,
@@ -14,7 +14,7 @@ use windows_sys::Win32::Security::Cryptography::{
     CRYPT_NEXT, CRYPT_SILENT, KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
 };
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 // UTF-16 encoded "Microsoft Base Smart Card Crypto Provider\0"
 const CSP_NAME_W: &[u8] = &[
     77, 0, 105, 0, 99, 0, 114, 0, 111, 0, 115, 0, 111, 0, 102, 0, 116, 0, 32, 0, 66, 0, 97, 0, 115, 0, 101, 0, 32, 0,
@@ -22,19 +22,19 @@ const CSP_NAME_W: &[u8] = &[
     116, 0, 111, 0, 32, 0, 80, 0, 114, 0, 111, 0, 118, 0, 105, 0, 100, 0, 101, 0, 114, 0, 0, 0,
 ];
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
-§#[cfg(feature = "winscard")]
+§#[cfg(feature = "scard")]
 // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
 pub type HCRYPTPROV = usize; // ULONG_PTR
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
                              // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
 pub type HCRYPTKEY = usize; // ULONG_PTR
 
 use crate::{Error, ErrorKind, Result};
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: *mut c_void) -> Result<Vec<u8>> {
     let mut certificate = CertEnumCertificatesInStore(cert_store, null_mut());
@@ -62,7 +62,7 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: *mut c_void
     ))
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 unsafe fn open_user_cert_store() -> Result<*mut c_void> {
     // "My\0" encoded as a wide string.
     // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
@@ -85,7 +85,7 @@ unsafe fn open_user_cert_store() -> Result<*mut c_void> {
     Ok(cert_store)
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 pub unsafe fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
     let cert_store = open_user_cert_store()?;
@@ -96,7 +96,7 @@ pub unsafe fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result
     Ok(cert)
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Vec<u8>, Certificate)> {
     let raw_cert = extract_raw_certificate_by_thumbprint(thumbprint)?;
@@ -104,7 +104,7 @@ pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Ve
     Ok((raw_cert.to_vec(), picky_asn1_der::from_bytes(&raw_cert)?))
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 unsafe fn acquire_key_container_context(key_container_name: &str) -> Result<HCRYPTPROV> {
     let container_name = key_container_name
@@ -131,7 +131,7 @@ unsafe fn acquire_key_container_context(key_container_name: &str) -> Result<HCRY
     Ok(crypt_context_handle)
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 unsafe fn get_reader_name(crypt_context_handle: HCRYPTPROV) -> Result<String> {
     let mut reader_buff_len = 0;
@@ -165,7 +165,7 @@ unsafe fn get_reader_name(crypt_context_handle: HCRYPTPROV) -> Result<String> {
         .map_err(|_| Error::new(ErrorKind::InternalError, "reader name is not valid UTF-8 text"))
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
 pub unsafe fn get_key_container_certificate(crypt_context_handle: HCRYPTPROV) -> Result<Certificate> {
     let mut key = HCRYPTKEY::default();
@@ -200,7 +200,7 @@ pub struct SmartCardInfo {
     pub private_key_file_index: u8,
 }
 
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 // This function gathers the smart card information like reader name, key container name,
 // and so on using the provided certificate serial number.
 // It iterates over existing key containers and tries to find a suitable reader name and key container.

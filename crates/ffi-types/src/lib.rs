@@ -1,5 +1,5 @@
 pub mod common;
-#[cfg(feature = "winscard")]
+#[cfg(feature = "scard")]
 pub mod winscard;
 
 pub use common::*;

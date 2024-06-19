@@ -16,8 +16,7 @@ fn main() {
         // https://docs.microsoft.com/en-us/cpp/build/reference/exports
 
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        #[cfg(feature = "scard")]
-        let sspi_def_file = manifest_dir.join("sspi_winscard.def");
+                let sspi_def_file = manifest_dir.join("sspi_winscard.def");
         #[cfg(not(feature = "scard"))]
         let sspi_def_file = manifest_dir.join("sspi.def");
         println!("cargo:rustc-link-arg=/DEF:{}", sspi_def_file.display());

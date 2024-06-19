@@ -22,7 +22,6 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
-#[cfg(feature = "scard")]
 use sha1::{Digest, Sha1};
 use url::Url;
 
@@ -50,11 +49,8 @@ use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::network_client::NetworkProtocol;
-#[cfg(feature = "scard")]
 use crate::pk_init::{self, DhParameters};
-#[cfg(feature = "scard")]
 use crate::pku2u::generate_client_dh_parameters;
-#[cfg(feature = "scard")]
 use crate::smartcard::SmartCard;
 use crate::utils::{
     extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, parse_target_name, save_decrypted_data,
@@ -118,8 +114,7 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
-    #[cfg(feature = "scard")]
-    dh_parameters: Option<DhParameters>,
+        dh_parameters: Option<DhParameters>,
 }
 
 impl Kerberos {
@@ -135,8 +130,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
-            dh_parameters: None,
+                        dh_parameters: None,
         })
     }
 
@@ -152,8 +146,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
-            dh_parameters: None,
+                        dh_parameters: None,
         })
     }
 
@@ -415,8 +408,7 @@ impl Sspi for Kerberos {
                 username: identity.username,
             });
         }
-        #[cfg(feature = "scard")]
-        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
+                if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
@@ -665,8 +657,7 @@ impl<'a> Kerberos {
 
                         (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                     }
-                    #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
+                                        CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
                 };
                 debug!(username, service_name);
 
@@ -714,7 +705,6 @@ impl<'a> Kerberos {
 
                         (username, password, realm, cname_type)
                     }
-                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let username = utf16_bytes_to_utf8_string(&smart_card.username);
                         let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
@@ -751,8 +741,7 @@ impl<'a> Kerberos {
                             with_pre_auth: false,
                         })
                     }
-                    #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(smart_card) => {
+                                        CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
 
@@ -818,8 +807,7 @@ impl<'a> Kerberos {
                         password: &password,
                         enc_params: &mut self.encryption_params,
                     },
-                    #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
+                                        CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                         dh_parameters: self.dh_parameters.as_mut().unwrap(),
                         enc_params: &mut self.encryption_params,
                     },
@@ -1043,8 +1031,7 @@ pub mod test_data {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
-            dh_parameters: None,
+                        dh_parameters: None,
         }
     }
 
@@ -1067,8 +1054,7 @@ pub mod test_data {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
-            dh_parameters: None,
+                        dh_parameters: None,
         }
     }
 }

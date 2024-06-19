@@ -223,7 +223,6 @@ impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
     }
 }
 
-#[cfg(feature = "scard")]
 mod scard_credentials {
     use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
@@ -339,7 +338,6 @@ mod scard_credentials {
     }
 }
 
-#[cfg(feature = "scard")]
 pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
@@ -347,8 +345,7 @@ pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
 pub enum CredentialsBuffers {
     /// Raw auth identity buffers for the password based authentication
     AuthIdentity(AuthIdentityBuffers),
-    #[cfg(feature = "scard")]
-    /// Raw smart card identity buffers for the smart card based authentication
+        /// Raw smart card identity buffers for the smart card based authentication
     SmartCard(SmartCardIdentityBuffers),
 }
 
@@ -381,8 +378,7 @@ impl CredentialsBuffers {
 pub enum Credentials {
     /// Auth identity for the password based authentication
     AuthIdentity(AuthIdentity),
-    #[cfg(feature = "scard")]
-    /// Smart card identity for the smart card based authentication
+        /// Smart card identity for the smart card based authentication
     SmartCard(Box<SmartCardIdentity>),
 }
 
@@ -396,7 +392,6 @@ impl Credentials {
     }
 }
 
-#[cfg(feature = "scard")]
 impl From<SmartCardIdentity> for Credentials {
     fn from(value: SmartCardIdentity) -> Self {
         Self::SmartCard(Box::new(value))
@@ -415,8 +410,7 @@ impl TryFrom<Credentials> for CredentialsBuffers {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(match value {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
-            #[cfg(feature = "scard")]
-            Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
+                        Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
         })
     }
 }
