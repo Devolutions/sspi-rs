@@ -154,11 +154,12 @@ impl Sspi for SspiCredSsp {
         let encrypted_data = encrypted_data.as_slice();
 
         let stream_header_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader)?;
-        let (stream_header_data, encrypted_data) = encrypted_data.split_at(stream_header_buffer.buf_len());
+        let (stream_header_data, encrypted_data) =
+            encrypted_data.split_at(stream_header_buffer.buf_len().min(encrypted_data.len()));
         stream_header_buffer.write_data(stream_header_data)?;
 
         let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
-        let (data_data, encrypted_data) = encrypted_data.split_at(data_buffer.buf_len());
+        let (data_data, encrypted_data) = encrypted_data.split_at(data_buffer.buf_len().min(encrypted_data.len()));
         data_buffer.write_data(data_data)?;
 
         let stream_trailer_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer)?;
