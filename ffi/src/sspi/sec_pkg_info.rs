@@ -161,7 +161,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
 
         for package in &packages {
-            size += package.name.as_ref().as_bytes().len() + package.comment.as_bytes().len();
+            size += package.name.as_ref().as_bytes().len() + 1 /* null byte */ + package.comment.as_bytes().len() + 1 /* null byte */;
         }
 
         let raw_packages = libc::malloc(size);
