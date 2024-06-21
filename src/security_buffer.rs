@@ -56,7 +56,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::Missing(_) => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
-                    "The missing buffer type does not hold any buffers inside.",
+                    "the missing buffer type does not hold any buffers inside",
                 ))
             }
             SecurityBuffer::Empty => SecurityBuffer::Empty,
@@ -77,7 +77,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::Missing(_) => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
-                    "The missing buffer type does not hold any buffers inside.",
+                    "the missing buffer type does not hold any buffers inside",
                 ))
             }
             SecurityBuffer::Empty => {}
@@ -112,7 +112,7 @@ impl<'data> SecurityBuffer<'data> {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {:?}", buffer_type),
                 )
             })
     }
@@ -130,7 +130,7 @@ impl<'data> SecurityBuffer<'data> {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {:?}", buffer_type),
                 )
             })
     }
