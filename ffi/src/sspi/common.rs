@@ -491,7 +491,9 @@ mod tests {
         };
 
         let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
         assert_eq!(status, 0);
 
         // Check SECBUFFER_STREAM
@@ -546,7 +548,9 @@ mod tests {
         };
 
         let status = unsafe { super::EncryptMessage(&mut kerberos_server_context, 0, &mut message, 0) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_server_context) };
         assert_eq!(status, 0);
 
         let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
@@ -574,7 +578,9 @@ mod tests {
         };
 
         let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
         assert_eq!(status, 0);
 
         // Check that the decrypted data is the same as the initial message
