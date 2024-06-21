@@ -318,6 +318,7 @@ mod tests {
     use std::ptr::null_mut;
 
     use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
+    use crate::sspi::common::FreeContextBuffer;
 
     #[test]
     fn enumerate_security_packages_a() {
@@ -342,6 +343,9 @@ mod tests {
             for i in 0..(packages_amount as usize) {
                 let _ = packages.add(i).as_mut().unwrap();
             }
+
+            let status = FreeContextBuffer(packages as *mut _);
+            assert_eq!(status, 0);
         }
     }
 
@@ -368,6 +372,9 @@ mod tests {
             for i in 0..(packages_amount as usize) {
                 let _ = packages.add(i).as_mut().unwrap();
             }
+
+            let status = FreeContextBuffer(packages as *mut _);
+            assert_eq!(status, 0);
         }
     }
 }
