@@ -150,7 +150,7 @@ impl Sspi for SspiCredSsp {
 
         let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let encrypted_data = self.tls_connection_mut()?.encrypt_tls(&plain_message.data())?;
+        let encrypted_data = self.tls_connection_mut()?.encrypt_tls(plain_message.data())?;
         let encrypted_data = encrypted_data.as_slice();
 
         let stream_header_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader)?;
