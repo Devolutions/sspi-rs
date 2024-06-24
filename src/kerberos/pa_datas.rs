@@ -22,28 +22,28 @@ use crate::{check_if_empty, pku2u, Error, ErrorKind};
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
 pub enum AsReqPaDataOptions<'a> {
     AuthIdentity(AuthIdentityPaDataOptions<'a>),
-        SmartCard(Box<SmartCardPaDataOptions<'a>>),
+    SmartCard(Box<SmartCardPaDataOptions<'a>>),
 }
 
 impl AsReqPaDataOptions<'_> {
     pub fn generate(&self) -> Result<Vec<PaData>> {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
-                        AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),
+            AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),
         }
     }
 
     pub fn with_pre_auth(&mut self, pre_auth: bool) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.with_pre_auth = pre_auth,
-                        AsReqPaDataOptions::SmartCard(options) => options.with_pre_auth = pre_auth,
+            AsReqPaDataOptions::SmartCard(options) => options.with_pre_auth = pre_auth,
         }
     }
 
     pub fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
-                        AsReqPaDataOptions::SmartCard(_) => {}
+            AsReqPaDataOptions::SmartCard(_) => {}
         }
     }
 }
@@ -57,7 +57,7 @@ pub enum AsRepSessionKeyExtractor<'a> {
         password: &'a str,
         enc_params: &'a EncryptionParams,
     },
-        SmartCard {
+    SmartCard {
         dh_parameters: &'a mut DhParameters,
         enc_params: &'a mut EncryptionParams,
     },
@@ -72,7 +72,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 password,
                 enc_params,
             } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
-                        AsRepSessionKeyExtractor::SmartCard {
+            AsRepSessionKeyExtractor::SmartCard {
                 dh_parameters,
                 enc_params,
             } => {

@@ -114,7 +114,7 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
-        dh_parameters: Option<DhParameters>,
+    dh_parameters: Option<DhParameters>,
 }
 
 impl Kerberos {
@@ -130,7 +130,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-                        dh_parameters: None,
+            dh_parameters: None,
         })
     }
 
@@ -146,7 +146,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-                        dh_parameters: None,
+            dh_parameters: None,
         })
     }
 
@@ -408,7 +408,7 @@ impl Sspi for Kerberos {
                 username: identity.username,
             });
         }
-                if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
+        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
@@ -657,7 +657,7 @@ impl<'a> Kerberos {
 
                         (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                     }
-                                        CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
+                    CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
                 };
                 debug!(username, service_name);
 
@@ -741,7 +741,7 @@ impl<'a> Kerberos {
                             with_pre_auth: false,
                         })
                     }
-                                        CredentialsBuffers::SmartCard(smart_card) => {
+                    CredentialsBuffers::SmartCard(smart_card) => {
                         let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
                         let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
 
@@ -807,7 +807,7 @@ impl<'a> Kerberos {
                         password: &password,
                         enc_params: &mut self.encryption_params,
                     },
-                                        CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
+                    CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                         dh_parameters: self.dh_parameters.as_mut().unwrap(),
                         enc_params: &mut self.encryption_params,
                     },
@@ -1054,7 +1054,7 @@ pub mod test_data {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
-                        dh_parameters: None,
+            dh_parameters: None,
         }
     }
 }

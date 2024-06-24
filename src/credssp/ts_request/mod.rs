@@ -287,7 +287,7 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
         CredentialsBuffers::AuthIdentity(creds) => {
             (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
         }
-                CredentialsBuffers::SmartCard(creds) => (
+        CredentialsBuffers::SmartCard(creds) => (
             picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
             write_smart_card_credentials(creds)?,
         ),
@@ -350,7 +350,7 @@ pub fn read_ts_credentials(mut buffer: impl io::Read) -> crate::Result<Credentia
         Some(&TS_PASSWORD_CREDS) => Ok(CredentialsBuffers::AuthIdentity(read_password_credentials(
             &ts_credentials.credentials.0 .0,
         )?)),
-                Some(&picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS) => Err(Error::new(
+        Some(&picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS) => Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Reading of the TsSmartCard credentials is not supported yet",
         )),

@@ -19,7 +19,6 @@ const APDU_COMMAND_DATA_SIZE: usize = 255;
 // tag is always 1 byte in length
 const TLV_TAG_LENGTH: usize = 1;
 
-// #[cfg(feature = "scard")]
 pub enum SmartCardApi {
     #[cfg(feature = "scard")]
     WinSCard(Card),

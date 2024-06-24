@@ -345,7 +345,7 @@ pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
 pub enum CredentialsBuffers {
     /// Raw auth identity buffers for the password based authentication
     AuthIdentity(AuthIdentityBuffers),
-        /// Raw smart card identity buffers for the smart card based authentication
+    /// Raw smart card identity buffers for the smart card based authentication
     SmartCard(SmartCardIdentityBuffers),
 }
 
@@ -378,7 +378,7 @@ impl CredentialsBuffers {
 pub enum Credentials {
     /// Auth identity for the password based authentication
     AuthIdentity(AuthIdentity),
-        /// Smart card identity for the smart card based authentication
+    /// Smart card identity for the smart card based authentication
     SmartCard(Box<SmartCardIdentity>),
 }
 
@@ -410,7 +410,7 @@ impl TryFrom<Credentials> for CredentialsBuffers {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(match value {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
-                        Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
+            Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
         })
     }
 }
