@@ -82,8 +82,8 @@ mod utils;
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
 
-#[cfg(all(feature = "winscard", not(target_os = "windows")))]
-compile_error!("winscard feature should be used only on Windows");
+#[cfg(all(feature = "scard", not(target_os = "windows")))]
+compile_error!("scard feature should be used only on Windows");
 
 use std::{error, fmt, io, result, str, string};
 

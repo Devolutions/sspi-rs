@@ -316,7 +316,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(feature = "scard")]
-                if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -336,13 +336,13 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(feature = "scard")]
-                if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
         // Try to collect credentials for the emulated smart card.
         #[cfg(feature = "scard")]
-                if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -655,13 +655,13 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
+    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
-        if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
+    if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, password data is a wide C string and we need to delete the NULL terminator.
