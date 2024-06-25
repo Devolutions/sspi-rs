@@ -364,14 +364,13 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
             SecurityBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
         } else {
-            if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
-                buf.with_data(&mut [])?
+            let data = if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
+                &mut []
             } else {
                 // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
-                buf.with_data(unsafe {
-                    from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?)
-                })?
-            }
+                unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
+            };
+            buf.with_data(data)?
         })
     }
 
