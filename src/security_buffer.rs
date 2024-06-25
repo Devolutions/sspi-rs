@@ -9,9 +9,9 @@ use crate::{Error, ErrorKind, Result, SecurityBufferType};
 /// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
 /// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
 ///
-/// So, the already defined [SecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
+/// So, the already defined [OwnedSecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
 /// We use reference in the [SecurityBuffer] structure to avoid data cloning as much as possible.
-/// Decryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
+/// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
 /// security package.
 pub enum SecurityBuffer<'data> {
     Data(&'data mut [u8]),
@@ -218,7 +218,7 @@ impl<'data> SecurityBuffer<'data> {
 
 impl fmt::Debug for SecurityBuffer<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DecryptBuffer {{ ")?;
+        write!(f, "SecurityBuffer {{ ")?;
         match self {
             SecurityBuffer::Data(data) => write_buffer(data, "Data", f)?,
             SecurityBuffer::Token(data) => write_buffer(data, "Token", f)?,

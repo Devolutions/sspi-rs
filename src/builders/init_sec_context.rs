@@ -247,7 +247,7 @@ impl<
         }
     }
 
-    /// Specifies a mutable reference to a buffer with `SecurityBuffer` that receives the output data.
+    /// Specifies a mutable reference to a buffer with [OwnedSecurityBuffer] that receives the output data.
     pub fn with_output(
         self,
         output: &'a mut [OwnedSecurityBuffer],
@@ -282,7 +282,7 @@ impl<
         }
     }
 
-    /// Specifies a mutable reference to a buffer with `SecurityBuffer` structures. Don't call this method on during
+    /// Specifies a mutable reference to a buffer with [OwnedSecurityBuffer] structures. Don't call this method on during
     /// the first execution of the builder. On the second execution, this parameter is a reference to the partially
     /// formed context returned during the first call.
     pub fn with_input(self, input: &'a mut [OwnedSecurityBuffer]) -> Self {
