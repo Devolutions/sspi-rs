@@ -79,6 +79,24 @@ jobs:
       - name: Test
         run: cargo test --manifest-path ${{ matrix.manifest }} ${{ matrix.additional-args }}
 
+  miri:
+    name: Miri FFI tests
+    runs-on: ubuntu-20.04
+    needs: formatting
+    env:
+      SSPI_RS_IS_RUNNING_TESTS: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain and Miri
+        run: |
+          rustup toolchain install nightly --component miri
+          rustup override set nightly
+
+      - name: Test
+        run: cargo miri test --manifest-path ffi/Cargo.toml
+
   wasm:
     name: WASM target
     runs-on: ubuntu-latest
