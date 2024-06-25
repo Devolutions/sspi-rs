@@ -255,7 +255,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 ));
                 #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
-                    whoami::hostname(),
+                    hostname()?,
                 )?)?)
             }
             kerberos::PKG_NAME => {
