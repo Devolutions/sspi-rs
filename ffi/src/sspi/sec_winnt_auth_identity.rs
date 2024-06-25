@@ -1,3 +1,4 @@
+use std::ptr::copy_nonoverlapping;
 #[cfg(windows)]
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
@@ -16,7 +17,7 @@ use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
+use crate::utils::{into_raw_ptr, raw_str_into_bytes, w_str_len};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -718,17 +719,39 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         check_null!(psz_domain_name);
         check_null!(psz_packed_credentials_string);
 
-        let user = c_w_str_to_string(psz_user_name);
-        let domain = c_w_str_to_string(psz_domain_name);
-        let password = c_w_str_to_string(psz_packed_credentials_string);
+        let user_length = w_str_len(psz_user_name);
+        let domain_length = w_str_len(psz_domain_name);
+        let password_length = w_str_len(psz_packed_credentials_string);
+
+        if user_length == 0 || domain_length == 0 || password_length == 0 {
+            return ErrorKind::InvalidParameter.to_u32().unwrap();
+        }
+
+        let user = unsafe { libc::malloc(user_length * 2) as *mut SecWChar };
+        if user.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_user_name, user, user_length);
+
+        let domain = unsafe { libc::malloc(domain_length * 2) as *mut SecWChar };
+        if domain.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_domain_name, domain, domain_length);
+
+        let password = unsafe { libc::malloc(password_length * 2) as *mut SecWChar };
+        if password.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_packed_credentials_string, password, password_length);
 
         let auth_identity = SecWinntAuthIdentityW {
-            user: psz_user_name,
-            user_length: user.len().try_into().unwrap(),
-            domain: psz_domain_name,
-            domain_length: domain.len().try_into().unwrap(),
-            password: psz_packed_credentials_string,
-            password_length: password.len().try_into().unwrap(),
+            user,
+            user_length: user_length.try_into().unwrap(),
+            domain,
+            domain_length: domain_length.try_into().unwrap(),
+            password,
+            password_length: password_length.try_into().unwrap(),
             flags: 0,
         };
 
@@ -748,7 +771,13 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
             return 0;
         }
 
-        let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data as *mut _);
+        let auth_data = auth_data as *mut SecWinntAuthIdentityW;
+
+        unsafe { libc::free((*auth_data).user as *mut _) };
+        unsafe { libc::free((*auth_data).domain as *mut _) };
+        unsafe { libc::free((*auth_data).password as *mut _) };
+
+        let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data);
 
         0
     }
@@ -803,6 +832,9 @@ mod tests {
                 "domain",
                 String::from_utf16_lossy(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
             );
+
+            let status = SspiFreeAuthIdentity(identity as *mut _);
+            assert_eq!(status, 0);
         }
     }
 
@@ -829,26 +861,8 @@ mod tests {
             let status =
                 SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
 
-            assert_eq!(status, 0);
-            assert!(!identity.is_null());
-
-            let identity = identity.cast::<SecWinntAuthIdentityW>();
-
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts((*identity).user, (*identity).user_length as usize))
-            );
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts(
-                    (*identity).password,
-                    (*identity).password_length as usize
-                ))
-            );
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
-            );
+            assert_eq!(status, ErrorKind::InvalidParameter.to_u32().unwrap());
+            assert!(identity.is_null());
         }
     }
 
@@ -858,10 +872,11 @@ mod tests {
         let mut identity = null_mut::<c_void>();
 
         unsafe {
-            SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
+            let status =
+                SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
+            assert_eq!(status, 0);
 
             let status = SspiFreeAuthIdentity(identity);
-
             assert_eq!(status, 0);
         }
     }

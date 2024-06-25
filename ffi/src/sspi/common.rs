@@ -364,10 +364,13 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
             SecurityBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
         } else {
-            // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
-            buf.with_data(unsafe {
-                from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?)
-            })?
+            let data = if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
+                &mut []
+            } else {
+                // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
+                unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
+            };
+            buf.with_data(data)?
         })
     }
 
@@ -487,7 +490,9 @@ mod tests {
         };
 
         let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
         assert_eq!(status, 0);
 
         // Check SECBUFFER_STREAM
@@ -542,7 +547,9 @@ mod tests {
         };
 
         let status = unsafe { super::EncryptMessage(&mut kerberos_server_context, 0, &mut message, 0) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_server_context) };
         assert_eq!(status, 0);
 
         let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
@@ -570,7 +577,9 @@ mod tests {
         };
 
         let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
         assert_eq!(status, 0);
 
         // Check that the decrypted data is the same as the initial message
