@@ -4,7 +4,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{DecryptBuffer, Error, ErrorKind, Result, SecurityBufferType};
+use crate::{Error, ErrorKind, Result, SecurityBuffer, SecurityBufferType};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -248,63 +248,61 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 ///   But in such a case, the `SECBUFFER_DATA` buffer is empty. So, we take the inner buffer from
 ///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
-pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [DecryptBuffer]) -> Result<()> {
-    if let Ok(buffer) = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
-        let stream_buffer = buffer.take_data();
-        let stream_buffer_len = stream_buffer.len();
+pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBuffer]) -> Result<()> {
+    if let Ok(buffer) = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
         let decrypted_len = decrypted.len();
 
-        if stream_buffer_len < decrypted_len {
+        if buffer.buf_len() < decrypted_len {
             return Err(Error::new(
                 ErrorKind::DecryptFailure,
                 format!(
                     "decrypted data length ({}) does not match the stream buffer length ({})",
-                    decrypted_len, stream_buffer_len,
+                    decrypted_len,
+                    buffer.buf_len(),
                 ),
             ));
         }
 
-        let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let stream_buffer = buffer.take_data();
+        let stream_buffer_len = stream_buffer.len();
+
+        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
 
         let data = &mut stream_buffer[stream_buffer_len - decrypted_len..];
         data.copy_from_slice(decrypted);
 
         data_buffer.set_data(data)
     } else {
-        let data_buffer = DecryptBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
-        let data = data_buffer.take_data();
+        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
 
-        if data.len() < decrypted.len() {
+        if data_buffer.buf_len() < decrypted.len() {
             return Err(Error::new(
                 ErrorKind::DecryptFailure,
                 format!(
                     "decrypted data length ({}) does not match the data buffer length ({})",
                     decrypted.len(),
-                    data.len(),
+                    data_buffer.buf_len(),
                 ),
             ));
         }
 
-        let data = &mut data[0..decrypted.len()];
-        data.copy_from_slice(decrypted);
-
-        data_buffer.set_data(data)
+        data_buffer.write_data(decrypted)
     }
 }
 
 /// Extracts data to decrypt from the incoming buffers.
 ///
 /// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
-pub fn extract_encrypted_data(buffers: &[DecryptBuffer]) -> Result<Vec<u8>> {
-    let mut encrypted = DecryptBuffer::buf_data(buffers, SecurityBufferType::Token)
+pub fn extract_encrypted_data(buffers: &[SecurityBuffer]) -> Result<Vec<u8>> {
+    let mut encrypted = SecurityBuffer::buf_data(buffers, SecurityBufferType::Token)
         .unwrap_or_default()
         .to_vec();
 
     encrypted.extend_from_slice(
-        if let Ok(buffer) = DecryptBuffer::buf_data(buffers, SecurityBufferType::Stream) {
+        if let Ok(buffer) = SecurityBuffer::buf_data(buffers, SecurityBufferType::Stream) {
             buffer
         } else {
-            DecryptBuffer::buf_data(buffers, SecurityBufferType::Data)?
+            SecurityBuffer::buf_data(buffers, SecurityBufferType::Data)?
         },
     );
 

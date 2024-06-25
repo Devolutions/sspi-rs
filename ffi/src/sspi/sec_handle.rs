@@ -129,7 +129,7 @@ impl SspiImpl for SspiHandle {
 }
 
 impl Sspi for SspiHandle {
-    fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [sspi::OwnedSecurityBuffer]) -> Result<sspi::SecurityStatus> {
         self.sspi_context.lock()?.complete_auth_token(token)
     }
 
@@ -146,7 +146,7 @@ impl Sspi for SspiHandle {
 
     fn decrypt_message(
         &mut self,
-        message: &mut [sspi::DecryptBuffer],
+        message: &mut [sspi::SecurityBuffer],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
         self.sspi_context.lock()?.decrypt_message(message, sequence_number)

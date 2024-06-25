@@ -8,8 +8,8 @@ use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer, SecurityBufferType,
-    SecurityStatus, ServerRequestFlags, Sspi, Username,
+    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, OwnedSecurityBuffer, SecurityBuffer,
+    SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -46,12 +46,11 @@ fn main() -> Result<(), io::Error> {
     //
     // By agreement, the server places the trailer at the beginning
     // of the message, and the data comes after the trailer.
+    let mut token = vec![0u8; ntlm.query_context_sizes()?.security_trailer as usize];
+    let mut data = msg.as_bytes().to_vec();
     let mut msg_buffer = vec![
-        SecurityBuffer::new(
-            vec![0u8; ntlm.query_context_sizes()?.security_trailer as usize],
-            SecurityBufferType::Token,
-        ),
-        SecurityBuffer::new(Vec::from(msg.as_bytes()), SecurityBufferType::Data),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
 
     println!("Unencrypted message: [{}]", msg);
@@ -59,13 +58,13 @@ fn main() -> Result<(), io::Error> {
 
     let _result = ntlm.encrypt_message(EncryptionFlags::empty(), &mut msg_buffer, 0)?;
 
-    println!("Encrypted message: {:?}", msg_buffer[1].buffer);
+    println!("Encrypted message: {:?}", msg_buffer[1].data());
 
     println!("Sending the trailer...");
-    write_message(&mut stream, &msg_buffer[0].buffer)?;
+    write_message(&mut stream, &msg_buffer[0].data())?;
 
     println!("Sending the data...");
-    write_message(&mut stream, &msg_buffer[1].buffer)?;
+    write_message(&mut stream, &msg_buffer[1].data())?;
 
     println!("Communication successfully finished.");
 
@@ -79,8 +78,8 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_auth_data(identity)
         .execute(ntlm)?;
 
-    let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
-    let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
     loop {
         read_message(&mut stream, &mut input_buffer[0].buffer)?;

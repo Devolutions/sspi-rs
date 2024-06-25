@@ -18,11 +18,11 @@ use crate::generator::GeneratorInitSecurityContext;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags,
+    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
     EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
+    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
+    SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -258,8 +258,8 @@ impl SspiImpl for Ntlm {
             .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
@@ -267,11 +267,11 @@ impl SspiImpl for Ntlm {
                 server::write_challenge(self, &mut output_token.buffer)?
             }
             NtlmState::Authenticate => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 self.identity = builder.credentials_handle.cloned().flatten();
 
-                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -310,7 +310,7 @@ impl Ntlm {
 
         let status = match self.state {
             NtlmState::Initial => {
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
                 self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
@@ -331,12 +331,13 @@ impl Ntlm {
                         "Input buffers must be specified on subsequent calls",
                     )
                 })?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
 
-                if let Ok(sec_buffer) =
-                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
-                {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
+                    builder.input.as_ref().unwrap(),
+                    SecurityBufferType::ChannelBindings,
+                ) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -373,7 +374,7 @@ impl Ntlm {
 
 impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> crate::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 
@@ -391,9 +392,13 @@ impl Sspi for Ntlm {
         SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
         let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.buffer.as_slice())?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
 
-        *data.buffer.as_mut() = self.send_sealing_key.as_mut().unwrap().process(data.buffer.as_slice());
+        let encrypted_data = self.send_sealing_key.as_mut().unwrap().process(data.data());
+        if encrypted_data.len() < data.buf_len() {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "The Data buffer is too small"));
+        }
+        data.write_data(&encrypted_data)?;
 
         let checksum = self
             .send_sealing_key
@@ -401,8 +406,12 @@ impl Sspi for Ntlm {
             .unwrap()
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
 
-        let signature = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-        *signature.buffer.as_mut() = compute_signature(&checksum, sequence_number).to_vec();
+        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        if signature_buffer.buf_len() < SIGNATURE_SIZE {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
+        }
+        let signature = compute_signature(&checksum, sequence_number);
+        signature_buffer.write_data(signature.as_slice())?;
 
         Ok(SecurityStatus::Ok)
     }
@@ -410,7 +419,7 @@ impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
-        message: &mut [DecryptBuffer],
+        message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {

@@ -11,8 +11,8 @@ use crate::ntlm::NtlmConfig;
 use crate::utils::is_azure_ad_domain;
 use crate::{
     builders, kerberos, ntlm, pku2u, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptBuffer,
-    DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm,
+    CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, OwnedSecurityBuffer,
     PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
     SspiImpl, PACKAGE_ID_NONE,
 };
@@ -293,7 +293,7 @@ impl SspiEx for Negotiate {
 
 impl Sspi for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
-    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.complete_auth_token(token),
@@ -318,7 +318,7 @@ impl Sspi for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn decrypt_message<'data>(
         &mut self,
-        message: &mut [DecryptBuffer<'data>],
+        message: &mut [SecurityBuffer<'data>],
         sequence_number: u32,
     ) -> Result<DecryptionFlags> {
         match &mut self.protocol {
