@@ -728,12 +728,21 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         }
 
         let user = unsafe { libc::malloc(user_length * 2) as *mut SecWChar };
+        if user.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
         copy_nonoverlapping(psz_user_name, user, user_length);
 
         let domain = unsafe { libc::malloc(domain_length * 2) as *mut SecWChar };
+        if domain.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
         copy_nonoverlapping(psz_domain_name, domain, domain_length);
 
         let password = unsafe { libc::malloc(password_length * 2) as *mut SecWChar };
+        if password.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
         copy_nonoverlapping(psz_packed_credentials_string, password, password_length);
 
         let auth_identity = SecWinntAuthIdentityW {
@@ -764,17 +773,9 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
 
         let auth_data = auth_data as *mut SecWinntAuthIdentityW;
 
-        if !(*auth_data).user.is_null() {
-            unsafe { libc::free((*auth_data).user as *mut _) };
-        }
-
-        if !(*auth_data).domain.is_null() {
-            unsafe { libc::free((*auth_data).domain as *mut _) };
-        }
-
-        if !(*auth_data).password.is_null() {
-            unsafe { libc::free((*auth_data).password as *mut _) };
-        }
+        unsafe { libc::free((*auth_data).user as *mut _) };
+        unsafe { libc::free((*auth_data).domain as *mut _) };
+        unsafe { libc::free((*auth_data).password as *mut _) };
 
         let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data);
 
