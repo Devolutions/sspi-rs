@@ -1,3 +1,5 @@
+#![cfg(all(target_os = "windows", feature = "scard"))]
+
 use ffi_types::winscard::{ScardIoRequest, ScardReaderStateA, ScardStatus};
 use ffi_types::{Dword, LpByte, LpCByte, LpCStr, LpCVoid, LpDword, LpStr, LpVoid};
 

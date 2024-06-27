@@ -362,7 +362,7 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
-        const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9C;
+        const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9A;
 
         if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY {
             return Err(Error::new(

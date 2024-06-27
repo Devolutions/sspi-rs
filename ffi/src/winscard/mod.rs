@@ -1,3 +1,5 @@
+#![cfg(all(target_os = "windows", feature = "scard"))]
+
 use ffi_types::winscard::functions::{PSCardApiFunctionTable, SCardApiFunctionTable};
 use ffi_types::winscard::ScardIoRequest;
 use winscard::winscard::Protocol;

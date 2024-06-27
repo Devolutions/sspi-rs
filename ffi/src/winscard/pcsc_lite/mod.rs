@@ -1,4 +1,4 @@
-#![cfg(not(target_os = "windows"))]
+#![cfg(all(target_os = "windows", feature = "scard"))]
 
 use std::borrow::Cow;
 use std::env;
