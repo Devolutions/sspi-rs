@@ -12,16 +12,9 @@ use winscard::SmartCard as PivSmartCard;
 use crate::{Error, ErrorKind};
 use crate::Result;
 
-// ISO/IEC 7816-4
-const CLA_BYTE_NO_CHAINING: u8 = 0x00;
-const CLA_BYTE_CHAINING: u8 = 0x10;
-// the max amount of data a one APDU command can contain
-const APDU_COMMAND_DATA_SIZE: usize = 255;
-// tag is always 1 byte in length
-const TLV_TAG_LENGTH: usize = 1;
-
 pub enum SmartCardApi {
     #[cfg(feature = "scard")]
+    #[allow(dead_code)]
     WinSCard(Card),
     PivSmartCard(Box<PivSmartCard<'static>>),
 }
@@ -44,6 +37,7 @@ pub struct SmartCard {
 }
 
 impl SmartCard {
+    #[allow(dead_code)]
     #[cfg(feature = "scard")]
     pub fn new(pin: Vec<u8>, scard_reader_name: &str, private_key_file_index: u8) -> Result<Self> {
         let context = Context::establish(Scope::User)?;

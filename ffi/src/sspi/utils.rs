@@ -1,4 +1,4 @@
-use sspi::CredentialsBuffers;
+use sspi::{CredentialsBuffers, Error, ErrorKind, Result};
 
 use super::credentials_attributes::CredentialsAttributes;
 use super::sec_handle::CredentialsHandle;
@@ -27,4 +27,13 @@ pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
         raw_str.truncate(len - 2);
         len = raw_str.len();
     }
+}
+
+pub fn hostname() -> Result<String> {
+    whoami::fallible::hostname().map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("can not query the system hostname: {:?}", err),
+        )
+    })
 }

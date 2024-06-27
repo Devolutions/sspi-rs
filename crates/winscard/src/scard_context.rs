@@ -7,10 +7,25 @@ use alloc::{format, vec};
 
 use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
+use uuid::Uuid;
 
-use crate::scard::SmartCard;
-use crate::winscard::{DeviceTypeId, Icon, Protocol, ShareMode, WinScard, WinScardContext};
+use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
+use crate::winscard::{
+    CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
+};
 use crate::{Error, ErrorKind, WinScardResult};
+
+// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
+// To be notified of the arrival of a new smart card reader,
+// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
+const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
+
+/// Default name of the emulated smart card.
+pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
+/// Default CSP name.
+pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
+const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
+const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
@@ -51,6 +66,8 @@ impl<'a> SmartCardInfo<'a> {
     pub fn try_from_env() -> WinScardResult<Self> {
         use std::fs;
 
+        use picky::x509::Cert;
+
         use crate::env::{
             WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV,
             WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV, WINSCARD_READER_NAME_ENV,
@@ -71,8 +88,6 @@ impl<'a> SmartCardInfo<'a> {
 
             cert_der
         } else if let Ok(cert_path) = env!(WINSCARD_CERT_PATH_ENV) {
-            use picky::x509::Cert;
-
             let raw_certificate = fs::read_to_string(cert_path).map_err(|e| {
                 Error::new(
                     ErrorKind::InvalidParameter,
@@ -448,7 +463,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         reader_name: &str,
         _share_mode: ShareMode,
         _protocol: Option<Protocol>,
-    ) -> WinScardResult<Box<dyn WinScard>> {
+    ) -> WinScardResult<ScardConnectData> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
@@ -456,16 +471,19 @@ impl<'a> WinScardContext for ScardContext<'a> {
             ));
         }
 
-        Ok(Box::new(SmartCard::new(
-            Cow::Owned(reader_name.to_owned()),
-            self.smart_card_info.pin.clone(),
-            self.smart_card_info.auth_cert_der.clone(),
-            self.smart_card_info.auth_pk.clone(),
-        )?))
+        Ok(ScardConnectData {
+            handle: Box::new(SmartCard::new(
+                Cow::Owned(reader_name.to_owned()),
+                self.smart_card_info.pin.clone(),
+                self.smart_card_info.auth_cert_der.clone(),
+                self.smart_card_info.auth_pk.clone(),
+            )?),
+            protocol: SUPPORTED_CONNECTION_PROTOCOL,
+        })
     }
 
-    fn list_readers(&self) -> Vec<Cow<str>> {
-        vec![self.smart_card_info.reader.name.clone()]
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+        Ok(vec![self.smart_card_info.reader.name.clone()])
     }
 
     fn device_type_id(&self, reader_name: &str) -> WinScardResult<DeviceTypeId> {
@@ -494,11 +512,75 @@ impl<'a> WinScardContext for ScardContext<'a> {
         true
     }
 
-    fn read_cache(&self, key: &str) -> Option<&[u8]> {
-        self.cache.get(key).map(|item| item.as_slice())
+    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
+        self.cache
+            .get(key)
+            .map(|item| Cow::Borrowed(item.as_slice()))
+            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
     }
 
-    fn write_cache(&mut self, key: String, value: Vec<u8>) {
+    fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
         self.cache.insert(key, value);
+
+        Ok(())
+    }
+
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
+        // We don't support configuring or introducing reader groups. So, we just return hardcoded values.
+        //
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
+        // SCARD_DEFAULT_READERS: TEXT("SCard$DefaultReaders\000")
+        // Default group to which all readers are added when introduced into the system.
+        Ok(vec![Cow::Borrowed("SCard$DefaultReaders\u{0}00")])
+    }
+
+    fn cancel(&mut self) -> WinScardResult<()> {
+        // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel
+        // The only requests that you can cancel are those that require waiting for external action by the smart card or user.
+        //
+        // We don't have any external actions, so we just return success.
+        Ok(())
+    }
+
+    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+        use crate::ATR;
+
+        let supported_readers = self.list_readers()?;
+
+        for reader_state in reader_states {
+            if supported_readers.contains(&reader_state.reader_name) {
+                reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT
+                    | CurrentState::SCARD_STATE_INUSE
+                    | CurrentState::SCARD_STATE_PRESENT
+                    | CurrentState::SCARD_STATE_CHANGED;
+                reader_state.atr[0..ATR.len()].copy_from_slice(&ATR);
+                reader_state.atr_len = ATR.len();
+            } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
+                reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
+            } else {
+                error!(?reader_state.reader_name, "Unsupported reader");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+        // we have only one smart card with only one default name
+        Ok(vec![DEFAULT_CARD_NAME.into()])
+    }
+
+    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+        Ok(match provider_id {
+            ProviderId::Primary => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "ProviderId::Primary is not supported for emulated smart card",
+                ))
+            }
+            ProviderId::Csp => MICROSOFT_DEFAULT_CSP.into(),
+            ProviderId::Ksp => MICROSOFT_DEFAULT_KSP.into(),
+            ProviderId::CardModule => MICROSOFT_SCARD_DRIVER_LOCATION.into(),
+        })
     }
 }

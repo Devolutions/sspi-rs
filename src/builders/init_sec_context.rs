@@ -7,7 +7,7 @@ use super::{
     ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
     WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
-use crate::{ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
+use crate::{ClientRequestFlags, ClientResponseFlags, DataRepresentation, OwnedSecurityBuffer, SecurityStatus};
 
 pub type EmptyInitializeSecurityContext<'a, C> = InitializeSecurityContext<
     'a,
@@ -67,10 +67,10 @@ pub struct InitializeSecurityContext<
     pub credentials_handle: Option<&'a mut CredsHandle>,
     pub context_requirements: ClientRequestFlags,
     pub target_data_representation: DataRepresentation,
-    pub output: &'a mut [SecurityBuffer],
+    pub output: &'a mut [OwnedSecurityBuffer],
 
     pub target_name: Option<&'a str>,
-    pub input: Option<&'a mut [SecurityBuffer]>,
+    pub input: Option<&'a mut [OwnedSecurityBuffer]>,
 }
 
 impl<
@@ -247,10 +247,10 @@ impl<
         }
     }
 
-    /// Specifies a mutable reference to a buffer with `SecurityBuffer` that receives the output data.
+    /// Specifies a mutable reference to a buffer with [OwnedSecurityBuffer] that receives the output data.
     pub fn with_output(
         self,
-        output: &'a mut [SecurityBuffer],
+        output: &'a mut [OwnedSecurityBuffer],
     ) -> InitializeSecurityContext<
         'a,
         CredsHandle,
@@ -282,10 +282,10 @@ impl<
         }
     }
 
-    /// Specifies a mutable reference to a buffer with `SecurityBuffer` structures. Don't call this method on during
+    /// Specifies a mutable reference to a buffer with [OwnedSecurityBuffer] structures. Don't call this method on during
     /// the first execution of the builder. On the second execution, this parameter is a reference to the partially
     /// formed context returned during the first call.
-    pub fn with_input(self, input: &'a mut [SecurityBuffer]) -> Self {
+    pub fn with_input(self, input: &'a mut [OwnedSecurityBuffer]) -> Self {
         Self {
             input: Some(input),
             ..self

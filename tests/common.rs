@@ -3,7 +3,7 @@ use std::io;
 use lazy_static::lazy_static;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
-    DataRepresentation, DecryptBuffer, EncryptionFlags, SecurityBuffer, SecurityBufferType, SecurityStatus,
+    DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
     ServerRequestFlags, Sspi, SspiEx, Username,
 };
 use time::OffsetDateTime;
@@ -101,7 +101,7 @@ where
     let mut server_status = SecurityStatus::ContinueNeeded;
 
     loop {
-        let mut client_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        let mut client_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
         let mut builder = client
             .initialize_security_context()
@@ -120,7 +120,7 @@ where
             return Ok((client_status, server_status));
         }
 
-        server_output = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        server_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
         let server_result = server
             .accept_security_context()
@@ -177,26 +177,27 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let server_sizes = server.query_context_sizes()?;
     let sequence_number = 0;
 
+    let mut token = vec![0; server_sizes.security_trailer as usize];
+    let mut data = MESSAGE_TO_CLIENT.to_vec();
     let mut messages = [
-        SecurityBuffer::new(MESSAGE_TO_CLIENT.clone(), SecurityBufferType::Data),
-        SecurityBuffer::new(
-            vec![0; server_sizes.security_trailer as usize],
-            SecurityBufferType::Token,
-        ),
+        SecurityBuffer::Token(token.as_mut_slice()),
+        SecurityBuffer::Data(data.as_mut_slice()),
     ];
     server.encrypt_message(EncryptionFlags::empty(), &mut messages, sequence_number)?;
-    assert_ne!(*MESSAGE_TO_CLIENT, messages[0].buffer);
+    assert_ne!(*MESSAGE_TO_CLIENT, messages[1].data());
 
     println!(
         "Message to client: {:x?}, encrypted message: {:x?}, token: {:x?}",
-        *MESSAGE_TO_CLIENT, messages[0].buffer, messages[1].buffer
+        *MESSAGE_TO_CLIENT,
+        messages[0].data(),
+        messages[1].data()
     );
 
-    let [mut data, mut token] = messages;
+    let [mut token, mut data] = messages;
 
     let mut messages = vec![
-        DecryptBuffer::Data(&mut data.buffer),
-        DecryptBuffer::Token(&mut token.buffer),
+        SecurityBuffer::Data(data.take_data()),
+        SecurityBuffer::Token(token.take_data()),
     ];
 
     client.decrypt_message(&mut messages, sequence_number)?;

@@ -3,8 +3,8 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
-    DataRepresentation, DecryptBuffer, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferType,
-    ServerRequestFlags, Sspi,
+    DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer, SecurityBuffer,
+    SecurityBufferType, ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -78,7 +78,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         let mut input_tokens =
             p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
 
-        let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
+        let mut output_tokens = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), SecurityBufferType::Token)];
 
         let result_status = sspi_context.accept_security_context()
             .with_credentials_handle(&mut Some(auth_data))
@@ -280,7 +280,7 @@ pub unsafe extern "system" fn EncryptMessage(
 
         let len = (*p_message).c_buffers as usize;
         let raw_buffers = from_raw_parts((*p_message).p_buffers, len);
-        let mut message = p_sec_buffers_to_security_buffers(raw_buffers);
+        let mut message = try_execute!(p_sec_buffers_to_decrypt_buffers(raw_buffers));
 
         let result_status = sspi_context.encrypt_message(
             EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
@@ -288,7 +288,7 @@ pub unsafe extern "system" fn EncryptMessage(
             message_seq_no.try_into().unwrap(),
         );
 
-        copy_to_c_sec_buffer((*p_message).p_buffers, &message, false);
+        try_execute!(copy_decrypted_buffers((*p_message).p_buffers, message));
 
         let result = try_execute!(result_status);
         result.to_u32().unwrap()
@@ -341,16 +341,16 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
-/// Creates a vector of [DecryptBuffer]s from the input C buffers.
+/// Creates a vector of [SecurityBuffer]s from the input C buffers.
 ///
 /// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.
 #[allow(clippy::useless_conversion)]
-unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<DecryptBuffer>> {
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBuffer>> {
     let mut buffers = Vec::with_capacity(raw_buffers.len());
 
     for raw_buffer in raw_buffers {
-        let buf = DecryptBuffer::with_security_buffer_type(
+        let buf = SecurityBuffer::with_security_buffer_type(
             SecurityBufferType::from_u32(raw_buffer.buffer_type).ok_or_else(|| {
                 sspi::Error::new(
                     ErrorKind::InternalError,
@@ -359,15 +359,18 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             })?,
         )?;
 
-        buffers.push(if let DecryptBuffer::Missing(_) = buf {
+        buffers.push(if let SecurityBuffer::Missing(_) = buf {
             // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
-            DecryptBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
+            SecurityBuffer::Missing(raw_buffer.cb_buffer.try_into()?)
         } else {
-            // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
-            buf.with_data(unsafe {
-                from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?)
-            })?
+            let data = if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
+                &mut []
+            } else {
+                // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
+                unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
+            };
+            buf.with_data(data)?
         })
     }
 
@@ -378,7 +381,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 ///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.
-unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<DecryptBuffer>) -> sspi::Result<()> {
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBuffer>) -> sspi::Result<()> {
     // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
@@ -389,7 +392,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
         // So, we don't need to copy any data and we skip it.
         //
         // The `SECBUFFER_STREAM` usage example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
-        if matches!(from_buffer, DecryptBuffer::Stream(_)) {
+        if matches!(from_buffer, SecurityBuffer::Stream(_)) {
             continue;
         }
 
@@ -406,7 +409,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Decry
         })?;
         to_buffer.cb_buffer = from_buffer_len.try_into()?;
 
-        if !matches!(from_buffer, DecryptBuffer::Missing(_)) {
+        if !matches!(from_buffer, SecurityBuffer::Missing(_)) {
             // We don't need to copy the actual content of the buffer because [from_buffer] is created
             // from the C-input-buffer and all decryption is performed in-place.
             to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
@@ -425,11 +428,21 @@ mod tests {
 
     use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
-    use sspi::{EncryptionFlags, SecurityBuffer, SecurityBufferType, Sspi};
+    use sspi::{EncryptionFlags, Kerberos, SecurityBuffer, Sspi};
 
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{SecHandle, SspiHandle};
     use crate::utils::into_raw_ptr;
+
+    fn kerberos_sec_handle(kerberos: Kerberos) -> SecHandle {
+        SecHandle {
+            dw_lower: {
+                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos));
+                into_raw_ptr(sspi_context) as c_ulonglong
+            },
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        }
+    }
 
     #[test]
     fn kerberos_stream_buffer_decryption() {
@@ -442,31 +455,21 @@ mod tests {
         let kerberos_client = sspi::kerberos::test_data::fake_client();
         let mut kerberos_server = sspi::kerberos::test_data::fake_server();
 
-        let mut message = [
-            SecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            SecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
+        let mut message = vec![
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         kerberos_server
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut kerberos_client_context = SecHandle {
-            dw_lower: {
-                let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-                into_raw_ptr(sspi_context) as c_ulonglong
-            },
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
-        };
+        let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
 
-        let mut stream_buffer_data = message[0].buffer.clone();
-        stream_buffer_data.extend_from_slice(&message[1].buffer);
+        let mut stream_buffer_data = message[0].data().to_vec();
+        stream_buffer_data.extend_from_slice(message[1].data());
         let stream_buffer_data_len = stream_buffer_data.len().try_into().unwrap();
         let mut buffers = [
             SecBuffer {
@@ -487,7 +490,9 @@ mod tests {
         };
 
         let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
 
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
         assert_eq!(status, 0);
 
         // Check SECBUFFER_STREAM
@@ -505,6 +510,81 @@ mod tests {
                     buffers[1].cb_buffer.try_into().unwrap(),
                 )
             },
+            plain_message
+        );
+    }
+
+    #[test]
+    fn kerberos_encryption_decryption() {
+        // This test simulates decryption and decryption. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let plain_message = b"some plain message";
+
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+        let kerberos_server = sspi::kerberos::test_data::fake_server();
+
+        let mut kerberos_server_context = kerberos_sec_handle(kerberos_server);
+
+        let mut token = [0_u8; 1024];
+        let mut data = plain_message.to_vec();
+        let mut buffers = [
+            SecBuffer {
+                cb_buffer: token.len().try_into().unwrap(),
+                buffer_type: 2, // Token
+                pv_buffer: token.as_mut_ptr() as *mut _,
+            },
+            SecBuffer {
+                cb_buffer: data.len().try_into().unwrap(),
+                buffer_type: 1, // Data
+                pv_buffer: data.as_mut_ptr() as *mut _,
+            },
+        ];
+        let mut message = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 2,
+            p_buffers: buffers.as_mut_ptr(),
+        };
+
+        let status = unsafe { super::EncryptMessage(&mut kerberos_server_context, 0, &mut message, 0) };
+        assert_eq!(status, 0);
+
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_server_context) };
+        assert_eq!(status, 0);
+
+        let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
+
+        let mut token =
+            unsafe { from_raw_parts(buffers[0].pv_buffer as *const u8, buffers[0].cb_buffer as usize) }.to_vec();
+        let mut data =
+            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize) }.to_vec();
+        let mut buffers = [
+            SecBuffer {
+                cb_buffer: token.len().try_into().unwrap(),
+                buffer_type: 2, // Token
+                pv_buffer: token.as_mut_ptr() as *mut _,
+            },
+            SecBuffer {
+                cb_buffer: data.len().try_into().unwrap(),
+                buffer_type: 1, // Data
+                pv_buffer: data.as_mut_ptr() as *mut _,
+            },
+        ];
+        let mut message = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 2,
+            p_buffers: buffers.as_mut_ptr(),
+        };
+
+        let status = unsafe { super::DecryptMessage(&mut kerberos_client_context, &mut message, 0, null_mut()) };
+        assert_eq!(status, 0);
+
+        let status = unsafe { super::DeleteSecurityContext(&mut kerberos_client_context) };
+        assert_eq!(status, 0);
+
+        // Check that the decrypted data is the same as the initial message
+        assert_eq!(
+            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize,) },
             plain_message
         );
     }

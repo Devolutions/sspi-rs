@@ -16,11 +16,18 @@ pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
     String::from_utf16_lossy(unsafe { from_raw_parts(s, len) })
 }
 
+pub unsafe fn w_str_len(s: *const u16) -> usize {
+    let mut len = 0;
+
+    while unsafe { *(s.add(len)) } != 0 {
+        len += 1;
+    }
+
+    len
+}
+
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
-    unsafe { from_raw_parts(raw_buffer, len) }
-        .iter()
-        .map(|c| *c as u8)
-        .collect()
+    unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
 }
 
 pub fn str_to_w_buff(data: &str) -> Vec<u16> {

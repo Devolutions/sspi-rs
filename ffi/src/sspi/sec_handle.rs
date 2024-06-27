@@ -40,7 +40,7 @@ use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
-use super::utils::transform_credentials_handle;
+use super::utils::{hostname, transform_credentials_handle};
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
@@ -129,7 +129,7 @@ impl SspiImpl for SspiHandle {
 }
 
 impl Sspi for SspiHandle {
-    fn complete_auth_token(&mut self, token: &mut [sspi::SecurityBuffer]) -> Result<sspi::SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [sspi::OwnedSecurityBuffer]) -> Result<sspi::SecurityStatus> {
         self.sspi_context.lock()?.complete_auth_token(token)
     }
 
@@ -146,7 +146,7 @@ impl Sspi for SspiHandle {
 
     fn decrypt_message(
         &mut self,
-        message: &mut [sspi::DecryptBuffer],
+        message: &mut [sspi::SecurityBuffer],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
         self.sspi_context.lock()?.decrypt_message(message, sequence_number)
@@ -200,7 +200,7 @@ pub struct CredentialsHandle {
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
-    let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+    let client_computer_name = attributes.hostname()?;
 
     if let Some(kdc_url) = attributes.kdc_url() {
         let kerberos_config = KerberosConfig::new(&kdc_url, client_computer_name.clone());
@@ -255,11 +255,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 ));
                 #[cfg(target_os = "windows")]
                 SspiContext::Pku2u(Pku2u::new_client_from_config(Pku2uConfig::default_client_config(
-                    whoami::hostname(),
+                    hostname()?,
                 )?)?)
             }
             kerberos::PKG_NAME => {
-                let client_computer_name = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+                let client_computer_name = attributes.hostname()?;
 
                 if let Some(kdc_url) = attributes.kdc_url() {
                     SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new(
@@ -275,7 +275,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 }
             }
             ntlm::PKG_NAME => {
-                let hostname = attributes.workstation.clone().unwrap_or_else(whoami::hostname);
+                let hostname = attributes.hostname()?;
 
                 SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(hostname)))
             }
@@ -1063,22 +1063,22 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
         let mut sspi_context = match security_package_name {
             negotiate::PKG_NAME => {
                 let negotiate_config = NegotiateConfig {
-                    protocol_config: Box::new(NtlmConfig::new(whoami::hostname())),
+                    protocol_config: Box::new(NtlmConfig::new(try_execute!(hostname()))),
                     package_list: None,
-                    client_computer_name: whoami::hostname(),
+                    client_computer_name: try_execute!(hostname()),
                 };
                 SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
-                    client_computer_name:Some(whoami::hostname()),
+                    client_computer_name:Some(try_execute!(hostname())),
                     kdc_url:None
                 };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
                     krb_config
                 )))
             },
-            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(whoami::hostname()))),
+            ntlm::PKG_NAME => SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(try_execute!(hostname())))),
             _ => {
                 return ErrorKind::InvalidParameter.to_u32().unwrap();
             }

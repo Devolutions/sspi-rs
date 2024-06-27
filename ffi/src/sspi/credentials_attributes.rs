@@ -2,8 +2,10 @@ use std::mem::size_of;
 use std::slice::from_raw_parts;
 
 use libc::c_void;
+use sspi::Result;
 
 use super::sspi_data_types::{SecChar, SecWChar};
+use super::utils::hostname;
 
 #[derive(Debug)]
 pub struct KdcProxySettings {
@@ -39,6 +41,14 @@ impl CredentialsAttributes {
             self.kdc_proxy_settings
                 .as_ref()
                 .map(|kdc_proxy_settings| kdc_proxy_settings.proxy_server.to_string())
+        }
+    }
+
+    pub fn hostname(&self) -> Result<String> {
+        if let Some(hostname) = self.workstation.as_ref() {
+            Ok(hostname.clone())
+        } else {
+            hostname()
         }
     }
 }

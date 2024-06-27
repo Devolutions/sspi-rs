@@ -9,7 +9,7 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, DecryptBuffer, Ntlm, SecurityBuffer,
+    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, OwnedSecurityBuffer, SecurityBuffer,
     SecurityBufferType, SecurityStatus, Sspi, SspiImpl, Username,
 };
 
@@ -23,7 +23,7 @@ fn main() -> Result<(), io::Error> {
     let mut ntlm = Ntlm::new();
 
     let account_name = whoami::username();
-    let computer_name = whoami::hostname();
+    let computer_name = whoami::fallible::hostname().unwrap();
     let username =
         Username::new(&account_name, Some(&computer_name)).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
@@ -52,7 +52,7 @@ fn main() -> Result<(), io::Error> {
 
     println!("Encrypted message: {:?}", data);
 
-    let mut msg_buffer = vec![DecryptBuffer::Token(&mut trailer), DecryptBuffer::Data(&mut data)];
+    let mut msg_buffer = vec![SecurityBuffer::Token(&mut trailer), SecurityBuffer::Data(&mut data)];
 
     let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
 
@@ -74,7 +74,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_auth_data(identity)
         .execute(ntlm)?;
 
-    let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
     let username = whoami::username();
 
     let mut builder = ntlm
@@ -91,7 +91,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
 
     write_message(&mut stream, &output_buffer[0].buffer)?;
 
-    let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
 
     loop {
         output_buffer[0].buffer.clear();

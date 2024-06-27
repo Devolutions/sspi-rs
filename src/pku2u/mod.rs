@@ -52,8 +52,8 @@ use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptBuffer, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
+    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
     SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
@@ -189,7 +189,7 @@ impl Pku2u {
 
 impl Sspi for Pku2u {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
@@ -204,7 +204,7 @@ impl Sspi for Pku2u {
 
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -222,7 +222,7 @@ impl Sspi for Pku2u {
             Pku2uMode::Server => SERVER_WRAP_TOKEN_FLAGS,
         };
 
-        let mut payload = data.buffer.to_vec();
+        let mut payload = data_buffer.data().to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
         let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
@@ -240,9 +240,10 @@ impl Sspi for Pku2u {
                     return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
                 }
 
-                *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
-                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-                *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
+                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                data_buffer.write_data(data)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                token_buffer.write_data(token)?;
             }
             _ => {
                 return Err(Error::new(
@@ -256,7 +257,7 @@ impl Sspi for Pku2u {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -428,7 +429,7 @@ impl Pku2u {
 
                 let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(mech_token)?)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = Pku2uState::Preauthentication;
@@ -440,7 +441,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
                 let buffer = neg_token_targ
@@ -545,7 +546,7 @@ impl Pku2u {
 
                 let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&response_token)?;
 
                 self.state = Pku2uState::AsExchange;
@@ -557,7 +558,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
                 let buffer = neg_token_targ
@@ -698,7 +699,7 @@ impl Pku2u {
 
                 let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_targ)?;
 
                 self.state = Pku2uState::ApExchange;
@@ -710,7 +711,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
@@ -816,9 +817,7 @@ mod tests {
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
     use super::Pku2uMode;
     use crate::kerberos::EncryptionParams;
-    use crate::{
-        DecryptBuffer, EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, SecurityBufferType, Sspi,
-    };
+    use crate::{EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -960,25 +959,21 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
 
         let plain_message = b"some plain message";
 
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
         let mut message = [
-            SecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            SecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         pku2u_server
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut buffer = message[0].buffer.clone();
-        buffer.extend_from_slice(&message[1].buffer);
+        let mut buffer = message[0].data().to_vec();
+        buffer.extend_from_slice(&message[1].data());
 
-        let mut message = [DecryptBuffer::Stream(&mut buffer), DecryptBuffer::Data(&mut [])];
+        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
         pku2u_client.decrypt_message(&mut message, 0).unwrap();
 

@@ -59,7 +59,7 @@ use crate::utils::{
 use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
-    CredentialsBuffers, DecryptBuffer, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult,
+    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
@@ -287,7 +287,7 @@ impl Kerberos {
 
 impl Sspi for Kerberos {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
@@ -302,7 +302,7 @@ impl Sspi for Kerberos {
 
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -319,7 +319,7 @@ impl Sspi for Kerberos {
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
-        let mut payload = data.buffer.to_vec();
+        let mut payload = data_buffer.data().to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
         let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
@@ -333,9 +333,14 @@ impl Sspi for Kerberos {
 
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                *data.buffer.as_mut() = raw_wrap_token[SECURITY_TRAILER..].to_vec();
-                let header = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-                *header.buffer.as_mut() = raw_wrap_token[0..SECURITY_TRAILER].to_vec();
+                if raw_wrap_token.len() < SECURITY_TRAILER {
+                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
+                }
+
+                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                data_buffer.write_data(data)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                token_buffer.write_data(token)?;
             }
             _ => {
                 return Err(Error::new(
@@ -349,7 +354,7 @@ impl Sspi for Kerberos {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [DecryptBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -479,7 +484,7 @@ impl SspiImpl for Kerberos {
 
         let status = match &self.state {
             KerberosState::ApExchange => {
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
                     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
@@ -664,7 +669,7 @@ impl<'a> Kerberos {
                 let encoded_neg_token_init =
                     picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = KerberosState::Preauthentication;
@@ -677,13 +682,14 @@ impl<'a> Kerberos {
                     .as_ref()
                     .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
 
-                if let Ok(sec_buffer) =
-                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), SecurityBufferType::ChannelBindings)
-                {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
+                    builder.input.as_ref().unwrap(),
+                    SecurityBufferType::ChannelBindings,
+                ) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
@@ -920,7 +926,7 @@ impl<'a> Kerberos {
 
                 let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
                 self.state = KerberosState::ApExchange;
@@ -932,7 +938,7 @@ impl<'a> Kerberos {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = SecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
 
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -962,7 +968,7 @@ impl<'a> Kerberos {
 
                 let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
                 output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
 
                 self.state = KerberosState::PubKeyAuth;
@@ -1064,7 +1070,7 @@ pub mod test_data {
 mod tests {
     use crate::generator::NetworkRequest;
     use crate::network_client::NetworkClient;
-    use crate::{DecryptBuffer, EncryptionFlags, SecurityBuffer, SecurityBufferType, Sspi};
+    use crate::{EncryptionFlags, SecurityBuffer, Sspi};
 
     struct NetworkClientMock;
 
@@ -1083,25 +1089,21 @@ mod tests {
 
         let plain_message = b"some plain message";
 
+        let mut token = [0; 1024];
+        let mut data = plain_message.to_vec();
         let mut message = [
-            SecurityBuffer {
-                buffer: Vec::new(),
-                buffer_type: SecurityBufferType::Token,
-            },
-            SecurityBuffer {
-                buffer: plain_message.to_vec(),
-                buffer_type: SecurityBufferType::Data,
-            },
+            SecurityBuffer::Token(token.as_mut_slice()),
+            SecurityBuffer::Data(data.as_mut_slice()),
         ];
 
         kerberos_server
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        let mut buffer = message[0].buffer.clone();
-        buffer.extend_from_slice(&message[1].buffer);
+        let mut buffer = message[0].data().to_vec();
+        buffer.extend_from_slice(&message[1].data());
 
-        let mut message = [DecryptBuffer::Stream(&mut buffer), DecryptBuffer::Data(&mut [])];
+        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
         kerberos_client.decrypt_message(&mut message, 0).unwrap();
 

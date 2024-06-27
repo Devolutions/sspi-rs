@@ -1,3 +1,4 @@
+use std::ptr::copy_nonoverlapping;
 #[cfg(windows)]
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
@@ -5,18 +6,18 @@ use std::slice::from_raw_parts;
 use libc::{c_char, c_void};
 #[cfg(windows)]
 use sspi::Secret;
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 use sspi::SmartCardIdentityBuffers;
 use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, into_raw_ptr, raw_str_into_bytes};
+use crate::utils::{into_raw_ptr, raw_str_into_bytes, w_str_len};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -315,7 +316,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         .into();
 
         // Only marshaled smart card creds starts with '@' char.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
@@ -335,13 +336,13 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         .into();
 
         // Only marshaled smart card creds starts with '@' char.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
         // Try to collect credentials for the emulated smart card.
-        #[cfg(feature = "scard")]
+        #[cfg(all(feature = "scard", target_os = "windows"))]
         if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
@@ -354,15 +355,14 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
     if username.contains(&b'@') {
         info!("Trying to collect smart card creds...");
-        use winscard::SmartCardInfo;
+        use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
         use crate::sspi::utils::raw_wide_str_trim_nulls;
         use crate::utils::str_encode_utf16;
-        use crate::winscard::scard_context::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
         match SmartCardInfo::try_from_env() {
             Ok(smart_card_info) => {
@@ -520,7 +520,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
     ))
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", target_os = "windows"))]
 #[instrument(level = "trace", ret)]
 unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
@@ -719,17 +719,39 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         check_null!(psz_domain_name);
         check_null!(psz_packed_credentials_string);
 
-        let user = c_w_str_to_string(psz_user_name);
-        let domain = c_w_str_to_string(psz_domain_name);
-        let password = c_w_str_to_string(psz_packed_credentials_string);
+        let user_length = w_str_len(psz_user_name);
+        let domain_length = w_str_len(psz_domain_name);
+        let password_length = w_str_len(psz_packed_credentials_string);
+
+        if user_length == 0 || domain_length == 0 || password_length == 0 {
+            return ErrorKind::InvalidParameter.to_u32().unwrap();
+        }
+
+        let user = unsafe { libc::malloc(user_length * 2) as *mut SecWChar };
+        if user.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_user_name, user, user_length);
+
+        let domain = unsafe { libc::malloc(domain_length * 2) as *mut SecWChar };
+        if domain.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_domain_name, domain, domain_length);
+
+        let password = unsafe { libc::malloc(password_length * 2) as *mut SecWChar };
+        if password.is_null() {
+            return ErrorKind::InternalError.to_u32().unwrap();
+        }
+        copy_nonoverlapping(psz_packed_credentials_string, password, password_length);
 
         let auth_identity = SecWinntAuthIdentityW {
-            user: psz_user_name,
-            user_length: user.len().try_into().unwrap(),
-            domain: psz_domain_name,
-            domain_length: domain.len().try_into().unwrap(),
-            password: psz_packed_credentials_string,
-            password_length: password.len().try_into().unwrap(),
+            user,
+            user_length: user_length.try_into().unwrap(),
+            domain,
+            domain_length: domain_length.try_into().unwrap(),
+            password,
+            password_length: password_length.try_into().unwrap(),
             flags: 0,
         };
 
@@ -749,7 +771,13 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
             return 0;
         }
 
-        let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data as *mut _);
+        let auth_data = auth_data as *mut SecWinntAuthIdentityW;
+
+        unsafe { libc::free((*auth_data).user as *mut _) };
+        unsafe { libc::free((*auth_data).domain as *mut _) };
+        unsafe { libc::free((*auth_data).password as *mut _) };
+
+        let _auth_data: Box<SecWinntAuthIdentityW> = Box::from_raw(auth_data);
 
         0
     }
@@ -804,6 +832,9 @@ mod tests {
                 "domain",
                 String::from_utf16_lossy(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
             );
+
+            let status = SspiFreeAuthIdentity(identity as *mut _);
+            assert_eq!(status, 0);
         }
     }
 
@@ -830,26 +861,8 @@ mod tests {
             let status =
                 SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
 
-            assert_eq!(status, 0);
-            assert!(!identity.is_null());
-
-            let identity = identity.cast::<SecWinntAuthIdentityW>();
-
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts((*identity).user, (*identity).user_length as usize))
-            );
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts(
-                    (*identity).password,
-                    (*identity).password_length as usize
-                ))
-            );
-            assert_eq!(
-                "",
-                String::from_utf16_lossy(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
-            );
+            assert_eq!(status, ErrorKind::InvalidParameter.to_u32().unwrap());
+            assert!(identity.is_null());
         }
     }
 
@@ -859,10 +872,11 @@ mod tests {
         let mut identity = null_mut::<c_void>();
 
         unsafe {
-            SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
+            let status =
+                SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
+            assert_eq!(status, 0);
 
             let status = SspiFreeAuthIdentity(identity);
-
             assert_eq!(status, 0);
         }
     }
