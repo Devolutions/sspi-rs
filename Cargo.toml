@@ -44,7 +44,7 @@ md4 = "0.10"
 sha2 = "0.10"
 sha1 = "0.10"
 hmac = "0.12"
-crypto-mac = "0.11"
+digest = { version = "0.11.0-pre.8", default-features = false, features = ["mac"] }
 num-derive = "0.4"
 num-traits = "0.2"
 lazy_static = "1.4"
