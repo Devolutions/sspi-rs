@@ -707,10 +707,11 @@ impl<'a> Kerberos {
                     }
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let username = utf16_bytes_to_utf8_string(&smart_card.username);
+                        let domain = utf16_bytes_to_utf8_string(&smart_card.domain);
                         let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
 
-                        let realm = get_client_principal_realm(&username, "");
-                        let cname_type = get_client_principal_name_type(&username, "");
+                        let realm = get_client_principal_realm(&username, &domain);
+                        let cname_type = get_client_principal_name_type(&username, &domain);
 
                         (username, password, realm.to_uppercase(), cname_type)
                     }

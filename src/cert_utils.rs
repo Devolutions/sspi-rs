@@ -1,5 +1,8 @@
+#[cfg(feature = "scard")]
 use std::ffi::c_void;
+#[cfg(feature = "scard")]
 use std::ptr::{null, null_mut};
+#[cfg(feature = "scard")]
 use std::slice::from_raw_parts;
 
 use picky_asn1::wrapper::Utf8StringAsn1;
@@ -25,7 +28,7 @@ const CSP_NAME_W: &[u8] = &[
 #[cfg(feature = "scard")]
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
-§#[cfg(feature = "scard")]
+#[cfg(feature = "scard")]
 // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
 pub type HCRYPTPROV = usize; // ULONG_PTR
 #[cfg(feature = "scard")]

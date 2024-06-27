@@ -235,6 +235,8 @@ mod scard_credentials {
     pub struct SmartCardIdentityBuffers {
         /// UTF-16 encoded username
         pub username: Vec<u8>,
+        /// UTF-16 encoded domain
+        pub domain: Vec<u8>,
         /// DER-encoded X509 certificate
         pub certificate: Vec<u8>,
         /// UTF-16 encoded smart card name
@@ -259,6 +261,8 @@ mod scard_credentials {
     pub struct SmartCardIdentity {
         /// Username
         pub username: String,
+        /// Domain
+        pub domain: String,
         /// X509 certificate
         pub certificate: Certificate,
         /// Smart card reader name
@@ -297,6 +301,7 @@ mod scard_credentials {
                 reader_name: utils::string_to_utf16(value.reader_name),
                 pin: utils::string_to_utf16(String::from_utf8_lossy(value.pin.as_ref())).into(),
                 username: utils::string_to_utf16(value.username),
+                domain: utils::string_to_utf16(value.domain),
                 card_name: value.card_name.map(utils::string_to_utf16),
                 container_name: utils::string_to_utf16(value.container_name),
                 csp_name: utils::string_to_utf16(value.csp_name),
@@ -327,6 +332,7 @@ mod scard_credentials {
                 reader_name: utils::bytes_to_utf16_string(&value.reader_name),
                 pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
                 username: utils::bytes_to_utf16_string(&value.username),
+                domain: utils::bytes_to_utf16_string(&value.domain),
                 card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
                 container_name: utils::bytes_to_utf16_string(&value.container_name),
                 csp_name: utils::bytes_to_utf16_string(&value.csp_name),

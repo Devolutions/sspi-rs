@@ -8,7 +8,9 @@ use picky_asn1::wrapper::OctetStringAsn1;
 use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
 use winscard::SmartCard as PivSmartCard;
 
-use crate::{Error, ErrorKind, Result};
+#[cfg(feature = "scard")]
+use crate::{Error, ErrorKind};
+use crate::Result;
 
 // ISO/IEC 7816-4
 const CLA_BYTE_NO_CHAINING: u8 = 0x00;

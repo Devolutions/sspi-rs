@@ -11,6 +11,7 @@ description = "A Rust implementation of WinSCard"
 
 [features]
 std = ["tracing/std", "base64", "picky-asn1-der"]
+scard = ["dep:flate2"]
 
 [lib]
 name = "winscard"
@@ -26,7 +27,7 @@ time = { version = "0.3.28", default-features = false, features = [
     "formatting",
 ] }
 uuid = { version = "1.4.1", features = ["v4"], default-features = false }
-flate2 = { version = "1.0.28", features = ["zlib", "rust_backend"], default-features = false }
+flate2 = { version = "1.0.28", features = ["zlib", "rust_backend"], default-features = false, optional = true }
 rsa = { version = "0.9.6", features = ["hazmat", "sha1"], default-features = false }
 rand_core = "0.6.4"
 sha1 = { version = "0.10.6", default-features = false }

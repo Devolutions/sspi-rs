@@ -11,6 +11,7 @@ mod macros;
 mod ber_tlv;
 mod card_capability_container;
 mod chuid;
+#[cfg(feature = "scard")]
 mod compression;
 mod dummy_rng;
 /// Contains env variables names that represent smart card credentials.
@@ -18,6 +19,7 @@ mod dummy_rng;
 pub mod env;
 mod piv_cert;
 mod scard;
+#[cfg(feature = "scard")]
 mod scard_context;
 /// Constants with most popular tags used in this PIV smart card implementation.
 pub mod tlv_tags;
@@ -37,6 +39,7 @@ use iso7816_tlv::TlvError;
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, PIV_AID};
+#[cfg(feature = "scard")]
 pub use scard_context::{Reader, ScardContext, SmartCardInfo};
 
 /// The [WinScardResult] type.
