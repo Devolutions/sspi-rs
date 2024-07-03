@@ -8,9 +8,9 @@ use picky_asn1::wrapper::OctetStringAsn1;
 use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
 use winscard::SmartCard as PivSmartCard;
 
+use crate::Result;
 #[cfg(feature = "scard")]
 use crate::{Error, ErrorKind};
-use crate::Result;
 
 pub enum SmartCardApi {
     #[cfg(feature = "scard")]

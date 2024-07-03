@@ -32,7 +32,7 @@ const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
 pub type HCRYPTPROV = usize; // ULONG_PTR
 #[cfg(feature = "scard")]
-                             // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
+// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
 pub type HCRYPTKEY = usize; // ULONG_PTR
 
 use crate::{Error, ErrorKind, Result};

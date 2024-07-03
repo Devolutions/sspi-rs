@@ -757,7 +757,8 @@ impl<'a> Kerberos {
                                 .private_key_pem
                                 .as_ref()
                                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "scard private key is missing"))?
-                                .to_vec().as_slice(),
+                                .to_vec()
+                                .as_slice(),
                         );
                         let certificate = smart_card.certificate.clone();
 
