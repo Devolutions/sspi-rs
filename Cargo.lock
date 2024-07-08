@@ -141,8 +141,7 @@ dependencies = [
 [[package]]
 name = "aws-lc-sys"
 version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2927c7af777b460b7ccd95f8b67acd7b4c04ec8896bf0c8e80ba30523cffc057"
+source = "git+https://github.com/awakecoding/aws-lc-rs?branch=v0.19.0-patched#95da179cfd9a6ae9ab51ce33326d6416a9dd20a1"
 dependencies = [
  "bindgen",
  "cc",
@@ -2386,6 +2385,7 @@ dependencies = [
  "proptest",
  "rand",
  "reqwest",
+ "rsa",
  "rustls",
  "serde",
  "serde_derive",

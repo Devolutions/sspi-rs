@@ -98,7 +98,6 @@ use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
 pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
-#[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
@@ -1841,6 +1840,15 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<rsa::Error> for Error {
+    fn from(value: rsa::Error) -> Self {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("Error: an unexpected RsaError happened: {}", value),
+        )
+    }
+}
+
 impl From<Asn1DerError> for Error {
     fn from(err: Asn1DerError) -> Self {
         Self::new(ErrorKind::InvalidToken, format!("ASN1 DER error: {:?}", err))
@@ -1990,7 +1998,6 @@ impl From<pcsc::Error> for Error {
     }
 }
 
-#[cfg(feature = "scard")]
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
         Self::new(ErrorKind::InternalError, format!("RSA key error: {:?}", err))
