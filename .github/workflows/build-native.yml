@@ -104,21 +104,13 @@ jobs:
           echo "CC_aarch64-linux-android=$AndroidToolchain/bin/aarch64-linux-android21-clang" >> $Env:GITHUB_ENV
           echo "AR_aarch64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
 
-      - name: Fix ring dependency for Windows ARM64
+      - name: Install NASM
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install activeperl nasm
+          choco install nasm
           $Env:PATH += ";$Env:ProgramFiles\NASM"
-
-          $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
-          $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
-          $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
-          echo "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
-          @('', '[patch.crates-io]',
-           'ring = { git = "https://github.com/awakecoding/ring", branch = "v0.16.20-patched" }') | % {
-             Add-Content -Path "Cargo.toml" -Value $_
-           }
+          echo "PATH=$Env:PATH" >> $Env:GITHUB_ENV
 
       - name: Setup build environment
         shell: pwsh

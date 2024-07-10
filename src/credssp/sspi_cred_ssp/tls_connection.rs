@@ -32,25 +32,60 @@ const AES_BLOCK_SIZE: usize = 16;
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
 //
 // This configuration just accepts any certificate
-pub mod danger {
-    use std::time::SystemTime;
+mod danger {
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types;
+    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
 
-    use rustls::client::{ServerCertVerified, ServerCertVerifier};
-    use rustls::{Certificate, Error, ServerName};
-
-    pub struct NoCertificateVerification;
+    #[derive(Debug)]
+    pub(super) struct NoCertificateVerification;
 
     impl ServerCertVerifier for NoCertificateVerification {
         fn verify_server_cert(
             &self,
-            _end_entity: &Certificate,
-            _intermediates: &[Certificate],
-            _server_name: &ServerName,
-            _scts: &mut dyn Iterator<Item = &[u8]>,
-            _ocsp_response: &[u8],
-            _now: SystemTime,
+            _: &pki_types::CertificateDer<'_>,
+            _: &[pki_types::CertificateDer<'_>],
+            _: &pki_types::ServerName<'_>,
+            _: &[u8],
+            _: pki_types::UnixTime,
         ) -> Result<ServerCertVerified, Error> {
             Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _: &[u8],
+            _: &pki_types::CertificateDer<'_>,
+            _: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _: &[u8],
+            _: &pki_types::CertificateDer<'_>,
+            _: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::ECDSA_SHA1_Legacy,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+            ]
         }
     }
 }
@@ -318,17 +353,24 @@ impl TlsConnection {
             TlsConnection::Rustls(tls_connection) => {
                 let connection_cipher = tls_connection
                     .negotiated_cipher_suite()
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
+                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "connection cipher is not negotiated"))?;
 
-                let bulk_cipher = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                let suite = match connection_cipher {
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.suite,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.suite,
                 };
-                let block_size = match bulk_cipher {
-                    rustls::BulkAlgorithm::Aes128Gcm => AES_BLOCK_SIZE,
-                    rustls::BulkAlgorithm::Aes256Gcm => AES_BLOCK_SIZE,
+
+                let block_size = match suite.as_str() {
+                    Some(name) if name.contains("AES_128_GCM") => AES_BLOCK_SIZE,
+                    Some(name) if name.contains("AES_256_GCM") => AES_BLOCK_SIZE,
                     // ChaCha20 is a stream cipher
-                    rustls::BulkAlgorithm::Chacha20Poly1305 => 0,
+                    Some(name) if name.contains("CHACHA20_POLY1305") => 0,
+                    _ => {
+                        return Err(Error::new(
+                            ErrorKind::UnsupportedFunction,
+                            format!("cipher suite {suite:?} not supported"),
+                        ))
+                    }
                 };
 
                 Ok(StreamSizes {
@@ -390,17 +432,19 @@ impl TlsConnection {
                     .negotiated_cipher_suite()
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
-                let bulk_cipher = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.bulk,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.bulk,
+                let suite = match connection_cipher {
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.suite,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.suite,
                 };
-                let (cipher, cipher_strength) = match bulk_cipher {
-                    rustls::BulkAlgorithm::Aes128Gcm => (ConnectionCipher::CalgAes128, 128),
-                    rustls::BulkAlgorithm::Aes256Gcm => (ConnectionCipher::CalgAes256, 256),
-                    rustls::BulkAlgorithm::Chacha20Poly1305 => {
+
+                let (cipher, cipher_strength) = match suite.as_str() {
+                    Some(name) if name.contains("AES_128_GCM") => (ConnectionCipher::CalgAes128, 128),
+                    Some(name) if name.contains("AES_256_GCM") => (ConnectionCipher::CalgAes256, 256),
+                    // NOTE: alg_id for CHACHA20_POLY1305 does not exist
+                    _ => {
                         return Err(Error::new(
                             ErrorKind::UnsupportedFunction,
-                            "alg_id for CHACHA20_POLY1305 does not exist",
+                            format!("alg_id for {suite:?} is not known"),
                         ))
                     }
                 };
