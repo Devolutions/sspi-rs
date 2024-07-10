@@ -104,12 +104,12 @@ jobs:
           echo "CC_aarch64-linux-android=$AndroidToolchain/bin/aarch64-linux-android21-clang" >> $Env:GITHUB_ENV
           echo "AR_aarch64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
 
-      - name: Install NASM
+      - name: Install dependencies for rustls
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install nasm
-          $Env:PATH += ";$Env:ProgramFiles\NASM"
+          choco install nasm ninja
+          $Env:PATH += ";$Env:ProgramFiles\NASM;$Env:ProgramData\chocolatey\lib\ninja\tools"
           echo "PATH=$Env:PATH" >> $Env:GITHUB_ENV
 
       - name: Setup build environment
