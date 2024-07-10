@@ -360,7 +360,7 @@ impl SspiCredSsp {
                             )
                         })?)?;
 
-                    let mut client_config = rustls::client::ClientConfig::builder()
+                    let mut client_config = ClientConfig::builder()
                         .dangerous()
                         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
                         .with_no_client_auth();

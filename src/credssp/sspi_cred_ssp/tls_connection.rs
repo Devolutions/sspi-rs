@@ -193,7 +193,7 @@ impl TlsConnection {
         let tls_version: u16 = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
-            .try_into();
+            .into();
 
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
@@ -238,7 +238,7 @@ impl TlsConnection {
         let tls_version: u16 = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
-            .try_into();
+            .into();
 
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
@@ -451,14 +451,14 @@ impl TlsConnection {
                     }
                 };
 
-                let hash_algo = common.hash_provider.algorithm();
+                let hash_strength = common.hash_provider.output_len().try_into()?;
 
                 Ok(ConnectionInfo {
                     protocol,
                     cipher,
                     cipher_strength,
                     hash: ConnectionHash::CalgSha,
-                    hash_strength: hash_algo.output_len().try_into()?,
+                    hash_strength,
                     key_exchange: ConnectionKeyExchange::CalgRsaKeyx,
                     exchange_strength: (self.raw_peer_public_key()?.len() * 8).try_into()?,
                 })
