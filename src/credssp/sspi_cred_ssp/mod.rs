@@ -7,7 +7,8 @@ use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rustls::{ClientConfig, ClientConnection, Connection};
+use rustls::client::ClientConfig;
+use rustls::{ClientConnection, Connection};
 
 use self::tls_connection::{danger, TlsConnection};
 use super::ts_request::NONCE_SIZE;
@@ -359,7 +360,7 @@ impl SspiCredSsp {
                             )
                         })?)?;
 
-                    let mut config = rustls::client::ClientConfig::builder()
+                    let mut client_config = rustls::client::ClientConfig::builder()
                         .dangerous()
                         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
                         .with_no_client_auth();

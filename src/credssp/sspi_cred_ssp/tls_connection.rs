@@ -189,16 +189,17 @@ impl TlsConnection {
         // record type (such as a TLS handshake "finished message"), DecryptMessage() won't even
         // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
         let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
-        let tls_version = connection
+
+        let tls_version: u16 = connection
             .protocol_version()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
-            .try_into::<u16>()
-            .to_be_bytes();
-        tls_packet_start.extend_from_slice(&tls_version);
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
+            .try_into();
+
+        tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
         if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid TLS packet header."));
+            return Err(Error::new(ErrorKind::InvalidToken, "invalid TLS packet header."));
         }
 
         // Safe: payload length is checked above.
@@ -233,16 +234,17 @@ impl TlsConnection {
         // record type (such as a TLS handshake "finished message"), DecryptMessage() won't even
         // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
         let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
-        let tls_version = connection
+
+        let tls_version: u16 = connection
             .protocol_version()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
-            .try_into::<u16>()
-            .to_be_bytes();
-        tls_packet_start.extend_from_slice(&tls_version);
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
+            .try_into();
+
+        tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
         if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
-            return Err(Error::new(ErrorKind::InvalidToken, "Invalid TLS packet header."));
+            return Err(Error::new(ErrorKind::InvalidToken, "invalid TLS packet header."));
         }
 
         // Safe: payload length is checked above.
@@ -444,7 +446,7 @@ impl TlsConnection {
                     _ => {
                         return Err(Error::new(
                             ErrorKind::UnsupportedFunction,
-                            format!("alg_id for {suite:?} is not known"),
+                            format!("alg_id for {:?} is not known", common.suite),
                         ))
                     }
                 };
