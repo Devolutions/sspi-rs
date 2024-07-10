@@ -21,11 +21,11 @@ scard = ["sspi/scard", "dep:ffi-types", "dep:winscard"]
 cfg-if = "1"
 libc = "0.2"
 num-traits = "0.2"
-whoami = "1.4"
+whoami = "1.5"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
 picky-asn1-der = "0.4"
-uuid = { version = "1.4", default-features = false }
+uuid = { version = "1.10", default-features = false }
 winscard = { path = "../crates/winscard", features = ["std"], optional = true }
 
 # logging
