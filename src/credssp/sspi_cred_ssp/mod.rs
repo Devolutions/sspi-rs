@@ -359,11 +359,13 @@ impl SspiCredSsp {
                             )
                         })?)?;
 
-                    let mut client_config = ClientConfig::builder()
-                        .with_safe_defaults()
+                    let mut config = rustls::client::ClientConfig::builder()
+                        .dangerous()
                         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
                         .with_no_client_auth();
+
                     client_config.key_log = Arc::new(rustls::KeyLogFile::new());
+
                     let config = Arc::new(client_config);
 
                     self.tls_connection = Some(TlsConnection::Rustls(Connection::Client(

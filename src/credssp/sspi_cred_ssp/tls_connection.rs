@@ -32,13 +32,13 @@ const AES_BLOCK_SIZE: usize = 16;
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
 //
 // This configuration just accepts any certificate
-mod danger {
+pub mod danger {
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::pki_types;
     use rustls::{DigitallySignedStruct, Error, SignatureScheme};
 
     #[derive(Debug)]
-    pub(super) struct NoCertificateVerification;
+    pub struct NoCertificateVerification;
 
     impl ServerCertVerifier for NoCertificateVerification {
         fn verify_server_cert(
@@ -192,7 +192,7 @@ impl TlsConnection {
         let tls_version = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
-            .get_u16()
+            .try_into::<u16>()
             .to_be_bytes();
         tls_packet_start.extend_from_slice(&tls_version);
 
@@ -236,7 +236,7 @@ impl TlsConnection {
         let tls_version = connection
             .protocol_version()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "Can not query negotiated TLS version"))?
-            .get_u16()
+            .try_into::<u16>()
             .to_be_bytes();
         tls_packet_start.extend_from_slice(&tls_version);
 
@@ -432,12 +432,12 @@ impl TlsConnection {
                     .negotiated_cipher_suite()
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "Connection cipher is not negotiated"))?;
 
-                let suite = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.suite,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.suite,
+                let common = match connection_cipher {
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common,
                 };
 
-                let (cipher, cipher_strength) = match suite.as_str() {
+                let (cipher, cipher_strength) = match common.suite.as_str() {
                     Some(name) if name.contains("AES_128_GCM") => (ConnectionCipher::CalgAes128, 128),
                     Some(name) if name.contains("AES_256_GCM") => (ConnectionCipher::CalgAes256, 256),
                     // NOTE: alg_id for CHACHA20_POLY1305 does not exist
@@ -449,7 +449,7 @@ impl TlsConnection {
                     }
                 };
 
-                let hash_algo = connection_cipher.hash_algorithm();
+                let hash_algo = common.hash_provider.algorithm();
 
                 Ok(ConnectionInfo {
                     protocol,
