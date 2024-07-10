@@ -372,10 +372,10 @@ impl SspiCredSsp {
                     self.tls_connection = Some(TlsConnection::Rustls(Connection::Client(
                         ClientConnection::new(
                             config,
-                            target_hostname.try_into().map_err(|err| {
+                            target_hostname.to_owned().try_into().map_err(|e| {
                                 Error::new(
                                     ErrorKind::InvalidParameter,
-                                    format!("Provided target name is not valid DNS name: {:?}", err),
+                                    format!("provided target name is not valid DNS name: {:?}", e),
                                 )
                             })?,
                         )
