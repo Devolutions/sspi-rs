@@ -110,7 +110,10 @@ jobs:
         run: |
           choco install nasm ninja
           $Env:PATH += ";$Env:ProgramFiles\NASM;$Env:ProgramData\chocolatey\lib\ninja\tools"
+          echo "$Env:PATH"
           echo "PATH=$Env:PATH" >> $Env:GITHUB_ENV
+          nasm --version
+          ninja --version
 
       - name: Setup build environment
         shell: pwsh
