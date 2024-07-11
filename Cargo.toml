@@ -65,7 +65,6 @@ trust-dns-resolver = { version = "0.23", optional = true }
 portpicker = { version = "0.1", optional = true }
 num-bigint-dig = "0.8"
 tracing = "0.1"
-rustls = { version = "0.23", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.38", features = ["time", "rt", "rt-multi-thread"], optional = true }
@@ -91,3 +90,11 @@ picky = { version = "7.0.0-rc.8", features = ["x509"] }
 tracing-subscriber = "0.3"
 proptest = "1.5"
 cfg-if = "1"
+
+# Use ring for Windows ARM until we figure out the problem with the linker.
+[target.'cfg(all(target_arch = \"arm\", target_os = \"windows\"))'.dependencies]
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "logging", "std", "tls12"] }
+
+# Use AWS LC everywhere else
+[target.'cfg(not(all(target_arch = \"arm\", target_os = \"windows\")))'.dependencies]
+rustls = { version = "0.23", optional = true, default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
