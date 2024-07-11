@@ -188,7 +188,7 @@ jobs:
           }
           Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
 
-          $CargoArgs = @('build', '-v', '-p', 'sspi-ffi', '--target', $RustTarget)
+          $CargoArgs = @('build', '-vvv', '-p', 'sspi-ffi', '--target', $RustTarget)
 
           if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')
