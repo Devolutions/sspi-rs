@@ -116,6 +116,9 @@ jobs:
           Write-Host "Installed NASM: $(nasm --version)"
           Write-Host "Installed ninja: $(ninja --version)"
 
+          # This is required to avoid linker errors when targetting Windows ARM.
+          # Indeed libclang / LLVM is a link-time requirement for AWS LC (or ring).
+          # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
           $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
           $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
           $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
@@ -185,7 +188,7 @@ jobs:
           }
           Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
 
-          $CargoArgs = @('build', '-p', 'sspi-ffi', '--target', $RustTarget)
+          $CargoArgs = @('build', '-v', '-p', 'sspi-ffi', '--target', $RustTarget)
 
           if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')
