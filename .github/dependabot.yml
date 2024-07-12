@@ -26,6 +26,11 @@ updates:
           - "*tls*"
           - "*rand*"
           - "picky*"
+      windows:
+        patterns:
+          - "windows*"
+          - "winreg"
+          - "winapi"
       patch:
         dependency-type: "production"
         update-types:
