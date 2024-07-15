@@ -53,11 +53,11 @@ serde_derive = "1"
 url = "2.5"
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "rustls-tls-native-roots"], optional = true, default-features = false }
 
-picky = { version = "7.0.0-rc.8", default-features = false }
-picky-krb = "0.8"
-picky-asn1 = { version = "0.8", features = ["time_conversion"] }
-picky-asn1-der = "0.4"
-picky-asn1-x509 = { version = "0.12", features = ["pkcs7"] }
+picky = { version = "7.0.0-rc.9", default-features = false }
+picky-krb = "0.9"
+picky-asn1 = { version = "0.9", features = ["time_conversion"] }
+picky-asn1-der = "0.5"
+picky-asn1-x509 = { version = "0.13", features = ["pkcs7"] }
 
 oid = "0.2"
 uuid = { version = "1.10", features = ["v4"] }
@@ -87,7 +87,7 @@ tokio = { version = "1.38", features = ["time", "rt", "rt-multi-thread"] }
 base64 = "0.22"
 static_assertions = "1"
 whoami = "1.5"
-picky = { version = "7.0.0-rc.8", features = ["x509"] }
+picky = { version = "7.0.0-rc.9", features = ["x509"] }
 tracing-subscriber = "0.3"
 proptest = "1.5"
 cfg-if = "1"
