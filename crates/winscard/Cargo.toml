@@ -19,8 +19,8 @@ name = "winscard"
 bitflags = "2.6"
 iso7816 = "0.1"
 iso7816-tlv = "0.4"
-picky = { version = "7.0.0-rc.8", default-features = false, features = ["x509"] }
-picky-asn1-x509 = { version = "0.12" }
+picky = { version = "7.0.0-rc.9", default-features = false, features = ["x509"] }
+picky-asn1-x509 = { version = "0.13" }
 tracing = { version = "0.1", features = ["attributes"], default-features = false }
 time = { version = "0.3", default-features = false, features = [
     "formatting",
@@ -31,7 +31,7 @@ rsa = { version = "0.9", features = ["hazmat", "sha1"], default-features = false
 rand_core = "0.6"
 sha1 = { version = "0.10", default-features = false }
 base64 = { version = "0.22" , optional = true }
-picky-asn1-der = { version = "0.4", optional = true }
+picky-asn1-der = { version = "0.5", optional = true }
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 

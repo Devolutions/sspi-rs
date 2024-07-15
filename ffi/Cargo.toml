@@ -24,7 +24,7 @@ num-traits = "0.2"
 whoami = "1.5"
 sspi = { path = "..", features = ["network_client", "dns_resolver"] }
 ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
-picky-asn1-der = "0.4"
+picky-asn1-der = "0.5"
 uuid = { version = "1.10", default-features = false }
 winscard = { path = "../crates/winscard", features = ["std"], optional = true }
 

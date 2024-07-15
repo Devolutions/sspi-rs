@@ -176,12 +176,6 @@ checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
 name = "base64"
-version = "0.21.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -854,6 +848,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -893,17 +893,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "601cbb57e577e2f5ef5be8e7b83f0f63994f25aa94d673e54a92d5c516d101f1"
-dependencies = [
- "bytes",
- "fnv",
- "itoa",
-]
-
-[[package]]
-name = "http"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
@@ -920,7 +909,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
 dependencies = [
  "bytes",
- "http 1.1.0",
+ "http",
 ]
 
 [[package]]
@@ -931,7 +920,7 @@ checksum = "793429d76616a256bcb62c2a2ec2bed781c8307e797e2598c50010f2bee2544f"
 dependencies = [
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http",
  "http-body",
  "pin-project-lite",
 ]
@@ -951,7 +940,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.1.0",
+ "http",
  "http-body",
  "httparse",
  "itoa",
@@ -968,7 +957,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ee4be2c948921a1a5320b629c4193916ed787a7f7f293fd3f7f5a6c9de74155"
 dependencies = [
  "futures-util",
- "http 1.1.0",
+ "http",
  "hyper",
  "hyper-util",
  "rustls",
@@ -989,7 +978,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.1.0",
+ "http",
  "http-body",
  "hyper",
  "pin-project-lite",
@@ -1443,6 +1432,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "p521"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc9e2161f1f215afdfce23677034ae137bbd45016a880c2eb3ba8eb95f085b2"
+dependencies = [
+ "base16ct",
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "rand_core",
+ "sha2",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1518,24 +1521,26 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "picky"
-version = "7.0.0-rc.8"
+version = "7.0.0-rc.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52cccdaffd2f361b4b4eb70b4249bd71d89bb66cb84b7f76483ecd1640c543ce"
+checksum = "fe9b488630f493840c2e6ef270c3619a3dc2ad0953eb978d6e4273a8337fee5e"
 dependencies = [
  "aes",
  "aes-gcm",
  "aes-kw",
- "base64 0.21.7",
+ "base64",
  "cbc",
  "des",
  "digest",
  "ed25519-dalek",
+ "hex",
  "hmac",
- "http 0.2.12",
+ "http",
  "md-5",
  "num-bigint-dig",
  "p256",
  "p384",
+ "p521",
  "pbkdf2",
  "picky-asn1",
  "picky-asn1-der",
@@ -1556,9 +1561,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "295eea0f33c16be21e2a98b908fdd4d73c04dd48c8480991b76dbcf0cb58b212"
+checksum = "360019b238b11b8c0e88cd9db3a6677f1af122e3422d0a26a2b576f084d9be36"
 dependencies = [
  "oid",
  "serde",
@@ -1569,9 +1574,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1-der"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5df7873a9e36d42dadb393bea5e211fe83d793c172afad5fb4ec846ec582793f"
+checksum = "04784987e157b5a8f832ce68b3364915dc6ef4bed94a6e10e241fa1bae3db2e3"
 dependencies = [
  "picky-asn1",
  "serde",
@@ -1580,11 +1585,11 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1-x509"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c5f20f71a68499ff32310f418a6fad8816eac1a2859ed3f0c5c741389dd6208"
+checksum = "f3384ff768b1c4a04532916be77935f634a4738d3b2138da98798e90352fadf4"
 dependencies = [
- "base64 0.21.7",
+ "base64",
  "num-bigint-dig",
  "oid",
  "picky-asn1",
@@ -1596,9 +1601,9 @@ dependencies = [
 
 [[package]]
 name = "picky-krb"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f71cf61ebe6e657a81bcac31f9d61d52c23a1fd517b0dad77b915a7d3d15d2e8"
+checksum = "e2213fd3942a9d3366b3e108b6d02db2227c80937a55f79a71e1719ab075bb77"
 dependencies = [
  "aes",
  "byteorder",
@@ -1937,12 +1942,12 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7d6d2a27d57148378eb5e111173f4276ad26340ecc5c49a4a2152167a2d6a37"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bytes",
  "futures-channel",
  "futures-core",
  "futures-util",
- "http 1.1.0",
+ "http",
  "http-body",
  "http-body-util",
  "hyper",
@@ -2100,7 +2105,7 @@ version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29993a25686778eb88d4189742cd713c9bce943bc54251a33509dc63cbacf73d"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "rustls-pki-types",
 ]
 
@@ -2357,7 +2362,7 @@ version = "0.12.0"
 dependencies = [
  "async-dnssd",
  "async-recursion",
- "base64 0.22.1",
+ "base64",
  "bitflags 2.6.0",
  "byteorder",
  "cfg-if",
@@ -3164,7 +3169,7 @@ dependencies = [
 name = "winscard"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bitflags 2.6.0",
  "flate2",
  "iso7816",
