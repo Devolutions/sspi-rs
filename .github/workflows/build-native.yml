@@ -170,6 +170,8 @@ jobs:
             $Env:AWS_LC_SYS_NO_ASM = 1
           }
 
+          echo $Env:AWS_LC_SYS_NO_ASM
+
           if ($DotNetOs -eq 'osx') {
             Set-Item "Env:CFLAGS_${RustArch}-apple-darwin" "-arch $AppleArch"
           }
