@@ -47,8 +47,6 @@ jobs:
 
       # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
-        env:
-          AWS_LC_SYS_NO_ASM: true
         run: cargo clippy --manifest-path ffi/Cargo.toml ${{ matrix.additional-args }} -- -D warnings -D clippy::print_stdout
 
   tests:
@@ -78,13 +76,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install NASM
+      - name: Install dependencies for rustls
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install nasm
-          $Env:PATH += ";$Env:ProgramFiles\NASM"
-          echo "PATH=$Env:PATH" >> $Env:GITHUB_ENV
+          choco install ninja nasm
+          Install-Module VsDevShell -Force
+
+          # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
+          $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
+          $Env:LIBCLANG_PATH="$VSINSTALLDIR\VC\Tools\Llvm\x64\bin"
+          Write-Output "LIBCLANG_PATH=$VSINSTALLDIR\VC\Tools\Llvm\x64\bin" >> $Env:GITHUB_ENV
+
+          # Add nasm to the PATH
+          $NASM_PATH = "$Env:ProgramFiles\NASM"
+          Write-Output "PATH=$Env:PATH;$NASM_PATH" >> $Env:GITHUB_ENV
 
       - name: Test
         run: cargo test --manifest-path ${{ matrix.manifest }} ${{ matrix.additional-args }}

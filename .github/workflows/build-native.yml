@@ -64,10 +64,6 @@ jobs:
           - arch: x86
             os: ios
 
-          # FIXME: Disable Windows ARM build until https://github.com/aws/aws-lc-rs/issues/453 is fixed.
-          - arch: arm64
-            os: win
-
     steps:
       - name: Checkout ${{ github.repository }}
         uses: actions/checkout@v4
@@ -112,21 +108,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install nasm ninja
+          choco install ninja nasm
+          Install-Module VsDevShell -Force
 
-          # We need to add the NASM binary folder to the PATH manually.
-          $Env:PATH += ";$Env:ProgramFiles\NASM"
-
-          Write-Host "Installed NASM: $(nasm --version)"
-          Write-Host "Installed ninja: $(ninja --version)"
-
-          # libclang / LLVM is a requirement for AWS LC (or ring).
           # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
           $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
-          $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
-          $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
+          $Env:LIBCLANG_PATH="$VSINSTALLDIR\VC\Tools\Llvm\x64\bin"
+          Write-Output "LIBCLANG_PATH=$VSINSTALLDIR\VC\Tools\Llvm\x64\bin" >> $Env:GITHUB_ENV
 
-          Write-Output "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
+          # Add nasm to the PATH
+          $NASM_PATH = "$Env:ProgramFiles\NASM"
+          Write-Output "PATH=$Env:PATH;$NASM_PATH" >> $Env:GITHUB_ENV
 
       - name: Setup build environment
         shell: pwsh
@@ -154,6 +146,7 @@ jobs:
             'x86'='i686';'arm'='armv7'}[$DotNetArch]
           $AppleArch = @{'x64'='x86_64';'arm64'='arm64';
             'x86'='i386';'arm'='arm'}[$DotNetArch]
+          $MsvcArch = @{'x64'='x64';'arm64'='arm64'}[$DotNetArch]
           $RustPlatform = @{'win'='pc-windows-msvc';
             'osx'='apple-darwin';'ios'='apple-ios';
             'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
@@ -174,6 +167,7 @@ jobs:
           rustup target add $RustTarget
 
           if ($DotNetOs -eq 'win') {
+            Enter-VsDevShell $MsvcArch
             $Env:RUSTFLAGS="-C target-feature=+crt-static"
           }
 
