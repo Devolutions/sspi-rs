@@ -196,7 +196,8 @@ jobs:
 
           $CargoArgs = @('build', '-vvv', '-p', 'sspi-ffi', '--target', $RustTarget)
 
-          if (-Not ($BuildType -Eq 'debug')) {
+          # FIXME: remove the right-hand condition when ARM build is fixed for AWS LC.
+          if ((-Not ($BuildType -Eq 'debug')) -And (-Not ($Env:AWS_LC_SYS_NO_ASM -Eq 1))) {
             $CargoArgs += @('--release')
           }
 
