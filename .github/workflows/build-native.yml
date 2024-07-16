@@ -116,8 +116,7 @@ jobs:
           Write-Host "Installed NASM: $(nasm --version)"
           Write-Host "Installed ninja: $(ninja --version)"
 
-          # This is required to avoid linker errors when targetting Windows ARM.
-          # Indeed libclang / LLVM is a link-time requirement for AWS LC (or ring).
+          # libclang / LLVM is a requirement for AWS LC (or ring).
           # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
           $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
           $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
