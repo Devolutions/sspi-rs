@@ -166,11 +166,10 @@ jobs:
 
           # FIXME: disable ASM for ARM until https://github.com/aws/aws-lc-rs/issues/453 is fixed.
           # WARN: Do not release until this is addressed, crypto is quite slow.
-          if ($DotNetArch -eq 'arm') {
+          if ($DotNetArch -eq 'arm64') {
             $Env:AWS_LC_SYS_NO_ASM = 1
           }
-
-          echo $Env:AWS_LC_SYS_NO_ASM
+          echo "AWS_LC_SYS_NO_ASM = $Env:AWS_LC_SYS_NO_ASM"
 
           if ($DotNetOs -eq 'osx') {
             Set-Item "Env:CFLAGS_${RustArch}-apple-darwin" "-arch $AppleArch"
