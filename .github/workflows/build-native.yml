@@ -165,8 +165,9 @@ jobs:
 
           # FIXME: disable ASM for ARM until https://github.com/aws/aws-lc-rs/issues/453 is fixed.
           # WARN: Do not release until this is addressed, crypto is quite slow.
-          if ($DotNetArch -eq 'arm64') {
+          if (($DotNetArch -Eq 'arm64') -And ($DotNetOs -Eq 'win')) {
             $Env:AWS_LC_SYS_NO_ASM = 1
+            $BuildType = "debug"
           }
           echo "AWS_LC_SYS_NO_ASM = $Env:AWS_LC_SYS_NO_ASM"
 
@@ -196,8 +197,7 @@ jobs:
 
           $CargoArgs = @('build', '-vvv', '-p', 'sspi-ffi', '--target', $RustTarget)
 
-          # FIXME: remove the right-hand condition when ARM build is fixed for AWS LC.
-          if ((-Not ($BuildType -Eq 'debug')) -And (-Not ($Env:AWS_LC_SYS_NO_ASM -Eq 1))) {
+          if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')
           }
 
