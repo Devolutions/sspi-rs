@@ -64,6 +64,10 @@ jobs:
           - arch: x86
             os: ios
 
+          # FIXME: Disable Windows ARM build until https://github.com/aws/aws-lc-rs/issues/453 is fixed.
+          - arch: arm64
+            os: win
+
     steps:
       - name: Checkout ${{ github.repository }}
         uses: actions/checkout@v4
@@ -162,14 +166,6 @@ jobs:
           if (($DotNetOs -eq 'android') -and ($DotNetArch -eq 'arm')) {
             $RustTarget = "armv7-linux-androideabi"
           }
-
-          # FIXME: disable ASM for ARM until https://github.com/aws/aws-lc-rs/issues/453 is fixed.
-          # WARN: Do not release until this is addressed, crypto is quite slow.
-          if (($DotNetArch -Eq 'arm64') -And ($DotNetOs -Eq 'win')) {
-            $Env:AWS_LC_SYS_NO_ASM = 1
-            $BuildType = "debug"
-          }
-          echo "AWS_LC_SYS_NO_ASM = $Env:AWS_LC_SYS_NO_ASM"
 
           if ($DotNetOs -eq 'osx') {
             Set-Item "Env:CFLAGS_${RustArch}-apple-darwin" "-arch $AppleArch"
