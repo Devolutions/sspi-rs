@@ -93,4 +93,4 @@ proptest = "1.5"
 cfg-if = "1"
 
 [patch.crates-io]
-aws-lc-sys = { git = 'https://github.com/awakecoding/aws-lc-rs', rev = "619234bda66ec1f2bad9c090681733b3c39b7ef8" }
+aws-lc-sys = { git = "https://github.com/aws/aws-lc-rs", rev = "eeac93be8e8180bb07a12e41be6dc7b40797df69" }
