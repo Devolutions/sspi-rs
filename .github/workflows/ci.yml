@@ -47,6 +47,8 @@ jobs:
 
       # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
+        env:
+          AWS_LC_SYS_NO_ASM: true
         run: cargo clippy --manifest-path ffi/Cargo.toml ${{ matrix.additional-args }} -- -D warnings -D clippy::print_stdout
 
   tests:
@@ -77,6 +79,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Test
+        env:
+          AWS_LC_SYS_NO_ASM: true
         run: cargo test --manifest-path ${{ matrix.manifest }} ${{ matrix.additional-args }}
 
   miri:

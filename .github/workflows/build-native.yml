@@ -104,21 +104,23 @@ jobs:
           echo "CC_aarch64-linux-android=$AndroidToolchain/bin/aarch64-linux-android21-clang" >> $Env:GITHUB_ENV
           echo "AR_aarch64-linux-android=$AndroidToolchain/bin/llvm-ar" >> $Env:GITHUB_ENV
 
-      - name: Fix ring dependency for Windows ARM64
+      - name: Install dependencies for rustls
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install activeperl nasm
-          $Env:PATH += ";$Env:ProgramFiles\NASM"
+          choco install ninja nasm
 
+          # We need to add the NASM binary folder to the PATH manually.
+          # We don’t need to do that for ninja.
+          Write-Output "PATH=$Env:PATH;$Env:ProgramFiles\NASM" >> $Env:GITHUB_ENV
+
+          # libclang / LLVM is a requirement for AWS LC.
+          # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
           $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
-          $VCINSTALLDIR = Join-Path $VSINSTALLDIR "VC"
-          $LLVM_ROOT = Join-Path $VCINSTALLDIR "Tools\Llvm\x64"
-          echo "PATH=$Env:PATH;${LLVM_ROOT}\bin" >> $Env:GITHUB_ENV
-          @('', '[patch.crates-io]',
-           'ring = { git = "https://github.com/awakecoding/ring", branch = "v0.16.20-patched" }') | % {
-             Add-Content -Path "Cargo.toml" -Value $_
-           }
+          Write-Output "LIBCLANG_PATH=$VSINSTALLDIR\VC\Tools\Llvm\x64\bin" >> $Env:GITHUB_ENV
+
+          # Install Visual Studio Developer PowerShell Module for cmdlets such as Enter-VsDevShell
+          Install-Module VsDevShell -Force
 
       - name: Setup build environment
         shell: pwsh
@@ -146,6 +148,7 @@ jobs:
             'x86'='i686';'arm'='armv7'}[$DotNetArch]
           $AppleArch = @{'x64'='x86_64';'arm64'='arm64';
             'x86'='i386';'arm'='arm'}[$DotNetArch]
+          $MsvcArch = @{'x64'='x64';'arm64'='arm64'}[$DotNetArch]
           $RustPlatform = @{'win'='pc-windows-msvc';
             'osx'='apple-darwin';'ios'='apple-ios';
             'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
@@ -166,6 +169,7 @@ jobs:
           rustup target add $RustTarget
 
           if ($DotNetOs -eq 'win') {
+            Enter-VsDevShell $MsvcArch
             $Env:RUSTFLAGS="-C target-feature=+crt-static"
           }
 
@@ -183,7 +187,7 @@ jobs:
           }
           Set-Content -Path .\ffi\Cargo.toml -Value $CargoToml
 
-          $CargoArgs = @('build', '-p', 'sspi-ffi', '--target', $RustTarget)
+          $CargoArgs = @('build', '-vvv', '-p', 'sspi-ffi', '--target', $RustTarget)
 
           if (-Not ($BuildType -Eq 'debug')) {
             $CargoArgs += @('--release')

@@ -7,7 +7,8 @@ use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rustls::{ClientConfig, ClientConnection, Connection};
+use rustls::client::ClientConfig;
+use rustls::{ClientConnection, Connection};
 
 use self::tls_connection::{danger, TlsConnection};
 use super::ts_request::NONCE_SIZE;
@@ -360,19 +361,21 @@ impl SspiCredSsp {
                         })?)?;
 
                     let mut client_config = ClientConfig::builder()
-                        .with_safe_defaults()
+                        .dangerous()
                         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
                         .with_no_client_auth();
+
                     client_config.key_log = Arc::new(rustls::KeyLogFile::new());
+
                     let config = Arc::new(client_config);
 
                     self.tls_connection = Some(TlsConnection::Rustls(Connection::Client(
                         ClientConnection::new(
                             config,
-                            target_hostname.try_into().map_err(|err| {
+                            target_hostname.to_owned().try_into().map_err(|e| {
                                 Error::new(
                                     ErrorKind::InvalidParameter,
-                                    format!("Provided target name is not valid DNS name: {:?}", err),
+                                    format!("provided target name is not valid DNS name: {:?}", e),
                                 )
                             })?,
                         )
