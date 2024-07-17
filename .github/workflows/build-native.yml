@@ -109,16 +109,18 @@ jobs:
         shell: pwsh
         run: |
           choco install ninja nasm
-          Install-Module VsDevShell -Force
 
+          # We need to add the NASM binary folder to the PATH manually.
+          # We don’t need to do that for ninja.
+          Write-Output "PATH=$Env:PATH;$Env:ProgramFiles\NASM" >> $Env:GITHUB_ENV
+
+          # libclang / LLVM is a requirement for AWS LC.
           # https://aws.github.io/aws-lc-rs/requirements/windows.html#libclang--llvm
           $VSINSTALLDIR = $(vswhere.exe -latest -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath)
-          $Env:LIBCLANG_PATH="$VSINSTALLDIR\VC\Tools\Llvm\x64\bin"
           Write-Output "LIBCLANG_PATH=$VSINSTALLDIR\VC\Tools\Llvm\x64\bin" >> $Env:GITHUB_ENV
 
-          # Add nasm to the PATH
-          $NASM_PATH = "$Env:ProgramFiles\NASM"
-          Write-Output "PATH=$Env:PATH;$NASM_PATH" >> $Env:GITHUB_ENV
+          # Install Visual Studio Developer PowerShell Module for cmdlets such as Enter-VsDevShell
+          Install-Module VsDevShell -Force
 
       - name: Setup build environment
         shell: pwsh
