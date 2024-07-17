@@ -11,6 +11,7 @@ use std::io::Write;
 
 pub use encryption_params::EncryptionParams;
 use lazy_static::lazy_static;
+use picky::key::PrivateKey;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_asn1_x509::oids;
@@ -22,7 +23,7 @@ use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
 use rand::rngs::OsRng;
 use rand::Rng;
-#[cfg(feature = "scard")]
+use rsa::{Pkcs1v15Sign, RsaPrivateKey};
 use sha1::{Digest, Sha1};
 use url::Url;
 
@@ -50,12 +51,8 @@ use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::network_client::NetworkProtocol;
-#[cfg(feature = "scard")]
 use crate::pk_init::{self, DhParameters};
-#[cfg(feature = "scard")]
 use crate::pku2u::generate_client_dh_parameters;
-#[cfg(feature = "scard")]
-use crate::smartcard::SmartCard;
 use crate::utils::{
     extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, parse_target_name, save_decrypted_data,
     utf16_bytes_to_utf8_string,
@@ -118,7 +115,6 @@ pub struct Kerberos {
     realm: Option<String>,
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
-    #[cfg(feature = "scard")]
     dh_parameters: Option<DhParameters>,
 }
 
@@ -135,7 +131,6 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
             dh_parameters: None,
         })
     }
@@ -152,7 +147,6 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
             dh_parameters: None,
         })
     }
@@ -420,7 +414,6 @@ impl Sspi for Kerberos {
                 username: identity.username,
             });
         }
-        #[cfg(feature = "scard")]
         if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
@@ -670,7 +663,6 @@ impl<'a> Kerberos {
 
                         (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                     }
-                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
                 };
                 debug!(username, service_name);
@@ -720,7 +712,6 @@ impl<'a> Kerberos {
 
                         (username, password, realm, cname_type)
                     }
-                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(smart_card) => {
                         let username = utf16_bytes_to_utf8_string(&smart_card.username);
                         let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
@@ -745,56 +736,43 @@ impl<'a> Kerberos {
                 };
                 let kdc_req_body = generate_as_req_kdc_body(&options)?;
 
-                let pa_data_options = match credentials {
-                    CredentialsBuffers::AuthIdentity(auth_identity) => {
-                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-                        let salt = format!("{}{}", domain, username);
+                let pa_data_options =
+                    match credentials {
+                        CredentialsBuffers::AuthIdentity(auth_identity) => {
+                            let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
+                            let salt = format!("{}{}", domain, username);
 
-                        AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
-                            password: &password,
-                            salt: salt.as_bytes().to_vec(),
-                            enc_params: self.encryption_params.clone(),
-                            with_pre_auth: false,
-                        })
-                    }
-                    #[cfg(feature = "scard")]
-                    CredentialsBuffers::SmartCard(smart_card) => {
-                        let pin = utf16_bytes_to_utf8_string(smart_card.pin.as_ref()).into_bytes();
-                        let reader_name = utf16_bytes_to_utf8_string(&smart_card.reader_name);
-                        let private_key_pem = String::from_utf8(
-                            smart_card
-                                .private_key_pem
-                                .as_ref()
-                                .ok_or_else(|| Error::new(ErrorKind::InternalError, "scard private key is missing"))?
-                                .to_vec(),
-                        )?;
-                        let certificate = smart_card.certificate.clone();
+                            AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
+                                password: &password,
+                                salt: salt.as_bytes().to_vec(),
+                                enc_params: self.encryption_params.clone(),
+                                with_pre_auth: false,
+                            })
+                        }
+                        CredentialsBuffers::SmartCard(smart_card) => {
+                            let private_key_pem =
+                                utf16_bytes_to_utf8_string(smart_card.private_key_pem.as_ref().ok_or_else(|| {
+                                    Error::new(ErrorKind::InternalError, "scard private key is missing")
+                                })?);
+                            self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
 
-                        self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
-
-                        AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
-                            p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
-                            kdc_req_body: &kdc_req_body,
-                            dh_parameters: self.dh_parameters.clone().unwrap(),
-                            sign_data: Box::new(move |data_to_sign| {
-                                // we need to calculate the sha1 hash by ourselves because a smart card can only calculate the resulting signature
-                                let mut sha1 = Sha1::new();
-                                sha1.update(data_to_sign);
-                                let hash = sha1.finalize().to_vec();
-
-                                let mut smart_card = SmartCard::new_emulated(
-                                    reader_name.clone().into(),
-                                    pin.clone(),
-                                    private_key_pem.as_ref(),
-                                    certificate.clone(),
-                                )?;
-                                smart_card.sign(hash)
-                            }),
-                            with_pre_auth: false,
-                            authenticator_nonce: OsRng.gen::<[u8; 4]>(),
-                        }))
-                    }
-                };
+                            AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
+                                p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
+                                kdc_req_body: &kdc_req_body,
+                                dh_parameters: self.dh_parameters.clone().unwrap(),
+                                sign_data: Box::new(move |data_to_sign| {
+                                    let mut sha1 = Sha1::new();
+                                    sha1.update(data_to_sign);
+                                    let hash = sha1.finalize().to_vec();
+                                    let private_key = PrivateKey::from_pem_str(&private_key_pem)?;
+                                    let rsa_private_key = RsaPrivateKey::try_from(&private_key)?;
+                                    Ok(rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), &hash)?)
+                                }),
+                                with_pre_auth: false,
+                                authenticator_nonce: OsRng.gen::<[u8; 4]>(),
+                            }))
+                        }
+                    };
 
                 let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
 
@@ -823,7 +801,6 @@ impl<'a> Kerberos {
                         password: &password,
                         enc_params: &mut self.encryption_params,
                     },
-                    #[cfg(feature = "scard")]
                     CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                         dh_parameters: self.dh_parameters.as_mut().unwrap(),
                         enc_params: &mut self.encryption_params,
@@ -1048,7 +1025,6 @@ pub mod test_data {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
             dh_parameters: None,
         }
     }
@@ -1072,7 +1048,6 @@ pub mod test_data {
             realm: None,
             kdc_url: None,
             channel_bindings: None,
-            #[cfg(feature = "scard")]
             dh_parameters: None,
         }
     }

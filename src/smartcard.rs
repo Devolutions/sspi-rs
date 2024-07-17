@@ -54,6 +54,8 @@ impl SmartCard {
         })
     }
 
+    // FIXME: This code will be used when support for system-provided smart cards is added
+    #[allow(dead_code)]
     pub fn new_emulated(
         reader_name: Cow<'_, str>,
         pin: Vec<u8>,
@@ -74,6 +76,8 @@ impl SmartCard {
         })
     }
 
+    // FIXME: This code will be used when support for system-provided smart cards is added
+    #[allow(dead_code)]
     pub fn sign(&mut self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
         match self.smart_card_type {
             SmartCardApi::WinSCard(ref scard) => {
