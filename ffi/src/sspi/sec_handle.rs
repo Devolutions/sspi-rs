@@ -1212,3 +1212,141 @@ pub extern "system" fn QueryCredentialsAttributesExW(
 }
 
 pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::{null, null_mut};
+
+    use libc::c_void;
+
+    use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
+    use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
+    use crate::sspi::sec_handle::{AcquireCredentialsHandleW, InitializeSecurityContextW, SecHandle};
+    use crate::sspi::sec_pkg_info::{EnumerateSecurityPackagesW, PSecPkgInfoW, QuerySecurityPackageInfoW, SecPkgInfoW};
+    use crate::sspi::sec_winnt_auth_identity::SecWinntAuthIdentityW;
+    use crate::utils::c_w_str_to_string;
+
+    extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
+
+    #[test]
+    fn initialize_security_context_w() {
+        // This test simulates initialize security context function call. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+        let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+
+        let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
+        assert_eq!(status, 0);
+
+        println!("{:?}", unsafe { &*pkg_info });
+        println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).name) });
+        println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
+
+        let mut pc_packages = 0;
+        let mut packages: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+
+        let status = unsafe { EnumerateSecurityPackagesW(&mut pc_packages, &mut packages) };
+        assert_eq!(status, 0);
+
+        for i in 0..pc_packages as usize {
+            let pkg_info = unsafe { packages.add(i) };
+            println!("{:?}", unsafe { &*pkg_info });
+            println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).name) });
+            println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
+        }
+
+        let status = unsafe { FreeContextBuffer(packages as *mut _) };
+        assert_eq!(status, 0);
+
+        let user = "user".encode_utf16().collect::<Vec<_>>();
+        let domain = "domain".encode_utf16().collect::<Vec<_>>();
+        let password = "password".encode_utf16().collect::<Vec<_>>();
+
+        let credentials = SecWinntAuthIdentityW {
+            user: user.as_ptr(),
+            user_length: user.len() as u32,
+            domain: domain.as_ptr(),
+            domain_length: domain.len() as u32,
+            password: password.as_ptr(),
+            password_length: password.len() as u32,
+            flags: 0,
+        };
+
+        let mut cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let status = unsafe {
+            AcquireCredentialsHandleW(
+                null_mut(),
+                pkg_name.as_ptr() as *mut _,
+                2, /* SECPKG_CRED_OUTBOUND */
+                null::<c_void>(),
+                &credentials as *const _ as *const c_void,
+                dummy,
+                null::<c_void>(),
+                &mut cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let mut sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut new_sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
+        let mut attrs = 0;
+
+        let mut out_buffer = vec![0; unsafe { (*pkg_info).cb_max_token as usize }];
+        let mut out_sec_buffer = SecBuffer {
+            cb_buffer: unsafe { (*pkg_info).cb_max_token as u32 },
+            buffer_type: 2,
+            pv_buffer: out_buffer.as_mut_ptr() as *mut _,
+        };
+        let mut out_buffer_desk = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut out_sec_buffer,
+        };
+
+        let mut in_buffer_desk = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 0,
+            p_buffers: null_mut::<SecBuffer>(),
+        };
+
+        let status = unsafe {
+            InitializeSecurityContextW(
+                &mut cred_handle,
+                &mut sec_context,
+                target_name.as_ptr() as *mut _,
+                0,
+                0,
+                0x10, /* SECURITY_NATIVE_DREP */
+                &mut in_buffer_desk,
+                0,
+                &mut new_sec_context,
+                &mut out_buffer_desk,
+                &mut attrs,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0x0009_0312 /* CONTINUE_NEEDED */);
+
+        let status = unsafe { FreeContextBuffer(pkg_info as *mut _) };
+        assert_eq!(status, 0);
+
+        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
+        assert_eq!(status, 0);
+
+        let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
+        assert_eq!(status, 0);
+    }
+}
