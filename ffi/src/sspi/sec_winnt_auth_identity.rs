@@ -245,9 +245,6 @@ pub unsafe fn auth_data_to_identity_buffers(
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
-    // let raw_creds = from_raw_parts(p_auth_data as *const u8, 128);
-    // debug!(?raw_creds);
-
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         return credssp_auth_data_to_identity_buffers(p_auth_data);

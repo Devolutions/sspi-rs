@@ -1,4 +1,4 @@
-use sspi::{CredentialsBuffers, Error, ErrorKind, Result};
+use sspi::{CredentialsBuffers, Result};
 
 use super::credentials_attributes::CredentialsAttributes;
 use super::sec_handle::CredentialsHandle;
@@ -30,10 +30,19 @@ pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
 }
 
 pub fn hostname() -> Result<String> {
-    whoami::fallible::hostname().map_err(|err| {
-        Error::new(
-            ErrorKind::InternalError,
-            format!("can not query the system hostname: {:?}", err),
-        )
-    })
+    #[cfg(test)]
+    {
+        Ok("test-vm".into())
+    }
+    #[cfg(not(test))]
+    {
+        use sspi::{Error, ErrorKind};
+
+        whoami::fallible::hostname().map_err(|err| {
+            Error::new(
+                ErrorKind::InternalError,
+                format!("can not query the system hostname: {:?}", err),
+            )
+        })
+    }
 }

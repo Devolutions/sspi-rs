@@ -22,8 +22,10 @@ pub struct SecPkgInfoW {
 
 pub type PSecPkgInfoW = *mut SecPkgInfoW;
 
+pub struct RawSecPkgInfoW(pub *mut SecPkgInfoW);
+
 #[allow(clippy::useless_conversion)]
-impl From<PackageInfo> for &mut SecPkgInfoW {
+impl From<PackageInfo> for RawSecPkgInfoW {
     fn from(pkg_info: PackageInfo) -> Self {
         let pkg_name = str_to_w_buff(pkg_info.name.as_ref());
         let name_bytes_len = pkg_name.len() * 2;
@@ -60,10 +62,11 @@ impl From<PackageInfo> for &mut SecPkgInfoW {
         }
         pkg_info_w.comment = comment_ptr as *mut _;
 
-        unsafe { (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap() }
+        Self(raw_pkg_info as *mut SecPkgInfoW)
     }
 }
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecPkgInfoA {
     pub f_capabilities: u32,
@@ -76,7 +79,10 @@ pub struct SecPkgInfoA {
 
 pub type PSecPkgInfoA = *mut SecPkgInfoA;
 
-impl From<PackageInfo> for &mut SecPkgInfoA {
+pub struct RawSecPkgInfoA(pub *mut SecPkgInfoA);
+
+#[allow(clippy::useless_conversion)]
+impl From<PackageInfo> for RawSecPkgInfoA {
     fn from(pkg_info: PackageInfo) -> Self {
         let mut pkg_name = pkg_info.name.to_string().as_bytes().to_vec();
         // We need to add the null-terminator during the conversion from Rust to C string.
@@ -125,7 +131,7 @@ impl From<PackageInfo> for &mut SecPkgInfoA {
         }
         pkg_info_a.comment = comment_ptr as *mut _;
 
-        unsafe { (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap() }
+        Self(raw_pkg_info as *mut SecPkgInfoA)
     }
 }
 
@@ -274,12 +280,12 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 
         let pkg_name = try_execute!(CStr::from_ptr(p_package_name).to_str(), ErrorKind::InvalidParameter);
 
-        let pkg_info: &mut SecPkgInfoA = try_execute!(enumerate_security_packages())
+        let pkg_info: RawSecPkgInfoA = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.as_ref() == pkg_name)
             .unwrap()
             .into();
-        *pp_package_info = pkg_info;
+        *pp_package_info = pkg_info.0;
 
         0
     }
@@ -300,12 +306,12 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
 
         let pkg_name = c_w_str_to_string(p_package_name);
 
-        let pkg_info: &mut SecPkgInfoW = try_execute!(enumerate_security_packages())
+        let pkg_info: RawSecPkgInfoW = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.to_string() == pkg_name)
             .unwrap()
             .into();
-        *pp_package_info = pkg_info;
+        *pp_package_info = pkg_info.0;
 
         0
     }
