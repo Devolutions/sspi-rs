@@ -34,7 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", 
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
-windows-sys = { version = "0.48", features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
+windows-sys = { version = "0.52", features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
 
 [dev-dependencies]
 sspi = { path = "..", features = ["network_client", "dns_resolver", "test_data"] }

@@ -19,7 +19,7 @@ cfg_if::cfg_if! {
                 let dns_status = DnsQuery_W(&HSTRING::from(name), DNS_TYPE_SRV,
                     DNS_QUERY_STANDARD, None, &mut p_query_results, None);
 
-                match dns_status {
+                match dns_status.ok() {
                     Ok(()) => {
                         let p_name_target = (*p_query_results).Data.Srv.pNameTarget;
                         if let Ok(name_target) = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16).to_string() {
