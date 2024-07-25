@@ -1,3 +1,4 @@
+mod cipher_block_size;
 mod tls_connection;
 
 use std::sync::Arc;
