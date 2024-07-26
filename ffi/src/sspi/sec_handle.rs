@@ -1254,6 +1254,8 @@ mod tests {
         let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
         assert_eq!(status, 0);
 
+        // We left all `println`s on purpose:
+        // to simulate any memory access to the allocated memory.
         println!("{:?}", unsafe { &*pkg_info });
         println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).name) });
         println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
@@ -1378,6 +1380,8 @@ mod tests {
         let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr() as *const _, &mut pkg_info) };
         assert_eq!(status, 0);
 
+        // We left all `println`s on purpose:
+        // to simulate any memory access to the allocated memory.
         println!("{:?}", unsafe { &*pkg_info });
         println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).name).to_str().unwrap() });
         println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).comment).to_str().unwrap() });
