@@ -383,7 +383,7 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
                     csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
                     pin: pin.into(),
                     private_key_file_index: None,
-                    private_key_pem: Some(smart_card_info.auth_pk_pem.as_bytes().to_vec()),
+                    private_key_pem: Some(str_encode_utf16(smart_card_info.auth_pk_pem.as_ref())),
                 });
             }
             Err(err) => {
