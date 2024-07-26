@@ -1,4 +1,4 @@
-use sspi::{CredentialsBuffers, Error, ErrorKind, Result};
+use sspi::{CredentialsBuffers, Result};
 
 use super::credentials_attributes::CredentialsAttributes;
 use super::sec_handle::CredentialsHandle;
@@ -30,10 +30,22 @@ pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
 }
 
 pub fn hostname() -> Result<String> {
-    whoami::fallible::hostname().map_err(|err| {
-        Error::new(
-            ErrorKind::InternalError,
-            format!("can not query the system hostname: {:?}", err),
-        )
-    })
+    // We run tests with Miri. Miri is the Rust's mid-level intermediate representation interpreter.
+    // It is unable to execute system calls. Thus, Miri cannot execute `whoami::fallible::hostname()`.
+    // So, we decided to keep hardcoded hostname.
+    #[cfg(miri)]
+    {
+        Ok("test-vm".into())
+    }
+    #[cfg(not(miri))]
+    {
+        use sspi::{Error, ErrorKind};
+
+        whoami::fallible::hostname().map_err(|err| {
+            Error::new(
+                ErrorKind::InternalError,
+                format!("can not query the system hostname: {:?}", err),
+            )
+        })
+    }
 }
