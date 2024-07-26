@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use picky_asn1_x509::Certificate;
 use rustls::{Connection, ProtocolVersion};
 
+use crate::credssp::sspi_cred_ssp::cipher_block_size::get_cipher_block_size;
 use crate::{
     ConnectionCipher, ConnectionHash, ConnectionInfo, ConnectionKeyExchange, ConnectionProtocol, Error, ErrorKind,
     Result, StreamSizes,
@@ -23,10 +24,6 @@ const TLS_PACKET_SEQUENCE_NUMBER_LEN: usize = std::mem::size_of::<u64>();
 // application_data(23)
 const TLS_APPLICATION_DATA_CONTENT_TYPE: u8 = 0x17;
 
-// [Block Size and Padding](https://www.rfc-editor.org/rfc/rfc3826#section-3.1.1.3)
-// The block size of the AES cipher is 128 bits
-const AES_BLOCK_SIZE: usize = 16;
-
 // [Processing Events and Sequencing Rules](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c)
 // The CredSSP server does not request the client's X.509 certificate (thus far, the client is anonymous).
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
@@ -34,8 +31,7 @@ const AES_BLOCK_SIZE: usize = 16;
 // This configuration just accepts any certificate
 pub mod danger {
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::pki_types;
-    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
+    use rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
 
     #[derive(Debug)]
     pub struct NoCertificateVerification;
@@ -358,21 +354,8 @@ impl TlsConnection {
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "connection cipher is not negotiated"))?;
 
                 let suite = match connection_cipher {
-                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => &cipher_suite.common.suite,
-                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => &cipher_suite.common.suite,
-                };
-
-                let block_size = match suite.as_str() {
-                    Some(name) if name.contains("AES_128_GCM") => AES_BLOCK_SIZE,
-                    Some(name) if name.contains("AES_256_GCM") => AES_BLOCK_SIZE,
-                    // ChaCha20 is a stream cipher
-                    Some(name) if name.contains("CHACHA20_POLY1305") => 0,
-                    _ => {
-                        return Err(Error::new(
-                            ErrorKind::UnsupportedFunction,
-                            format!("cipher suite {suite:?} not supported"),
-                        ))
-                    }
+                    rustls::SupportedCipherSuite::Tls12(cipher_suite) => cipher_suite.common.suite,
+                    rustls::SupportedCipherSuite::Tls13(cipher_suite) => cipher_suite.common.suite,
                 };
 
                 Ok(StreamSizes {
@@ -385,7 +368,7 @@ impl TlsConnection {
                     // MSDN: message must contain four buffers
                     // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
                     buffers: 4,
-                    block_size: block_size as u32,
+                    block_size: get_cipher_block_size(suite)?,
                 })
             }
         }
