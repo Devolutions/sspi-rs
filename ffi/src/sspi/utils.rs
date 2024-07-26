@@ -32,12 +32,12 @@ pub fn raw_wide_str_trim_nulls(raw_str: &mut Vec<u8>) {
 pub fn hostname() -> Result<String> {
     // We run tests with Miri. Miri is the Rust's mid-level intermediate representation interpreter.
     // It is unable to execute system calls. Thus, Miri cannot execute `whoami::fallible::hostname()`.
-    // So, we decided to keep hardcoded hostname value for tests.
-    #[cfg(test)]
+    // So, we decided to keep hardcoded hostname.
+    #[cfg(miri)]
     {
         Ok("test-vm".into())
     }
-    #[cfg(not(test))]
+    #[cfg(not(miri))]
     {
         use sspi::{Error, ErrorKind};
 
