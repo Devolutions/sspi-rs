@@ -29,6 +29,30 @@ exclude = [
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
+[workspace.dependencies]
+uuid = { version = "1.10", default-features = false }
+tracing = { version = "0.1",  default-features = false }
+bitflags = "2.6"
+rand = "0.8"
+cfg-if = "1"
+time = { version = "0.3", default-features = false }
+sha1 = { version = "0.10", default-features = false }
+num-derive = "0.4"
+num-traits = { version = "0.2", default-features = false }
+picky = { version = "7.0.0-rc.9", default-features = false }
+picky-asn1-der = "0.5"
+picky-asn1-x509 = "0.13"
+# `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
+tokio = { version = "1.40", features = ["time", "rt", "rt-multi-thread"] }
+ffi-types = { path = "crates/ffi-types" }
+winscard = { path = "crates/winscard" }
+rsa = { version = "0.9.6", default-features = false }
+windows-sys = { version = "0.59" }
+base64 = "0.22"
+whoami = "1.5"
+tracing-subscriber = "0.3"
+proptest = "1.5"
+
 [features]
 default = ["aws-lc-rs"]
 
@@ -52,60 +76,61 @@ __rustls-used = ["dep:rustls"]
 __install-crypto-provider = []
 
 [dependencies]
+bitflags.workspace = true
+rand.workspace = true
+cfg-if.workspace = true
+time = { workspace = true, features = ["std"] }
+picky.workspace = true
+sha1.workspace = true
+num-derive.workspace = true
+num-traits = { workspace = true, default-features = true }
+picky-asn1-der.workspace = true
+picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
+uuid = { workspace = true, features = ["v4"], default-features = true }
+tokio = { workspace = true, optional = true }
+winscard = { workspace = true, optional = true }
+rsa = { workspace = true, features = ["sha1"] }
+tracing = { workspace = true, default-features = true }
+
 byteorder = "1.5"
-bitflags = "2.6"
-rand = "0.8"
-cfg-if = "1"
-time = { version = "0.3", default-features = false, features = ["std"] }
-num-derive = "0.4"
-num-traits = "0.2"
+md-5 = "0.10"
+md4 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+crypto-mac = "0.11"
+lazy_static = "1.5"
 serde = "1"
 serde_derive = "1"
 url = "2.5"
 oid = "0.2"
-uuid = { version = "1.10", features = ["v4"] }
-async-recursion = "1.1"
-tracing = "0.1"
 
-picky = { version = "7.0.0-rc.9", default-features = false }
 picky-krb = "0.9"
 picky-asn1 = { version = "0.9", features = ["time_conversion"] }
-picky-asn1-der = "0.5"
-picky-asn1-x509 = { version = "0.13", features = ["pkcs7"] }
-num-bigint-dig = "0.8"
-crypto-mac = "0.11"
-md-5 = "0.10"
-md4 = "0.10"
-sha2 = "0.10"
-sha1 = "0.10"
-hmac = "0.12"
-rsa = { version = "0.9.6", features = ["sha1"], default-features = false }
-zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
 trust-dns-resolver = { version = "0.23", optional = true }
 portpicker = { version = "0.1", optional = true }
+num-bigint-dig = "0.8"
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 rustls-native-certs = { version = "0.8", optional = true }
-# `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { version = "1.40", optional = true, features = ["time", "rt", "rt-multi-thread"] }
-winscard = { version = "0.2", optional = true, path = "./crates/winscard" }
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+async-recursion = "1.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 windows = { version = "0.58", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
-windows-sys = { version = "0.59", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { version = "1.40", features = ["time", "rt", "rt-multi-thread"] }
+tokio.workspace = true
 
 [dev-dependencies]
-base64 = "0.22"
+base64.workspace = true
 static_assertions = "1"
-whoami = "1.5"
-picky = { version = "7.0.0-rc.9", features = ["x509"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-proptest = "1.5"
-cfg-if = "1"
+whoami.workspace = true
+picky = { workspace = true, features = ["x509"] }
+tracing-subscriber.workspace = true
+proptest.workspace = true
+cfg-if.workspace = true

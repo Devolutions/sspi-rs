@@ -16,25 +16,25 @@ std = ["tracing/std", "base64", "picky-asn1-der"]
 name = "winscard"
 
 [dependencies]
-bitflags = "2.6"
+bitflags.workspace = true
 iso7816 = "0.1"
 iso7816-tlv = "0.4"
-picky = { version = "7.0.0-rc.9", default-features = false, features = ["x509"] }
-picky-asn1-x509 = { version = "0.13" }
-tracing = { version = "0.1", features = ["attributes"], default-features = false }
-time = { version = "0.3", default-features = false, features = [
+picky = { workspace = true, features = ["x509"] }
+picky-asn1-x509.workspace = true
+tracing = { workspace = true, features = ["attributes"] }
+time = { workspace = true, features = [
     "formatting",
 ] }
-uuid = { version = "1.10", features = ["v4"], default-features = false }
+uuid = { workspace = true, features = ["v4"] }
 flate2 = { version = "1.0", features = ["zlib", "rust_backend"], default-features = false }
-rsa = { version = "0.9", features = ["hazmat", "sha1"], default-features = false }
+rsa = { workspace = true, features = ["hazmat", "sha1"] }
 rand_core = "0.6"
-sha1 = { version = "0.10", default-features = false }
-base64 = { version = "0.22" , optional = true }
-picky-asn1-der = { version = "0.5", optional = true }
-num-derive = "0.4"
-num-traits = { version = "0.2", default-features = false }
+sha1.workspace = true
+base64 = { workspace = true , optional = true }
+picky-asn1-der = { workspace = true, optional = true }
+num-derive.workspace = true
+num-traits.workspace = true
 
 [dev-dependencies]
-proptest = "1.5"
-rand = "0.8"
+proptest.workspace = true
+rand.workspace = true
