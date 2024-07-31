@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
@@ -21,7 +21,7 @@ use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16};
 use crate::winscard::scard_handle::{
     raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context, WinScardContextHandle,
 };
-use crate::winscard::system_scard::SystemScardContext;
+use crate::winscard::system_scard::{init_scard_api_table, SystemScardContext};
 
 const ERROR_INVALID_HANDLE: u32 = 6;
 
@@ -35,15 +35,15 @@ const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
 // of `SCARD_CONTEXTS` we can track all active contexts and correctly check is the passed context is valid.
 // The same applies to the `SCardReleaseContext`. We need to ensure that the passed context handle was not
 // released before.
-static SCARD_CONTEXTS: OnceLock<Mutex<Vec<ScardContext>>> = OnceLock::new();
+static SCARD_CONTEXTS: LazyLock<Mutex<Vec<ScardContext>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 // This API table instance is only needed for the `SCardAccessStartedEvent` function. This function
 // doesn't accept any parameters, so we need a separate initialized API table to call the system API.
 #[cfg(target_os = "windows")]
-static WINSCARD_API: OnceLock<SCardApiFunctionTable> = OnceLock::new();
+static WINSCARD_API: LazyLock<SCardApiFunctionTable> =
+    LazyLock::new(|| init_scard_api_table().expect("winscard module loading should not fail"));
 
 fn save_context(context: ScardContext) {
     SCARD_CONTEXTS
-        .get_or_init(|| Mutex::new(Vec::new()))
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
         .push(context)
@@ -51,7 +51,6 @@ fn save_context(context: ScardContext) {
 
 fn is_present(context: ScardContext) -> bool {
     SCARD_CONTEXTS
-        .get_or_init(|| Mutex::new(Vec::new()))
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
         .iter()
@@ -60,7 +59,6 @@ fn is_present(context: ScardContext) -> bool {
 
 fn release_context(context: ScardContext) {
     SCARD_CONTEXTS
-        .get_or_init(|| Mutex::new(Vec::new()))
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
         .retain(|ctx| *ctx != context)
@@ -646,7 +644,23 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
 // We use created event to return its handle from the `SCardAccessStartedEvent` function.
 // Note. If the `SCardAccessStartedEvent` frunction is not be called, the event will not be created.
 #[cfg(target_os = "windows")]
-static START_EVENT_HANDLE: OnceLock<Handle> = OnceLock::new();
+static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
+    use std::ptr::null;
+
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::System::Threading::CreateEventA;
+
+    // SAFETY: All parameters are correct.
+    let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
+    if handle.is_null() {
+        error!(
+            "Unable to create event: returned event handle is null. Last error: {}",
+            // SAFETY: it's safe to call this function.
+            unsafe { GetLastError() }
+        );
+    }
+    handle as _
+});
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
@@ -659,41 +673,21 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
         // the smart card resource manager is started. The event-object handle can be specified in a call
         // to one of the wait functions.
 
-        use crate::winscard::system_scard::init_scard_api_table;
-
         if std::env::var(SMART_CARD_TYPE)
             .and_then(|use_system_card| Ok(use_system_card == "true"))
             .unwrap_or_default()
         {
             // Use system-provided smart card.
-            let api =
-                WINSCARD_API.get_or_init(|| init_scard_api_table().expect("winscard module loading should not fail"));
-
-            // SAFETY: The `api` is initialized, so it's safe to call this function.
-            unsafe { (api.SCardAccessStartedEvent)() }
+            //
+            // SAFETY: The `WINSCARD_API` is lazily initialized, so it's safe to call this function.
+            unsafe { (WINSCARD_API.SCardAccessStartedEvent)() }
         } else {
             // Use emulated smart card.
             //
             // We create the event once for the entire process and keep it like a singleton in the "signaled" state.
             // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
             // because we are always in a ready (signaled) state and have only one handle for the entire process.
-            *START_EVENT_HANDLE.get_or_init(|| {
-                use std::ptr::null;
-
-                use windows_sys::Win32::Foundation::GetLastError;
-                use windows_sys::Win32::System::Threading::CreateEventA;
-
-                // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as Handle;
-                if handle == 0 {
-                    error!(
-                        "Unable to create event: returned event handle is null. Last error: {}",
-                        // SAFETY: it's safe to call this function.
-                        unsafe { GetLastError() }
-                    );
-                }
-                handle
-            })
+            *START_EVENT_HANDLE
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -713,18 +707,14 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
 pub extern "system" fn SCardReleaseStartedEvent() {
     #[cfg(target_os = "windows")]
     {
-        use crate::winscard::system_scard::init_scard_api_table;
-
         if std::env::var(SMART_CARD_TYPE)
             .and_then(|use_system_card| Ok(use_system_card == "true"))
             .unwrap_or_default()
         {
             // Use system-provided smart card.
-            let api =
-                WINSCARD_API.get_or_init(|| init_scard_api_table().expect("winscard module loading should not fail"));
-
-            // SAFETY: The `api` is initialized, so it's safe to call this function.
-            unsafe { (api.SCardReleaseStartedEvent)() }
+            //
+            // SAFETY: The `WINSDCARD_API` is lazily initialized, so it's safe to call this function.
+            unsafe { (WINSCARD_API.SCardReleaseStartedEvent)() }
         } else {
             use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
 
@@ -733,24 +723,9 @@ pub extern "system" fn SCardReleaseStartedEvent() {
             // We create the event once for the entire process and keep it like a singleton in the "signaled" state.
             // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
             // because we are always in a ready (signaled) state and have only one handle for the entire process.
-            let event_handle = *START_EVENT_HANDLE.get_or_init(|| {
-                use std::ptr::null;
-
-                use windows_sys::Win32::System::Threading::CreateEventA;
-
-                // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as Handle;
-                if handle == 0 {
-                    error!(
-                        "Unable to create event: returned event handle is null. Last error: {}",
-                        // SAFETY: it's safe to call this function.
-                        unsafe { GetLastError() }
-                    );
-                }
-                handle
-            });
+            //
             // SAFETY: It's safe to close the handle.
-            if unsafe { CloseHandle(event_handle as *mut c_void) } == 0 {
+            if unsafe { CloseHandle(*START_EVENT_HANDLE as *mut c_void) } == 0 {
                 error!(
                     "Cannot close the event handle. List error: {}",
                     // SAFETY: it's safe to call this function.

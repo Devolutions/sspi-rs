@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use crate::ntlm::{AuthIdentityBuffers, NTLM_VERSION_SIZE};
 use crate::*;
@@ -85,42 +85,42 @@ pub const LOCAL_CHALLENGE_TARGET_INFO_BUFFER: [u8; 64] = [
 pub const LOCAL_CHALLENGE_TIMESTAMP: u64 = 0x01cb_b06c_1a9b_8da9;
 const LOCAL_CHALLENGE_MESSAGE_SIZE: usize = 128;
 
-lazy_static! {
-    pub static ref LOCAL_NEGOTIATE_MESSAGE: [u8; LOCAL_NEGOTIATE_MESSAGE_SIZE] = {
-        let mut message = Vec::with_capacity(LOCAL_NEGOTIATE_MESSAGE_SIZE);
-        message.extend_from_slice(NTLM_SIGNATURE.as_ref());
-        message.extend_from_slice(NEGOTIATE_MESSAGE_TYPE.as_ref());
-        message.extend_from_slice(LOCAL_NEGOTIATE_FLAGS.to_le_bytes().as_ref());
-        message.extend_from_slice(LOCAL_NEGOTIATE_DOMAIN.as_ref());
-        message.extend_from_slice(LOCAL_NEGOTIATE_WORKSTATION.as_ref());
-        message.extend_from_slice(LOCAL_NEGOTIATE_VERSION.as_ref());
+pub static LOCAL_NEGOTIATE_MESSAGE: LazyLock<[u8; LOCAL_NEGOTIATE_MESSAGE_SIZE]> = LazyLock::new(|| {
+    let mut message = Vec::with_capacity(LOCAL_NEGOTIATE_MESSAGE_SIZE);
+    message.extend_from_slice(NTLM_SIGNATURE.as_ref());
+    message.extend_from_slice(NEGOTIATE_MESSAGE_TYPE.as_ref());
+    message.extend_from_slice(LOCAL_NEGOTIATE_FLAGS.to_le_bytes().as_ref());
+    message.extend_from_slice(LOCAL_NEGOTIATE_DOMAIN.as_ref());
+    message.extend_from_slice(LOCAL_NEGOTIATE_WORKSTATION.as_ref());
+    message.extend_from_slice(LOCAL_NEGOTIATE_VERSION.as_ref());
 
-        let mut result = [0x00; LOCAL_NEGOTIATE_MESSAGE_SIZE];
-        result.clone_from_slice(message.as_ref());
+    let mut result = [0x00; LOCAL_NEGOTIATE_MESSAGE_SIZE];
+    result.clone_from_slice(message.as_ref());
 
-        result
-    };
-    pub static ref LOCAL_CHALLENGE_MESSAGE: [u8; LOCAL_CHALLENGE_MESSAGE_SIZE] = {
-        let mut message = Vec::with_capacity(LOCAL_CHALLENGE_MESSAGE_SIZE);
-        message.extend_from_slice(NTLM_SIGNATURE.as_ref());
-        message.extend_from_slice(CHALLENGE_MESSAGE_TYPE.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_TARGET_NAME.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_FLAGS.to_le_bytes().as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_SERVER_CHALLENGE.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_RESERVED.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_TARGET_INFO.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_VERSION.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_TARGET_NAME_BUFFER.as_ref());
-        message.extend_from_slice(LOCAL_CHALLENGE_TARGET_INFO_BUFFER.as_ref());
+    result
+});
+pub static LOCAL_CHALLENGE_MESSAGE: LazyLock<[u8; LOCAL_CHALLENGE_MESSAGE_SIZE]> = LazyLock::new(|| {
+    let mut message = Vec::with_capacity(LOCAL_CHALLENGE_MESSAGE_SIZE);
+    message.extend_from_slice(NTLM_SIGNATURE.as_ref());
+    message.extend_from_slice(CHALLENGE_MESSAGE_TYPE.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_TARGET_NAME.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_FLAGS.to_le_bytes().as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_SERVER_CHALLENGE.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_RESERVED.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_TARGET_INFO.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_VERSION.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_TARGET_NAME_BUFFER.as_ref());
+    message.extend_from_slice(LOCAL_CHALLENGE_TARGET_INFO_BUFFER.as_ref());
 
-        let mut result = [0x00; LOCAL_CHALLENGE_MESSAGE_SIZE];
-        result.clone_from_slice(message.as_ref());
+    let mut result = [0x00; LOCAL_CHALLENGE_MESSAGE_SIZE];
+    result.clone_from_slice(message.as_ref());
 
-        result
-    };
-    pub static ref TEST_CREDENTIALS: AuthIdentityBuffers = AuthIdentity {
+    result
+});
+pub static TEST_CREDENTIALS: LazyLock<AuthIdentityBuffers> = LazyLock::new(|| {
+    AuthIdentity {
         username: Username::new("User", Some("Domain")).unwrap(),
         password: String::from("Password").into(),
     }
-    .into();
-}
+    .into()
+});

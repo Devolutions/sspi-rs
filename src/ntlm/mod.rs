@@ -5,10 +5,10 @@ mod test;
 
 use std::fmt::Debug;
 use std::io;
+use std::sync::LazyLock;
 
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
-use lazy_static::lazy_static;
 use messages::{client, server};
 
 pub use self::config::NtlmConfig;
@@ -42,15 +42,13 @@ const SIGNATURE_SEQ_NUM_SIZE: usize = 4;
 const SIGNATURE_CHECKSUM_SIZE: usize = 8;
 const MESSAGES_VERSION: u32 = 1;
 
-lazy_static! {
-    pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xb48,
-        name: SecurityPackageType::Ntlm,
-        comment: String::from("NTLM Security Package"),
-    };
-}
+pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
+    capabilities: PackageCapabilities::empty(),
+    rpc_id: PACKAGE_ID_NONE,
+    max_token_len: 0xb48,
+    name: SecurityPackageType::Ntlm,
+    comment: String::from("NTLM Security Package"),
+});
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum NtlmState {

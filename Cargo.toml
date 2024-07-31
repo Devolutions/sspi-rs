@@ -59,7 +59,6 @@ cfg-if = "1"
 time = { version = "0.3", default-features = false, features = ["std"] }
 num-derive = "0.4"
 num-traits = "0.2"
-lazy_static = "1.5"
 serde = "1"
 serde_derive = "1"
 url = "2.5"
