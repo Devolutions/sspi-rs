@@ -8,12 +8,12 @@ mod validate;
 
 use std::io::Write;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 pub use cert_utils::validation::validate_server_p2p_certificate;
 pub use config::Pku2uConfig;
 pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
 pub use generators::{generate_authenticator, generate_authenticator_extension, generate_client_dh_parameters};
-use lazy_static::lazy_static;
 use picky::hash::HashAlgorithm;
 use picky::signature::SignatureAlgorithm;
 use picky_asn1_x509::signed_data::SignedData;
@@ -77,15 +77,13 @@ pub const CLIENT_WRAP_TOKEN_FLAGS: u8 = 2;
 /// acceptor subkey = false
 pub const SERVER_WRAP_TOKEN_FLAGS: u8 = 3;
 
-lazy_static! {
-    pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
-        name: SecurityPackageType::Pku2u,
-        comment: String::from("Pku2u Security Package"),
-    };
-}
+pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
+    capabilities: PackageCapabilities::empty(),
+    rpc_id: PACKAGE_ID_NONE,
+    max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
+    name: SecurityPackageType::Pku2u,
+    comment: String::from("Pku2u Security Package"),
+});
 
 #[derive(Debug, Clone)]
 pub enum Pku2uState {

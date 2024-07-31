@@ -1,6 +1,6 @@
 use std::io;
+use std::sync::LazyLock;
 
-use lazy_static::lazy_static;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
     DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
@@ -8,13 +8,11 @@ use sspi::{
 };
 use time::OffsetDateTime;
 
-lazy_static! {
-    pub static ref CREDENTIALS: AuthIdentity = AuthIdentity {
-        username: Username::new("Username", Some("Domain")).unwrap(),
-        password: String::from("Password").into(),
-    };
-    static ref MESSAGE_TO_CLIENT: Vec<u8> = b"Hello, client!".to_vec();
-}
+pub static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
+    username: Username::new("Username", Some("Domain")).unwrap(),
+    password: String::from("Password").into(),
+});
+static MESSAGE_TO_CLIENT: LazyLock<Vec<u8>> = LazyLock::new(|| b"Hello, client!".to_vec());
 
 pub struct CredentialsProxyImpl<'a> {
     credentials: &'a AuthIdentity,
