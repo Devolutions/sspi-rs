@@ -65,7 +65,6 @@ pub mod ntlm;
 mod pk_init;
 pub mod pku2u;
 
-#[allow(unreachable_patterns)]
 mod auth_identity;
 mod ber;
 pub mod cert_utils;
@@ -73,6 +72,7 @@ mod crypto;
 mod dns;
 mod kdc;
 mod krb;
+mod rustls;
 mod secret;
 mod security_buffer;
 mod smartcard;

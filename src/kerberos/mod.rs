@@ -989,7 +989,7 @@ impl SspiEx for Kerberos {
     }
 }
 
-#[cfg(any(feature = "test_data", test))]
+#[cfg(any(feature = "__test-data", test))]
 pub mod test_data {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
@@ -1088,7 +1088,7 @@ mod tests {
             .unwrap();
 
         let mut buffer = message[0].data().to_vec();
-        buffer.extend_from_slice(&message[1].data());
+        buffer.extend_from_slice(message[1].data());
 
         let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 

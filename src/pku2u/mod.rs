@@ -971,7 +971,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             .unwrap();
 
         let mut buffer = message[0].data().to_vec();
-        buffer.extend_from_slice(&message[1].data());
+        buffer.extend_from_slice(message[1].data());
 
         let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
 
