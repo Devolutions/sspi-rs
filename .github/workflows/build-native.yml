@@ -135,6 +135,15 @@ jobs:
         if: ${{ matrix.os == 'linux' }}
         run: sudo apt update
 
+      # We need a newer version of GCC because aws-lc-rs rejects versions affected
+      # by this bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189
+      # These lines can be safely removed once we switch to ubuntu-22.04 runner.
+      - name: Install GCC 10.x
+        if: ${{ matrix.os == 'linux' }}
+        run: |
+          sudo apt install gcc-10
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 60
+
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}}) (${{matrix.build}})
         shell: pwsh
         run: |
