@@ -24,7 +24,7 @@ cfg-if = "1"
 libc = "0.2"
 num-traits = "0.2"
 whoami = "1.5"
-sspi = { path = "..", features = ["network_client", "dns_resolver"] }
+sspi = { path = "..", default-features = false, features = ["network_client", "dns_resolver"] }
 ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
 picky-asn1-der = "0.5"
 uuid = { version = "1.10", default-features = false }
