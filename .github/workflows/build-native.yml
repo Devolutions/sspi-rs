@@ -144,6 +144,12 @@ jobs:
           sudo apt install gcc-10
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 60
 
+      # No pregenerated bindings are provided for Android at this time.
+      # See: https://github.com/aws/aws-lc-rs/tree/main/aws-lc-sys#pregenerated-bindings-availability
+      - name: Install bindgen CLI
+        if: matrix.os == 'android'
+        run: cargo install --force --locked bindgen-cli
+
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}}) (${{matrix.build}})
         shell: pwsh
         run: |

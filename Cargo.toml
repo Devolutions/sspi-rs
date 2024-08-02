@@ -45,8 +45,8 @@ ring = ["rustls?/ring", "reqwest?/rustls-tls-native-roots", "__install-crypto-pr
 # Internal (PRIVATE!) features. Do not rely on these whatsoever. They may disappear at anytime.
 
 __test-data = []
-__rustls-used = []
-__install-crypto-provider = ["dep:rustls"]
+__rustls-used = ["dep:rustls"]
+__install-crypto-provider = []
 
 [dependencies]
 byteorder = "1.5"
