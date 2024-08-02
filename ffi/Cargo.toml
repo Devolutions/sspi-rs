@@ -13,9 +13,11 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["aws-lc-rs"]
 tsssp = ["sspi/tsssp"]
 scard = ["sspi/scard", "dep:ffi-types", "dep:winscard"]
+aws-lc-rs = ["sspi/aws-lc-rs"]
+ring = ["sspi/ring"]
 
 [dependencies]
 cfg-if = "1"
