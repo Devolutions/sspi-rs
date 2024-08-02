@@ -39,7 +39,6 @@ pub mod reqwest_network_client {
     use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
 
     use byteorder::{BigEndian, ReadBytesExt};
-    use reqwest::blocking::Client;
     use url::Url;
 
     use super::{NetworkClient, NetworkProtocol};
@@ -94,7 +93,27 @@ pub mod reqwest_network_client {
         }
 
         fn send_http(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
-            let client = Client::new();
+            crate::rustls::install_default_crypto_provider_if_necessary().map_err(|()| {
+                Error::new(
+                    ErrorKind::SecurityPackageNotFound,
+                    "failed to install the default crypto provider for TLS",
+                )
+            })?;
+
+            let client = crate::rustls::load_native_certs(reqwest::blocking::ClientBuilder::new())
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::NoAuthenticatingAuthority,
+                        "failed to load native certificates",
+                    )
+                })?
+                .build()
+                .map_err(|e| {
+                    Error::new(
+                        ErrorKind::NoAuthenticatingAuthority,
+                        format!("failed to build reqwest client: {e}"),
+                    )
+                })?;
 
             let response = client
                 .post(url.clone())

@@ -58,6 +58,13 @@ pub struct SspiCredSsp {
 
 impl SspiCredSsp {
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
+        crate::rustls::install_default_crypto_provider_if_necessary().map_err(|()| {
+            Error::new(
+                ErrorKind::SecurityPackageNotFound,
+                "failed to install the default crypto provider for TLS",
+            )
+        })?;
+
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
@@ -69,6 +76,13 @@ impl SspiCredSsp {
 
     /// * `sspi_context` is a security package that will be used for authorization
     pub fn new_server(sspi_context: SspiContext) -> Result<Self> {
+        crate::rustls::install_default_crypto_provider_if_necessary().map_err(|()| {
+            Error::new(
+                ErrorKind::SecurityPackageNotFound,
+                "failed to install the default crypto provider for TLS",
+            )
+        })?;
+
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),

@@ -13,16 +13,18 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["aws-lc-rs"]
 tsssp = ["sspi/tsssp"]
 scard = ["sspi/scard", "dep:ffi-types", "dep:winscard"]
+aws-lc-rs = ["sspi/aws-lc-rs"]
+ring = ["sspi/ring"]
 
 [dependencies]
 cfg-if = "1"
 libc = "0.2"
 num-traits = "0.2"
 whoami = "1.5"
-sspi = { path = "..", features = ["network_client", "dns_resolver"] }
+sspi = { path = "..", default-features = false, features = ["network_client", "dns_resolver"] }
 ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
 picky-asn1-der = "0.5"
 uuid = { version = "1.10", default-features = false }
@@ -37,4 +39,4 @@ symbol-rename-macro = { path = "./symbol-rename-macro" }
 windows-sys = { version = "0.52", features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
 
 [dev-dependencies]
-sspi = { path = "..", features = ["network_client", "dns_resolver", "test_data"] }
+sspi = { path = "..", features = ["network_client", "dns_resolver", "__test-data"] }
