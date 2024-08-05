@@ -93,7 +93,7 @@ winscard = { version = "0.1", optional = true, path = "./crates/winscard" }
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 windows = { version = "0.58", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
-windows-sys = { version = "0.52", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
