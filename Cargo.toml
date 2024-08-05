@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -88,7 +88,7 @@ rustls-native-certs = { version = "0.7", optional = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.39", optional = true, features = ["time", "rt", "rt-multi-thread"] }
 pcsc = { version = "2.8", optional = true }
-winscard = { version = "0.1", optional = true, path = "./crates/winscard" }
+winscard = { version = "0.2", optional = true, path = "./crates/winscard" }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

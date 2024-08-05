@@ -12,16 +12,6 @@ The sspi-rs works in accordance with the MSDN documentation. At the moment, [NT 
 
 Some SSPI functions tend to be cumbersome, that's why sspi-rs allows to use SSPI in a convenient way by utilizing builders. Examples are available in the [examples](examples), [example section](#example), and [Documentation](target/doc/sspi/index.html).
 
-## Usage
-
-sspi-rs is included in the Cargo.toml like this:
-```TOML
-[dependencies]
-sspi = "0.11.1"
-```
-After that you can `use` the types that you need.
-
-
 ## Documentation
 
 Documentation will give you a comprehensive overlook of the crate. For the example of a simple use case, visit the [examples](examples) folder.
