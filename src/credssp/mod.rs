@@ -1,12 +1,6 @@
-cfg_if::cfg_if! {
-    if #[cfg(fuzzing)] {
-        pub mod ts_request;
-    } else {
-        mod ts_request;
-    }
-}
 #[cfg(feature = "tsssp")]
 pub mod sspi_cred_ssp;
+mod ts_request;
 
 use std::io;
 

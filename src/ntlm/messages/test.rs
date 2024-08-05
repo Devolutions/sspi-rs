@@ -99,6 +99,7 @@ pub static LOCAL_NEGOTIATE_MESSAGE: LazyLock<[u8; LOCAL_NEGOTIATE_MESSAGE_SIZE]>
 
     result
 });
+
 pub static LOCAL_CHALLENGE_MESSAGE: LazyLock<[u8; LOCAL_CHALLENGE_MESSAGE_SIZE]> = LazyLock::new(|| {
     let mut message = Vec::with_capacity(LOCAL_CHALLENGE_MESSAGE_SIZE);
     message.extend_from_slice(NTLM_SIGNATURE.as_ref());
@@ -117,6 +118,7 @@ pub static LOCAL_CHALLENGE_MESSAGE: LazyLock<[u8; LOCAL_CHALLENGE_MESSAGE_SIZE]>
 
     result
 });
+
 pub static TEST_CREDENTIALS: LazyLock<AuthIdentityBuffers> = LazyLock::new(|| {
     AuthIdentity {
         username: Username::new("User", Some("Domain")).unwrap(),
