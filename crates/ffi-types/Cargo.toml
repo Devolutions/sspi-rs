@@ -1,11 +1,10 @@
 [package]
 name = "ffi-types"
-version = "0.1.0"
-edition = "2021"
+version = "0.0.0"
 license = "MIT/Apache-2.0"
+edition = "2021"
+publish = false
 
 [features]
 default = []
 winscard = []
-
-[dependencies]
