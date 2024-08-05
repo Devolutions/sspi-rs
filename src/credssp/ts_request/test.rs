@@ -205,6 +205,7 @@ static AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: LazyLock<CredentialsBuffers> 
         .into(),
     )
 });
+
 static AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
@@ -217,6 +218,7 @@ static AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: LazyLock<CredentialsBuffers> 
         .into(),
     )
 });
+
 static AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
@@ -226,6 +228,7 @@ static AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: LazyLock<Cred
         .into(),
     )
 });
+
 static AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
