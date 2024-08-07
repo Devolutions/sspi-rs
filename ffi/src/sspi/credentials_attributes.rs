@@ -2,7 +2,7 @@ use std::mem::size_of;
 use std::slice::from_raw_parts;
 
 use libc::c_void;
-use sspi::Result;
+use sspi::{Error, ErrorKind, Result};
 
 use super::sspi_data_types::{SecChar, SecWChar};
 use super::utils::hostname;
@@ -63,15 +63,25 @@ pub struct SecPkgCredentialsKdcProxySettingsW {
     pub client_tls_cred_length: u16,
 }
 
-pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> KdcProxySettings {
+pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> Result<KdcProxySettings> {
+    if p_buffer.is_null() {
+        return Err(Error::new(ErrorKind::InvalidParameter, "p_buffer cannot be null"));
+    }
+
     let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
 
-    let proxy_server = String::from_utf16_lossy(from_raw_parts(
-        p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
-        (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
-    ));
+    // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
+    // so it's not null either.
+    let proxy_server = String::from_utf16_lossy(unsafe {
+        from_raw_parts(
+            p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
+            (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
+        )
+    });
 
-    let client_tls_cred =
+    // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
+    // so it's not null either.
+    let client_tls_cred = unsafe {
         if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
             Some(String::from_utf16_lossy(from_raw_parts(
                 p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
@@ -79,12 +89,13 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> KdcProxySetti
             )))
         } else {
             None
-        };
+        }
+    };
 
-    KdcProxySettings {
+    Ok(KdcProxySettings {
         proxy_server,
         client_tls_cred,
-    }
+    })
 }
 
 #[repr(C)]

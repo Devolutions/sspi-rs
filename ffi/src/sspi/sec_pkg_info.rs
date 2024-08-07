@@ -38,6 +38,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
 
         let raw_pkg_info;
         let pkg_info_w;
+        // SAFETY: Memory allocation should be safe.
         unsafe {
             raw_pkg_info = libc::malloc(size);
             pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
@@ -49,6 +50,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
 
         let name_ptr;
+        // SAFETY: According to documentation, `name_ptr` is placed right after RawSecPkgInfoW struct.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_w_size);
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
@@ -56,6 +58,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         pkg_info_w.name = name_ptr as *mut _;
 
         let comment_ptr;
+        // SAFETY: According to documentation, `comment_ptr` is placed right after `name_ptr`.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
@@ -101,6 +104,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         let raw_pkg_info;
         let pkg_info_a;
 
+        // SAFETY: Memory allocation should be safe.
         unsafe {
             raw_pkg_info = libc::malloc(size);
 
@@ -118,6 +122,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
         let name_ptr;
+        // SAFETY: According to documentation, `name_ptr` is placed right after RawSecPkgInfoA struct.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_a_size);
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
@@ -125,6 +130,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         pkg_info_a.name = name_ptr as *mut _;
 
         let comment_ptr;
+        // SAFETY: According to documentation, `comment_ptr` is placed right after `name_ptr`.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
@@ -162,7 +168,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as u32;
+        // SAFETY: `pc_packages` is not null. We've checked this above.
+        unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
 
@@ -170,12 +177,20 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             size += package.name.as_ref().len() + 1 /* null byte */ + package.comment.len() + 1 /* null byte */;
         }
 
-        let raw_packages = libc::malloc(size);
+        // SAFETY: Memory allocation should be safe.
+        let raw_packages = unsafe { libc::malloc(size) };
+
+        if raw_packages.is_null() {
+            return ErrorKind::InsufficientMemory.to_u32().unwrap();
+        }
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoA;
-        let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar;
+
+        // SAFETY: It should be safe to cast a pointer. Data is placed right after all SecPkgInfoA structs.
+        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar };
         for pkg_info in packages {
-            let pkg_info_a = package_ptr.as_mut().unwrap();
+            // SAFETY: `package_ptr` is a local pointer, so is's valid.
+            let pkg_info_a = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
             pkg_info_a.w_version = KERBEROS_VERSION as u16;
@@ -185,21 +200,28 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             name.push(0);
-            copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len());
+            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len()); }
             pkg_info_a.name = data_ptr as *mut _;
-            data_ptr = data_ptr.add(name.len());
+            // SAFETY: The `comment` is placed right after the `name`.
+            data_ptr = unsafe { data_ptr.add(name.len()) };
 
             let mut comment = pkg_info.comment.as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             comment.push(0);
-            copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len());
-            pkg_info_a.comment = data_ptr as *mut _;
-            data_ptr = data_ptr.add(comment.len());
 
-            package_ptr = package_ptr.add(1);
+            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len()); }
+            pkg_info_a.comment = data_ptr as *mut _;
+            // SAFETY: The `name` of next struct (if any) is placed right after `comment'.
+            data_ptr = unsafe { data_ptr.add(comment.len()) };
+
+            // SAFETY: Next structure (if any) is placed right after this structure.
+            package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        *pp_package_info = raw_packages as *mut _;
+        // SAFETY: `pp_package_into` is not null. We've checked this above.
+        unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
     }
@@ -220,7 +242,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        *pc_packages = packages.len() as u32;
+        // SAFETY: `pc_packages` is not null. We've checked this above.
+        unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
         let mut names = Vec::with_capacity(packages.len());
@@ -236,30 +259,43 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             comments.push(comment);
         }
 
-        let raw_packages = libc::malloc(size);
+        // SAFETY: Memory allocation should be safe.
+        let raw_packages = unsafe { libc::malloc(size) };
+
+        if raw_packages.is_null() {
+            return ErrorKind::InsufficientMemory.to_u32().unwrap();
+        }
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoW;
-        let mut data_ptr = raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar;
+        // SAFETY: It should be safe to cast a pointer. Data is placed right after all SecPkgInfoW structs.
+        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar };
         for (i, pkg_info) in packages.iter().enumerate() {
-            let pkg_info_w = package_ptr.as_mut().unwrap();
+            // SAFETY: `package_ptr` is a local pointer, so it's valid.
+            let pkg_info_w = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
             pkg_info_w.w_version = KERBEROS_VERSION as u16;
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
             pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
-            copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len());
+            // SAFETY: This function is safe to call because `names[i]` is valid C string and `data_ptr` is valid pointer.
+            unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len()); }
             pkg_info_w.name = data_ptr as *mut _;
-            data_ptr = data_ptr.add(names[i].len());
+            // SAFETY: The `comment` is placed right after the `name`.
+            data_ptr = unsafe { data_ptr.add(names[i].len()) };
 
-            copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len());
+            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len()); }
             pkg_info_w.comment = data_ptr as *mut _;
-            data_ptr = data_ptr.add(comments[i].len());
+            // SAFETY: The `name` of next struct (if any) is placed right after `comment'.
+            data_ptr = unsafe { data_ptr.add(comments[i].len()) };
 
-            package_ptr = package_ptr.add(1);
+            // SAFETY: Next structure (if any) is placed right after this structure.
+            package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        *pp_package_info = raw_packages as *mut _;
+        // SAFETY: `pp_package_into` is not null. We've checked this above.
+        unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
     }
@@ -278,14 +314,17 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        let pkg_name = try_execute!(CStr::from_ptr(p_package_name).to_str(), ErrorKind::InvalidParameter);
+        // SAFETY: This function is safe to call because `p_package_name` is not null, we've checked this above.
+        // All other guarantees about validity of C string must be provided by user.
+        let pkg_name = try_execute!(unsafe { CStr::from_ptr(p_package_name) }.to_str(), ErrorKind::InvalidParameter);
 
         let pkg_info: RawSecPkgInfoA = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.as_ref() == pkg_name)
             .unwrap()
             .into();
-        *pp_package_info = pkg_info.0;
+        // SAFETY: `pp_package_info` is not null. We've checked this above.
+        unsafe { *pp_package_info = pkg_info.0; }
 
         0
     }
@@ -304,14 +343,17 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        let pkg_name = c_w_str_to_string(p_package_name);
+        // SAFETY: This function is safe to call because `p_package_name` is not null, we've checked this above.
+        // All other guarantees about validity of C string must be provided by user.
+        let pkg_name = unsafe { c_w_str_to_string(p_package_name) };
 
         let pkg_info: RawSecPkgInfoW = try_execute!(enumerate_security_packages())
             .into_iter()
             .find(|pkg| pkg.name.to_string() == pkg_name)
             .unwrap()
             .into();
-        *pp_package_info = pkg_info.0;
+        // SAFETY: `pp_package_info` is not null. We've checked this above.
+        unsafe { *pp_package_info = pkg_info.0; }
 
         0
     }

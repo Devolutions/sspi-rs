@@ -9,7 +9,8 @@ pub unsafe fn transform_credentials_handle<'a>(
     if credentials_handle.is_null() {
         None
     } else {
-        let cred_handle = credentials_handle.as_mut().unwrap();
+        // SAFETY: `credentials_handle` is not null. We've checked this above.
+        let cred_handle = unsafe { credentials_handle.as_mut().unwrap() };
         Some((
             cred_handle.credentials.clone(),
             cred_handle.security_package_name.as_str(),
