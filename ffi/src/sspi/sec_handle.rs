@@ -312,6 +312,10 @@ fn verify_security_package(package_name: &str) -> Result<()> {
     }
 }
 
+/// AcquireCredentialsHandleA function acquires a handle to preexisting credentials of a security principal.
+///
+/// NOTE: Although in the original Windows SSPI, `p_auth_data` parameter can be NULL, in our implementation it must be non-NULL.
+/// That's because we cannot get the default credentials handle for security package, like Windows can.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleA"))]
 #[no_mangle]
@@ -363,6 +367,10 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+/// AcquireCredentialsHandleW function acquires a handle to preexisting credentials of a security principal.
+///
+/// NOTE: Although in the original Windows SSPI, `p_auth_data` parameter can be NULL, in our implementation it must be non-NULL.
+/// That's because we cannot get the default credentials handle for security package, like Windows can.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
 #[no_mangle]
