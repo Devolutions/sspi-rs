@@ -6,19 +6,32 @@ pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
+/// # Safety
+///
+/// Behavior is undefined is any of the following conditions are violated:
+///
+/// * `s` must be [valid] C string.
 pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
     let mut len = 0;
 
+    // SAFETY: The user must provide guarantees that `s` is valid C string.
     while unsafe { *(s.add(len)) } != 0 {
         len += 1;
     }
 
+    // SAFETY: The user must provide guarantees that `s` is valid C string.
     String::from_utf16_lossy(unsafe { from_raw_parts(s, len) })
 }
 
+/// # Safety
+///
+/// Behavior is undefined is any of the following conditions are violated:
+///
+/// * `s` must be [valid] C string.
 pub unsafe fn w_str_len(s: *const u16) -> usize {
     let mut len = 0;
 
+    // SAFETY: The user must provide guarantees that `s` is valid C string.
     while unsafe { *(s.add(len)) } != 0 {
         len += 1;
     }

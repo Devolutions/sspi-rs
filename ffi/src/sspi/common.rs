@@ -265,7 +265,6 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
     // NOTE: see https://github.com/Devolutions/sspi-rs/pull/141 for rationale behind libc usage.
-    check_null!(pv_context_buffer);
     // SAFETY: Memory deallocation should be safe.
     unsafe {
         libc::free(pv_context_buffer);

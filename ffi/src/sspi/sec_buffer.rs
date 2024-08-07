@@ -63,13 +63,13 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
         if allocate || to_buffers[i].pv_buffer.is_null() {
             // SAFETY: Memory allocation should be safe. Also, we check `pv_buffer` for the null below.
             to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) as *mut c_char };
-        }
 
-        if to_buffers[i].pv_buffer.is_null() {
-            return Err(Error::new(
-                ErrorKind::InsufficientMemory,
-                format!("cannot allocate {buffer_size} bytes"),
-            ));
+            if to_buffers[i].pv_buffer.is_null() {
+                return Err(Error::new(
+                    ErrorKind::InsufficientMemory,
+                    format!("cannot allocate {buffer_size} bytes"),
+                ));
+            }
         }
 
         // SAFETY: `pv_buffer` is not null. We've checked for this above.

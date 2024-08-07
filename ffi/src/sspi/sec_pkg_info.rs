@@ -50,7 +50,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
 
         let name_ptr;
-        // SAFETY: According to documentation, `name_ptr` is placed right after RawSecPkgInfoW struct.
+        // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_w_size);
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
@@ -58,7 +58,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         pkg_info_w.name = name_ptr as *mut _;
 
         let comment_ptr;
-        // SAFETY: According to documentation, `comment_ptr` is placed right after `name_ptr`.
+        // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
@@ -122,7 +122,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
         let name_ptr;
-        // SAFETY: According to documentation, `name_ptr` is placed right after RawSecPkgInfoA struct.
+        // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_a_size);
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
@@ -130,7 +130,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         pkg_info_a.name = name_ptr as *mut _;
 
         let comment_ptr;
-        // SAFETY: According to documentation, `comment_ptr` is placed right after `name_ptr`.
+        // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
@@ -200,20 +200,22 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             name.push(0);
-            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            // SAFETY: This function is safe to call because `name` is valid C string and
+            // `data_ptr` is a local pointer to allocated memory.
             unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len()); }
             pkg_info_a.name = data_ptr as *mut _;
-            // SAFETY: The `comment` is placed right after the `name`.
+            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
             data_ptr = unsafe { data_ptr.add(name.len()) };
 
             let mut comment = pkg_info.comment.as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             comment.push(0);
 
-            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            // SAFETY: This function is safe to call because `name` is valid C string and
+            // `data_ptr` is a local pointer to allocated memory.
             unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len()); }
             pkg_info_a.comment = data_ptr as *mut _;
-            // SAFETY: The `name` of next struct (if any) is placed right after `comment'.
+            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
             data_ptr = unsafe { data_ptr.add(comment.len()) };
 
             // SAFETY: Next structure (if any) is placed right after this structure.
@@ -278,16 +280,18 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
             pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
-            // SAFETY: This function is safe to call because `names[i]` is valid C string and `data_ptr` is valid pointer.
+            // SAFETY: This function is safe to call because `names[i]` is valid C string and
+            // `data_ptr` is a local pointer to allocated memory.
             unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len()); }
             pkg_info_w.name = data_ptr as *mut _;
-            // SAFETY: The `comment` is placed right after the `name`.
+            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
             data_ptr = unsafe { data_ptr.add(names[i].len()) };
 
-            // SAFETY: This function is safe to call because `name` is valid C string and `data_ptr` is valid pointer.
+            // SAFETY: This function is safe to call because `name` is valid C string and
+            // `data_ptr` is a local pointer to allocated memory.
             unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len()); }
             pkg_info_w.comment = data_ptr as *mut _;
-            // SAFETY: The `name` of next struct (if any) is placed right after `comment'.
+            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
             data_ptr = unsafe { data_ptr.add(comments[i].len()) };
 
             // SAFETY: Next structure (if any) is placed right after this structure.
