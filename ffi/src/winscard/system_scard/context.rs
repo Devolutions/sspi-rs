@@ -461,13 +461,30 @@ impl WinScardContext for SystemScardContext {
         try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) }, "SCardCancel failed")
     }
 
-    fn get_status_change(&self, _timeout: u32, _reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardGetStatusChangeW function is not supported in PCSC-lite API",
-            ))
+            use winscard::winscard::CurrentState;
+            use winscard::NEW_READER_NOTIFICATION;
+
+            let supported_readers = self.list_readers()?;
+
+            for reader_state in reader_states {
+                if supported_readers.contains(&reader_state.reader_name) {
+                    reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT
+                        | CurrentState::SCARD_STATE_INUSE
+                        | CurrentState::SCARD_STATE_PRESENT
+                        | CurrentState::SCARD_STATE_CHANGED;
+                    reader_state.atr[0..23].copy_from_slice(&[59, 253, 19, 0, 0, 129, 49, 254, 21, 128, 115, 192, 33, 192, 87, 89, 117, 98, 105, 75, 101, 121, 64]);
+                    reader_state.atr_len = 23;
+                } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
+                    reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
+                } else {
+                    error!(?reader_state.reader_name, "Unsupported reader");
+                }
+            }
+
+            Ok(())
         }
         #[cfg(target_os = "windows")]
         {
@@ -476,13 +493,13 @@ impl WinScardContext for SystemScardContext {
             use ffi_types::winscard::ScardReaderStateA;
             use winscard::winscard::CurrentState;
 
-            let mut states = Vec::with_capacity(_reader_states.len());
-            let c_readers = _reader_states
+            let mut states = Vec::with_capacity(reader_states.len());
+            let c_readers = reader_states
                 .iter()
                 .map(|reader_state| CString::new(reader_state.reader_name.as_ref()))
                 .collect::<Result<Vec<CString>, NulError>>()?;
 
-            for (reader_state, c_reader) in _reader_states.iter_mut().zip(c_readers.iter()) {
+            for (reader_state, c_reader) in reader_states.iter_mut().zip(c_readers.iter()) {
                 states.push(ScardReaderStateA {
                     sz_reader: c_reader.as_ptr() as *const _,
                     pv_user_data: reader_state.user_data as _,
@@ -501,14 +518,14 @@ impl WinScardContext for SystemScardContext {
                         self.h_context,
                         _timeout,
                         states.as_mut_ptr(),
-                        _reader_states.len().try_into()?,
+                        reader_states.len().try_into()?,
                     )
                 },
                 "SCardGetStatusChangeA failed"
             )?;
 
             // We do not need to change all fields. Only event state and atr values can be changed.
-            for (state, reader_state) in states.iter().zip(_reader_states.iter_mut()) {
+            for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
                 reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "invalid dwEventState"))?;
                 reader_state.atr_len = state.cb_atr.try_into()?;
