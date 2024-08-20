@@ -171,7 +171,7 @@ impl WinScard for SystemScard {
                 unsafe {
                     (self.api.SCardStatusA)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -214,12 +214,13 @@ impl WinScard for SystemScard {
         //     "SCardFreeMemory failed"
         // )?;
 
-        let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
-        debug!(state, ?state_b);
+        // let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
+        // debug!(state, ?state_b);
 
         let status = Status {
             readers,
-            state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
+            // state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
+            state: state.try_into()?,
             protocol: Protocol::from_bits(protocol.try_into().unwrap()).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
