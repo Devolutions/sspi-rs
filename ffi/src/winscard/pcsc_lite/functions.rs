@@ -1,7 +1,7 @@
-use ffi_types::winscard::{ScardIoRequest, ScardReaderStateA, ScardStatus};
-use ffi_types::{Dword, LpByte, LpCByte, LpCStr, LpCVoid, LpDword, LpStr, LpVoid};
+use ffi_types::winscard::{ScardIoRequest, ScardReaderStateA};
+use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpStr, LpVoid};
 
-use super::{LpScardContext, LpScardHandle, ScardContext, ScardHandle};
+use super::{LpScardContext, LpScardHandle, ScardContext, ScardHandle, ScardStatus, Dword, LpDword};
 
 /// Creates an Application Context to the PC/SC Resource Manager.
 ///

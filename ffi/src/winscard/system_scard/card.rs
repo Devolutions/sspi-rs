@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
+use std::io::Write;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
@@ -22,7 +23,7 @@ use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
 /// Represents a state of the current `SystemScard`.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum HandleState {
     /// The card is not connected or has been disconnected.
     Disconnected,
@@ -42,6 +43,17 @@ pub struct SystemScard {
     api: SCardApiFunctionTable,
     #[cfg(not(target_os = "windows"))]
     api: PcscLiteApiFunctionTable,
+}
+
+use std::fmt;
+
+impl fmt::Debug for SystemScard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SystemScard")
+         .field("h_card", &self.h_card)
+         .field("h_card_context", &self.h_card_context)
+         .finish()
+    }
 }
 
 impl SystemScard {
@@ -100,11 +112,15 @@ impl Drop for SystemScard {
 }
 
 impl WinScard for SystemScard {
+    #[instrument(ret)]
     fn status(&self) -> WinScardResult<Status> {
-        let mut reader_name: *mut u8 = null_mut();
-        let mut reader_name_len = SCARD_AUTOALLOCATE;
-        let mut state = 0;
-        let mut protocol = 0;
+        println!("status status status");
+        debug!("status status status");
+
+        let mut reader_name = [0_u8; 1024];
+        let mut reader_name_len = 1024;
+        let mut state = 0xdead_beef;
+        let mut protocol = 0xdead_beef;
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
         //
         // `pbAtr`: Pointer to a 32-byte buffer that receives the ATR string from the currently
@@ -112,7 +128,7 @@ impl WinScard for SystemScard {
         //
         // PCSC-lite docs do not specify that ATR buf should be 32 bytes long, but actually,
         // the ATR string can not be longer than 32 bytes.
-        let mut atr = vec![0; 32];
+        let mut atr = [0_u8; 32];
         let mut atr_len = 32;
 
         #[cfg(not(target_os = "windows"))]
@@ -121,13 +137,14 @@ impl WinScard for SystemScard {
             //
             // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
             // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
-            try_execute!(
+            debug!(atr_len, reader_name_len);
+            let res = try_execute!(
                 // SAFETY: This function is safe to call because `self.h_card` is checked
                 // and all other values is type checked.
                 unsafe {
                     (self.api.SCardStatus)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -136,7 +153,9 @@ impl WinScard for SystemScard {
                     )
                 },
                 "SCardStatus failed"
-            )?;
+            );
+            debug!(?res, atr_len, reader_name_len);
+            res?;
         }
         #[cfg(target_os = "windows")]
         {
@@ -164,17 +183,24 @@ impl WinScard for SystemScard {
             )?;
         }
 
+        debug!(reader_name_len);
+        println!("{} status status status", reader_name_len);
+        std::io::stdout().flush().unwrap();
+
         // SAFETY: A slice creation is safe in this context because the `reader_name` pointer is
         // a local pointer that was initialized by the `SCardStatus` function.
-        let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
+        // let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
+        let multi_string_buffer = &reader_name[0..reader_name_len.try_into()?];
+        debug!(?multi_string_buffer);
+        println!("{:?}", multi_string_buffer);
         let readers = if let Ok(readers) = parse_multi_string_owned(multi_string_buffer) {
             readers
         } else {
-            try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-                unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-                "SCardFreeMemory failed"
-            )?;
+            // try_execute!(
+            //     // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
+            //     unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
+            //     "SCardFreeMemory failed"
+            // )?;
 
             return Err(Error::new(
                 ErrorKind::InternalError,
@@ -182,22 +208,25 @@ impl WinScard for SystemScard {
             ));
         };
 
-        try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-            unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-            "SCardFreeMemory failed"
-        )?;
+        // try_execute!(
+        //     // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
+        //     unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
+        //     "SCardFreeMemory failed"
+        // )?;
+
+        let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
+        debug!(state, ?state_b);
 
         let status = Status {
             readers,
-            state: state.try_into()?,
-            protocol: Protocol::from_bits(protocol).ok_or_else(|| {
+            state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
+            protocol: Protocol::from_bits(protocol.try_into().unwrap()).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
                     format!("Invalid protocol value: {}", protocol),
                 )
             })?,
-            atr: atr.into(),
+            atr: atr[0..atr_len.try_into()?].to_vec().into(),
         };
 
         Ok(status)
@@ -210,7 +239,7 @@ impl WinScard for SystemScard {
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code,
+                    code.into(),
                     input.as_ptr() as *const _,
                     input.len().try_into()?,
                     null_mut(),
@@ -234,7 +263,7 @@ impl WinScard for SystemScard {
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code,
+                    code.into(),
                     input.as_ptr() as *const _,
                     input.len().try_into()?,
                     output.as_mut_ptr() as *mut _,
@@ -308,6 +337,8 @@ impl WinScard for SystemScard {
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
+        debug!("TBT: scardbt: {} - {}. {} - {}", self.h_card()?, std::mem::size_of::<ScardHandle>(), self.h_card_context, std::mem::size_of::<ScardContext>());
+
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked.
             unsafe { (self.api.SCardBeginTransaction)(self.h_card()?) },
@@ -340,7 +371,7 @@ impl WinScard for SystemScard {
                 (self.api.SCardReconnect)(
                     self.h_card()?,
                     share_mode.into(),
-                    dw_preferred_protocols,
+                    dw_preferred_protocols.into(),
                     initialization.into(),
                     &mut active_protocol,
                 )
@@ -348,7 +379,7 @@ impl WinScard for SystemScard {
             "SCardReconnect failed"
         )?;
 
-        Ok(Protocol::from_bits(active_protocol).unwrap_or_default())
+        Ok(Protocol::from_bits(active_protocol.try_into().unwrap()).unwrap_or_default())
     }
 
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
@@ -368,7 +399,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, null_mut(), &mut data_len) },
+            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), null_mut(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
 
@@ -377,7 +408,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, data.as_mut_ptr(), &mut data_len) },
+            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), data.as_mut_ptr(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
 
@@ -394,7 +425,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id, attribute_data.as_ptr(), len) },
+            unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id.into(), attribute_data.as_ptr(), len) },
             "SCardSetAttrib failed"
         )
     }

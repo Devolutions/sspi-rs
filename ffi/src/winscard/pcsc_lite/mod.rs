@@ -1,20 +1,27 @@
 #![cfg(not(target_os = "windows"))]
 
+use core::ffi::{c_long, c_ulong};
 use std::borrow::Cow;
 use std::env;
 use std::ffi::CString;
 
-use libc::{dlopen, dlsym};
+use libc::{dlopen, dlsym, RTLD_LOCAL, RTLD_LAZY};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 
 pub mod functions;
 
+pub type ScardStatus = c_long;
+
+pub type Dword = c_ulong;
+
+pub type LpDword = *mut Dword;
+
 /// `hContext` returned by `SCardEstablishContext()`.
 ///
 /// https://pcsclite.apdu.fr/api/pcsclite_8h.html#a22530ffaff18b5d3e32260a5f1ce4abd
-pub type ScardContext = i32;
+pub type ScardContext = c_long;
 
 /// Pointer to the [ScardContext].
 pub type LpScardContext = *mut ScardContext;
@@ -22,10 +29,32 @@ pub type LpScardContext = *mut ScardContext;
 /// `hCard` returned by `SCardConnect()`.
 ///
 /// https://pcsclite.apdu.fr/api/pcsclite_8h.html#af328aca3e11de737ecd771bcf1f75fb5
-pub type ScardHandle = i32;
+pub type ScardHandle = c_long;
 
 /// Pointer to the [ScardHandle].
 pub type LpScardHandle = *mut ScardHandle;
+
+bitflags::bitflags! {
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    pub struct State: Dword {
+        const Absent = 0x0002;
+        const Present = 0x0004;
+        const Swallowed = 0x0008;
+        const Powered = 0x0010;
+        const Negotiable = 0x0020;
+        const Specific = 0x0040;
+    }
+}
+
+impl From<State> for winscard::winscard::State {
+    fn from(value: State) -> Self {
+        if let Ok(s) = Self::try_from(value.bits() as u32) {
+            s
+        } else {
+            Self::Specific
+        }
+    }
+}
 
 /// Path to the `pcsc-lite` library.
 ///
@@ -36,14 +65,14 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     let pcsc_lite_path = if let Ok(lib_path) = env::var(PCSC_LITE_LIB_PATH_ENV) {
         Cow::Owned(lib_path)
     } else {
-        Cow::Borrowed("libpcsclite")
+        Cow::Borrowed("libpcsclite.so.1")
     };
     let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
 
     // SAFETY: The library path is type checked.
-    let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), 0) };
+    let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), RTLD_LOCAL | RTLD_LAZY) };
     if handle.is_null() {
-        return Err(Error::new(ErrorKind::InternalError, "Can not load pcsc-lite library"));
+        return Err(Error::new(ErrorKind::InternalError, format!("Can not load pcsc-lite library: {}", pcsc_lite_path.to_str().unwrap())));
     }
 
     macro_rules! load_fn {
@@ -75,4 +104,17 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         SCardCancel: load_fn!("SCardCancel"),
         SCardIsValidContext: load_fn!("SCardIsValidContext"),
     })
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::{ScardContext, ScardHandle};
+
+    #[test]
+    fn load_api_table() {
+        use std::mem::size_of;
+
+        super::initialize_pcsc_lite_api().unwrap();
+        println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
+    }
 }

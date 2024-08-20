@@ -56,7 +56,7 @@ pub struct SmartCardInfo<'a> {
 }
 
 impl<'a> SmartCardInfo<'a> {
-    fn reader_icon() -> &'static [u8] {
+    pub fn reader_icon() -> &'static [u8] {
         include_bytes!("../assets/reader_icon.bmp")
     }
 

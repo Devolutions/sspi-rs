@@ -60,6 +60,12 @@ impl From<ReaderAction> for u32 {
     }
 }
 
+impl From<ReaderAction> for u64 {
+    fn from(value: ReaderAction) -> Self {
+        value as u64
+    }
+}
+
 /// A smart card attribute id.
 ///
 /// This enum represents a scard attribute id. A set of variants is formed by merging `WinSCard` attr ids and `pscsc-lite` attr ids.
@@ -293,6 +299,12 @@ impl From<ScardScope> for u32 {
     }
 }
 
+impl From<ScardScope> for u64 {
+    fn from(value: ScardScope) -> Self {
+        value as u64
+    }
+}
+
 /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
 ///
 /// `dwShareMode` parameter:
@@ -312,6 +324,12 @@ pub enum ShareMode {
 impl From<ShareMode> for u32 {
     fn from(value: ShareMode) -> Self {
         value as u32
+    }
+}
+
+impl From<ShareMode> for u64 {
+    fn from(value: ShareMode) -> Self {
+        value as u64
     }
 }
 

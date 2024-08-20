@@ -2427,11 +2427,13 @@ dependencies = [
 name = "sspi-ffi"
 version = "0.10.1"
 dependencies = [
+ "bitflags 2.6.0",
  "cfg-if",
  "ffi-types",
  "libc",
  "num-traits",
  "picky-asn1-der",
+ "picky-asn1-x509",
  "sspi",
  "symbol-rename-macro",
  "tracing",

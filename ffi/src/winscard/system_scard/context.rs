@@ -3,6 +3,9 @@ use std::ffi::CString;
 use std::ptr::{null, null_mut};
 #[cfg(target_os = "windows")]
 use std::slice::from_raw_parts;
+#[cfg(not(target_os = "windows"))]
+use std::collections::BTreeMap;
+use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
@@ -26,6 +29,8 @@ pub struct SystemScardContext {
     api: SCardApiFunctionTable,
     #[cfg(not(target_os = "windows"))]
     api: PcscLiteApiFunctionTable,
+    #[cfg(not(target_os = "windows"))]
+    cache: BTreeMap<String, Vec<u8>>,
 }
 
 impl SystemScardContext {
@@ -52,7 +57,264 @@ impl SystemScardContext {
             ));
         }
 
-        Ok(Self { h_context, api })
+        debug!("foierjfoirefj: {} - {}", h_context, std::mem::size_of::<ScardContext>());
+
+        // initialize scard cache
+
+        use winscard::SmartCardInfo;
+        let smart_card_info = SmartCardInfo::try_from_env().unwrap();
+
+        // Freshness values may vary at different points in time.
+        // We do not need to change them in runtime, so we hardcode them here.
+        // Those values do not mean anything special. They are just extracted from the real TPM smart card.
+        const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
+        const CONTAINER_FRESHNESS: [u8; 2] = [0x01, 0x00];
+        const FILE_FRESHNESS: [u8; 2] = [0x0b, 0x00];
+
+        // The following header is formed based on the extracted information from the Windows Smart Card Minidriver (`msclmd.dll`).
+        // Do not change it unless you know what you are doing.
+        // A broken cache will break the entire authentication.
+        const CACHE_ITEM_HEADER: [u8; 6] = {
+            let mut header = [0; 6];
+
+            // reference: msclmd!I_GetPIVCache
+            header[0] = 1;
+            header[1] = PIN_FRESHNESS[1];
+            header[2] = CONTAINER_FRESHNESS[0] + 1;
+            header[3] = CONTAINER_FRESHNESS[1];
+            header[4] = FILE_FRESHNESS[0] + 1;
+            header[5] = FILE_FRESHNESS[1];
+
+            header
+        };
+
+        let mut cache = BTreeMap::new();
+        cache.insert("Cached_CardProperty_Read Only Mode_0".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&4_u32.to_le_bytes());
+            // false
+            value.extend_from_slice(&0_u32.to_le_bytes());
+
+            value
+        });
+        cache.insert("Cached_CardProperty_Cache Mode_0".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&4_u32.to_le_bytes());
+            // true
+            value.extend_from_slice(&1_u32.to_le_bytes());
+
+            value
+        });
+        cache.insert("Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&4_u32.to_le_bytes());
+            // true
+            value.extend_from_slice(&1_u32.to_le_bytes());
+
+            value
+        });
+        cache.insert("Cached_GeneralFile/mscp/cmapfile".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len: size_of<CONTAINER_MAP_RECORD>()
+            // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
+            value.extend_from_slice(&86_u32.to_le_bytes());
+            // CONTAINER_MAP_RECORD:
+            let container = smart_card_info
+                .container_name
+                .as_ref()
+                .encode_utf16()
+                .chain(core::iter::once(0))
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>();
+            value.extend_from_slice(&container); // wszGuid
+            value.extend_from_slice(&[3, 0]); // bFlags
+            value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
+            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+
+            value
+        });
+        cache.insert("Cached_CardmodFile\\Cached_CMAPFile".into(), {
+            // CONTAINER_MAP_RECORD:
+            let mut value = smart_card_info
+                .container_name
+                .as_ref()
+                .encode_utf16()
+                .chain(core::iter::once(0))
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(); // wszGuid
+            value.extend_from_slice(&[3, 0]); // bFlags
+            value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
+            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+
+            value
+        });
+        cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&4_u32.to_le_bytes());
+            // PIN identifier
+            value.extend_from_slice(&1_u32.to_le_bytes());
+
+            value
+        });
+        cache.insert("Cached_ContainerInfo_00".into(), {
+            // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
+            // RSA 4096 is not defined in the specification so we don't support it.
+            // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
+            // 5.3 Cryptographic Mechanism Identifiers
+            // '07' - RSA 2048
+
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len (precalculated)
+            value.extend_from_slice(&292_u32.to_le_bytes());
+
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14, 0x01, 0x00, 0x00]); // container info header
+
+            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-publickeystruc
+            // PUBLICKEYSTRUC
+            value.push(0x06); // bType = PUBLICKEYBLOB
+            value.push(0x02); // bVersion = 0x2
+            value.extend_from_slice(&[0x00, 0x00]); // reserved
+            value.extend_from_slice(&[0x00, 0xa4, 0x00, 0x00]); // aiKeyAlg = CALG_RSA_KEYX
+
+            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-rsapubkey
+            // RSAPUBKEY
+            value.extend_from_slice(b"RSA1"); // magic = RSA1
+            value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
+
+            // let pub_key = smart_cards_info.
+            let public_key = smart_card_info
+                .auth_pk
+                .to_public_key()
+                .expect("rsa private key to public key");
+            let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
+            let (modulus, public_exponent) = match &public_key.subject_public_key {
+                PublicKey::Rsa(rsa) => (
+                    {
+                        let mut modulus = rsa.0.modulus.to_vec();
+                        modulus.reverse();
+                        modulus.resize(256, 0);
+                        modulus
+                    },
+                    {
+                        let mut pub_exp = rsa.0.public_exponent.to_vec();
+                        pub_exp.reverse();
+                        pub_exp.resize(4, 0);
+                        pub_exp
+                    },
+                ),
+                _ => {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedFeature,
+                        "only RSA 2048 keys are supported",
+                    ))
+                }
+            };
+
+            value.extend_from_slice(&public_exponent); // pubexp
+            value.extend_from_slice(&modulus); // public key
+
+            value
+        });
+        cache.insert("Cached_GeneralFile/mscp/kxc00".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+
+            let mut compressed_cert = vec![0; smart_card_info.auth_cert_der.len()];
+            let compressed = winscard::compression::compress_cert(&smart_card_info.auth_cert_der, &mut compressed_cert)?;
+
+            let total_value_len =
+                (compressed.len() + 2 /* unknown flags */ + 2/* uncompressed certificate len */) as u32;
+            value.extend_from_slice(&total_value_len.to_le_bytes());
+
+            value.extend_from_slice(&[0x01, 0x00]); // unknown flags
+            value.extend_from_slice(&(smart_card_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
+            value.extend_from_slice(&compressed_cert);
+
+            value
+        });
+        cache.insert("Cached_CardProperty_Capabilities_0".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&12_u32.to_le_bytes());
+            // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
+            // So, we just insert the extracted data from a real smart card.
+            // Card capabilities:
+            value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+
+            value
+        });
+
+        cache.insert("Cached_CardProperty_Key Sizes_2".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&20_u32.to_le_bytes());
+            // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+            value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+            value.extend_from_slice(&[
+                1, 0, 0, 0, // dwVersion = 1
+                0, 4, 0, 0, // dwMinimumBitlen = 1024
+                0, 4, 0, 0, // dwDefaultBitlen = 1048
+                0, 8, 0, 0, // dwMaximumBitlen = 2048
+                0, 4, 0, 0, // dwIncrementalBitlen = 1024
+            ]);
+
+            value
+        });
+
+        cache.insert("Cached_CardProperty_Key Sizes_1".into(), {
+            let mut value = CACHE_ITEM_HEADER.to_vec();
+            // unkown flags
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+            // actual data len
+            value.extend_from_slice(&20_u32.to_le_bytes());
+            // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+            value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+            value.extend_from_slice(&[
+                1, 0, 0, 0, // dwVersion = 1
+                0, 4, 0, 0, // dwMinimumBitlen = 1024
+                0, 4, 0, 0, // dwDefaultBitlen = 1048
+                0, 8, 0, 0, // dwMaximumBitlen = 2048
+                0, 4, 0, 0, // dwIncrementalBitlen = 1024
+            ]);
+
+            value
+        });
+
+        cache.insert(
+            "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
+            PIN_FRESHNESS.to_vec(),
+        );
+        cache.insert(
+            "Cached_CardmodFile\\Cached_File_Freshness".into(),
+            FILE_FRESHNESS.to_vec(),
+        );
+        cache.insert(
+            "Cached_CardmodFile\\Cached_Container_Freshness".into(),
+            CONTAINER_FRESHNESS.to_vec(),
+        );
+
+        Ok(Self { h_context, api, cache })
     }
 }
 
@@ -75,6 +337,8 @@ impl WinScardContext for SystemScardContext {
         share_mode: ShareMode,
         protocol: Option<Protocol>,
     ) -> WinScardResult<ScardConnectData> {
+        debug!(reader_name, ?share_mode, ?protocol);
+
         let c_string = CString::new(reader_name)?;
 
         let mut scard: ScardHandle = 0;
@@ -90,7 +354,7 @@ impl WinScardContext for SystemScardContext {
                         self.h_context,
                         c_string.as_ptr() as *const _,
                         share_mode.into(),
-                        protocol.unwrap_or_default().bits(),
+                        protocol.unwrap_or_default().bits().into(),
                         &mut scard,
                         &mut active_protocol,
                     )
@@ -117,11 +381,12 @@ impl WinScardContext for SystemScardContext {
             )?;
         }
 
+        debug!("eoijeioeriofjrefo: {} - {}", scard, std::mem::size_of::<ScardHandle>());
         let handle = Box::new(SystemScard::new(scard, self.h_context)?);
 
         Ok(ScardConnectData {
             handle,
-            protocol: Protocol::from_bits(active_protocol).unwrap_or_default(),
+            protocol: Protocol::from_bits(active_protocol.try_into().unwrap()).unwrap_or_default(),
         })
     }
 
@@ -187,10 +452,7 @@ impl WinScardContext for SystemScardContext {
     fn device_type_id(&self, _reader_name: &str) -> WinScardResult<DeviceTypeId> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardGetDeviceTypeId function is not supported in PCSC-lite API",
-            ))
+            Ok(DeviceTypeId::Usb)
         }
         #[cfg(target_os = "windows")]
         {
@@ -225,10 +487,9 @@ impl WinScardContext for SystemScardContext {
     fn reader_icon(&self, _reader_name: &str) -> WinScardResult<Icon> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardGetReaderIcon function is not supported in PCSC-lite API",
-            ))
+            use winscard::SmartCardInfo;
+
+            Ok(Icon::from(SmartCardInfo::reader_icon()))
         }
         #[cfg(target_os = "windows")]
         {
@@ -284,13 +545,13 @@ impl WinScardContext for SystemScardContext {
         .is_ok()
     }
 
-    fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, _key: &str) -> WinScardResult<Cow<[u8]>> {
+    fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardReadCache function is not supported in PCSC-lite API",
-            ))
+            self.cache
+                .get(key)
+                .map(|item| Cow::Borrowed(item.as_slice()))
+                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
         }
         #[cfg(target_os = "windows")]
         {
@@ -299,7 +560,7 @@ impl WinScardContext for SystemScardContext {
 
             let mut data_len = SCARD_AUTOALLOCATE;
 
-            let c_cache_key = CString::new(_key)?;
+            let c_cache_key = CString::new(key)?;
             let mut card_id = uuid_to_c_guid(_card_id);
 
             let mut data: *mut u8 = null_mut();
@@ -355,21 +616,20 @@ impl WinScardContext for SystemScardContext {
         &mut self,
         _card_id: Uuid,
         _freshness_counter: u32,
-        _key: String,
-        mut _value: Vec<u8>,
+        key: String,
+        mut value: Vec<u8>,
     ) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardWriteCache function is not supported in PCSC-lite API",
-            ))
+            self.cache.insert(key, value);
+
+            Ok(())
         }
         #[cfg(target_os = "windows")]
         {
             use super::uuid_to_c_guid;
 
-            let c_cache_key = CString::new(_key.as_str())?;
+            let c_cache_key = CString::new(key.as_str())?;
             let mut card_id = uuid_to_c_guid(_card_id);
 
             try_execute!(
@@ -381,8 +641,8 @@ impl WinScardContext for SystemScardContext {
                         &mut card_id,
                         _freshness_counter,
                         c_cache_key.into_raw() as *mut _,
-                        _value.as_mut_ptr(),
-                        _value.len().try_into()?,
+                        value.as_mut_ptr(),
+                        value.len().try_into()?,
                     )
                 },
                 "SCardWriteCacheA failed"
@@ -657,5 +917,65 @@ impl WinScardContext for SystemScardContext {
 
             Ok(Cow::Owned(name))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use winscard::winscard::ScardScope;
+    use winscard::winscard::WinScardContext;
+    use winscard::winscard::Protocol;
+    use winscard::winscard::ShareMode;
+
+    use super::SystemScardContext;
+    use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+    use std::mem::size_of;
+
+    fn init_logging() {
+        use tracing_subscriber::prelude::*;
+        use tracing_subscriber::filter::LevelFilter;
+        use std::io;
+
+        let stdout_layer = tracing_subscriber::fmt::layer()
+            .with_level(true)
+            .with_writer(io::stdout)
+            .with_filter(LevelFilter::TRACE);
+
+        tracing_subscriber::registry()
+            .with(stdout_layer)
+            .init()
+    }
+
+    #[test]
+    fn bt() {
+        init_logging();
+
+        let scard_context = SystemScardContext::establish(ScardScope::User).unwrap();
+        let mut scard = scard_context.connect(
+            "Yubico YubiKey CCID 00 00",
+            ShareMode::Shared,
+            Some(Protocol::T0 | Protocol::T1),
+        ).unwrap();
+        // scard.handle.begin_transaction().unwrap();
+        println!("{:?}", scard.handle.status().unwrap());
+        // println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
+    }
+
+    #[test]
+    fn rt() {
+        // let mut h_context = 0;
+
+        // let api = initialize_pcsc_lite_api()?;
+
+        // try_execute!(
+        //     // SAFETY: This function is safe to call because the `scope` parameter value is type checked
+        //     // and `*mut h_context` can't be `null`.
+        //     unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
+        //     "SCardEstablishContext failed"
+        // ).unwrap();
+
+        // assert!(h_context != 0);
+
+        // debug!("Created context: {} - {}", h_context, std::mem::size_of::<ScardContext>());
     }
 }

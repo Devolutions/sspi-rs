@@ -11,7 +11,7 @@ mod macros;
 mod ber_tlv;
 mod card_capability_container;
 mod chuid;
-mod compression;
+pub mod compression;
 mod dummy_rng;
 /// Contains env variables names that represent smart card credentials.
 #[cfg(feature = "std")]

@@ -73,7 +73,7 @@ pub unsafe fn build_buf_request_type_wide<'data>(
 }
 
 /// Saves the resulting data after the [RequestedBufferType] processing.
-#[instrument(level = "debug", ret)]
+#[instrument(level = "debug", ret, skip(out_buf))]
 pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
     if pcb_buf.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
