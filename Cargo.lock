@@ -2432,6 +2432,7 @@ dependencies = [
  "ffi-types",
  "libc",
  "num-traits",
+ "picky",
  "picky-asn1-der",
  "picky-asn1-x509",
  "sspi",

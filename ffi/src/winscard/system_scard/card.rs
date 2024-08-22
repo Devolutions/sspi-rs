@@ -214,13 +214,13 @@ impl WinScard for SystemScard {
         //     "SCardFreeMemory failed"
         // )?;
 
-        // let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
-        // debug!(state, ?state_b);
+        let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
+        debug!(state, ?state_b);
 
         let status = Status {
             readers,
-            // state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
-            state: state.try_into()?,
+            state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
+            // state: state.try_into()?,
             protocol: Protocol::from_bits(protocol.try_into().unwrap()).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,

@@ -35,6 +35,7 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
 bitflags = "2.6.0"
 picky-asn1-x509 = "0.13.0"
+picky = { version = "7.0.0-rc.9", default-features = false, features = ["x509"] }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
