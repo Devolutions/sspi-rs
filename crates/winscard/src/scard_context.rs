@@ -312,7 +312,7 @@ impl<'a> ScardContext<'a> {
                 (compressed.len() + 2 /* unknown flags */ + 2/* uncompressed certificate len */) as u32;
             value.extend_from_slice(&total_value_len.to_le_bytes());
 
-            value.extend_from_slice(&[0x01, 0x00]); // unknown flags
+            value.extend_from_slice(&[0x01, 0x00]); // flags that specify that the certificate is compressed
             value.extend_from_slice(&(smart_card_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
             value.extend_from_slice(&compressed_cert);
 
