@@ -2,6 +2,7 @@ use std::borrow::Cow;
 #[cfg(not(target_os = "windows"))]
 use std::collections::BTreeMap;
 use std::ffi::CString;
+use std::fmt;
 use std::ptr::{null, null_mut};
 #[cfg(target_os = "windows")]
 use std::slice::from_raw_parts;
@@ -35,8 +36,6 @@ pub struct SystemScardContext {
     #[cfg(not(target_os = "windows"))]
     cache: BTreeMap<String, Vec<u8>>,
 }
-
-use std::fmt;
 
 impl fmt::Debug for SystemScardContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -88,14 +87,12 @@ fn init_scard_cache(container_name: &str, auth_cert: picky::x509::Cert, auth_cer
     let mut cache = BTreeMap::new();
 
     // Freshness values are not supported, so we set all values to zero.
-    // We do not need to change them in runtime, so we hardcode them here.
     const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
     const CONTAINER_FRESHNESS: [u8; 2] = [0x00, 0x00];
     const FILE_FRESHNESS: [u8; 2] = [0x00, 0x00];
 
     // The following header is formed based on the extracted information during the debugging and troubleshooting.
-    // Do not change it unless you know what you are doing.
-    // A broken cache will break the entire authentication.
+    // Do not change it unless you know what you are doing. A broken cache will break the entire authentication.
     const CACHE_ITEM_HEADER: [u8; 6] = {
         let mut header = [0; 6];
 
@@ -163,6 +160,7 @@ fn init_scard_cache(container_name: &str, auth_cert: picky::x509::Cert, auth_cer
         // so we need to resize the data if it contains less then `size_of() * MAX_CONTAINER_NAME_LEN` bytes.
         let container_name_bytes_len = size_of::<WChar>() * MAX_CONTAINER_NAME_LEN;
         debug_assert_eq!(container_name_bytes_len, 80);
+
         wsz_guid.resize(container_name_bytes_len, 0);
         debug!(?wsz_guid);
 
@@ -288,8 +286,6 @@ impl WinScardContext for SystemScardContext {
         share_mode: ShareMode,
         protocol: Option<Protocol>,
     ) -> WinScardResult<ScardConnectData> {
-        debug!(reader_name, ?share_mode, ?protocol);
-
         let c_string = CString::new(reader_name)?;
 
         let mut scard: ScardHandle = 0;
@@ -332,7 +328,6 @@ impl WinScardContext for SystemScardContext {
             )?;
         }
 
-        debug!("eoijeioeriofjrefo: {} - {}", scard, std::mem::size_of::<ScardHandle>());
         let handle = Box::new(SystemScard::new(scard, self.h_context)?);
 
         Ok(ScardConnectData {
@@ -872,64 +867,5 @@ impl WinScardContext for SystemScardContext {
 
             Ok(Cow::Owned(name))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::mem::size_of;
-
-    use winscard::winscard::{Protocol, ScardScope, ShareMode, WinScardContext};
-
-    use super::SystemScardContext;
-    use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
-
-    fn init_logging() {
-        use std::io;
-
-        use tracing_subscriber::filter::LevelFilter;
-        use tracing_subscriber::prelude::*;
-
-        let stdout_layer = tracing_subscriber::fmt::layer()
-            .with_level(true)
-            .with_writer(io::stdout)
-            .with_filter(LevelFilter::TRACE);
-
-        tracing_subscriber::registry().with(stdout_layer).init()
-    }
-
-    #[test]
-    fn bt() {
-        init_logging();
-
-        let scard_context = SystemScardContext::establish(ScardScope::User).unwrap();
-        let mut scard = scard_context
-            .connect(
-                "Yubico YubiKey CCID 00 00",
-                ShareMode::Shared,
-                Some(Protocol::T0 | Protocol::T1),
-            )
-            .unwrap();
-        // scard.handle.begin_transaction().unwrap();
-        println!("{:?}", scard.handle.status().unwrap());
-        // println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
-    }
-
-    #[test]
-    fn rt() {
-        // let mut h_context = 0;
-
-        // let api = initialize_pcsc_lite_api()?;
-
-        // try_execute!(
-        //     // SAFETY: This function is safe to call because the `scope` parameter value is type checked
-        //     // and `*mut h_context` can't be `null`.
-        //     unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
-        //     "SCardEstablishContext failed"
-        // ).unwrap();
-
-        // assert!(h_context != 0);
-
-        // debug!("Created context: {} - {}", h_context, std::mem::size_of::<ScardContext>());
     }
 }
