@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::env;
 use std::ffi::CString;
 
-use libc::{dlopen, dlsym, RTLD_LOCAL, RTLD_LAZY};
+use libc::{dlopen, dlsym, RTLD_LAZY, RTLD_LOCAL};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
@@ -72,7 +72,10 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     // SAFETY: The library path is type checked.
     let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), RTLD_LOCAL | RTLD_LAZY) };
     if handle.is_null() {
-        return Err(Error::new(ErrorKind::InternalError, format!("Can not load pcsc-lite library: {}", pcsc_lite_path.to_str().unwrap())));
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            format!("Can not load pcsc-lite library: {}", pcsc_lite_path.to_str().unwrap()),
+        ));
     }
 
     macro_rules! load_fn {
