@@ -18,9 +18,9 @@ use super::parse_multi_string_owned;
 #[cfg(target_os = "windows")]
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
-#[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
+#[cfg(not(target_os = "windows"))]
+use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
@@ -214,7 +214,7 @@ impl WinScard for SystemScard {
             },
             #[cfg(target_os = "windows")]
             state: state.try_into()?,
-            protocol: Protocol::from_bits(protocol.try_into().unwrap()).ok_or_else(|| {
+            protocol: Protocol::from_bits(protocol.try_into()?).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
                     format!("Invalid protocol value: {}", protocol),

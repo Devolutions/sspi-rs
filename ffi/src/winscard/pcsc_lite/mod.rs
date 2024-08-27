@@ -42,13 +42,22 @@ pub type LpScardHandle = *mut ScardHandle;
 // https://pcsclite.apdu.fr/api/group__API.html#differences
 // > SCardStatus() returns a bit field on pcsc-lite but a enumeration on Windows.
 bitflags::bitflags! {
+    /// [SCardStatus](https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382)
+    ///
+    /// Current state of this reader: is a DWORD possibly OR'd with the following values:
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
     pub struct State: Dword {
+        /// There is no card in the reader.
         const Absent = 0x0002;
+        /// There is a card in the reader, but it has not been moved into position for use.
         const Present = 0x0004;
+        /// There is a card in the reader in position for use. The card is not powered.
         const Swallowed = 0x0008;
+        /// Power is being provided to the card, but the reader driver is unaware of the mode of the card.
         const Powered = 0x0010;
+        /// The card has been reset and is awaiting PTS negotiation.
         const Negotiable = 0x0020;
+        /// The card has been reset and specific communication protocols have been established.
         const Specific = 0x0040;
     }
 }
