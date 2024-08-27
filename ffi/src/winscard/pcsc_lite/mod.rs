@@ -18,6 +18,8 @@ pub type Dword = c_ulong;
 
 pub type LpDword = *mut Dword;
 
+pub const SCARD_AUTOALLOCATE: Dword = 0xffffffffffffffff;
+
 /// `hContext` returned by `SCardEstablishContext()`.
 ///
 /// https://pcsclite.apdu.fr/api/pcsclite_8h.html#a22530ffaff18b5d3e32260a5f1ce4abd
