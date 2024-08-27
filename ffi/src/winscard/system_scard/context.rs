@@ -29,12 +29,19 @@ const MAX_CONTAINER_NAME_LEN: usize = 40;
 
 pub struct SystemScardContext {
     h_context: ScardContext,
+
     #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
     #[cfg(not(target_os = "windows"))]
     api: PcscLiteApiFunctionTable,
+
+    // pcsc-lite API does not have function for the cache reading/writing. So, we emulate the smart card cache by ourselves.
     #[cfg(not(target_os = "windows"))]
     cache: BTreeMap<String, Vec<u8>>,
+    // pcsc-lite API does not have the `SCardGetStatusChangeW` function. We need the ATR string value to emulate it. We query the ATR
+    // string once using the pcsc-lite API, save it, and then use it every time we need it.
+    #[cfg(not(target_os = "windows"))]
+    atr: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for SystemScardContext {
@@ -78,12 +85,35 @@ impl SystemScardContext {
 
                 init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
             },
+            #[cfg(not(target_os = "windows"))]
+            atr: None,
         })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn ger_card_atr(&mut self, reader_name: &str) -> WinScardResult<Vec<u8>> {
+        if let Some(atr) = self.atr.as_ref() {
+            Ok(atr.to_vec())
+        } else {
+            use winscard::winscard::AttributeId;
+
+            let ScardConnectData { handle, protocol: _ } =
+                self.connect(reader_name, ShareMode::Shared, Some(Protocol::T0 | Protocol::T1))?;
+            let atr = handle.get_attribute(AttributeId::AtrString)?.to_vec();
+
+            self.atr = Some(atr.clone());
+
+            Ok(atr)
+        }
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn init_scard_cache(container_name: &str, auth_cert: picky::x509::Cert, auth_cert_der: &[u8]) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
+fn init_scard_cache(
+    container_name: &str,
+    auth_cert: picky::x509::Cert,
+    auth_cert_der: &[u8],
+) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
     let mut cache = BTreeMap::new();
 
     // Freshness values are not supported, so we set all values to zero.
@@ -280,6 +310,7 @@ impl Drop for SystemScardContext {
 }
 
 impl WinScardContext for SystemScardContext {
+    #[instrument]
     fn connect(
         &self,
         reader_name: &str,
@@ -332,7 +363,7 @@ impl WinScardContext for SystemScardContext {
 
         Ok(ScardConnectData {
             handle,
-            protocol: Protocol::from_bits(active_protocol.try_into().unwrap()).unwrap_or_default(),
+            protocol: Protocol::from_bits(active_protocol.try_into()?).unwrap_or_default(),
         })
     }
 
@@ -491,7 +522,7 @@ impl WinScardContext for SystemScardContext {
         .is_ok()
     }
 
-    #[instrument]
+    #[instrument(ret)]
     fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
@@ -559,6 +590,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
+    #[instrument(ret)]
     fn write_cache(
         &mut self,
         _card_id: Uuid,
@@ -668,13 +700,18 @@ impl WinScardContext for SystemScardContext {
         try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) }, "SCardCancel failed")
     }
 
-    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    #[instrument(ret)]
+    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
             use winscard::winscard::CurrentState;
             use winscard::NEW_READER_NOTIFICATION;
 
-            let supported_readers = self.list_readers()?;
+            let supported_readers = self
+                .list_readers()?
+                .into_iter()
+                .map(|r| Cow::Owned(r.to_string()))
+                .collect::<Vec<_>>();
 
             for reader_state in reader_states {
                 if supported_readers.contains(&reader_state.reader_name) {
@@ -682,11 +719,12 @@ impl WinScardContext for SystemScardContext {
                         | CurrentState::SCARD_STATE_INUSE
                         | CurrentState::SCARD_STATE_PRESENT
                         | CurrentState::SCARD_STATE_CHANGED;
-                    reader_state.atr[0..23].copy_from_slice(&[
-                        59, 253, 19, 0, 0, 129, 49, 254, 21, 128, 115, 192, 33, 192, 87, 89, 117, 98, 105, 75, 101,
-                        121, 64,
-                    ]);
-                    reader_state.atr_len = 23;
+
+                    let atr = self.ger_card_atr(reader_state.reader_name.as_ref())?;
+                    debug_assert!(atr.len() <= 32);
+
+                    reader_state.atr[0..atr.len()].copy_from_slice(&atr);
+                    reader_state.atr_len = atr.len();
                 } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
                     reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
                 } else {
