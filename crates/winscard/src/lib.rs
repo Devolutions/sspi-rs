@@ -11,7 +11,7 @@ mod macros;
 mod ber_tlv;
 mod card_capability_container;
 mod chuid;
-pub mod compression;
+mod compression;
 mod dummy_rng;
 /// Contains env variables names that represent smart card credentials.
 #[cfg(feature = "std")]
@@ -38,7 +38,9 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID, SUPPORTED_CONNECTION_PROTOCOL};
-pub use scard_context::{Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, NEW_READER_NOTIFICATION};
+pub use scard_context::{
+    Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, NEW_READER_NOTIFICATION,
+};
 
 /// The [WinScardResult] type.
 pub type WinScardResult<T> = result::Result<T, Error>;
