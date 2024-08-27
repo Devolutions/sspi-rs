@@ -1,16 +1,16 @@
 use std::borrow::Cow;
+#[cfg(not(target_os = "windows"))]
+use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::ptr::{null, null_mut};
 #[cfg(target_os = "windows")]
 use std::slice::from_raw_parts;
-#[cfg(not(target_os = "windows"))]
-use std::collections::BTreeMap;
-use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
+use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use uuid::Uuid;
 use winscard::winscard::{
     DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ScardScope, ShareMode, WinScardContext,
@@ -22,6 +22,9 @@ use super::{parse_multi_string_owned, SystemScard};
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+
+// https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L86-L93
+const MAX_CONTAINER_NAME_LEN: usize = 40;
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -44,7 +47,6 @@ impl fmt::Debug for SystemScardContext {
 }
 
 impl SystemScardContext {
-    #[allow(dead_code)]
     pub fn establish(scope: ScardScope) -> WinScardResult<Self> {
         let mut h_context = 0;
 
@@ -67,177 +69,204 @@ impl SystemScardContext {
             ));
         }
 
-        debug!("foierjfoirefj: {} - {}", h_context, std::mem::size_of::<ScardContext>());
-
-        // initialize scard cache
-        use picky::x509::Cert;
-
-        let auth_cert = {
-            let cert_path = std::env::var("WINSCARD_CERTIFICATE_FILE_PATH").unwrap();
-            let raw_certificate = std::fs::read_to_string(cert_path).unwrap();
-            Cert::from_pem_str(&raw_certificate).unwrap()
-        };
-        let auth_cert_der = auth_cert.to_der().unwrap();
-
-        let mut cache = BTreeMap::new();
-        cache.insert("Cached_CardProperty_Read Only Mode_0".into(), {
-            let mut value = [1, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // true
-            value.extend_from_slice(&1_u32.to_le_bytes());
-
-            value
-        });
-        cache.insert("Cached_CardProperty_Cache Mode_0".into(), {
-            let mut value = [1, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // true
-            value.extend_from_slice(&1_u32.to_le_bytes());
-
-            value
-        });
-        cache.insert("Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(), {
-            let mut value = [1, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // false
-            value.extend_from_slice(&0_u32.to_le_bytes());
-
-            value
-        });
-        cache.insert("Cached_GeneralFile/mscp/cmapfile".into(), {
-            let mut value = [1, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len: size_of<CONTAINER_MAP_RECORD>()
-            // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
-            value.extend_from_slice(&86_u32.to_le_bytes());
-            // CONTAINER_MAP_RECORD:
-            // let container = smart_card_info
-            //     .container_name
-            //     .as_ref()
-            //     .encode_utf16()
-            //     .chain(core::iter::once(0))
-            //     .flat_map(|v| v.to_le_bytes())
-            //     .collect::<Vec<_>>();
-            let container = [49, 0, 100, 0, 56, 0, 97, 0, 99, 0, 54, 0, 53, 0, 56, 0, 45, 0, 101, 0, 48, 0, 54, 0, 53, 0, 45, 0, 57, 0, 50, 0, 97, 0, 48, 0, 45, 0, 56, 0, 53, 0, 97, 0, 102, 0, 45, 0, 48, 0, 57, 0, 48, 0, 98, 0, 48, 0, 55, 0, 53, 0, 102, 0, 99, 0, 49, 0, 48, 0, 53, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-            value.extend_from_slice(&container); // wszGuid
-            value.extend_from_slice(&[3, 0]); // bFlags
-            value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
-            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
-
-            value
-        });
-        cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
-            let mut value = [1, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // PIN identifier
-            value.extend_from_slice(&1_u32.to_le_bytes());
-
-            value
-        });
-        cache.insert("Cached_ContainerInfo_00".into(), {
-            // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
-            // RSA 4096 is not defined in the specification so we don't support it.
-            // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
-            // 5.3 Cryptographic Mechanism Identifiers
-            // '07' - RSA 2048
-
-            let mut value = [1_u8, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len (precalculated)
-            value.extend_from_slice(&292_u32.to_le_bytes());
-
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14, 0x01, 0x00, 0x00]); // container info header
-
-            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-publickeystruc
-            // PUBLICKEYSTRUC
-            value.push(0x06); // bType = PUBLICKEYBLOB
-            value.push(0x02); // bVersion = 0x2
-            value.extend_from_slice(&[0x00, 0x00]); // reserved
-            value.extend_from_slice(&[0x00, 0xa4, 0x00, 0x00]); // aiKeyAlg = CALG_RSA_KEYX
-
-            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-rsapubkey
-            // RSAPUBKEY
-            value.extend_from_slice(b"RSA1"); // magic = RSA1
-            value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
-
-            let public_key = auth_cert
-                .public_key();
-            let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
-            let (modulus, public_exponent) = match &public_key.subject_public_key {
-                PublicKey::Rsa(rsa) => (
-                    {
-                        let mut modulus = rsa.0.modulus.to_vec();
-                        modulus.reverse();
-                        modulus.resize(256, 0);
-                        modulus
-                    },
-                    {
-                        let mut pub_exp = rsa.0.public_exponent.to_vec();
-                        pub_exp.reverse();
-                        pub_exp.resize(4, 0);
-                        pub_exp
-                    },
-                ),
-                _ => {
-                    return Err(Error::new(
-                        ErrorKind::UnsupportedFeature,
-                        "only RSA 2048 keys are supported",
-                    ))
-                }
-            };
-
-            value.extend_from_slice(&public_exponent); // pubexp
-            value.extend_from_slice(&modulus); // public key
-
-            value
-        });
-        cache.insert("Cached_GeneralFile/mscp/kxc00".into(), {
-            let mut value = [1_u8, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-
-            value.extend_from_slice(&(auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
-            value.extend_from_slice(&[0x00, 0x00]); // unknown flags
-            value.extend_from_slice(&auth_cert_der);
-
-            value
-        });
-        cache.insert("Cached_CardProperty_Capabilities_0".into(), {
-            let mut value = [1_u8, 0, 1, 0, 1, 0].to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&12_u32.to_le_bytes());
-            // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
-            // So, we just insert the extracted data from a real smart card.
-            // Card capabilities:
-            value.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
-
-            value
-        });
-
         Ok(Self {
             h_context,
             api,
             #[cfg(not(target_os = "windows"))]
-            cache,
+            cache: {
+                let auth_cert = winscard::env::auth_cert_from_env()?;
+                let auth_cert_der = auth_cert.to_der()?;
+
+                init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
+            },
         })
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn init_scard_cache(container_name: &str, auth_cert: picky::x509::Cert, auth_cert_der: &[u8]) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
+    let mut cache = BTreeMap::new();
+
+    // Freshness values are not supported, so we set all values to zero.
+    // We do not need to change them in runtime, so we hardcode them here.
+    const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
+    const CONTAINER_FRESHNESS: [u8; 2] = [0x00, 0x00];
+    const FILE_FRESHNESS: [u8; 2] = [0x00, 0x00];
+
+    // The following header is formed based on the extracted information during the debugging and troubleshooting.
+    // Do not change it unless you know what you are doing.
+    // A broken cache will break the entire authentication.
+    const CACHE_ITEM_HEADER: [u8; 6] = {
+        let mut header = [0; 6];
+
+        header[0] = 1;
+        header[1] = PIN_FRESHNESS[1];
+        header[2] = CONTAINER_FRESHNESS[0] + 1;
+        header[3] = CONTAINER_FRESHNESS[1];
+        header[4] = FILE_FRESHNESS[0] + 1;
+        header[5] = FILE_FRESHNESS[1];
+
+        header
+    };
+
+    cache.insert("Cached_CardProperty_Read Only Mode_0".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&4_u32.to_le_bytes());
+        // true
+        value.extend_from_slice(&1_u32.to_le_bytes());
+
+        value
+    });
+    cache.insert("Cached_CardProperty_Cache Mode_0".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&4_u32.to_le_bytes());
+        // true
+        value.extend_from_slice(&1_u32.to_le_bytes());
+
+        value
+    });
+    cache.insert("Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&4_u32.to_le_bytes());
+        // false
+        value.extend_from_slice(&0_u32.to_le_bytes());
+
+        value
+    });
+    cache.insert("Cached_GeneralFile/mscp/cmapfile".into(), {
+        use std::mem::size_of;
+
+        use ffi_types::WChar;
+
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len: size_of<CONTAINER_MAP_RECORD>()
+        // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
+        value.extend_from_slice(&86_u32.to_le_bytes());
+        // CONTAINER_MAP_RECORD:
+        let mut wsz_guid = container_name
+            .encode_utf16()
+            .chain(core::iter::once(0))
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+        // `wszGuid` has type `WCHAR [MAX_CONTAINER_NAME_LEN]`,
+        // so we need to resize the data if it contains less then `size_of() * MAX_CONTAINER_NAME_LEN` bytes.
+        let container_name_bytes_len = size_of::<WChar>() * MAX_CONTAINER_NAME_LEN;
+        debug_assert_eq!(container_name_bytes_len, 80);
+        wsz_guid.resize(container_name_bytes_len, 0);
+        debug!(?wsz_guid);
+
+        value.extend_from_slice(&wsz_guid); // wszGuid
+        value.extend_from_slice(&[3, 0]); // bFlags
+        value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
+        value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+
+        value
+    });
+    cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&4_u32.to_le_bytes());
+        // PIN identifier
+        value.extend_from_slice(&1_u32.to_le_bytes());
+
+        value
+    });
+    cache.insert("Cached_ContainerInfo_00".into(), {
+        // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
+        // RSA 4096 is not defined in the specification so we don't support it.
+        // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
+        // 5.3 Cryptographic Mechanism Identifiers
+        // '07' - RSA 2048
+
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len (precalculated)
+        value.extend_from_slice(&292_u32.to_le_bytes());
+
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14, 0x01, 0x00, 0x00]); // container info header
+
+        // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-publickeystruc
+        // PUBLICKEYSTRUC
+        value.push(0x06); // bType = PUBLICKEYBLOB
+        value.push(0x02); // bVersion = 0x2
+        value.extend_from_slice(&[0x00, 0x00]); // reserved
+        value.extend_from_slice(&[0x00, 0xa4, 0x00, 0x00]); // aiKeyAlg = CALG_RSA_KEYX
+
+        // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-rsapubkey
+        // RSAPUBKEY
+        value.extend_from_slice(b"RSA1"); // magic = RSA1
+        value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
+
+        let public_key = auth_cert.public_key();
+        let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
+        let (modulus, public_exponent) = match &public_key.subject_public_key {
+            PublicKey::Rsa(rsa) => (
+                {
+                    let mut modulus = rsa.0.modulus.to_vec();
+                    modulus.reverse();
+                    modulus.resize(256, 0);
+                    modulus
+                },
+                {
+                    let mut pub_exp = rsa.0.public_exponent.to_vec();
+                    pub_exp.reverse();
+                    pub_exp.resize(4, 0);
+                    pub_exp
+                },
+            ),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "only RSA 2048 keys are supported",
+                ))
+            }
+        };
+
+        value.extend_from_slice(&public_exponent); // pubexp
+        value.extend_from_slice(&modulus); // public key
+
+        value
+    });
+    cache.insert("Cached_GeneralFile/mscp/kxc00".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+
+        value.extend_from_slice(&(u16::try_from(auth_cert_der.len())?.to_le_bytes())); // uncompressed certificate data len
+        value.extend_from_slice(&[0x00, 0x00]); // flags that specify that the certificate is not compressed
+        value.extend_from_slice(&auth_cert_der);
+
+        value
+    });
+    cache.insert("Cached_CardProperty_Capabilities_0".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&12_u32.to_le_bytes());
+        // Here should be the CARD_CAPABILITIES struct but the actual extracted data is different.
+        // So, we just insert the extracted data from a real smart card.
+        // Card capabilities:
+        value.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+
+        value
+    });
+
+    Ok(cache)
 }
 
 impl Drop for SystemScardContext {
@@ -540,7 +569,7 @@ impl WinScardContext for SystemScardContext {
         _card_id: Uuid,
         _freshness_counter: u32,
         key: String,
-        mut value: Vec<u8>,
+        value: Vec<u8>,
     ) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
@@ -658,7 +687,10 @@ impl WinScardContext for SystemScardContext {
                         | CurrentState::SCARD_STATE_INUSE
                         | CurrentState::SCARD_STATE_PRESENT
                         | CurrentState::SCARD_STATE_CHANGED;
-                    reader_state.atr[0..23].copy_from_slice(&[59, 253, 19, 0, 0, 129, 49, 254, 21, 128, 115, 192, 33, 192, 87, 89, 117, 98, 105, 75, 101, 121, 64]);
+                    reader_state.atr[0..23].copy_from_slice(&[
+                        59, 253, 19, 0, 0, 129, 49, 254, 21, 128, 115, 192, 33, 192, 87, 89, 117, 98, 105, 75, 101,
+                        121, 64,
+                    ]);
                     reader_state.atr_len = 23;
                 } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
                     reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
@@ -845,28 +877,25 @@ impl WinScardContext for SystemScardContext {
 
 #[cfg(test)]
 mod tests {
-    use winscard::winscard::ScardScope;
-    use winscard::winscard::WinScardContext;
-    use winscard::winscard::Protocol;
-    use winscard::winscard::ShareMode;
+    use std::mem::size_of;
+
+    use winscard::winscard::{Protocol, ScardScope, ShareMode, WinScardContext};
 
     use super::SystemScardContext;
     use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
-    use std::mem::size_of;
 
     fn init_logging() {
-        use tracing_subscriber::prelude::*;
-        use tracing_subscriber::filter::LevelFilter;
         use std::io;
+
+        use tracing_subscriber::filter::LevelFilter;
+        use tracing_subscriber::prelude::*;
 
         let stdout_layer = tracing_subscriber::fmt::layer()
             .with_level(true)
             .with_writer(io::stdout)
             .with_filter(LevelFilter::TRACE);
 
-        tracing_subscriber::registry()
-            .with(stdout_layer)
-            .init()
+        tracing_subscriber::registry().with(stdout_layer).init()
     }
 
     #[test]
@@ -874,11 +903,13 @@ mod tests {
         init_logging();
 
         let scard_context = SystemScardContext::establish(ScardScope::User).unwrap();
-        let mut scard = scard_context.connect(
-            "Yubico YubiKey CCID 00 00",
-            ShareMode::Shared,
-            Some(Protocol::T0 | Protocol::T1),
-        ).unwrap();
+        let mut scard = scard_context
+            .connect(
+                "Yubico YubiKey CCID 00 00",
+                ShareMode::Shared,
+                Some(Protocol::T0 | Protocol::T1),
+            )
+            .unwrap();
         // scard.handle.begin_transaction().unwrap();
         println!("{:?}", scard.handle.status().unwrap());
         // println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())

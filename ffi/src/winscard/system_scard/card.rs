@@ -1,8 +1,8 @@
 use std::borrow::Cow;
+use std::io::Write;
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
-use std::io::Write;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
@@ -50,9 +50,9 @@ use std::fmt;
 impl fmt::Debug for SystemScard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SystemScard")
-         .field("h_card", &self.h_card)
-         .field("h_card_context", &self.h_card_context)
-         .finish()
+            .field("h_card", &self.h_card)
+            .field("h_card_context", &self.h_card_context)
+            .finish()
     }
 }
 
@@ -338,8 +338,6 @@ impl WinScard for SystemScard {
     }
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
-        debug!("TBT: scardbt: {} - {}. {} - {}", self.h_card()?, std::mem::size_of::<ScardHandle>(), self.h_card_context, std::mem::size_of::<ScardContext>());
-
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked.
             unsafe { (self.api.SCardBeginTransaction)(self.h_card()?) },
