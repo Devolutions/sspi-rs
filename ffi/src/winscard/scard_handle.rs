@@ -108,7 +108,6 @@ impl WinScardContextHandle {
     }
 
     /// Returns the icon of the specified reader.
-    // #[instrument(level = "debug", ret)]
     pub fn get_reader_icon(&mut self, reader: &str, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
 
@@ -228,7 +227,6 @@ impl WinScardContextHandle {
     }
 
     /// Saves the provided data in the [OutBuffer] based on the [RequestedBufferType].
-    // #[instrument(level = "debug", skip(data))]
     pub fn write_to_out_buf(
         &mut self,
         data: &[u8],
