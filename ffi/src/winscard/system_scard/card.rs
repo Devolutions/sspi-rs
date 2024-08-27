@@ -18,9 +18,9 @@ use super::parse_multi_string_owned;
 #[cfg(target_os = "windows")]
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
-#[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
+#[cfg(not(target_os = "windows"))]
+use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
@@ -181,7 +181,6 @@ impl WinScard for SystemScard {
 
         // SAFETY: A slice creation is safe in this context because the `reader_name` pointer is
         // a local pointer that was initialized by the `SCardStatus` function.
-        // let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
         let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
 
         let readers = if let Ok(readers) = parse_multi_string_owned(multi_string_buffer) {
@@ -205,13 +204,16 @@ impl WinScard for SystemScard {
             "SCardFreeMemory failed"
         )?;
 
-        let state_b = crate::winscard::pcsc_lite::State::from_bits(state);
-        debug!(state, ?state_b);
-
         let status = Status {
             readers,
-            state: state_b.map(|s| s.into()).unwrap_or(winscard::winscard::State::Specific),
-            // state: state.try_into()?,
+            #[cfg(not(target_os = "windows"))]
+            state: {
+                use crate::winscard::pcsc_lite::State;
+
+                State::from_bits(state).unwrap_or(State::Specific).into()
+            },
+            #[cfg(target_os = "windows")]
+            state: state.try_into()?,
             protocol: Protocol::from_bits(protocol.try_into().unwrap()).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
@@ -369,7 +371,7 @@ impl WinScard for SystemScard {
             "SCardReconnect failed"
         )?;
 
-        Ok(Protocol::from_bits(active_protocol.try_into().unwrap()).unwrap_or_default())
+        Ok(Protocol::from_bits(active_protocol.try_into()?).unwrap_or_default())
     }
 
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
