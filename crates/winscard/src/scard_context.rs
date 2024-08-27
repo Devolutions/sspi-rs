@@ -477,7 +477,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         Ok(())
     }
 
-    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         use crate::ATR;
 
         let supported_readers = self.list_readers()?;

@@ -523,6 +523,7 @@ bitflags! {
 /// The `SCARD_READERSTATEW` structure is used by functions for tracking smart cards within readers.
 ///
 /// [SCARD_READERSTATEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatew).
+#[derive(Debug)]
 pub struct ReaderState<'data> {
     /// The name of the reader being monitored.
     pub reader_name: Cow<'data, str>,
@@ -729,7 +730,7 @@ pub trait WinScardContext {
     /// [SCardGetStatusChangeW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
     ///
     /// The SCardGetStatusChange function blocks execution until the current availability of the cards in a specific set of readers changes.
-    fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
+    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
 
     /// [SCardGetCardTypeProviderNameW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
     ///
