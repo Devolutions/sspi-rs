@@ -34,6 +34,11 @@ pub type ScardHandle = c_long;
 /// Pointer to the [ScardHandle].
 pub type LpScardHandle = *mut ScardHandle;
 
+// We have already defined `State` flags in the `winscard` crate but we need a separate one for the pcsc-lite because of
+// differences between Windows WinSCard API and pcsc-lite.
+//
+// https://pcsclite.apdu.fr/api/group__API.html#differences
+// > SCardStatus() returns a bit field on pcsc-lite but a enumeration on Windows.
 bitflags::bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
     pub struct State: Dword {
@@ -48,9 +53,13 @@ bitflags::bitflags! {
 
 impl From<State> for winscard::winscard::State {
     fn from(value: State) -> Self {
-        if let Ok(s) = Self::try_from(value.bits() as u32) {
-            s
+        if let Ok(state) = Self::try_from(value.bits() as u32) {
+            // If the pcsc-lite card state has only one bit set, then we can safely convert it to the Windows WinSCard state.
+            state
         } else {
+            // If the pcsc-lite card state has more then one bit set, then we just return the `State::Specific` state. The Windows
+            // WinSCard usually returns this state for the working inserted smart card. We do the same for the emulated smart cards
+            // and for the system scards in the case of state uncertainty.
             Self::Specific
         }
     }
@@ -65,7 +74,7 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     let pcsc_lite_path = if let Ok(lib_path) = env::var(PCSC_LITE_LIB_PATH_ENV) {
         Cow::Owned(lib_path)
     } else {
-        Cow::Borrowed("libpcsclite.so.1")
+        Cow::Borrowed("libpcsclite.so")
     };
     let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
 
@@ -107,17 +116,4 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         SCardCancel: load_fn!("SCardCancel"),
         SCardIsValidContext: load_fn!("SCardIsValidContext"),
     })
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::{ScardContext, ScardHandle};
-
-    #[test]
-    fn load_api_table() {
-        use std::mem::size_of;
-
-        super::initialize_pcsc_lite_api().unwrap();
-        println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
-    }
 }
