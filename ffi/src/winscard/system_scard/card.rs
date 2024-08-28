@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::mem::size_of;
 use std::ptr::null_mut;
 use std::slice::from_raw_parts;
@@ -18,9 +19,9 @@ use super::parse_multi_string_owned;
 #[cfg(target_os = "windows")]
 use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
-#[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
+#[cfg(not(target_os = "windows"))]
+use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
@@ -45,17 +46,6 @@ pub struct SystemScard {
     api: SCardApiFunctionTable,
     #[cfg(not(target_os = "windows"))]
     api: PcscLiteApiFunctionTable,
-}
-
-use std::fmt;
-
-impl fmt::Debug for SystemScard {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SystemScard")
-            .field("h_card", &self.h_card)
-            .field("h_card_context", &self.h_card_context)
-            .finish()
-    }
 }
 
 impl SystemScard {
@@ -110,6 +100,15 @@ impl Drop for SystemScard {
                 error!(?err, "Failed to disconnect the card");
             }
         }
+    }
+}
+
+impl fmt::Debug for SystemScard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SystemScard")
+            .field("h_card", &self.h_card)
+            .field("h_card_context", &self.h_card_context)
+            .finish()
     }
 }
 
