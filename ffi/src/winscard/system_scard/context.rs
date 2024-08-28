@@ -11,7 +11,6 @@ use std::slice::from_raw_parts;
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
-use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use uuid::Uuid;
 use winscard::winscard::{
     DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ScardScope, ShareMode, WinScardContext,
@@ -23,9 +22,6 @@ use super::{parse_multi_string_owned, SystemScard};
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
-
-// https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L86-L93
-const MAX_CONTAINER_NAME_LEN: usize = 40;
 
 pub struct SystemScardContext {
     h_context: ScardContext,
@@ -114,6 +110,11 @@ fn init_scard_cache(
     auth_cert: picky::x509::Cert,
     auth_cert_der: &[u8],
 ) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
+    use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
+
+    // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L86-L93
+    const MAX_CONTAINER_NAME_LEN: usize = 40;
+
     let mut cache = BTreeMap::new();
 
     // Freshness values are not supported, so we set all values to zero.
@@ -620,7 +621,7 @@ impl WinScardContext for SystemScardContext {
                         &mut card_id,
                         _freshness_counter,
                         c_cache_key.into_raw() as *mut _,
-                        value.as_mut_ptr(),
+                        value.as_ptr(),
                         value.len().try_into()?,
                     )
                 },
