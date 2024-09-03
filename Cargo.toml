@@ -86,7 +86,7 @@ portpicker = { version = "0.1", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 rustls-native-certs = { version = "0.7", optional = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { version = "1.39", optional = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { version = "1.40", optional = true, features = ["time", "rt", "rt-multi-thread"] }
 pcsc = { version = "2.8", optional = true }
 winscard = { version = "0.2", optional = true, path = "./crates/winscard" }
 
@@ -98,7 +98,7 @@ windows-sys = { version = "0.52", features = ["Win32_Security_Cryptography", "Wi
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { version = "1.38", features = ["time", "rt", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 base64 = "0.22"
