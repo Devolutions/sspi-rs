@@ -49,6 +49,7 @@ impl fmt::Debug for SystemScardContext {
 }
 
 impl SystemScardContext {
+    #[instrument(ret)]
     pub fn establish(scope: ScardScope) -> WinScardResult<Self> {
         let mut h_context = 0;
 
@@ -57,11 +58,13 @@ impl SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         let api = initialize_pcsc_lite_api()?;
 
+        debug!("h_context size: {}", std::mem::size_of_val(&h_context));
+
         try_execute!(
             // SAFETY: This function is safe to call because the `scope` parameter value is type checked
             // and `*mut h_context` can't be `null`.
             unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
-            "SCardEstablishContext failed"
+            "SCardEstablishContext failed :("
         )?;
 
         if h_context == 0 {
@@ -381,7 +384,7 @@ impl WinScardContext for SystemScardContext {
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
                 // and other parameters are type checked.
                 unsafe { (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
-                "SCardListReaders failed"
+                "SCardListReaders failed 1"
             )?;
         }
         #[cfg(target_os = "windows")]
@@ -409,7 +412,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
-                "SCardListReaders failed"
+                "SCardListReaders failed 2"
             )?;
         }
         #[cfg(target_os = "windows")]
@@ -906,5 +909,66 @@ impl WinScardContext for SystemScardContext {
 
             Ok(Cow::Owned(name))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::mem::size_of;
+ 
+    use winscard::winscard::{Protocol, ScardScope, ShareMode, WinScardContext};
+ 
+    use super::SystemScardContext;
+    use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+ 
+    fn init_logging() {
+        use std::io;
+ 
+        use tracing_subscriber::filter::LevelFilter;
+        use tracing_subscriber::prelude::*;
+ 
+        let stdout_layer = tracing_subscriber::fmt::layer()
+            .with_level(true)
+            .with_writer(io::stdout)
+            .with_filter(LevelFilter::TRACE);
+ 
+        tracing_subscriber::registry().with(stdout_layer).init()
+    }
+ 
+    #[test]
+    fn bt() {
+        init_logging();
+ 
+        let scard_context = SystemScardContext::establish(ScardScope::User).unwrap();
+        let readers = scard_context.list_readers().unwrap();
+        info!(?readers);
+        let mut scard = scard_context
+            .connect(
+                "Yubico YubiKey FIDO+CCID",
+                ShareMode::Shared,
+                Some(Protocol::T0 | Protocol::T1),
+            )
+            .unwrap();
+        // scard.handle.begin_transaction().unwrap();
+        println!("{:?}", scard.handle.status().unwrap());
+        // println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
+    }
+ 
+    #[test]
+    fn rt() {
+        // let mut h_context = 0;
+ 
+        // let api = initialize_pcsc_lite_api()?;
+ 
+        // try_execute!(
+        //     // SAFETY: This function is safe to call because the `scope` parameter value is type checked
+        //     // and `*mut h_context` can't be `null`.
+        //     unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
+        //     "SCardEstablishContext failed"
+        // ).unwrap();
+ 
+        // assert!(h_context != 0);
+ 
+        // debug!("Created context: {} - {}", h_context, std::mem::size_of::<ScardContext>());
     }
 }

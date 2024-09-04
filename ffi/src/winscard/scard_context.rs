@@ -85,9 +85,13 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
         if use_system_card == "true" {
-            info!("Creating system-provided smart card context");
+            info!("Creating system-provided smart card context: 1");
             Box::new(try_execute!(SystemScardContext::establish(try_execute!(
-                dw_scope.try_into()
+                {
+                    let dw_scope_res = dw_scope.try_into();
+                    debug!(?dw_scope_res, "conversion");
+                    dw_scope_res
+                }
             ))))
         } else {
             info!("Creating emulated smart card context");
