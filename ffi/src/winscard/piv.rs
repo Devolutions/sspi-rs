@@ -34,6 +34,53 @@ const CERTIFICATE_LABELS: &[(&[u8], [u8; 3])] = &[
     ),
 ];
 
+/// PIV certificate slot ID.
+///
+/// Read more in the NIST SP 800-73pt1-5 specification: Table 5. PIV Card Application key references.
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum SlotId {
+    /// PIV Authentication Key.
+    PivAuthentication = 0x9a,
+    /// Digital Signature Key.
+    DigitalSignature = 0x9c,
+    /// Key Management Key.
+    KeyManagement = 0x9d,
+    /// Card Card Authentication Key.
+    CardAuthentication = 0x9e,
+}
+
+impl SlotId {
+    /// Returns [u8] representation of the slot.
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Determines the slot id based on the slot certificate label.
+    pub fn from_certificate_label(certificate_label: &[u8]) -> Result<Self> {
+        for (label, slot_id) in CERTIFICATE_SLOT_IDS {
+            if *label == certificate_label {
+                return Ok(*slot_id);
+            }
+        }
+
+        Err(Error::new(ErrorKind::NoCredentials, "certificate label not recognized"))
+    }
+}
+
+/// Possible PIV slot IDs.
+///
+/// The PIV (Personal Identity Verification) standard specifies 25 slots. Each slot has a name and number.
+/// Each slot number is given as a hex value, and all slot numbers can be represented as a single byte.
+///
+/// More info: https://docs.yubico.com/yesdk/users-manual/application-piv/slots.html.
+const CERTIFICATE_SLOT_IDS: &[(&[u8], SlotId)] = &[
+    (b"X.509 Certificate for PIV Authentication", SlotId::PivAuthentication),
+    (b"X.509 Certificate for Digital Signature", SlotId::DigitalSignature),
+    (b"X.509 Certificate for Key Management", SlotId::KeyManagement),
+    (b"X.509 Certificate for Card Authentication", SlotId::CardAuthentication),
+];
+
 /// SELECT APDU command.
 ///
 /// The SELECT card command sets the currently selected application. More info:

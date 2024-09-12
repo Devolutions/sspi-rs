@@ -1007,7 +1007,6 @@ unsafe fn write_cache(
 ) -> WinScardResult<()> {
     check_handle!(context, "scard context handle");
     check_null!(card_identifier, "card identified");
-    check_null!(data, "cache data buffer");
 
     // SAFETY: The `card_identifier` parameter is not null (checked above).
     let card_id = unsafe {
@@ -1021,8 +1020,14 @@ unsafe fn write_cache(
 
     // SAFETY: The `context` value is not zero (checked above).
     let context = unsafe { scard_context_to_winscard_context(context) }?;
-    // SAFETY: The `data` parameter is not null (checked above).
-    let data = unsafe { from_raw_parts(data, data_len.try_into()?) }.to_vec();
+    // The YubiKey Smart Card Minidriver can call `SCardWriteCacheW` with the `Data` pointer set to NULL and
+    // `DataLen` equal to 0.
+    let data = if data.is_null() || data_len == 0 {
+        Vec::new()
+    } else {
+        // SAFETY: The `data` parameter is not null (checked above).
+        unsafe { from_raw_parts(data, data_len.try_into()?) }.to_vec()
+    };
 
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }
