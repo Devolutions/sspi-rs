@@ -87,11 +87,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
         if use_system_card == "true" {
             info!("Creating system-provided smart card context: 1");
             Box::new(try_execute!(SystemScardContext::establish(try_execute!(
-                {
-                    let dw_scope_res = dw_scope.try_into();
-                    debug!(?dw_scope_res, "conversion");
-                    dw_scope_res
-                }
+                dw_scope.try_into()
             ))))
         } else {
             info!("Creating emulated smart card context");
@@ -130,7 +126,7 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 
         ErrorKind::Success.into()
     } else {
-        warn!("Scard context is invalid or has been released");
+        warn!(context, "Scard context is invalid or has been released");
 
         ERROR_INVALID_HANDLE
     }
@@ -153,7 +149,7 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
             ERROR_INVALID_HANDLE
         }
     } else {
-        debug!("Provided context is not present in active contexts");
+        debug!(context, "Provided context is not present in active contexts");
 
         ERROR_INVALID_HANDLE
     }

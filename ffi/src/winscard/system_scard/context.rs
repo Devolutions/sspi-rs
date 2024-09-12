@@ -23,6 +23,11 @@ use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
+/// Default name of the system provided smart card.
+/// pcsc-lite and PC/SC framework don't have method for querying scard name, so we use predefined value. It doesn't affect the auth process.
+#[cfg(not(target_os = "windows"))]
+const DEFAULT_CARD_NAME: &str = "Sspi-rs system provided scard";
+
 pub struct SystemScardContext {
     h_context: ScardContext,
 
@@ -87,23 +92,6 @@ impl SystemScardContext {
             #[cfg(not(target_os = "windows"))]
             atr: None,
         })
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn ger_card_atr(&mut self, reader_name: &str) -> WinScardResult<Vec<u8>> {
-        if let Some(atr) = self.atr.as_ref() {
-            Ok(atr.to_vec())
-        } else {
-            use winscard::winscard::AttributeId;
-
-            let ScardConnectData { handle, protocol: _ } =
-                self.connect(reader_name, ShareMode::Shared, Some(Protocol::T0 | Protocol::T1))?;
-            let atr = handle.get_attribute(AttributeId::AtrString)?.to_vec();
-
-            self.atr = Some(atr.clone());
-
-            Ok(atr)
-        }
     }
 }
 
@@ -705,96 +693,81 @@ impl WinScardContext for SystemScardContext {
     }
 
     #[instrument(ret)]
-    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+        use std::ffi::NulError;
+
+        #[cfg(not(target_os = "macos"))]
+        use ffi_types::winscard::ScardReaderStateA as ScardReaderState;
+        use winscard::winscard::CurrentState;
+
+        #[cfg(target_os = "macos")]
+        use crate::winscard::pcsc_lite::ScardReaderState;
+
+        let mut states = Vec::with_capacity(reader_states.len());
+        let c_readers = reader_states
+            .iter()
+            .map(|reader_state| CString::new(reader_state.reader_name.as_ref()))
+            .collect::<Result<Vec<CString>, NulError>>()?;
+
+        for (reader_state, c_reader) in reader_states.iter_mut().zip(c_readers.iter()) {
+            states.push(ScardReaderState {
+                sz_reader: c_reader.as_ptr() as *const _,
+                pv_user_data: reader_state.user_data as _,
+                dw_current_state: reader_state.current_state.bits(),
+                dw_event_state: reader_state.event_state.bits(),
+                cb_atr: reader_state.atr_len.try_into()?,
+                rgb_atr: reader_state.atr,
+            });
+        }
+
         #[cfg(not(target_os = "windows"))]
         {
-            use winscard::winscard::CurrentState;
-            use winscard::NEW_READER_NOTIFICATION;
-
-            let supported_readers = self
-                .list_readers()?
-                .into_iter()
-                .map(|r| Cow::Owned(r.to_string()))
-                .collect::<Vec<_>>();
-
-            for reader_state in reader_states {
-                if supported_readers.contains(&reader_state.reader_name) {
-                    reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT
-                        | CurrentState::SCARD_STATE_INUSE
-                        | CurrentState::SCARD_STATE_PRESENT
-                        | CurrentState::SCARD_STATE_CHANGED;
-
-                    let atr = self.ger_card_atr(reader_state.reader_name.as_ref())?;
-                    debug_assert!(atr.len() <= 32);
-
-                    reader_state.atr[0..atr.len()].copy_from_slice(&atr);
-                    reader_state.atr_len = atr.len();
-                } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
-                    reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
-                } else {
-                    error!(?reader_state.reader_name, "Unsupported reader");
-                }
-            }
-
-            Ok(())
+            try_execute!(
+                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
+                // and other parameters are type checked.
+                unsafe {
+                    (self.api.SCardGetStatusChange)(
+                        self.h_context,
+                        timeout,
+                        states.as_mut_ptr(),
+                        reader_states.len().try_into()?,
+                    )
+                },
+                "SCardGetStatusChange failed"
+            )?;
         }
         #[cfg(target_os = "windows")]
         {
-            use std::ffi::NulError;
-
-            use ffi_types::winscard::ScardReaderStateA;
-            use winscard::winscard::CurrentState;
-
-            let mut states = Vec::with_capacity(reader_states.len());
-            let c_readers = reader_states
-                .iter()
-                .map(|reader_state| CString::new(reader_state.reader_name.as_ref()))
-                .collect::<Result<Vec<CString>, NulError>>()?;
-
-            for (reader_state, c_reader) in reader_states.iter_mut().zip(c_readers.iter()) {
-                states.push(ScardReaderStateA {
-                    sz_reader: c_reader.as_ptr() as *const _,
-                    pv_user_data: reader_state.user_data as _,
-                    dw_current_state: reader_state.current_state.bits(),
-                    dw_event_state: reader_state.event_state.bits(),
-                    cb_atr: reader_state.atr_len.try_into()?,
-                    rgb_atr: reader_state.atr,
-                });
-            }
-
             try_execute!(
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
                 // and other parameters are type checked.
                 unsafe {
                     (self.api.SCardGetStatusChangeA)(
                         self.h_context,
-                        _timeout,
+                        timeout,
                         states.as_mut_ptr(),
                         reader_states.len().try_into()?,
                     )
                 },
                 "SCardGetStatusChangeA failed"
             )?;
-
-            // We do not need to change all fields. Only event state and atr values can be changed.
-            for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
-                reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
-                    .ok_or_else(|| Error::new(ErrorKind::InternalError, "invalid dwEventState"))?;
-                reader_state.atr_len = state.cb_atr.try_into()?;
-                reader_state.atr = state.rgb_atr;
-            }
-
-            Ok(())
         }
+
+        // We do not need to change all fields. Only event state and atr values can be changed.
+        for (state, reader_state) in states.iter().zip(reader_states.iter_mut()) {
+            reader_state.event_state = CurrentState::from_bits(state.dw_event_state)
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "invalid dwEventState"))?;
+            reader_state.atr_len = state.cb_atr.try_into()?;
+            reader_state.atr = state.rgb_atr;
+        }
+
+        Ok(())
     }
 
     fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardGetStatusChangeW function is not supported in PCSC-lite API",
-            ))
+            Ok(vec![Cow::Borrowed(DEFAULT_CARD_NAME)])
         }
         #[cfg(target_os = "windows")]
         {
@@ -847,13 +820,20 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn get_card_type_provider_name(&self, _card_name: &str, _provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
         #[cfg(not(target_os = "windows"))]
         {
-            Err(Error::new(
-                ErrorKind::UnsupportedFeature,
-                "SCardGetCardTypeProviderNameW function is not supported in PCSC-lite API",
-            ))
+            Ok(match provider_id {
+                ProviderId::Primary => {
+                    return Err(Error::new(
+                        ErrorKind::UnsupportedFeature,
+                        "ProviderId::Primary is not supported for emulated smart card",
+                    ))
+                }
+                ProviderId::Csp => winscard::MICROSOFT_DEFAULT_CSP.into(),
+                ProviderId::Ksp => winscard::MICROSOFT_DEFAULT_KSP.into(),
+                ProviderId::CardModule => winscard::MICROSOFT_SCARD_DRIVER_LOCATION.into(),
+            })
         }
         #[cfg(target_os = "windows")]
         {
@@ -871,7 +851,7 @@ impl WinScardContext for SystemScardContext {
                     (self.api.SCardGetCardTypeProviderNameA)(
                         self.h_context,
                         c_card_name.as_ptr() as *const _,
-                        _provider_id.into(),
+                        provider_id.into(),
                         ((&mut data) as *mut *mut u8) as *mut _,
                         &mut data_len,
                     )
@@ -909,66 +889,5 @@ impl WinScardContext for SystemScardContext {
 
             Ok(Cow::Owned(name))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::mem::size_of;
- 
-    use winscard::winscard::{Protocol, ScardScope, ShareMode, WinScardContext};
- 
-    use super::SystemScardContext;
-    use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
- 
-    fn init_logging() {
-        use std::io;
- 
-        use tracing_subscriber::filter::LevelFilter;
-        use tracing_subscriber::prelude::*;
- 
-        let stdout_layer = tracing_subscriber::fmt::layer()
-            .with_level(true)
-            .with_writer(io::stdout)
-            .with_filter(LevelFilter::TRACE);
- 
-        tracing_subscriber::registry().with(stdout_layer).init()
-    }
- 
-    #[test]
-    fn bt() {
-        init_logging();
- 
-        let scard_context = SystemScardContext::establish(ScardScope::User).unwrap();
-        let readers = scard_context.list_readers().unwrap();
-        info!(?readers);
-        let mut scard = scard_context
-            .connect(
-                "Yubico YubiKey FIDO+CCID",
-                ShareMode::Shared,
-                Some(Protocol::T0 | Protocol::T1),
-            )
-            .unwrap();
-        // scard.handle.begin_transaction().unwrap();
-        println!("{:?}", scard.handle.status().unwrap());
-        // println!("{} {}", size_of::<ScardContext>(), size_of::<ScardHandle>())
-    }
- 
-    #[test]
-    fn rt() {
-        // let mut h_context = 0;
- 
-        // let api = initialize_pcsc_lite_api()?;
- 
-        // try_execute!(
-        //     // SAFETY: This function is safe to call because the `scope` parameter value is type checked
-        //     // and `*mut h_context` can't be `null`.
-        //     unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
-        //     "SCardEstablishContext failed"
-        // ).unwrap();
- 
-        // assert!(h_context != 0);
- 
-        // debug!("Created context: {} - {}", h_context, std::mem::size_of::<ScardContext>());
     }
 }

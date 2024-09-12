@@ -1,28 +1,66 @@
 #![cfg(not(target_os = "windows"))]
 
+pub mod functions;
+
+#[cfg(not(target_os = "macos"))]
 use core::ffi::{c_long, c_ulong};
 use std::borrow::Cow;
 use std::env;
 use std::ffi::CString;
 
+use ffi_types::{LpCStr, LpVoid};
 use libc::{dlopen, dlsym, RTLD_LAZY, RTLD_LOCAL};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 
-pub mod functions;
+/// [SCARD_IO_REQUEST Struct Reference](https://pcsclite.apdu.fr/api/structSCARD__IO__REQUEST.html)
+///
+/// Protocol Control Information (PCI).
+#[cfg_attr(not(target_os = "macos"), repr(C))]
+#[cfg_attr(target_os = "macos", repr(C, packed))]
+pub struct ScardIoRequest {
+    /// Protocol identifier.
+    pub dw_protocol: u32,
+    /// Protocol Control Inf Length.
+    pub cb_pci_length: u32,
+}
 
+/// [SCARD_READERSTATE Struct Reference](https://pcsclite.apdu.fr/api/structSCARD__READERSTATE.html)
+#[cfg_attr(not(target_os = "macos"), repr(C))]
+#[cfg_attr(target_os = "macos", repr(C, packed))]
+pub struct ScardReaderState {
+    pub sz_reader: LpCStr,
+    pub pv_user_data: LpVoid,
+    pub dw_current_state: u32,
+    pub dw_event_state: u32,
+    pub cb_atr: u32,
+    pub rgb_atr: [u8; 36],
+}
+
+#[cfg(not(target_os = "macos"))]
 pub type ScardStatus = c_long;
+#[cfg(target_os = "macos")]
+pub type ScardStatus = u32;
 
+#[cfg(target_os = "macos")]
+pub type Dword = u32;
+#[cfg(not(target_os = "macos"))]
 pub type Dword = c_ulong;
 
 pub type LpDword = *mut Dword;
 
+#[cfg(target_os = "macos")]
+pub const SCARD_AUTOALLOCATE: Dword = 0xffffffff;
+#[cfg(not(target_os = "macos"))]
 pub const SCARD_AUTOALLOCATE: Dword = 0xffffffffffffffff;
 
 /// `hContext` returned by `SCardEstablishContext()`.
 ///
 /// https://pcsclite.apdu.fr/api/pcsclite_8h.html#a22530ffaff18b5d3e32260a5f1ce4abd
+#[cfg(target_os = "macos")]
+pub type ScardContext = i32;
+#[cfg(not(target_os = "macos"))]
 pub type ScardContext = c_long;
 
 /// Pointer to the [ScardContext].
@@ -31,6 +69,9 @@ pub type LpScardContext = *mut ScardContext;
 /// `hCard` returned by `SCardConnect()`.
 ///
 /// https://pcsclite.apdu.fr/api/pcsclite_8h.html#af328aca3e11de737ecd771bcf1f75fb5
+#[cfg(target_os = "macos")]
+pub type ScardHandle = i32;
+#[cfg(not(target_os = "macos"))]
 pub type ScardHandle = c_long;
 
 /// Pointer to the [ScardHandle].
@@ -85,8 +126,17 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     let pcsc_lite_path = if let Ok(lib_path) = env::var(PCSC_LITE_LIB_PATH_ENV) {
         Cow::Owned(lib_path)
     } else {
-        Cow::Borrowed("libpcsclite.so")
+        #[cfg(target_os = "macos")]
+        {
+            Cow::Borrowed("/System/Library/Frameworks/PCSC.framework/PCSC")
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Cow::Borrowed("libpcsclite.so")
+        }
     };
+    debug!(?pcsc_lite_path);
+
     let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
 
     // SAFETY: The library path is type checked.
@@ -103,7 +153,9 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
             let fn_name = CString::new($func_name).expect("CString creation should not fail");
             // SAFETY: The `handle` is initialized and checked above. The function name should be correct
             // because it's hardcoded in the code.
-            unsafe { std::mem::transmute(dlsym(handle, fn_name.as_ptr())) }
+            let fn_ptr = unsafe { dlsym(handle, fn_name.as_ptr()) };
+            debug!(?fn_ptr, $func_name);
+            unsafe { std::mem::transmute(fn_ptr) }
         }};
     }
 

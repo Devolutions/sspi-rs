@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::fmt;
 use std::mem::size_of;
 use std::ptr::null_mut;
-use std::slice::from_raw_parts;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
+#[cfg(target_os = "windows")]
 use ffi_types::winscard::ScardIoRequest;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
@@ -16,12 +16,10 @@ use winscard::winscard::{
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::parse_multi_string_owned;
-#[cfg(target_os = "windows")]
-use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::SCARD_AUTOALLOCATE;
+use crate::winscard::pcsc_lite::ScardIoRequest;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
@@ -115,8 +113,10 @@ impl fmt::Debug for SystemScard {
 impl WinScard for SystemScard {
     #[instrument(ret)]
     fn status(&self) -> WinScardResult<Status> {
-        let mut reader_name: *mut u8 = null_mut();
-        let mut reader_name_len = SCARD_AUTOALLOCATE;
+        // macOS PC/SC framework doesn't support `SCARD_AUTOALLOCATE` option, so we use preallocated buffer for reader name.
+        let mut reader_name = vec![0; 256];
+        let mut reader_name_len = 256;
+
         let mut state = 0;
         let mut protocol = 0;
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
@@ -132,16 +132,13 @@ impl WinScard for SystemScard {
         #[cfg(not(target_os = "windows"))]
         {
             // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
-            //
-            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
-            // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
             try_execute!(
                 // SAFETY: This function is safe to call because `self.h_card` is checked
                 // and all other values is type checked.
                 unsafe {
                     (self.api.SCardStatus)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -155,18 +152,13 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
-            // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
-            // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
-            //
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and all other values is type checked.
             try_execute!(
                 // SAFETY: This function is safe to call because `self.h_card` is checked
                 // and all other values is type checked.
                 unsafe {
                     (self.api.SCardStatusA)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -178,30 +170,16 @@ impl WinScard for SystemScard {
             )?;
         }
 
-        // SAFETY: A slice creation is safe in this context because the `reader_name` pointer is
-        // a local pointer that was initialized by the `SCardStatus` function.
-        let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
+        let multi_string_buffer = &reader_name[0..reader_name_len.try_into()?];
 
         let readers = if let Ok(readers) = parse_multi_string_owned(multi_string_buffer) {
             readers
         } else {
-            try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-                unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-                "SCardFreeMemory failed"
-            )?;
-
             return Err(Error::new(
                 ErrorKind::InternalError,
                 "returned reader is not valid UTF-8",
             ));
         };
-
-        try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-            unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-            "SCardFreeMemory failed"
-        )?;
 
         let status = Status {
             readers,

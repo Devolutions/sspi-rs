@@ -24,8 +24,10 @@ pub const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
 /// Default CSP name.
 pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
-const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
-const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll";
+/// Default KSP name.
+pub const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
+/// Default smart card driver location.
+pub const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll\0";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]

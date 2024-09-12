@@ -439,6 +439,25 @@ pub struct Status<'a> {
     pub atr: Atr,
 }
 
+impl<'a> Status<'a> {
+    /// Returns owned [Status].
+    pub fn into_owned(self) -> Status<'static> {
+        let Status {
+            atr,
+            readers,
+            protocol,
+            state,
+        } = self;
+
+        Status {
+            readers: readers.into_iter().map(|r| r.to_string().into()).collect(),
+            state,
+            protocol,
+            atr,
+        }
+    }
+}
+
 /// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)
 ///
 /// The SCARD_IO_REQUEST structure begins a protocol control information structure.
@@ -523,7 +542,7 @@ bitflags! {
 /// The `SCARD_READERSTATEW` structure is used by functions for tracking smart cards within readers.
 ///
 /// [SCARD_READERSTATEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatew).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReaderState<'data> {
     /// The name of the reader being monitored.
     pub reader_name: Cow<'data, str>,
