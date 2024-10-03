@@ -50,10 +50,7 @@ pub type Dword = c_ulong;
 
 pub type LpDword = *mut Dword;
 
-#[cfg(target_os = "macos")]
-pub const SCARD_AUTOALLOCATE: Dword = 0xffffffff;
-#[cfg(not(target_os = "macos"))]
-pub const SCARD_AUTOALLOCATE: Dword = 0xffffffffffffffff;
+pub const SCARD_AUTOALLOCATE: Dword = Dword::MAX;
 
 /// `hContext` returned by `SCardEstablishContext()`.
 ///
