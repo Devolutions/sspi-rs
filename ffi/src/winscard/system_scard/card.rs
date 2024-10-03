@@ -114,8 +114,8 @@ impl WinScard for SystemScard {
     #[instrument(ret)]
     fn status(&self) -> WinScardResult<Status> {
         // macOS PC/SC framework doesn't support `SCARD_AUTOALLOCATE` option, so we use preallocated buffer for reader name.
-        let mut reader_name = vec![0; 256];
-        let mut reader_name_len = 256;
+        let mut reader_name = vec![0; 1024];
+        let mut reader_name_len = 1024;
 
         let mut state = 0;
         let mut protocol = 0;
