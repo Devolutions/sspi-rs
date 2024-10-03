@@ -450,7 +450,7 @@ impl<'a> Status<'a> {
         } = self;
 
         Status {
-            readers: readers.into_iter().map(|r| r.to_string().into()).collect(),
+            readers: readers.into_iter().map(|r| r.into_owned().into()).collect(),
             state,
             protocol,
             atr,
