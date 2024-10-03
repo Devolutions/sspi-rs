@@ -82,7 +82,7 @@ pub type SCardStatusFn = unsafe extern "system" fn(
 pub type SCardGetStatusChangeFn = unsafe extern "system" fn(
     h_context: ScardContext,
     dw_timeout: Dword,
-    rg_reader_states: *mut ScardReaderStateA,
+    rg_reader_states: *mut ScardReaderState,
     c_readers: Dword,
 ) -> ScardStatus;
 
