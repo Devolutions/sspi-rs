@@ -39,10 +39,6 @@ pub struct SystemScardContext {
     // pcsc-lite API does not have function for the cache reading/writing. So, we emulate the smart card cache by ourselves.
     #[cfg(not(target_os = "windows"))]
     cache: BTreeMap<String, Vec<u8>>,
-    // pcsc-lite API does not have the `SCardGetStatusChangeW` function. We need the ATR string value to emulate it. We query the ATR
-    // string once using the pcsc-lite API, save it, and then use it every time we need it.
-    #[cfg(not(target_os = "windows"))]
-    atr: Option<Vec<u8>>,
 }
 
 impl fmt::Debug for SystemScardContext {
@@ -89,8 +85,6 @@ impl SystemScardContext {
 
                 init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
             },
-            #[cfg(not(target_os = "windows"))]
-            atr: None,
         })
     }
 }
