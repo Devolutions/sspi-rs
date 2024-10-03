@@ -40,7 +40,7 @@ use picky::x509::certificate::CertError;
 pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID, SUPPORTED_CONNECTION_PROTOCOL};
 pub use scard_context::{
     Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP,
-    MICROSOFT_SCARD_DRIVER_LOCATION, NEW_READER_NOTIFICATION,
+    MICROSOFT_SCARD_DRIVER_LOCATION,
 };
 
 /// The [WinScardResult] type.

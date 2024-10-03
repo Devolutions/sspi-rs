@@ -18,7 +18,7 @@ use crate::{Error, ErrorKind, WinScardResult};
 /// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
 /// To be notified of the arrival of a new smart card reader,
 /// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
-pub const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
+const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 /// Default name of the emulated smart card.
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
