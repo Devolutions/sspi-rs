@@ -59,13 +59,11 @@ impl SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         let api = initialize_pcsc_lite_api()?;
 
-        debug!("h_context size: {}", std::mem::size_of_val(&h_context));
-
         try_execute!(
             // SAFETY: This function is safe to call because the `scope` parameter value is type checked
             // and `*mut h_context` can't be `null`.
             unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
-            "SCardEstablishContext failed :("
+            "SCardEstablishContext failed"
         )?;
 
         if h_context == 0 {
@@ -366,7 +364,7 @@ impl WinScardContext for SystemScardContext {
                 // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
                 // and other parameters are type checked.
                 unsafe { (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
-                "SCardListReaders failed 1"
+                "SCardListReaders failed"
             )?;
         }
         #[cfg(target_os = "windows")]
@@ -394,7 +392,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
-                "SCardListReaders failed 2"
+                "SCardListReaders failed"
             )?;
         }
         #[cfg(target_os = "windows")]
@@ -576,7 +574,6 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    #[instrument(ret)]
     fn write_cache(
         &mut self,
         _card_id: Uuid,
