@@ -126,7 +126,7 @@ impl WinScard for SystemScard {
         //
         // PCSC-lite docs do not specify that ATR buf should be 32 bytes long, but actually,
         // the ATR string can not be longer than 32 bytes.
-        let mut atr = [0; 32];
+        let mut atr = vec![0; 32];
         let mut atr_len = 32;
 
         #[cfg(not(target_os = "windows"))]
@@ -181,6 +181,8 @@ impl WinScard for SystemScard {
             ));
         };
 
+        atr.truncate(atr_len.try_into()?);
+
         let status = Status {
             readers,
             #[cfg(not(target_os = "windows"))]
@@ -197,7 +199,7 @@ impl WinScard for SystemScard {
                     format!("Invalid protocol value: {}", protocol),
                 )
             })?,
-            atr: atr[0..atr_len.try_into()?].to_vec().into(),
+            atr: atr.into(),
         };
 
         Ok(status)
