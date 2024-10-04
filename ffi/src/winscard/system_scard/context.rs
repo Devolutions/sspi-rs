@@ -347,7 +347,11 @@ impl WinScardContext for SystemScardContext {
 
         Ok(ScardConnectData {
             handle,
-            protocol: Protocol::from_bits(active_protocol.try_into()?).unwrap_or_default(),
+            protocol: Protocol::from_bits(
+                #[allow(clippy::useless_conversion)]
+                active_protocol.try_into()?,
+            )
+            .unwrap_or_default(),
         })
     }
 

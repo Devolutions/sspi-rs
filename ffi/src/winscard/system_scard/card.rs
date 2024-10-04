@@ -193,7 +193,11 @@ impl WinScard for SystemScard {
             },
             #[cfg(target_os = "windows")]
             state: state.try_into()?,
-            protocol: Protocol::from_bits(protocol.try_into()?).ok_or_else(|| {
+            protocol: Protocol::from_bits(
+                #[allow(clippy::useless_conversion)]
+                protocol.try_into()?,
+            )
+            .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
                     format!("Invalid protocol value: {}", protocol),
@@ -350,7 +354,11 @@ impl WinScard for SystemScard {
             "SCardReconnect failed"
         )?;
 
-        Ok(Protocol::from_bits(active_protocol.try_into()?).unwrap_or_default())
+        Ok(Protocol::from_bits(
+            #[allow(clippy::useless_conversion)]
+            active_protocol.try_into()?,
+        )
+        .unwrap_or_default())
     }
 
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
