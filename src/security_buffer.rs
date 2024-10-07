@@ -20,6 +20,7 @@ pub enum SecurityBuffer<'data> {
     StreamTrailer(&'data mut [u8]),
     Stream(&'data mut [u8]),
     Extra(&'data mut [u8]),
+    Padding(&'data mut [u8]),
     Missing(usize),
     Empty,
 }
@@ -35,6 +36,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBufferType::Token => Ok(SecurityBuffer::Token(&mut [])),
             SecurityBufferType::Missing => Ok(SecurityBuffer::Missing(0)),
             SecurityBufferType::Extra => Ok(SecurityBuffer::Extra(&mut [])),
+            SecurityBufferType::Padding => Ok(SecurityBuffer::Padding(&mut [])),
             SecurityBufferType::StreamTrailer => Ok(SecurityBuffer::StreamTrailer(&mut [])),
             SecurityBufferType::StreamHeader => Ok(SecurityBuffer::StreamHeader(&mut [])),
             SecurityBufferType::Stream => Ok(SecurityBuffer::Stream(&mut [])),
@@ -53,6 +55,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(_) => SecurityBuffer::StreamTrailer(data),
             SecurityBuffer::Stream(_) => SecurityBuffer::Stream(data),
             SecurityBuffer::Extra(_) => SecurityBuffer::Extra(data),
+            SecurityBuffer::Padding(_) => SecurityBuffer::Padding(data),
             SecurityBuffer::Missing(_) => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
@@ -74,6 +77,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(data) => *data = buf,
             SecurityBuffer::Stream(data) => *data = buf,
             SecurityBuffer::Extra(data) => *data = buf,
+            SecurityBuffer::Padding(data) => *data = buf,
             SecurityBuffer::Missing(_) => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
@@ -94,6 +98,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(_) => SecurityBufferType::StreamTrailer,
             SecurityBuffer::Stream(_) => SecurityBufferType::Stream,
             SecurityBuffer::Extra(_) => SecurityBufferType::Extra,
+            SecurityBuffer::Padding(_) => SecurityBufferType::Padding,
             SecurityBuffer::Missing(_) => SecurityBufferType::Missing,
             SecurityBuffer::Empty => SecurityBufferType::Empty,
         }
@@ -151,6 +156,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(data) => data,
             SecurityBuffer::Stream(data) => data,
             SecurityBuffer::Extra(data) => data,
+            SecurityBuffer::Padding(data) => data,
             SecurityBuffer::Missing(_) => &[],
             SecurityBuffer::Empty => &[],
         }
@@ -165,6 +171,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(data) => data.len(),
             SecurityBuffer::Stream(data) => data.len(),
             SecurityBuffer::Extra(data) => data.len(),
+            SecurityBuffer::Padding(data) => data.len(),
             SecurityBuffer::Missing(needed_bytes_amount) => *needed_bytes_amount,
             SecurityBuffer::Empty => 0,
         }
@@ -189,6 +196,7 @@ impl<'data> SecurityBuffer<'data> {
             SecurityBuffer::StreamTrailer(data) => take(data),
             SecurityBuffer::Stream(data) => take(data),
             SecurityBuffer::Extra(data) => take(data),
+            SecurityBuffer::Padding(data) => take(data),
             SecurityBuffer::Missing(_) => &mut [],
             SecurityBuffer::Empty => &mut [],
         }
@@ -226,6 +234,7 @@ impl fmt::Debug for SecurityBuffer<'_> {
             SecurityBuffer::StreamTrailer(data) => write_buffer(data, "StreamTrailer", f)?,
             SecurityBuffer::Stream(data) => write_buffer(data, "Stream", f)?,
             SecurityBuffer::Extra(data) => write_buffer(data, "Extra", f)?,
+            SecurityBuffer::Padding(data) => write_buffer(data, "Padding", f)?,
             SecurityBuffer::Missing(needed_bytes_amount) => write!(f, "Missing({})", *needed_bytes_amount)?,
             SecurityBuffer::Empty => f.write_str("Empty")?,
         };
