@@ -68,8 +68,8 @@ pub type SCardReadCacheAFn =
     unsafe extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardReadCacheWFn =
     unsafe extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, LpDword) -> ScardStatus;
-pub type SCardWriteCacheAFn = unsafe extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpByte, u32) -> ScardStatus;
-pub type SCardWriteCacheWFn = unsafe extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpByte, u32) -> ScardStatus;
+pub type SCardWriteCacheAFn = unsafe extern "system" fn(ScardContext, LpUuid, u32, LpStr, LpCByte, u32) -> ScardStatus;
+pub type SCardWriteCacheWFn = unsafe extern "system" fn(ScardContext, LpUuid, u32, LpWStr, LpCByte, u32) -> ScardStatus;
 pub type SCardGetReaderIconAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardGetReaderIconWFn = unsafe extern "system" fn(ScardContext, LpCWStr, LpByte, LpDword) -> ScardStatus;
 pub type SCardGetDeviceTypeIdAFn = unsafe extern "system" fn(ScardContext, LpCStr, LpDword) -> ScardStatus;

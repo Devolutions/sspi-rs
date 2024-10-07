@@ -4,6 +4,7 @@ pub type LpStr = *mut u8;
 pub type LpCStr = *const u8;
 pub type Dword = u32;
 pub type LpDword = *mut u32;
+pub type WChar = u16;
 pub type LpWStr = *mut u16;
 pub type LpCWStr = *const u16;
 pub type LpCByte = *const u8;

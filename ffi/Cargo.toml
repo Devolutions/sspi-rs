@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 [features]
 default = ["aws-lc-rs"]
 tsssp = ["sspi/tsssp"]
-scard = ["sspi/scard", "dep:ffi-types", "dep:winscard"]
+scard = ["sspi/scard", "dep:ffi-types", "dep:winscard", "dep:bitflags", "dep:picky-asn1-x509", "dep:picky"]
 aws-lc-rs = ["sspi/aws-lc-rs"]
 ring = ["sspi/ring"]
 
@@ -37,6 +37,11 @@ tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
 windows-sys = { version = "0.52", features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
+
+[target.'cfg(not(windows))'.dependencies]
+bitflags = { version = "2.6", optional = true }
+picky-asn1-x509 = { version = "0.13", optional = true }
+picky = { version = "7.0.0-rc", default-features = false, features = ["x509"], optional = true }
 
 [dev-dependencies]
 sspi = { path = "..", features = ["network_client", "dns_resolver", "__test-data"] }

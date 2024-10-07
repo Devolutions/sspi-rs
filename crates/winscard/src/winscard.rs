@@ -60,6 +60,12 @@ impl From<ReaderAction> for u32 {
     }
 }
 
+impl From<ReaderAction> for u64 {
+    fn from(value: ReaderAction) -> Self {
+        value as u64
+    }
+}
+
 /// A smart card attribute id.
 ///
 /// This enum represents a scard attribute id. A set of variants is formed by merging `WinSCard` attr ids and `pscsc-lite` attr ids.
@@ -293,6 +299,12 @@ impl From<ScardScope> for u32 {
     }
 }
 
+impl From<ScardScope> for u64 {
+    fn from(value: ScardScope) -> Self {
+        value as u64
+    }
+}
+
 /// [SCardConnectW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
 ///
 /// `dwShareMode` parameter:
@@ -312,6 +324,12 @@ pub enum ShareMode {
 impl From<ShareMode> for u32 {
     fn from(value: ShareMode) -> Self {
         value as u32
+    }
+}
+
+impl From<ShareMode> for u64 {
+    fn from(value: ShareMode) -> Self {
+        value as u64
     }
 }
 
@@ -421,6 +439,25 @@ pub struct Status<'a> {
     pub atr: Atr,
 }
 
+impl<'a> Status<'a> {
+    /// Returns owned [Status].
+    pub fn into_owned(self) -> Status<'static> {
+        let Status {
+            atr,
+            readers,
+            protocol,
+            state,
+        } = self;
+
+        Status {
+            readers: readers.into_iter().map(|r| r.into_owned().into()).collect(),
+            state,
+            protocol,
+            atr,
+        }
+    }
+}
+
 /// [SCARD_IO_REQUEST](https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request)
 ///
 /// The SCARD_IO_REQUEST structure begins a protocol control information structure.
@@ -505,6 +542,7 @@ bitflags! {
 /// The `SCARD_READERSTATEW` structure is used by functions for tracking smart cards within readers.
 ///
 /// [SCARD_READERSTATEW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-scard_readerstatew).
+#[derive(Debug, Clone)]
 pub struct ReaderState<'data> {
     /// The name of the reader being monitored.
     pub reader_name: Cow<'data, str>,
@@ -711,7 +749,7 @@ pub trait WinScardContext {
     /// [SCardGetStatusChangeW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
     ///
     /// The SCardGetStatusChange function blocks execution until the current availability of the cards in a specific set of readers changes.
-    fn get_status_change(&self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
+    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
 
     /// [SCardGetCardTypeProviderNameW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
     ///

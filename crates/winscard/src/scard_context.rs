@@ -15,17 +15,19 @@ use crate::winscard::{
 };
 use crate::{Error, ErrorKind, WinScardResult};
 
-// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
-// To be notified of the arrival of a new smart card reader,
-// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
+/// https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew
+/// To be notified of the arrival of a new smart card reader,
+/// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
 /// Default name of the emulated smart card.
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
 /// Default CSP name.
 pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
-const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
-const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll";
+/// Default KSP name.
+pub const MICROSOFT_DEFAULT_KSP: &str = "Microsoft Smart Card Key Storage Provider";
+/// Default smart card driver location.
+pub const MICROSOFT_SCARD_DRIVER_LOCATION: &str = "msclmd.dll\0";
 
 /// Describes a smart card reader.
 #[derive(Debug, Clone)]
@@ -56,7 +58,8 @@ pub struct SmartCardInfo<'a> {
 }
 
 impl<'a> SmartCardInfo<'a> {
-    fn reader_icon() -> &'static [u8] {
+    /// Returns image bytes (BMP encoded) of the stadard Windowss Reader Icon.
+    pub fn reader_icon() -> &'static [u8] {
         include_bytes!("../assets/reader_icon.bmp")
     }
 
@@ -64,82 +67,16 @@ impl<'a> SmartCardInfo<'a> {
     /// Required environment variables are listed in the `env` module of this crate.
     #[cfg(feature = "std")]
     pub fn try_from_env() -> WinScardResult<Self> {
-        use std::fs;
-
-        use picky::x509::Cert;
-
         use crate::env::{
-            WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV, WINSCARD_CONTAINER_NAME_ENV, WINSCARD_PIN_ENV,
-            WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV, WINSCARD_READER_NAME_ENV,
+            auth_cert_from_env, container_name, private_key_from_env, WINSCARD_PIN_ENV, WINSCARD_READER_NAME_ENV,
         };
 
-        let container_name = env!(WINSCARD_CONTAINER_NAME_ENV)?.into();
+        let container_name = container_name()?.into();
         let reader_name: Cow<'_, str> = env!(WINSCARD_READER_NAME_ENV)?.into();
         let pin = env!(WINSCARD_PIN_ENV)?.into();
 
-        let auth_cert_der = if let Ok(cert_data) = env!(WINSCARD_CERT_DATA_ENV) {
-            use base64::Engine;
-            use picky_asn1_x509::Certificate;
-
-            let cert_der = base64::engine::general_purpose::STANDARD.decode(cert_data)?;
-
-            // Deserialize the certificate to ensure the provided data is a valid ASN1 DER certificate.
-            let _: Certificate = picky_asn1_der::from_bytes(&cert_der)?;
-
-            cert_der
-        } else if let Ok(cert_path) = env!(WINSCARD_CERT_PATH_ENV) {
-            let raw_certificate = fs::read_to_string(cert_path).map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("Unable to read certificate from the provided file: {}", e),
-                )
-            })?;
-            Cert::from_pem_str(&raw_certificate)?.to_der()?
-        } else {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!(
-                    "Either \"{}\" or \"{}\" environment variable must be present",
-                    WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV
-                ),
-            ));
-        };
-
-        let (raw_private_key, private_key) = if let Ok(private_key_data) = env!(WINSCARD_PK_DATA_ENV) {
-            use base64::Engine;
-
-            let private_key_der = base64::engine::general_purpose::STANDARD.decode(private_key_data)?;
-
-            let private_key = PrivateKey::from_pkcs8(&private_key_der)?;
-            let raw_private_key = private_key.to_pem_str()?;
-
-            (raw_private_key, private_key)
-        } else if let Ok(pk_path) = env!(WINSCARD_PK_PATH_ENV) {
-            let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("Unable to read private key from the provided file: {}", e),
-                )
-            })?;
-            let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!(
-                        "Error while trying to read a private key from a pem-encoded string: {}",
-                        e
-                    ),
-                )
-            })?;
-            (raw_private_key, private_key)
-        } else {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!(
-                    "Either \"{}\" or \"{}\" environment variable must be present",
-                    WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV
-                ),
-            ));
-        };
+        let auth_cert_der = auth_cert_from_env()?.to_der()?;
+        let (raw_private_key, private_key) = private_key_from_env()?;
 
         // Standard Windows Reader Icon
         let icon: &[u8] = Self::reader_icon();
@@ -377,7 +314,7 @@ impl<'a> ScardContext<'a> {
                 (compressed.len() + 2 /* unknown flags */ + 2/* uncompressed certificate len */) as u32;
             value.extend_from_slice(&total_value_len.to_le_bytes());
 
-            value.extend_from_slice(&[0x01, 0x00]); // unknown flags
+            value.extend_from_slice(&[0x01, 0x00]); // flags that specify that the certificate is compressed
             value.extend_from_slice(&(smart_card_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
             value.extend_from_slice(&compressed_cert);
 
@@ -542,7 +479,7 @@ impl<'a> WinScardContext for ScardContext<'a> {
         Ok(())
     }
 
-    fn get_status_change(&self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         use crate::ATR;
 
         let supported_readers = self.list_readers()?;

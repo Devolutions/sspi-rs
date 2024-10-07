@@ -126,7 +126,7 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 
         ErrorKind::Success.into()
     } else {
-        warn!("Scard context is invalid or has been released");
+        warn!(context, "Scard context is invalid or has been released");
 
         ERROR_INVALID_HANDLE
     }
@@ -149,7 +149,7 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
             ERROR_INVALID_HANDLE
         }
     } else {
-        debug!("Provided context is not present in active contexts");
+        debug!(context, "Provided context is not present in active contexts");
 
         ERROR_INVALID_HANDLE
     }
@@ -1025,7 +1025,7 @@ unsafe fn write_cache(
     card_identifier: LpUuid,
     freshness_counter: u32,
     lookup_name: &str,
-    data: LpByte,
+    data: LpCByte,
     data_len: u32,
 ) -> WinScardResult<()> {
     check_handle!(context, "scard context handle");
@@ -1045,7 +1045,7 @@ unsafe fn write_cache(
     // SAFETY: The `context` value is not zero (checked above).
     let context = unsafe { scard_context_to_winscard_context(context) }?;
     // SAFETY: The `data` parameter is not null (checked above).
-    let data = unsafe { from_raw_parts_mut(data, data_len.try_into()?) }.to_vec();
+    let data = unsafe { from_raw_parts(data, data_len.try_into()?) }.to_vec();
 
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }
@@ -1058,7 +1058,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     card_identifier: LpUuid,
     freshness_counter: u32,
     lookup_name: LpStr,
-    data: LpByte,
+    data: LpCByte,
     data_len: u32,
 ) -> ScardStatus {
     check_null!(lookup_name);
@@ -1082,7 +1082,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     card_identifier: LpUuid,
     freshness_counter: u32,
     lookup_name: LpWStr,
-    data: LpByte,
+    data: LpCByte,
     data_len: u32,
 ) -> ScardStatus {
     check_null!(lookup_name);

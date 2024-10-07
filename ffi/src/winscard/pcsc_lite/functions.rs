@@ -1,7 +1,9 @@
-use ffi_types::winscard::{ScardIoRequest, ScardReaderStateA, ScardStatus};
-use ffi_types::{Dword, LpByte, LpCByte, LpCStr, LpCVoid, LpDword, LpStr, LpVoid};
+use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpStr, LpVoid};
 
-use super::{LpScardContext, LpScardHandle, ScardContext, ScardHandle};
+use super::{
+    Dword, LpDword, LpScardContext, LpScardHandle, ScardContext, ScardHandle, ScardIoRequest, ScardReaderState,
+    ScardStatus,
+};
 
 /// Creates an Application Context to the PC/SC Resource Manager.
 ///
@@ -80,7 +82,7 @@ pub type SCardStatusFn = unsafe extern "system" fn(
 pub type SCardGetStatusChangeFn = unsafe extern "system" fn(
     h_context: ScardContext,
     dw_timeout: Dword,
-    rg_reader_states: *mut ScardReaderStateA,
+    rg_reader_states: *mut ScardReaderState,
     c_readers: Dword,
 ) -> ScardStatus;
 

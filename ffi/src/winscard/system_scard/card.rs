@@ -1,10 +1,11 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::mem::size_of;
 use std::ptr::null_mut;
-use std::slice::from_raw_parts;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
+#[cfg(target_os = "windows")]
 use ffi_types::winscard::ScardIoRequest;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
@@ -15,14 +16,15 @@ use winscard::winscard::{
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::parse_multi_string_owned;
-use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
+#[cfg(not(target_os = "windows"))]
+use crate::winscard::pcsc_lite::ScardIoRequest;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
 /// Represents a state of the current `SystemScard`.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum HandleState {
     /// The card is not connected or has been disconnected.
     Disconnected,
@@ -99,10 +101,22 @@ impl Drop for SystemScard {
     }
 }
 
+impl fmt::Debug for SystemScard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SystemScard")
+            .field("h_card", &self.h_card)
+            .field("h_card_context", &self.h_card_context)
+            .finish()
+    }
+}
+
 impl WinScard for SystemScard {
+    #[instrument(ret)]
     fn status(&self) -> WinScardResult<Status> {
-        let mut reader_name: *mut u8 = null_mut();
-        let mut reader_name_len = SCARD_AUTOALLOCATE;
+        // macOS PC/SC framework doesn't support `SCARD_AUTOALLOCATE` option, so we use preallocated buffer for reader name.
+        let mut reader_name = vec![0; 1024];
+        let mut reader_name_len = 1024;
+
         let mut state = 0;
         let mut protocol = 0;
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw
@@ -118,16 +132,13 @@ impl WinScard for SystemScard {
         #[cfg(not(target_os = "windows"))]
         {
             // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
-            //
-            // If `*pcchReaderLen` is equal to SCARD_AUTOALLOCATE then the function will allocate itself
-            // the needed memory for szReaderName. Use SCardFreeMemory() to release it.
             try_execute!(
                 // SAFETY: This function is safe to call because `self.h_card` is checked
                 // and all other values is type checked.
                 unsafe {
                     (self.api.SCardStatus)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -141,18 +152,13 @@ impl WinScard for SystemScard {
         #[cfg(target_os = "windows")]
         {
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
-            // If this buffer length is specified as SCARD_AUTOALLOCATE, then szReaderName is converted to a pointer
-            // to a byte pointer, and it receives the address of a block of memory that contains the multiple-string structure.
-            //
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and all other values is type checked.
             try_execute!(
                 // SAFETY: This function is safe to call because `self.h_card` is checked
                 // and all other values is type checked.
                 unsafe {
                     (self.api.SCardStatusA)(
                         self.h_card()?,
-                        (&mut reader_name as *mut *mut u8) as *mut _,
+                        reader_name.as_mut_ptr(),
                         &mut reader_name_len,
                         &mut state,
                         &mut protocol,
@@ -164,34 +170,32 @@ impl WinScard for SystemScard {
             )?;
         }
 
-        // SAFETY: A slice creation is safe in this context because the `reader_name` pointer is
-        // a local pointer that was initialized by the `SCardStatus` function.
-        let multi_string_buffer = unsafe { from_raw_parts(reader_name, reader_name_len.try_into()?) };
+        let multi_string_buffer = &reader_name[0..reader_name_len.try_into()?];
+
         let readers = if let Ok(readers) = parse_multi_string_owned(multi_string_buffer) {
             readers
         } else {
-            try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-                unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-                "SCardFreeMemory failed"
-            )?;
-
             return Err(Error::new(
                 ErrorKind::InternalError,
                 "returned reader is not valid UTF-8",
             ));
         };
 
-        try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card_context` is always a valid handle.
-            unsafe { (self.api.SCardFreeMemory)(self.h_card_context, reader_name as *const _) },
-            "SCardFreeMemory failed"
-        )?;
+        atr.truncate(atr_len.try_into()?);
 
         let status = Status {
             readers,
+            #[cfg(not(target_os = "windows"))]
+            state: crate::winscard::pcsc_lite::State::from_bits(state)
+                .unwrap_or(State::Specific)
+                .into(),
+            #[cfg(target_os = "windows")]
             state: state.try_into()?,
-            protocol: Protocol::from_bits(protocol).ok_or_else(|| {
+            protocol: Protocol::from_bits(
+                #[allow(clippy::useless_conversion)]
+                protocol.try_into()?,
+            )
+            .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
                     format!("Invalid protocol value: {}", protocol),
@@ -210,7 +214,7 @@ impl WinScard for SystemScard {
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code,
+                    code.into(),
                     input.as_ptr() as *const _,
                     input.len().try_into()?,
                     null_mut(),
@@ -234,7 +238,7 @@ impl WinScard for SystemScard {
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code,
+                    code.into(),
                     input.as_ptr() as *const _,
                     input.len().try_into()?,
                     output.as_mut_ptr() as *mut _,
@@ -340,7 +344,7 @@ impl WinScard for SystemScard {
                 (self.api.SCardReconnect)(
                     self.h_card()?,
                     share_mode.into(),
-                    dw_preferred_protocols,
+                    dw_preferred_protocols.into(),
                     initialization.into(),
                     &mut active_protocol,
                 )
@@ -348,7 +352,11 @@ impl WinScard for SystemScard {
             "SCardReconnect failed"
         )?;
 
-        Ok(Protocol::from_bits(active_protocol).unwrap_or_default())
+        Ok(Protocol::from_bits(
+            #[allow(clippy::useless_conversion)]
+            active_protocol.try_into()?,
+        )
+        .unwrap_or_default())
     }
 
     fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
@@ -368,7 +376,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, null_mut(), &mut data_len) },
+            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), null_mut(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
 
@@ -377,7 +385,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id, data.as_mut_ptr(), &mut data_len) },
+            unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), data.as_mut_ptr(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
 
@@ -394,7 +402,7 @@ impl WinScard for SystemScard {
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
             // and other function parameters are type checked.
-            unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id, attribute_data.as_ptr(), len) },
+            unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id.into(), attribute_data.as_ptr(), len) },
             "SCardSetAttrib failed"
         )
     }
