@@ -101,12 +101,6 @@ pub mod reqwest_network_client {
             })?;
 
             let client = crate::rustls::load_native_certs(reqwest::blocking::ClientBuilder::new())
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::NoAuthenticatingAuthority,
-                        "failed to load native certificates",
-                    )
-                })?
                 .build()
                 .map_err(|e| {
                     Error::new(
