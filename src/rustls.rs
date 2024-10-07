@@ -42,7 +42,9 @@ pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> Op
     {
         let mut builder = builder;
 
-        for cert in rustls_native_certs::load_native_certs().ok()? {
+        let result = rustls_native_certs::load_native_certs();
+
+        for cert in result.certs {
             // Continue on parsing errors, as native stores often include ancient or syntactically
             // invalid certificates, like root certificates without any X509 extensions.
             // Inspiration: https://github.com/rustls/rustls/blob/633bf4ba9d9521a95f68766d04c22e2b01e68318/rustls/src/anchors.rs#L105-L112
