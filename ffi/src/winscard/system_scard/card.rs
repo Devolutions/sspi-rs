@@ -186,11 +186,9 @@ impl WinScard for SystemScard {
         let status = Status {
             readers,
             #[cfg(not(target_os = "windows"))]
-            state: {
-                use crate::winscard::pcsc_lite::State;
-
-                State::from_bits(state).unwrap_or(State::Specific).into()
-            },
+            state: crate::winscard::pcsc_lite::State::from_bits(state)
+                .unwrap_or(State::Specific)
+                .into(),
             #[cfg(target_os = "windows")]
             state: state.try_into()?,
             protocol: Protocol::from_bits(
