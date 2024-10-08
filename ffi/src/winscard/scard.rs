@@ -82,7 +82,7 @@ pub unsafe extern "system" fn SCardConnectA(
 
     let reader_name = try_execute!(
         // SAFETY: The `sz_reader` parameter is not null (checked above).
-        unsafe { CStr::from_ptr(sz_reader as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 

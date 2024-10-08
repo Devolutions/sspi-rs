@@ -386,7 +386,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     let card_name = try_execute!(
         // SAFETY: It's safe to construct a slice because the `sz_card_name` is not null (checked above).
         // All other guarantees should be provided by the user.
-        unsafe { CStr::from_ptr(sz_card_name as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(sz_card_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
@@ -979,7 +979,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
 
     let lookup_name = try_execute!(
         // SAFETY: The `lookup_name` parameter is not null (checked above).
-        unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
     // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
@@ -1065,7 +1065,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 
     let lookup_name = try_execute!(
         // SAFETY: The `lookup_name` parameter is not null (checked above).
-        unsafe { CStr::from_ptr(lookup_name as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
     // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function
@@ -1142,7 +1142,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 
     let reader_name = try_execute!(
         // SAFETY: The `sz_reader_name` parameter is not null (checked above).
-        unsafe { CStr::from_ptr(sz_reader_name as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
@@ -1207,7 +1207,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
 
     let reader_name = try_execute!(
         // SAFETY: The `sz_reader_name` parameter is not null (checked above).
-        unsafe { CStr::from_ptr(sz_reader_name as *const i8) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
