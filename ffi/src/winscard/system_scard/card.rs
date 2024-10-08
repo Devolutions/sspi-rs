@@ -187,7 +187,7 @@ impl WinScard for SystemScard {
             readers,
             #[cfg(not(target_os = "windows"))]
             state: crate::winscard::pcsc_lite::State::from_bits(state)
-                .unwrap_or(State::Specific)
+                .unwrap_or(crate::winscard::pcsc_lite::State::Specific)
                 .into(),
             #[cfg(target_os = "windows")]
             state: state.try_into()?,
