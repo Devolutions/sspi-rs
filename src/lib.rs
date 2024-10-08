@@ -1993,13 +1993,6 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
-#[cfg(feature = "scard")]
-impl From<pcsc::Error> for Error {
-    fn from(_value: pcsc::Error) -> Self {
-        Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
-    }
-}
-
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
         Self::new(ErrorKind::InternalError, format!("RSA key error: {:?}", err))

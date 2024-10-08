@@ -691,11 +691,11 @@ impl WinScardContext for SystemScardContext {
     fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
         use std::ffi::NulError;
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
         use ffi_types::winscard::ScardReaderStateA as ScardReaderState;
         use winscard::winscard::CurrentState;
 
-        #[cfg(target_os = "macos")]
+        #[cfg(not(target_os = "windows"))]
         use crate::winscard::pcsc_lite::ScardReaderState;
 
         let mut states = Vec::with_capacity(reader_states.len());
@@ -723,7 +723,8 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardGetStatusChange)(
                         self.h_context,
-                        timeout,
+                        #[allow(clippy::useless_conversion)]
+                        timeout.into(),
                         states.as_mut_ptr(),
                         reader_states.len().try_into()?,
                     )
