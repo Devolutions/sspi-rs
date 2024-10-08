@@ -260,7 +260,7 @@ fn init_scard_cache(
 
         value.extend_from_slice(&(u16::try_from(auth_cert_der.len())?.to_le_bytes())); // uncompressed certificate data len
         value.extend_from_slice(&[0x00, 0x00]); // flags that specify that the certificate is not compressed
-        value.extend_from_slice(&auth_cert_der);
+        value.extend_from_slice(auth_cert_der);
 
         value
     });

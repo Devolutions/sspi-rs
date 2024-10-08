@@ -36,7 +36,7 @@ jobs:
         include:
           - os: win
             runner: windows-2022
-            additional-args: --features tsssp,scard
+            additional-args: --features tsssp
           - os: osx
             runner: macos-12
           - os: linux
@@ -67,13 +67,27 @@ jobs:
             crate-name: sspi
           - manifest: ffi/Cargo.toml
             crate-name: sspi-ffi
+
           - os: win
             runner: windows-2022
-            additional-args: --features tsssp,scard
           - os: osx
             runner: macos-12
           - os: linux
             runner: ubuntu-20.04
+
+          - os: win
+            manifest: Cargo.toml
+            additional-args: --features network_client,dns_resolver,scard,tsssp
+          - os: osx
+            manifest: Cargo.toml
+            additional-args: --features network_client,dns_resolver,scard
+          - os: linux
+            manifest: Cargo.toml
+            additional-args: --features network_client,dns_resolver,scard
+
+          - os: win
+            manifest: ffi/Cargo.toml
+            additional-args: --features tsssp
 
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +113,7 @@ jobs:
           rustup override set nightly
 
       - name: Test
-        run: cargo miri test --manifest-path ffi/Cargo.toml
+        run: cargo miri test --manifest-path ffi/Cargo.toml --no-default-features --features ring
 
   wasm:
     name: WASM target
@@ -110,7 +124,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Prepare runner
-        run: sudo apt install wabt
+        run: sudo apt-get install wabt
 
       - name: Check
         shell: pwsh

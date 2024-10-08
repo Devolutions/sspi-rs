@@ -102,7 +102,9 @@ bitflags::bitflags! {
 
 impl From<State> for winscard::winscard::State {
     fn from(value: State) -> Self {
-        if let Ok(state) = Self::try_from(value.bits() as u32) {
+        #[allow(clippy::useless_conversion)]
+        let bits: u32 = value.bits().try_into().expect("Card state value should fit in u32");
+        if let Ok(state) = Self::try_from(bits) {
             // If the pcsc-lite card state has only one bit set, then we can safely convert it to the Windows WinSCard state.
             state
         } else {
@@ -148,11 +150,18 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     macro_rules! load_fn {
         ($func_name:literal) => {{
             let fn_name = CString::new($func_name).expect("CString creation should not fail");
-            // SAFETY: The `handle` is initialized and checked above. The function name should be correct
-            // because it's hardcoded in the code.
+
+            // SAFETY: The `handle` is initialized and checked above.
+            // The function name should be correct because it's hardcoded in the code.
             let fn_ptr = unsafe { dlsym(handle, fn_name.as_ptr()) };
             debug!(?fn_ptr, $func_name);
-            unsafe { std::mem::transmute(fn_ptr) }
+
+            // SAFETY: FFI. We have to trust that we defined the signatures correctly.
+            unsafe {
+                // Not great to silent, but mostly fine in this context.
+                #[expect(clippy::missing_transmute_annotations)]
+                std::mem::transmute::<*mut libc::c_void, _>(fn_ptr)
+            }
         }};
     }
 
