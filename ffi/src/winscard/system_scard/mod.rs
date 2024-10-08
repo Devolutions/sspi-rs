@@ -81,8 +81,8 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         ($func_name:literal) => {{
             // SAFETY: This function is safe to call because we've checked the `winscard_mofule`
             // handle above and the `$func_name` is correct and hardcoded in the code.
-            #[expect(clippy::missing_transmute_annotations)] // Not great to silent, but mostly fine.
             unsafe {
+                #[expect(clippy::missing_transmute_annotations)] // Not great to silent, but mostly fine.
                 transmute::<windows_sys::Win32::Foundation::FARPROC, _>(GetProcAddress(winscard_module, s!($func_name)))
             }
         }};
