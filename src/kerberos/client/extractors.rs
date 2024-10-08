@@ -20,7 +20,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
             .find(|pa_data| pa_data.padata_type.0 .0 == PA_ETYPE_INFO2_TYPE)
         {
             let etype_info_2: EtypeInfo2 = picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0 .0)?;
-            if let Some(params) = etype_info_2.0.get(0) {
+            if let Some(params) = etype_info_2.0.first() {
                 return Ok(params.salt.0.as_ref().map(|salt| salt.0.to_string()));
             }
         }
@@ -93,7 +93,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
             let pa_etype_info2: EtypeInfo2 = picky_asn1_der::from_bytes(&data)?;
             let pa_etype_info2 = pa_etype_info2
                 .0
-                .get(0)
+                .first()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing EtypeInto2Entry in EtypeInfo2"))?;
 
             Ok((

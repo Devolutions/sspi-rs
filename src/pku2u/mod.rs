@@ -461,7 +461,7 @@ impl Pku2u {
                 check_sequence_number!(acceptor_nego.header.sequence_num, self.next_seq_number());
 
                 // We support only one auth scheme. So the server must choose it otherwise it's an invalid behaviour
-                if let Some(auth_scheme) = acceptor_nego.auth_schemes.get(0) {
+                if let Some(auth_scheme) = acceptor_nego.auth_schemes.first() {
                     if *auth_scheme == Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap() {
                         self.auth_scheme = Some(*auth_scheme);
                     } else {
