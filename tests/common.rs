@@ -13,7 +13,7 @@ pub static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
     password: String::from("Password").into(),
 });
 
-const MESSAGE_TO_CLIENT: &'static [u8] = b"Hello, client!";
+const MESSAGE_TO_CLIENT: &[u8] = b"Hello, client!";
 
 pub struct CredentialsProxyImpl<'a> {
     credentials: &'a AuthIdentity,
