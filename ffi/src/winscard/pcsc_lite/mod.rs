@@ -102,7 +102,8 @@ bitflags::bitflags! {
 
 impl From<State> for winscard::winscard::State {
     fn from(value: State) -> Self {
-        if let Ok(state) = Self::try_from(value.bits() as u32) {
+        let bits: u32 = value.bits().try_into().expect("Card state value should fit in u32");
+        if let Ok(state) = Self::try_from(bits) {
             // If the pcsc-lite card state has only one bit set, then we can safely convert it to the Windows WinSCard state.
             state
         } else {
