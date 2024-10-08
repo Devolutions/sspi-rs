@@ -79,10 +79,11 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
 
     macro_rules! load_fn {
         ($func_name:literal) => {{
-            // SAFETY: This function is safe to call because we've checked the `winscard_mofule`
+            // SAFETY: This function is safe to call because we've checked the `winscard_module`
             // handle above and the `$func_name` is correct and hardcoded in the code.
             unsafe {
-                #[expect(clippy::missing_transmute_annotations)] // Not great to silent, but mostly fine.
+                // Not great to silent, but mostly fine in this context.
+                #[expect(clippy::missing_transmute_annotations)]
                 transmute::<windows_sys::Win32::Foundation::FARPROC, _>(GetProcAddress(winscard_module, s!($func_name)))
             }
         }};
