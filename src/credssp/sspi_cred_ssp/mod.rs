@@ -266,8 +266,8 @@ impl Sspi for SspiCredSsp {
     fn query_context_remote_cert(&mut self) -> Result<CertContext> {
         let certificates = self.tls_connection()?.peer_certificates()?;
         let raw_server_certificate = certificates
-            .get(0)
-            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "Can not acquire server certificate"))?;
+            .first()
+            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "cannot acquire server certificate"))?;
 
         let server_certificate: Certificate = picky_asn1_der::from_bytes(raw_server_certificate)?;
 

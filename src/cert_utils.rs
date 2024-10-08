@@ -304,12 +304,13 @@ pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<S
         // safe: checked above
         _ => unreachable!("ExtensionView must be SubjectAltName"),
     };
-    let other_name = match alternate_name.0.get(0).unwrap() {
+
+    let other_name = match alternate_name.0.first().expect("there is always at least one element") {
         GeneralName::OtherName(other_name) => other_name,
         _ => {
             return Err(Error::new(
                 ErrorKind::IncompleteCredentials,
-                "Subject alternate name has unsupported value type",
+                "subject alternate name has unsupported value type",
             ))
         }
     };
