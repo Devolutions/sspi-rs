@@ -452,8 +452,8 @@ impl TlsConnection {
     pub fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
         let certificates = self.peer_certificates()?;
         let peer_certificate = certificates
-            .get(0)
-            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "Can not acquire server certificate"))?;
+            .first()
+            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "cannot acquire server certificate"))?;
 
         let peer_certificate: Certificate = picky_asn1_der::from_bytes(peer_certificate)?;
 
