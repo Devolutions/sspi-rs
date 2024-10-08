@@ -11,7 +11,7 @@ pub fn validate_signed_data(signed_data: &SignedData, rsa_public_key: &RsaPublic
         .signers_infos
         .0
          .0
-        .get(0)
+        .first()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing signers_infos in signed data"))?;
 
     let signed_attributes = Asn1SetOf::from(signer_info.signed_attrs.0 .0 .0.clone());

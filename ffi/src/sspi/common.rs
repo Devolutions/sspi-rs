@@ -501,7 +501,7 @@ mod tests {
 
         // Check SECBUFFER_DATA
         assert_eq!(buffers[1].buffer_type, 1);
-        assert_eq!(buffers[1].cb_buffer, plain_message.len().try_into().unwrap());
+        assert_eq!(buffers[1].cb_buffer, u32::try_from(plain_message.len()).unwrap());
         // Check that the decrypted data is the same as the initial message
         assert_eq!(
             unsafe {

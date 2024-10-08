@@ -15,8 +15,7 @@ use crate::pk_init::{
     GenerateAsPaDataOptions as SmartCardPaDataOptions, Wrapper,
 };
 use crate::pku2u::{extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data};
-use crate::Result;
-use crate::{check_if_empty, pku2u, Error, ErrorKind};
+use crate::{check_if_empty, pku2u, Error, ErrorKind, Result};
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.

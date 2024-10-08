@@ -97,8 +97,10 @@ pub use security_buffer::SecurityBuffer;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
-pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
+pub use self::auth_identity::{
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers,
+    Username,
+};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
@@ -495,7 +497,7 @@ where
     ///
     /// * `flags`: package-specific flags that indicate the quality of protection. A security package can use this parameter to enable the selection of cryptographic algorithms
     /// * `message`: on input, the structure accepts one or more `SecurityBuffer` structures that can be of type `SecurityBufferType::Data`.
-    /// That buffer contains the message to be encrypted. The message is encrypted in place, overwriting the original contents of the structure.
+    ///   That buffer contains the message to be encrypted. The message is encrypted in place, overwriting the original contents of the structure.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Example
@@ -606,8 +608,8 @@ where
     /// # Parameters
     ///
     /// * `message`: on input, the structure references one or more `SecurityBuffer` structures.
-    /// At least one of these must be of type `SecurityBufferType::Data`.
-    /// That buffer contains the encrypted message. The encrypted message is decrypted in place, overwriting the original contents of its buffer
+    ///   At least one of these must be of type `SecurityBufferType::Data`.
+    ///   That buffer contains the encrypted message. The encrypted message is decrypted in place, overwriting the original contents of its buffer
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Returns
@@ -1412,16 +1414,16 @@ impl AsRef<str> for SecurityPackageType {
     }
 }
 
-impl string::ToString for SecurityPackageType {
-    fn to_string(&self) -> String {
+impl fmt::Display for SecurityPackageType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SecurityPackageType::Ntlm => ntlm::PKG_NAME.into(),
-            SecurityPackageType::Kerberos => kerberos::PKG_NAME.into(),
-            SecurityPackageType::Negotiate => negotiate::PKG_NAME.into(),
-            SecurityPackageType::Pku2u => pku2u::PKG_NAME.into(),
+            SecurityPackageType::Ntlm => write!(f, "{}", ntlm::PKG_NAME),
+            SecurityPackageType::Kerberos => write!(f, "{}", kerberos::PKG_NAME),
+            SecurityPackageType::Negotiate => write!(f, "{}", negotiate::PKG_NAME),
+            SecurityPackageType::Pku2u => write!(f, "{}", pku2u::PKG_NAME),
             #[cfg(feature = "tsssp")]
-            SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME.into(),
-            SecurityPackageType::Other(name) => name.clone(),
+            SecurityPackageType::CredSsp => write!(f, "{}", sspi_cred_ssp::PKG_NAME),
+            SecurityPackageType::Other(name) => write!(f, "{name}"),
         }
     }
 }

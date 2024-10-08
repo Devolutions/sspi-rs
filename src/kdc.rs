@@ -75,7 +75,7 @@ pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
 pub fn detect_kdc_host(domain: &str) -> Option<String> {
     let kdc_hosts = detect_kdc_hosts(domain);
     if !kdc_hosts.is_empty() {
-        Some(kdc_hosts.get(0).unwrap().to_string())
+        Some(kdc_hosts.first().unwrap().to_string())
     } else {
         None
     }
@@ -94,7 +94,7 @@ mod tests {
         if let Ok(domain) = std::env::var("TEST_KERBEROS_REALM") {
             println!("Finding KDC for {} domain", &domain);
             let kdc_hosts = detect_kdc_hosts(&domain);
-            if let Some(kdc_host) = kdc_hosts.get(0) {
+            if let Some(kdc_host) = kdc_hosts.first() {
                 println!("KDC server: {}", kdc_host);
             } else {
                 println!("No KDC server found!");

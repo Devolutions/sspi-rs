@@ -1055,17 +1055,7 @@ pub mod test_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::generator::NetworkRequest;
-    use crate::network_client::NetworkClient;
     use crate::{EncryptionFlags, SecurityBuffer, Sspi};
-
-    struct NetworkClientMock;
-
-    impl NetworkClient for NetworkClientMock {
-        fn send(&self, _request: &NetworkRequest) -> crate::Result<Vec<u8>> {
-            unreachable!("unsupported protocol")
-        }
-    }
 
     #[test]
     fn stream_buffer_decryption() {

@@ -537,10 +537,16 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                         .execute(sspi_context),
                     ts_request
                 ) {
-                    AcceptSecurityContextResult { status, .. } if status == SecurityStatus::ContinueNeeded => {
+                    AcceptSecurityContextResult {
+                        status: SecurityStatus::ContinueNeeded,
+                        ..
+                    } => {
                         ts_request.nego_tokens = Some(output_token.remove(0).buffer);
                     }
-                    AcceptSecurityContextResult { status, .. } if status == SecurityStatus::CompleteNeeded => {
+                    AcceptSecurityContextResult {
+                        status: SecurityStatus::CompleteNeeded,
+                        ..
+                    } => {
                         let ContextNames { username } = try_cred_ssp_server!(
                             self.context.as_mut().unwrap().sspi_context.query_context_names(),
                             ts_request

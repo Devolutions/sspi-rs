@@ -61,10 +61,10 @@ fn main() -> Result<(), io::Error> {
     println!("Encrypted message: {:?}", msg_buffer[1].data());
 
     println!("Sending the trailer...");
-    write_message(&mut stream, &msg_buffer[0].data())?;
+    write_message(&mut stream, msg_buffer[0].data())?;
 
     println!("Sending the data...");
-    write_message(&mut stream, &msg_buffer[1].data())?;
+    write_message(&mut stream, msg_buffer[1].data())?;
 
     println!("Communication successfully finished.");
 
