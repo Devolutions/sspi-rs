@@ -13,6 +13,7 @@ use crate::{Error, ErrorKind, Result, SecurityBufferType};
 /// We use reference in the [SecurityBuffer] structure to avoid data cloning as much as possible.
 /// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
 /// security package.
+#[non_exhaustive]
 pub enum SecurityBuffer<'data> {
     Data(&'data mut [u8]),
     Token(&'data mut [u8]),
