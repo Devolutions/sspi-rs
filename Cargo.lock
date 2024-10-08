@@ -1475,25 +1475,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pcsc"
-version = "2.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45ed9d7f816b7d9ce9ddb0062dd2f393b3af31411a95a35411809b4b9116ea08"
-dependencies = [
- "bitflags 1.3.2",
- "pcsc-sys",
-]
-
-[[package]]
-name = "pcsc-sys"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b09e9ba80f2c4d167f936d27594f7248bca3295921ffbfa44a24b339b6cb7403"
-dependencies = [
- "pkg-config",
-]
-
-[[package]]
 name = "pem-rfc7468"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2345,7 +2326,6 @@ dependencies = [
  "num-derive",
  "num-traits",
  "oid",
- "pcsc",
  "picky",
  "picky-asn1",
  "picky-asn1-der",

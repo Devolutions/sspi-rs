@@ -97,8 +97,10 @@ pub use security_buffer::SecurityBuffer;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
-pub use self::auth_identity::{AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, Username};
-pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers};
+pub use self::auth_identity::{
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers,
+    Username,
+};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };
@@ -1988,13 +1990,6 @@ impl From<std::num::TryFromIntError> for Error {
 impl<T> From<std::sync::PoisonError<T>> for Error {
     fn from(_: std::sync::PoisonError<T>) -> Self {
         Self::new(ErrorKind::InternalError, "Can not lock SspiHandle mutex")
-    }
-}
-
-#[cfg(feature = "scard")]
-impl From<pcsc::Error> for Error {
-    fn from(_value: pcsc::Error) -> Self {
-        Self::new(ErrorKind::InternalError, "pcsc error".to_owned())
     }
 }
 
