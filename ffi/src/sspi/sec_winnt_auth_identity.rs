@@ -192,10 +192,10 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             let caption = string_to_utf16("Enter credentials\0");
             let cred_ui_info = CREDUI_INFOW {
                 cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
-                hwndParent: 0,
+                hwndParent: null_mut(),
                 pszMessageText: message.as_ptr() as *const _,
                 pszCaptionText: caption.as_ptr() as *const _,
-                hbmBanner: 0,
+                hbmBanner: null_mut(),
             };
             let mut auth_package_count = 0;
             let mut out_buffer_size = 1024;

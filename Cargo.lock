@@ -2352,7 +2352,7 @@ dependencies = [
  "uuid",
  "whoami",
  "windows",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
  "winreg 0.52.0",
  "winscard",
  "zeroize",
@@ -2376,7 +2376,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "whoami",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
  "winscard",
 ]
 
