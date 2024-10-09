@@ -68,7 +68,7 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
     // the null-terminated C string by `CString` type.
     let winscard_module = unsafe { LoadLibraryA(file_name.as_ptr() as *const _) };
 
-    if winscard_module == 0 {
+    if winscard_module.is_null() {
         return Err(Error::new(
             ErrorKind::InternalError,
             "can not load the winscard module: LoadLibrary function has returned NULL",

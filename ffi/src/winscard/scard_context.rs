@@ -646,7 +646,9 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
 // We use created event to return its handle from the `SCardAccessStartedEvent` function.
 // Note. If the `SCardAccessStartedEvent` frunction is not be called, the event will not be created.
 #[cfg(target_os = "windows")]
-static START_EVENT_HANDLE: OnceLock<windows_sys::Win32::Foundation::HANDLE> = OnceLock::new();
+type HANDLE = isize;
+#[cfg(target_os = "windows")]
+static START_EVENT_HANDLE: OnceLock<HANDLE> = OnceLock::new();
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
@@ -684,7 +686,7 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
                 use windows_sys::Win32::System::Threading::CreateEventA;
 
                 // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
+                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as HANDLE;
                 if handle == 0 {
                     error!(
                         "Unable to create event: returned event handle is null. Last error: {}",
@@ -739,7 +741,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
                 use windows_sys::Win32::System::Threading::CreateEventA;
 
                 // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
+                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as HANDLE;
                 if handle == 0 {
                     error!(
                         "Unable to create event: returned event handle is null. Last error: {}",
@@ -750,7 +752,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
                 handle
             });
             // SAFETY: It's safe to close the handle.
-            if unsafe { CloseHandle(event_handle) } == 0 {
+            if unsafe { CloseHandle(event_handle as *mut c_void) } == 0 {
                 error!(
                     "Cannot close the event handle. List error: {}",
                     // SAFETY: it's safe to call this function.
