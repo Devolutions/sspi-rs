@@ -1256,7 +1256,7 @@ mod tests {
         // This test simulates initialize security context function call. It's better to run it using Miri
         // https://github.com/rust-lang/miri
         // cargo +nightly miri test
-        let mut pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
         let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
         let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
@@ -1311,7 +1311,7 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleW(
                 null_mut(),
-                pkg_name.as_mut_ptr() as *mut _,
+                pkg_name.as_ptr() as *const _,
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
                 &credentials as *const _ as *const c_void,
@@ -1382,7 +1382,7 @@ mod tests {
         // This test simulates initialize security context function call. It's better to run it using Miri
         // https://github.com/rust-lang/miri
         // cargo +nightly miri test
-        let mut pkg_name = String::from("NTLM\0");
+        let pkg_name = "NTLM\0";
         let mut pkg_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
         let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr() as *const _, &mut pkg_info) };
@@ -1437,7 +1437,7 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleA(
                 null_mut(),
-                pkg_name.as_mut_ptr() as *mut _,
+                pkg_name.as_ptr() as *const _,
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
                 &credentials as *const _ as *const c_void,
@@ -1500,6 +1500,230 @@ mod tests {
         assert_eq!(status, 0);
 
         let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn acquire_credentials_handle_w_null_credentials() {
+        // This test simulates initialize security context function call. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+
+        let user = "user".encode_utf16().collect::<Vec<_>>();
+        let domain = "domain".encode_utf16().collect::<Vec<_>>();
+        let password = "password".encode_utf16().collect::<Vec<_>>();
+
+        let credentials = vec![
+            SecWinntAuthIdentityW {
+                user: null(),
+                user_length: 0,
+                domain: domain.as_ptr(),
+                domain_length: domain.len() as u32,
+                password: password.as_ptr(),
+                password_length: password.len() as u32,
+                flags: 1,
+            },
+            SecWinntAuthIdentityW {
+                user: user.as_ptr(),
+                user_length: user.len() as u32,
+                domain: null(),
+                domain_length: 0,
+                password: password.as_ptr(),
+                password_length: password.len() as u32,
+                flags: 1,
+            },
+            SecWinntAuthIdentityW {
+                user: user.as_ptr(),
+                user_length: user.len() as u32,
+                domain: domain.as_ptr(),
+                domain_length: domain.len() as u32,
+                password: null(),
+                password_length: 0,
+                flags: 1,
+            },
+        ];
+
+        for credentials in credentials {
+            let mut cred_handle = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+
+            let status = unsafe {
+                AcquireCredentialsHandleW(
+                    null_mut(),
+                    pkg_name.as_ptr() as *const _,
+                    2, /* SECPKG_CRED_OUTBOUND */
+                    null::<c_void>(),
+                    &credentials as *const _ as *const c_void,
+                    dummy,
+                    null::<c_void>(),
+                    &mut cred_handle,
+                    null_mut(),
+                )
+            };
+            assert_eq!(status, 0);
+
+            let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    #[test]
+    fn acquire_credentials_handle_w_empty_credentials() {
+        // This test simulates initialize security context function call. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+
+        let user = "".encode_utf16().collect::<Vec<_>>();
+        let domain = "".encode_utf16().collect::<Vec<_>>();
+        let password = "".encode_utf16().collect::<Vec<_>>();
+
+        let credentials = SecWinntAuthIdentityW {
+            user: user.as_ptr(),
+            user_length: user.len() as u32,
+            domain: domain.as_ptr(),
+            domain_length: domain.len() as u32,
+            password: password.as_ptr(),
+            password_length: password.len() as u32,
+            flags: 1,
+        };
+
+        let mut cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let status = unsafe {
+            AcquireCredentialsHandleW(
+                null_mut(),
+                pkg_name.as_ptr() as *const _,
+                2, /* SECPKG_CRED_OUTBOUND */
+                null::<c_void>(),
+                &credentials as *const _ as *const c_void,
+                dummy,
+                null::<c_void>(),
+                &mut cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn acquire_credentials_handle_a_null_credentials() {
+        // This test simulates initialize security context function call. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let pkg_name = "NTLM\0";
+
+        let user = "user";
+        let domain = "domain";
+        let password = "password";
+
+        let credentials = vec![
+            SecWinntAuthIdentityA {
+                user: null(),
+                user_length: 0,
+                domain: domain.as_ptr() as *const _,
+                domain_length: domain.len() as u32,
+                password: password.as_ptr() as *const _,
+                password_length: password.len() as u32,
+                flags: 1,
+            },
+            SecWinntAuthIdentityA {
+                user: user.as_ptr() as *const _,
+                user_length: user.len() as u32,
+                domain: null(),
+                domain_length: 0,
+                password: password.as_ptr() as *const _,
+                password_length: password.len() as u32,
+                flags: 1,
+            },
+            SecWinntAuthIdentityA {
+                user: user.as_ptr() as *const _,
+                user_length: user.len() as u32,
+                domain: domain.as_ptr() as *const _,
+                domain_length: domain.len() as u32,
+                password: null(),
+                password_length: 0,
+                flags: 1,
+            },
+        ];
+
+        for credentials in credentials {
+            let mut cred_handle = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+
+            let status = unsafe {
+                AcquireCredentialsHandleA(
+                    null_mut(),
+                    pkg_name.as_ptr() as *const _,
+                    2, /* SECPKG_CRED_OUTBOUND */
+                    null::<c_void>(),
+                    &credentials as *const _ as *const c_void,
+                    dummy,
+                    null::<c_void>(),
+                    &mut cred_handle,
+                    null_mut(),
+                )
+            };
+            assert_eq!(status, 0);
+
+            let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    #[test]
+    fn acquire_credentials_handle_a_empty_credentials() {
+        // This test simulates initialize security context function call. It's better to run it using Miri
+        // https://github.com/rust-lang/miri
+        // cargo +nightly miri test
+        let pkg_name = "NTLM\0";
+
+        let user = "";
+        let domain = "";
+        let password = "";
+
+        let credentials = SecWinntAuthIdentityA {
+            user: user.as_ptr() as *const _,
+            user_length: user.len() as u32,
+            domain: domain.as_ptr() as *const _,
+            domain_length: domain.len() as u32,
+            password: password.as_ptr() as *const _,
+            password_length: password.len() as u32,
+            flags: 1,
+        };
+
+        let mut cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let status = unsafe {
+            AcquireCredentialsHandleA(
+                null_mut(),
+                pkg_name.as_ptr() as *const _,
+                2, /* SECPKG_CRED_OUTBOUND */
+                null::<c_void>(),
+                &credentials as *const _ as *const c_void,
+                dummy,
+                null::<c_void>(),
+                &mut cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
         assert_eq!(status, 0);
     }
 }
