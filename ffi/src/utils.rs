@@ -26,7 +26,13 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
     len
 }
 
-pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
+/// Converts raw credentials string into [Vec] of bytes.
+///
+/// Credentials are often represented as strings. For example, username, domain, password.
+/// It is OK for Windows SSPI to accept `null` or empty credential strings. The `AcquireCredentialsHandle`
+/// function will return successful status code is we pass the `null` username value. Thus, this function
+/// will return an empty [Vec] in such a case. It is done on purpose to follow the Windows SSPI behaviour.
+pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     if !raw_buffer.is_null() {
         unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
     } else {
