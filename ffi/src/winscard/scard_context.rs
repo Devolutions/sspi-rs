@@ -646,9 +646,7 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
 // We use created event to return its handle from the `SCardAccessStartedEvent` function.
 // Note. If the `SCardAccessStartedEvent` frunction is not be called, the event will not be created.
 #[cfg(target_os = "windows")]
-type HANDLE = isize;
-#[cfg(target_os = "windows")]
-static START_EVENT_HANDLE: OnceLock<HANDLE> = OnceLock::new();
+static START_EVENT_HANDLE: OnceLock<Handle> = OnceLock::new();
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
@@ -686,7 +684,7 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
                 use windows_sys::Win32::System::Threading::CreateEventA;
 
                 // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as HANDLE;
+                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as Handle;
                 if handle == 0 {
                     error!(
                         "Unable to create event: returned event handle is null. Last error: {}",
@@ -741,7 +739,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
                 use windows_sys::Win32::System::Threading::CreateEventA;
 
                 // SAFETY: All parameters are correct.
-                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as HANDLE;
+                let handle = unsafe { CreateEventA(null(), 1, 1, null()) } as Handle;
                 if handle == 0 {
                     error!(
                         "Unable to create event: returned event handle is null. Last error: {}",
