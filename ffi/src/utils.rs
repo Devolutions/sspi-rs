@@ -27,7 +27,11 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 }
 
 pub unsafe fn raw_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
-    unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
+    if !raw_buffer.is_null() {
+        unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
+    } else {
+        Vec::new()
+    }
 }
 
 pub fn str_to_w_buff(data: &str) -> Vec<u16> {
