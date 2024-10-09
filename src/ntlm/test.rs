@@ -1,5 +1,3 @@
-use lazy_static::lazy_static;
-
 use crate::crypto::{Rc4, HASH_SIZE};
 use crate::ntlm::messages::test::TEST_CREDENTIALS;
 use crate::ntlm::{
@@ -16,14 +14,17 @@ const SIGNING_KEY: [u8; HASH_SIZE] = [
     0x20, 0xc0, 0x2b, 0x3d, 0xc0, 0x61, 0xa7, 0x73, 0xa4, 0xf1, 0xba, 0xa6, 0x7c, 0xdc, 0x1a, 0x12,
 ];
 
-lazy_static! {
-    pub static ref TEST_DATA: Vec<u8> = b"Hello, World!!!".to_vec();
-    pub static ref ENCRYPTED_TEST_DATA: Vec<u8> =
-        vec![0x20, 0x2e, 0xdd, 0xd9, 0x56, 0x5e, 0xc4, 0x59, 0x42, 0xdb, 0x94, 0xfd, 0x6b, 0xf3, 0x11];
-    pub static ref DIGEST_FOR_TEST_DATA: Vec<u8> = vec![0x58, 0x27, 0x4d, 0x35, 0x1f, 0x2d, 0x3c, 0xfd];
-    pub static ref SIGNATURE_FOR_TEST_DATA: Vec<u8> =
-        vec![0x1, 0x0, 0x0, 0x0, 0x58, 0x27, 0x4d, 0x35, 0x1f, 0x2d, 0x3c, 0xfd, 0xd2, 0x2, 0x96, 0x49];
-}
+pub const TEST_DATA: &'static [u8] = b"Hello, World!!!";
+
+pub const ENCRYPTED_TEST_DATA: [u8; 15] = [
+    0x20, 0x2e, 0xdd, 0xd9, 0x56, 0x5e, 0xc4, 0x59, 0x42, 0xdb, 0x94, 0xfd, 0x6b, 0xf3, 0x11,
+];
+
+pub const DIGEST_FOR_TEST_DATA: [u8; 8] = [0x58, 0x27, 0x4d, 0x35, 0x1f, 0x2d, 0x3c, 0xfd];
+
+pub const SIGNATURE_FOR_TEST_DATA: [u8; 16] = [
+    0x1, 0x0, 0x0, 0x0, 0x58, 0x27, 0x4d, 0x35, 0x1f, 0x2d, 0x3c, 0xfd, 0xd2, 0x2, 0x96, 0x49,
+];
 
 #[test]
 fn encrypt_message_crypts_data() {
@@ -36,7 +37,7 @@ fn encrypt_message_crypts_data() {
         SecurityBuffer::Token(token.as_mut_slice()),
         SecurityBuffer::Data(data.as_mut_slice()),
     ];
-    let expected = &*ENCRYPTED_TEST_DATA;
+    let expected = &ENCRYPTED_TEST_DATA;
 
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)
@@ -44,7 +45,7 @@ fn encrypt_message_crypts_data() {
     let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
-    assert_eq!(expected.as_slice(), output.data());
+    assert_eq!(expected, output.data());
 }
 
 #[test]
@@ -59,7 +60,7 @@ fn encrypt_message_correct_computes_digest() {
         SecurityBuffer::Token(token.as_mut_slice()),
         SecurityBuffer::Data(data.as_mut_slice()),
     ];
-    let expected = &*DIGEST_FOR_TEST_DATA;
+    let expected = &DIGEST_FOR_TEST_DATA;
 
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
@@ -67,7 +68,7 @@ fn encrypt_message_correct_computes_digest() {
     let signature = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
-    assert_eq!(expected.as_slice(), &signature.data()[4..12]);
+    assert_eq!(expected, &signature.data()[4..12]);
 }
 
 #[test]
@@ -106,7 +107,7 @@ fn decrypt_message_decrypts_data() {
         SecurityBuffer::Data(&mut encrypted_test_data),
         SecurityBuffer::Token(&mut signature_test_data),
     ];
-    let expected = &*TEST_DATA;
+    let expected = TEST_DATA;
 
     context.decrypt_message(&mut buffers, TEST_SEQ_NUM).unwrap();
     let data = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();

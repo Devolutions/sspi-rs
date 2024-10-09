@@ -113,7 +113,7 @@ fn read_header(mut buffer: impl io::Read) -> crate::Result<(AuthenticateMessageF
 fn read_payload<T>(
     negotiate_flags: NegotiateFlags,
     message_fields: &mut AuthenticateMessageFields,
-    mut buffer: &mut io::Cursor<T>,
+    buffer: &mut io::Cursor<T>,
 ) -> crate::Result<Option<Mic>>
 where
     io::Cursor<T>: io::Read + io::Seek,
@@ -127,14 +127,14 @@ where
         None
     };
 
-    message_fields.domain_name.read_buffer_from(&mut buffer)?;
-    message_fields.user_name.read_buffer_from(&mut buffer)?;
-    message_fields.workstation.read_buffer_from(&mut buffer)?;
-    message_fields.lm_challenge_response.read_buffer_from(&mut buffer)?;
-    message_fields.nt_challenge_response.read_buffer_from(&mut buffer)?;
+    message_fields.domain_name.read_buffer_from_cursor(buffer)?;
+    message_fields.user_name.read_buffer_from_cursor(buffer)?;
+    message_fields.workstation.read_buffer_from_cursor(buffer)?;
+    message_fields.lm_challenge_response.read_buffer_from_cursor(buffer)?;
+    message_fields.nt_challenge_response.read_buffer_from_cursor(buffer)?;
     message_fields
         .encrypted_random_session_key
-        .read_buffer_from(&mut buffer)?;
+        .read_buffer_from_cursor(buffer)?;
 
     Ok(mic)
 }
