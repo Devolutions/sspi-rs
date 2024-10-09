@@ -21,7 +21,7 @@ use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16};
 use crate::winscard::scard_handle::{
     raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context, WinScardContextHandle,
 };
-use crate::winscard::system_scard::{init_scard_api_table, SystemScardContext};
+use crate::winscard::system_scard::SystemScardContext;
 
 const ERROR_INVALID_HANDLE: u32 = 6;
 
@@ -39,8 +39,9 @@ static SCARD_CONTEXTS: LazyLock<Mutex<Vec<ScardContext>>> = LazyLock::new(|| Mut
 // This API table instance is only needed for the `SCardAccessStartedEvent` function. This function
 // doesn't accept any parameters, so we need a separate initialized API table to call the system API.
 #[cfg(target_os = "windows")]
-static WINSCARD_API: LazyLock<SCardApiFunctionTable> =
-    LazyLock::new(|| init_scard_api_table().expect("winscard module loading should not fail"));
+static WINSCARD_API: LazyLock<SCardApiFunctionTable> = LazyLock::new(|| {
+    crate::winscard::system_scard::init_scard_api_table().expect("winscard module loading should not fail")
+});
 
 fn save_context(context: ScardContext) {
     SCARD_CONTEXTS
