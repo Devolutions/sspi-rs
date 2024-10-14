@@ -1246,7 +1246,9 @@ mod tests {
         EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, PSecPkgInfoA, PSecPkgInfoW, QuerySecurityPackageInfoA,
         QuerySecurityPackageInfoW, SecPkgInfoA, SecPkgInfoW,
     };
-    use crate::sspi::sec_winnt_auth_identity::{SecWinntAuthIdentityA, SecWinntAuthIdentityW};
+    use crate::sspi::sec_winnt_auth_identity::{
+        SecWinntAuthIdentityA, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE,
+    };
     use crate::utils::c_w_str_to_string;
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
@@ -1522,7 +1524,7 @@ mod tests {
                 domain_length: domain.len() as u32,
                 password: password.as_ptr(),
                 password_length: password.len() as u32,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             },
             SecWinntAuthIdentityW {
                 user: user.as_ptr(),
@@ -1531,7 +1533,7 @@ mod tests {
                 domain_length: 0,
                 password: password.as_ptr(),
                 password_length: password.len() as u32,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             },
             SecWinntAuthIdentityW {
                 user: user.as_ptr(),
@@ -1540,7 +1542,7 @@ mod tests {
                 domain_length: domain.len() as u32,
                 password: null(),
                 password_length: 0,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             },
         ];
 
@@ -1588,7 +1590,7 @@ mod tests {
             domain_length: domain.len() as u32,
             password: password.as_ptr(),
             password_length: password.len() as u32,
-            flags: 1,
+            flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
         };
 
         let mut cred_handle = SecHandle {
@@ -1634,7 +1636,7 @@ mod tests {
                 domain_length: domain.len() as u32,
                 password: password.as_ptr() as *const _,
                 password_length: password.len() as u32,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
                 user: user.as_ptr() as *const _,
@@ -1643,7 +1645,7 @@ mod tests {
                 domain_length: 0,
                 password: password.as_ptr() as *const _,
                 password_length: password.len() as u32,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
                 user: user.as_ptr() as *const _,
@@ -1652,7 +1654,7 @@ mod tests {
                 domain_length: domain.len() as u32,
                 password: null(),
                 password_length: 0,
-                flags: 1,
+                flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
         ];
 
@@ -1700,7 +1702,7 @@ mod tests {
             domain_length: domain.len() as u32,
             password: password.as_ptr() as *const _,
             password_length: password.len() as u32,
-            flags: 1,
+            flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
         };
 
         let mut cred_handle = SecHandle {
