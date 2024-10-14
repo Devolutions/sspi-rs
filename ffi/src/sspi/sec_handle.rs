@@ -1253,11 +1253,11 @@ mod tests {
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn initialize_security_context_w() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
         let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
@@ -1379,11 +1379,11 @@ mod tests {
         assert_eq!(status, 0);
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn initialize_security_context_a() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0";
         let mut pkg_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
@@ -1505,11 +1505,11 @@ mod tests {
         assert_eq!(status, 0);
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn acquire_credentials_handle_w_null_credentials() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
 
         let user = "user".encode_utf16().collect::<Vec<_>>();
@@ -1572,11 +1572,11 @@ mod tests {
         }
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn acquire_credentials_handle_w_empty_credentials() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
 
         let user = "".encode_utf16().collect::<Vec<_>>();
@@ -1617,11 +1617,11 @@ mod tests {
         assert_eq!(status, 0);
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn acquire_credentials_handle_a_null_credentials() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0";
 
         let user = "user";
@@ -1684,11 +1684,11 @@ mod tests {
         }
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn acquire_credentials_handle_a_empty_credentials() {
-        // This test simulates initialize security context function call. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let pkg_name = "NTLM\0";
 
         let user = "";
