@@ -32,8 +32,16 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 /// It is OK for Windows SSPI to accept `null` or empty credential strings. The `AcquireCredentialsHandle`
 /// function will return successful status code is we pass the `null` username value. Thus, this function
 /// will return an empty [Vec] in such a case. It is done on purpose to follow the Windows SSPI behaviour.
+///
+/// # Safety
+///
+/// * `raw_buffer` must be [valid] for reads for `len` many bytes, and it must be properly aligned.
+/// * The total size `len` of the slice must be no larger than `isize::MAX`, and adding that size to `data`
+///   must not "wrap around" the address space.
 pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     if !raw_buffer.is_null() {
+        // SAFETY:
+        // `raw_buffer` is not null: checked above. All other guarantees should be upheld by the caller.
         unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
     } else {
         Vec::new()
