@@ -314,7 +314,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
-        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if !user.is_empty() && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -337,7 +337,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
-        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if !user.is_empty() && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -664,7 +664,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
-    if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
+    if !username.is_empty() && CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, password data is a wide C string and we need to delete the NULL terminator.
