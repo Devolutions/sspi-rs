@@ -50,7 +50,7 @@ rsa = { version = "0.9.6", default-features = false }
 windows-sys = { version = "0.59" }
 base64 = "0.22"
 whoami = "1.5"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 proptest = "1.5"
 
 [features]
