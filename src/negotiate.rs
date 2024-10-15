@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::net::IpAddr;
-
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::kdc::detect_kdc_url;
@@ -19,15 +18,13 @@ use crate::{
 
 pub const PKG_NAME: &str = "Negotiate";
 
-lazy_static! {
-    pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
-        name: SecurityPackageType::Negotiate,
-        comment: String::from("Microsoft Package Negotiator"),
-    };
-}
+pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
+    capabilities: PackageCapabilities::empty(),
+    rpc_id: PACKAGE_ID_NONE,
+    max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
+    name: SecurityPackageType::Negotiate,
+    comment: String::from("Microsoft Package Negotiator"),
+});
 
 pub trait ProtocolConfig: Debug + Send + Sync {
     fn new_client(&self) -> Result<NegotiatedProtocol>;

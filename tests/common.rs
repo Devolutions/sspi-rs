@@ -1,6 +1,6 @@
 use std::io;
+use std::sync::LazyLock;
 
-use lazy_static::lazy_static;
 use sspi::{
     credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
     DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
@@ -8,13 +8,12 @@ use sspi::{
 };
 use time::OffsetDateTime;
 
-lazy_static! {
-    pub static ref CREDENTIALS: AuthIdentity = AuthIdentity {
-        username: Username::new("Username", Some("Domain")).unwrap(),
-        password: String::from("Password").into(),
-    };
-    static ref MESSAGE_TO_CLIENT: Vec<u8> = b"Hello, client!".to_vec();
-}
+pub static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
+    username: Username::new("Username", Some("Domain")).unwrap(),
+    password: String::from("Password").into(),
+});
+
+const MESSAGE_TO_CLIENT: &'static [u8] = b"Hello, client!";
 
 pub struct CredentialsProxyImpl<'a> {
     credentials: &'a AuthIdentity,
@@ -184,11 +183,11 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
         SecurityBuffer::Data(data.as_mut_slice()),
     ];
     server.encrypt_message(EncryptionFlags::empty(), &mut messages, sequence_number)?;
-    assert_ne!(*MESSAGE_TO_CLIENT, messages[1].data());
+    assert_ne!(MESSAGE_TO_CLIENT, messages[1].data());
 
     println!(
         "Message to client: {:x?}, encrypted message: {:x?}, token: {:x?}",
-        *MESSAGE_TO_CLIENT,
+        MESSAGE_TO_CLIENT,
         messages[0].data(),
         messages[1].data()
     );
@@ -202,7 +201,7 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
 
     client.decrypt_message(&mut messages, sequence_number)?;
 
-    assert_eq!(*MESSAGE_TO_CLIENT, messages[0].data());
+    assert_eq!(MESSAGE_TO_CLIENT, messages[0].data());
 
     Ok(())
 }

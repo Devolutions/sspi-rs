@@ -8,9 +8,9 @@ mod utils;
 
 use std::fmt::Debug;
 use std::io::Write;
+use std::sync::LazyLock;
 
 pub use encryption_params::EncryptionParams;
-use lazy_static::lazy_static;
 use picky::key::PrivateKey;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
@@ -85,15 +85,13 @@ pub const SECURITY_TRAILER: usize = 60;
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
 
-lazy_static! {
-    pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
-        name: SecurityPackageType::Kerberos,
-        comment: String::from("Kerberos Security Package"),
-    };
-}
+pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
+    capabilities: PackageCapabilities::empty(),
+    rpc_id: PACKAGE_ID_NONE,
+    max_token_len: 0xbb80, // 48 000 bytes: default maximum token len in Windows
+    name: SecurityPackageType::Kerberos,
+    comment: String::from("Kerberos Security Package"),
+});
 
 #[derive(Debug, Clone)]
 pub enum KerberosState {

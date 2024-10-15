@@ -2,9 +2,9 @@
 mod test;
 
 use std::io::{self, Read, Write};
+use std::sync::LazyLock;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use lazy_static::lazy_static;
 use rand::rngs::OsRng;
 use rand::Rng;
 use time::OffsetDateTime;
@@ -28,20 +28,18 @@ const NT_V2_RESPONSE_BASE_SIZE: usize = 28;
 // the client and server are on the same host. If the server and client platforms are
 // different or if they are on different hosts, then the information MUST be ignored.
 // Any fields after the MachineID field MUST be ignored on receipt.
-lazy_static! {
-    pub static ref SINGLE_HOST_DATA: [u8; SINGLE_HOST_DATA_SIZE] = {
-        let mut result = [0x00; SINGLE_HOST_DATA_SIZE];
-        let mut buffer = io::Cursor::new(result.as_mut());
+pub static SINGLE_HOST_DATA: LazyLock<[u8; SINGLE_HOST_DATA_SIZE]> = LazyLock::new(|| {
+    let mut result = [0x00; SINGLE_HOST_DATA_SIZE];
+    let mut buffer = io::Cursor::new(result.as_mut());
 
-        buffer.write_u32::<LittleEndian>(SINGLE_HOST_DATA_SIZE as u32).unwrap(); //size
-        buffer.write_u32::<LittleEndian>(0).unwrap(); //z4
-        buffer.write_u32::<LittleEndian>(1).unwrap(); //data present
-        buffer.write_u32::<LittleEndian>(0x2000).unwrap(); //custom_data
-        buffer.write_all([0xaa; 32].as_ref()).unwrap(); //machine_id
+    buffer.write_u32::<LittleEndian>(SINGLE_HOST_DATA_SIZE as u32).unwrap(); //size
+    buffer.write_u32::<LittleEndian>(0).unwrap(); //z4
+    buffer.write_u32::<LittleEndian>(1).unwrap(); //data present
+    buffer.write_u32::<LittleEndian>(0x2000).unwrap(); //custom_data
+    buffer.write_all([0xaa; 32].as_ref()).unwrap(); //machine_id
 
-        result
-    };
-}
+    result
+});
 
 fn convert_to_file_time(end_date: OffsetDateTime) -> crate::Result<u64> {
     let start_date = time::Date::from_calendar_date(1601, time::Month::January, 1)

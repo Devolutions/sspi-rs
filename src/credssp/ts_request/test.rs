@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use super::*;
 use crate::credssp::CredSspMode;
@@ -196,40 +196,48 @@ const TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: [u8; 25] = [
     0x04, 0x00, 0xa2, 0x02, 0x04, 0x00,
 ];
 
-lazy_static! {
-    static ref AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: CredentialsBuffers = CredentialsBuffers::AuthIdentity(
+static AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
+    CredentialsBuffers::AuthIdentity(
         AuthIdentity {
             username: Username::parse("a").unwrap(),
             password: String::from("1").into(),
         }
-        .into()
-    );
-    static ref AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: CredentialsBuffers = CredentialsBuffers::AuthIdentity(
+        .into(),
+    )
+});
+
+static AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
+    CredentialsBuffers::AuthIdentity(
         AuthIdentity {
             username: Username::new("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890", None).unwrap(),
             password: String::from(
-                "@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?"
+                "@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?",
             )
             .into(),
         }
-        .into()
-    );
-    static ref AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: CredentialsBuffers =
-        CredentialsBuffers::AuthIdentity(
-            AuthIdentity {
-                username: Username::new("Username", Some("Domain")).unwrap(),
-                password: String::from("Password").into(),
-            }
-            .into()
-        );
-    static ref AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: CredentialsBuffers = CredentialsBuffers::AuthIdentity(
+        .into(),
+    )
+});
+
+static AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
+    CredentialsBuffers::AuthIdentity(
+        AuthIdentity {
+            username: Username::new("Username", Some("Domain")).unwrap(),
+            password: String::from("Password").into(),
+        }
+        .into(),
+    )
+});
+
+static AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
+    CredentialsBuffers::AuthIdentity(
         AuthIdentity {
             username: Username::new("", Some("")).unwrap(),
             password: String::from("").into(),
         }
-        .into()
-    );
-}
+        .into(),
+    )
+});
 
 #[test]
 fn ntlm_decode_first_phase_with_nego_token_and_client_nonce() {

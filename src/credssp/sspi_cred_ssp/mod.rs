@@ -1,10 +1,9 @@
 mod cipher_block_size;
 mod tls_connection;
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use async_recursion::async_recursion;
-use lazy_static::lazy_static;
 use picky_asn1_x509::Certificate;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -27,15 +26,13 @@ use crate::{
 
 pub const PKG_NAME: &str = "CREDSSP";
 
-lazy_static! {
-    pub static ref PACKAGE_INFO: PackageInfo = PackageInfo {
-        capabilities: PackageCapabilities::empty(),
-        rpc_id: PACKAGE_ID_NONE,
-        max_token_len: negotiate::PACKAGE_INFO.max_token_len + 1,
-        name: SecurityPackageType::CredSsp,
-        comment: String::from("CredSsp security package"),
-    };
-}
+pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
+    capabilities: PackageCapabilities::empty(),
+    rpc_id: PACKAGE_ID_NONE,
+    max_token_len: negotiate::PACKAGE_INFO.max_token_len + 1,
+    name: SecurityPackageType::CredSsp,
+    comment: String::from("CredSsp security package"),
+});
 
 #[derive(Debug, Clone)]
 enum CredSspState {

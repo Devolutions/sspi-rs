@@ -6,9 +6,8 @@ pub mod test;
 mod av_pair;
 mod computations;
 
-use std::io;
-
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io;
 
 use crate::ntlm::{NegotiateFlags, NTLM_VERSION_SIZE};
 
@@ -70,6 +69,13 @@ impl MessageFields {
         cursor.read_exact(&mut self.buffer)?;
 
         Ok(())
+    }
+
+    fn read_buffer_from_cursor<T>(&mut self, cursor: &mut io::Cursor<T>) -> io::Result<()>
+    where
+        io::Cursor<T>: io::Read + io::Seek,
+    {
+        self.read_buffer_from(cursor)
     }
 }
 
