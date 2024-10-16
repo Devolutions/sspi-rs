@@ -44,7 +44,7 @@ picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.13"
 tokio = "1.40"
 ffi-types = { path = "crates/ffi-types" }
-winscard = { path = "crates/winscard" }
+winscard = { version = "0.2", path = "crates/winscard" }
 rsa = { version = "0.9.6", default-features = false }
 windows-sys = "0.59"
 base64 = "0.22"
