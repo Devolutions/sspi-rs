@@ -42,15 +42,14 @@ num-traits = { version = "0.2", default-features = false }
 picky = { version = "7.0.0-rc.9", default-features = false }
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.13"
-# `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { version = "1.40", features = ["time", "rt", "rt-multi-thread"] }
+tokio = "1.40"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { path = "crates/winscard" }
 rsa = { version = "0.9.6", default-features = false }
-windows-sys = { version = "0.59" }
+windows-sys = "0.59"
 base64 = "0.22"
 whoami = "1.5"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = "0.3"
 proptest = "1.5"
 
 [features]
@@ -87,7 +86,8 @@ num-traits = { workspace = true, default-features = true }
 picky-asn1-der.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 uuid = { workspace = true, features = ["v4"], default-features = true }
-tokio = { workspace = true, optional = true }
+# `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
+tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
 rsa = { workspace = true, features = ["sha1"] }
 tracing = { workspace = true, default-features = true }
