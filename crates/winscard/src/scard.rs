@@ -50,7 +50,7 @@ const IO_CTL: u32 = 0x00313520;
 
 /// The original winscard ATR is not suitable because it contains AID bytes.
 /// So we need to construct our own. Read more about our constructed ATR string:
-/// https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D
+/// <https://smartcard-atr.apdu.fr/parse?ATR=3B+8D+01+80+FB+A0+00+00+03+08+00+00+10+00+01+00+4D>
 #[rustfmt::skip]
 pub const ATR: [u8; 17] = [
     // TS. Direct Convention

@@ -35,7 +35,7 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 ///
 /// # Safety
 ///
-/// * `raw_buffer` must be [valid] for reads for `len` many bytes, and it must be properly aligned.
+/// * `raw_buffer` must be valid for reads for `len` many bytes, and it must be properly aligned.
 /// * The total size `len` of the slice must be no larger than `isize::MAX`, and adding that size to `data`
 ///   must not "wrap around" the address space.
 pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {

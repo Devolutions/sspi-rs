@@ -75,7 +75,7 @@ impl From<ReaderAction> for u64 {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, FromPrimitive, ToPrimitive)]
 #[repr(u32)]
 pub enum AttributeId {
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a2e87e6925548b9fcca3fa0026b82500d
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a2e87e6925548b9fcca3fa0026b82500d>
     AsyncProtocolTypes = 0x0120,
     /// Answer to reset (ATR) string.
     AtrString = 0x0303,
@@ -101,7 +101,7 @@ pub enum AttributeId {
     CurrentIfsc = 0x0207,
     /// Current byte size for information field size device.
     CurrentIfsd = 0x0208,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a9c6ee3dccc23e924907e3dc2e29a50f6
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a9c6ee3dccc23e924907e3dc2e29a50f6>
     CurrentIoState = 0x0302,
     /// Current guard time.
     CurrentN = 0x0205,
@@ -129,13 +129,13 @@ pub enum AttributeId {
     /// the next will be unit 1 (if it is the same brand of reader) and so on. Two different brands of readers
     /// will both have zero for this value.
     DeviceUnit = 0x0001,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a1a1d31628ec9f49f79d2dda6651658d6
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a1a1d31628ec9f49f79d2dda6651658d6>
     EscAuhRequest = 0xA005,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a69d8dd84f5f433efbfa6e0fce2a95528
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a69d8dd84f5f433efbfa6e0fce2a95528>
     EscCancel = 0xA003,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a55df7896fb65a2a942780d383d815071
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a55df7896fb65a2a942780d383d815071>
     EscReset = 0xA000,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a5fcd5c979018130c164a64c728f0716d
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a5fcd5c979018130c164a64c728f0716d>
     ExtendedBt = 0x020c,
     /// Single byte. Zero if smart card electrical contact is not active; nonzero if contact is active.
     IccInterfaceStatus = 0x0301,
@@ -149,19 +149,19 @@ pub enum AttributeId {
     MaxDataRate = 0x0124,
     /// Maximum bytes for information file size device.
     MaxIfsd = 0x0125,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a42ea634deb1ec51e10722b661aa73d01
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a42ea634deb1ec51e10722b661aa73d01>
     MaxInput = 0xA007,
     /// Zero if device does not support power down while smart card is inserted. Nonzero otherwise.
     PowerMgmtSupport = 0x0131,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a62d09db2a45663ea726239aeafaac747
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a62d09db2a45663ea726239aeafaac747>
     SupresT1IfsRequest = 0x0007,
     /// DWORD encoded as 0x0rrrpppp where rrr is RFU and should be 0x000. pppp encodes the supported
     /// protocol types. A '1' in a given bit position indicates support for the associated ISO protocol,
     /// so if bits zero and one are set, both T=0 and T=1 protocols are supported.
     SyncProtocolTypes = 0x0126,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a86eb3bba6a8a463aa0eac4ada7704785
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a86eb3bba6a8a463aa0eac4ada7704785>
     UserAuthInputDevice = 0x0142,
-    /// https://pcsclite.apdu.fr/api/reader_8h.html#a60bf2dbb950d448099314aa86c14b2aa
+    /// <https://pcsclite.apdu.fr/api/reader_8h.html#a60bf2dbb950d448099314aa86c14b2aa>
     UserToCardAuthDevice = 0x0140,
     /// Vendor-supplied interface device serial number.
     VendorIfdSerialNo = 0x0103,
