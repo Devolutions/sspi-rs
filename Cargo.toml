@@ -131,6 +131,6 @@ base64.workspace = true
 static_assertions = "1"
 whoami.workspace = true
 picky = { workspace = true, features = ["x509"] }
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
