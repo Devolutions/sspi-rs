@@ -20,28 +20,28 @@ aws-lc-rs = ["sspi/aws-lc-rs"]
 ring = ["sspi/ring"]
 
 [dependencies]
-cfg-if = "1"
-libc = "0.2"
-num-traits = "0.2"
-whoami = "1.5"
-sspi = { path = "..", default-features = false, features = ["network_client", "dns_resolver"] }
-ffi-types = { path = "../crates/ffi-types", features = ["winscard"], optional = true }
-picky-asn1-der = "0.5"
-uuid = { version = "1.10", default-features = false }
-winscard = { path = "../crates/winscard", features = ["std"], optional = true }
-
+cfg-if.workspace = true
+num-traits = { workspace = true, default-features = true }
+whoami.workspace = true
+ffi-types = { workspace = true, features = ["winscard"], optional = true }
+picky-asn1-der.workspace = true
+uuid.workspace = true
+winscard = { workspace = true, features = ["std"], optional = true }
 # logging
-tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
+tracing = { workspace = true, default-features = true }
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
+
+libc = "0.2"
+sspi = { path = "..", default-features = false, features = ["network_client", "dns_resolver"] }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
-windows-sys = { version = "0.59", features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
 
 [target.'cfg(not(windows))'.dependencies]
-bitflags = { version = "2.6", optional = true }
-picky-asn1-x509 = { version = "0.13", optional = true }
-picky = { version = "7.0.0-rc", default-features = false, features = ["x509"], optional = true }
+bitflags = { workspace = true, optional = true }
+picky-asn1-x509 = { workspace = true, optional = true }
+picky = { workspace = true, features = ["x509"], optional = true }
 
 [dev-dependencies]
 sspi = { path = "..", features = ["network_client", "dns_resolver", "__test-data"] }
