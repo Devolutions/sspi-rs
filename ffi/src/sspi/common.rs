@@ -514,11 +514,11 @@ mod tests {
         );
     }
 
+    /// This test simulates initialize security context function call. It's better to run it using Miri
+    /// https://github.com/rust-lang/miri
+    /// cargo +nightly miri test
     #[test]
     fn kerberos_encryption_decryption() {
-        // This test simulates decryption and decryption. It's better to run it using Miri
-        // https://github.com/rust-lang/miri
-        // cargo +nightly miri test
         let plain_message = b"some plain message";
 
         let kerberos_client = sspi::kerberos::test_data::fake_client();

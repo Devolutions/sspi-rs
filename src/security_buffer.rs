@@ -4,12 +4,12 @@ use std::mem::take;
 use crate::{Error, ErrorKind, Result, SecurityBufferType};
 
 /// A special security buffer type is used for the data decryption. Basically, it's almost the same
-/// as [OwnedSecurityBuffer] but for decryption.
+/// as `OwnedSecurityBuffer` but for decryption.
 ///
 /// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
 /// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
 ///
-/// So, the already defined [OwnedSecurityBuffer] is not suitable for decryption because it uses [Vec] inside.
+/// So, the already defined `OwnedSecurityBuffer` is not suitable for decryption because it uses [Vec] inside.
 /// We use reference in the [SecurityBuffer] structure to avoid data cloning as much as possible.
 /// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
 /// security package.

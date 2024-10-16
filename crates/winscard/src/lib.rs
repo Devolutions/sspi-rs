@@ -56,7 +56,7 @@ pub struct Response {
 }
 
 impl Response {
-    /// Creates a new [Response] based on the [status] and [data].
+    /// Creates a new [Response] based on the `status` and `data`.
     pub fn new(status: Status, data: Option<Vec<u8>>) -> Self {
         Response { status, data }
     }
@@ -91,7 +91,7 @@ pub struct Error {
 }
 
 impl Error {
-    /// Creates a new [Error] based on the [error_kind] and [description].
+    /// Creates a new [Error] based on the `error_kind` and `description`.
     pub fn new(error_kind: ErrorKind, description: impl Into<String>) -> Self {
         Error {
             error_kind,

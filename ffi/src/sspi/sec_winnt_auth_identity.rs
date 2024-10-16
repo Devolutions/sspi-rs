@@ -17,7 +17,7 @@ use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{into_raw_ptr, raw_str_into_bytes, w_str_len};
+use crate::utils::{credentials_str_into_bytes, into_raw_ptr, w_str_len};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -277,16 +277,16 @@ pub unsafe fn auth_data_to_identity_buffers_a(
             );
         }
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
-            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
+            user: credentials_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
+            domain: credentials_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
+            password: credentials_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user: raw_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
-            domain: raw_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-            password: raw_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
+            user: credentials_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
+            domain: credentials_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
+            password: credentials_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize).into(),
         }))
     }
 }
@@ -305,8 +305,8 @@ pub unsafe fn auth_data_to_identity_buffers_w(
                 usize::try_from((*auth_data).package_list_length).unwrap(),
             )));
         }
-        let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
-        let password = raw_str_into_bytes(
+        let user = credentials_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
+        let password = credentials_str_into_bytes(
             (*auth_data).password as *const _,
             (*auth_data).password_length as usize * 2,
         )
@@ -314,19 +314,22 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
-        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if !user.is_empty() && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
-            domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
+            domain: credentials_str_into_bytes(
+                (*auth_data).domain as *const _,
+                (*auth_data).domain_length as usize * 2,
+            ),
             password,
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-        let user = raw_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
-        let password = raw_str_into_bytes(
+        let user = credentials_str_into_bytes((*auth_data).user as *const _, (*auth_data).user_length as usize * 2);
+        let password = credentials_str_into_bytes(
             (*auth_data).password as *const _,
             (*auth_data).password_length as usize * 2,
         )
@@ -334,7 +337,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
-        if CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
+        if !user.is_empty() && CredIsMarshaledCredentialW(user.as_ptr() as *const _) != 0 {
             return handle_smart_card_creds(user, password);
         }
 
@@ -346,7 +349,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
-            domain: raw_str_into_bytes((*auth_data).domain as *const _, (*auth_data).domain_length as usize * 2),
+            domain: credentials_str_into_bytes(
+                (*auth_data).domain as *const _,
+                (*auth_data).domain_length as usize * 2,
+            ),
             password,
         }))
     }
@@ -658,7 +664,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
-    if CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
+    if !username.is_empty() && CredIsMarshaledCredentialW(username.as_ptr() as *const _) != 0 {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, password data is a wide C string and we need to delete the NULL terminator.

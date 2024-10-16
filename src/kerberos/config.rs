@@ -13,7 +13,7 @@ pub struct KerberosConfig {
     ///
     /// Depending on the scheme it is expected to be either:
     /// - a (Kerberos) KDC address (e.g.: tcp://domain:88, udp://domain:88), or
-    /// - a KDC _Proxy_ URL (e.g.: https://gateway.devolutions.net/jet/KdcProxy?token=<…>)
+    /// - a KDC _Proxy_ URL (e.g.: <https://gateway.devolutions.net/jet/KdcProxy?token=…>)
     ///
     /// That is, when the scheme is `http` or `https`, the KDC Proxy Protocol ([KKDCP]) will be
     /// used on top of the Kerberos protocol, wrapping the messages.
