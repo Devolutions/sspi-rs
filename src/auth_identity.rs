@@ -203,10 +203,11 @@ impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
 
     fn try_from(credentials_buffers: &AuthIdentityBuffers) -> Result<Self, Self::Error> {
         let account_name = utils::bytes_to_utf16_string(&credentials_buffers.user);
-        let domain_name = credentials_buffers
-            .domain
-            .is_empty()
-            .then(|| utils::bytes_to_utf16_string(&credentials_buffers.domain));
+        let domain_name = if !credentials_buffers.domain.is_empty() {
+            Some(utils::bytes_to_utf16_string(&credentials_buffers.domain))
+        } else {
+            None
+        };
 
         let username = Username::new(&account_name, domain_name.as_deref())?;
         let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()).into();
