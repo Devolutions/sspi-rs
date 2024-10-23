@@ -421,15 +421,19 @@ impl SspiImpl for Negotiate {
                 kerberos.acquire_credentials_handle_impl(builder)?;
             }
             NegotiatedProtocol::Ntlm(ntlm) => {
-                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
-                    identity
+                let auth_identity = if builder.credential_use == CredentialUse::Outbound {
+                    if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
+                        Some(identity)
+                    } else {
+                        return Err(Error::new(
+                            ErrorKind::NoCredentials,
+                            "Auth identity is not provided for the Ntlm",
+                        ));
+                    }
                 } else {
-                    return Err(Error::new(
-                        ErrorKind::NoCredentials,
-                        "Auth identity is not provided for the Pku2u",
-                    ));
+                    None
                 };
-                let new_builder = builder.full_transform(Some(auth_identity));
+                let new_builder = builder.full_transform(auth_identity);
                 new_builder.execute(ntlm)?;
             }
         };

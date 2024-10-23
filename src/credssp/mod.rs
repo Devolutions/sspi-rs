@@ -441,15 +441,9 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                 .take()
                 .expect("CredSsp client mode should never be empty")
             {
-                ClientMode::Negotiate(_) => {
-                    return Err(ServerError {
-                        ts_request,
-                        error: crate::Error::new(
-                            ErrorKind::UnsupportedFunction,
-                            "Negotiate module is not supported for the CredSsp server",
-                        ),
-                    })
-                }
+                ClientMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
+                    try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
+                ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config), ts_request),
                 ))),
