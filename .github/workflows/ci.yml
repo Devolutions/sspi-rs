@@ -80,7 +80,7 @@ jobs:
             additional-args: --features network_client,dns_resolver,scard,tsssp
           - os: osx
             manifest: Cargo.toml
-            additional-args: --features network_client,dns_resolver,scard
+            additional-args: --features network_client,scard
           - os: linux
             manifest: Cargo.toml
             additional-args: --features network_client,dns_resolver,scard
