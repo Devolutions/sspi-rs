@@ -39,11 +39,11 @@ jobs:
           - os: win
             runner: windows-2022
           - os: osx
-            runner: macos-12
+            runner: macos-14
           - os: linux
             runner: ubuntu-20.04
           - os: ios
-            runner: macos-12
+            runner: macos-14
           - os: android
             runner: ubuntu-20.04
         exclude:
@@ -123,6 +123,10 @@ jobs:
 
           # Install Visual Studio Developer PowerShell Module for cmdlets such as Enter-VsDevShell
           Install-Module VsDevShell -Force
+
+      - name: Install dependencies
+        if: matrix.os == 'ios'
+        run: cargo install --force --locked bindgen-cli
 
       - name: Setup build environment
         shell: pwsh
