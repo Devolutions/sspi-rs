@@ -32,7 +32,7 @@ tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
 
 libc = "0.2"
-sspi = { path = "..", default-features = false, features = ["network_client", "dns_resolver"] }
+sspi = { path = "..", default-features = false, features = ["network_client"] }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
@@ -43,5 +43,8 @@ bitflags = { workspace = true, optional = true }
 picky-asn1-x509 = { workspace = true, optional = true }
 picky = { workspace = true, features = ["x509"], optional = true }
 
+[target.'cfg(not(any(target_os="macos", target_os="ios", windows)))'.dependencies]
+sspi = { path = "..", default-features = false, features = ["dns_resolver"] }
+
 [dev-dependencies]
-sspi = { path = "..", features = ["network_client", "dns_resolver", "__test-data"] }
+sspi = { path = "..", features = ["__test-data"] }
