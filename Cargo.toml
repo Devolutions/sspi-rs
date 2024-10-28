@@ -124,7 +124,7 @@ windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Wi
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio.workspace = true
+tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 
 [dev-dependencies]
 base64.workspace = true
