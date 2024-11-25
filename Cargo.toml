@@ -39,9 +39,9 @@ time = { version = "0.3", default-features = false }
 sha1 = { version = "0.10", default-features = false }
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
-picky = { version = "7.0.0-rc.9", default-features = false }
+picky = { version = "7.0.0-rc.10", default-features = false }
 picky-asn1-der = "0.5"
-picky-asn1-x509 = "0.13"
+picky-asn1-x509 = "0.14"
 tokio = "1.41"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
