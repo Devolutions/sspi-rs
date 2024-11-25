@@ -85,6 +85,23 @@ impl Krb5Conf {
         None
     }
 
+    pub fn get_values_in_section(&self, path: &[&str]) -> Option<Vec<(&str, &str)>> {
+        let mut values = Vec::new();
+
+        let path = path.join("|").to_ascii_lowercase();
+        for (key, val) in self.values.iter() {
+            if key.to_ascii_lowercase().contains(&path) {
+                values.push((&key[path.len() + 1..], val.as_str()));
+            }
+        }
+
+        if values.is_empty() {
+            None
+        } else {
+            Some(values)
+        }
+    }
+
     fn enter_section(&mut self, name: &str) {
         self.path = vec![name.to_owned()];
     }

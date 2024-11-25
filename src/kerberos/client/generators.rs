@@ -1,3 +1,5 @@
+use std::env;
+use std::path::Path;
 use std::str::FromStr;
 
 use bitflags;
@@ -44,6 +46,7 @@ use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
+use crate::krb::Krb5Conf;
 use crate::utils::parse_target_name;
 use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
@@ -79,12 +82,53 @@ pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
 }
 
 pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
-    if domain.is_empty() {
+    // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
+
+    let krb5_config = env::var("KRB5_CONFIG").unwrap_or_else(|_| "/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
+    let krb5_conf_paths = krb5_config.split(':').map(Path::new).collect::<Vec<&Path>>();
+
+    get_client_principal_realm_impl(&krb5_conf_paths, username, domain)
+}
+
+fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, domain: &str) -> String {
+    let domain = if domain.is_empty() {
         if let Some((_left, right)) = username.split_once('@') {
-            return right.to_string();
+            right.to_string()
+        } else {
+            String::new()
+        }
+    } else {
+        domain.to_string()
+    };
+
+    for krb5_conf_path in krb5_conf_paths {
+        if !krb5_conf_path.exists() {
+            continue;
+        }
+
+        if let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path) {
+            if let Some(mappings) = krb5_conf.get_values_in_section(&["domain_realm"]) {
+                for (mapping_domain, realm) in mappings {
+                    if matches_domain(&domain, mapping_domain) {
+                        return realm.to_owned();
+                    }
+                }
+            }
         }
     }
-    domain.to_string()
+
+    domain.to_uppercase()
+}
+
+fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
+    if mapping_domain.starts_with('.') {
+        domain
+            .split_once('.')
+            .map(|(_, remaining)| remaining.eq_ignore_ascii_case(&mapping_domain[1..]))
+            .unwrap_or(false)
+    } else {
+        domain.eq_ignore_ascii_case(mapping_domain)
+    }
 }
 
 #[derive(Debug)]
@@ -740,6 +784,8 @@ pub fn generate_krb_priv_request(
 mod tests {
     use super::*;
 
+    const KRB5_CONFIG_FILE_PATH: &str = "test_assets/krb5.conf";
+
     #[test]
     fn test_set_flags() {
         let mut checksum_values = ChecksumValues::default();
@@ -767,5 +813,35 @@ mod tests {
         checksum_values.set_flags(flags);
         let expected_bytes = [0x3E, 0x00, 0x00, 0x00];
         assert_eq!(checksum_values.inner[20..24], expected_bytes);
+    }
+
+    #[test]
+    fn test_get_client_principal_realm_from_domain() {
+        let username = "";
+        let domain = "TBT.com";
+
+        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+
+        assert_eq!(realm, "TBT.COM");
+    }
+
+    #[test]
+    fn test_get_client_principal_realm_from_username() {
+        let username = "user@tbt.com";
+        let domain = "";
+
+        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+
+        assert_eq!(realm, "TBT.COM");
+    }
+
+    #[test]
+    fn test_get_client_principal_realm_from_subdomain_and_domain() {
+        let username = "";
+        let domain = "s.tbt.com";
+
+        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+
+        assert_eq!(realm, "TBT.COM");
     }
 }
