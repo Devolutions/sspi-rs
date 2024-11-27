@@ -10,10 +10,6 @@ authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
 
-[[example]]
-name = "kerberos"
-required-features = ["network_client"]
-
 [workspace]
 resolver = "2"
 members = [
@@ -39,13 +35,13 @@ time = { version = "0.3", default-features = false }
 sha1 = { version = "0.10", default-features = false }
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
-picky = { version = "7.0.0-rc.10", default-features = false }
+picky = { version = "7.0.0-rc.11", default-features = false }
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.14"
 tokio = "1.41"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
-rsa = { version = "0.9.6", default-features = false }
+rsa = { version = "0.9.7", default-features = false }
 windows-sys = "0.59"
 base64 = "0.22"
 whoami = "1.5"
@@ -58,7 +54,7 @@ default = ["aws-lc-rs"]
 # Enable reqwest for HTTP requests.
 network_client = ["dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "__rustls-used"]
 # KDC discovery by querying DNS records.
-dns_resolver = ["dep:trust-dns-resolver", "dep:tokio"]
+dns_resolver = ["dep:hickory-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
 tsssp = ["dep:rustls", "__rustls-used"]
 # Turns on Kerberos smart card login (available only on Windows and users WinSCard API).
@@ -105,10 +101,10 @@ url = "2.5"
 oid = "0.2"
 
 picky-krb = "0.9"
-picky-asn1 = { version = "0.9", features = ["time_conversion"] }
+picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
-trust-dns-resolver = { version = "0.23", optional = true }
+hickory-resolver = { version = "0.24", optional = true }
 portpicker = { version = "0.1", optional = true }
 num-bigint-dig = "0.8"
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
@@ -134,3 +130,7 @@ picky = { workspace = true, features = ["x509"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
+
+[[example]]
+name = "kerberos"
+required-features = ["network_client"]

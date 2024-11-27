@@ -237,15 +237,15 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature="dns_resolver")] {
-        use trust_dns_resolver::TokioAsyncResolver;
-        use trust_dns_resolver::system_conf::read_system_conf;
-        use trust_dns_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
+        use hickory_resolver::TokioAsyncResolver;
+        use hickory_resolver::system_conf::read_system_conf;
+        use hickory_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
         use std::env;
         use std::net::{IpAddr,SocketAddr};
         use std::str::FromStr;
         use url::Url;
 
-        fn get_trust_dns_name_server_from_url_str(url: &str) -> Option<NameServerConfig> {
+        fn get_dns_name_server_from_url(url: &str) -> Option<NameServerConfig> {
             let url = if !url.contains("://") && !url.is_empty() {
                 format!("udp://{}", url)
             } else {
@@ -276,11 +276,11 @@ cfg_if::cfg_if! {
             None
         }
 
-        fn get_trust_dns_resolver_from_name_servers(name_servers: Vec<String>) -> TokioAsyncResolver {
+        fn get_dns_resolver_from_name_servers(name_servers: Vec<String>) -> TokioAsyncResolver {
             let mut resolver_config = ResolverConfig::new();
 
             for name_server_url in name_servers {
-                if let Some(name_server) = get_trust_dns_name_server_from_url_str(&name_server_url) {
+                if let Some(name_server) = get_dns_name_server_from_url(&name_server_url) {
                     resolver_config.add_name_server(name_server);
                 }
             }
@@ -292,17 +292,17 @@ cfg_if::cfg_if! {
         }
 
         #[cfg(target_os="windows")]
-        fn get_trust_dns_resolver(domain: &str) -> Option<TokioAsyncResolver> {
+        fn get_dns_resolver(domain: &str) -> Option<TokioAsyncResolver> {
             let name_servers = get_name_servers_for_domain(domain);
-            Some(get_trust_dns_resolver_from_name_servers(name_servers))
+            Some(get_dns_resolver_from_name_servers(name_servers))
         }
 
         #[cfg(not(target_os="windows"))]
-        fn get_trust_dns_resolver(_domain: &str) -> Option<TokioAsyncResolver> {
+        fn get_dns_resolver(_domain: &str) -> Option<TokioAsyncResolver> {
             if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
                 let name_servers: Vec<String> = name_server_list
                     .split(',').map(|c|c.trim()).filter(|x| !x.is_empty()).map(String::from).collect();
-                Some(get_trust_dns_resolver_from_name_servers(name_servers))
+                Some(get_dns_resolver_from_name_servers(name_servers))
             } else if let Ok((resolver_config, resolver_options)) = read_system_conf() {
                 Some(TokioAsyncResolver::tokio(resolver_config, resolver_options))
             } else {
@@ -310,10 +310,10 @@ cfg_if::cfg_if! {
             }
         }
 
-        pub fn detect_kdc_hosts_from_dns_trust(domain: &str) -> Vec<String> {
+        pub fn detect_kdc_hosts_from_dns_resolver(domain: &str) -> Vec<String> {
             let mut kdc_hosts = Vec::new();
 
-            if let Some(resolver) = get_trust_dns_resolver(domain) {
+            if let Some(resolver) = get_dns_resolver(domain) {
                 if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._tcp.{}", domain))) {
                     for record in records {
                         let port = record.port();
@@ -380,7 +380,7 @@ pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
         } else if #[cfg(any(target_os="macos", target_os="ios"))] {
             detect_kdc_hosts_from_dns_apple(domain)
         } else if #[cfg(feature="dns_resolver")] {
-            detect_kdc_hosts_from_dns_trust(domain)
+            detect_kdc_hosts_from_dns_resolver(domain)
         } else {
             Vec::new()
         }
