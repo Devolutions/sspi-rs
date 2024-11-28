@@ -1,8 +1,9 @@
+#[cfg(test)]
 macro_rules! test_encoding_decoding {
     ($name:ident, $expected:expr, $data:expr) => {
         paste::paste! {
             #[test]
-            fn [<$name _encoding_decoding>]() {
+            fn [<$name:lower _encoding_decoding>]() {
                 use crate::rpc::{Encode, Decode};
 
                 let data = $data;
