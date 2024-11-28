@@ -171,6 +171,50 @@ impl Decode for ContextResult {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bind {
+    pub max_xmit_frag: u16,
+    pub max_recv_frag: u16,
+    pub assoc_group: u32,
+    pub contexts: Vec<ContextElement>,
+}
+
+impl Encode for Bind {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(self.max_xmit_frag)?;
+        writer.write_u16::<LittleEndian>(self.max_recv_frag)?;
+        writer.write_u32::<LittleEndian>(self.assoc_group)?;
+        writer.write_u32::<LittleEndian>(self.contexts.len().try_into()?)?;
+
+        for context in &self.contexts {
+            context.encode(&mut writer)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Decode for Bind {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        let max_xmit_frag = reader.read_u16::<LittleEndian>()?;
+        let max_recv_frag = reader.read_u16::<LittleEndian>()?;
+        let assoc_group = reader.read_u32::<LittleEndian>()?;
+
+        let contexts_count = reader.read_u32::<LittleEndian>()?;
+        let contexts = (0..contexts_count)
+            .into_iter()
+            .map(|_| ContextElement::decode(&mut reader))
+            .collect::<DpapiResult<_>>()?;
+
+        Ok(Self {
+            max_xmit_frag,
+            max_recv_frag,
+            assoc_group,
+            contexts,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
