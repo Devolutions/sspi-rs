@@ -51,6 +51,7 @@ whoami = "1.5"
 tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
+byteorder = "1.5"
 
 [features]
 default = ["aws-lc-rs"]
@@ -94,8 +95,8 @@ tracing = { workspace = true, default-features = true }
 serde.workspace = true
 picky-krb.workspace = true
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
+byteorder.workspace = true
 
-byteorder = "1.5"
 md-5 = "0.10"
 md4 = "0.10"
 sha2 = "0.10"

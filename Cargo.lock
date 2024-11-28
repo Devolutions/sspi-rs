@@ -535,6 +535,13 @@ dependencies = [
 [[package]]
 name = "dpapi"
 version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "num-derive",
+ "num-traits",
+ "paste",
+ "uuid",
+]
 
 [[package]]
 name = "dunce"

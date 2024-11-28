@@ -13,3 +13,10 @@ description = "A Rust implementation of Windows DPAPI"
 name = "dpapi"
 
 [dependencies]
+byteorder.workspace = true
+num-derive.workspace = true
+num-traits = { workspace = true, default-features = true }
+uuid.workspace = true
+
+[dev-dependencies]
+paste = "1.0"
