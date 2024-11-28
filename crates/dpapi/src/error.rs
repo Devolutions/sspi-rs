@@ -1,4 +1,5 @@
 use std::io::Error as IoError;
+use std::num::TryFromIntError;
 
 use num_derive::{FromPrimitive, ToPrimitive};
 use uuid::Error as UuidError;
@@ -9,6 +10,7 @@ pub enum ErrorKind {
     Success = 0,
     NteBadFlags = 0x80090009,
     NteInvalidParameter = 0x80090027,
+    NteInternalErrpr = 0x8009002D,
 
     IoError = 1,
     UuidError = 2,
@@ -44,6 +46,15 @@ impl From<UuidError> for Error {
     fn from(err: UuidError) -> Self {
         Self {
             kind: ErrorKind::UuidError,
+            description: err.to_string(),
+        }
+    }
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(err: TryFromIntError) -> Self {
+        Self {
+            kind: ErrorKind::NteInternalErrpr,
             description: err.to_string(),
         }
     }
