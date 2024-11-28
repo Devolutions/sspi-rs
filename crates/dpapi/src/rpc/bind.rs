@@ -16,6 +16,7 @@ use crate::{DpapiResult, Error, ErrorKind};
 ///    unsigned char Bitmask[8];
 /// } BindTimeFeatureNegotiationBitmask;
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
 pub enum BindTimeFeatureNegotiationBitmask {
     None = 0x0,
@@ -25,7 +26,7 @@ pub enum BindTimeFeatureNegotiationBitmask {
     KeepConnectionOnOrphanSupported = 0x02,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxId {
     pub uuid: Uuid,
     pub version: u16,
@@ -59,7 +60,7 @@ impl Decode for SyntaxId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextElement {
     pub context_id: u16,
     pub abstract_syntax: SyntaxId,
@@ -96,6 +97,76 @@ impl Decode for ContextElement {
             context_id,
             abstract_syntax,
             transfer_syntaxes,
+        })
+    }
+}
+
+/// [`p_cont_def_result_t` Enumerator](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/8df5c4d4-364d-468c-81fe-ec94c1b40917)
+///
+/// These extensions specify a new member, `negotiate_ack`, which is added to the `p_cont_def_result_t` enumeration
+/// (specified in C706 section 12.6), with the numeric value of `3`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum ContextResultCode {
+    Acceptance = 0,
+    UserRejection = 1,
+    ProviderRejection = 2,
+    NegotiateAck = 3, // MS-RPCE extension
+}
+
+impl From<ContextResultCode> for u16 {
+    fn from(code: ContextResultCode) -> Self {
+        code as u16
+    }
+}
+
+impl TryFrom<u16> for ContextResultCode {
+    type Error = Error;
+
+    fn try_from(v: u16) -> DpapiResult<Self> {
+        match v {
+            0 => Ok(Self::Acceptance),
+            1 => Ok(Self::UserRejection),
+            2 => Ok(Self::ProviderRejection),
+            3 => Ok(Self::NegotiateAck),
+            v => Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                format!("invalid ContextResultCode value: {}", v),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextResult {
+    pub result: ContextResultCode,
+    pub reason: u16,
+    pub syntax: Uuid,
+    pub syntax_version: u32,
+}
+
+impl Encode for ContextResult {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(self.result.into())?;
+        writer.write_u16::<LittleEndian>(self.reason)?;
+        writer.write(&self.syntax.to_bytes_le())?;
+        writer.write_u32::<LittleEndian>(self.syntax_version)?;
+
+        Ok(())
+    }
+}
+
+impl Decode for ContextResult {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self {
+            result: reader.read_u16::<LittleEndian>()?.try_into()?,
+            reason: reader.read_u16::<LittleEndian>()?,
+            syntax: {
+                let mut uuid_buf = [0; 16];
+                reader.read(&mut uuid_buf)?;
+                Uuid::from_slice_le(&uuid_buf)?
+            },
+            syntax_version: reader.read_u32::<LittleEndian>()?,
         })
     }
 }
@@ -153,5 +224,16 @@ mod tests {
             ],
         },
         [0, 0, 1, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0, 51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0]
+    }
+
+    test_encoding_decoding! {
+        ContextResult,
+        ContextResult {
+            result: ContextResultCode::Acceptance,
+            reason: 0,
+            syntax: Uuid::from_str("71710533-beba-4937-8319-b5dbef9ccc36").unwrap(),
+            syntax_version: 1,
+        },
+        [0, 0, 0, 0, 51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0]
     }
 }
