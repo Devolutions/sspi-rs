@@ -538,10 +538,11 @@ dependencies = [
 name = "dpapi"
 version = "0.1.0"
 dependencies = [
- "picky-asn1",
- "picky-asn1-der",
- "picky-asn1-x509",
- "serde",
+ "byteorder",
+ "num-derive",
+ "num-traits",
+ "paste",
+ "uuid",
 ]
 
 [[package]]
