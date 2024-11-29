@@ -233,21 +233,74 @@ impl Decode for SecurityTrailer {
     }
 }
 
+bitflags::bitflags! {
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    pub struct FaultFlags: u8 {
+        const None = 0x00;
+        const ExtendedErrorPresent = 0x01;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fault {
+    pub alloc_hint: u32,
+    pub context_id: u16,
+    pub cancel_count: u8,
+    // Extension of MS-RPCE.
+    pub flags: FaultFlags,
+    pub status: u32,
+    pub stub_data: Vec<u8>,
+}
+
+impl Encode for Fault {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u32::<LittleEndian>(self.alloc_hint)?;
+        writer.write_u16::<LittleEndian>(self.context_id)?;
+        writer.write_u8(self.cancel_count)?;
+        writer.write_u8(self.flags.bits())?;
+        writer.write_u32::<LittleEndian>(self.status)?;
+        // alignment padding
+        writer.write_u32::<LittleEndian>(0)?;
+        // TODO: check written bytes.
+        writer.write(&self.stub_data)?;
+
+        Ok(())
+    }
+}
+
+impl Decode for Fault {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self {
+            alloc_hint: reader.read_u32::<LittleEndian>()?,
+            context_id: reader.read_u16::<LittleEndian>()?,
+            cancel_count: reader.read_u8()?,
+            flags: FaultFlags::from_bits(reader.read_u8()?)
+                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid FaultFlags value"))?,
+            status: reader.read_u32::<LittleEndian>()?,
+            stub_data: {
+                let mut buf = Vec::new();
+                reader.read_to_end(&mut buf)?;
+                buf
+            },
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PduData {
     Bind(Bind),
+    Fault(Fault),
 }
 
 impl PduData {
     pub fn decode(packet_type: PacketType, data_len: usize, mut reader: impl Read) -> DpapiResult<Self> {
-        match packet_type {
-            PacketType::Bind => {
-                // TODO: optimize it.
-                let mut buf = vec![0; data_len];
-                reader.read(&mut buf)?;
+        // TODO: optimize it.
+        let mut buf = vec![0; data_len];
+        reader.read(&mut buf)?;
 
-                Ok(PduData::Bind(Bind::decode(&buf as &[u8])?))
-            }
+        match packet_type {
+            PacketType::Bind => Ok(PduData::Bind(Bind::decode(&buf as &[u8])?)),
+            PacketType::Fault => Ok(PduData::Fault(Fault::decode(&buf as &[u8])?)),
             _ => Err(Error::new(
                 ErrorKind::NteInternalError,
                 format!("unsupported packet type: {:?}", packet_type),
@@ -260,6 +313,7 @@ impl Encode for PduData {
     fn encode(&self, writer: impl Write) -> DpapiResult<()> {
         match self {
             PduData::Bind(bind) => bind.encode(writer),
+            PduData::Fault(fault) => fault.encode(writer),
         }
     }
 }
