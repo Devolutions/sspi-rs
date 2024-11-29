@@ -332,6 +332,37 @@ impl Decode for BindNak {
     }
 }
 
+// `AlterContext` has the same layout as `Bind`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterContext(pub Bind);
+
+impl Encode for AlterContext {
+    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+        self.0.encode(writer)
+    }
+}
+
+impl Decode for AlterContext {
+    fn decode(reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self(Bind::decode(reader)?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterContextResponse(pub BindAck);
+
+impl Encode for AlterContextResponse {
+    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+        self.0.encode(writer)
+    }
+}
+
+impl Decode for AlterContextResponse {
+    fn decode(reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self(BindAck::decode(reader)?))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
