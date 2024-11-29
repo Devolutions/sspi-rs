@@ -4,6 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
 use super::{Decode, Encode};
+use crate::rpc::{read_padding, write_padding};
 use crate::{DpapiResult, Error, ErrorKind};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
@@ -244,10 +245,7 @@ impl Encode for BindAck {
             0
         } + 2;
 
-        let padding_len = (4 - (sec_addr_len % 4)) % 4;
-        let padding_buf = vec![0; padding_len];
-        // TODO: check written bytes.
-        writer.write(&padding_buf)?;
+        write_padding::<4>(sec_addr_len, &mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.results.len().try_into()?)?;
         for result in &self.results {
@@ -278,10 +276,7 @@ impl Decode for BindAck {
                     String::new()
                 };
 
-                let sec_addr_len = sec_addr_len + 2;
-                let padding_len = (4 - (sec_addr_len % 4)) % 4;
-                let mut padding_buf = vec![0; padding_len];
-                reader.read_exact(padding_buf.as_mut_slice())?;
+                read_padding::<4>(sec_addr_len + 2 /* len */, &mut reader)?;
 
                 sec_addr
             },
@@ -291,6 +286,47 @@ impl Decode for BindAck {
                     .into_iter()
                     .map(|_| ContextResult::decode(&mut reader))
                     .collect::<DpapiResult<_>>()?
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindNak {
+    pub reason: u16,
+    pub versions: Vec<(u8, u8)>,
+}
+
+impl Encode for BindNak {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(self.reason)?;
+
+        writer.write_u8(self.versions.len().try_into()?)?;
+        for version in &self.versions {
+            writer.write_u8(version.0)?;
+            writer.write_u8(version.1)?;
+        }
+
+        let versions_buf_len = 1 /* len */ + 2 /* version size */ * self.versions.len();
+        write_padding::<4>(versions_buf_len, &mut writer)
+    }
+}
+
+impl Decode for BindNak {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self {
+            reason: reader.read_u16::<LittleEndian>()?,
+            versions: {
+                let versions_count = reader.read_u8()?;
+                let versions = (0..versions_count)
+                    .into_iter()
+                    .map(|_| Ok((reader.read_u8()?, reader.read_u8()?)))
+                    .collect::<DpapiResult<Vec<_>>>()?;
+
+                let versions_buf_len = 1 /* len */ + 2 /* version size */ * versions.len();
+                read_padding::<4>(versions_buf_len, reader)?;
+
+                versions
             },
         })
     }
