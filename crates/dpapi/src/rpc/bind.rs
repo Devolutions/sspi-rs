@@ -215,6 +215,87 @@ impl Decode for Bind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindAck {
+    pub max_xmit_frag: u16,
+    pub max_recv_frag: u16,
+    pub assoc_group: u32,
+    pub sec_addr: String,
+    pub results: Vec<ContextResult>,
+}
+
+impl Encode for BindAck {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(self.max_xmit_frag)?;
+        writer.write_u16::<LittleEndian>(self.max_recv_frag)?;
+        writer.write_u32::<LittleEndian>(self.assoc_group)?;
+
+        let sec_addr_len = if !self.sec_addr.is_empty() {
+            let sec_addr_len = self.sec_addr.len() + 1;
+            writer.write_u16::<LittleEndian>(sec_addr_len.try_into()?)?;
+
+            writer.write(self.sec_addr.as_bytes())?;
+            writer.write_u8(0)?;
+
+            sec_addr_len
+        } else {
+            writer.write_u16::<LittleEndian>(0)?;
+
+            0
+        } + 2;
+
+        let padding_len = (4 - (sec_addr_len % 4)) % 4;
+        let padding_buf = vec![0; padding_len];
+        // TODO: check written bytes.
+        writer.write(&padding_buf)?;
+
+        writer.write_u32::<LittleEndian>(self.results.len().try_into()?)?;
+        for result in &self.results {
+            result.encode(&mut writer)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Decode for BindAck {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        Ok(Self {
+            max_xmit_frag: reader.read_u16::<LittleEndian>()?,
+            max_recv_frag: reader.read_u16::<LittleEndian>()?,
+            assoc_group: reader.read_u32::<LittleEndian>()?,
+            sec_addr: {
+                let sec_addr_len = usize::from(reader.read_u16::<LittleEndian>()?);
+                let sec_addr = if sec_addr_len > 0 {
+                    let mut buf = vec![0; sec_addr_len - 1 /* null byte */];
+
+                    reader.read_exact(buf.as_mut_slice())?;
+                    // Read null-terminator byte.
+                    reader.read_u8()?;
+
+                    String::from_utf8(buf)?
+                } else {
+                    String::new()
+                };
+
+                let sec_addr_len = sec_addr_len + 2;
+                let padding_len = (4 - (sec_addr_len % 4)) % 4;
+                let mut padding_buf = vec![0; padding_len];
+                reader.read_exact(padding_buf.as_mut_slice())?;
+
+                sec_addr
+            },
+            results: {
+                let results_count = reader.read_u32::<LittleEndian>()?;
+                (0..results_count)
+                    .into_iter()
+                    .map(|_| ContextResult::decode(&mut reader))
+                    .collect::<DpapiResult<_>>()?
+            },
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -222,6 +303,7 @@ mod tests {
     use super::*;
 
     test_encoding_decoding! {
+        syntax_id,
         SyntaxId,
         SyntaxId {
             uuid: Uuid::from_str("b9785960-524f-11df-8b6d-83dcded72085").expect("valid uuid"),
@@ -232,6 +314,7 @@ mod tests {
     }
 
     test_encoding_decoding! {
+        context_element,
         ContextElement,
         ContextElement {
             context_id: 0,
@@ -252,6 +335,7 @@ mod tests {
     }
 
     test_encoding_decoding! {
+        context_result,
         ContextResult,
         ContextResult {
             result: ContextResultCode::Acceptance,

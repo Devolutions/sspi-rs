@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 use std::num::TryFromIntError;
+use std::string::FromUtf8Error;
 
 use num_derive::{FromPrimitive, ToPrimitive};
 use uuid::Error as UuidError;
@@ -53,6 +54,15 @@ impl From<UuidError> for Error {
 
 impl From<TryFromIntError> for Error {
     fn from(err: TryFromIntError) -> Self {
+        Self {
+            kind: ErrorKind::NteInternalError,
+            description: err.to_string(),
+        }
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(err: FromUtf8Error) -> Self {
         Self {
             kind: ErrorKind::NteInternalError,
             description: err.to_string(),
