@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
 use super::{Decode, Encode};
-use crate::rpc::{read_padding, write_padding};
+use crate::rpc::{read_padding, read_uuid, write_padding};
 use crate::{DpapiResult, Error, ErrorKind};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
@@ -46,17 +46,10 @@ impl Encode for SyntaxId {
 
 impl Decode for SyntaxId {
     fn decode(mut reader: impl Read) -> DpapiResult<SyntaxId> {
-        let mut uuid_buf = [0; 16];
-        reader.read(&mut uuid_buf)?;
-        let uuid = Uuid::from_slice_le(&uuid_buf)?;
-
-        let version = reader.read_u16::<LittleEndian>()?;
-        let version_minor = reader.read_u16::<LittleEndian>()?;
-
         Ok(Self {
-            uuid,
-            version,
-            version_minor,
+            uuid: read_uuid(&mut reader)?,
+            version: reader.read_u16::<LittleEndian>()?,
+            version_minor: reader.read_u16::<LittleEndian>()?,
         })
     }
 }
@@ -348,6 +341,7 @@ impl Decode for AlterContext {
     }
 }
 
+// `AlterContextResponse` has the same layout as `BindAck`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterContextResponse(pub BindAck);
 
