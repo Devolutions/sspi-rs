@@ -538,6 +538,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.8.0",
  "byteorder",
+ "num-bigint-dig",
  "num-derive",
  "num-traits",
  "paste",

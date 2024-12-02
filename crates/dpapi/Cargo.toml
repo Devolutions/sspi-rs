@@ -24,6 +24,7 @@ regex = "1.11.1"
 picky-asn1.workspace = true
 picky-asn1-der.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
+num-bigint-dig.workspace = true
 
 [dev-dependencies]
 paste = "1.0"
