@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::rpc::{read_to_end, read_uuid, Decode, Encode};
 use crate::sid_utils::{ace_to_bytes, sd_to_bytes};
+use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{DpapiResult, Error, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -362,17 +363,6 @@ impl Decode for DpapiBlob {
             enc_content_algorithm_id,
         })
     }
-}
-
-pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> DpapiResult<String> {
-    debug_assert_eq!(data.len() % 2, 0);
-
-    Ok(String::from_utf16(
-        &data
-            .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
-            .collect::<Vec<u16>>(),
-    )?)
 }
 
 #[cfg(test)]

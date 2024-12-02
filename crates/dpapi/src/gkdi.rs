@@ -1,9 +1,11 @@
+use std::fmt;
 use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
 use crate::rpc::{read_padding, read_uuid, write_padding, Decode, Encode};
+use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{DpapiResult, Error, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +77,108 @@ impl Decode for GetKey {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HashAlg {
+    Sha1,
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+impl fmt::Display for HashAlg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HashAlg::Sha1 => write!(f, "SHA1"),
+            HashAlg::Sha256 => write!(f, "SHA256"),
+            HashAlg::Sha384 => write!(f, "SHA384"),
+            HashAlg::Sha512 => write!(f, "SHA512"),
+        }
+    }
+}
+
+impl TryFrom<&str> for HashAlg {
+    type Error = Error;
+
+    fn try_from(data: &str) -> Result<Self, Self::Error> {
+        match data {
+            "SHA1" => Ok(HashAlg::Sha1),
+            "SHA256" => Ok(HashAlg::Sha256),
+            "SHA384" => Ok(HashAlg::Sha384),
+            "SHA512" => Ok(HashAlg::Sha512),
+            _ => Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                format!("invalid hash alg name: {}", data),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KdfParameters {
+    hash_alg: HashAlg,
+}
+
+impl KdfParameters {
+    const MAGIC_IDENTIFIER_1: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+    const MAGIC_IDENTIFIER_2: &[u8] = &[0x00, 0x00, 0x00, 0x00];
+}
+
+impl Encode for KdfParameters {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        let encoded_hash_alg = self
+            .hash_alg
+            .to_string()
+            .encode_utf16()
+            .into_iter()
+            .chain(std::iter::once(0))
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        writer.write(KdfParameters::MAGIC_IDENTIFIER_1)?;
+        writer.write_u32::<LittleEndian>(encoded_hash_alg.len().try_into()?)?;
+        // TODO
+        writer.write(KdfParameters::MAGIC_IDENTIFIER_2)?;
+        writer.write(&encoded_hash_alg)?;
+
+        Ok(())
+    }
+}
+
+impl Decode for KdfParameters {
+    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        let mut buf = [0; 8];
+        reader.read_exact(&mut buf)?;
+
+        if buf != KdfParameters::MAGIC_IDENTIFIER_1 {
+            return Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                "invalid KdfParameters::MAGIC_IDENTIFIER_1",
+            ));
+        }
+
+        let hash_name_len: usize = reader.read_u32::<LittleEndian>()?.try_into()?;
+
+        let mut buf = [0; 4];
+        reader.read_exact(&mut buf)?;
+
+        if buf != KdfParameters::MAGIC_IDENTIFIER_2 {
+            return Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                "invalid KdfParameters::MAGIC_IDENTIFIER_2",
+            ));
+        }
+
+        let mut buf = vec![0; hash_name_len - 2 /* UTF16 null terminator char */];
+        reader.read_exact(&mut buf)?;
+        // Skip UTF16 null terminator char.
+        reader.read_u16::<LittleEndian>()?;
+
+        Ok(Self {
+            hash_alg: utf16_bytes_to_utf8_string(&buf)?.as_str().try_into()?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -92,5 +196,14 @@ mod tests {
             l2_key_id: 31,
         },
         [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x44, 0x29, 0x73, 0x7f, 0x91, 0x6a, 0x41, 0x9e, 0xc3, 0x86, 0x08, 0x2a, 0xfa, 0xfb, 0x9e, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00]
+    }
+
+    test_encoding_decoding! {
+        kdf_parameters,
+        KdfParameters,
+        KdfParameters {
+            hash_alg: HashAlg::Sha512,
+        },
+        [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x00, 0x48, 0x00, 0x41, 0x00, 0x35, 0x00, 0x31, 0x00, 0x32, 0x00, 0x00, 0x00]
     }
 }
