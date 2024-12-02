@@ -229,7 +229,7 @@ impl DpapiBlob {
                     version: CmsVersion::V2,
                     originator_info: Optional::from(None),
                     recipient_infos: RecipientInfos::from(vec![RecipientInfo::Kek(KekRecipientInfo {
-                        version: CmsVersion::V2,
+                        version: CmsVersion::V4,
                         kek_id: KekIdentifier {
                             key_identifier: OctetStringAsn1::from(self.key_identifier.encode_to_vec()?),
                             date: Optional::from(None),
@@ -436,10 +436,8 @@ mod tests {
         28, 51, 197, 167, 169, 116, 13, 102, 84, 136, 85, 182,
     ];
 
-    #[test]
-    fn dpapi_decoding() {
-        // /*
-        let expected = DpapiBlob {
+    fn testing_blob() -> DpapiBlob {
+        DpapiBlob {
             key_identifier: KeyIdentifier {
                 version: 1,
                 flags: 3,
@@ -512,10 +510,23 @@ mod tests {
                     16,
                 )),
             ),
-        };
+        }
+    }
 
+    #[test]
+    fn dpapi_blob_decoding() {
         let blob = DpapiBlob::decode(DPAPI_BLOB_DATA).unwrap();
 
-        assert_eq!(expected, blob);
+        assert_eq!(testing_blob(), blob);
+    }
+
+    #[test]
+    fn dpapi_blob_encoding() {
+        let blob = testing_blob();
+
+        let mut buf = Vec::new();
+        blob.encode(false, &mut buf).unwrap();
+
+        assert_eq!(DPAPI_BLOB_DATA.as_ref(), &buf);
     }
 }
