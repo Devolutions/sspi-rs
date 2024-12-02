@@ -271,7 +271,6 @@ impl DpapiBlob {
 impl Decode for DpapiBlob {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let content_info: ContentInfo = picky_asn1_der::from_reader(&mut reader)?;
-        let id: String = content_info.content_type.0.clone().into();
 
         if content_info.content_type.0 != oids::enveloped_data() {
             return Err(Error::new(
