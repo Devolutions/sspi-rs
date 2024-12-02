@@ -63,7 +63,7 @@ fn read_padding<const ALIGNMENT: usize>(buf_len: usize, mut reader: impl Read) -
     Ok(())
 }
 
-fn read_to_end(mut reader: impl Read) -> DpapiResult<Vec<u8>> {
+pub fn read_to_end(mut reader: impl Read) -> DpapiResult<Vec<u8>> {
     let mut buf = Vec::new();
     reader.read_to_end(&mut buf)?;
 
