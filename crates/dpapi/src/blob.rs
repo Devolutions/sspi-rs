@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::rpc::{read_to_end, read_uuid, Decode, Encode};
 use crate::sid_utils::{ace_to_bytes, sd_to_bytes};
-use crate::utils::utf16_bytes_to_utf8_string;
+use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
 use crate::{DpapiResult, Error, ErrorKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -42,20 +42,8 @@ impl KeyIdentifier {
 
 impl Encode for KeyIdentifier {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        let domain_name = self
-            .domain_name
-            .encode_utf16()
-            .into_iter()
-            .chain(std::iter::once(0))
-            .flat_map(|v| v.to_le_bytes())
-            .collect::<Vec<_>>();
-        let forest_name = self
-            .forest_name
-            .encode_utf16()
-            .into_iter()
-            .chain(std::iter::once(0))
-            .flat_map(|v| v.to_le_bytes())
-            .collect::<Vec<_>>();
+        let domain_name = encode_utf16_le(&self.domain_name);
+        let forest_name = encode_utf16_le(&self.forest_name);
 
         writer.write_u32::<LittleEndian>(self.version)?;
         // TODO

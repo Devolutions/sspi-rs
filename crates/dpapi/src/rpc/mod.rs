@@ -70,7 +70,7 @@ pub fn read_to_end(mut reader: impl Read) -> DpapiResult<Vec<u8>> {
     Ok(buf)
 }
 
-fn write_buf(mut data: &[u8], mut writer: impl Write) -> DpapiResult<()> {
+pub fn write_buf(mut data: &[u8], mut writer: impl Write) -> DpapiResult<()> {
     while !data.is_empty() {
         let bytes_written = writer.write(data)?;
         data = &data[bytes_written..];
@@ -83,7 +83,7 @@ fn write_buf(mut data: &[u8], mut writer: impl Write) -> DpapiResult<()> {
     Ok(())
 }
 
-fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
+pub fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
     while !buf.is_empty() {
         let bytes_read = reader.read(buf)?;
         buf = &mut buf[bytes_read..];
@@ -94,4 +94,18 @@ fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
     }
 
     Ok(())
+}
+
+pub fn read_c_str_utf16_le(len: usize, mut reader: impl Read) -> DpapiResult<String> {
+    use byteorder::{LittleEndian, ReadBytesExt};
+
+    use crate::utils::utf16_bytes_to_utf8_string;
+
+    let mut buf = vec![0; len - 2 /* UTF16 null terminator */];
+    reader.read_exact(buf.as_mut_slice())?;
+
+    // Read UTF16 null terminator.
+    reader.read_u16::<LittleEndian>()?;
+
+    utf16_bytes_to_utf8_string(&buf)
 }
