@@ -342,6 +342,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "concat-kdf"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d72c1252426a83be2092dd5884a5f6e3b8e7180f6891b6263d2c21b92ec8816"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,14 +547,22 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.8.0",
  "byteorder",
+ "concat-kdf",
+ "elliptic-curve",
  "num-bigint-dig",
  "num-derive",
  "num-traits",
+ "p256",
+ "p384",
+ "p521",
  "paste",
  "picky-asn1",
  "picky-asn1-der",
  "picky-asn1-x509",
  "regex",
+ "rust-kbkdf",
+ "sha1",
+ "sha2",
  "thiserror 2.0.11",
  "uuid",
 ]
@@ -2175,6 +2192,17 @@ dependencies = [
  "signature",
  "spki",
  "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rust-kbkdf"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7154b066d77b7a5fe90728ed6e281fc26b4c207351ae0d9d937578c8f9a8596"
+dependencies = [
+ "generic-array",
+ "typenum",
  "zeroize",
 ]
 

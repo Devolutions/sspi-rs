@@ -34,6 +34,7 @@ rand = "0.8"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
 sha1 = { version = "0.10", default-features = false }
+sha2 = "0.10"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 picky = "7.0.0-rc.11"
@@ -83,6 +84,7 @@ cfg-if.workspace = true
 time = { workspace = true, features = ["std"] }
 picky.workspace = true
 sha1.workspace = true
+sha2.workspace = true
 num-derive.workspace = true
 num-traits = { workspace = true, default-features = true }
 picky-asn1-der.workspace = true
@@ -101,7 +103,6 @@ num-bigint-dig.workspace = true
 
 md-5 = "0.10"
 md4 = "0.10"
-sha2 = "0.10"
 hmac = "0.12"
 crypto-mac = "0.11"
 lazy_static = "1.5"

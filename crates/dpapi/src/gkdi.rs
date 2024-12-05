@@ -107,7 +107,7 @@ impl Decode for GetKey {
 ///
 /// It contains hash algorithms that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlg {
     Sha1,
     Sha256,
