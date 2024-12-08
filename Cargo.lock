@@ -549,6 +549,7 @@ dependencies = [
  "byteorder",
  "concat-kdf",
  "elliptic-curve",
+ "hmac",
  "num-bigint-dig",
  "num-derive",
  "num-traits",
@@ -564,6 +565,7 @@ dependencies = [
  "sha1",
  "sha2",
  "thiserror 2.0.11",
+ "typenum",
  "uuid",
 ]
 
@@ -2198,8 +2200,7 @@ dependencies = [
 [[package]]
 name = "rust-kbkdf"
 version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7154b066d77b7a5fe90728ed6e281fc26b4c207351ae0d9d937578c8f9a8596"
+source = "git+https://gitlab.com/TheBestTvarynka/rust-kbkdf.git?branch=fix-key-generation#d1c113f1446be6415569e339cfcf8a0f4873ce32"
 dependencies = [
  "generic-array",
  "typenum",

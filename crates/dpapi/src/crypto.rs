@@ -1,5 +1,7 @@
+use hmac::{Hmac, Mac};
 use num_bigint_dig::BigUint;
 use thiserror::Error;
+use rust_kbkdf::{PseudoRandomFunction, PseudoRandomFunctionKey};
 use uuid::Uuid;
 
 use crate::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
@@ -16,27 +18,100 @@ const KDS_SERVICE_LABEL: &[u8] = &[
     75, 0, 68, 0, 83, 0, 32, 0, 115, 0, 101, 0, 114, 0, 118, 0, 105, 0, 99, 0, 101, 0, 0, 0,
 ];
 
+type HmacSha256 = Hmac<sha2::Sha256>;
+
+struct HmacSha256PrfKey<'key>(&'key [u8]);
+
+impl<'key> HmacSha256PrfKey<'key> {
+    pub fn new(key: &'key [u8]) -> Self {
+        Self(key)
+    }
+
+    pub fn key(&self) -> &[u8] {
+        self.0
+    }
+}
+
+impl<'key> PseudoRandomFunctionKey for HmacSha256PrfKey<'key> {
+    type KeyHandle = HmacSha256PrfKey<'key>;
+
+    fn key_handle(&self) -> &Self::KeyHandle {
+        self
+    }
+}
+
+struct HmacSha256Prf {
+    hmac: Option<HmacSha256>,
+}
+
+impl HmacSha256Prf {
+    pub fn new() -> Self {
+        Self { hmac: None }
+    }
+}
+
+impl<'a> PseudoRandomFunction<'a> for HmacSha256Prf {
+    type KeyHandle = HmacSha256PrfKey<'a>;
+    type PrfOutputSize = typenum::U32;
+    type Error = Error;
+
+    fn init(&mut self, key: &'a dyn PseudoRandomFunctionKey<KeyHandle = HmacSha256PrfKey<'a>>) -> Result<(), Error> {
+        self.hmac = Some(
+            HmacSha256::new_from_slice(key.key_handle().key())
+                .map_err(|err| Error::new(ErrorKind::NteInternalError, "invalid hmac key length"))?,
+        );
+
+        Ok(())
+    }
+
+    fn update(&mut self, msg: &[u8]) -> Result<(), Error> {
+        if let Some(hmac) = self.hmac.as_mut() {
+            hmac.update(msg);
+
+            Ok(())
+        } else {
+            Err(Error::new(
+                ErrorKind::NteInternalError,
+                "HMAC hashed is not initialized",
+            ))
+        }
+    }
+
+    fn finish(&mut self, out: &mut [u8]) -> Result<usize, Error> {
+        if let Some(hmac) = self.hmac.as_mut() {
+            let hmac = hmac.clone().finalize().into_bytes();
+
+            out.copy_from_slice(hmac.as_slice());
+
+            Ok(hmac.as_slice().len())
+        } else {
+            Err(Error::new(
+                ErrorKind::NteInternalError,
+                "HMAC hashed is not initialized",
+            ))
+        }
+    }
+}
+
 fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> DpapiResult<Vec<u8>> {
-    // use rust_kbkdf::{CounterMode, kbkdf, KDFMode, InputType, CounterLocation, SpecifiedInput};
+    use rust_kbkdf::{kbkdf, CounterLocation, CounterMode, InputType, KDFMode, SpecifiedInput};
+
+    let mut derived_key = vec![0; length];
+
+    let key = HmacSha256PrfKey::new(secret);
+    let mut hmac = HmacSha256Prf::new();
 
     // KDF(HashAlg, KI, Label, Context, L)
     // where KDF is SP800-108 in counter mode.
-    let mut derived_key = [0; 32];
+    kbkdf(
+        &KDFMode::CounterMode(CounterMode { counter_length: 32 }),
+        &InputType::SpecifiedInput(SpecifiedInput { label, context }),
+        &key,
+        &mut hmac,
+        &mut derived_key,
+    )?;
 
-    // kbkdf(
-    //     &KDFMode::CounterMode(CounterMode {
-    //         length: 32,
-    //     }),
-    //     &InputType::FixedInput(SpecifiedInput {
-    //         label,
-    //         context,
-    //     }),
-    //     secret,
-    //     prf,
-    //     &mut derived_key,
-    // )
-
-    todo!()
+    Ok(derived_key)
 }
 
 fn kdf_concat(
@@ -412,5 +487,28 @@ fn compute_public_key(
             ErrorKind::NteInternalError,
             format!("unsupported or invalid secret algorithm: {}", secret_algorithm),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kdf() {
+        let expected_key = [95, 246, 71, 210, 202, 186, 163, 251, 24, 175, 54, 107, 191, 107, 87, 35, 241, 202, 64, 106, 34, 201, 185, 5, 213, 175, 222, 111, 249, 145, 238, 162];
+
+        let secret = &[213, 85, 238, 100, 120, 222, 109, 53, 48, 101, 43, 187, 152, 206, 110, 105, 123, 251, 227, 253, 232, 85, 197, 24, 217, 190, 118, 74, 54, 226, 8, 188, 163, 141, 155, 170, 208, 164, 97, 125, 32, 172, 65, 183, 251, 135, 229, 224, 214, 22, 98, 18, 170, 254, 220, 105, 217, 11, 142, 135, 141, 104, 82, 189];
+        let context = &[228, 137, 183, 195, 107, 83, 44, 167, 62, 235, 215, 116, 108, 38, 108, 149, 107, 206, 154, 191, 189, 219, 105, 175, 72, 213, 172, 131, 94, 207, 58, 208];
+
+        let key = kdf(
+            HashAlg::Sha256,
+            secret,
+            KDS_SERVICE_LABEL,
+            context,
+            32,
+        ).unwrap();
+
+        assert_eq!(expected_key[..], key[..]);
     }
 }
