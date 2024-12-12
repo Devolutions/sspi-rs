@@ -22,7 +22,7 @@ pub enum CryptoError {
 }
 
 // "KDS service\0" encoded in UTF16 le.
-const KDS_SERVICE_LABEL: &[u8] = &[
+pub const KDS_SERVICE_LABEL: &[u8] = &[
     75, 0, 68, 0, 83, 0, 32, 0, 115, 0, 101, 0, 114, 0, 118, 0, 105, 0, 99, 0, 101, 0, 0, 0,
 ];
 
@@ -135,7 +135,7 @@ pub fn content_encrypt(
     Ok(cipher.encrypt(iv.into(), plaintext)?)
 }
 
-fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> DpapiResult<Vec<u8>> {
+pub fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> DpapiResult<Vec<u8>> {
     use rust_kbkdf::{kbkdf, CounterLocation, CounterMode, InputType, KDFMode, SpecifiedInput};
 
     let mut derived_key = vec![0; length];
@@ -315,7 +315,7 @@ pub fn compute_kek_from_public_key(
     compute_kek(algorithm, secret_algorithm, secret_parameters, &private_key, public_key)
 }
 
-fn compute_kek(
+pub fn compute_kek(
     algorithm: HashAlg,
     secret_algorithm: &str,
     secret_parameters: Option<&[u8]>,
@@ -435,7 +435,7 @@ fn compute_kek(
     kdf(algorithm, &secret, KDS_SERVICE_LABEL, kek_context, 32)
 }
 
-fn compute_public_key(
+pub fn compute_public_key(
     secret_algorithm: &str,
     secret_parameters: Option<&[u8]>,
     private_key: &[u8],

@@ -4,8 +4,14 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_bigint_dig::BigUint;
 use thiserror::Error;
+use rand::rngs::OsRng;
+use rand::Rng;
 use uuid::Uuid;
 
+use crate::blob::KeyIdentifier;
+use crate::crypto::{
+    compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
+};
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{DpapiResult, Error};
@@ -514,6 +520,103 @@ impl GroupKeyEnvelope {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: &[u8] = &[0x4B, 0x44, 0x53, 0x4B];
     const VERSION: u32 = 1;
+
+    pub fn is_public_key(&self) -> bool {
+        self.flags & 1 != 0
+    }
+
+    pub fn new_kek(&self) -> DpapiResult<(Vec<u8>, KeyIdentifier)> {
+        if self.kdf_alg != "SP800_108_CTR_HMAC" {
+            return Err(Error::new(ErrorKind::NteInternalError, "Invalid KDF algorithm"));
+        }
+
+        let kdf_parameters = KdfParameters::decode(self.kdf_parameters.as_slice())?;
+        let hash_alg = kdf_parameters.hash_alg;
+
+        let mut rand = OsRng;
+
+        let (kek, key_info) = if self.is_public_key() {
+            // the L2 key is the peer's public key
+
+            let mut private_key = vec![self.private_key_length.div_ceil(8).try_into()?];
+            rand.fill(private_key.as_mut_slice());
+
+            let kek = compute_kek(
+                hash_alg,
+                &self.secret_algorithm,
+                Some(&self.secret_parameters),
+                &private_key,
+                &self.l2_key,
+            )?;
+            let key_info = compute_public_key(
+                &self.secret_algorithm,
+                Some(&self.secret_parameters),
+                &private_key,
+                &self.l2_key,
+            )?;
+
+            (kek, key_info)
+        } else {
+            let key_info = rand.gen::<[u8; 32]>();
+            let kek = kdf(hash_alg, &self.l2_key, KDS_SERVICE_LABEL, &key_info, 32)?;
+
+            (kek, key_info.to_vec())
+        };
+
+        Ok((
+            kek,
+            KeyIdentifier {
+                version: 1,
+                flags: self.flags,
+
+                l0: self.l0,
+                l1: self.l1,
+                l2: self.l2,
+                root_key_identifier: self.root_key_identifier.clone(),
+
+                key_info,
+                domain_name: self.domain_name.clone(),
+                forest_name: self.forest_name.clone(),
+            },
+        ))
+    }
+
+    pub fn get_kek(&self, key_identifier: &KeyIdentifier) -> DpapiResult<Vec<u8>> {
+        if self.is_public_key() {
+            return Err(Error::new(
+                ErrorKind::NteInternalError,
+                "current user is not authorized to retrieve the KEK information",
+            ));
+        }
+
+        if self.l0 != key_identifier.l0 {
+            return Err(Error::new(
+                ErrorKind::NteInternalError,
+                "l0 index does not match requested l0 index",
+            ));
+        }
+
+        if self.kdf_alg != "SP800_108_CTR_HMAC" {
+            return Err(Error::new(ErrorKind::NteInternalError, "Invalid KDF algorithm"));
+        }
+
+        let kdf_parameters = KdfParameters::decode(self.kdf_parameters.as_slice())?;
+        let hash_alg = kdf_parameters.hash_alg;
+        let l2_key = compute_l2_key(hash_alg, key_identifier.l1, key_identifier.l2, self)?;
+
+        if key_identifier.is_public_key() {
+            compute_kek_from_public_key(
+                hash_alg,
+                &l2_key,
+                &self.secret_algorithm,
+                Some(&self.secret_parameters),
+                &key_identifier.key_info,
+                self.private_key_length.div_ceil(8).try_into()?,
+            )
+        } else {
+            kdf(hash_alg, &l2_key, KDS_SERVICE_LABEL, &key_identifier.key_info, 32)
+        }
+    }
 }
 
 impl Encode for GroupKeyEnvelope {
