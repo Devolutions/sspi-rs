@@ -24,6 +24,7 @@ picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 num-bigint-dig.workspace = true
 sha1.workspace = true
 sha2.workspace = true
+rand.workspace = true
 
 rust-kbkdf = { version = "1.1.0", git = "https://gitlab.com/TheBestTvarynka/rust-kbkdf.git", branch = "fix-key-generation" }
 elliptic-curve = { version = "0.13.8", features = ["sec1"] }
@@ -34,6 +35,7 @@ concat-kdf = { version = "0.1.0", features = ["std"] }
 typenum = "1.17.0"
 hmac = "0.12.1"
 aes-kw = { version = "0.2.1", features = ["alloc"] }
+aes-gcm = "0.10.3"
 
 thiserror = "2.0"
 regex = "1.11"

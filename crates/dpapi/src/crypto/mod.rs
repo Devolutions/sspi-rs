@@ -1,11 +1,14 @@
 mod hmac_sha_prf;
 
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_kw::KekAes256;
 use num_bigint_dig::BigUint;
 use thiserror::Error;
 use rust_kbkdf::{PseudoRandomFunction, PseudoRandomFunctionKey};
-use picky_asn1_x509::enveloped_data::KeyEncryptionAlgorithmIdentifier;
-use picky_asn1_x509::oids;
+use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
+use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
+use rand::Rng;
 use uuid::Uuid;
 
 use self::hmac_sha_prf::*;
@@ -51,6 +54,85 @@ pub fn cek_encrypt(algorithm: &KeyEncryptionAlgorithmIdentifier, kek: &[u8], key
     let kek = KekAes256::new(kek.into());
 
     Ok(kek.wrap_vec(key)?)
+}
+
+pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> DpapiResult<(Vec<u8>, Vec<u8>)> {
+    if algorithm.oid() != &oids::aes256_wrap() {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "unexpected algorithm oid: expected aes256-wrap",
+        ));
+    }
+
+    let mut rng = OsRng;
+    let cek = Aes256Gcm::generate_key(&mut rng);
+    let iv = rng.gen::<[u8; 12]>();
+
+    Ok((cek.to_vec(), iv.to_vec()))
+}
+
+pub fn content_decrypt(
+    algorithm: &ContentEncryptionAlgorithmIdentifier,
+    cek: &[u8],
+    data: &[u8],
+) -> DpapiResult<Vec<u8>> {
+    if algorithm.oid() != &oids::aes256_gcm() {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "unexpected algorithm oid: expected aes256-gcm",
+        ));
+    }
+
+    let iv = if let AlgorithmIdentifierParameters::Aes(aes_parameters) = algorithm.parameters() {
+        if let AesParameters::InitializationVector(iv) = aes_parameters {
+            iv.0.as_slice()
+        } else {
+            return Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                "invalid aes parameters: expected initialization vector",
+            ));
+        }
+    } else {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "invalid aes parameters: missing",
+        ));
+    };
+
+    let mut cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from_slice(cek));
+    Ok(cipher.decrypt(iv.into(), data)?)
+}
+
+pub fn content_encrypt(
+    algorithm: &ContentEncryptionAlgorithmIdentifier,
+    cek: &[u8],
+    plaintext: &[u8],
+) -> DpapiResult<Vec<u8>> {
+    if algorithm.oid() != &oids::aes256_gcm() {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "unexpected algorithm oid: expected aes256-gcm",
+        ));
+    }
+
+    let iv = if let AlgorithmIdentifierParameters::Aes(aes_parameters) = algorithm.parameters() {
+        if let AesParameters::InitializationVector(iv) = aes_parameters {
+            iv.0.as_slice()
+        } else {
+            return Err(Error::new(
+                ErrorKind::NteInvalidParameter,
+                "invalid aes parameters: expected initialization vector",
+            ));
+        }
+    } else {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "invalid aes parameters: missing",
+        ));
+    };
+
+    let mut cipher = Aes256Gcm::new(&Key::<Aes256Gcm>::from_slice(cek));
+    Ok(cipher.encrypt(iv.into(), plaintext)?)
 }
 
 fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> DpapiResult<Vec<u8>> {
@@ -463,6 +545,7 @@ fn compute_public_key(
 
 #[cfg(test)]
 mod tests {
+    use picky_asn1::wrapper::OctetStringAsn1;
     use picky_asn1_x509::AesMode;
 
     use super::*;
@@ -698,5 +781,46 @@ mod tests {
         .unwrap();
 
         assert_eq!(expected_key[..], key[..]);
+    }
+
+    const PLAINTEXT: &[u8] = &[84, 104, 101, 66, 101, 115, 116, 84, 118, 97, 114, 121, 110, 107, 97];
+    const CIPHER_TEXT: &[u8] = &[
+        141, 73, 82, 191, 110, 35, 212, 200, 182, 19, 135, 174, 143, 253, 167, 179, 170, 9, 181, 213, 130, 114, 20, 4,
+        145, 63, 224, 92, 231, 37, 18,
+    ];
+    const AES256_GCM_IV: &[u8] = &[127, 98, 187, 173, 250, 133, 155, 4, 74, 60, 109, 245];
+    const AES256_GCM_KEY: &[u8] = &[
+        237, 217, 97, 116, 100, 107, 229, 54, 97, 127, 233, 172, 141, 83, 124, 250, 21, 115, 218, 160, 137, 22, 103,
+        96, 167, 25, 59, 35, 65, 126, 69, 192,
+    ];
+
+    #[test]
+    fn test_content_decrypt() {
+        let plaintext = content_decrypt(
+            &ContentEncryptionAlgorithmIdentifier::new_aes256(
+                AesMode::Gcm,
+                AesParameters::InitializationVector(OctetStringAsn1::from(AES256_GCM_IV.to_vec())),
+            ),
+            AES256_GCM_KEY,
+            CIPHER_TEXT,
+        )
+        .unwrap();
+
+        assert_eq!(PLAINTEXT[..], plaintext[..]);
+    }
+
+    #[test]
+    fn test_content_encrypt() {
+        let cipher_text = content_encrypt(
+            &ContentEncryptionAlgorithmIdentifier::new_aes256(
+                AesMode::Gcm,
+                AesParameters::InitializationVector(OctetStringAsn1::from(AES256_GCM_IV.to_vec())),
+            ),
+            AES256_GCM_KEY,
+            PLAINTEXT,
+        )
+        .unwrap();
+
+        assert_eq!(CIPHER_TEXT[..], cipher_text[..]);
     }
 }

@@ -545,6 +545,7 @@ dependencies = [
 name = "dpapi"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "aes-kw",
  "bitflags 2.8.0",
  "byteorder",
@@ -561,6 +562,7 @@ dependencies = [
  "picky-asn1",
  "picky-asn1-der",
  "picky-asn1-x509",
+ "rand",
  "regex",
  "rust-kbkdf",
  "sha1",
