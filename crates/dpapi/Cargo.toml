@@ -33,6 +33,7 @@ p384 = { version = "0.13.0", features = ["ecdh"] }
 concat-kdf = { version = "0.1.0", features = ["std"] }
 typenum = "1.17.0"
 hmac = "0.12.1"
+aes-kw = { version = "0.2.1", features = ["alloc"] }
 
 thiserror = "2.0"
 regex = "1.11"

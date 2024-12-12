@@ -1,8 +1,11 @@
 mod hmac_sha_prf;
 
+use aes_kw::KekAes256;
 use num_bigint_dig::BigUint;
 use thiserror::Error;
 use rust_kbkdf::{PseudoRandomFunction, PseudoRandomFunctionKey};
+use picky_asn1_x509::enveloped_data::KeyEncryptionAlgorithmIdentifier;
+use picky_asn1_x509::oids;
 use uuid::Uuid;
 
 use self::hmac_sha_prf::*;
@@ -19,6 +22,36 @@ pub enum CryptoError {
 const KDS_SERVICE_LABEL: &[u8] = &[
     75, 0, 68, 0, 83, 0, 32, 0, 115, 0, 101, 0, 114, 0, 118, 0, 105, 0, 99, 0, 101, 0, 0, 0,
 ];
+
+pub fn cek_decrypt(
+    algorithm: &KeyEncryptionAlgorithmIdentifier,
+    kek: &[u8],
+    wrapped_key: &[u8],
+) -> DpapiResult<Vec<u8>> {
+    if algorithm.oid() != &oids::aes256_wrap() {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "unexpected algorithm oid: expected aes256-wrap",
+        ));
+    }
+
+    let kek = KekAes256::new(kek.into());
+
+    Ok(kek.unwrap_vec(wrapped_key)?)
+}
+
+pub fn cek_encrypt(algorithm: &KeyEncryptionAlgorithmIdentifier, kek: &[u8], key: &[u8]) -> DpapiResult<Vec<u8>> {
+    if algorithm.oid() != &oids::aes256_wrap() {
+        return Err(Error::new(
+            ErrorKind::NteInvalidParameter,
+            "unexpected algorithm oid: expected aes256-wrap",
+        ));
+    }
+
+    let kek = KekAes256::new(kek.into());
+
+    Ok(kek.wrap_vec(key)?)
+}
 
 fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> DpapiResult<Vec<u8>> {
     use rust_kbkdf::{kbkdf, CounterLocation, CounterMode, InputType, KDFMode, SpecifiedInput};
@@ -430,6 +463,8 @@ fn compute_public_key(
 
 #[cfg(test)]
 mod tests {
+    use picky_asn1_x509::AesMode;
+
     use super::*;
 
     const SECRET_KEY: &[u8] = &[
@@ -617,5 +652,51 @@ mod tests {
         .unwrap();
 
         assert_eq!(expected_key[..], kek[..]);
+    }
+
+    #[test]
+    fn test_cek_encrypt() {
+        let expected_key = [
+            177, 34, 69, 51, 190, 164, 94, 127, 38, 205, 148, 208, 11, 108, 215, 29, 178, 61, 153, 114, 42, 203, 15,
+            82, 30, 72, 228, 118, 78, 34, 29, 117, 181, 56, 147, 124, 62, 48, 255, 39,
+        ];
+
+        let wrapped_key = cek_encrypt(
+            &KeyEncryptionAlgorithmIdentifier::new_aes256_empty(AesMode::Wrap),
+            &[
+                9, 171, 213, 100, 174, 219, 112, 33, 135, 63, 151, 51, 231, 55, 121, 167, 132, 216, 251, 190, 174, 207,
+                209, 164, 141, 125, 85, 196, 84, 60, 232, 36,
+            ],
+            &[
+                206, 232, 113, 60, 84, 106, 53, 122, 24, 150, 171, 198, 170, 126, 87, 228, 7, 22, 212, 151, 162, 93,
+                220, 211, 115, 74, 24, 231, 235, 112, 110, 133,
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(expected_key[..], wrapped_key[..]);
+    }
+
+    #[test]
+    fn test_cek_decrypt() {
+        let expected_key = [
+            237, 217, 97, 116, 100, 107, 229, 54, 97, 127, 233, 172, 141, 83, 124, 250, 21, 115, 218, 160, 137, 22,
+            103, 96, 167, 25, 59, 35, 65, 126, 69, 192,
+        ];
+
+        let key = cek_decrypt(
+            &KeyEncryptionAlgorithmIdentifier::new_aes256_empty(AesMode::Wrap),
+            &[
+                166, 59, 66, 26, 83, 122, 242, 219, 236, 155, 114, 107, 185, 13, 252, 191, 239, 219, 244, 91, 42, 197,
+                34, 82, 11, 8, 251, 120, 137, 197, 250, 110,
+            ],
+            &[
+                79, 59, 241, 186, 249, 240, 229, 63, 50, 183, 56, 137, 17, 64, 57, 136, 49, 12, 176, 219, 163, 106,
+                132, 25, 1, 87, 85, 16, 179, 52, 21, 138, 173, 143, 110, 15, 16, 0, 99, 244,
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(expected_key[..], key[..]);
     }
 }
