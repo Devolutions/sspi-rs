@@ -59,10 +59,10 @@ use crate::utils::{
 };
 use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
+    BufferType, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
     CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, ServerResponseFlags,
+    Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -300,8 +300,8 @@ impl Sspi for Kerberos {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = SecurityBuffer::find_buffer(message, BufferType::Token)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -338,7 +338,7 @@ impl Sspi for Kerberos {
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
                 data_buffer.write_data(data)?;
-                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
             _ => {
@@ -483,7 +483,7 @@ impl SspiImpl for Kerberos {
 
         let status = match &self.state {
             KerberosState::ApExchange => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
                     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
@@ -668,7 +668,7 @@ impl<'a> Kerberos {
                 let encoded_neg_token_init =
                     picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = KerberosState::Preauthentication;
@@ -681,14 +681,13 @@ impl<'a> Kerberos {
                     .as_ref()
                     .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
-                    builder.input.as_ref().unwrap(),
-                    SecurityBufferType::ChannelBindings,
-                ) {
+                if let Ok(sec_buffer) =
+                    OwnedSecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
+                {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
@@ -911,7 +910,7 @@ impl<'a> Kerberos {
 
                 let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
                 self.state = KerberosState::ApExchange;
@@ -923,7 +922,7 @@ impl<'a> Kerberos {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -953,7 +952,7 @@ impl<'a> Kerberos {
 
                 let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
 
                 self.state = KerberosState::PubKeyAuth;

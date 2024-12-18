@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem::take;
 
-use crate::{Error, ErrorKind, Result, SecurityBufferType};
+use crate::{BufferType, Error, ErrorKind, OwnedSecurityBufferType, Result, SecurityBufferFlags};
 
 /// A special security buffer type is used for the data decryption. Basically, it's almost the same
 /// as `OwnedSecurityBuffer` but for decryption.
@@ -14,7 +14,7 @@ use crate::{Error, ErrorKind, Result, SecurityBufferType};
 /// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
 /// security package.
 #[non_exhaustive]
-pub enum SecurityBuffer<'data> {
+pub enum SecurityBufferType<'data> {
     Data(&'data mut [u8]),
     Token(&'data mut [u8]),
     StreamHeader(&'data mut [u8]),
@@ -26,82 +26,190 @@ pub enum SecurityBuffer<'data> {
     Empty,
 }
 
+#[derive()]
+pub struct SecurityBuffer<'data> {
+    pub buffer_type: SecurityBufferType<'data>,
+    pub buffer_flags: SecurityBufferFlags,
+}
+
 impl<'data> SecurityBuffer<'data> {
-    /// Created a [SecurityBuffer] from based on provided [SecurityBufferType].
+    pub fn data_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Data(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn token_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Token(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn stream_header_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::StreamHeader(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn stream_trailer_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::StreamTrailer(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn stream_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Stream(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn extra_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Extra(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn padding_buf(data: &mut [u8]) -> SecurityBuffer {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Padding(data),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    pub fn missing_buf<'a>(count: usize) -> SecurityBuffer<'a> {
+        SecurityBuffer {
+            buffer_type: SecurityBufferType::Missing(count),
+            buffer_flags: Default::default(),
+        }
+    }
+
+    /// Created a [SecurityBuffer] from based on provided [BufferType].
     ///
     /// Inner buffers will be empty.
-    pub fn with_security_buffer_type(security_buffer_type: SecurityBufferType) -> Result<Self> {
-        match security_buffer_type {
-            SecurityBufferType::Empty => Ok(SecurityBuffer::Empty),
-            SecurityBufferType::Data => Ok(SecurityBuffer::Data(&mut [])),
-            SecurityBufferType::Token => Ok(SecurityBuffer::Token(&mut [])),
-            SecurityBufferType::Missing => Ok(SecurityBuffer::Missing(0)),
-            SecurityBufferType::Extra => Ok(SecurityBuffer::Extra(&mut [])),
-            SecurityBufferType::Padding => Ok(SecurityBuffer::Padding(&mut [])),
-            SecurityBufferType::StreamTrailer => Ok(SecurityBuffer::StreamTrailer(&mut [])),
-            SecurityBufferType::StreamHeader => Ok(SecurityBuffer::StreamHeader(&mut [])),
-            SecurityBufferType::Stream => Ok(SecurityBuffer::Stream(&mut [])),
-            _ => Err(Error::new(ErrorKind::UnsupportedFunction, "")),
-        }
+    pub fn with_security_buffer_type(security_buffer_type: BufferType) -> Result<Self> {
+        Ok(Self {
+            buffer_type: match security_buffer_type {
+                BufferType::Empty => SecurityBufferType::Empty,
+                BufferType::Data => SecurityBufferType::Data(&mut []),
+                BufferType::Token => SecurityBufferType::Token(&mut []),
+                BufferType::Missing => SecurityBufferType::Missing(0),
+                BufferType::Extra => SecurityBufferType::Extra(&mut []),
+                BufferType::Padding => SecurityBufferType::Padding(&mut []),
+                BufferType::StreamTrailer => SecurityBufferType::StreamTrailer(&mut []),
+                BufferType::StreamHeader => SecurityBufferType::StreamHeader(&mut []),
+                BufferType::Stream => SecurityBufferType::Stream(&mut []),
+                _ => return Err(Error::new(ErrorKind::UnsupportedFunction, "")),
+            },
+            buffer_flags: SecurityBufferFlags::None,
+        })
+    }
+
+    /// Created a [SecurityBuffer] from based on provided [BufferType].
+    ///
+    /// Inner buffers will be empty.
+    pub fn with_owned_security_buffer_type(security_buffer_type: OwnedSecurityBufferType) -> Result<Self> {
+        Ok(Self {
+            buffer_type: match security_buffer_type.buffer_type {
+                BufferType::Empty => SecurityBufferType::Empty,
+                BufferType::Data => SecurityBufferType::Data(&mut []),
+                BufferType::Token => SecurityBufferType::Token(&mut []),
+                BufferType::Missing => SecurityBufferType::Missing(0),
+                BufferType::Extra => SecurityBufferType::Extra(&mut []),
+                BufferType::Padding => SecurityBufferType::Padding(&mut []),
+                BufferType::StreamTrailer => SecurityBufferType::StreamTrailer(&mut []),
+                BufferType::StreamHeader => SecurityBufferType::StreamHeader(&mut []),
+                BufferType::Stream => SecurityBufferType::Stream(&mut []),
+                _ => return Err(Error::new(ErrorKind::UnsupportedFunction, "")),
+            },
+            buffer_flags: security_buffer_type.buffer_flags,
+        })
     }
 
     /// Creates a new [SecurityBuffer] with the provided buffer data saving the old buffer type.
     ///
-    /// *Attention*: the buffer type must not be [SecurityBufferType::Missing].
+    /// *Attention*: the buffer type must not be [BufferType::Missing].
     pub fn with_data(self, data: &'data mut [u8]) -> Result<Self> {
-        Ok(match self {
-            SecurityBuffer::Data(_) => SecurityBuffer::Data(data),
-            SecurityBuffer::Token(_) => SecurityBuffer::Token(data),
-            SecurityBuffer::StreamHeader(_) => SecurityBuffer::StreamHeader(data),
-            SecurityBuffer::StreamTrailer(_) => SecurityBuffer::StreamTrailer(data),
-            SecurityBuffer::Stream(_) => SecurityBuffer::Stream(data),
-            SecurityBuffer::Extra(_) => SecurityBuffer::Extra(data),
-            SecurityBuffer::Padding(_) => SecurityBuffer::Padding(data),
-            SecurityBuffer::Missing(_) => {
-                return Err(Error::new(
-                    ErrorKind::InternalError,
-                    "the missing buffer type does not hold any buffers inside",
-                ))
-            }
-            SecurityBuffer::Empty => SecurityBuffer::Empty,
+        Ok(Self {
+            buffer_type: match &self.buffer_type {
+                SecurityBufferType::Data(_) => SecurityBufferType::Data(data),
+                SecurityBufferType::Token(_) => SecurityBufferType::Token(data),
+                SecurityBufferType::StreamHeader(_) => SecurityBufferType::StreamHeader(data),
+                SecurityBufferType::StreamTrailer(_) => SecurityBufferType::StreamTrailer(data),
+                SecurityBufferType::Stream(_) => SecurityBufferType::Stream(data),
+                SecurityBufferType::Extra(_) => SecurityBufferType::Extra(data),
+                SecurityBufferType::Padding(_) => SecurityBufferType::Padding(data),
+                SecurityBufferType::Missing(_) => {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        "the missing buffer type does not hold any buffers inside",
+                    ))
+                }
+                SecurityBufferType::Empty => SecurityBufferType::Empty,
+            },
+            buffer_flags: self.buffer_flags,
         })
     }
 
     /// Sets the buffer data.
     ///
-    /// *Attention*: the buffer type must not be [SecurityBufferType::Missing].
+    /// *Attention*: the buffer type must not be [BufferType::Missing].
     pub fn set_data(&mut self, buf: &'data mut [u8]) -> Result<()> {
-        match self {
-            SecurityBuffer::Data(data) => *data = buf,
-            SecurityBuffer::Token(data) => *data = buf,
-            SecurityBuffer::StreamHeader(data) => *data = buf,
-            SecurityBuffer::StreamTrailer(data) => *data = buf,
-            SecurityBuffer::Stream(data) => *data = buf,
-            SecurityBuffer::Extra(data) => *data = buf,
-            SecurityBuffer::Padding(data) => *data = buf,
-            SecurityBuffer::Missing(_) => {
+        match &mut self.buffer_type {
+            SecurityBufferType::Data(data) => *data = buf,
+            SecurityBufferType::Token(data) => *data = buf,
+            SecurityBufferType::StreamHeader(data) => *data = buf,
+            SecurityBufferType::StreamTrailer(data) => *data = buf,
+            SecurityBufferType::Stream(data) => *data = buf,
+            SecurityBufferType::Extra(data) => *data = buf,
+            SecurityBufferType::Padding(data) => *data = buf,
+            SecurityBufferType::Missing(_) => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
                     "the missing buffer type does not hold any buffers inside",
                 ))
             }
-            SecurityBuffer::Empty => {}
+            SecurityBufferType::Empty => {}
         };
         Ok(())
     }
 
-    /// Determines the [SecurityBufferType] of the decrypt buffer.
-    pub fn security_buffer_type(&self) -> SecurityBufferType {
-        match self {
-            SecurityBuffer::Data(_) => SecurityBufferType::Data,
-            SecurityBuffer::Token(_) => SecurityBufferType::Token,
-            SecurityBuffer::StreamHeader(_) => SecurityBufferType::StreamHeader,
-            SecurityBuffer::StreamTrailer(_) => SecurityBufferType::StreamTrailer,
-            SecurityBuffer::Stream(_) => SecurityBufferType::Stream,
-            SecurityBuffer::Extra(_) => SecurityBufferType::Extra,
-            SecurityBuffer::Padding(_) => SecurityBufferType::Padding,
-            SecurityBuffer::Missing(_) => SecurityBufferType::Missing,
-            SecurityBuffer::Empty => SecurityBufferType::Empty,
+    /// Determines the [BufferType] of security buffer.
+    pub fn buffer_type(&self) -> BufferType {
+        match &self.buffer_type {
+            SecurityBufferType::Data(_) => BufferType::Data,
+            SecurityBufferType::Token(_) => BufferType::Token,
+            SecurityBufferType::StreamHeader(_) => BufferType::StreamHeader,
+            SecurityBufferType::StreamTrailer(_) => BufferType::StreamTrailer,
+            SecurityBufferType::Stream(_) => BufferType::Stream,
+            SecurityBufferType::Extra(_) => BufferType::Extra,
+            SecurityBufferType::Padding(_) => BufferType::Padding,
+            SecurityBufferType::Missing(_) => BufferType::Missing,
+            SecurityBufferType::Empty => BufferType::Empty,
+        }
+    }
+
+    pub fn owned_security_buffer_type(&self) -> OwnedSecurityBufferType {
+        let buffer_type = match &self.buffer_type {
+            SecurityBufferType::Data(_) => BufferType::Data,
+            SecurityBufferType::Token(_) => BufferType::Token,
+            SecurityBufferType::StreamHeader(_) => BufferType::StreamHeader,
+            SecurityBufferType::StreamTrailer(_) => BufferType::StreamTrailer,
+            SecurityBufferType::Stream(_) => BufferType::Stream,
+            SecurityBufferType::Extra(_) => BufferType::Extra,
+            SecurityBufferType::Padding(_) => BufferType::Padding,
+            SecurityBufferType::Missing(_) => BufferType::Missing,
+            SecurityBufferType::Empty => BufferType::Empty,
+        };
+
+        OwnedSecurityBufferType {
+            buffer_type,
+            buffer_flags: self.buffer_flags,
         }
     }
 
@@ -110,17 +218,14 @@ impl<'data> SecurityBuffer<'data> {
     /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
     pub fn find_buffer<'a>(
         buffers: &'a [SecurityBuffer<'data>],
-        buffer_type: SecurityBufferType,
+        buffer_type: BufferType,
     ) -> Result<&'a SecurityBuffer<'data>> {
-        buffers
-            .iter()
-            .find(|b| b.security_buffer_type() == buffer_type)
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("no buffer was provided with type {:?}", buffer_type),
-                )
-            })
+        buffers.iter().find(|b| b.buffer_type() == buffer_type).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("no buffer was provided with type {:?}", buffer_type),
+            )
+        })
     }
 
     /// Returns the mutable reference to the [SecurityBuffer] with specified buffer type.
@@ -128,11 +233,11 @@ impl<'data> SecurityBuffer<'data> {
     /// If a slice contains more than one buffer with a specified buffer type, then the first one will be returned.
     pub fn find_buffer_mut<'a>(
         buffers: &'a mut [SecurityBuffer<'data>],
-        buffer_type: SecurityBufferType,
+        buffer_type: BufferType,
     ) -> Result<&'a mut SecurityBuffer<'data>> {
         buffers
             .iter_mut()
-            .find(|b| b.security_buffer_type() == buffer_type)
+            .find(|b| b.buffer_type() == buffer_type)
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
@@ -142,7 +247,7 @@ impl<'data> SecurityBuffer<'data> {
     }
 
     /// Returns the immutable reference to the inner buffer data.
-    pub fn buf_data<'a>(buffers: &'a [SecurityBuffer<'a>], buffer_type: SecurityBufferType) -> Result<&'a [u8]> {
+    pub fn buf_data<'a>(buffers: &'a [SecurityBuffer<'a>], buffer_type: BufferType) -> Result<&'a [u8]> {
         Ok(SecurityBuffer::find_buffer(buffers, buffer_type)?.data())
     }
 
@@ -150,38 +255,38 @@ impl<'data> SecurityBuffer<'data> {
     ///
     /// Some buffer types can not hold the data, so the empty slice will be returned.
     pub fn data(&self) -> &[u8] {
-        match self {
-            SecurityBuffer::Data(data) => data,
-            SecurityBuffer::Token(data) => data,
-            SecurityBuffer::StreamHeader(data) => data,
-            SecurityBuffer::StreamTrailer(data) => data,
-            SecurityBuffer::Stream(data) => data,
-            SecurityBuffer::Extra(data) => data,
-            SecurityBuffer::Padding(data) => data,
-            SecurityBuffer::Missing(_) => &[],
-            SecurityBuffer::Empty => &[],
+        match &self.buffer_type {
+            SecurityBufferType::Data(data) => data,
+            SecurityBufferType::Token(data) => data,
+            SecurityBufferType::StreamHeader(data) => data,
+            SecurityBufferType::StreamTrailer(data) => data,
+            SecurityBufferType::Stream(data) => data,
+            SecurityBufferType::Extra(data) => data,
+            SecurityBufferType::Padding(data) => data,
+            SecurityBufferType::Missing(_) => &[],
+            SecurityBufferType::Empty => &[],
         }
     }
 
     /// Calculates the buffer data length.
     pub fn buf_len(&self) -> usize {
-        match self {
-            SecurityBuffer::Data(data) => data.len(),
-            SecurityBuffer::Token(data) => data.len(),
-            SecurityBuffer::StreamHeader(data) => data.len(),
-            SecurityBuffer::StreamTrailer(data) => data.len(),
-            SecurityBuffer::Stream(data) => data.len(),
-            SecurityBuffer::Extra(data) => data.len(),
-            SecurityBuffer::Padding(data) => data.len(),
-            SecurityBuffer::Missing(needed_bytes_amount) => *needed_bytes_amount,
-            SecurityBuffer::Empty => 0,
+        match &self.buffer_type {
+            SecurityBufferType::Data(data) => data.len(),
+            SecurityBufferType::Token(data) => data.len(),
+            SecurityBufferType::StreamHeader(data) => data.len(),
+            SecurityBufferType::StreamTrailer(data) => data.len(),
+            SecurityBufferType::Stream(data) => data.len(),
+            SecurityBufferType::Extra(data) => data.len(),
+            SecurityBufferType::Padding(data) => data.len(),
+            SecurityBufferType::Missing(needed_bytes_amount) => *needed_bytes_amount,
+            SecurityBufferType::Empty => 0,
         }
     }
 
     /// Returns the mutable reference to the inner buffer data leaving the empty buffer on its place.
     pub fn take_buf_data_mut<'a>(
         buffers: &'a mut [SecurityBuffer<'data>],
-        buffer_type: SecurityBufferType,
+        buffer_type: BufferType,
     ) -> Result<&'data mut [u8]> {
         Ok(SecurityBuffer::find_buffer_mut(buffers, buffer_type)?.take_data())
     }
@@ -190,16 +295,16 @@ impl<'data> SecurityBuffer<'data> {
     ///
     /// Some buffer types can not hold the data, so the empty slice will be returned.
     pub fn take_data(&mut self) -> &'data mut [u8] {
-        match self {
-            SecurityBuffer::Data(data) => take(data),
-            SecurityBuffer::Token(data) => take(data),
-            SecurityBuffer::StreamHeader(data) => take(data),
-            SecurityBuffer::StreamTrailer(data) => take(data),
-            SecurityBuffer::Stream(data) => take(data),
-            SecurityBuffer::Extra(data) => take(data),
-            SecurityBuffer::Padding(data) => take(data),
-            SecurityBuffer::Missing(_) => &mut [],
-            SecurityBuffer::Empty => &mut [],
+        match &mut self.buffer_type {
+            SecurityBufferType::Data(data) => take(data),
+            SecurityBufferType::Token(data) => take(data),
+            SecurityBufferType::StreamHeader(data) => take(data),
+            SecurityBufferType::StreamTrailer(data) => take(data),
+            SecurityBufferType::Stream(data) => take(data),
+            SecurityBufferType::Extra(data) => take(data),
+            SecurityBufferType::Padding(data) => take(data),
+            SecurityBufferType::Missing(_) => &mut [],
+            SecurityBufferType::Empty => &mut [],
         }
     }
 
@@ -228,16 +333,17 @@ impl<'data> SecurityBuffer<'data> {
 impl fmt::Debug for SecurityBuffer<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SecurityBuffer {{ ")?;
-        match self {
-            SecurityBuffer::Data(data) => write_buffer(data, "Data", f)?,
-            SecurityBuffer::Token(data) => write_buffer(data, "Token", f)?,
-            SecurityBuffer::StreamHeader(data) => write_buffer(data, "StreamHeader", f)?,
-            SecurityBuffer::StreamTrailer(data) => write_buffer(data, "StreamTrailer", f)?,
-            SecurityBuffer::Stream(data) => write_buffer(data, "Stream", f)?,
-            SecurityBuffer::Extra(data) => write_buffer(data, "Extra", f)?,
-            SecurityBuffer::Padding(data) => write_buffer(data, "Padding", f)?,
-            SecurityBuffer::Missing(needed_bytes_amount) => write!(f, "Missing({})", *needed_bytes_amount)?,
-            SecurityBuffer::Empty => f.write_str("Empty")?,
+        f.write_fmt(format_args!("{:?},", self.buffer_flags))?;
+        match &self.buffer_type {
+            SecurityBufferType::Data(data) => write_buffer(data, "Data", f)?,
+            SecurityBufferType::Token(data) => write_buffer(data, "Token", f)?,
+            SecurityBufferType::StreamHeader(data) => write_buffer(data, "StreamHeader", f)?,
+            SecurityBufferType::StreamTrailer(data) => write_buffer(data, "StreamTrailer", f)?,
+            SecurityBufferType::Stream(data) => write_buffer(data, "Stream", f)?,
+            SecurityBufferType::Extra(data) => write_buffer(data, "Extra", f)?,
+            SecurityBufferType::Padding(data) => write_buffer(data, "Padding", f)?,
+            SecurityBufferType::Missing(needed_bytes_amount) => write!(f, "Missing({})", *needed_bytes_amount)?,
+            SecurityBufferType::Empty => f.write_str("Empty")?,
         };
         write!(f, " }}")
     }

@@ -8,8 +8,8 @@ use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, OwnedSecurityBuffer, SecurityBuffer,
-    SecurityBufferType, SecurityStatus, ServerRequestFlags, Sspi, Username,
+    AuthIdentity, BufferType, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, OwnedSecurityBuffer,
+    SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -78,8 +78,8 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_auth_data(identity)
         .execute(ntlm)?;
 
-    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
-    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
+    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     loop {
         read_message(&mut stream, &mut input_buffer[0].buffer)?;

@@ -4,7 +4,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{Error, ErrorKind, Result, SecurityBuffer, SecurityBufferType};
+use crate::{BufferType, Error, ErrorKind, Result, SecurityBuffer};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -241,7 +241,7 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     }
 }
 
-/// Copies a decrypted data into the [SecurityBufferType::Data] or [SecurityBufferType::Stream].
+/// Copies a decrypted data into the [BufferType::Data] or [BufferType::Stream].
 ///
 /// There are two choices for how we should save the decrypted data in security buffers:
 /// * If the `SECBUFFER_STREAM` is present, we should save all data in the `SECBUFFER_DATA` buffer.
@@ -249,7 +249,7 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 ///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
 pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBuffer]) -> Result<()> {
-    if let Ok(buffer) = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
+    if let Ok(buffer) = SecurityBuffer::find_buffer_mut(buffers, BufferType::Stream) {
         let decrypted_len = decrypted.len();
 
         if buffer.buf_len() < decrypted_len {
@@ -266,14 +266,14 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
         let stream_buffer = buffer.take_data();
         let stream_buffer_len = stream_buffer.len();
 
-        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, BufferType::Data)?;
 
         let data = &mut stream_buffer[stream_buffer_len - decrypted_len..];
         data.copy_from_slice(decrypted);
 
         data_buffer.set_data(data)
     } else {
-        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, BufferType::Data)?;
 
         if data_buffer.buf_len() < decrypted.len() {
             return Err(Error::new(
@@ -294,15 +294,15 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
 ///
 /// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
 pub fn extract_encrypted_data(buffers: &[SecurityBuffer]) -> Result<Vec<u8>> {
-    let mut encrypted = SecurityBuffer::buf_data(buffers, SecurityBufferType::Token)
+    let mut encrypted = SecurityBuffer::buf_data(buffers, BufferType::Token)
         .unwrap_or_default()
         .to_vec();
 
     encrypted.extend_from_slice(
-        if let Ok(buffer) = SecurityBuffer::buf_data(buffers, SecurityBufferType::Stream) {
+        if let Ok(buffer) = SecurityBuffer::buf_data(buffers, BufferType::Stream) {
             buffer
         } else {
-            SecurityBuffer::buf_data(buffers, SecurityBufferType::Data)?
+            SecurityBuffer::buf_data(buffers, BufferType::Data)?
         },
     );
 

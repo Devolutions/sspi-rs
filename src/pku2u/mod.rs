@@ -51,10 +51,10 @@ use crate::pku2u::extractors::extract_krb_rep;
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
-    InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
-    SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
@@ -201,8 +201,8 @@ impl Sspi for Pku2u {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = SecurityBuffer::find_buffer(message, BufferType::Token)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
 
         let cipher = self
             .encryption_params
@@ -240,7 +240,7 @@ impl Sspi for Pku2u {
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
                 data_buffer.write_data(data)?;
-                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+                let token_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
             _ => {
@@ -427,7 +427,7 @@ impl Pku2u {
 
                 let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(mech_token)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = Pku2uState::Preauthentication;
@@ -439,7 +439,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
                 let buffer = neg_token_targ
@@ -544,7 +544,7 @@ impl Pku2u {
 
                 let response_token = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&response_token)?;
 
                 self.state = Pku2uState::AsExchange;
@@ -556,7 +556,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
                 let buffer = neg_token_targ
@@ -697,7 +697,7 @@ impl Pku2u {
 
                 let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_targ)?;
 
                 self.state = Pku2uState::ApExchange;
@@ -709,7 +709,7 @@ impl Pku2u {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
 

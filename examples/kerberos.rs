@@ -7,9 +7,9 @@ use reqwest::header::{
 };
 use reqwest::StatusCode;
 use sspi::{
-    AcquireCredentialsHandleResult, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    InitializeSecurityContextResult, Kerberos, KerberosConfig, OwnedSecurityBuffer, SecurityBufferType, SecurityStatus,
-    Sspi, SspiImpl, Username,
+    AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, OwnedSecurityBuffer, SecurityStatus, Sspi, SspiImpl,
+    Username,
 };
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -148,8 +148,8 @@ pub fn step(
     hostname: &str,
 ) -> (String, SecurityStatus) {
     let input_buffer = base64::engine::general_purpose::STANDARD.decode(input_token).unwrap();
-    let mut secure_input_buffer = vec![OwnedSecurityBuffer::new(input_buffer, SecurityBufferType::Token)];
-    let mut secure_output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut secure_input_buffer = vec![OwnedSecurityBuffer::new(input_buffer, BufferType::Token)];
+    let mut secure_output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     match step_helper(
         kerberos,
         cred_handle,

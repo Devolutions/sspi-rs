@@ -16,12 +16,12 @@ use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, CertContext, CertEncodingType, CertTrustErrorStatus,
-    CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
-    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities, PackageInfo, Result,
-    SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes,
-    PACKAGE_ID_NONE,
+    builders, negotiate, AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType,
+    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags,
+    ConnectionInfo, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation,
+    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    SspiImpl, StreamSizes, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -107,7 +107,7 @@ impl SspiCredSsp {
     }
 
     fn decrypt_and_decode_ts_request(&mut self, input: &mut [OwnedSecurityBuffer]) -> Result<TsRequest> {
-        let encrypted_ts_request = OwnedSecurityBuffer::find_buffer_mut(input, SecurityBufferType::Token)?;
+        let encrypted_ts_request = OwnedSecurityBuffer::find_buffer_mut(input, BufferType::Token)?;
         let DecryptionResult::Success(DecryptionResultBuffers {
             header: _,
             decrypted: raw_ts_request,
@@ -161,21 +161,21 @@ impl Sspi for SspiCredSsp {
             ));
         }
 
-        let plain_message = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let plain_message = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
 
         let encrypted_data = self.tls_connection_mut()?.encrypt_tls(plain_message.data())?;
         let encrypted_data = encrypted_data.as_slice();
 
-        let stream_header_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamHeader)?;
+        let stream_header_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::StreamHeader)?;
         let (stream_header_data, encrypted_data) =
             encrypted_data.split_at(stream_header_buffer.buf_len().min(encrypted_data.len()));
         stream_header_buffer.write_data(stream_header_data)?;
 
-        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
         let (data_data, encrypted_data) = encrypted_data.split_at(data_buffer.buf_len().min(encrypted_data.len()));
         data_buffer.write_data(data_data)?;
 
-        let stream_trailer_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::StreamTrailer)?;
+        let stream_trailer_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::StreamTrailer)?;
         stream_trailer_buffer.write_data(encrypted_data)?;
 
         Ok(SecurityStatus::Ok)
@@ -195,7 +195,7 @@ impl Sspi for SspiCredSsp {
 
         match self
             .tls_connection_mut()?
-            .decrypt_tls(SecurityBuffer::take_buf_data_mut(message, SecurityBufferType::Data)?)?
+            .decrypt_tls(SecurityBuffer::take_buf_data_mut(message, BufferType::Data)?)?
         {
             DecryptionResult::Success(DecryptionResultBuffers {
                 header,
@@ -203,14 +203,14 @@ impl Sspi for SspiCredSsp {
                 extra,
             }) => {
                 // buffers order is important. MSTSC won't work with another buffers order.
-                message[0] = SecurityBuffer::StreamHeader(header);
-                message[1] = SecurityBuffer::Data(decrypted);
+                message[0] = SecurityBuffer::stream_header_buf(header);
+                message[1] = SecurityBuffer::data_buf(decrypted);
                 // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
                 // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
                 //
                 // So, we can just set an empty buffer here.
-                message[2] = SecurityBuffer::StreamTrailer(&mut []);
-                message[3] = SecurityBuffer::Extra(extra);
+                message[2] = SecurityBuffer::stream_trailer_buf(&mut []);
+                message[3] = SecurityBuffer::extra_buf(extra);
 
                 Ok(DecryptionFlags::empty())
             }
@@ -221,8 +221,8 @@ impl Sspi for SspiCredSsp {
                 // * https://stackoverflow.com/a/6832633/9123725
                 // * https://stackoverflow.com/a/65101172
 
-                message[0] = SecurityBuffer::Missing(needed_bytes_amount);
-                message[1] = SecurityBuffer::Missing(needed_bytes_amount);
+                message[0] = SecurityBuffer::missing_buf(needed_bytes_amount);
+                message[1] = SecurityBuffer::missing_buf(needed_bytes_amount);
 
                 Err(Error::new(ErrorKind::IncompleteMessage, "Got incomplete TLS message"))
             }
@@ -399,7 +399,7 @@ impl SspiCredSsp {
                 let input_token = builder
                     .input
                     .as_mut()
-                    .and_then(|buffers| OwnedSecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Token).ok())
+                    .and_then(|buffers| OwnedSecurityBuffer::find_buffer_mut(buffers, BufferType::Token).ok())
                     .map(|sec_buffer| sec_buffer.buffer.as_slice())
                     .unwrap_or_default();
                 let (bytes_written, tls_buffer) = self.tls_connection_mut()?.process_tls_packets(input_token)?;
@@ -413,7 +413,7 @@ impl SspiCredSsp {
                     return self.initialize_security_context_impl(yield_point, builder).await;
                 }
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer = tls_buffer;
 
                 SecurityStatus::ContinueNeeded
@@ -430,13 +430,10 @@ impl SspiCredSsp {
 
                 let mut input_token = vec![OwnedSecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
-                    SecurityBufferType::Token,
+                    BufferType::Token,
                 )];
 
-                let mut output_token = vec![OwnedSecurityBuffer::new(
-                    Vec::with_capacity(1024),
-                    SecurityBufferType::Token,
-                )];
+                let mut output_token = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut inner_builder = self
                     .cred_ssp_context
@@ -490,7 +487,7 @@ impl SspiCredSsp {
                 let mut encoded_ts_request = Vec::new();
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer = self.tls_connection_mut()?.encrypt_tls(&encoded_ts_request)?;
 
                 SecurityStatus::ContinueNeeded
@@ -536,7 +533,7 @@ impl SspiCredSsp {
                 let mut encoded_ts_request = Vec::new();
                 ts_request.encode_ts_request(&mut encoded_ts_request)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer = self.tls_connection_mut()?.encrypt_tls(&encoded_ts_request)?;
 
                 self.state = CredSspState::Final;

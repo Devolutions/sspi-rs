@@ -2,9 +2,9 @@ use std::io;
 use std::sync::LazyLock;
 
 use sspi::{
-    credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
-    DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiEx, Username,
+    credssp, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, ContextNames, CredentialUse,
+    DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi,
+    SspiEx, Username,
 };
 use time::OffsetDateTime;
 
@@ -100,7 +100,7 @@ where
     let mut server_status = SecurityStatus::ContinueNeeded;
 
     loop {
-        let mut client_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        let mut client_output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
         let mut builder = client
             .initialize_security_context()
@@ -119,7 +119,7 @@ where
             return Ok((client_status, server_status));
         }
 
-        server_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        server_output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
         let server_result = server
             .accept_security_context()

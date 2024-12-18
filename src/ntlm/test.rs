@@ -42,7 +42,7 @@ fn encrypt_message_crypts_data() {
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)
         .unwrap();
-    let output = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();
+    let output = SecurityBuffer::find_buffer(&buffers, BufferType::Data).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
     assert_eq!(expected, output.data());
@@ -65,7 +65,7 @@ fn encrypt_message_correct_computes_digest() {
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
         .unwrap();
-    let signature = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
+    let signature = SecurityBuffer::find_buffer(&buffers, BufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
     assert_eq!(expected, &signature.data()[4..12]);
@@ -88,7 +88,7 @@ fn encrypt_message_writes_seq_num_to_signature() {
     let result = context
         .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
         .unwrap();
-    let signature = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Token).unwrap();
+    let signature = SecurityBuffer::find_buffer(&buffers, BufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
     assert_eq!(expected, signature.data()[12..SIGNATURE_SIZE]);
@@ -110,7 +110,7 @@ fn decrypt_message_decrypts_data() {
     let expected = TEST_DATA;
 
     context.decrypt_message(&mut buffers, TEST_SEQ_NUM).unwrap();
-    let data = SecurityBuffer::find_buffer(&buffers, SecurityBufferType::Data).unwrap();
+    let data = SecurityBuffer::find_buffer(&buffers, BufferType::Data).unwrap();
 
     assert_eq!(expected, data.data());
 }
@@ -230,7 +230,7 @@ fn initialize_security_context_wrong_state_negotiate() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Negotiate;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -249,7 +249,7 @@ fn initialize_security_context_wrong_state_authenticate() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Authenticate;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -268,7 +268,7 @@ fn initialize_security_context_wrong_state_completion() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Completion;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -287,7 +287,7 @@ fn initialize_security_context_wrong_state_final() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Final;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -307,10 +307,7 @@ fn initialize_security_context_writes_negotiate_message() {
 
     context.state = NtlmState::Initial;
 
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -323,7 +320,7 @@ fn initialize_security_context_writes_negotiate_message() {
     let result = context.initialize_security_context_impl(&mut builder).unwrap();
 
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
-    let output = OwnedSecurityBuffer::find_buffer(&output, SecurityBufferType::Token).unwrap();
+    let output = OwnedSecurityBuffer::find_buffer(&output, BufferType::Token).unwrap();
     assert_eq!(context.state, NtlmState::Challenge);
     assert!(!output.buffer.is_empty());
 }
@@ -342,12 +339,9 @@ fn initialize_security_context_reads_challenge_message() {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ],
-        SecurityBufferType::Token,
+        BufferType::Token,
     )];
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -376,12 +370,9 @@ fn initialize_security_context_writes_authenticate_message() {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x00, 0x00, 0x00, 0x61, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ],
-        SecurityBufferType::Token,
+        BufferType::Token,
     )];
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -395,7 +386,7 @@ fn initialize_security_context_writes_authenticate_message() {
     let result = context.initialize_security_context_impl(&mut builder).unwrap();
 
     assert_eq!(result.status, SecurityStatus::Ok);
-    let output = OwnedSecurityBuffer::find_buffer(&output, SecurityBufferType::Token).unwrap();
+    let output = OwnedSecurityBuffer::find_buffer(&output, BufferType::Token).unwrap();
     assert_eq!(context.state, NtlmState::Final);
     assert!(!output.buffer.is_empty());
 }
@@ -405,10 +396,7 @@ fn initialize_security_context_fails_on_empty_output_on_challenge_state() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Challenge;
 
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
     let mut credentials = Some(TEST_CREDENTIALS.clone());
 
     let mut builder = context
@@ -426,7 +414,7 @@ fn accept_security_context_wrong_state_negotiate() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Negotiate;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     assert!(context
         .accept_security_context()
@@ -444,7 +432,7 @@ fn accept_security_context_wrong_state_challenge() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Challenge;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     assert!(context
         .accept_security_context()
@@ -462,7 +450,7 @@ fn accept_security_context_wrong_state_completion() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Completion;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     assert!(context
         .accept_security_context()
@@ -480,7 +468,7 @@ fn accept_security_context_wrong_state_final() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Final;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     assert!(context
         .accept_security_context()
@@ -503,12 +491,9 @@ fn accept_security_context_reads_negotiate_message() {
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x97, 0x82, 0x08, 0xe0, 0x00, 0x00,
             0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
         ],
-        SecurityBufferType::Token,
+        BufferType::Token,
     );
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
     let result = context
         .accept_security_context()
@@ -533,12 +518,9 @@ fn accept_security_context_writes_challenge_message() {
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x97, 0x82, 0x08, 0xe0, 0x00, 0x00,
             0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
         ],
-        SecurityBufferType::Token,
+        BufferType::Token,
     );
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
     let result = context
         .accept_security_context()
         .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
@@ -550,7 +532,7 @@ fn accept_security_context_writes_challenge_message() {
         .unwrap();
 
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
-    let output = OwnedSecurityBuffer::find_buffer(&output, SecurityBufferType::Token).unwrap();
+    let output = OwnedSecurityBuffer::find_buffer(&output, BufferType::Token).unwrap();
     assert_eq!(context.state, NtlmState::Authenticate);
     assert!(!output.buffer.is_empty());
 }
@@ -589,12 +571,9 @@ fn accept_security_context_reads_authenticate() {
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
             0x0f, // encrypted key
         ],
-        SecurityBufferType::Token,
+        BufferType::Token,
     );
-    let mut output = vec![OwnedSecurityBuffer::new(
-        Vec::with_capacity(1024),
-        SecurityBufferType::Token,
-    )];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
     let result = context
         .accept_security_context()
@@ -616,7 +595,7 @@ fn accept_security_context_fails_on_empty_output_on_negotiate_state() {
 
     context.state = NtlmState::Initial;
 
-    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     assert!(context
         .accept_security_context()

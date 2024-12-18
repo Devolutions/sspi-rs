@@ -1,8 +1,7 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use libc::c_char;
-use num_traits::{FromPrimitive, ToPrimitive};
-use sspi::{OwnedSecurityBuffer, SecurityBufferType};
+use sspi::{OwnedSecurityBuffer, OwnedSecurityBufferType};
 
 #[derive(Debug)]
 #[repr(C)]
@@ -33,7 +32,7 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
                 .iter()
                 .map(|v| *v as u8)
                 .collect(),
-            buffer_type: SecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
+            buffer_type: OwnedSecurityBufferType::from_u32(raw_buffer.buffer_type.try_into().unwrap()).unwrap(),
         })
         .collect()
 }
@@ -48,7 +47,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
         let buffer = &from_buffers[i];
         let buffer_size = buffer.buffer.len();
         to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
-        to_buffers[i].buffer_type = buffer.buffer_type.to_u32().unwrap();
+        to_buffers[i].buffer_type = buffer.buffer_type.to_u32();
         if allocate || to_buffers[i].pv_buffer.is_null() {
             to_buffers[i].pv_buffer = libc::malloc(buffer_size) as *mut c_char;
         }

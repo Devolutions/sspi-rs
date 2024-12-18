@@ -9,8 +9,8 @@ use std::net::TcpStream;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, OwnedSecurityBuffer, SecurityBuffer,
-    SecurityBufferType, SecurityStatus, Sspi, SspiImpl, Username,
+    AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, DataRepresentation, Ntlm, OwnedSecurityBuffer,
+    SecurityBuffer, SecurityStatus, Sspi, SspiImpl, Username,
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -74,7 +74,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .with_auth_data(identity)
         .execute(ntlm)?;
 
-    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
     let username = whoami::username();
 
     let mut builder = ntlm
@@ -91,7 +91,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
 
     write_message(&mut stream, &output_buffer[0].buffer)?;
 
-    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     loop {
         output_buffer[0].buffer.clear();

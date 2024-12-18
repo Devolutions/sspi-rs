@@ -17,12 +17,12 @@ use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
-    EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
+    DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
-    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
-    SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    PackageInfo, SecurityBuffer, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -256,8 +256,8 @@ impl SspiImpl for Ntlm {
             .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
@@ -265,11 +265,11 @@ impl SspiImpl for Ntlm {
                 server::write_challenge(self, &mut output_token.buffer)?
             }
             NtlmState::Authenticate => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 self.identity = builder.credentials_handle.cloned().flatten();
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(input, BufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -308,7 +308,7 @@ impl Ntlm {
 
         let status = match self.state {
             NtlmState::Initial => {
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
                 self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
@@ -329,13 +329,12 @@ impl Ntlm {
                         "Input buffers must be specified on subsequent calls",
                     )
                 })?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = OwnedSecurityBuffer::find_buffer(input, BufferType::Token)?;
+                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
-                    builder.input.as_ref().unwrap(),
-                    SecurityBufferType::ChannelBindings,
-                ) {
+                if let Ok(sec_buffer) =
+                    OwnedSecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
+                {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -387,8 +386,8 @@ impl Sspi for Ntlm {
             self.complete_auth_token(&mut [])?;
         }
 
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        SecurityBuffer::find_buffer_mut(message, BufferType::Token)?; // check if exists
+        let data = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
 
         let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
 
@@ -404,7 +403,7 @@ impl Sspi for Ntlm {
             .unwrap()
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
 
-        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        let signature_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
             return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
         }
