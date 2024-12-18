@@ -52,7 +52,10 @@ fn main() -> Result<(), io::Error> {
 
     println!("Encrypted message: {:?}", data);
 
-    let mut msg_buffer = vec![SecurityBuffer::Token(&mut trailer), SecurityBuffer::Data(&mut data)];
+    let mut msg_buffer = vec![
+        SecurityBuffer::token_buf(&mut trailer),
+        SecurityBuffer::data_buf(&mut data),
+    ];
 
     let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
 

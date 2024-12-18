@@ -34,8 +34,8 @@ fn encrypt_message_crypts_data() {
     let mut token = [0; 100];
     let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        SecurityBuffer::Token(token.as_mut_slice()),
-        SecurityBuffer::Data(data.as_mut_slice()),
+        SecurityBuffer::token_buf(token.as_mut_slice()),
+        SecurityBuffer::data_buf(data.as_mut_slice()),
     ];
     let expected = &ENCRYPTED_TEST_DATA;
 
@@ -57,8 +57,8 @@ fn encrypt_message_correct_computes_digest() {
     let mut token = [0; 100];
     let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        SecurityBuffer::Token(token.as_mut_slice()),
-        SecurityBuffer::Data(data.as_mut_slice()),
+        SecurityBuffer::token_buf(token.as_mut_slice()),
+        SecurityBuffer::data_buf(data.as_mut_slice()),
     ];
     let expected = &DIGEST_FOR_TEST_DATA;
 
@@ -80,8 +80,8 @@ fn encrypt_message_writes_seq_num_to_signature() {
     let mut token = [0; 100];
     let mut data = TEST_DATA.to_vec();
     let mut buffers = vec![
-        SecurityBuffer::Token(token.as_mut_slice()),
-        SecurityBuffer::Data(data.as_mut_slice()),
+        SecurityBuffer::token_buf(token.as_mut_slice()),
+        SecurityBuffer::data_buf(data.as_mut_slice()),
     ];
     let expected = TEST_SEQ_NUM.to_le_bytes();
 
@@ -104,8 +104,8 @@ fn decrypt_message_decrypts_data() {
     let mut signature_test_data = SIGNATURE_FOR_TEST_DATA.to_vec();
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut signature_test_data),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut signature_test_data),
     ];
     let expected = TEST_DATA;
 
@@ -125,8 +125,8 @@ fn decrypt_message_does_not_fail_on_correct_signature() {
     let mut signature_test_data = SIGNATURE_FOR_TEST_DATA.to_vec();
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut signature_test_data),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut signature_test_data),
     ];
 
     context.decrypt_message(&mut buffers, TEST_SEQ_NUM).unwrap();
@@ -144,8 +144,8 @@ fn decrypt_message_fails_on_incorrect_version() {
     ];
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut token),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut token),
     ];
 
     assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
@@ -163,8 +163,8 @@ fn decrypt_message_fails_on_incorrect_checksum() {
     ];
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut token),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut token),
     ];
 
     assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
@@ -182,8 +182,8 @@ fn decrypt_message_fails_on_incorrect_seq_num() {
     ];
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut token),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut token),
     ];
 
     assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
@@ -200,8 +200,8 @@ fn decrypt_message_fails_on_incorrect_signing_key() {
     let mut signature_test_data = SIGNATURE_FOR_TEST_DATA.to_vec();
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut signature_test_data),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut signature_test_data),
     ];
 
     assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
@@ -218,8 +218,8 @@ fn decrypt_message_fails_on_incorrect_sealing_key() {
     let mut signature_test_data = SIGNATURE_FOR_TEST_DATA.to_vec();
 
     let mut buffers = vec![
-        SecurityBuffer::Data(&mut encrypted_test_data),
-        SecurityBuffer::Token(&mut signature_test_data),
+        SecurityBuffer::data_buf(&mut encrypted_test_data),
+        SecurityBuffer::token_buf(&mut signature_test_data),
     ];
 
     assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());

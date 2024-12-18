@@ -960,8 +960,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut token = [0; 1024];
         let mut data = plain_message.to_vec();
         let mut message = [
-            SecurityBuffer::Token(token.as_mut_slice()),
-            SecurityBuffer::Data(data.as_mut_slice()),
+            SecurityBuffer::token_buf(token.as_mut_slice()),
+            SecurityBuffer::data_buf(data.as_mut_slice()),
         ];
 
         pku2u_server
@@ -971,7 +971,10 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut buffer = message[0].data().to_vec();
         buffer.extend_from_slice(message[1].data());
 
-        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
+        let mut message = [
+            SecurityBuffer::stream_buf(&mut buffer),
+            SecurityBuffer::data_buf(&mut []),
+        ];
 
         pku2u_client.decrypt_message(&mut message, 0).unwrap();
 

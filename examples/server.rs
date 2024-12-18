@@ -49,8 +49,8 @@ fn main() -> Result<(), io::Error> {
     let mut token = vec![0u8; ntlm.query_context_sizes()?.security_trailer as usize];
     let mut data = msg.as_bytes().to_vec();
     let mut msg_buffer = vec![
-        SecurityBuffer::Token(token.as_mut_slice()),
-        SecurityBuffer::Data(data.as_mut_slice()),
+        SecurityBuffer::token_buf(token.as_mut_slice()),
+        SecurityBuffer::data_buf(data.as_mut_slice()),
     ];
 
     println!("Unencrypted message: [{}]", msg);

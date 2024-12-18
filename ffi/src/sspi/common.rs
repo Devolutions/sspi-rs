@@ -445,8 +445,8 @@ mod tests {
         let mut token = [0; 1024];
         let mut data = plain_message.to_vec();
         let mut message = vec![
-            SecurityBuffer::Token(token.as_mut_slice()),
-            SecurityBuffer::Data(data.as_mut_slice()),
+            SecurityBuffer::token_buf(token.as_mut_slice()),
+            SecurityBuffer::data_buf(data.as_mut_slice()),
         ];
 
         kerberos_server

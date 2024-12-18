@@ -575,8 +575,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBuffer::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// println!("Unencrypted: {:?}", msg_buffer[1].data());
@@ -692,8 +692,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg = [
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBuffer::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// let _result = server_ntlm
@@ -702,8 +702,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.take_data()),
-    ///     sspi::SecurityBuffer::Data(data.take_data()),
+    ///     sspi::SecurityBuffer::token_buf(token.take_data()),
+    ///     sspi::SecurityBuffer::data_buf(data.take_data()),
     /// ];
     ///
     /// #[allow(unused_variables)]
