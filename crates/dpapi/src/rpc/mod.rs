@@ -1,6 +1,8 @@
 pub mod bind;
+pub mod client;
 pub mod pdu;
 pub mod request;
+pub mod verification;
 
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 
@@ -69,13 +71,13 @@ impl Decode for Uuid {
     }
 }
 
-pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, writer: impl Write) -> DpapiResult<()> {
+pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, mut writer: impl Write) -> DpapiResult<usize> {
     let padding_len = (ALIGNMENT - (buf_len % ALIGNMENT)) % ALIGNMENT;
     let padding_buf = vec![0; padding_len];
 
     write_buf(&padding_buf, writer)?;
 
-    Ok(())
+    Ok(padding_len)
 }
 
 pub fn read_padding<const ALIGNMENT: usize>(buf_len: usize, reader: impl Read) -> DpapiResult<()> {

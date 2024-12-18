@@ -406,14 +406,17 @@ impl Encode for PduData {
 pub struct Pdu {
     pub header: PduHeader,
     pub data: PduData,
-    pub security_trailer: SecurityTrailer,
+    pub security_trailer: Option<SecurityTrailer>,
 }
 
 impl Encode for Pdu {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         self.header.encode(&mut writer)?;
         self.data.encode(&mut writer)?;
-        self.security_trailer.encode(writer)?;
+
+        if let Some(security_trailer) = self.security_trailer.as_ref() {
+            security_trailer.encode(writer)?;
+        }
 
         Ok(())
     }
@@ -434,7 +437,11 @@ impl Decode for Pdu {
                 .into(),
             &mut reader,
         )?;
-        let security_trailer = SecurityTrailer::decode(reader)?;
+        let security_trailer = if header.auth_len > 0 {
+            Some(SecurityTrailer::decode(reader)?)
+        } else {
+            None
+        };
 
         Ok(Self {
             header,

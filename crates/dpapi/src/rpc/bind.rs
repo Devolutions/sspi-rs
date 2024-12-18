@@ -296,7 +296,9 @@ impl Encode for BindNak {
         }
 
         let versions_buf_len = 1 /* len */ + 2 /* version size */ * self.versions.len();
-        write_padding::<4>(versions_buf_len, &mut writer)
+        write_padding::<4>(versions_buf_len, &mut writer)?;
+
+        Ok(())
     }
 }
 

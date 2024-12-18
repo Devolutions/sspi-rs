@@ -31,6 +31,9 @@ pub enum Error {
     #[error(transparent)]
     Crypto(#[from] crate::crypto::CryptoError),
 
+    #[error(transparent)]
+    Command(#[from] crate::rpc::verification::CommandError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
