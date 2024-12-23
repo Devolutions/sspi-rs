@@ -5,9 +5,9 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use super::{read_to_end, Decode, Encode};
-use crate::rpc::bind::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, ContextElement};
+use crate::rpc::bind::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak};
 use crate::rpc::request::{Request, Response};
-use crate::{DpapiResult, Error, ErrorKind};
+use crate::{DpapiResult, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
@@ -99,17 +99,17 @@ impl Decode for DataRepresentation {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let first_octet = reader.read_u8()?;
 
+        let integer_representation = (first_octet & 0b11110000) >> 4;
+        let character_representation = first_octet & 0b00001111;
+        let floating_representation = reader.read_u8()?;
+
         let data_representation = Self {
-            byte_order: IntegerRepresentation::from_u8((first_octet & 0b11110000) >> 4)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid IntegerRepresentation value"))?,
-            character: CharacterRepresentation::from_u8(first_octet & 0b00001111)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid CharacterRepresentation value"))?,
-            floating_point: FloatingPointRepresentation::from_u8(reader.read_u8()?).ok_or_else(|| {
-                Error::new(
-                    ErrorKind::NteInvalidParameter,
-                    "invalid FloatingPointRepresentation value",
-                )
-            })?,
+            byte_order: IntegerRepresentation::from_u8(integer_representation)
+                .ok_or_else(|| Error::InvalidIntegerRepresentation(integer_representation))?,
+            character: CharacterRepresentation::from_u8(character_representation)
+                .ok_or_else(|| Error::InvalidCharacterRepresentation(character_representation))?,
+            floating_point: FloatingPointRepresentation::from_u8(floating_representation)
+                .ok_or_else(|| Error::InvalidFloatingPointRepresentation(floating_representation))?,
         };
 
         // Padding.
@@ -151,10 +151,14 @@ impl Decode for PduHeader {
         Ok(Self {
             version: reader.read_u8()?,
             version_minor: reader.read_u8()?,
-            packet_type: PacketType::from_u8(reader.read_u8()?)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid PacketType value"))?,
-            packet_flags: PacketFlags::from_bits(reader.read_u8()?)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid PacketFlags value"))?,
+            packet_type: {
+                let packet_type = reader.read_u8()?;
+                PacketType::from_u8(packet_type).ok_or_else(|| Error::InvalidPacketType(packet_type))?
+            },
+            packet_flags: {
+                let packet_flags = reader.read_u8()?;
+                PacketFlags::from_bits(packet_flags).ok_or_else(|| Error::InvalidPacketFlags(packet_flags))?
+            },
             data_rep: DataRepresentation::decode(&mut reader)?,
             frag_len: reader.read_u16::<LittleEndian>()?,
             auth_len: reader.read_u16::<LittleEndian>()?,
@@ -212,11 +216,14 @@ impl Encode for SecurityTrailer {
 
 impl Decode for SecurityTrailer {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+        let security_provider = reader.read_u8()?;
+        let authentication_level = reader.read_u8()?;
+
         Ok(Self {
-            security_type: SecurityProvider::from_u8(reader.read_u8()?)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid SecurityProvider value"))?,
-            level: AuthenticationLevel::from_u8(reader.read_u8()?)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid AuthenticationLevel value"))?,
+            security_type: SecurityProvider::from_u8(security_provider)
+                .ok_or_else(|| Error::InvalidSecurityProvider(security_provider))?,
+            level: AuthenticationLevel::from_u8(authentication_level)
+                .ok_or_else(|| Error::InvalidAuthenticationLevel(authentication_level))?,
             pad_length: reader.read_u8()?,
             context_id: {
                 // Skip Auth-Rsrvd.
@@ -270,8 +277,10 @@ impl Decode for Fault {
             alloc_hint: reader.read_u32::<LittleEndian>()?,
             context_id: reader.read_u16::<LittleEndian>()?,
             cancel_count: reader.read_u8()?,
-            flags: FaultFlags::from_bits(reader.read_u8()?)
-                .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid FaultFlags value"))?,
+            flags: {
+                let fault_flags = reader.read_u8()?;
+                FaultFlags::from_bits(fault_flags).ok_or_else(|| Error::InvalidFaultFlags(fault_flags))?
+            },
             status: reader.read_u32::<LittleEndian>()?,
             stub_data: read_to_end(reader)?,
         })
@@ -307,10 +316,7 @@ impl PduData {
             PacketType::Request => Ok(PduData::Request(Request::decode(pdu_header, &buf as &[u8])?)),
             PacketType::Response => Ok(PduData::Response(Response::decode(&buf as &[u8])?)),
             PacketType::Fault => Ok(PduData::Fault(Fault::decode(&buf as &[u8])?)),
-            _ => Err(Error::new(
-                ErrorKind::NteInternalError,
-                format!("unsupported packet type: {:?}", pdu_header.packet_type),
-            )),
+            packet_type => Err(Error::PduNotSupported(packet_type)),
         }
     }
 }

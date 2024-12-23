@@ -541,6 +541,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "paste",
+ "thiserror 2.0.10",
  "uuid",
 ]
 
