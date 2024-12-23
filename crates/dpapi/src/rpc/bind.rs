@@ -3,8 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
-use super::{Decode, Encode};
-use crate::rpc::{read_padding, read_uuid, write_padding};
+use crate::rpc::{read_padding, read_uuid, write_buf, write_padding, Decode, Encode};
 use crate::{DpapiResult, Error};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
@@ -36,7 +35,7 @@ pub struct SyntaxId {
 
 impl Encode for SyntaxId {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        writer.write(&self.uuid.to_bytes_le())?;
+        write_buf(&self.uuid.to_bytes_le(), &mut writer)?;
         writer.write_u16::<LittleEndian>(self.version)?;
         writer.write_u16::<LittleEndian>(self.version_minor)?;
 
@@ -139,7 +138,7 @@ impl Encode for ContextResult {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         writer.write_u16::<LittleEndian>(self.result.into())?;
         writer.write_u16::<LittleEndian>(self.reason)?;
-        writer.write(&self.syntax.to_bytes_le())?;
+        write_buf(&self.syntax.to_bytes_le(), &mut writer)?;
         writer.write_u32::<LittleEndian>(self.syntax_version)?;
 
         Ok(())
@@ -151,11 +150,7 @@ impl Decode for ContextResult {
         Ok(Self {
             result: reader.read_u16::<LittleEndian>()?.try_into()?,
             reason: reader.read_u16::<LittleEndian>()?,
-            syntax: {
-                let mut uuid_buf = [0; 16];
-                reader.read(&mut uuid_buf)?;
-                Uuid::from_slice_le(&uuid_buf)?
-            },
+            syntax: read_uuid(&mut reader)?,
             syntax_version: reader.read_u32::<LittleEndian>()?,
         })
     }
@@ -223,7 +218,7 @@ impl Encode for BindAck {
             let sec_addr_len = self.sec_addr.len() + 1;
             writer.write_u16::<LittleEndian>(sec_addr_len.try_into()?)?;
 
-            writer.write(self.sec_addr.as_bytes())?;
+            write_buf(self.sec_addr.as_bytes(), &mut writer)?;
             writer.write_u8(0)?;
 
             sec_addr_len
