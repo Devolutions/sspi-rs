@@ -1,71 +1,48 @@
-use std::io::Error as IoError;
-use std::num::TryFromIntError;
-use std::string::FromUtf8Error;
+use thiserror::Error;
 
-use num_derive::{FromPrimitive, ToPrimitive};
-use uuid::Error as UuidError;
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("IO error: {0:?}")]
+    Io(#[from] std::io::Error),
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive, ToPrimitive)]
-#[repr(u32)]
-pub enum ErrorKind {
-    Success = 0,
-    NteBadFlags = 0x80090009,
-    NteInvalidParameter = 0x80090027,
-    NteInternalError = 0x8009002D,
+    #[error("UUID error: {0:?}")]
+    Uuid(#[from] uuid::Error),
 
-    IoError = 1,
-    UuidError = 2,
-}
+    #[error("Integer conversion error: {0:?}")]
+    IntegerConversion(#[from] std::num::TryFromIntError),
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub description: String,
-}
+    #[error("Provided buf contains invalid UTF-8 data: {0:?}")]
+    Utf8(#[from] std::string::FromUtf8Error),
 
-impl Error {
-    pub fn new(kind: ErrorKind, description: impl Into<String>) -> Self {
-        Self {
-            kind,
-            description: description.into(),
-        }
-    }
+    #[error("Invalid context result code value: {0}")]
+    InvalidContextResultCode(u16),
+
+    #[error("Invalid integer representation value: {0}")]
+    InvalidIntegerRepresentation(u8),
+
+    #[error("Invalid character representation value: {0}")]
+    InvalidCharacterRepresentation(u8),
+
+    #[error("Invalid floating point representation value: {0}")]
+    InvalidFloatingPointRepresentation(u8),
+
+    #[error("Invalid packet type value: {0}")]
+    InvalidPacketType(u8),
+
+    #[error("Invalid packet flags value: {0}")]
+    InvalidPacketFlags(u8),
+
+    #[error("Invalid security provider value: {0}")]
+    InvalidSecurityProvider(u8),
+
+    #[error("Invalid authentication level value: {0}")]
+    InvalidAuthenticationLevel(u8),
+
+    #[error("Invalid fault flags value: {0}")]
+    InvalidFaultFlags(u8),
+
+    #[error("{0:?} PDU is not supported")]
+    PduNotSupported(crate::rpc::pdu::PacketType),
 }
 
 pub type DpapiResult<T> = Result<T, Error>;
-
-impl From<IoError> for Error {
-    fn from(err: IoError) -> Self {
-        Self {
-            kind: ErrorKind::IoError,
-            description: err.to_string(),
-        }
-    }
-}
-
-impl From<UuidError> for Error {
-    fn from(err: UuidError) -> Self {
-        Self {
-            kind: ErrorKind::UuidError,
-            description: err.to_string(),
-        }
-    }
-}
-
-impl From<TryFromIntError> for Error {
-    fn from(err: TryFromIntError) -> Self {
-        Self {
-            kind: ErrorKind::NteInternalError,
-            description: err.to_string(),
-        }
-    }
-}
-
-impl From<FromUtf8Error> for Error {
-    fn from(err: FromUtf8Error) -> Self {
-        Self {
-            kind: ErrorKind::NteInternalError,
-            description: err.to_string(),
-        }
-    }
-}

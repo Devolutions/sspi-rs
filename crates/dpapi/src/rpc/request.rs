@@ -1,13 +1,11 @@
 use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 use uuid::Uuid;
 
 use super::{read_to_end, read_uuid, Decode, Encode};
 use crate::rpc::pdu::{PacketFlags, PduHeader};
-use crate::{DpapiResult, Error, ErrorKind};
+use crate::DpapiResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {

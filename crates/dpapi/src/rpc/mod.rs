@@ -1,9 +1,9 @@
 #[macro_use]
 mod macros;
 
-mod bind;
-mod pdu;
-mod request;
+pub mod bind;
+pub mod pdu;
+pub mod request;
 
 use std::io::{Read, Write};
 

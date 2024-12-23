@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{Decode, Encode};
 use crate::rpc::{read_padding, read_uuid, write_padding};
-use crate::{DpapiResult, Error, ErrorKind};
+use crate::{DpapiResult, Error};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
 ///
@@ -83,7 +83,6 @@ impl Decode for ContextElement {
         let abstract_syntax = SyntaxId::decode(&mut reader)?;
 
         let transfer_syntaxes = (0..transfer_syntaxes_count)
-            .into_iter()
             .map(|_| SyntaxId::decode(&mut reader))
             .collect::<DpapiResult<_>>()?;
 
@@ -123,10 +122,7 @@ impl TryFrom<u16> for ContextResultCode {
             1 => Ok(Self::UserRejection),
             2 => Ok(Self::ProviderRejection),
             3 => Ok(Self::NegotiateAck),
-            v => Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                format!("invalid ContextResultCode value: {}", v),
-            )),
+            v => Err(Error::InvalidContextResultCode(v)),
         }
     }
 }
@@ -196,7 +192,6 @@ impl Decode for Bind {
 
         let contexts_count = reader.read_u32::<LittleEndian>()?;
         let contexts = (0..contexts_count)
-            .into_iter()
             .map(|_| ContextElement::decode(&mut reader))
             .collect::<DpapiResult<_>>()?;
 
@@ -276,7 +271,6 @@ impl Decode for BindAck {
             results: {
                 let results_count = reader.read_u32::<LittleEndian>()?;
                 (0..results_count)
-                    .into_iter()
                     .map(|_| ContextResult::decode(&mut reader))
                     .collect::<DpapiResult<_>>()?
             },
@@ -312,7 +306,6 @@ impl Decode for BindNak {
             versions: {
                 let versions_count = reader.read_u8()?;
                 let versions = (0..versions_count)
-                    .into_iter()
                     .map(|_| Ok((reader.read_u8()?, reader.read_u8()?)))
                     .collect::<DpapiResult<Vec<_>>>()?;
 
