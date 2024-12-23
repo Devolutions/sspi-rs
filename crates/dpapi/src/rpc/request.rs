@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
-use super::{read_to_end, read_uuid, Decode, Encode};
+use super::{read_to_end, read_uuid, write_buf, Decode, Encode};
 use crate::rpc::pdu::{PacketFlags, PduHeader};
 use crate::DpapiResult;
 
@@ -22,10 +22,9 @@ impl Encode for Request {
         writer.write_u16::<LittleEndian>(self.context_id)?;
         writer.write_u16::<LittleEndian>(self.opnum)?;
         if let Some(obj) = self.obj.as_ref() {
-            writer.write(&obj.to_bytes_le())?;
+            write_buf(&obj.to_bytes_le(), &mut writer)?;
         }
-        // TODO
-        writer.write(&self.stub_data)?;
+        write_buf(&self.stub_data, writer)?;
 
         Ok(())
     }
@@ -63,8 +62,7 @@ impl Encode for Response {
         // Reserved.
         writer.write_u8(0)?;
 
-        // TODO
-        writer.write(&self.stub_data)?;
+        write_buf(&self.stub_data, writer)?;
 
         Ok(())
     }
