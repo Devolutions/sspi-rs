@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
-use crate::rpc::{read_padding, read_uuid, write_buf, write_padding, Decode, Encode};
+use crate::rpc::{read_padding, write_buf, write_padding, Decode, Encode};
 use crate::{DpapiResult, Error};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
@@ -35,7 +35,7 @@ pub struct SyntaxId {
 
 impl Encode for SyntaxId {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        write_buf(&self.uuid.to_bytes_le(), &mut writer)?;
+        self.uuid.encode(&mut writer)?;
         writer.write_u16::<LittleEndian>(self.version)?;
         writer.write_u16::<LittleEndian>(self.version_minor)?;
 
@@ -46,7 +46,7 @@ impl Encode for SyntaxId {
 impl Decode for SyntaxId {
     fn decode(mut reader: impl Read) -> DpapiResult<SyntaxId> {
         Ok(Self {
-            uuid: read_uuid(&mut reader)?,
+            uuid: Uuid::decode(&mut reader)?,
             version: reader.read_u16::<LittleEndian>()?,
             version_minor: reader.read_u16::<LittleEndian>()?,
         })
@@ -138,7 +138,7 @@ impl Encode for ContextResult {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         writer.write_u16::<LittleEndian>(self.result.into())?;
         writer.write_u16::<LittleEndian>(self.reason)?;
-        write_buf(&self.syntax.to_bytes_le(), &mut writer)?;
+        self.syntax.encode(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.syntax_version)?;
 
         Ok(())
@@ -150,7 +150,7 @@ impl Decode for ContextResult {
         Ok(Self {
             result: reader.read_u16::<LittleEndian>()?.try_into()?,
             reason: reader.read_u16::<LittleEndian>()?,
-            syntax: read_uuid(&mut reader)?,
+            syntax: Uuid::decode(&mut reader)?,
             syntax_version: reader.read_u32::<LittleEndian>()?,
         })
     }
