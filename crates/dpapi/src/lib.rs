@@ -2,8 +2,6 @@
 #![doc = include_str!("../README.md")]
 #![allow(dead_code)]
 
-mod macros;
-
 mod blob;
 mod error;
 mod gkdi;

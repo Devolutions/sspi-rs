@@ -46,6 +46,36 @@ pub enum Error {
 
     #[error("invalid fragment (PDU) length: {0}")]
     InvalidFragLength(u16),
+
+    #[error("invalid {0} magic bytes: expected: {1:?}, but got: {2:?}")]
+    InvalidMagicBytes(&'static str, &'static [u8], Vec<u8>),
+
+    #[error("unsupported protection descriptor: {0}")]
+    UnsupportedProtectionDescriptor(String),
+
+    #[error("invalid protection descriptor: {0}")]
+    InvalidProtectionDescriptor(std::borrow::Cow<'static, str>),
+
+    #[error("invalid {0} value: {0}")]
+    InvalidValue(&'static str, String),
+
+    #[error("missing {0} value")]
+    MissingValue(&'static str),
+
+    #[error("can not parse integer: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+
+    #[error("this error should never occur: {0}")]
+    Infallible(#[from] std::convert::Infallible),
+
+    #[error("ASN1: {0:?}")]
+    Asn1(#[from] picky_asn1_der::Asn1DerError),
+
+    #[error("faced characters that do not belong to the charset: {0:?}")]
+    CharSet(#[from] picky_asn1::restricted_string::CharSetError),
+
+    #[error("Can not create a string from UTF-16 bytes: {0:?}")]
+    FromUtf16(#[from] std::string::FromUtf16Error),
 }
 
 pub type DpapiResult<T> = Result<T, Error>;

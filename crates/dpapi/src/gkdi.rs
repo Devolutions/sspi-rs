@@ -5,9 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_bigint_dig::BigUint;
 use uuid::Uuid;
 
-use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_uuid, write_padding, Decode, Encode};
+use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
-use crate::{DpapiResult, Error, ErrorKind};
+use crate::{DpapiResult, Error};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetKey {
@@ -26,15 +26,13 @@ impl Encode for GetKey {
         // pbTargetSD - pointer header includes the length + padding
         writer.write_u64::<LittleEndian>(target_sd_len)?;
 
-        // TODO
-        writer.write(&self.target_sd)?;
+        write_buf(&self.target_sd, &mut writer)?;
 
         write_padding::<8>(target_sd_len.try_into()?, &mut writer)?;
 
         if let Some(root_key_id) = self.root_key_id.as_ref() {
-            // TODO
-            writer.write(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00])?;
-            writer.write(root_key_id.to_bytes_le().as_ref())?;
+            write_buf(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], &mut writer)?;
+            write_buf(root_key_id.to_bytes_le().as_ref(), &mut writer)?;
         } else {
             writer.write_u64::<LittleEndian>(0)?;
         };
@@ -53,13 +51,12 @@ impl Decode for GetKey {
         let _offset = reader.read_u64::<LittleEndian>()?;
 
         let mut target_sd = vec![0; target_sd_len.try_into()?];
-        // TODO
-        reader.read_exact(&mut target_sd)?;
+        read_buf(&mut target_sd, &mut reader)?;
 
         read_padding::<8>(target_sd_len.try_into()?, &mut reader)?;
 
         let root_key_id = if reader.read_u64::<LittleEndian>()? != 0 {
-            Some(read_uuid(&mut reader)?)
+            Some(Uuid::decode(&mut reader)?)
         } else {
             None
         };
@@ -106,10 +103,7 @@ impl TryFrom<&str> for HashAlg {
             "SHA256" => Ok(HashAlg::Sha256),
             "SHA384" => Ok(HashAlg::Sha384),
             "SHA512" => Ok(HashAlg::Sha512),
-            _ => Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                format!("invalid hash alg name: {}", data),
-            )),
+            _ => Err(Error::InvalidValue("hash algorithm", data.to_owned())),
         }
     }
 }
@@ -128,11 +122,10 @@ impl Encode for KdfParameters {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
 
-        writer.write(KdfParameters::MAGIC_IDENTIFIER_1)?;
+        write_buf(KdfParameters::MAGIC_IDENTIFIER_1, &mut writer)?;
         writer.write_u32::<LittleEndian>(encoded_hash_alg.len().try_into()?)?;
-        // TODO
-        writer.write(KdfParameters::MAGIC_IDENTIFIER_2)?;
-        writer.write(&encoded_hash_alg)?;
+        write_buf(KdfParameters::MAGIC_IDENTIFIER_2, &mut writer)?;
+        write_buf(&encoded_hash_alg, &mut writer)?;
 
         Ok(())
     }
@@ -141,29 +134,31 @@ impl Encode for KdfParameters {
 impl Decode for KdfParameters {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let mut buf = [0; 8];
-        reader.read_exact(&mut buf)?;
+        read_buf(&mut buf, &mut reader)?;
 
-        if buf != KdfParameters::MAGIC_IDENTIFIER_1 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid KdfParameters::MAGIC_IDENTIFIER_1",
+        if buf != Self::MAGIC_IDENTIFIER_1 {
+            return Err(Error::InvalidMagicBytes(
+                "KdfParameters::MAGIC_IDENTIFIER_1",
+                Self::MAGIC_IDENTIFIER_1,
+                buf.to_vec(),
             ));
         }
 
         let hash_name_len: usize = reader.read_u32::<LittleEndian>()?.try_into()?;
 
         let mut buf = [0; 4];
-        reader.read_exact(&mut buf)?;
+        read_buf(&mut buf, &mut reader)?;
 
-        if buf != KdfParameters::MAGIC_IDENTIFIER_2 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid KdfParameters::MAGIC_IDENTIFIER_2",
+        if buf != Self::MAGIC_IDENTIFIER_2 {
+            return Err(Error::InvalidMagicBytes(
+                "KdfParameters::MAGIC_IDENTIFIER_1",
+                Self::MAGIC_IDENTIFIER_2,
+                buf.to_vec(),
             ));
         }
 
         let mut buf = vec![0; hash_name_len - 2 /* UTF16 null terminator char */];
-        reader.read_exact(&mut buf)?;
+        read_buf(&mut buf, &mut reader)?;
         // Skip UTF16 null terminator char.
         reader.read_u16::<LittleEndian>()?;
 
@@ -187,8 +182,7 @@ impl FfcdhParameters {
 impl Encode for FfcdhParameters {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         writer.write_u32::<LittleEndian>(12 + self.key_length * 2)?;
-        // TODO
-        writer.write(FfcdhParameters::MAGIC)?;
+        write_buf(FfcdhParameters::MAGIC, &mut writer)?;
         writer.write_u32::<LittleEndian>(self.key_length)?;
 
         let key_len = self.key_length.try_into()?;
@@ -197,15 +191,13 @@ impl Encode for FfcdhParameters {
         while field_order.len() < key_len {
             field_order.insert(0, 0);
         }
-        // TODO
-        writer.write(&field_order)?;
+        write_buf(&field_order, &mut writer)?;
 
         let mut generator = self.generator.to_bytes_be();
         while generator.len() < key_len {
             generator.insert(0, 0);
         }
-        // TODO
-        writer.write(&generator)?;
+        write_buf(&generator, &mut writer)?;
 
         Ok(())
     }
@@ -216,25 +208,20 @@ impl Decode for FfcdhParameters {
         let _total_len = reader.read_u32::<LittleEndian>()?;
 
         let mut magic = [0; 4];
-        // TODO
-        reader.read_exact(&mut magic)?;
-        if magic != FfcdhParameters::MAGIC {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid FfcdhParameters::MAGIC",
-            ));
+        read_buf(&mut magic, &mut reader)?;
+
+        if magic != Self::MAGIC {
+            return Err(Error::InvalidMagicBytes("FfcdhParameters", Self::MAGIC, magic.to_vec()));
         }
 
         let key_length = reader.read_u32::<LittleEndian>()?;
 
         let mut field_order = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut field_order)?;
+        read_buf(&mut field_order, &mut reader)?;
         let field_order = BigUint::from_bytes_be(&field_order);
 
         let mut generator = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut generator)?;
+        read_buf(&mut generator, &mut reader)?;
         let generator = BigUint::from_bytes_be(&generator);
 
         Ok(Self {
@@ -259,8 +246,7 @@ impl FfcdhKey {
 
 impl Encode for FfcdhKey {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        // TODO
-        writer.write(FfcdhKey::MAGIC)?;
+        write_buf(FfcdhKey::MAGIC, &mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.key_length)?;
 
@@ -270,22 +256,19 @@ impl Encode for FfcdhKey {
         while field_order.len() < key_len {
             field_order.insert(0, 0);
         }
-        // TODO
-        writer.write(&field_order)?;
+        write_buf(&field_order, &mut writer)?;
 
         let mut generator = self.generator.to_bytes_be();
         while generator.len() < key_len {
             generator.insert(0, 0);
         }
-        // TODO
-        writer.write(&generator)?;
+        write_buf(&generator, &mut writer)?;
 
         let mut public_key = self.public_key.to_bytes_be();
         while public_key.len() < key_len {
             public_key.insert(0, 0);
         }
-        // TODO
-        writer.write(&public_key)?;
+        write_buf(&public_key, &mut writer)?;
 
         Ok(())
     }
@@ -294,27 +277,24 @@ impl Encode for FfcdhKey {
 impl Decode for FfcdhKey {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let mut magic = [0; 4];
-        // TODO
-        reader.read_exact(&mut magic)?;
+        read_buf(&mut magic, &mut reader)?;
+
         if magic != FfcdhKey::MAGIC {
-            return Err(Error::new(ErrorKind::NteInvalidParameter, "invalid FfcdhKey::MAGIC"));
+            return Err(Error::InvalidMagicBytes("FfcdhKey", Self::MAGIC, magic.to_vec()));
         }
 
         let key_length = reader.read_u32::<LittleEndian>()?;
 
         let mut field_order = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut field_order)?;
+        read_buf(&mut field_order, &mut reader)?;
         let field_order = BigUint::from_bytes_be(&field_order);
 
         let mut generator = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut generator)?;
+        read_buf(&mut generator, &mut reader)?;
         let generator = BigUint::from_bytes_be(&generator);
 
         let mut public_key = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut public_key)?;
+        read_buf(&mut public_key, &mut reader)?;
         let public_key = BigUint::from_bytes_be(&public_key);
 
         Ok(Self {
@@ -351,7 +331,7 @@ impl TryFrom<&[u8]> for EllipticCurve {
             b"ECK1" => Ok(EllipticCurve::P256),
             b"ECK3" => Ok(EllipticCurve::P384),
             b"ECK5" => Ok(EllipticCurve::P521),
-            _ => Err(Error::new(ErrorKind::NteInvalidParameter, "invalid elliptic curve")),
+            _ => Err(Error::InvalidValue("elliptic curve id", format!("{:?}", value))),
         }
     }
 }
@@ -366,8 +346,7 @@ pub struct EcdhKey {
 
 impl Encode for EcdhKey {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        // TODO
-        writer.write(self.curve.into())?;
+        write_buf(self.curve.into(), &mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.key_length)?;
 
@@ -377,15 +356,13 @@ impl Encode for EcdhKey {
         while x.len() < key_len {
             x.insert(0, 0);
         }
-        // TODO
-        writer.write(&x)?;
+        write_buf(&x, &mut writer)?;
 
         let mut y = self.y.to_bytes_be();
         while y.len() < key_len {
             y.insert(0, 0);
         }
-        // TODO
-        writer.write(&y)?;
+        write_buf(&y, &mut writer)?;
 
         Ok(())
     }
@@ -394,22 +371,18 @@ impl Encode for EcdhKey {
 impl Decode for EcdhKey {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let mut buf = [0; 4];
-        reader.read_exact(&mut buf)?;
+        read_buf(&mut buf, &mut reader)?;
         let curve = EllipticCurve::try_from(buf.as_ref())?;
 
         let key_length = reader.read_u32::<LittleEndian>()?;
 
         let mut x = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut x)?;
+        read_buf(&mut x, &mut reader)?;
         let x = BigUint::from_bytes_be(&x);
 
         let mut y = vec![0; key_length.try_into()?];
-        // TODO
-        reader.read_exact(&mut y)?;
-        println!("{:?}", y);
+        read_buf(&mut y, &mut reader)?;
         let y = BigUint::from_bytes_be(&y);
-        println!("y: {y}");
 
         Ok(Self {
             curve,
@@ -441,20 +414,19 @@ pub struct GroupKeyEnvelope {
 
 impl GroupKeyEnvelope {
     const MAGIC: &[u8] = &[0x4B, 0x44, 0x53, 0x4B];
+    const VERSION: u32 = 1;
 }
 
 impl Encode for GroupKeyEnvelope {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        // version is always 1
-        writer.write_u32::<LittleEndian>(1)?;
+        writer.write_u32::<LittleEndian>(Self::VERSION)?;
 
-        // TODO
-        writer.write(GroupKeyEnvelope::MAGIC)?;
+        write_buf(GroupKeyEnvelope::MAGIC, &mut writer)?;
         writer.write_u32::<LittleEndian>(self.flags)?;
         writer.write_u32::<LittleEndian>(self.l0)?;
         writer.write_u32::<LittleEndian>(self.l1)?;
         writer.write_u32::<LittleEndian>(self.l2)?;
-        writer.write(&self.root_key_identifier.to_bytes_le())?;
+        self.root_key_identifier.encode(&mut writer)?;
 
         let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
         let encoded_secret_alg = encode_utf16_le(&self.secret_algorithm);
@@ -471,15 +443,15 @@ impl Encode for GroupKeyEnvelope {
         writer.write_u32::<LittleEndian>(self.l2_key.len().try_into()?)?;
         writer.write_u32::<LittleEndian>(encoded_domain_name.len().try_into()?)?;
         writer.write_u32::<LittleEndian>(encoded_forest_name.len().try_into()?)?;
-        // TODO
-        writer.write(&encoded_kdf_alg)?;
-        writer.write(&self.kdf_parameters)?;
-        writer.write(&encoded_secret_alg)?;
-        writer.write(&self.secret_parameters)?;
-        writer.write(&encoded_domain_name)?;
-        writer.write(&encoded_forest_name)?;
-        writer.write(&self.l1_key)?;
-        writer.write(&self.l2_key)?;
+
+        write_buf(&encoded_kdf_alg, &mut writer)?;
+        write_buf(&self.kdf_parameters, &mut writer)?;
+        write_buf(&encoded_secret_alg, &mut writer)?;
+        write_buf(&self.secret_parameters, &mut writer)?;
+        write_buf(&encoded_domain_name, &mut writer)?;
+        write_buf(&encoded_forest_name, &mut writer)?;
+        write_buf(&self.l1_key, &mut writer)?;
+        write_buf(&self.l2_key, &mut writer)?;
 
         Ok(())
     }
@@ -489,29 +461,25 @@ impl Decode for GroupKeyEnvelope {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let version = reader.read_u32::<LittleEndian>()?;
 
-        if version != 1 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid GroupKeyEnvelope version",
+        if version != Self::VERSION {
+            return Err(Error::InvalidValue(
+                "GroupKeyEnvelope version",
+                format!("expected {} but got {}", Self::VERSION, version),
             ));
         }
 
         let mut buf = [0; 4];
-        // TODO
-        reader.read_exact(&mut buf)?;
+        read_buf(&mut buf, &mut reader)?;
 
-        if buf != GroupKeyEnvelope::MAGIC {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid GroupKeyEnvelope magic",
-            ));
+        if buf != Self::MAGIC {
+            return Err(Error::InvalidMagicBytes("GroupKeyEnvelope", Self::MAGIC, buf.to_vec()));
         }
 
         let flags = reader.read_u32::<LittleEndian>()?;
         let l0 = reader.read_u32::<LittleEndian>()?;
         let l1 = reader.read_u32::<LittleEndian>()?;
         let l2 = reader.read_u32::<LittleEndian>()?;
-        let root_key_identifier = read_uuid(&mut reader)?;
+        let root_key_identifier = Uuid::decode(&mut reader)?;
 
         let kdf_alg_len = reader.read_u32::<LittleEndian>()?;
         let kdf_parameters_len = reader.read_u32::<LittleEndian>()?;
@@ -525,16 +493,16 @@ impl Decode for GroupKeyEnvelope {
         let forest_len = reader.read_u32::<LittleEndian>()?;
 
         let kdf_alg = read_c_str_utf16_le(kdf_alg_len.try_into()?, &mut reader)?;
-        let kdf_parameters = read_buf(kdf_parameters_len.try_into()?, &mut reader)?;
+        let kdf_parameters = read_vec(kdf_parameters_len.try_into()?, &mut reader)?;
 
         let secret_algorithm = read_c_str_utf16_le(secret_alg_len.try_into()?, &mut reader)?;
-        let secret_parameters = read_buf(secret_parameters_len.try_into()?, &mut reader)?;
+        let secret_parameters = read_vec(secret_parameters_len.try_into()?, &mut reader)?;
 
         let domain_name = read_c_str_utf16_le(domain_len.try_into()?, &mut reader)?;
         let forest_name = read_c_str_utf16_le(forest_len.try_into()?, &mut reader)?;
 
-        let l1_key = read_buf(l1_key_len.try_into()?, &mut reader)?;
-        let l2_key = read_buf(l2_key_len.try_into()?, &mut reader)?;
+        let l1_key = read_vec(l1_key_len.try_into()?, &mut reader)?;
+        let l2_key = read_vec(l2_key_len.try_into()?, &mut reader)?;
 
         Ok(Self {
             flags,

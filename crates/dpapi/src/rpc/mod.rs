@@ -45,7 +45,7 @@ impl Decode for Uuid {
     }
 }
 
-pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, mut writer: impl Write) -> DpapiResult<()> {
+pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, writer: impl Write) -> DpapiResult<()> {
     let padding_len = (ALIGNMENT - (buf_len % ALIGNMENT)) % ALIGNMENT;
     let padding_buf = vec![0; padding_len];
 
@@ -54,11 +54,11 @@ pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, mut writer: impl Wr
     Ok(())
 }
 
-pub fn read_padding<const ALIGNMENT: usize>(buf_len: usize, mut reader: impl Read) -> DpapiResult<()> {
+pub fn read_padding<const ALIGNMENT: usize>(buf_len: usize, reader: impl Read) -> DpapiResult<()> {
     let padding_len = (ALIGNMENT - (buf_len % ALIGNMENT)) % ALIGNMENT;
     let mut padding_buf = vec![0; padding_len];
 
-    reader.read_exact(&mut padding_buf)?;
+    read_buf(&mut padding_buf, reader)?;
 
     Ok(())
 }
@@ -96,13 +96,21 @@ pub fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
     Ok(())
 }
 
+pub fn read_vec(len: usize, reader: impl Read) -> DpapiResult<Vec<u8>> {
+    let mut buf = vec![0; len];
+
+    read_buf(&mut buf, reader)?;
+
+    Ok(buf)
+}
+
 pub fn read_c_str_utf16_le(len: usize, mut reader: impl Read) -> DpapiResult<String> {
     use byteorder::{LittleEndian, ReadBytesExt};
 
     use crate::utils::utf16_bytes_to_utf8_string;
 
     let mut buf = vec![0; len - 2 /* UTF16 null terminator */];
-    reader.read_exact(buf.as_mut_slice())?;
+    read_buf(buf.as_mut_slice(), &mut reader)?;
 
     // Read UTF16 null terminator.
     reader.read_u16::<LittleEndian>()?;

@@ -16,10 +16,10 @@ use picky_asn1_x509::enveloped_data::{
 use picky_asn1_x509::oids;
 use uuid::Uuid;
 
-use crate::rpc::{read_to_end, read_uuid, Decode, Encode};
+use crate::rpc::{read_buf, read_to_end, write_buf, Decode, Encode, EncodeExt};
 use crate::sid_utils::{ace_to_bytes, sd_to_bytes};
 use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
-use crate::{DpapiResult, Error, ErrorKind};
+use crate::{DpapiResult, Error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct KeyIdentifier {
@@ -46,24 +46,22 @@ impl Encode for KeyIdentifier {
         let forest_name = encode_utf16_le(&self.forest_name);
 
         writer.write_u32::<LittleEndian>(self.version)?;
-        // TODO
-        writer.write(&KeyIdentifier::MAGIC)?;
+        write_buf(&KeyIdentifier::MAGIC, &mut writer)?;
         writer.write_u32::<LittleEndian>(self.flags)?;
 
         writer.write_u32::<LittleEndian>(self.l0)?;
         writer.write_u32::<LittleEndian>(self.l1)?;
         writer.write_u32::<LittleEndian>(self.l2)?;
 
-        writer.write(&self.root_key_identifier.to_bytes_le())?;
+        self.root_key_identifier.encode(&mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.key_info.len().try_into()?)?;
         writer.write_u32::<LittleEndian>(domain_name.len().try_into()?)?;
         writer.write_u32::<LittleEndian>(forest_name.len().try_into()?)?;
 
-        // TODO
-        writer.write(&self.key_info)?;
-        writer.write(&domain_name)?;
-        writer.write(&forest_name)?;
+        write_buf(&self.key_info, &mut writer)?;
+        write_buf(&domain_name, &mut writer)?;
+        write_buf(&forest_name, &mut writer)?;
 
         Ok(())
     }
@@ -74,12 +72,13 @@ impl Decode for KeyIdentifier {
         let version = reader.read_u32::<LittleEndian>()?;
 
         let mut magic = [0; 4];
-        reader.read_exact(&mut magic)?;
+        read_buf(&mut magic, &mut reader)?;
 
-        if magic != KeyIdentifier::MAGIC {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid KeyIdentifier magic bytes",
+        if magic != Self::MAGIC {
+            return Err(Error::InvalidMagicBytes(
+                "KeyIdentifier",
+                Self::MAGIC.as_slice(),
+                magic.to_vec(),
             ));
         }
 
@@ -88,22 +87,22 @@ impl Decode for KeyIdentifier {
         let l0 = reader.read_u32::<LittleEndian>()?;
         let l1 = reader.read_u32::<LittleEndian>()?;
         let l2 = reader.read_u32::<LittleEndian>()?;
-        let root_key_identifier = read_uuid(&mut reader)?;
+        let root_key_identifier = Uuid::decode(&mut reader)?;
 
         let key_info_len = reader.read_u32::<LittleEndian>()?;
         let domain_len = reader.read_u32::<LittleEndian>()? - 2 /* UTF16 null terminator */;
         let forest_len = reader.read_u32::<LittleEndian>()? - 2 /* UTF16 null terminator */;
 
         let mut key_info = vec![0; key_info_len.try_into()?];
-        reader.read_exact(key_info.as_mut_slice())?;
+        read_buf(key_info.as_mut_slice(), &mut reader)?;
 
         let mut domain_name = vec![0; domain_len.try_into()?];
-        reader.read_exact(domain_name.as_mut_slice())?;
+        read_buf(domain_name.as_mut_slice(), &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
         let mut forest_name = vec![0; forest_len.try_into()?];
-        reader.read_exact(forest_name.as_mut_slice())?;
+        read_buf(forest_name.as_mut_slice(), &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
@@ -164,9 +163,8 @@ impl SidProtectionDescriptor {
         let general_protection_descriptor: GeneralProtectionDescriptor = picky_asn1_der::from_bytes(data)?;
 
         if general_protection_descriptor.descriptor_type.0 != oids::sid_protection_descriptor() {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid protection descriptor type: expected sid",
+            return Err(Error::UnsupportedProtectionDescriptor(
+                general_protection_descriptor.descriptor_type.0.into(),
             ));
         }
 
@@ -177,15 +175,14 @@ impl SidProtectionDescriptor {
             .descriptors
             .0
             .get(0)
-            .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid protection descriptor data"))?
+            .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?
             .0
             .get(0)
-            .ok_or_else(|| Error::new(ErrorKind::NteInvalidParameter, "invalid protection descriptor data"))?;
+            .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?;
 
         if descriptor_type.0.as_utf8() != "SID" {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid protection descriptor data",
+            return Err(Error::UnsupportedProtectionDescriptor(
+                descriptor_type.0.as_utf8().to_owned(),
             ));
         }
 
@@ -223,7 +220,7 @@ impl DpapiBlob {
                             key_identifier: OctetStringAsn1::from(self.key_identifier.encode_to_vec()?),
                             date: Optional::from(None),
                             other: Optional::from(Some(OtherKeyAttribute {
-                                key_attr_id: ObjectIdentifierAsn1::from(oids::microsoft_software()),
+                                key_attr_id: ObjectIdentifierAsn1::from(oids::protection_descriptor_type()),
                                 key_attr: Some(Asn1RawDer(self.protection_descriptor.encode_asn1()?)),
                             })),
                         },
@@ -248,8 +245,7 @@ impl DpapiBlob {
         )?;
 
         if !blob_in_envelope {
-            // TODO
-            writer.write(&self.enc_content)?;
+            write_buf(&self.enc_content, &mut writer)?;
         }
 
         Ok(())
@@ -261,25 +257,31 @@ impl Decode for DpapiBlob {
         let content_info: ContentInfo = picky_asn1_der::from_reader(&mut reader)?;
 
         if content_info.content_type.0 != oids::enveloped_data() {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid content type: expected enveloped data",
+            let expected_content_type: String = oids::enveloped_data().into();
+            let actual_content_type: String = content_info.content_type.0.into();
+
+            return Err(Error::InvalidValue(
+                "content info type",
+                format!("expected {expected_content_type} but got {actual_content_type}"),
             ));
         }
 
         let enveloped_data: EnvelopedData = picky_asn1_der::from_bytes(&content_info.content.0 .0)?;
 
         if enveloped_data.version != CmsVersion::V2 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid enveloped data version: expected CmsVersion::V2",
+            return Err(Error::InvalidValue(
+                "enveloped data CMS version",
+                format!("expected {:?} but got {:?}", CmsVersion::V2, enveloped_data.version,),
             ));
         }
 
         if enveloped_data.recipient_infos.0.len() != 1 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid enveloped data recipient infos: expected exactly one recipient info",
+            return Err(Error::InvalidValue(
+                "recipient infos",
+                format!(
+                    "expected exactly 1 recipient info but got {}",
+                    enveloped_data.recipient_infos.0.len(),
+                ),
             ));
         }
 
@@ -289,9 +291,9 @@ impl Decode for DpapiBlob {
         };
 
         if kek_info.version != CmsVersion::V4 {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid recipient version: expected CmsVersion::V4",
+            return Err(Error::InvalidValue(
+                "KEK info CMS version",
+                format!("expected {:?} but got {:?}", CmsVersion::V4, enveloped_data.version,),
             ));
         }
 
@@ -299,26 +301,23 @@ impl Decode for DpapiBlob {
 
         let protection_descriptor = if let Some(OtherKeyAttribute { key_attr_id, key_attr }) = &kek_info.kek_id.other.0
         {
-            if key_attr_id.0 != oids::microsoft_software() {
-                return Err(Error::new(
-                    ErrorKind::NteInvalidParameter,
-                    "invalid kek recipient info other attribute oid",
+            if key_attr_id.0 != oids::protection_descriptor_type() {
+                let expected_descriptor: String = oids::protection_descriptor_type().into();
+                let actual_descriptor: String = (&key_attr_id.0).into();
+
+                return Err(Error::InvalidValue(
+                    "KEK recipient info OtherAttribute OID",
+                    format!("expected {expected_descriptor} but got {actual_descriptor}"),
                 ));
             }
 
             if let Some(encoded_protection_descriptor) = key_attr {
                 SidProtectionDescriptor::decode_asn1(&encoded_protection_descriptor.0)?
             } else {
-                return Err(Error::new(
-                    ErrorKind::NteInvalidParameter,
-                    "invalid kek recipient info other attribute: missing value",
-                ));
+                return Err(Error::MissingValue("KEK recipient info OtherAttribute"));
             }
         } else {
-            return Err(Error::new(
-                ErrorKind::NteInvalidParameter,
-                "invalid kek recipient info: missing protection descriptor",
-            ));
+            return Err(Error::MissingValue("KEK recipient info protection descriptor"));
         };
 
         let enc_content = if let Some(enc_content) = enveloped_data.encrypted_content_info.encrypted_content.0 {
