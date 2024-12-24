@@ -174,10 +174,10 @@ impl SidProtectionDescriptor {
         } = general_protection_descriptor
             .descriptors
             .0
-            .get(0)
+            .first()
             .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?
             .0
-            .get(0)
+            .first()
             .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?;
 
         if descriptor_type.0.as_utf8() != "SID" {
@@ -285,10 +285,8 @@ impl Decode for DpapiBlob {
             ));
         }
 
-        let recipient_info = enveloped_data.recipient_infos.0.get(0).unwrap();
-        let kek_info = match recipient_info {
-            RecipientInfo::Kek(kek_recipient_info) => kek_recipient_info,
-        };
+        let recipient_info = enveloped_data.recipient_infos.0.first().unwrap();
+        let RecipientInfo::Kek(kek_info) = recipient_info;
 
         if kek_info.version != CmsVersion::V4 {
             return Err(Error::InvalidValue(

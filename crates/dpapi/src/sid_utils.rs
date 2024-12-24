@@ -26,8 +26,8 @@ pub fn sid_to_bytes(sid: &str) -> DpapiResult<Vec<u8>> {
     data[0] = revision;
     data[1] = u8::try_from(parts.len() - 3)?;
 
-    for i in 3..parts.len() {
-        let sub_auth = parts[i].parse::<u32>()?;
+    for part in parts.iter().skip(3) {
+        let sub_auth = part.parse::<u32>()?;
         data.extend_from_slice(&sub_auth.to_le_bytes());
     }
 
@@ -60,7 +60,7 @@ pub fn acl_to_bytes(aces: &[Vec<u8>]) -> DpapiResult<Vec<u8>> {
     // Sbz1.
     data.extend_from_slice(&[0x00, 0x00]);
     for ace in aces {
-        data.extend_from_slice(&ace);
+        data.extend_from_slice(ace);
     }
 
     Ok(data)

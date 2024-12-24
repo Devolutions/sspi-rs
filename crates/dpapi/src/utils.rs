@@ -13,7 +13,6 @@ pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> DpapiResult<String> {
 
 pub fn encode_utf16_le(data: &str) -> Vec<u8> {
     data.encode_utf16()
-        .into_iter()
         .chain(std::iter::once(0))
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>()
