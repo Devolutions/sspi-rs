@@ -17,7 +17,7 @@ use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringA
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::crypto::CipherSuite;
+use picky_krb::crypto::{CipherSuite, EncryptWithoutChecksum};
 use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
@@ -61,8 +61,8 @@ use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     BufferType, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
     CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, ServerResponseFlags,
-    Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityPackageType, SecurityStatus,
+    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -301,7 +301,9 @@ impl Sspi for Kerberos {
 
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, BufferType::Token)?;
-        let data_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
+        // Find buffers with the `Data` type but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+        let data_to_encrypt =
+            SecurityBuffer::buffers_with_type_and_flags(message, BufferType::Data, SecurityBufferFlags::NONE);
 
         let cipher = self
             .encryption_params
@@ -318,17 +320,44 @@ impl Sspi for Kerberos {
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
-        let mut payload = data_buffer.data().to_vec();
+        let mut payload = data_to_encrypt.into_iter().fold(Vec::new(), |mut acc, buffer| {
+            acc.extend_from_slice(buffer.data());
+            acc
+        });
         payload.extend_from_slice(&wrap_token.header());
 
-        let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
-        checksum.rotate_right(RRC.into());
+        let EncryptWithoutChecksum {
+            mut encrypted,
+            confounder,
+            ki: _,
+        } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
+
+        // Find buffers with the `Data` type (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
+        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
+            .into_iter()
+            .fold(confounder, |mut acc, buffer| {
+                acc.extend_from_slice(buffer.data());
+                acc
+            });
+
+        let checksum_suite = cipher.checksum_type().hasher();
+        let checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+
+        encrypted.extend_from_slice(&checksum);
+
+        encrypted.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
-        wrap_token.set_checksum(checksum);
+        wrap_token.set_checksum(encrypted);
 
         let mut raw_wrap_token = Vec::with_capacity(92);
         wrap_token.encode(&mut raw_wrap_token)?;
+
+        let mut data_buffers =
+            SecurityBuffer::buffers_with_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE);
+        let data_buffer = data_buffers
+            .first_mut()
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {

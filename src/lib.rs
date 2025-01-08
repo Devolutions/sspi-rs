@@ -1299,7 +1299,7 @@ impl OwnedSecurityBuffer {
             buffer,
             buffer_type: OwnedSecurityBufferType {
                 buffer_type,
-                buffer_flags: SecurityBufferFlags::None,
+                buffer_flags: SecurityBufferFlags::NONE,
             },
         }
     }
@@ -1388,7 +1388,7 @@ bitflags! {
     /// [`SecBuffer` structure (sspi.h)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer).
     pub struct SecurityBufferFlags: u32 {
         /// There is no flags for the buffer.
-        const None = 0x0;
+        const NONE = 0x0;
         /// The buffer is read-only with no checksum. This flag is intended for sending header information to the security package for
         /// computing the checksum. The package can read this buffer, but cannot modify it.
         const SECBUFFER_READONLY = 0x80000000;

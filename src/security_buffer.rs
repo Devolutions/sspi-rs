@@ -26,10 +26,9 @@ pub enum SecurityBufferType<'data> {
     Empty,
 }
 
-#[derive()]
 pub struct SecurityBuffer<'data> {
-    pub buffer_type: SecurityBufferType<'data>,
-    pub buffer_flags: SecurityBufferFlags,
+    buffer_type: SecurityBufferType<'data>,
+    buffer_flags: SecurityBufferFlags,
 }
 
 impl<'data> SecurityBuffer<'data> {
@@ -106,7 +105,7 @@ impl<'data> SecurityBuffer<'data> {
                 BufferType::Stream => SecurityBufferType::Stream(&mut []),
                 _ => return Err(Error::new(ErrorKind::UnsupportedFunction, "")),
             },
-            buffer_flags: SecurityBufferFlags::None,
+            buffer_flags: SecurityBufferFlags::NONE,
         })
     }
 
@@ -194,6 +193,10 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    pub fn buffer_flags(&self) -> SecurityBufferFlags {
+        self.buffer_flags
+    }
+
     pub fn owned_security_buffer_type(&self) -> OwnedSecurityBufferType {
         let buffer_type = match &self.buffer_type {
             SecurityBufferType::Data(_) => BufferType::Data,
@@ -226,6 +229,46 @@ impl<'data> SecurityBuffer<'data> {
                 format!("no buffer was provided with type {:?}", buffer_type),
             )
         })
+    }
+
+    /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type.
+    pub fn buffers_with_type<'a>(
+        buffers: &'a [SecurityBuffer<'data>],
+        buffer_type: BufferType,
+    ) -> Vec<&'a SecurityBuffer<'data>> {
+        buffers.iter().filter(|b| b.buffer_type() == buffer_type).collect()
+    }
+
+    /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type.
+    pub fn buffers_with_type_mut<'a>(
+        buffers: &'a mut [SecurityBuffer<'data>],
+        buffer_type: BufferType,
+    ) -> Vec<&'a mut SecurityBuffer<'data>> {
+        buffers.iter_mut().filter(|b| b.buffer_type() == buffer_type).collect()
+    }
+
+    /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type and flags.
+    pub fn buffers_with_type_and_flags<'a>(
+        buffers: &'a [SecurityBuffer<'data>],
+        buffer_type: BufferType,
+        buffer_flags: SecurityBufferFlags,
+    ) -> Vec<&'a SecurityBuffer<'data>> {
+        buffers
+            .iter()
+            .filter(|b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
+            .collect()
+    }
+
+    /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type and flags.
+    pub fn buffers_with_type_and_flags_mut<'a>(
+        buffers: &'a mut [SecurityBuffer<'data>],
+        buffer_type: BufferType,
+        buffer_flags: SecurityBufferFlags,
+    ) -> Vec<&'a mut SecurityBuffer<'data>> {
+        buffers
+            .iter_mut()
+            .filter(|b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
+            .collect()
     }
 
     /// Returns the mutable reference to the [SecurityBuffer] with specified buffer type.
