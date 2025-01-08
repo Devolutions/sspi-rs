@@ -17,7 +17,7 @@ use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringA
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::crypto::{CipherSuite, EncryptWithoutChecksum};
+use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
 use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
@@ -301,7 +301,7 @@ impl Sspi for Kerberos {
 
         // checks if the Token buffer present
         let _ = SecurityBuffer::find_buffer(message, BufferType::Token)?;
-        // Find buffers with the `Data` type but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+        // Find `Data` buffers but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
         let data_to_encrypt =
             SecurityBuffer::buffers_with_type_and_flags(message, BufferType::Data, SecurityBufferFlags::NONE);
 
@@ -332,7 +332,7 @@ impl Sspi for Kerberos {
             ki: _,
         } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
 
-        // Find buffers with the `Data` type (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
         let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
             .into_iter()
             .fold(confounder, |mut acc, buffer| {
@@ -398,11 +398,33 @@ impl Sspi for Kerberos {
 
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
-        let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
+        let wrap_token = WrapToken::decode(encrypted.as_slice())?;
 
-        wrap_token.checksum.rotate_left(RRC.into());
+        let mut checksum = wrap_token.checksum;
+        checksum.rotate_left(RRC.into());
 
-        let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
+        let DecryptWithoutChecksum {
+            plaintext: mut decrypted,
+            confounder,
+            checksum,
+            ki: _,
+        } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
+
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
+        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
+            .into_iter()
+            .fold(confounder, |mut acc, buffer| {
+                acc.extend_from_slice(buffer.data());
+                acc
+            });
+
+        let checksum_suite = cipher.checksum_type().hasher();
+        let calculated_checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+
+        if calculated_checksum != checksum {
+            return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
+        }
+
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 

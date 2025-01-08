@@ -302,7 +302,13 @@ pub fn extract_encrypted_data(buffers: &[SecurityBuffer]) -> Result<Vec<u8>> {
         if let Ok(buffer) = SecurityBuffer::buf_data(buffers, BufferType::Stream) {
             buffer
         } else {
-            SecurityBuffer::buf_data(buffers, BufferType::Data)?
+            use crate::SecurityBufferFlags;
+
+            // Find `Data` buffers but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+            SecurityBuffer::buffers_with_type_and_flags(buffers, BufferType::Data, SecurityBufferFlags::NONE)
+                .first_mut()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?
+                .data()
         },
     );
 
