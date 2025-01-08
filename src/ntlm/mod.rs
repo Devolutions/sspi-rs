@@ -21,8 +21,8 @@ use crate::{
     CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
-    PackageInfo, SecurityBuffer, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
-    PACKAGE_ID_NONE,
+    PackageInfo, SecurityBuffer, SecurityBufferFlags, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
+    SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -386,14 +386,28 @@ impl Sspi for Ntlm {
             self.complete_auth_token(&mut [])?;
         }
 
-        SecurityBuffer::find_buffer_mut(message, BufferType::Token)?; // check if exists
-        let data = SecurityBuffer::find_buffer_mut(message, BufferType::Data)?;
+        // check if exists
+        SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
+            .into_iter()
+            .fold(Vec::new(), |mut acc, buffer| {
+                acc.extend_from_slice(buffer.data());
+                acc
+            });
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, &data_to_sign)?;
+
+        // Find `Data` buffers without the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+        let mut data_buffers =
+            SecurityBuffer::buffers_with_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE);
+        let data = data_buffers
+            .first_mut()
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
         let encrypted_data = self.send_sealing_key.as_mut().unwrap().process(data.data());
         if encrypted_data.len() < data.buf_len() {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Data buffer is too small"));
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the Data buffer is too small"));
         }
         data.write_data(&encrypted_data)?;
 
@@ -405,7 +419,7 @@ impl Sspi for Ntlm {
 
         let signature_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the Token buffer is too small"));
         }
         let signature = compute_signature(&checksum, sequence_number);
         signature_buffer.write_data(signature.as_slice())?;
@@ -426,7 +440,7 @@ impl Sspi for Ntlm {
         let encrypted = extract_encrypted_data(message)?;
 
         if encrypted.len() < 16 {
-            return Err(Error::new(ErrorKind::MessageAltered, "Invalid encrypted message size!"));
+            return Err(Error::new(ErrorKind::MessageAltered, "invalid encrypted message size"));
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
@@ -435,7 +449,23 @@ impl Sspi for Ntlm {
 
         save_decrypted_data(&decrypted, message)?;
 
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, &decrypted)?;
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
+            .into_iter()
+            .fold(Vec::new(), |mut acc, buffer| {
+                if buffer
+                    .buffer_flags()
+                    .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)
+                {
+                    acc.extend_from_slice(buffer.data());
+                } else {
+                    // The `Data` buffer contains encrypted data, but the checksum was calculated over the decrypted data.
+                    // So, we replace encrypted data with decrypted one.
+                    acc.extend_from_slice(&decrypted);
+                }
+                acc
+            });
+        let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -446,7 +476,7 @@ impl Sspi for Ntlm {
         if signature != expected_signature.as_ref() {
             return Err(Error::new(
                 ErrorKind::MessageAltered,
-                "Signature verification failed, something nasty is going on!",
+                "signature verification failed, something nasty is going on",
             ));
         }
 

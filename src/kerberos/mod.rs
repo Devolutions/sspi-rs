@@ -332,7 +332,7 @@ impl Sspi for Kerberos {
             ki: _,
         } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
 
-        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
         let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
             .into_iter()
             .fold(confounder, |mut acc, buffer| {
@@ -412,7 +412,7 @@ impl Sspi for Kerberos {
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
-        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
         let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
             .into_iter()
             .fold(confounder, |mut acc, buffer| {
@@ -422,7 +422,7 @@ impl Sspi for Kerberos {
                 {
                     acc.extend_from_slice(buffer.data());
                 } else {
-                    // The `Data` buffer contains encrypted data, but the checksum is calculated over the decrypted data.
+                    // The `Data` buffer contains encrypted data, but the checksum was calculated over the decrypted data.
                     // So, we replace encrypted data with decrypted one.
                     acc.extend_from_slice(&decrypted);
                 }
