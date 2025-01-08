@@ -3,16 +3,9 @@ use std::mem::take;
 
 use crate::{BufferType, Error, ErrorKind, OwnedSecurityBufferType, Result, SecurityBufferFlags};
 
-/// A special security buffer type is used for the data decryption. Basically, it's almost the same
-/// as `OwnedSecurityBuffer` but for decryption.
+/// A security buffer type with a mutable reference to the buffer data.
 ///
-/// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
-/// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
-///
-/// So, the already defined `OwnedSecurityBuffer` is not suitable for decryption because it uses [Vec] inside.
-/// We use reference in the [SecurityBuffer] structure to avoid data cloning as much as possible.
-/// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
-/// security package.
+/// Basically, it is a security buffer but without buffer flags.
 #[non_exhaustive]
 pub enum SecurityBufferType<'data> {
     Data(&'data mut [u8]),
@@ -26,12 +19,23 @@ pub enum SecurityBufferType<'data> {
     Empty,
 }
 
+/// A special security buffer type is used for the data decryption. Basically, it's almost the same
+/// as `OwnedSecurityBuffer` but for decryption.
+///
+/// [DecryptMessage](https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--general)
+/// "The encrypted message is decrypted in place, overwriting the original contents of its buffer."
+///
+/// So, the already defined `OwnedSecurityBuffer` is not suitable for decryption because it uses [Vec] inside.
+/// We use reference in the [SecurityBuffer] structure to avoid data cloning as much as possible.
+/// Decryption/encryption input buffers can be very large. Even up to 32 KiB if we are using this crate as a TSSSP(CREDSSP)
+/// security package.
 pub struct SecurityBuffer<'data> {
     buffer_type: SecurityBufferType<'data>,
     buffer_flags: SecurityBufferFlags,
 }
 
 impl<'data> SecurityBuffer<'data> {
+    /// Creates a [SecurityBuffer] with a `Data` buffer type and empty buffer flags.
     pub fn data_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Data(data),
@@ -39,6 +43,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `Token` buffer type and empty buffer flags.
     pub fn token_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Token(data),
@@ -46,6 +51,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `StreamHeader` buffer type and empty buffer flags.
     pub fn stream_header_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::StreamHeader(data),
@@ -53,6 +59,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `StreamTrailer` buffer type and empty buffer flags.
     pub fn stream_trailer_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::StreamTrailer(data),
@@ -60,6 +67,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `Stream` buffer type and empty buffer flags.
     pub fn stream_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Stream(data),
@@ -67,6 +75,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `Extra` buffer type and empty buffer flags.
     pub fn extra_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Extra(data),
@@ -74,6 +83,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `Padding` buffer type and empty buffer flags.
     pub fn padding_buf(data: &mut [u8]) -> SecurityBuffer {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Padding(data),
@@ -81,6 +91,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Creates a [SecurityBuffer] with a `Missing` buffer type and empty buffer flags.
     pub fn missing_buf<'a>(count: usize) -> SecurityBuffer<'a> {
         SecurityBuffer {
             buffer_type: SecurityBufferType::Missing(count),
@@ -88,6 +99,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    /// Set buffer flags.
     pub fn with_flags(self, buffer_flags: SecurityBufferFlags) -> Self {
         let Self {
             buffer_type,
@@ -100,7 +112,7 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
-    /// Created a [SecurityBuffer] from based on provided [BufferType].
+    /// Creates a [SecurityBuffer] from based on provided [BufferType].
     ///
     /// Inner buffers will be empty.
     pub fn with_security_buffer_type(security_buffer_type: BufferType) -> Result<Self> {
