@@ -409,12 +409,23 @@ impl Sspi for Kerberos {
             checksum,
             ki: _,
         } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
+        // remove wrap token header
+        decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag).
         let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
             .into_iter()
             .fold(confounder, |mut acc, buffer| {
-                acc.extend_from_slice(buffer.data());
+                if buffer
+                    .buffer_flags()
+                    .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)
+                {
+                    acc.extend_from_slice(buffer.data());
+                } else {
+                    // The `Data` buffer contains encrypted data, but the checksum is calculated over the decrypted data.
+                    // So, we replace encrypted data with decrypted one.
+                    acc.extend_from_slice(&decrypted);
+                }
                 acc
             });
 
@@ -424,9 +435,6 @@ impl Sspi for Kerberos {
         if calculated_checksum != checksum {
             return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
         }
-
-        // remove wrap token header
-        decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
         save_decrypted_data(&decrypted, message)?;
 
@@ -1103,7 +1111,7 @@ pub mod test_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EncryptionFlags, SecurityBuffer, Sspi};
+    use crate::{EncryptionFlags, SecurityBuffer, SecurityBufferFlags, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1136,5 +1144,40 @@ mod tests {
         kerberos_client.decrypt_message(&mut message, 0).unwrap();
 
         assert_eq!(message[1].data(), plain_message);
+    }
+
+    #[test]
+    fn rpc_request_decryption() {
+        let mut kerberos_server = super::test_data::fake_server();
+        let mut kerberos_client = super::test_data::fake_client();
+
+        let plain_message_data = b"some plain message";
+        let mut plain_message = plain_message_data.to_vec();
+
+        let first_buff_data = b"test";
+        let mut first_buff = first_buff_data.to_vec();
+        let third_buff_data = b"msg";
+        let mut third_buff = third_buff_data.to_vec();
+        let mut token = [0; 1024];
+
+        let mut message = [
+            SecurityBuffer::token_buf(&mut token),
+            SecurityBuffer::data_buf(&mut first_buff).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBuffer::data_buf(&mut plain_message),
+            SecurityBuffer::data_buf(&mut third_buff).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+        ];
+
+        kerberos_server
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .unwrap();
+
+        assert!(!message[0].data().is_empty());
+        assert_eq!(message[1].data(), first_buff_data);
+        assert!(!message[2].data().is_empty());
+        assert_eq!(message[3].data(), third_buff_data);
+
+        kerberos_client.decrypt_message(&mut message, 0).unwrap();
+
+        assert_eq!(message[2].data(), plain_message_data);
     }
 }

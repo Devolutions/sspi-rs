@@ -4,7 +4,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{BufferType, Error, ErrorKind, Result, SecurityBuffer};
+use crate::{BufferType, Error, ErrorKind, Result, SecurityBuffer, SecurityBufferFlags};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -273,7 +273,14 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
 
         data_buffer.set_data(data)
     } else {
-        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, BufferType::Data)?;
+        let mut data_buffers =
+            SecurityBuffer::buffers_with_type_and_flags_mut(buffers, BufferType::Data, SecurityBufferFlags::NONE);
+        let data_buffer = data_buffers.first_mut().ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                "no buffer was provided with type Data and without READONLY_WITH_CHECKSUM flag",
+            )
+        })?;
 
         if data_buffer.buf_len() < decrypted.len() {
             return Err(Error::new(

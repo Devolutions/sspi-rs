@@ -88,6 +88,18 @@ impl<'data> SecurityBuffer<'data> {
         }
     }
 
+    pub fn with_flags(self, buffer_flags: SecurityBufferFlags) -> Self {
+        let Self {
+            buffer_type,
+            buffer_flags: _,
+        } = self;
+
+        Self {
+            buffer_type,
+            buffer_flags,
+        }
+    }
+
     /// Created a [SecurityBuffer] from based on provided [BufferType].
     ///
     /// Inner buffers will be empty.
