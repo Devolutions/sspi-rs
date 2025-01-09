@@ -45,7 +45,8 @@ use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
 use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
 use crate::kerberos::client::generators::{
-    generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions, GssFlags,
+    generate_ap_rep, generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
+    GssFlags,
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
@@ -98,6 +99,7 @@ pub enum KerberosState {
     Negotiate,
     Preauthentication,
     ApExchange,
+    ApRepDce,
     PubKeyAuth,
     Credentials,
     Final,
@@ -229,6 +231,23 @@ impl Kerberos {
             };
         }
         Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
+    }
+
+    fn prepare_final_neg_token(
+        &mut self,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<()> {
+        let neg_token_targ = generate_final_neg_token_targ(Some(generate_initiator_raw(
+            picky_asn1_der::to_vec(&get_mech_list())?,
+            self.seq_number as u64,
+            self.encryption_params.sub_session_key.as_ref().unwrap(),
+        )?));
+
+        let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
+
+        let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+        output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
+        Ok(())
     }
 
     pub async fn as_exchange(
@@ -969,7 +988,14 @@ impl<'a> Kerberos {
                     context_requirements.into(),
                 )?;
 
-                let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
+                let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+                    // Wrap in a NegToken.
+                    picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?
+                } else {
+                    // Do not wrap if the `USE_DCE_STYLE` flag is set.
+                    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
+                    picky_asn1_der::to_vec(&ap_req)?
+                };
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
@@ -993,11 +1019,9 @@ impl<'a> Kerberos {
 
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
 
-                let sub_session_key = extract_sub_session_key_from_ap_rep(
-                    &ap_rep,
-                    self.encryption_params.session_key.as_ref().unwrap(),
-                    &self.encryption_params,
-                )?;
+                let session_key = self.encryption_params.session_key.as_ref().unwrap();
+                let sub_session_key =
+                    extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
 
                 self.encryption_params.sub_session_key = Some(sub_session_key);
 
@@ -1005,17 +1029,29 @@ impl<'a> Kerberos {
                     validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
                 }
 
-                let neg_token_targ = generate_final_neg_token_targ(Some(generate_initiator_raw(
-                    picky_asn1_der::to_vec(&get_mech_list())?,
-                    self.seq_number as u64,
-                    self.encryption_params.sub_session_key.as_ref().unwrap(),
-                )?));
+                if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+                    let ap_rep = generate_ap_rep(
+                        session_key,
+                        self.encryption_params.sub_session_key.as_ref().unwrap(),
+                        &self.encryption_params,
+                    )?;
 
-                let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
+                    let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
+                    let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+                    output_token.buffer.write_all(&ap_rep)?;
 
+                    self.state = KerberosState::ApRepDce;
+
+                    SecurityStatus::ContinueNeeded
+                } else {
+                    self.prepare_final_neg_token(builder)?;
+                    self.state = KerberosState::PubKeyAuth;
+                    SecurityStatus::Ok
+                }
+            }
+            KerberosState::ApRepDce => {
+                self.prepare_final_neg_token(builder)?;
                 self.state = KerberosState::PubKeyAuth;
 
                 SecurityStatus::Ok
