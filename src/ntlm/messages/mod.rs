@@ -6,8 +6,9 @@ pub mod test;
 mod av_pair;
 mod computations;
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::ntlm::{NegotiateFlags, NTLM_VERSION_SIZE};
 

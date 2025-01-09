@@ -820,7 +820,7 @@ mod tests {
         let username = "";
         let domain = "TBT.com";
 
-        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
 
         assert_eq!(realm, "TBT.COM");
     }
@@ -830,7 +830,7 @@ mod tests {
         let username = "user@tbt.com";
         let domain = "";
 
-        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
 
         assert_eq!(realm, "TBT.COM");
     }
@@ -840,7 +840,7 @@ mod tests {
         let username = "";
         let domain = "s.tbt.com";
 
-        let realm = get_client_principal_realm_impl(&vec![Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
 
         assert_eq!(realm, "TBT.COM");
     }
