@@ -36,11 +36,11 @@ time = { version = "0.3", default-features = false }
 sha1 = { version = "0.10", default-features = false }
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
-picky = { path = "../picky-rs/picky" }
-picky-asn1 = { path = "../picky-rs/picky-asn1" }
-picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
-picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
-picky-krb = { path = "../picky-rs/picky-krb" }
+picky = { git = "https://github.com/Devolutions/picky-rs.git", branch = "master"}
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs.git", branch = "master"}
+picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs.git", branch = "master"}
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs.git", branch = "master"}
+picky-krb = { git = "https://github.com/Devolutions/picky-rs.git", branch = "master"}
 tokio = "1.42"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
