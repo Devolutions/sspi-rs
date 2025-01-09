@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod bind;
 pub mod client;
 pub mod pdu;
