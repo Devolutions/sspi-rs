@@ -101,7 +101,7 @@ impl RpcClient {
     }
 
     fn create_request(
-        &self,
+        &mut self,
         context_id: u16,
         opnum: u16,
         mut stub_data: Vec<u8>,
@@ -116,7 +116,7 @@ impl RpcClient {
         // next 16 byte boundary after the stub data. This padding is
         // included as part of the stub data to be encrypted.
         let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
-        let security_trailer = self.auth.get_empty_trailer(padding_len.try_into()?);
+        let security_trailer = self.auth.get_empty_trailer(padding_len.try_into()?)?;
         let auth_len = security_trailer.auth_value.len();
         let encrypt_offsets = (24, 24 + stub_data.len());
 

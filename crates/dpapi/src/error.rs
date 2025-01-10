@@ -34,6 +34,9 @@ pub enum Error {
     #[error(transparent)]
     Command(#[from] crate::rpc::verification::CommandError),
 
+    #[error(transparent)]
+    Auth(#[from] crate::rpc::auth::AuthError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
