@@ -141,19 +141,21 @@ impl RpcClient {
         ))
     }
 
-    fn prepare_pdu(&self, pdu: Pdu, encrypt_offsets: (usize, usize)) -> DpapiResult<Vec<u8>> {
+    fn prepare_pdu(&self, pdu: Pdu, encrypt_offsets: Option<(usize, usize)>) -> DpapiResult<Vec<u8>> {
         let mut pdu_encoded = pdu.encode_to_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
         pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
 
-        let header = &pdu_encoded[0..encrypt_offsets.0];
-        let body = &pdu_encoded[encrypt_offsets.0..encrypt_offsets.1];
-        let sec_trailer = &pdu_encoded[encrypt_offsets.1..encrypt_offsets.1 + 8];
+        if let Some(encrypt_offsets) = encrypt_offsets {
+            let header = &pdu_encoded[0..encrypt_offsets.0];
+            let body = &pdu_encoded[encrypt_offsets.0..encrypt_offsets.1];
+            let sec_trailer = &pdu_encoded[encrypt_offsets.1..encrypt_offsets.1 + 8];
 
-        let pdu_encoded = self.auth.wrap(header, body, sec_trailer, self.sign_header)?;
-
-        Ok(pdu_encoded)
+            Ok(self.auth.wrap(header, body, sec_trailer, self.sign_header)?)
+        } else {
+            Ok(pdu_encoded)
+        }
     }
 
     fn process_bind_ack(&self, ack: &BindAck, contexts: &[ContextElement]) -> Vec<ContextElement> {
@@ -180,10 +182,11 @@ impl RpcClient {
         &self,
         response: &mut [u8],
         pdu_header: &PduHeader,
-        encrypt_offsets: (usize, usize),
+        encrypt_offsets: Option<(usize, usize)>,
     ) -> DpapiResult<Pdu> {
-        if pdu_header.auth_len > 0 {
+        if pdu_header.auth_len > 0 && encrypt_offsets.is_some() {
             // Decrypt the security trailer.
+            let encrypt_offsets = encrypt_offsets.unwrap();
 
             let sec_trailer_offset = usize::from(pdu_header.frag_len - (pdu_header.auth_len + 8));
             let header = &response[0..encrypt_offsets.0];
@@ -200,8 +203,77 @@ impl RpcClient {
 
         let pdu = Pdu::decode(response as &[u8])?;
 
-        // TODO: check pdu type (can be done outside this function).
+        Ok(pdu)
+    }
+
+    pub fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<(usize, usize)>) -> DpapiResult<Pdu> {
+        let pdu_encoded = self.prepare_pdu(pdu, encrypt_offsets)?;
+
+        super::write_buf(&pdu_encoded, &mut self.stream)?;
+
+        // Read PDU header
+        let mut pdu_buf = super::read_vec(16, &mut self.stream)?;
+        let pdu_header = PduHeader::decode(pdu_buf.as_slice())?;
+
+        pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
+        super::read_buf(&mut self.stream, &mut pdu_buf[16..])?;
+
+        let pdu = self.process_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
+
+        pdu.data.check_error()?;
 
         Ok(pdu)
+    }
+
+    pub fn request(
+        &mut self,
+        context_id: u16,
+        opnum: u16,
+        stub_data: Vec<u8>,
+        verification_trailer: Option<VerificationTrailer>,
+    ) -> DpapiResult<Pdu> {
+        let (pdu, encrypt_offsets) = self.create_request(context_id, opnum, stub_data, verification_trailer)?;
+
+        self.send_pdu(pdu, Some(encrypt_offsets))
+    }
+
+    pub fn bind(&mut self, contexts: Vec<ContextElement>) -> DpapiResult<BindAck> {
+        let security_trailer = self.auth.initialize_security_context(&[])?;
+
+        let bind = self.create_bind_pdu(contexts.clone(), Some(security_trailer))?;
+        let pdu_resp = self.send_pdu(bind, None)?;
+
+        let Pdu {
+            header,
+            data,
+            security_trailer,
+        } = pdu_resp;
+        let bind_ack = data.bind_ack()?;
+
+        if !header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign) {
+            self.sign_header = false;
+        }
+
+        let final_contexts = self.process_bind_ack(&bind_ack, &contexts);
+        let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
+
+        while !self.auth.is_finished() {
+            let security_trailer = self.auth.initialize_security_context(&in_token.unwrap_or_default())?;
+
+            if security_trailer.auth_value.is_empty() {
+                break;
+            }
+
+            let alter_context = self.create_alter_context_pdu(final_contexts.clone(), security_trailer)?;
+            let alter_context_resp = self.send_pdu(alter_context, None)?;
+
+            let bind_ack = alter_context_resp.data.bind_ack()?;
+            let final_contexts = self.process_bind_ack(&bind_ack, &final_contexts);
+            in_token = alter_context_resp
+                .security_trailer
+                .map(|security_trailer| security_trailer.auth_value);
+        }
+
+        Ok(bind_ack)
     }
 }

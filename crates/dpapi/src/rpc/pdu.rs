@@ -37,11 +37,16 @@ pub enum PduError {
     InvalidFaultFlags(u8),
 
     #[error("{0:?} PDU is not supported")]
-    PduNotSupported(crate::rpc::pdu::PacketType),
+    PduNotSupported(PacketType),
 
     #[error("invalid fragment (PDU) length: {0}")]
     InvalidFragLength(u16),
+
+    #[error("RPC failed: {0}")]
+    RpcFail(&'static str),
 }
+
+pub type PduResult<T> = Result<T, PduError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
@@ -368,6 +373,23 @@ pub enum PduData {
 }
 
 impl PduData {
+    pub fn bind_ack(self) -> PduResult<BindAck> {
+        match self {
+            PduData::BindAck(bind_ack) => Ok(bind_ack),
+            _ => Err(PduError::RpcFail("BindAcknowledge PDU is expected")),
+        }
+    }
+
+    pub fn check_error(&self) -> PduResult<()> {
+        if let PduData::Fault(fault) = self {
+            Err(PduError::RpcFail("got unexpected Fault PDU"))
+        } else if let PduData::BindNak(bind_nak) = self {
+            Err(PduError::RpcFail("got unexpected BindAcknowledge PDU"))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn decode(pdu_header: &PduHeader, data_len: usize, reader: impl Read) -> DpapiResult<Self> {
         let buf = read_vec(data_len, reader)?;
 

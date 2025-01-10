@@ -19,6 +19,7 @@ pub type AuthResult<T> = Result<T, AuthError>;
 pub struct AuthProvider {
     security_type: SecurityProvider,
     security_context: SspiContext,
+    is_finished: bool,
 }
 
 impl AuthProvider {
@@ -33,7 +34,12 @@ impl AuthProvider {
         Ok(Self {
             security_type,
             security_context,
+            is_finished: false,
         })
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.is_finished
     }
 
     pub fn get_empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
@@ -65,5 +71,17 @@ impl AuthProvider {
         // TODO: call Sspi::encrypt_message method
 
         Ok(vec![])
+    }
+
+    pub fn initialize_security_context(&self, in_token: &[u8]) -> AuthResult<SecurityTrailer> {
+        // TODO: call Sspi::initialize_security_context method
+
+        Ok(SecurityTrailer {
+            security_type: self.security_type,
+            level: AuthenticationLevel::PktPrivacy,
+            pad_length: 0,
+            context_id: 0,
+            auth_value: todo!(),
+        })
     }
 }
