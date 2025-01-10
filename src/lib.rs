@@ -602,6 +602,19 @@ where
         sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
+    /// TODO
+    fn make_signature(&mut self,
+        flags: SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<SecurityStatus>;
+
+    fn verify_signature(&mut self,
+        flags: SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<SignatureFlags>;
+
     /// Decrypts a message. Some packages do not encrypt and decrypt messages but rather perform and check an integrity hash.
     ///
     /// # Parameters
@@ -1063,6 +1076,13 @@ bitflags! {
     pub struct DecryptionFlags: u32 {
         const SIGN_ONLY = 0x8000_0000;
         const WRAP_NO_ENCRYPT = 0x8000_0001;
+    }
+}
+
+bitflags! {
+    /// TODO
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct SignatureFlags: u32 {
     }
 }
 

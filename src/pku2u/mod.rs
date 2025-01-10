@@ -339,6 +339,22 @@ impl Sspi for Pku2u {
             "Pku2u does not support change pasword",
         ))
     }
+    
+    fn make_signature(&mut self,
+        flags: crate::SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<SecurityStatus> {
+        todo!()
+    }
+    
+    fn verify_signature(&mut self,
+        flags: crate::SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<crate::SignatureFlags> {
+        todo!()
+    }
 }
 
 impl SspiImpl for Pku2u {

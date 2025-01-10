@@ -374,6 +374,22 @@ impl Sspi for Negotiate {
             self.change_password(&mut yield_point, change_password).await
         }))
     }
+    
+    fn make_signature(&mut self,
+        flags: crate::SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<SecurityStatus> {
+        todo!()
+    }
+    
+    fn verify_signature(&mut self,
+        flags: crate::SignatureFlags,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<crate::SignatureFlags> {
+        todo!()
+    }
 }
 
 impl SspiImpl for Negotiate {
