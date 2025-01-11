@@ -374,21 +374,26 @@ impl Sspi for Negotiate {
             self.change_password(&mut yield_point, change_password).await
         }))
     }
-    
-    fn make_signature(&mut self,
-        flags: crate::SignatureFlags,
+
+    fn make_signature(
+        &mut self,
+        flags: u32,
         message: &mut [SecurityBuffer],
         sequence_number: u32,
-    ) -> crate::Result<SecurityStatus> {
-        todo!()
+    ) -> crate::Result<()> {
+        match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.make_signature(flags, message, sequence_number),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.make_signature(flags, message, sequence_number),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.make_signature(flags, message, sequence_number),
+        }
     }
-    
-    fn verify_signature(&mut self,
-        flags: crate::SignatureFlags,
-        message: &mut [SecurityBuffer],
-        sequence_number: u32,
-    ) -> crate::Result<crate::SignatureFlags> {
-        todo!()
+
+    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32> {
+        match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_signature(message, sequence_number),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.verify_signature(message, sequence_number),
+        }
     }
 }
 

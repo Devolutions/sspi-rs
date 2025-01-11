@@ -953,12 +953,13 @@ impl Sspi for SspiContext {
             self.change_password_impl(&mut yield_point, change_password).await
         }))
     }
-    
-    fn make_signature(&mut self,
-        flags: crate::SignatureFlags,
+
+    fn make_signature(
+        &mut self,
+        flags: u32,
         message: &mut [SecurityBuffer],
         sequence_number: u32,
-    ) -> crate::Result<SecurityStatus> {
+    ) -> crate::Result<()> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.make_signature(flags, message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.make_signature(flags, message, sequence_number),
@@ -968,19 +969,15 @@ impl Sspi for SspiContext {
             SspiContext::CredSsp(credssp) => credssp.make_signature(flags, message, sequence_number),
         }
     }
-    
-    fn verify_signature(&mut self,
-        flags: crate::SignatureFlags,
-        message: &mut [SecurityBuffer],
-        sequence_number: u32,
-    ) -> crate::Result<crate::SignatureFlags> {
+
+    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.verify_signature(flags, message, sequence_number),
-            SspiContext::Kerberos(kerberos) => kerberos.verify_signature(flags, message, sequence_number),
-            SspiContext::Negotiate(negotiate) => negotiate.verify_signature(flags, message, sequence_number),
-            SspiContext::Pku2u(pku2u) => pku2u.verify_signature(flags, message, sequence_number),
+            SspiContext::Ntlm(ntlm) => ntlm.verify_signature(message, sequence_number),
+            SspiContext::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),
+            SspiContext::Negotiate(negotiate) => negotiate.verify_signature(message, sequence_number),
+            SspiContext::Pku2u(pku2u) => pku2u.verify_signature(message, sequence_number),
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.verify_signature(flags, message, sequence_number),
+            SspiContext::CredSsp(credssp) => credssp.verify_signature(message, sequence_number),
         }
     }
 }

@@ -21,8 +21,8 @@ use crate::{
     ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
     EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
-    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags,
-    SignatureFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
+    SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -374,7 +374,7 @@ impl Ntlm {
         message: &mut [SecurityBuffer],
         sequence_number: u32,
         digest: &[u8; 16],
-    ) -> crate::Result<SecurityStatus> {
+    ) -> crate::Result<()> {
         let checksum = self
             .send_sealing_key
             .as_mut()
@@ -383,20 +383,15 @@ impl Ntlm {
 
         let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the token buffer is too small"));
         }
         let signature = compute_signature(&checksum, sequence_number);
         signature_buffer.write_data(signature.as_slice())?;
 
-        Ok(SecurityStatus::Ok)
+        Ok(())
     }
 
-    fn check_signature(
-        &mut self,
-        sequence_number: u32,
-        digest: &[u8; 16],
-        signature: &[u8],
-    ) -> crate::Result<()> {
+    fn check_signature(&mut self, sequence_number: u32, digest: &[u8; 16], signature: &[u8]) -> crate::Result<()> {
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -407,9 +402,10 @@ impl Ntlm {
         if signature != expected_signature.as_ref() {
             return Err(Error::new(
                 ErrorKind::MessageAltered,
-                "Signature verification failed, something nasty is going on!",
+                "signature verification failed, something nasty is going on",
             ));
         }
+
         Ok(())
     }
 }
@@ -527,10 +523,10 @@ impl Sspi for Ntlm {
 
     fn make_signature(
         &mut self,
-        _flags: crate::SignatureFlags,
+        _flags: u32,
         message: &mut [SecurityBuffer],
         sequence_number: u32,
-    ) -> crate::Result<SecurityStatus> {
+    ) -> crate::Result<()> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -542,15 +538,10 @@ impl Sspi for Ntlm {
 
         self.compute_checksum(message, sequence_number, &digest)?;
 
-        Ok(SecurityStatus::Ok)
+        Ok(())
     }
 
-    fn verify_signature(
-        &mut self,
-        _flags: crate::SignatureFlags,
-        message: &mut [SecurityBuffer],
-        sequence_number: u32,
-    ) -> crate::Result<SignatureFlags> {
+    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -563,7 +554,7 @@ impl Sspi for Ntlm {
         let signature = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
         self.check_signature(sequence_number, &digest, signature.data())?;
 
-        Ok(SignatureFlags::empty())
+        Ok(0)
     }
 }
 
