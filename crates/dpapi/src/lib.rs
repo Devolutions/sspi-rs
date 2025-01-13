@@ -3,6 +3,6 @@
 #![allow(dead_code)]
 
 mod error;
-mod rpc;
+pub mod rpc;
 
 pub use error::*;

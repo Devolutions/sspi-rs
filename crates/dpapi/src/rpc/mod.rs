@@ -1,6 +1,3 @@
-#[macro_use]
-mod macros;
-
 pub mod bind;
 pub mod pdu;
 pub mod request;
@@ -11,11 +8,11 @@ use uuid::Uuid;
 
 use crate::{DpapiResult, Error};
 
-trait Encode {
+pub trait Encode {
     fn encode(&self, writer: impl Write) -> DpapiResult<()>;
 }
 
-trait EncodeExt: Encode {
+pub trait EncodeExt: Encode {
     fn encode_to_vec(&self) -> DpapiResult<Vec<u8>> {
         let mut buf = Vec::new();
 
@@ -25,7 +22,9 @@ trait EncodeExt: Encode {
     }
 }
 
-trait Decode: Sized {
+impl<T: Encode> EncodeExt for T {}
+
+pub trait Decode: Sized {
     fn decode(reader: impl Read) -> DpapiResult<Self>;
 }
 

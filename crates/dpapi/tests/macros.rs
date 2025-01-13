@@ -1,10 +1,10 @@
-#[cfg(test)]
+#[allow(unused_macros)]
 macro_rules! test_encoding_decoding {
     ($name:ident, $type:ty, $expected:expr, $data:expr) => {
         paste::paste! {
             #[test]
             fn [<$name:lower _encoding_decoding>]() {
-                use crate::rpc::{Encode, Decode};
+                use dpapi::rpc::{EncodeExt, Decode};
 
                 let data = $data;
 
