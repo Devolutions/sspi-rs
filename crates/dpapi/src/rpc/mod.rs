@@ -13,6 +13,9 @@ use crate::{DpapiResult, Error};
 
 trait Encode {
     fn encode(&self, writer: impl Write) -> DpapiResult<()>;
+}
+
+trait EncodeExt: Encode {
     fn encode_to_vec(&self) -> DpapiResult<Vec<u8>> {
         let mut buf = Vec::new();
 
