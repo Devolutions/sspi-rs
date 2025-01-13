@@ -2,16 +2,16 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("{0:?}")]
+    #[error("IO error")]
     Io(#[from] std::io::Error),
 
-    #[error("UUID error: {0:?}")]
+    #[error("UUID error")]
     Uuid(#[from] uuid::Error),
 
-    #[error("integer conversion error: {0:?}")]
+    #[error("integer conversion error")]
     IntConversion(#[from] std::num::TryFromIntError),
 
-    #[error("provided buf contains invalid UTF-8 data: {0:?}")]
+    #[error("provided buf contains invalid UTF-8 data")]
     Utf8(#[from] std::string::FromUtf8Error),
 
     #[error("invalid context result code value: {0}")]

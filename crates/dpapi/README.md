@@ -1,6 +1,6 @@
 # dpapi-rs
 
-This crate contains the Windows [DPAPI](https://learn.microsoft.com/en-us/windows/win32/seccng/cng-dpapi) implementation. It can encrypt the data/decrypt DPAPI blobs using the domain's root key.
+This crate contains a Windows [DPAPI](https://learn.microsoft.com/en-us/windows/win32/seccng/cng-dpapi) implementation. It can encrypt the data/decrypt DPAPI blobs using the domain's root key.
 
 It automatically makes RPC calls to obtain the root key. The user must provide credentials to authenticate in the DC.
 
