@@ -9,7 +9,7 @@ pub enum Error {
     Uuid(#[from] uuid::Error),
 
     #[error("integer conversion error: {0:?}")]
-    IntegerConversion(#[from] std::num::TryFromIntError),
+    IntConversion(#[from] std::num::TryFromIntError),
 
     #[error("provided buf contains invalid UTF-8 data: {0:?}")]
     Utf8(#[from] std::string::FromUtf8Error),
@@ -18,7 +18,7 @@ pub enum Error {
     InvalidContextResultCode(u16),
 
     #[error("invalid integer representation value: {0}")]
-    InvalidIntegerRepr(u8),
+    InvalidIntRepr(u8),
 
     #[error("invalid character representation value: {0}")]
     InvalidCharacterRepr(u8),

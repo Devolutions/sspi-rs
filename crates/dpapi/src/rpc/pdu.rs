@@ -11,13 +11,13 @@ use crate::{DpapiResult, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
-pub enum IntegerRepr {
+pub enum IntRepr {
     BigEndian = 0,
     #[default]
     LittleEndian = 1,
 }
 
-impl IntegerRepr {
+impl IntRepr {
     pub fn as_u8(&self) -> u8 {
         *self as u8
     }
@@ -101,7 +101,7 @@ bitflags::bitflags! {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataRepr {
-    pub byte_order: IntegerRepr,
+    pub byte_order: IntRepr,
     pub character: CharacterRepr,
     pub floating_point: FloatingPointRepr,
 }
@@ -128,8 +128,8 @@ impl Decode for DataRepr {
         let floating_representation = reader.read_u8()?;
 
         let data_representation = Self {
-            byte_order: IntegerRepr::from_u8(integer_representation)
-                .ok_or_else(|| Error::InvalidIntegerRepr(integer_representation))?,
+            byte_order: IntRepr::from_u8(integer_representation)
+                .ok_or_else(|| Error::InvalidIntRepr(integer_representation))?,
             character: CharacterRepr::from_u8(character_representation)
                 .ok_or_else(|| Error::InvalidCharacterRepr(character_representation))?,
             floating_point: FloatingPointRepr::from_u8(floating_representation)
@@ -451,7 +451,7 @@ mod tests {
                 packet_type: PacketType::Bind,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
@@ -517,7 +517,7 @@ mod tests {
                 packet_type: PacketType::BindAck,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
@@ -566,7 +566,7 @@ mod tests {
                 packet_type: PacketType::AlterContext,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
@@ -617,7 +617,7 @@ mod tests {
                 packet_type: PacketType::AlterContextResponse,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
@@ -660,7 +660,7 @@ mod tests {
                 packet_type: PacketType::Request,
                 packet_flags: PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
@@ -696,7 +696,7 @@ mod tests {
                 packet_type: PacketType::Response,
                 packet_flags: PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
                 data_rep: DataRepr {
-                    byte_order: IntegerRepr::LittleEndian,
+                    byte_order: IntRepr::LittleEndian,
                     character: CharacterRepr::Ascii,
                     floating_point: FloatingPointRepr::Ieee,
                 },
