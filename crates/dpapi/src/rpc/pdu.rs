@@ -11,13 +11,13 @@ use crate::{DpapiResult, Error};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
-pub enum IntegerRepresentation {
+pub enum IntegerRepr {
     BigEndian = 0,
     #[default]
     LittleEndian = 1,
 }
 
-impl IntegerRepresentation {
+impl IntegerRepr {
     pub fn as_u8(&self) -> u8 {
         *self as u8
     }
@@ -25,13 +25,13 @@ impl IntegerRepresentation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
-pub enum CharacterRepresentation {
+pub enum CharacterRepr {
     #[default]
     Ascii = 0,
     Ebcdic = 1,
 }
 
-impl CharacterRepresentation {
+impl CharacterRepr {
     pub fn as_u8(&self) -> u8 {
         *self as u8
     }
@@ -39,7 +39,7 @@ impl CharacterRepresentation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
-pub enum FloatingPointRepresentation {
+pub enum FloatingPointRepr {
     #[default]
     Ieee = 0,
     Vax = 1,
@@ -47,7 +47,7 @@ pub enum FloatingPointRepresentation {
     Ibm = 3,
 }
 
-impl FloatingPointRepresentation {
+impl FloatingPointRepr {
     pub fn as_u8(&self) -> u8 {
         *self as u8
     }
@@ -100,13 +100,13 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DataRepresentation {
-    pub byte_order: IntegerRepresentation,
-    pub character: CharacterRepresentation,
-    pub floating_point: FloatingPointRepresentation,
+pub struct DataRepr {
+    pub byte_order: IntegerRepr,
+    pub character: CharacterRepr,
+    pub floating_point: FloatingPointRepr,
 }
 
-impl Encode for DataRepresentation {
+impl Encode for DataRepr {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         let first_octet = (self.byte_order.as_u8()) << 4 | self.character.as_u8();
         writer.write_u8(first_octet)?;
@@ -119,7 +119,7 @@ impl Encode for DataRepresentation {
     }
 }
 
-impl Decode for DataRepresentation {
+impl Decode for DataRepr {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let first_octet = reader.read_u8()?;
 
@@ -128,12 +128,12 @@ impl Decode for DataRepresentation {
         let floating_representation = reader.read_u8()?;
 
         let data_representation = Self {
-            byte_order: IntegerRepresentation::from_u8(integer_representation)
-                .ok_or_else(|| Error::InvalidIntegerRepresentation(integer_representation))?,
-            character: CharacterRepresentation::from_u8(character_representation)
-                .ok_or_else(|| Error::InvalidCharacterRepresentation(character_representation))?,
-            floating_point: FloatingPointRepresentation::from_u8(floating_representation)
-                .ok_or_else(|| Error::InvalidFloatingPointRepresentation(floating_representation))?,
+            byte_order: IntegerRepr::from_u8(integer_representation)
+                .ok_or_else(|| Error::InvalidIntegerRepr(integer_representation))?,
+            character: CharacterRepr::from_u8(character_representation)
+                .ok_or_else(|| Error::InvalidCharacterRepr(character_representation))?,
+            floating_point: FloatingPointRepr::from_u8(floating_representation)
+                .ok_or_else(|| Error::InvalidFloatingPointRepr(floating_representation))?,
         };
 
         // Padding.
@@ -149,7 +149,7 @@ pub struct PduHeader {
     pub version_minor: u8,
     pub packet_type: PacketType,
     pub packet_flags: PacketFlags,
-    pub data_rep: DataRepresentation,
+    pub data_rep: DataRepr,
     pub frag_len: u16,
     pub auth_len: u16,
     pub call_id: u32,
@@ -183,7 +183,7 @@ impl Decode for PduHeader {
                 let packet_flags = reader.read_u8()?;
                 PacketFlags::from_bits(packet_flags).ok_or_else(|| Error::InvalidPacketFlags(packet_flags))?
             },
-            data_rep: DataRepresentation::decode(&mut reader)?,
+            data_rep: DataRepr::decode(&mut reader)?,
             frag_len: reader.read_u16::<LittleEndian>()?,
             auth_len: reader.read_u16::<LittleEndian>()?,
             call_id: reader.read_u32::<LittleEndian>()?,
@@ -423,8 +423,8 @@ mod tests {
 
     test_encoding_decoding! {
         data_rep,
-        DataRepresentation,
-        DataRepresentation::default(),
+        DataRepr,
+        DataRepr::default(),
         [0x10, 0, 0, 0]
     }
 
@@ -450,10 +450,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::Bind,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 1624,
                 auth_len: 1500,
@@ -516,10 +516,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::BindAck,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 230,
                 auth_len: 138,
@@ -565,10 +565,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::AlterContext,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 173,
                 auth_len: 93,
@@ -616,10 +616,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::AlterContextResponse,
                 packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 64,
                 auth_len: 0,
@@ -659,10 +659,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::Request,
                 packet_flags: PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 332,
                 auth_len: 76,
@@ -695,10 +695,10 @@ mod tests {
                 version_minor: 0,
                 packet_type: PacketType::Response,
                 packet_flags: PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-                data_rep: DataRepresentation {
-                    byte_order: IntegerRepresentation::LittleEndian,
-                    character: CharacterRepresentation::Ascii,
-                    floating_point: FloatingPointRepresentation::Ieee,
+                data_rep: DataRepr {
+                    byte_order: IntegerRepr::LittleEndian,
+                    character: CharacterRepr::Ascii,
+                    floating_point: FloatingPointRepr::Ieee,
                 },
                 frag_len: 988,
                 auth_len: 76,

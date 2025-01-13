@@ -18,13 +18,13 @@ pub enum Error {
     InvalidContextResultCode(u16),
 
     #[error("invalid integer representation value: {0}")]
-    InvalidIntegerRepresentation(u8),
+    InvalidIntegerRepr(u8),
 
     #[error("invalid character representation value: {0}")]
-    InvalidCharacterRepresentation(u8),
+    InvalidCharacterRepr(u8),
 
     #[error("invalid floating point representation value: {0}")]
-    InvalidFloatingPointRepresentation(u8),
+    InvalidFloatingPointRepr(u8),
 
     #[error("invalid packet type value: {0}")]
     InvalidPacketType(u8),
