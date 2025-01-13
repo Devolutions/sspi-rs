@@ -106,9 +106,9 @@ pub enum ContextResultCode {
     NegotiateAck = 3, // MS-RPCE extension
 }
 
-impl From<ContextResultCode> for u16 {
-    fn from(code: ContextResultCode) -> Self {
-        code as u16
+impl ContextResultCode {
+    pub fn as_u16(&self) -> u16 {
+        *self as u16
     }
 }
 
@@ -136,7 +136,7 @@ pub struct ContextResult {
 
 impl Encode for ContextResult {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        writer.write_u16::<LittleEndian>(self.result.into())?;
+        writer.write_u16::<LittleEndian>(self.result.as_u16())?;
         writer.write_u16::<LittleEndian>(self.reason)?;
         self.syntax.encode(&mut writer)?;
         writer.write_u32::<LittleEndian>(self.syntax_version)?;

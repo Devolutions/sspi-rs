@@ -17,12 +17,24 @@ pub enum IntegerRepresentation {
     LittleEndian = 1,
 }
 
+impl IntegerRepresentation {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
 pub enum CharacterRepresentation {
     #[default]
     Ascii = 0,
     Ebcdic = 1,
+}
+
+impl CharacterRepresentation {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
@@ -33,6 +45,12 @@ pub enum FloatingPointRepresentation {
     Vax = 1,
     Cray = 2,
     Ibm = 3,
+}
+
+impl FloatingPointRepresentation {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -57,6 +75,12 @@ pub enum PacketType {
     Shutdown = 17,
     CoCancel = 18,
     Orphaned = 19,
+}
+
+impl PacketType {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
 }
 
 bitflags::bitflags! {
@@ -84,9 +108,9 @@ pub struct DataRepresentation {
 
 impl Encode for DataRepresentation {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        let first_octet = (self.byte_order as u8) << 4 | self.character as u8;
+        let first_octet = (self.byte_order.as_u8()) << 4 | self.character.as_u8();
         writer.write_u8(first_octet)?;
-        writer.write_u8(self.floating_point as u8)?;
+        writer.write_u8(self.floating_point.as_u8())?;
 
         // Padding
         writer.write_u16::<LittleEndian>(0)?;
@@ -135,7 +159,7 @@ impl Encode for PduHeader {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         writer.write_u8(self.version)?;
         writer.write_u8(self.version_minor)?;
-        writer.write_u8(self.packet_type as u8)?;
+        writer.write_u8(self.packet_type.as_u8())?;
         writer.write_u8(self.packet_flags.bits())?;
         self.data_rep.encode(&mut writer)?;
         writer.write_u16::<LittleEndian>(self.frag_len)?;
@@ -179,6 +203,12 @@ pub enum SecurityProvider {
     Default = 0xff,
 }
 
+impl SecurityProvider {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 #[repr(u8)]
 pub enum AuthenticationLevel {
@@ -189,6 +219,12 @@ pub enum AuthenticationLevel {
     Pkt = 0x04,
     PktIntegrity = 0x05,
     PktPrivacy = 0x06,
+}
+
+impl AuthenticationLevel {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,8 +238,8 @@ pub struct SecurityTrailer {
 
 impl Encode for SecurityTrailer {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        writer.write_u8(self.security_type as u8)?;
-        writer.write_u8(self.level as u8)?;
+        writer.write_u8(self.security_type.as_u8())?;
+        writer.write_u8(self.level.as_u8())?;
         writer.write_u8(self.pad_length)?;
         writer.write_u8(0)?; // Auth-Rsrvd
         writer.write_u32::<LittleEndian>(self.context_id)?;
@@ -303,16 +339,16 @@ impl PduData {
         read_buf(&mut buf, reader)?;
 
         match pdu_header.packet_type {
-            PacketType::Bind => Ok(PduData::Bind(Bind::decode(&buf as &[u8])?)),
-            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode(&buf as &[u8])?)),
-            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode(&buf as &[u8])?)),
-            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode(&buf as &[u8])?)),
+            PacketType::Bind => Ok(PduData::Bind(Bind::decode(buf.as_slice())?)),
+            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode(buf.as_slice())?)),
+            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode(buf.as_slice())?)),
+            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode(buf.as_slice())?)),
             PacketType::AlterContextResponse => Ok(PduData::AlterContextResponse(AlterContextResponse::decode(
-                &buf as &[u8],
+                buf.as_slice(),
             )?)),
-            PacketType::Request => Ok(PduData::Request(Request::decode(pdu_header, &buf as &[u8])?)),
-            PacketType::Response => Ok(PduData::Response(Response::decode(&buf as &[u8])?)),
-            PacketType::Fault => Ok(PduData::Fault(Fault::decode(&buf as &[u8])?)),
+            PacketType::Request => Ok(PduData::Request(Request::decode(pdu_header, buf.as_slice())?)),
+            PacketType::Response => Ok(PduData::Response(Response::decode(buf.as_slice())?)),
+            PacketType::Fault => Ok(PduData::Fault(Fault::decode(buf.as_slice())?)),
             packet_type => Err(Error::PduNotSupported(packet_type)),
         }
     }

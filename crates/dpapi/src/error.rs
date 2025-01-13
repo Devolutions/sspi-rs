@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("IO error: {0:?}")]
+    #[error("{0:?}")]
     Io(#[from] std::io::Error),
 
     #[error("UUID error: {0:?}")]
