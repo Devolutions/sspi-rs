@@ -40,6 +40,12 @@ pub enum Error {
     #[error(transparent)]
     Auth(#[from] crate::rpc::auth::AuthError),
 
+    #[error(transparent)]
+    Epm(#[from] crate::epm::EpmError),
+
+    #[error(transparent)]
+    Client(#[from] crate::client::ClientError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
