@@ -12,7 +12,7 @@ pub fn sid_to_bytes(sid: &str) -> DpapiResult<Vec<u8>> {
         return Err(Error::InvalidValue("SID", sid.to_owned()));
     }
 
-    let parts = sid.split('-').collect::<Vec<&str>>();
+    let parts = sid.split('-').collect::<Vec<_>>();
 
     if parts.len() < 3 {
         return Err(Error::InvalidValue("SID", sid.to_owned()));

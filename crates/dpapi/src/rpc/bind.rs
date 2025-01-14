@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
-use crate::rpc::{read_buf, read_padding, write_buf, write_padding, Decode, Encode};
+use crate::rpc::{read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::{DpapiResult, Error};
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
@@ -248,9 +248,8 @@ impl Decode for BindAck {
             sec_addr: {
                 let sec_addr_len = usize::from(reader.read_u16::<LittleEndian>()?);
                 let sec_addr = if sec_addr_len > 0 {
-                    let mut buf = vec![0; sec_addr_len - 1 /* null byte */];
+                    let buf = read_vec(sec_addr_len - 1 /* null byte */, &mut reader)?;
 
-                    read_buf(buf.as_mut_slice(), &mut reader)?;
                     // Read null-terminator byte.
                     reader.read_u8()?;
 

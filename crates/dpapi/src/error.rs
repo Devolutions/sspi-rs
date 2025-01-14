@@ -74,7 +74,7 @@ pub enum Error {
     #[error("faced characters that do not belong to the charset: {0:?}")]
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
 
-    #[error("Can not create a string from UTF-16 bytes: {0:?}")]
+    #[error("cannot create a string from UTF-16 bytes: {0:?}")]
     FromUtf16(#[from] std::string::FromUtf16Error),
 }
 

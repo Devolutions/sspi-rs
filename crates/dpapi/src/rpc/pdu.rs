@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-use super::{read_buf, read_to_end, write_buf, Decode, Encode};
+use super::{read_to_end, read_vec, write_buf, Decode, Encode};
 use crate::rpc::bind::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak};
 use crate::rpc::request::{Request, Response};
 use crate::{DpapiResult, Error};
@@ -335,8 +335,7 @@ pub enum PduData {
 
 impl PduData {
     pub fn decode(pdu_header: &PduHeader, data_len: usize, reader: impl Read) -> DpapiResult<Self> {
-        let mut buf = vec![0; data_len];
-        read_buf(&mut buf, reader)?;
+        let buf = read_vec(data_len, reader)?;
 
         match pdu_header.packet_type {
             PacketType::Bind => Ok(PduData::Bind(Bind::decode(buf.as_slice())?)),

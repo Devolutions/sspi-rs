@@ -39,7 +39,7 @@ impl Encode for Uuid {
 impl Decode for Uuid {
     fn decode(reader: impl Read) -> DpapiResult<Self> {
         let mut uuid_buf = [0; 16];
-        read_buf(&mut uuid_buf, reader)?;
+        read_buf(reader, &mut uuid_buf)?;
 
         Ok(Uuid::from_slice_le(&uuid_buf)?)
     }
@@ -58,7 +58,7 @@ pub fn read_padding<const ALIGNMENT: usize>(buf_len: usize, reader: impl Read) -
     let padding_len = (ALIGNMENT - (buf_len % ALIGNMENT)) % ALIGNMENT;
     let mut padding_buf = vec![0; padding_len];
 
-    read_buf(&mut padding_buf, reader)?;
+    read_buf(reader, &mut padding_buf)?;
 
     Ok(())
 }
@@ -83,7 +83,7 @@ pub fn write_buf(mut data: &[u8], mut writer: impl Write) -> DpapiResult<()> {
     Ok(())
 }
 
-pub fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
+pub fn read_buf(mut reader: impl Read, mut buf: &mut [u8]) -> DpapiResult<()> {
     while !buf.is_empty() {
         let bytes_read = reader.read(buf)?;
         buf = &mut buf[bytes_read..];
@@ -99,7 +99,7 @@ pub fn read_buf(mut buf: &mut [u8], mut reader: impl Read) -> DpapiResult<()> {
 pub fn read_vec(len: usize, reader: impl Read) -> DpapiResult<Vec<u8>> {
     let mut buf = vec![0; len];
 
-    read_buf(&mut buf, reader)?;
+    read_buf(reader, &mut buf)?;
 
     Ok(buf)
 }
@@ -109,8 +109,14 @@ pub fn read_c_str_utf16_le(len: usize, mut reader: impl Read) -> DpapiResult<Str
 
     use crate::utils::utf16_bytes_to_utf8_string;
 
-    let mut buf = vec![0; len - 2 /* UTF16 null terminator */];
-    read_buf(buf.as_mut_slice(), &mut reader)?;
+    if len < 2 {
+        return Err(Error::InvalidValue(
+            "invalid UTF-17 string length",
+            format!("expected more than 2 bytes, but got {}", len),
+        ));
+    }
+
+    let buf = read_vec(len - 2 /* UTF16 null terminator */, &mut reader)?;
 
     // Read UTF16 null terminator.
     reader.read_u16::<LittleEndian>()?;

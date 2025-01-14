@@ -16,27 +16,41 @@ use picky_asn1_x509::enveloped_data::{
 use picky_asn1_x509::oids;
 use uuid::Uuid;
 
-use crate::rpc::{read_buf, read_to_end, write_buf, Decode, Encode, EncodeExt};
+use crate::rpc::{read_buf, read_to_end, read_vec, write_buf, Decode, Encode, EncodeExt};
 use crate::sid_utils::{ace_to_bytes, sd_to_bytes};
 use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
 use crate::{DpapiResult, Error};
 
+/// Key Identifier
+///
+/// This contains the key identifier info that can be used by MS-GKDI GetKey to retrieve the group key seed values.
+/// This structure is not defined publicly by Microsoft but it closely matches the [GroupKeyEnvelope] structure.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct KeyIdentifier {
+    /// The version of the structure.
     pub version: u32,
+    /// Flags describing the values inside the structure.
     pub flags: u32,
 
+    /// The L0 index of the key.
     pub l0: u32,
+    /// The L1 index of the key.
     pub l1: u32,
+    /// The L2 index of the key.
     pub l2: u32,
+    /// A GUID that identifies a root key.
     pub root_key_identifier: Uuid,
 
+    /// Key info.
     pub key_info: Vec<u8>,
+    /// The domain name of the server in DNS format.
     pub domain_name: String,
+    /// The forest name of the server in DNS format.
     pub forest_name: String,
 }
 
 impl KeyIdentifier {
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
 }
 
@@ -72,7 +86,7 @@ impl Decode for KeyIdentifier {
         let version = reader.read_u32::<LittleEndian>()?;
 
         let mut magic = [0; 4];
-        read_buf(&mut magic, &mut reader)?;
+        read_buf(&mut reader, &mut magic)?;
 
         if magic != Self::MAGIC {
             return Err(Error::InvalidMagicBytes(
@@ -90,19 +104,32 @@ impl Decode for KeyIdentifier {
         let root_key_identifier = Uuid::decode(&mut reader)?;
 
         let key_info_len = reader.read_u32::<LittleEndian>()?;
-        let domain_len = reader.read_u32::<LittleEndian>()? - 2 /* UTF16 null terminator */;
-        let forest_len = reader.read_u32::<LittleEndian>()? - 2 /* UTF16 null terminator */;
 
-        let mut key_info = vec![0; key_info_len.try_into()?];
-        read_buf(key_info.as_mut_slice(), &mut reader)?;
+        let domain_len = reader.read_u32::<LittleEndian>()?;
+        if domain_len <= 2 {
+            return Err(Error::InvalidValue(
+                "KeyIdentifier domain name length",
+                format!("expected more than 2 bytes, but got {}", domain_len),
+            ));
+        }
+        let domain_len = domain_len - 2 /* UTF16 null terminator */;
 
-        let mut domain_name = vec![0; domain_len.try_into()?];
-        read_buf(domain_name.as_mut_slice(), &mut reader)?;
+        let forest_len = reader.read_u32::<LittleEndian>()?;
+        if forest_len <= 2 {
+            return Err(Error::InvalidValue(
+                "KeyIdentifier forest name length",
+                format!("expected more than 2 bytes, but got {}", forest_len),
+            ));
+        }
+        let forest_len = forest_len - 2 /* UTF16 null terminator */;
+
+        let key_info = read_vec(key_info_len.try_into()?, &mut reader)?;
+
+        let domain_name = read_vec(domain_len.try_into()?, &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
-        let mut forest_name = vec![0; forest_len.try_into()?];
-        read_buf(forest_name.as_mut_slice(), &mut reader)?;
+        let forest_name = read_vec(forest_len.try_into()?, &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
@@ -192,21 +219,27 @@ impl SidProtectionDescriptor {
     }
 }
 
+/// Represents DPAPI blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DpapiBlob {
+    /// The key identifier for the KEK.
     pub key_identifier: KeyIdentifier,
+    /// The protection descriptor that protects the key.
     pub protection_descriptor: SidProtectionDescriptor,
+    /// The encrypted CEK.
     pub enc_cek: Vec<u8>,
+    /// CEK encryption algorithm.
     pub enc_cek_algorithm_id: KeyEncryptionAlgorithmIdentifier,
+    /// The encrypted content.
     pub enc_content: Vec<u8>,
+    /// Content encryption algorithm.
     pub enc_content_algorithm_id: ContentEncryptionAlgorithmIdentifier,
 }
 
 impl DpapiBlob {
-    // blob_in_envelope: true to store the encrypted blob in the
-    // EnvelopedData structure (NCryptProtectSecret general), `false` to
-    // append the encrypted blob after the EnvelopedData structure
-    // (LAPS style).
+    // blob_in_envelope:
+    // * `true` to store the encrypted blob in the EnvelopedData structure (NCryptProtectSecret general).
+    // * `false` to append the encrypted blob after the EnvelopedData structure (LAPS style).
     fn encode(&self, blob_in_envelope: bool, mut writer: impl Write) -> DpapiResult<()> {
         picky_asn1_der::to_writer(
             &ContentInfo {
@@ -285,8 +318,7 @@ impl Decode for DpapiBlob {
             ));
         }
 
-        let recipient_info = enveloped_data.recipient_infos.0.first().unwrap();
-        let RecipientInfo::Kek(kek_info) = recipient_info;
+        let RecipientInfo::Kek(kek_info) = enveloped_data.recipient_infos.0.first().unwrap();
 
         if kek_info.version != CmsVersion::V4 {
             return Err(Error::InvalidValue(
@@ -320,7 +352,7 @@ impl Decode for DpapiBlob {
 
         let enc_content = if let Some(enc_content) = enveloped_data.encrypted_content_info.encrypted_content.0 {
             // Some DPAPI blobs don't include the content in the PKCS7 payload but
-            // just append after the blob.
+            // just append it after the blob.
             if enc_content.0 .0.is_empty() {
                 read_to_end(reader)?
             } else {
