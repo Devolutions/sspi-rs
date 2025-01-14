@@ -5,10 +5,10 @@ pub enum Error {
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
-    #[error("UUID error")]
+    #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),
 
-    #[error("integer conversion error")]
+    #[error(transparent)]
     IntConversion(#[from] std::num::TryFromIntError),
 
     #[error("provided buf contains invalid UTF-8 data")]
