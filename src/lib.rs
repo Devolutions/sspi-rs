@@ -81,6 +81,8 @@ mod utils;
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
 
+use std::{error, fmt, io, result, str, string};
+
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
@@ -92,7 +94,6 @@ use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 pub use security_buffer::SecurityBuffer;
-use std::{error, fmt, io, result, str, string};
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
