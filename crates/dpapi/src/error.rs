@@ -69,6 +69,9 @@ pub enum Error {
 
     #[error("{0}")]
     FromUtf16(String),
+
+    #[error(transparent)]
+    TryFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl From<std::string::FromUtf16Error> for Error {
