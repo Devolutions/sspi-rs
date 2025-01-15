@@ -17,6 +17,7 @@ members = [
   "ffi/symbol-rename-macro",
   "crates/winscard",
   "crates/ffi-types",
+  "crates/dpapi",
 ]
 exclude = [
   "tools/wasm-testcompile",
@@ -36,8 +37,10 @@ sha1 = { version = "0.10", default-features = false }
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 picky = { version = "7.0.0-rc.12", default-features = false }
+picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.14"
+picky-krb = "0.9"
 tokio = "1.43"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
@@ -47,6 +50,8 @@ base64 = "0.22"
 whoami = "1.5"
 tracing-subscriber = "0.3"
 proptest = "1.6"
+serde = "1"
+byteorder = "1.5"
 
 [features]
 default = ["aws-lc-rs"]
@@ -87,21 +92,20 @@ tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi
 winscard = { workspace = true, optional = true }
 rsa = { workspace = true, features = ["sha1"] }
 tracing = { workspace = true, default-features = true }
+serde.workspace = true
+picky-krb.workspace = true
+picky-asn1 = { workspace = true, features = ["time_conversion"] }
+byteorder.workspace = true
 
-byteorder = "1.5"
 md-5 = "0.10"
 md4 = "0.10"
 sha2 = "0.10"
 hmac = "0.12"
 crypto-mac = "0.11"
 lazy_static = "1.5"
-serde = "1"
 serde_derive = "1"
 url = "2.5"
 oid = "0.2"
-
-picky-krb = "0.9"
-picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
 hickory-resolver = { version = "0.24", optional = true }
