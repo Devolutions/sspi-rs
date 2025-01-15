@@ -1,0 +1,25 @@
+[package]
+name = "dpapi"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+homepage = "https://github.com/devolutions/sspi-rs"
+repository = "https://github.com/devolutions/sspi-rs"
+authors = ["Devolutions Inc. <infos@devolutions.net>"]
+description = "A Rust implementation of Windows DPAPI"
+
+[lib]
+name = "dpapi"
+
+[dependencies]
+bitflags.workspace = true
+byteorder.workspace = true
+num-derive.workspace = true
+num-traits = { workspace = true, default-features = true }
+uuid = { workspace = true, features = ["std"] }
+
+thiserror = "2.0"
+
+[dev-dependencies]
+paste = "1.0"
