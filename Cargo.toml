@@ -54,6 +54,7 @@ proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
 num-bigint-dig = "0.8"
+hmac = "0.12"
 
 [features]
 default = ["aws-lc-rs"]
@@ -100,10 +101,10 @@ picky-krb.workspace = true
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 num-bigint-dig.workspace = true
+hmac.workspace = true
 
 md-5 = "0.10"
 md4 = "0.10"
-hmac = "0.12"
 crypto-mac = "0.11"
 lazy_static = "1.5"
 serde_derive = "1"
