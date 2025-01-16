@@ -2,8 +2,8 @@
 #![allow(dead_code)]
 
 pub mod blob;
-pub mod error;
 pub(crate) mod crypto;
+pub mod error;
 pub mod gkdi;
 pub mod rpc;
 pub(crate) mod sid;

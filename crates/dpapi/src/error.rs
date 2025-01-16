@@ -28,6 +28,9 @@ pub enum Error {
     #[error(transparent)]
     Sid(#[from] crate::sid::SidError),
 
+    #[error(transparent)]
+    Crypto(#[from] crate::crypto::CryptoError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 

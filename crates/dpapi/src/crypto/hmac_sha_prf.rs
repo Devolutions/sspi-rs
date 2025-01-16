@@ -1,7 +1,7 @@
 use hmac::{Hmac, Mac};
 use rust_kbkdf::{PseudoRandomFunction, PseudoRandomFunctionKey};
 
-use crate::{DpapiResult, Error, ErrorKind};
+use super::{CryptoError, CryptoResult};
 
 pub struct HmacShaPrfKey<'key>(&'key [u8]);
 
@@ -38,34 +38,35 @@ macro_rules! define_hmac_sha_prf {
         impl<'a> PseudoRandomFunction<'a> for $name {
             type KeyHandle = HmacShaPrfKey<'a>;
             type PrfOutputSize = $out_size;
-            type Error = Error;
+            type Error = CryptoError;
 
             fn init(
                 &mut self,
                 key: &'a dyn PseudoRandomFunctionKey<KeyHandle = HmacShaPrfKey<'a>>,
-            ) -> Result<(), Error> {
-                self.hmac = Some(
-                    Hmac::<$sha>::new_from_slice(key.key_handle().key())
-                        .map_err(|err| Error::new(ErrorKind::NteInternalError, "invalid hmac key length"))?,
-                );
+            ) -> CryptoResult<()> {
+                self.hmac = Some(Hmac::<$sha>::new_from_slice(key.key_handle().key()).map_err(|_| {
+                    use hmac::digest::crypto_common::KeySizeUser;
+
+                    CryptoError::InvalidKeyLength {
+                        expected: Hmac::<$sha>::key_size(),
+                        actual: key.key_handle().key().len(),
+                    }
+                })?);
 
                 Ok(())
             }
 
-            fn update(&mut self, msg: &[u8]) -> Result<(), Error> {
+            fn update(&mut self, msg: &[u8]) -> CryptoResult<()> {
                 if let Some(hmac) = self.hmac.as_mut() {
                     hmac.update(msg);
 
                     Ok(())
                 } else {
-                    Err(Error::new(
-                        ErrorKind::NteInternalError,
-                        "HMAC hashed is not initialized",
-                    ))
+                    Err(CryptoError::Uninitialized("HMAC hasher"))
                 }
             }
 
-            fn finish(&mut self, out: &mut [u8]) -> Result<usize, Error> {
+            fn finish(&mut self, out: &mut [u8]) -> CryptoResult<usize> {
                 if let Some(hmac) = self.hmac.as_mut() {
                     let hmac = hmac.clone().finalize().into_bytes();
 
@@ -73,10 +74,7 @@ macro_rules! define_hmac_sha_prf {
 
                     Ok(hmac.as_slice().len())
                 } else {
-                    Err(Error::new(
-                        ErrorKind::NteInternalError,
-                        "HMAC hashed is not initialized",
-                    ))
+                    Err(CryptoError::Uninitialized("HMAC hasher"))
                 }
             }
         }
