@@ -575,7 +575,7 @@ impl GroupKeyEnvelope {
                 l0: self.l0,
                 l1: self.l1,
                 l2: self.l2,
-                root_key_identifier: self.root_key_identifier.clone(),
+                root_key_identifier: self.root_key_identifier,
 
                 key_info,
                 domain_name: self.domain_name.clone(),
