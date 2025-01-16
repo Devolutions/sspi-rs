@@ -52,6 +52,7 @@ tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
+num-bigint-dig = "0.8"
 
 [features]
 default = ["aws-lc-rs"]
@@ -96,6 +97,7 @@ serde.workspace = true
 picky-krb.workspace = true
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
+num-bigint-dig.workspace = true
 
 md-5 = "0.10"
 md4 = "0.10"
@@ -110,7 +112,6 @@ oid = "0.2"
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
 hickory-resolver = { version = "0.24", optional = true }
 portpicker = { version = "0.1", optional = true }
-num-bigint-dig = "0.8"
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 rustls-native-certs = { version = "0.8", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }

@@ -1,10 +1,17 @@
 use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use thiserror::Error;
 use uuid::Uuid;
 
-use crate::rpc::{read_padding, write_buf, write_padding, Decode, Encode};
-use crate::{DpapiResult, Error};
+use crate::rpc::{read_padding, read_vec, write_buf, write_padding, Decode, Encode};
+use crate::DpapiResult;
+
+#[derive(Debug, Error)]
+pub enum BindError {
+    #[error("invalid context result code value: {0}")]
+    InvalidContextResultCode(u16),
+}
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
 ///
@@ -113,15 +120,15 @@ impl ContextResultCode {
 }
 
 impl TryFrom<u16> for ContextResultCode {
-    type Error = Error;
+    type Error = BindError;
 
-    fn try_from(v: u16) -> DpapiResult<Self> {
+    fn try_from(v: u16) -> Result<Self, Self::Error> {
         match v {
             0 => Ok(Self::Acceptance),
             1 => Ok(Self::UserRejection),
             2 => Ok(Self::ProviderRejection),
             3 => Ok(Self::NegotiateAck),
-            v => Err(Error::InvalidContextResultCode(v)),
+            v => Err(BindError::InvalidContextResultCode(v)),
         }
     }
 }
@@ -248,9 +255,8 @@ impl Decode for BindAck {
             sec_addr: {
                 let sec_addr_len = usize::from(reader.read_u16::<LittleEndian>()?);
                 let sec_addr = if sec_addr_len > 0 {
-                    let mut buf = vec![0; sec_addr_len - 1 /* null byte */];
+                    let buf = read_vec(sec_addr_len - 1 /* null byte */, &mut reader)?;
 
-                    reader.read_exact(buf.as_mut_slice())?;
                     // Read null-terminator byte.
                     reader.read_u8()?;
 
