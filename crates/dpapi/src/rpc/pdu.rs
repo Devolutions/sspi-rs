@@ -3,11 +3,45 @@ use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use thiserror::Error;
 
 use super::{read_to_end, read_vec, write_buf, Decode, Encode};
 use crate::rpc::bind::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak};
 use crate::rpc::request::{Request, Response};
-use crate::{DpapiResult, Error};
+use crate::DpapiResult;
+
+#[derive(Error, Debug)]
+pub enum PduError {
+    #[error("invalid integer representation value: {0}")]
+    InvalidIntRepr(u8),
+
+    #[error("invalid character representation value: {0}")]
+    InvalidCharacterRepr(u8),
+
+    #[error("invalid floating point representation value: {0}")]
+    InvalidFloatingPointRepr(u8),
+
+    #[error("invalid packet type value: {0}")]
+    InvalidPacketType(u8),
+
+    #[error("invalid packet flags value: {0}")]
+    InvalidPacketFlags(u8),
+
+    #[error("invalid security provider value: {0}")]
+    InvalidSecurityProvider(u8),
+
+    #[error("invalid authentication level value: {0}")]
+    InvalidAuthenticationLevel(u8),
+
+    #[error("invalid fault flags value: {0}")]
+    InvalidFaultFlags(u8),
+
+    #[error("{0:?} PDU is not supported")]
+    PduNotSupported(crate::rpc::pdu::PacketType),
+
+    #[error("invalid fragment (PDU) length: {0}")]
+    InvalidFragLength(u16),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
@@ -129,11 +163,11 @@ impl Decode for DataRepr {
 
         let data_representation = Self {
             byte_order: IntRepr::from_u8(integer_representation)
-                .ok_or_else(|| Error::InvalidIntRepr(integer_representation))?,
+                .ok_or(PduError::InvalidIntRepr(integer_representation))?,
             character: CharacterRepr::from_u8(character_representation)
-                .ok_or_else(|| Error::InvalidCharacterRepr(character_representation))?,
+                .ok_or(PduError::InvalidCharacterRepr(character_representation))?,
             floating_point: FloatingPointRepr::from_u8(floating_representation)
-                .ok_or_else(|| Error::InvalidFloatingPointRepr(floating_representation))?,
+                .ok_or(PduError::InvalidFloatingPointRepr(floating_representation))?,
         };
 
         // Padding.
@@ -177,11 +211,11 @@ impl Decode for PduHeader {
             version_minor: reader.read_u8()?,
             packet_type: {
                 let packet_type = reader.read_u8()?;
-                PacketType::from_u8(packet_type).ok_or_else(|| Error::InvalidPacketType(packet_type))?
+                PacketType::from_u8(packet_type).ok_or(PduError::InvalidPacketType(packet_type))?
             },
             packet_flags: {
                 let packet_flags = reader.read_u8()?;
-                PacketFlags::from_bits(packet_flags).ok_or_else(|| Error::InvalidPacketFlags(packet_flags))?
+                PacketFlags::from_bits(packet_flags).ok_or(PduError::InvalidPacketFlags(packet_flags))?
             },
             data_rep: DataRepr::decode(&mut reader)?,
             frag_len: reader.read_u16::<LittleEndian>()?,
@@ -256,9 +290,9 @@ impl Decode for SecurityTrailer {
 
         Ok(Self {
             security_type: SecurityProvider::from_u8(security_provider)
-                .ok_or_else(|| Error::InvalidSecurityProvider(security_provider))?,
+                .ok_or(PduError::InvalidSecurityProvider(security_provider))?,
             level: AuthenticationLevel::from_u8(authentication_level)
-                .ok_or_else(|| Error::InvalidAuthenticationLevel(authentication_level))?,
+                .ok_or(PduError::InvalidAuthenticationLevel(authentication_level))?,
             pad_length: reader.read_u8()?,
             context_id: {
                 // Skip Auth-Rsrvd.
@@ -313,7 +347,7 @@ impl Decode for Fault {
             cancel_count: reader.read_u8()?,
             flags: {
                 let fault_flags = reader.read_u8()?;
-                FaultFlags::from_bits(fault_flags).ok_or_else(|| Error::InvalidFaultFlags(fault_flags))?
+                FaultFlags::from_bits(fault_flags).ok_or(PduError::InvalidFaultFlags(fault_flags))?
             },
             status: reader.read_u32::<LittleEndian>()?,
             stub_data: read_to_end(reader)?,
@@ -348,7 +382,7 @@ impl PduData {
             PacketType::Request => Ok(PduData::Request(Request::decode(pdu_header, buf.as_slice())?)),
             PacketType::Response => Ok(PduData::Response(Response::decode(buf.as_slice())?)),
             PacketType::Fault => Ok(PduData::Fault(Fault::decode(buf.as_slice())?)),
-            packet_type => Err(Error::PduNotSupported(packet_type)),
+            packet_type => Err(PduError::PduNotSupported(packet_type))?,
         }
     }
 }
@@ -396,7 +430,7 @@ impl Decode for Pdu {
                 .checked_sub(
                     header.auth_len + 8 /* security trailer header */ + 16, /* PDU header len */
                 )
-                .ok_or_else(|| Error::InvalidFragLength(header.frag_len))?
+                .ok_or(PduError::InvalidFragLength(header.frag_len))?
                 .into(),
             &mut reader,
         )?;

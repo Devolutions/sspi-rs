@@ -1,21 +1,28 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
+use thiserror::Error;
 
-use crate::{DpapiResult, Error};
+use crate::DpapiResult;
+
+#[derive(Debug, Error)]
+pub enum SidError {
+    #[error("invalid sid value: {0}")]
+    InvalidSid(String),
+}
 
 static SID_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^S-(\d)-(\d+)(?:-\d+){1,15}$").expect("valid SID regex"));
 
 pub fn sid_to_bytes(sid: &str) -> DpapiResult<Vec<u8>> {
     if !SID_PATTERN.is_match(sid) {
-        return Err(Error::InvalidValue("SID", sid.to_owned()));
+        Err(SidError::InvalidSid(sid.to_owned()))?;
     }
 
     let parts = sid.split('-').collect::<Vec<_>>();
 
     if parts.len() < 3 {
-        return Err(Error::InvalidValue("SID", sid.to_owned()));
+        Err(SidError::InvalidSid(sid.to_owned()))?;
     }
 
     let revision = parts[1].parse::<u8>()?;

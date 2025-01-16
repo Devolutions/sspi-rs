@@ -14,12 +14,39 @@ use picky_asn1_x509::enveloped_data::{
     KeyEncryptionAlgorithmIdentifier, OtherKeyAttribute, ProtectionDescriptor, RecipientInfo, RecipientInfos,
 };
 use picky_asn1_x509::oids;
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::rpc::{read_buf, read_to_end, read_vec, write_buf, Decode, Encode, EncodeExt};
-use crate::sid_utils::{ace_to_bytes, sd_to_bytes};
-use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
+use crate::sid::{ace_to_bytes, sd_to_bytes};
+use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{DpapiResult, Error};
+
+#[derive(Debug, Error)]
+pub enum BlobError {
+    #[error("unsupported protection descriptor: {0}")]
+    UnsupportedProtectionDescriptor(String),
+
+    #[error("invalid {name}: expected {expected} but got {actual}")]
+    InvalidOid {
+        name: &'static str,
+        expected: String,
+        actual: String,
+    },
+
+    #[error("invalid {name} version: expected {expected:?} but got {actual:?}")]
+    InvalidCmsVersion {
+        name: &'static str,
+        expected: CmsVersion,
+        actual: CmsVersion,
+    },
+
+    #[error("bad recipient infos amount: expected {expected} but got {actual}")]
+    RecipientInfosAmount { expected: usize, actual: usize },
+
+    #[error("missing {0} value")]
+    MissingValue(&'static str),
+}
 
 /// Key Identifier
 ///
@@ -89,11 +116,11 @@ impl Decode for KeyIdentifier {
         read_buf(&mut reader, &mut magic)?;
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagicBytes(
-                "KeyIdentifier",
-                Self::MAGIC.as_slice(),
-                magic.to_vec(),
-            ));
+            return Err(Error::InvalidMagic {
+                name: "KeyIdentifier",
+                expected: Self::MAGIC.as_slice(),
+                actual: magic.to_vec(),
+            });
         }
 
         let flags = reader.read_u32::<LittleEndian>()?;
@@ -105,31 +132,33 @@ impl Decode for KeyIdentifier {
 
         let key_info_len = reader.read_u32::<LittleEndian>()?;
 
-        let domain_len = reader.read_u32::<LittleEndian>()?;
+        let domain_len = reader.read_u32::<LittleEndian>()?.try_into()?;
         if domain_len <= 2 {
-            return Err(Error::InvalidValue(
-                "KeyIdentifier domain name length",
-                format!("expected more than 2 bytes, but got {}", domain_len),
-            ));
+            return Err(Error::InvalidLength {
+                name: "KeyIdentifier domain name",
+                expected: 2,
+                actual: domain_len,
+            });
         }
         let domain_len = domain_len - 2 /* UTF16 null terminator */;
 
-        let forest_len = reader.read_u32::<LittleEndian>()?;
+        let forest_len = reader.read_u32::<LittleEndian>()?.try_into()?;
         if forest_len <= 2 {
-            return Err(Error::InvalidValue(
-                "KeyIdentifier forest name length",
-                format!("expected more than 2 bytes, but got {}", forest_len),
-            ));
+            return Err(Error::InvalidLength {
+                name: "KeyIdentifier forest name",
+                expected: 2,
+                actual: forest_len,
+            });
         }
         let forest_len = forest_len - 2 /* UTF16 null terminator */;
 
         let key_info = read_vec(key_info_len.try_into()?, &mut reader)?;
 
-        let domain_name = read_vec(domain_len.try_into()?, &mut reader)?;
+        let domain_name = read_vec(domain_len, &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
-        let forest_name = read_vec(forest_len.try_into()?, &mut reader)?;
+        let forest_name = read_vec(forest_len, &mut reader)?;
         // Read UTF16 null terminator.
         reader.read_u16::<LittleEndian>()?;
 
@@ -141,8 +170,8 @@ impl Decode for KeyIdentifier {
             l2,
             root_key_identifier,
             key_info,
-            domain_name: utf16_bytes_to_utf8_string(&domain_name)?,
-            forest_name: utf16_bytes_to_utf8_string(&forest_name)?,
+            domain_name: from_utf16_le(&domain_name)?,
+            forest_name: from_utf16_le(&forest_name)?,
         })
     }
 }
@@ -190,9 +219,9 @@ impl SidProtectionDescriptor {
         let general_protection_descriptor: GeneralProtectionDescriptor = picky_asn1_der::from_bytes(data)?;
 
         if general_protection_descriptor.descriptor_type.0 != oids::sid_protection_descriptor() {
-            return Err(Error::UnsupportedProtectionDescriptor(
+            Err(BlobError::UnsupportedProtectionDescriptor(
                 general_protection_descriptor.descriptor_type.0.into(),
-            ));
+            ))?;
         }
 
         let ProtectionDescriptor {
@@ -202,15 +231,15 @@ impl SidProtectionDescriptor {
             .descriptors
             .0
             .first()
-            .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?
+            .ok_or(BlobError::MissingValue("protection descriptor"))?
             .0
             .first()
-            .ok_or_else(|| Error::InvalidProtectionDescriptor("missing ASN1 sequence".into()))?;
+            .ok_or(BlobError::MissingValue("protection descriptor"))?;
 
         if descriptor_type.0.as_utf8() != "SID" {
-            return Err(Error::UnsupportedProtectionDescriptor(
+            Err(BlobError::UnsupportedProtectionDescriptor(
                 descriptor_type.0.as_utf8().to_owned(),
-            ));
+            ))?;
         }
 
         Ok(Self {
@@ -293,38 +322,38 @@ impl Decode for DpapiBlob {
             let expected_content_type: String = oids::enveloped_data().into();
             let actual_content_type: String = content_info.content_type.0.into();
 
-            return Err(Error::InvalidValue(
-                "content info type",
-                format!("expected {expected_content_type} but got {actual_content_type}"),
-            ));
+            Err(BlobError::InvalidOid {
+                name: "blob content type",
+                expected: expected_content_type,
+                actual: actual_content_type,
+            })?;
         }
 
         let enveloped_data: EnvelopedData = picky_asn1_der::from_bytes(&content_info.content.0 .0)?;
 
         if enveloped_data.version != CmsVersion::V2 {
-            return Err(Error::InvalidValue(
-                "enveloped data CMS version",
-                format!("expected {:?} but got {:?}", CmsVersion::V2, enveloped_data.version,),
-            ));
+            Err(BlobError::InvalidCmsVersion {
+                name: "enveloped data",
+                expected: CmsVersion::V2,
+                actual: enveloped_data.version,
+            })?;
         }
 
         if enveloped_data.recipient_infos.0.len() != 1 {
-            return Err(Error::InvalidValue(
-                "recipient infos",
-                format!(
-                    "expected exactly 1 recipient info but got {}",
-                    enveloped_data.recipient_infos.0.len(),
-                ),
-            ));
+            Err(BlobError::RecipientInfosAmount {
+                expected: 1,
+                actual: enveloped_data.recipient_infos.0.len(),
+            })?;
         }
 
         let RecipientInfo::Kek(kek_info) = enveloped_data.recipient_infos.0.first().unwrap();
 
         if kek_info.version != CmsVersion::V4 {
-            return Err(Error::InvalidValue(
-                "KEK info CMS version",
-                format!("expected {:?} but got {:?}", CmsVersion::V4, enveloped_data.version,),
-            ));
+            Err(BlobError::InvalidCmsVersion {
+                name: "KEK info",
+                expected: CmsVersion::V4,
+                actual: kek_info.version,
+            })?;
         }
 
         let key_identifier = KeyIdentifier::decode(&kek_info.kek_id.key_identifier.0 as &[u8])?;
@@ -335,19 +364,20 @@ impl Decode for DpapiBlob {
                 let expected_descriptor: String = oids::protection_descriptor_type().into();
                 let actual_descriptor: String = (&key_attr_id.0).into();
 
-                return Err(Error::InvalidValue(
-                    "KEK recipient info OtherAttribute OID",
-                    format!("expected {expected_descriptor} but got {actual_descriptor}"),
-                ));
+                Err(BlobError::InvalidOid {
+                    name: "KEK recipient info OtherAttribute OID",
+                    expected: expected_descriptor,
+                    actual: actual_descriptor,
+                })?;
             }
 
             if let Some(encoded_protection_descriptor) = key_attr {
                 SidProtectionDescriptor::decode_asn1(&encoded_protection_descriptor.0)?
             } else {
-                return Err(Error::MissingValue("KEK recipient info OtherAttribute"));
+                Err(BlobError::MissingValue("KEK recipient info OtherAttribute"))?
             }
         } else {
-            return Err(Error::MissingValue("KEK recipient info protection descriptor"));
+            Err(BlobError::MissingValue("KEK recipient info protection descriptor"))?
         };
 
         let enc_content = if let Some(enc_content) = enveloped_data.encrypted_content_info.encrypted_content.0 {

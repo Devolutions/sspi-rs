@@ -3,11 +3,28 @@ use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_bigint_dig::BigUint;
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
-use crate::utils::{encode_utf16_le, utf16_bytes_to_utf8_string};
+use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{DpapiResult, Error};
+
+#[derive(Debug, Error)]
+pub enum GkdiError {
+    #[error("invalid hash algorithm name: {0}")]
+    InvalidHashName(String),
+
+    #[error("invalid {name} version: expected {expected} but got {actual}")]
+    InvalidVersion {
+        name: &'static str,
+        expected: u32,
+        actual: u32,
+    },
+
+    #[error("invalid elliptic curve id")]
+    InvalidEllipticCurveId(Vec<u8>),
+}
 
 /// GetKey RPC Request
 ///
@@ -110,7 +127,7 @@ impl fmt::Display for HashAlg {
 }
 
 impl TryFrom<&str> for HashAlg {
-    type Error = Error;
+    type Error = GkdiError;
 
     fn try_from(data: &str) -> Result<Self, Self::Error> {
         match data {
@@ -118,7 +135,7 @@ impl TryFrom<&str> for HashAlg {
             "SHA256" => Ok(HashAlg::Sha256),
             "SHA384" => Ok(HashAlg::Sha384),
             "SHA512" => Ok(HashAlg::Sha512),
-            _ => Err(Error::InvalidValue("hash algorithm", data.to_owned())),
+            _ => Err(GkdiError::InvalidHashName(data.to_owned())),
         }
     }
 }
@@ -157,11 +174,11 @@ impl Decode for KdfParameters {
         read_buf(&mut reader, &mut magic_identifier_1)?;
 
         if magic_identifier_1 != Self::MAGIC_IDENTIFIER_1 {
-            return Err(Error::InvalidMagicBytes(
-                "KdfParameters::MAGIC_IDENTIFIER_1",
-                Self::MAGIC_IDENTIFIER_1,
-                magic_identifier_1.to_vec(),
-            ));
+            return Err(Error::InvalidMagic {
+                name: "KdfParameters::MAGIC_IDENTIFIER_1",
+                expected: Self::MAGIC_IDENTIFIER_1,
+                actual: magic_identifier_1.to_vec(),
+            });
         }
 
         let hash_name_len: usize = reader.read_u32::<LittleEndian>()?.try_into()?;
@@ -170,19 +187,20 @@ impl Decode for KdfParameters {
         read_buf(&mut reader, &mut magic_identifier_2)?;
 
         if magic_identifier_2 != Self::MAGIC_IDENTIFIER_2 {
-            return Err(Error::InvalidMagicBytes(
-                "KdfParameters::MAGIC_IDENTIFIER_1",
-                Self::MAGIC_IDENTIFIER_2,
-                magic_identifier_2.to_vec(),
-            ));
+            return Err(Error::InvalidMagic {
+                name: "KdfParameters::MAGIC_IDENTIFIER_1",
+                expected: Self::MAGIC_IDENTIFIER_2,
+                actual: magic_identifier_2.to_vec(),
+            });
         }
 
         // The smallest possible hash algorithm name is "SHA1\0", 10 bytes long in UTF-16 encoding.
         if hash_name_len < 10 {
-            return Err(Error::InvalidValue(
-                "KdfParameters hash algorithm name length",
-                format!("expected at least 10 bytes but got {:?}", hash_name_len),
-            ));
+            Err(Error::InvalidLength {
+                name: "KdfParameters hash id",
+                expected: 10,
+                actual: hash_name_len,
+            })?;
         }
 
         let buf = read_vec(hash_name_len - 2 /* UTF-16 null terminator char */, &mut reader)?;
@@ -190,7 +208,7 @@ impl Decode for KdfParameters {
         reader.read_u16::<LittleEndian>()?;
 
         Ok(Self {
-            hash_alg: utf16_bytes_to_utf8_string(&buf)?.as_str().try_into()?,
+            hash_alg: from_utf16_le(&buf)?.as_str().try_into()?,
         })
     }
 }
@@ -254,7 +272,11 @@ impl Decode for FfcdhParameters {
         read_buf(&mut reader, &mut magic)?;
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagicBytes("FfcdhParameters", Self::MAGIC, magic.to_vec()));
+            return Err(Error::InvalidMagic {
+                name: "FfcdhParameters",
+                expected: Self::MAGIC,
+                actual: magic.to_vec(),
+            });
         }
 
         let key_length = reader.read_u32::<LittleEndian>()?;
@@ -329,7 +351,11 @@ impl Decode for FfcdhKey {
         read_buf(&mut reader, &mut magic)?;
 
         if magic != FfcdhKey::MAGIC {
-            return Err(Error::InvalidMagicBytes("FfcdhKey", Self::MAGIC, magic.to_vec()));
+            return Err(Error::InvalidMagic {
+                name: "FfcdhKey",
+                expected: Self::MAGIC,
+                actual: magic.to_vec(),
+            });
         }
 
         let key_length = reader.read_u32::<LittleEndian>()?;
@@ -365,14 +391,14 @@ impl From<EllipticCurve> for &[u8] {
 }
 
 impl TryFrom<&[u8]> for EllipticCurve {
-    type Error = Error;
+    type Error = GkdiError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         match value {
             b"ECK1" => Ok(EllipticCurve::P256),
             b"ECK3" => Ok(EllipticCurve::P384),
             b"ECK5" => Ok(EllipticCurve::P521),
-            _ => Err(Error::InvalidValue("elliptic curve id", format!("{:?}", value))),
+            _ => Err(GkdiError::InvalidEllipticCurveId(value.to_vec())),
         }
     }
 }
@@ -535,21 +561,22 @@ impl Decode for GroupKeyEnvelope {
         let version = reader.read_u32::<LittleEndian>()?;
 
         if version != Self::VERSION {
-            return Err(Error::InvalidValue(
-                "GroupKeyEnvelope version",
-                format!("expected {} but got {}", Self::VERSION, version),
-            ));
+            Err(GkdiError::InvalidVersion {
+                name: "GroupKeyEnvelope",
+                expected: Self::VERSION,
+                actual: version,
+            })?;
         }
 
         let mut magic = [0; 4];
         read_buf(&mut reader, &mut magic)?;
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagicBytes(
-                "GroupKeyEnvelope",
-                Self::MAGIC,
-                magic.to_vec(),
-            ));
+            return Err(Error::InvalidMagic {
+                name: "GroupKeyEnvelope",
+                expected: Self::MAGIC,
+                actual: magic.to_vec(),
+            });
         }
 
         let flags = reader.read_u32::<LittleEndian>()?;

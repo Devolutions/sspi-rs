@@ -4,9 +4,33 @@ pub mod request;
 
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 
+use thiserror::Error;
 use uuid::Uuid;
 
+use self::bind::BindError;
+use self::pdu::PduError;
 use crate::{DpapiResult, Error};
+
+#[derive(Debug, Error)]
+pub enum RpcError {
+    #[error(transparent)]
+    Bind(BindError),
+
+    #[error(transparent)]
+    Pdu(PduError),
+}
+
+impl From<PduError> for Error {
+    fn from(err: PduError) -> Self {
+        Error::from(RpcError::Pdu(err))
+    }
+}
+
+impl From<BindError> for Error {
+    fn from(err: BindError) -> Self {
+        Error::from(RpcError::Bind(err))
+    }
+}
 
 pub trait Encode {
     fn encode(&self, writer: impl Write) -> DpapiResult<()>;
@@ -107,13 +131,14 @@ pub fn read_vec(len: usize, reader: impl Read) -> DpapiResult<Vec<u8>> {
 pub fn read_c_str_utf16_le(len: usize, mut reader: impl Read) -> DpapiResult<String> {
     use byteorder::{LittleEndian, ReadBytesExt};
 
-    use crate::utils::utf16_bytes_to_utf8_string;
+    use crate::str::from_utf16_le;
 
     if len < 2 {
-        return Err(Error::InvalidValue(
-            "invalid UTF-17 string length",
-            format!("expected more than 2 bytes, but got {}", len),
-        ));
+        return Err(Error::InvalidLength {
+            name: "UTF-16 string",
+            expected: 2,
+            actual: len,
+        });
     }
 
     let buf = read_vec(len - 2 /* UTF16 null terminator */, &mut reader)?;
@@ -121,5 +146,5 @@ pub fn read_c_str_utf16_le(len: usize, mut reader: impl Read) -> DpapiResult<Str
     // Read UTF16 null terminator.
     reader.read_u16::<LittleEndian>()?;
 
-    utf16_bytes_to_utf8_string(&buf)
+    from_utf16_le(&buf)
 }
