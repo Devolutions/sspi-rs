@@ -1,8 +1,11 @@
-// #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 #![allow(dead_code)]
 
-mod error;
+pub mod blob;
+pub mod error;
+pub mod gkdi;
 pub mod rpc;
+pub(crate) mod sid;
+pub(crate) mod str;
 
 pub use error::*;

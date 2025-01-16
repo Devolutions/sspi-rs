@@ -2,6 +2,32 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("invalid {name} magic bytes")]
+    InvalidMagic {
+        name: &'static str,
+        expected: &'static [u8],
+        actual: Vec<u8>,
+    },
+
+    #[error("invalid {name} length: expected at least {expected} bytes but got {actual}")]
+    InvalidLength {
+        name: &'static str,
+        expected: usize,
+        actual: usize,
+    },
+
+    #[error(transparent)]
+    Gkdi(#[from] crate::gkdi::GkdiError),
+
+    #[error(transparent)]
+    Blob(#[from] crate::blob::BlobError),
+
+    #[error(transparent)]
+    Rpc(#[from] crate::rpc::RpcError),
+
+    #[error(transparent)]
+    Sid(#[from] crate::sid::SidError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
@@ -14,38 +40,23 @@ pub enum Error {
     #[error("provided buf contains invalid UTF-8 data")]
     Utf8(#[from] std::string::FromUtf8Error),
 
-    #[error("invalid context result code value: {0}")]
-    InvalidContextResultCode(u16),
+    #[error(transparent)]
+    ParseInt(#[from] std::num::ParseIntError),
 
-    #[error("invalid integer representation value: {0}")]
-    InvalidIntRepr(u8),
+    #[error(transparent)]
+    Asn1(#[from] picky_asn1_der::Asn1DerError),
 
-    #[error("invalid character representation value: {0}")]
-    InvalidCharacterRepr(u8),
+    #[error(transparent)]
+    CharSet(#[from] picky_asn1::restricted_string::CharSetError),
 
-    #[error("invalid floating point representation value: {0}")]
-    InvalidFloatingPointRepr(u8),
+    #[error("{0}")]
+    FromUtf16(String),
+}
 
-    #[error("invalid packet type value: {0}")]
-    InvalidPacketType(u8),
-
-    #[error("invalid packet flags value: {0}")]
-    InvalidPacketFlags(u8),
-
-    #[error("invalid security provider value: {0}")]
-    InvalidSecurityProvider(u8),
-
-    #[error("invalid authentication level value: {0}")]
-    InvalidAuthenticationLevel(u8),
-
-    #[error("invalid fault flags value: {0}")]
-    InvalidFaultFlags(u8),
-
-    #[error("{0:?} PDU is not supported")]
-    PduNotSupported(crate::rpc::pdu::PacketType),
-
-    #[error("invalid fragment (PDU) length: {0}")]
-    InvalidFragLength(u16),
+impl From<std::string::FromUtf16Error> for Error {
+    fn from(err: std::string::FromUtf16Error) -> Self {
+        Self::FromUtf16(err.to_string())
+    }
 }
 
 pub type DpapiResult<T> = Result<T, Error>;

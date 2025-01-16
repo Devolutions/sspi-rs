@@ -1,4 +1,3 @@
-#[allow(unused_macros)]
 macro_rules! test_encoding_decoding {
     ($name:ident, $type:ty, $expected:expr, $data:expr) => {
         paste::paste! {
