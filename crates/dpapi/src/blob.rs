@@ -60,11 +60,11 @@ pub struct KeyIdentifier {
     pub flags: u32,
 
     /// The L0 index of the key.
-    pub l0: u32,
+    pub l0: i32,
     /// The L1 index of the key.
-    pub l1: u32,
+    pub l1: i32,
     /// The L2 index of the key.
-    pub l2: u32,
+    pub l2: i32,
     /// A GUID that identifies a root key.
     pub root_key_identifier: Uuid,
 
@@ -79,6 +79,10 @@ pub struct KeyIdentifier {
 impl KeyIdentifier {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
+
+    pub fn is_public_key(&self) -> bool {
+        self.flags & 1 != 0
+    }
 }
 
 impl Encode for KeyIdentifier {
@@ -90,9 +94,9 @@ impl Encode for KeyIdentifier {
         write_buf(&KeyIdentifier::MAGIC, &mut writer)?;
         writer.write_u32::<LittleEndian>(self.flags)?;
 
-        writer.write_u32::<LittleEndian>(self.l0)?;
-        writer.write_u32::<LittleEndian>(self.l1)?;
-        writer.write_u32::<LittleEndian>(self.l2)?;
+        writer.write_i32::<LittleEndian>(self.l0)?;
+        writer.write_i32::<LittleEndian>(self.l1)?;
+        writer.write_i32::<LittleEndian>(self.l2)?;
 
         self.root_key_identifier.encode(&mut writer)?;
 
@@ -125,9 +129,9 @@ impl Decode for KeyIdentifier {
 
         let flags = reader.read_u32::<LittleEndian>()?;
 
-        let l0 = reader.read_u32::<LittleEndian>()?;
-        let l1 = reader.read_u32::<LittleEndian>()?;
-        let l2 = reader.read_u32::<LittleEndian>()?;
+        let l0 = reader.read_i32::<LittleEndian>()?;
+        let l1 = reader.read_i32::<LittleEndian>()?;
+        let l2 = reader.read_i32::<LittleEndian>()?;
         let root_key_identifier = Uuid::decode(&mut reader)?;
 
         let key_info_len = reader.read_u32::<LittleEndian>()?;

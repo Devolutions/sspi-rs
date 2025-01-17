@@ -3,9 +3,15 @@ use std::io::{Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_bigint_dig::BigUint;
+use rand::rngs::OsRng;
+use rand::Rng;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::blob::KeyIdentifier;
+use crate::crypto::{
+    compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
+};
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{DpapiResult, Error};
@@ -24,7 +30,18 @@ pub enum GkdiError {
 
     #[error("invalid elliptic curve id")]
     InvalidEllipticCurveId(Vec<u8>),
+
+    #[error("invalid kdf algorithm name: expected {expected} but got {actual}")]
+    InvalidKdfAlgName { expected: &'static str, actual: String },
+
+    #[error("current user is not authorized to retrieve the KEK information")]
+    IsNotAuthorized,
+
+    #[error("l0 index does not match requested l0 index")]
+    InvalidL0Index,
 }
+
+const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
 /// GetKey RPC Request
 ///
@@ -107,7 +124,7 @@ impl Decode for GetKey {
 ///
 /// It contains hash algorithms that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlg {
     Sha1,
     Sha256,
@@ -470,15 +487,14 @@ pub struct GroupKeyEnvelope {
     /// by this structure might be used for encryption and decryption, otherwise it should only be used for decryption.
     /// This field is encoded using little-endian format.
     pub flags: u32,
-    /// A 32-bit unsigned integer. This field MUST be the L0 index of the key being enveloped.
+    /// This field MUST be the L0 index of the key being enveloped. This field is encoded using little-endian format.
+    pub l0: i32,
+    /// This field MUST be the L1 index of the key being enveloped, and therefore MUST be a number between 0 and 31, inclusive.
     /// This field is encoded using little-endian format.
-    pub l0: u32,
-    /// A 32-bit unsigned integer. This field MUST be the L1 index of the key being enveloped,
-    /// and therefore MUST be a number between 0 and 31, inclusive. This field is encoded using little-endian format.
-    pub l1: u32,
-    /// A 32-bit unsigned integer. This field MUST be the L2 index of the key being enveloped,
-    /// and therefore MUST be a number between 0 and 31, inclusive. This field is encoded using little-endian format.
-    pub l2: u32,
+    pub l1: i32,
+    /// This field MUST be the L2 index of the key being enveloped, and therefore MUST be a number between 0 and 31, inclusive.
+    /// This field is encoded using little-endian format.
+    pub l2: i32,
     /// A GUID containing the root key identifier of the key being enveloped.
     pub root_key_identifier: Uuid,
     /// This field MUST be the ADM element KDF algorithm name associated with the ADM element root key,
@@ -514,6 +530,91 @@ impl GroupKeyEnvelope {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: &[u8] = &[0x4B, 0x44, 0x53, 0x4B];
     const VERSION: u32 = 1;
+
+    pub fn is_public_key(&self) -> bool {
+        self.flags & 1 != 0
+    }
+
+    pub fn new_kek(&self) -> DpapiResult<(Vec<u8>, KeyIdentifier)> {
+        if self.kdf_alg != KDF_ALGORITHM_NAME {
+            Err(GkdiError::InvalidKdfAlgName {
+                expected: KDF_ALGORITHM_NAME,
+                actual: self.kdf_alg.clone(),
+            })?;
+        }
+
+        let kdf_parameters = KdfParameters::decode(self.kdf_parameters.as_slice())?;
+        let hash_alg = kdf_parameters.hash_alg;
+
+        let mut rand = OsRng;
+
+        let (kek, key_info) = if self.is_public_key() {
+            // the L2 key is the peer's public key
+
+            let mut private_key = vec![self.private_key_length.div_ceil(8).try_into()?];
+            rand.fill(private_key.as_mut_slice());
+
+            let kek = compute_kek(hash_alg, &self.secret_algorithm, &private_key, &self.l2_key)?;
+            let key_info = compute_public_key(&self.secret_algorithm, &private_key, &self.l2_key)?;
+
+            (kek, key_info)
+        } else {
+            let key_info = rand.gen::<[u8; 32]>();
+            let kek = kdf(hash_alg, &self.l2_key, KDS_SERVICE_LABEL, &key_info, 32)?;
+
+            (kek, key_info.to_vec())
+        };
+
+        Ok((
+            kek,
+            KeyIdentifier {
+                version: 1,
+                flags: self.flags,
+
+                l0: self.l0,
+                l1: self.l1,
+                l2: self.l2,
+                root_key_identifier: self.root_key_identifier,
+
+                key_info,
+                domain_name: self.domain_name.clone(),
+                forest_name: self.forest_name.clone(),
+            },
+        ))
+    }
+
+    pub fn get_kek(&self, key_identifier: &KeyIdentifier) -> DpapiResult<Vec<u8>> {
+        if self.is_public_key() {
+            Err(GkdiError::IsNotAuthorized)?;
+        }
+
+        if self.l0 != key_identifier.l0 {
+            Err(GkdiError::InvalidL0Index)?;
+        }
+
+        if self.kdf_alg != KDF_ALGORITHM_NAME {
+            Err(GkdiError::InvalidKdfAlgName {
+                expected: KDF_ALGORITHM_NAME,
+                actual: self.kdf_alg.clone(),
+            })?;
+        }
+
+        let kdf_parameters = KdfParameters::decode(self.kdf_parameters.as_slice())?;
+        let hash_alg = kdf_parameters.hash_alg;
+        let l2_key = compute_l2_key(hash_alg, key_identifier.l1, key_identifier.l2, self)?;
+
+        if key_identifier.is_public_key() {
+            Ok(compute_kek_from_public_key(
+                hash_alg,
+                &l2_key,
+                &self.secret_algorithm,
+                &key_identifier.key_info,
+                self.private_key_length.div_ceil(8).try_into()?,
+            )?)
+        } else {
+            Ok(kdf(hash_alg, &l2_key, KDS_SERVICE_LABEL, &key_identifier.key_info, 32)?)
+        }
+    }
 }
 
 impl Encode for GroupKeyEnvelope {
@@ -522,9 +623,9 @@ impl Encode for GroupKeyEnvelope {
 
         write_buf(GroupKeyEnvelope::MAGIC, &mut writer)?;
         writer.write_u32::<LittleEndian>(self.flags)?;
-        writer.write_u32::<LittleEndian>(self.l0)?;
-        writer.write_u32::<LittleEndian>(self.l1)?;
-        writer.write_u32::<LittleEndian>(self.l2)?;
+        writer.write_i32::<LittleEndian>(self.l0)?;
+        writer.write_i32::<LittleEndian>(self.l1)?;
+        writer.write_i32::<LittleEndian>(self.l2)?;
         self.root_key_identifier.encode(&mut writer)?;
 
         let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
@@ -580,9 +681,9 @@ impl Decode for GroupKeyEnvelope {
         }
 
         let flags = reader.read_u32::<LittleEndian>()?;
-        let l0 = reader.read_u32::<LittleEndian>()?;
-        let l1 = reader.read_u32::<LittleEndian>()?;
-        let l2 = reader.read_u32::<LittleEndian>()?;
+        let l0 = reader.read_i32::<LittleEndian>()?;
+        let l1 = reader.read_i32::<LittleEndian>()?;
+        let l2 = reader.read_i32::<LittleEndian>()?;
         let root_key_identifier = Uuid::decode(&mut reader)?;
 
         let kdf_alg_len = reader.read_u32::<LittleEndian>()?;
