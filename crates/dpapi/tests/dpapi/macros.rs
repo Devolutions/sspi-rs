@@ -11,7 +11,7 @@ macro_rules! test_encoding_decoding {
                 let encoded = parsed.encode_to_vec().unwrap();
 
                 assert_eq!($expected, parsed);
-                assert_eq!(data.as_ref(), &encoded);
+                assert_eq!(data[..], encoded[..]);
             }
         }
     };

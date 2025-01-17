@@ -22,6 +22,20 @@ picky-asn1.workspace = true
 picky-asn1-der.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 num-bigint-dig.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+rand.workspace = true
+hmac.workspace = true
+
+rust-kbkdf = { version = "1.1", git = "https://gitlab.com/TheBestTvarynka/rust-kbkdf.git", branch = "fix-key-generation" }
+elliptic-curve = { version = "0.13", features = ["sec1", "std"] }
+p521 = { version = "0.13", features = ["ecdh"] }
+p256 = { version = "0.13", features = ["ecdh"] }
+p384 = { version = "0.13", features = ["ecdh"] }
+concat-kdf = { version = "0.1", features = ["std"] }
+typenum = "1.17"
+aes-kw = { version = "0.2", features = ["std"] }
+aes-gcm = { version = "0.10", features = ["std"] }
 
 thiserror = "2.0"
 regex = "1.11"
