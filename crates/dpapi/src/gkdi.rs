@@ -487,14 +487,13 @@ pub struct GroupKeyEnvelope {
     /// by this structure might be used for encryption and decryption, otherwise it should only be used for decryption.
     /// This field is encoded using little-endian format.
     pub flags: u32,
-    /// A 32-bit unsigned integer. This field MUST be the L0 index of the key being enveloped.
-    /// This field is encoded using little-endian format.
+    /// This field MUST be the L0 index of the key being enveloped. This field is encoded using little-endian format.
     pub l0: i32,
-    /// A 32-bit unsigned integer. This field MUST be the L1 index of the key being enveloped,
-    /// and therefore MUST be a number between 0 and 31, inclusive. This field is encoded using little-endian format.
+    /// This field MUST be the L1 index of the key being enveloped, and therefore MUST be a number between 0 and 31, inclusive.
+    /// This field is encoded using little-endian format.
     pub l1: i32,
-    /// A 32-bit unsigned integer. This field MUST be the L2 index of the key being enveloped,
-    /// and therefore MUST be a number between 0 and 31, inclusive. This field is encoded using little-endian format.
+    /// This field MUST be the L2 index of the key being enveloped, and therefore MUST be a number between 0 and 31, inclusive.
+    /// This field is encoded using little-endian format.
     pub l2: i32,
     /// A GUID containing the root key identifier of the key being enveloped.
     pub root_key_identifier: Uuid,

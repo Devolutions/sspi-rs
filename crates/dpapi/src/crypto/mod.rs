@@ -10,7 +10,7 @@ use rand::Rng;
 use thiserror::Error;
 use uuid::Uuid;
 
-use self::hmac_sha_prf::*;
+use self::hmac_sha_prf::{HmacSha1Prf, HmacSha256Prf, HmacSha384Prf, HmacSha512Prf, HmacShaPrfKey};
 use crate::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
 use crate::rpc::{Decode, EncodeExt};
 use crate::str::encode_utf16_le;
