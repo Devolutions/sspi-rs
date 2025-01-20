@@ -52,6 +52,7 @@ pub fn complete_authenticate(context: &mut Ntlm) -> crate::Result<SecurityStatus
         session_key.as_ref(),
     )?;
 
+    context.session_key = Some(session_key);
     context.state = NtlmState::Final;
 
     Ok(SecurityStatus::Ok)
