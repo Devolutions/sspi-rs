@@ -292,6 +292,27 @@ impl Sspi for SspiCredSsp {
             "ChangePassword is not supported in SspiCredSsp context",
         ))
     }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
+    fn make_signature(
+        &mut self,
+        _flags: u32,
+        _message: &mut [SecurityBuffer],
+        _sequence_number: u32,
+    ) -> crate::Result<()> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "make_signature is not supported",
+        ))
+    }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
+    fn verify_signature(&mut self, _message: &mut [SecurityBuffer], _sequence_number: u32) -> crate::Result<u32> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "verify_signature is not supported",
+        ))
+    }
 }
 
 impl SspiImpl for SspiCredSsp {

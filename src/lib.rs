@@ -81,6 +81,8 @@ mod utils;
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
 
+use std::{error, fmt, io, result, str, string};
+
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
@@ -92,7 +94,6 @@ use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
 pub use security_buffer::SecurityBuffer;
-use std::{error, fmt, io, result, str, string};
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
@@ -601,6 +602,224 @@ where
         message: &mut [SecurityBuffer],
         sequence_number: u32,
     ) -> Result<SecurityStatus>;
+
+    /// Generates a cryptographic checksum of the message, and also includes sequencing information to prevent message loss or insertion.
+    /// The function allows the application to choose between several cryptographic algorithms, if supported by the chosen mechanism.
+    ///
+    /// # Parameters
+    /// * `flags`: package-specific flags that indicate the quality of protection. A security package can use this parameter to enable the selection of cryptographic algorithms
+    /// * `message`: On input, the structure references one or more `SecurityBuffer` structures of `type SecurityBufferType::Data` that contain the message to be signed,
+    ///     and a `SecurityBuffer` of type `SecurityBufferType::Token` that receives the signature.
+    /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
+    ///
+    /// # Returns
+    /// * `SspiOk` on success
+    /// * `Error` on error
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut client_ntlm = sspi::Ntlm::new();
+    /// let mut ntlm = sspi::Ntlm::new();
+    ///
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = client_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut client_ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut server_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// loop {
+    ///     client_output_buffer[0].buffer.clear();
+    ///
+    ///     let mut builder = client_ntlm.initialize_security_context()
+    ///         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(
+    ///             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///         )
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_target_name("user")
+    ///         .with_input(&mut server_output_buffer)
+    ///         .with_output(&mut client_output_buffer);
+    ///
+    ///     let _client_result = client_ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
+    ///     let server_result = ntlm
+    ///         .accept_security_context()
+    ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_input(&mut client_output_buffer)
+    ///         .with_output(&mut server_output_buffer)
+    ///         .execute(&mut ntlm)
+    ///         .unwrap();
+    ///
+    ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
+    ///         || server_result.status == sspi::SecurityStatus::CompleteNeeded
+    ///     {
+    ///         break;
+    ///     }
+    /// }
+    ///
+    /// let _result = ntlm
+    ///     .complete_auth_token(&mut server_output_buffer)
+    ///     .unwrap();
+    ///
+    /// let mut token = [0; 128];
+    /// let mut data = "This is a message to be signed".as_bytes().to_vec();
+    /// let mut msg_buffer = vec![
+    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    /// ];
+    ///
+    /// println!("Input data: {:?}", msg_buffer[1].data());
+    ///
+    /// #[allow(unused_variables)]
+    /// let result = ntlm
+    ///     .make_signature(0, &mut msg_buffer, 0).unwrap();
+    ///
+    /// println!("Data signature: {:?}", msg_buffer[0].data());
+    /// ```
+    ///
+    /// # MSDN
+    /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
+    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBuffer], sequence_number: u32)
+        -> crate::Result<()>;
+
+    /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
+    ///
+    /// # Parameters
+    /// * `message`: On input, the structure references one or more `SecurityBuffer` structures of `type SecurityBufferType::Data` that contain the message to be verified,
+    ///     and a `SecurityBuffer` of type `SecurityBufferType::Token` that contains the signature.
+    /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
+    ///
+    /// # Returns
+    /// * `u32` package-specific flags that indicate the quality of protection.
+    /// * `Error` on error
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sspi::Sspi;
+    /// use sspi::Username;
+    /// use sspi::builders::EmptyInitializeSecurityContext;
+    /// use sspi::SspiImpl;
+    ///
+    /// let mut ntlm = sspi::Ntlm::new();
+    /// let mut server_ntlm = sspi::Ntlm::new();
+    ///
+    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    ///
+    /// let identity = sspi::AuthIdentity {
+    ///     username: Username::parse("user").unwrap(),
+    ///     password: "password".to_string().into(),
+    /// };
+    ///
+    /// let mut client_acq_cred_result = ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Outbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut ntlm)
+    ///     .unwrap();
+    ///
+    /// let mut server_acq_cred_result = server_ntlm
+    ///     .acquire_credentials_handle()
+    ///     .with_credential_use(sspi::CredentialUse::Inbound)
+    ///     .with_auth_data(&identity)
+    ///     .execute(&mut server_ntlm)
+    ///     .unwrap();
+    ///
+    /// loop {
+    ///     client_output_buffer[0].buffer.clear();
+    ///
+    ///     let mut builder = ntlm.initialize_security_context()
+    ///         .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(
+    ///             sspi::ClientRequestFlags::CONFIDENTIALITY | sspi::ClientRequestFlags::ALLOCATE_MEMORY,
+    ///         )
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_target_name("user")
+    ///         .with_input(&mut server_output_buffer)
+    ///         .with_output(&mut client_output_buffer);
+    ///
+    ///     let _client_result = ntlm.initialize_security_context_impl(&mut builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
+    ///         .unwrap();
+    ///
+    ///     let server_result = server_ntlm
+    ///         .accept_security_context()
+    ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
+    ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
+    ///         .with_target_data_representation(sspi::DataRepresentation::Native)
+    ///         .with_input(&mut client_output_buffer)
+    ///         .with_output(&mut server_output_buffer)
+    ///         .execute(&mut server_ntlm)
+    ///         .unwrap();
+    ///
+    ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
+    ///         || server_result.status == sspi::SecurityStatus::CompleteNeeded
+    ///     {
+    ///         break;
+    ///     }
+    /// }
+    ///
+    /// let _result = server_ntlm
+    ///     .complete_auth_token(&mut server_output_buffer)
+    ///     .unwrap();
+    ///
+    /// let mut token = [0; 128];
+    /// let mut data = "This is a message".as_bytes().to_vec();
+    /// let mut msg = [
+    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    /// ];
+    ///
+    /// let _result = server_ntlm
+    ///     .make_signature(0, &mut msg, 0).unwrap();
+    ///
+    /// let [mut token, mut data] = msg;
+    ///
+    /// let mut msg_buffer = vec![
+    ///     sspi::SecurityBuffer::Token(token.take_data()),
+    ///     sspi::SecurityBuffer::Data(data.take_data()),
+    /// ];
+    ///
+    /// #[allow(unused_variables)]
+    /// let signature_flags = ntlm
+    ///     .verify_signature(&mut msg_buffer, 0)
+    ///     .unwrap();
+    ///
+    /// println!("Signature calculated and verified.");
+    /// ```
+    ///
+    /// # MSDN
+    /// * [VerifySignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-verifysignature)
+    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32>;
 
     /// Decrypts a message. Some packages do not encrypt and decrypt messages but rather perform and check an integrity hash.
     ///

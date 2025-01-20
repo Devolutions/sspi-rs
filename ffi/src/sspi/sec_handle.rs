@@ -191,6 +191,25 @@ impl Sspi for SspiHandle {
         let mut context = self.sspi_context.lock()?;
         Ok(context.change_password_sync(change_password).into())
     }
+
+    fn make_signature(
+        &mut self,
+        _flags: u32,
+        _message: &mut [sspi::SecurityBuffer],
+        _sequence_number: u32,
+    ) -> Result<()> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "make_signature is not supported",
+        ))
+    }
+
+    fn verify_signature(&mut self, _message: &mut [sspi::SecurityBuffer], _sequence_number: u32) -> Result<u32> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "verify_signature is not supported",
+        ))
+    }
 }
 
 pub struct CredentialsHandle {

@@ -226,6 +226,54 @@ fn decrypt_message_fails_on_incorrect_sealing_key() {
 }
 
 #[test]
+fn make_signature_verified_by_verify_signature() {
+    let mut sender = Ntlm::new();
+    let mut reciever = Ntlm::new();
+
+    sender.send_signing_key = SIGNING_KEY;
+    sender.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
+
+    reciever.recv_signing_key = SIGNING_KEY;
+    reciever.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
+
+    let mut plain_test_data = TEST_DATA.to_vec();
+    let mut signature_test_data = [0u8; 16];
+    let mut make_signature_buffers = vec![
+        SecurityBuffer::Data(&mut plain_test_data),
+        SecurityBuffer::Token(&mut signature_test_data),
+    ];
+    assert!(sender
+        .make_signature(0, &mut make_signature_buffers, TEST_SEQ_NUM)
+        .is_ok());
+
+    let mut verify_signature_buffers = vec![
+        SecurityBuffer::Data(&mut plain_test_data),
+        SecurityBuffer::Token(&mut signature_test_data),
+    ];
+    assert!(reciever
+        .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
+        .is_ok());
+}
+
+#[test]
+fn verify_signature_fails_on_invalid_signature() {
+    let mut context = Ntlm::new();
+
+    context.recv_signing_key = SIGNING_KEY;
+    context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
+
+    let mut test_data = TEST_DATA.to_vec();
+    let mut token = [
+        0x01, 0x00, 0x00, 0x00, 0x2e, 0xdf, 0xff, 0x61, 0x29, 0xd6, 0x4d, 0xa9, 0xd2, 0x02, 0x96, 0x49,
+    ];
+
+    let mut verify_signature_buffers = vec![SecurityBuffer::Data(&mut test_data), SecurityBuffer::Token(&mut token)];
+    assert!(context
+        .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
+        .is_err());
+}
+
+#[test]
 fn initialize_security_context_wrong_state_negotiate() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Negotiate;

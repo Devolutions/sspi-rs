@@ -368,6 +368,46 @@ impl Ntlm {
             expiry: None,
         })
     }
+
+    fn compute_checksum(
+        &mut self,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+        digest: &[u8; 16],
+    ) -> crate::Result<()> {
+        let checksum = self
+            .send_sealing_key
+            .as_mut()
+            .unwrap()
+            .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
+
+        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        if signature_buffer.buf_len() < SIGNATURE_SIZE {
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the token buffer is too small"));
+        }
+        let signature = compute_signature(&checksum, sequence_number);
+        signature_buffer.write_data(signature.as_slice())?;
+
+        Ok(())
+    }
+
+    fn check_signature(&mut self, sequence_number: u32, digest: &[u8; 16], signature: &[u8]) -> crate::Result<()> {
+        let checksum = self
+            .recv_sealing_key
+            .as_mut()
+            .unwrap()
+            .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
+        let expected_signature = compute_signature(&checksum, sequence_number);
+
+        if signature != expected_signature.as_ref() {
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
+                "signature verification failed, something nasty is going on",
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 impl Sspi for Ntlm {
@@ -398,18 +438,7 @@ impl Sspi for Ntlm {
         }
         data.write_data(&encrypted_data)?;
 
-        let checksum = self
-            .send_sealing_key
-            .as_mut()
-            .unwrap()
-            .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
-
-        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
-        if signature_buffer.buf_len() < SIGNATURE_SIZE {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
-        }
-        let signature = compute_signature(&checksum, sequence_number);
-        signature_buffer.write_data(signature.as_slice())?;
+        self.compute_checksum(message, sequence_number, &digest)?;
 
         Ok(SecurityStatus::Ok)
     }
@@ -437,19 +466,7 @@ impl Sspi for Ntlm {
         save_decrypted_data(&decrypted, message)?;
 
         let digest = compute_digest(&self.recv_signing_key, sequence_number, &decrypted)?;
-        let checksum = self
-            .recv_sealing_key
-            .as_mut()
-            .unwrap()
-            .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
-        let expected_signature = compute_signature(&checksum, sequence_number);
-
-        if signature != expected_signature.as_ref() {
-            return Err(Error::new(
-                ErrorKind::MessageAltered,
-                "Signature verification failed, something nasty is going on!",
-            ));
-        }
+        self.check_signature(sequence_number, &digest, signature)?;
 
         Ok(DecryptionFlags::empty())
     }
@@ -502,6 +519,42 @@ impl Sspi for Ntlm {
             ErrorKind::UnsupportedFunction,
             "NTLM does not support change pasword",
         ))
+    }
+
+    fn make_signature(
+        &mut self,
+        _flags: u32,
+        message: &mut [SecurityBuffer],
+        sequence_number: u32,
+    ) -> crate::Result<()> {
+        if self.send_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
+        SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?; // check if exists
+
+        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
+
+        self.compute_checksum(message, sequence_number, &digest)?;
+
+        Ok(())
+    }
+
+    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32> {
+        if self.recv_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
+        SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?; // check if exists
+
+        let data = SecurityBuffer::find_buffer(message, SecurityBufferType::Data)?;
+        let digest = compute_digest(&self.recv_signing_key, sequence_number, data.data())?;
+
+        let signature = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
+        self.check_signature(sequence_number, &digest, signature.data())?;
+
+        Ok(0)
     }
 }
 
