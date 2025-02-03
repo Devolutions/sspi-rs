@@ -155,7 +155,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
-            format!("Queried info about unknown package: {:?}", s),
+            format!("queried info about unknown package: {:?}", s),
         )),
     }
 }
@@ -1311,7 +1311,7 @@ impl OwnedSecurityBuffer {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {:?}", buffer_type),
                 )
             })
     }
@@ -1326,7 +1326,7 @@ impl OwnedSecurityBuffer {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {:?}", buffer_type),
                 )
             })
     }
@@ -1429,7 +1429,7 @@ impl OwnedSecurityBufferType {
         let buffer_flags = SecurityBufferFlags::from_bits(buffer_flags).ok_or_else(|| {
             Error::new(
                 ErrorKind::InternalError,
-                format!("Invalid SecurityBufferFlags: {}", buffer_flags),
+                format!("invalid SecurityBufferFlags: {}", buffer_flags),
             )
         })?;
 
@@ -1923,7 +1923,7 @@ impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected RsaError happened: {}", value),
+            format!("an unexpected RsaError happened: {}", value),
         )
     }
 }
@@ -2027,13 +2027,13 @@ impl From<io::Error> for Error {
 
 impl From<rand::Error> for Error {
     fn from(err: rand::Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("Rand error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
     }
 }
 
 impl From<std::str::Utf8Error> for Error {
     fn from(err: std::str::Utf8Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-8 error: {:?}", err))
+        Self::new(ErrorKind::InternalError, err)
     }
 }
 
@@ -2060,13 +2060,13 @@ impl From<Error> for io::Error {
 
 impl From<std::num::TryFromIntError> for Error {
     fn from(_: std::num::TryFromIntError) -> Self {
-        Self::new(ErrorKind::InternalError, "Integer conversion error")
+        Self::new(ErrorKind::InternalError, "integer conversion error")
     }
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {
     fn from(_: std::sync::PoisonError<T>) -> Self {
-        Self::new(ErrorKind::InternalError, "Can not lock SspiHandle mutex")
+        Self::new(ErrorKind::InternalError, "can not lock SspiHandle mutex")
     }
 }
 
