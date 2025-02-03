@@ -153,10 +153,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
 
     let mut pa_datas = if *with_pre_auth {
         let current_date = OffsetDateTime::now_utc();
-        let mut microseconds = current_date.microsecond();
-        if microseconds > MAX_MICROSECONDS_IN_SECOND {
-            microseconds = MAX_MICROSECONDS_IN_SECOND;
-        }
+        let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
 
         let timestamp = PaEncTsEnc {
             patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
@@ -590,10 +587,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 #[instrument(level = "trace", skip_all, ret)]
 pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &EncryptionParams) -> Result<ApRep> {
     let current_date = OffsetDateTime::now_utc();
-    let mut microseconds = current_date.microsecond();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
-    }
+    let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
 
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
 

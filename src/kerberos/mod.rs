@@ -240,7 +240,10 @@ impl Kerberos {
         let neg_token_targ = generate_final_neg_token_targ(Some(generate_initiator_raw(
             picky_asn1_der::to_vec(&get_mech_list())?,
             self.seq_number as u64,
-            self.encryption_params.sub_session_key.as_ref().unwrap(),
+            self.encryption_params
+                .sub_session_key
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
         )?));
 
         let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
