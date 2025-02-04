@@ -1,0 +1,55 @@
+name: Release crates
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+jobs:
+  # Create a PR with the new versions and changelog, preparing the next release.
+  open-pr:
+    name: Open release PR
+    runs-on: ubuntu-latest
+    environment: cratesio-publish
+
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 512
+
+      - name: Run release-plz
+        id: release-plz
+        uses: Devolutions/actions-public/release-plz@v1
+        with:
+          command: release-pr
+          git-name: Devolutions Bot
+          git-email: bot@devolutions.net
+          github-token: ${{ secrets.DEVOLUTIONSBOT_WRITE_TOKEN }}
+
+  # Release unpublished packages.
+  release:
+    name: Release crates
+    runs-on: ubuntu-latest
+    environment: cratesio-publish
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 512
+
+      - name: Run release-plz
+        uses: Devolutions/actions-public/release-plz@v1
+        with:
+          command: release
+          registry-token: ${{ secrets.CRATES_IO_TOKEN }}
