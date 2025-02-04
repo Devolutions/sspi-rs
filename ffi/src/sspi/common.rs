@@ -396,7 +396,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
         to_buffer.buffer_type = from_buffer.owned_security_buffer_type().into();
         to_buffer.cb_buffer = from_buffer_len.try_into()?;
 
-        if from_buffer.buffer_type() == BufferType::Missing {
+        if from_buffer.buffer_type() != BufferType::Missing {
             // We don't need to copy the actual content of the buffer because [from_buffer] is created
             // from the C-input-buffer and all decryption is performed in-place.
             to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
