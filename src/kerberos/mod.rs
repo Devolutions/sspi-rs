@@ -320,7 +320,7 @@ impl Sspi for Kerberos {
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
-        let mut payload = data_to_encrypt.into_iter().fold(Vec::new(), |mut acc, buffer| {
+        let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
             acc.extend_from_slice(buffer.data());
             acc
         });
@@ -333,9 +333,8 @@ impl Sspi for Kerberos {
         } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
-            .into_iter()
-            .fold(confounder, |mut acc, buffer| {
+        let data_to_sign =
+            SecurityBuffer::buffers_with_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
@@ -353,12 +352,6 @@ impl Sspi for Kerberos {
         let mut raw_wrap_token = Vec::with_capacity(92);
         wrap_token.encode(&mut raw_wrap_token)?;
 
-        let mut data_buffers =
-            SecurityBuffer::buffers_with_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE);
-        let data_buffer = data_buffers
-            .first_mut()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
-
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
                 if raw_wrap_token.len() < SECURITY_TRAILER {
@@ -366,7 +359,17 @@ impl Sspi for Kerberos {
                 }
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+
+                let data_buffer = SecurityBuffer::buffers_with_type_and_flags_mut(
+                    message,
+                    BufferType::Data,
+                    SecurityBufferFlags::NONE,
+                )
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
+
                 data_buffer.write_data(data)?;
+
                 let token_buffer = SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
@@ -413,9 +416,8 @@ impl Sspi for Kerberos {
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
-            .into_iter()
-            .fold(confounder, |mut acc, buffer| {
+        let data_to_sign =
+            SecurityBuffer::buffers_with_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
                 if buffer
                     .buffer_flags()
                     .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)

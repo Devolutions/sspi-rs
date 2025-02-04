@@ -275,7 +275,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
     } else {
         let mut data_buffers =
             SecurityBuffer::buffers_with_type_and_flags_mut(buffers, BufferType::Data, SecurityBufferFlags::NONE);
-        let data_buffer = data_buffers.first_mut().ok_or_else(|| {
+        let data_buffer = data_buffers.next().ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidToken,
                 "no buffer was provided with type Data and without READONLY_WITH_CHECKSUM flag",
@@ -313,7 +313,7 @@ pub fn extract_encrypted_data(buffers: &[SecurityBuffer]) -> Result<Vec<u8>> {
 
             // Find `Data` buffers but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
             SecurityBuffer::buffers_with_type_and_flags(buffers, BufferType::Data, SecurityBufferFlags::NONE)
-                .first_mut()
+                .next()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?
                 .data()
         },

@@ -389,9 +389,8 @@ impl Sspi for Ntlm {
         // check if exists
         SecurityBuffer::find_buffer_mut(message, BufferType::Token)?;
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
-            .into_iter()
-            .fold(Vec::new(), |mut acc, buffer| {
+        let data_to_sign =
+            SecurityBuffer::buffers_with_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
@@ -399,11 +398,10 @@ impl Sspi for Ntlm {
         let digest = compute_digest(&self.send_signing_key, sequence_number, &data_to_sign)?;
 
         // Find `Data` buffers without the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
-        let mut data_buffers =
-            SecurityBuffer::buffers_with_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE);
-        let data = data_buffers
-            .first_mut()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
+        let data =
+            SecurityBuffer::buffers_with_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE)
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
         let encrypted_data = self.send_sealing_key.as_mut().unwrap().process(data.data());
         if encrypted_data.len() < data.buf_len() {
@@ -450,9 +448,8 @@ impl Sspi for Ntlm {
         save_decrypted_data(&decrypted, message)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign = SecurityBuffer::buffers_with_type(message, BufferType::Data)
-            .into_iter()
-            .fold(Vec::new(), |mut acc, buffer| {
+        let data_to_sign =
+            SecurityBuffer::buffers_with_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
                 if buffer
                     .buffer_flags()
                     .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)

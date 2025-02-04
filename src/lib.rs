@@ -1400,7 +1400,7 @@ bitflags! {
 /// Security buffer type.
 ///
 /// Contains the actual security buffer type and its flags.
-#[derive(Clone, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Eq, PartialEq, Default)]
 pub struct OwnedSecurityBufferType {
     /// Security buffer type.
     pub buffer_type: BufferType,
@@ -1413,8 +1413,12 @@ impl OwnedSecurityBufferType {
     ///
     /// [`SecBuffer` structure (sspi.h)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
     pub const SECBUFFER_ATTRMASK: u32 = 0xf0000000;
+}
 
-    pub fn from_u32(value: u32) -> Result<Self> {
+impl TryFrom<u32> for OwnedSecurityBufferType {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self> {
         use num_traits::cast::FromPrimitive;
 
         let buffer_type = value & !Self::SECBUFFER_ATTRMASK;
@@ -1438,11 +1442,13 @@ impl OwnedSecurityBufferType {
             buffer_flags,
         })
     }
+}
 
-    pub fn to_u32(&self) -> u32 {
+impl From<OwnedSecurityBufferType> for u32 {
+    fn from(value: OwnedSecurityBufferType) -> u32 {
         use num_traits::cast::ToPrimitive;
 
-        self.buffer_type.to_u32().unwrap() | self.buffer_flags.bits()
+        value.buffer_type.to_u32().unwrap() | value.buffer_flags.bits()
     }
 }
 

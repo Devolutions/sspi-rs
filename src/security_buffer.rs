@@ -259,16 +259,16 @@ impl<'data> SecurityBuffer<'data> {
     pub fn buffers_with_type<'a>(
         buffers: &'a [SecurityBuffer<'data>],
         buffer_type: BufferType,
-    ) -> Vec<&'a SecurityBuffer<'data>> {
-        buffers.iter().filter(|b| b.buffer_type() == buffer_type).collect()
+    ) -> impl Iterator<Item = &'a SecurityBuffer<'data>> {
+        buffers.iter().filter(move |b| b.buffer_type() == buffer_type)
     }
 
     /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type.
     pub fn buffers_with_type_mut<'a>(
         buffers: &'a mut [SecurityBuffer<'data>],
         buffer_type: BufferType,
-    ) -> Vec<&'a mut SecurityBuffer<'data>> {
-        buffers.iter_mut().filter(|b| b.buffer_type() == buffer_type).collect()
+    ) -> impl Iterator<Item = &'a mut SecurityBuffer<'data>> {
+        buffers.iter_mut().filter(move |b| b.buffer_type() == buffer_type)
     }
 
     /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type and flags.
@@ -276,11 +276,10 @@ impl<'data> SecurityBuffer<'data> {
         buffers: &'a [SecurityBuffer<'data>],
         buffer_type: BufferType,
         buffer_flags: SecurityBufferFlags,
-    ) -> Vec<&'a SecurityBuffer<'data>> {
+    ) -> impl Iterator<Item = &'a SecurityBuffer<'data>> {
         buffers
             .iter()
-            .filter(|b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
-            .collect()
+            .filter(move |b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
     }
 
     /// Returns the vector of immutable references to the [SecurityBuffer] with specified buffer type and flags.
@@ -288,11 +287,10 @@ impl<'data> SecurityBuffer<'data> {
         buffers: &'a mut [SecurityBuffer<'data>],
         buffer_type: BufferType,
         buffer_flags: SecurityBufferFlags,
-    ) -> Vec<&'a mut SecurityBuffer<'data>> {
+    ) -> impl Iterator<Item = &'a mut SecurityBuffer<'data>> {
         buffers
             .iter_mut()
-            .filter(|b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
-            .collect()
+            .filter(move |b| b.buffer_type() == buffer_type && b.buffer_flags() == buffer_flags)
     }
 
     /// Returns the mutable reference to the [SecurityBuffer] with specified buffer type.

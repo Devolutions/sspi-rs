@@ -4,7 +4,7 @@ use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
     BufferType, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer,
-    OwnedSecurityBufferType, SecurityBuffer, SecurityBufferType, ServerRequestFlags, Sspi,
+    OwnedSecurityBufferType, SecurityBuffer, ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -350,11 +350,11 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
     let mut buffers = Vec::with_capacity(raw_buffers.len());
 
     for raw_buffer in raw_buffers {
-        let buf = SecurityBuffer::with_owned_security_buffer_type(OwnedSecurityBufferType::from_u32(
+        let buf = SecurityBuffer::with_owned_security_buffer_type(OwnedSecurityBufferType::try_from(
             raw_buffer.buffer_type,
         )?)?;
 
-        buffers.push(if let SecurityBufferType::Missing(_) = buf.buffer_type {
+        buffers.push(if BufferType::Missing == buf.buffer_type() {
             // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
             SecurityBuffer::missing_buf(raw_buffer.cb_buffer.try_into()?)
@@ -387,16 +387,16 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
         // So, we don't need to copy any data and we skip it.
         //
         // The `SECBUFFER_STREAM` usage example: https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
-        if matches!(from_buffer.buffer_type, SecurityBufferType::Stream(_)) {
+        if from_buffer.buffer_type() == BufferType::Stream {
             continue;
         }
 
         let from_buffer_len = from_buffer.buf_len();
 
-        to_buffer.buffer_type = from_buffer.owned_security_buffer_type().to_u32();
+        to_buffer.buffer_type = from_buffer.owned_security_buffer_type().into();
         to_buffer.cb_buffer = from_buffer_len.try_into()?;
 
-        if !matches!(from_buffer.buffer_type, SecurityBufferType::Missing(_)) {
+        if from_buffer.buffer_type() == BufferType::Missing {
             // We don't need to copy the actual content of the buffer because [from_buffer] is created
             // from the C-input-buffer and all decryption is performed in-place.
             to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
