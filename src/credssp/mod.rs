@@ -28,7 +28,7 @@ use crate::{
     BufferType, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes,
     CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error,
     ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
-    InitializeSecurityContextResult, Negotiate, NegotiateConfig, OwnedSecurityBuffer, PackageInfo, SecurityBuffer,
+    InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferRef,
     SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
 
@@ -276,11 +276,11 @@ impl CredSspClient {
 
         match self.state {
             CredSspState::NegoToken => {
-                let mut input_token = [OwnedSecurityBuffer::new(
+                let mut input_token = [SecurityBuffer::new(
                     ts_request.nego_tokens.take().unwrap_or_default(),
                     BufferType::Token,
                 )];
-                let mut output_token = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
+                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let cred_ssp_context = self
@@ -503,8 +503,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             }
             CredSspState::NegoToken => {
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
-                let input_token = OwnedSecurityBuffer::new(input, BufferType::Token);
-                let mut output_token = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
+                let input_token = SecurityBuffer::new(input, BufferType::Token);
+                let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
@@ -799,7 +799,7 @@ impl<'a> SspiContext {
 
 impl Sspi for SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
-    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> crate::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
             SspiContext::Kerberos(kerberos) => kerberos.complete_auth_token(token),
@@ -814,7 +814,7 @@ impl Sspi for SspiContext {
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         match self {
@@ -830,7 +830,7 @@ impl Sspi for SspiContext {
     #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         match self {
@@ -1158,8 +1158,8 @@ impl CredSspContext {
         let mut data = input.to_vec();
 
         let mut buffers = vec![
-            SecurityBuffer::token_buf(token.as_mut_slice()),
-            SecurityBuffer::data_buf(data.as_mut_slice()),
+            SecurityBufferRef::token_buf(token.as_mut_slice()),
+            SecurityBufferRef::data_buf(data.as_mut_slice()),
         ];
 
         let send_seq_num = self.send_seq_num;
@@ -1167,10 +1167,10 @@ impl CredSspContext {
         self.sspi_context
             .encrypt_message(EncryptionFlags::empty(), &mut buffers, send_seq_num)?;
 
-        let mut output = SecurityBuffer::find_buffer(&buffers, BufferType::Token)?
+        let mut output = SecurityBufferRef::find_buffer(&buffers, BufferType::Token)?
             .data()
             .to_vec();
-        output.extend_from_slice(SecurityBuffer::find_buffer_mut(&mut buffers, BufferType::Data)?.data());
+        output.extend_from_slice(SecurityBufferRef::find_buffer_mut(&mut buffers, BufferType::Data)?.data());
 
         self.send_seq_num += 1;
 
@@ -1180,13 +1180,16 @@ impl CredSspContext {
     fn decrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
         let mut input = input.to_vec();
         let (signature, data) = input.split_at_mut(SIGNATURE_SIZE);
-        let mut buffers = vec![SecurityBuffer::data_buf(data), SecurityBuffer::token_buf(signature)];
+        let mut buffers = vec![
+            SecurityBufferRef::data_buf(data),
+            SecurityBufferRef::token_buf(signature),
+        ];
 
         let recv_seq_num = self.recv_seq_num;
 
         self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 
-        let output = SecurityBuffer::buf_data(&buffers, BufferType::Data)?.to_vec();
+        let output = SecurityBufferRef::buf_data(&buffers, BufferType::Data)?.to_vec();
 
         self.recv_seq_num += 1;
 

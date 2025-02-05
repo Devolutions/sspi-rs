@@ -3,8 +3,8 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
-    BufferType, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, OwnedSecurityBuffer,
-    OwnedSecurityBufferType, SecurityBuffer, ServerRequestFlags, Sspi,
+    BufferType, DataRepresentation, DecryptionFlags, EncryptionFlags, ErrorKind, SecurityBuffer, SecurityBufferRef,
+    SecurityBufferType, ServerRequestFlags, Sspi,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -78,7 +78,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         let mut input_tokens =
             p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize));
 
-        let mut output_tokens = vec![OwnedSecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
+        let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
         let result_status = sspi_context.accept_security_context()
             .with_credentials_handle(&mut Some(auth_data))
@@ -341,23 +341,22 @@ pub unsafe extern "system" fn DecryptMessage(
     }
 }
 
-/// Creates a vector of [SecurityBuffer]s from the input C buffers.
+/// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
 /// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.
 #[allow(clippy::useless_conversion)]
-unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBuffer>> {
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBufferRef>> {
     let mut buffers = Vec::with_capacity(raw_buffers.len());
 
     for raw_buffer in raw_buffers {
-        let buf = SecurityBuffer::with_owned_security_buffer_type(OwnedSecurityBufferType::try_from(
-            raw_buffer.buffer_type,
-        )?)?;
+        let buf =
+            SecurityBufferRef::with_owned_security_buffer_type(SecurityBufferType::try_from(raw_buffer.buffer_type)?)?;
 
         buffers.push(if BufferType::Missing == buf.buffer_type() {
             // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
             // SECBUFFER_MISSING: ...The pvBuffer member is ignored in this type.
-            SecurityBuffer::missing_buf(raw_buffer.cb_buffer.try_into()?)
+            SecurityBufferRef::missing_buf(raw_buffer.cb_buffer.try_into()?)
         } else {
             let data = if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
                 &mut []
@@ -376,7 +375,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 ///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.
-unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBuffer>) -> sspi::Result<()> {
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBufferRef>) -> sspi::Result<()> {
     // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
@@ -415,7 +414,7 @@ mod tests {
 
     use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
-    use sspi::{EncryptionFlags, Kerberos, SecurityBuffer, Sspi};
+    use sspi::{EncryptionFlags, Kerberos, SecurityBufferRef, Sspi};
 
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{SecHandle, SspiHandle};
@@ -445,8 +444,8 @@ mod tests {
         let mut token = [0; 1024];
         let mut data = plain_message.to_vec();
         let mut message = vec![
-            SecurityBuffer::token_buf(token.as_mut_slice()),
-            SecurityBuffer::data_buf(data.as_mut_slice()),
+            SecurityBufferRef::token_buf(token.as_mut_slice()),
+            SecurityBufferRef::data_buf(data.as_mut_slice()),
         ];
 
         kerberos_server

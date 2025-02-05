@@ -1,7 +1,7 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use libc::c_char;
-use sspi::{OwnedSecurityBuffer, OwnedSecurityBufferType};
+use sspi::{SecurityBuffer, SecurityBufferType};
 
 #[derive(Debug)]
 #[repr(C)]
@@ -24,24 +24,20 @@ pub struct SecBufferDesc {
 pub type PSecBufferDesc = *mut SecBufferDesc;
 
 #[allow(clippy::useless_conversion)]
-pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<OwnedSecurityBuffer> {
+pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<SecurityBuffer> {
     raw_buffers
         .iter()
-        .map(|raw_buffer| OwnedSecurityBuffer {
+        .map(|raw_buffer| SecurityBuffer {
             buffer: from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
                 .iter()
                 .map(|v| *v as u8)
                 .collect(),
-            buffer_type: OwnedSecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
+            buffer_type: SecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
         })
         .collect()
 }
 
-pub(crate) unsafe fn copy_to_c_sec_buffer(
-    to_buffers: PSecBuffer,
-    from_buffers: &[OwnedSecurityBuffer],
-    allocate: bool,
-) {
+pub(crate) unsafe fn copy_to_c_sec_buffer(to_buffers: PSecBuffer, from_buffers: &[SecurityBuffer], allocate: bool) {
     let to_buffers = from_raw_parts_mut(to_buffers, from_buffers.len());
     for i in 0..from_buffers.len() {
         let buffer = &from_buffers[i];
