@@ -19,24 +19,27 @@ use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
     ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
 };
-use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR};
+use picky_krb::constants::key_usages::{
+    AP_REP_ENC, AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
+};
 use picky_krb::constants::types::{
-    AD_AUTH_DATA_AP_OPTION_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV, NET_BIOS_ADDR_TYPE,
-    NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE,
-    PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
+    AD_AUTH_DATA_AP_OPTION_TYPE, AP_REP_MSG_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV,
+    NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE,
+    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
-    ApOptions, Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncKrbPrivPart,
-    EncKrbPrivPartInner, EncryptedData, EncryptionKey, HostAddress, KerbPaPacRequest, KerberosFlags,
-    KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName, Realm, Ticket,
+    ApOptions, Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncApRepPart,
+    EncApRepPartInner, EncKrbPrivPart, EncKrbPrivPartInner, EncryptedData, EncryptionKey, HostAddress,
+    KerbPaPacRequest, KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName,
+    Realm, Ticket,
 };
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
 use picky_krb::messages::{
-    ApMessage, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner, KrbPrivMessage, TgsReq,
-    TgtReq,
+    ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
+    KrbPrivMessage, TgsReq, TgtReq,
 };
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -150,10 +153,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
 
     let mut pa_datas = if *with_pre_auth {
         let current_date = OffsetDateTime::now_utc();
-        let mut microseconds = current_date.microsecond();
-        if microseconds > MAX_MICROSECONDS_IN_SECOND {
-            microseconds = MAX_MICROSECONDS_IN_SECOND;
-        }
+        let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
 
         let timestamp = PaEncTsEnc {
             patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
@@ -581,6 +581,39 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
             ExplicitContextTag7::from(IntegerAsn1::from_bytes_be_unsigned(seq_num.to_be_bytes().to_vec()))
         })),
         authorization_data,
+    }))
+}
+
+#[instrument(level = "trace", skip_all, ret)]
+pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &EncryptionParams) -> Result<ApRep> {
+    let current_date = OffsetDateTime::now_utc();
+    let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
+
+    let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+
+    let enc_ap_rep_part = EncApRepPart::from(EncApRepPartInner {
+        ctime: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
+        cusec: ExplicitContextTag1::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
+        subkey: Optional::from(Some(ExplicitContextTag2::from(EncryptionKey {
+            key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
+            key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_session_key.to_vec())),
+        }))),
+        seq_number: Optional::from(None),
+    });
+
+    let cipher = encryption_type.cipher();
+
+    let encoded_enc_ap_rep_part = picky_asn1_der::to_vec(&enc_ap_rep_part)?;
+    let encrypted_enc_ap_rep_part = cipher.encrypt(session_key, AP_REP_ENC, &encoded_enc_ap_rep_part)?;
+
+    Ok(ApRep::from(ApRepInner {
+        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AP_REP_MSG_TYPE])),
+        enc_part: ExplicitContextTag2::from(EncryptedData {
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
+            kvno: Optional::from(None),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_enc_ap_rep_part)),
+        }),
     }))
 }
 
