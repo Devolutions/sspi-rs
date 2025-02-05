@@ -164,7 +164,7 @@ impl RpcClient {
         ))
     }
 
-    fn prepare_pdu(&self, pdu: Pdu, encrypt_offsets: Option<(usize, usize)>) -> DpapiResult<Vec<u8>> {
+    fn prepare_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<(usize, usize)>) -> DpapiResult<Vec<u8>> {
         let mut pdu_encoded = pdu.encode_to_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
@@ -202,7 +202,7 @@ impl RpcClient {
     }
 
     fn process_response(
-        &self,
+        &mut self,
         response: &mut [u8],
         pdu_header: &PduHeader,
         encrypt_offsets: Option<(usize, usize)>,

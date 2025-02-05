@@ -40,7 +40,7 @@ aes-gcm = { version = "0.10", features = ["std"] }
 thiserror = "2.0"
 regex = "1.11"
 
-sspi = { path = "../..", default-features = false }
+sspi = { path = "../..", features = ["network_client"] }
 
 [dev-dependencies]
 paste = "1.0"
