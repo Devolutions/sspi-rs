@@ -2,9 +2,9 @@ use std::io;
 use std::sync::LazyLock;
 
 use sspi::{
-    credssp, AcquireCredentialsHandleResult, AuthIdentity, ClientRequestFlags, ContextNames, CredentialUse,
-    DataRepresentation, EncryptionFlags, OwnedSecurityBuffer, SecurityBuffer, SecurityBufferType, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiEx, Username,
+    credssp, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, ContextNames, CredentialUse,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi,
+    SspiEx, Username,
 };
 use time::OffsetDateTime;
 
@@ -100,7 +100,7 @@ where
     let mut server_status = SecurityStatus::ContinueNeeded;
 
     loop {
-        let mut client_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        let mut client_output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
         let mut builder = client
             .initialize_security_context()
@@ -119,7 +119,7 @@ where
             return Ok((client_status, server_status));
         }
 
-        server_output = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+        server_output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
         let server_result = server
             .accept_security_context()
@@ -179,8 +179,8 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let mut token = vec![0; server_sizes.security_trailer as usize];
     let mut data = MESSAGE_TO_CLIENT.to_vec();
     let mut messages = [
-        SecurityBuffer::Token(token.as_mut_slice()),
-        SecurityBuffer::Data(data.as_mut_slice()),
+        SecurityBufferRef::token_buf(token.as_mut_slice()),
+        SecurityBufferRef::data_buf(data.as_mut_slice()),
     ];
     server.encrypt_message(EncryptionFlags::empty(), &mut messages, sequence_number)?;
     assert_ne!(MESSAGE_TO_CLIENT, messages[1].data());
@@ -195,8 +195,8 @@ pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi)
     let [mut token, mut data] = messages;
 
     let mut messages = vec![
-        SecurityBuffer::Data(data.take_data()),
-        SecurityBuffer::Token(token.take_data()),
+        SecurityBufferRef::data_buf(data.take_data()),
+        SecurityBufferRef::token_buf(token.take_data()),
     ];
 
     client.decrypt_message(&mut messages, sequence_number)?;

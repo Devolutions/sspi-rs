@@ -22,7 +22,7 @@ The usage of the SSPs is as simple as creating an instance of the security provi
 
 Here is an example of acquiring a credentials handle and a timestamp of their validity:
 ```rust
-use sspi::{CredentialUse, Ntlm, Sspi, Username, builders::EmptyInitializeSecurityContext, OwnedSecurityBuffer, ClientRequestFlags, DataRepresentation, SecurityBufferType, SspiImpl};
+use sspi::{CredentialUse, Ntlm, Sspi, Username, builders::EmptyInitializeSecurityContext, SecurityBuffer, ClientRequestFlags, DataRepresentation, BufferType, SspiImpl};
 
 fn main() {
     let account_name = "example_user";
@@ -41,9 +41,9 @@ fn main() {
         .execute()
         .unwrap();
 
-    let mut output_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
     // first time calling initialize_security_context, the input buffer should be empty
-    let mut input_buffer = vec![OwnedSecurityBuffer::new(Vec::new(), SecurityBufferType::Token)];
+    let mut input_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
     // create a builder for the first call to initialize_security_context
     // the target should start with the protocol name, e.g. "HTTP/example.com" or "LDAP/example.com"
