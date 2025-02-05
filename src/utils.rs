@@ -4,7 +4,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{Error, ErrorKind, Result, SecurityBuffer, SecurityBufferType};
+use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -241,15 +241,15 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     }
 }
 
-/// Copies a decrypted data into the [SecurityBufferType::Data] or [SecurityBufferType::Stream].
+/// Copies a decrypted data into the [BufferType::Data] or [BufferType::Stream].
 ///
 /// There are two choices for how we should save the decrypted data in security buffers:
 /// * If the `SECBUFFER_STREAM` is present, we should save all data in the `SECBUFFER_DATA` buffer.
 ///   But in such a case, the `SECBUFFER_DATA` buffer is empty. So, we take the inner buffer from
 ///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
-pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBuffer]) -> Result<()> {
-    if let Ok(buffer) = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Stream) {
+pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBufferRef]) -> Result<()> {
+    if let Ok(buffer) = SecurityBufferRef::find_buffer_mut(buffers, BufferType::Stream) {
         let decrypted_len = decrypted.len();
 
         if buffer.buf_len() < decrypted_len {
@@ -266,14 +266,21 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
         let stream_buffer = buffer.take_data();
         let stream_buffer_len = stream_buffer.len();
 
-        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let data_buffer = SecurityBufferRef::find_buffer_mut(buffers, BufferType::Data)?;
 
         let data = &mut stream_buffer[stream_buffer_len - decrypted_len..];
         data.copy_from_slice(decrypted);
 
         data_buffer.set_data(data)
     } else {
-        let data_buffer = SecurityBuffer::find_buffer_mut(buffers, SecurityBufferType::Data)?;
+        let mut data_buffers =
+            SecurityBufferRef::buffers_of_type_and_flags_mut(buffers, BufferType::Data, SecurityBufferFlags::NONE);
+        let data_buffer = data_buffers.next().ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                "no buffer was provided with type Data and without READONLY_WITH_CHECKSUM flag",
+            )
+        })?;
 
         if data_buffer.buf_len() < decrypted.len() {
             return Err(Error::new(
@@ -293,16 +300,22 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
 /// Extracts data to decrypt from the incoming buffers.
 ///
 /// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
-pub fn extract_encrypted_data(buffers: &[SecurityBuffer]) -> Result<Vec<u8>> {
-    let mut encrypted = SecurityBuffer::buf_data(buffers, SecurityBufferType::Token)
+pub fn extract_encrypted_data(buffers: &[SecurityBufferRef]) -> Result<Vec<u8>> {
+    let mut encrypted = SecurityBufferRef::buf_data(buffers, BufferType::Token)
         .unwrap_or_default()
         .to_vec();
 
     encrypted.extend_from_slice(
-        if let Ok(buffer) = SecurityBuffer::buf_data(buffers, SecurityBufferType::Stream) {
+        if let Ok(buffer) = SecurityBufferRef::buf_data(buffers, BufferType::Stream) {
             buffer
         } else {
-            SecurityBuffer::buf_data(buffers, SecurityBufferType::Data)?
+            use crate::SecurityBufferFlags;
+
+            // Find `Data` buffers but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+            SecurityBufferRef::buffers_of_type_and_flags(buffers, BufferType::Data, SecurityBufferFlags::NONE)
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?
+                .data()
         },
     );
 

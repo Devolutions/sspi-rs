@@ -11,8 +11,8 @@ use crate::utils::is_azure_ad_domain;
 use crate::{
     builders, kerberos, ntlm, pku2u, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
     CertTrustStatus, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, OwnedSecurityBuffer,
-    PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
+    Error, ErrorKind, InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PackageCapabilities,
+    PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
     SspiImpl, PACKAGE_ID_NONE,
 };
 
@@ -290,7 +290,7 @@ impl SspiEx for Negotiate {
 
 impl Sspi for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
-    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.complete_auth_token(token),
@@ -302,7 +302,7 @@ impl Sspi for Negotiate {
     fn encrypt_message(
         &mut self,
         flags: crate::EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         match &mut self.protocol {
@@ -315,7 +315,7 @@ impl Sspi for Negotiate {
     #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn decrypt_message<'data>(
         &mut self,
-        message: &mut [SecurityBuffer<'data>],
+        message: &mut [SecurityBufferRef<'data>],
         sequence_number: u32,
     ) -> Result<DecryptionFlags> {
         match &mut self.protocol {
@@ -378,7 +378,7 @@ impl Sspi for Negotiate {
     fn make_signature(
         &mut self,
         flags: u32,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> crate::Result<()> {
         match &mut self.protocol {
@@ -388,7 +388,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_signature(message, sequence_number),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),

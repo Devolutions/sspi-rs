@@ -30,9 +30,9 @@
 //!     .execute(&mut ntlm)
 //!     .expect("AcquireCredentialsHandle resulted in error");
 //!
-//! let mut output = vec![sspi::OwnedSecurityBuffer::new(
+//! let mut output = vec![sspi::SecurityBuffer::new(
 //!     Vec::new(),
-//!     sspi::SecurityBufferType::Token,
+//!     sspi::BufferType::Token,
 //! )];
 //!
 //! let mut builder = ntlm.initialize_security_context()
@@ -93,7 +93,7 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
-pub use security_buffer::SecurityBuffer;
+pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;
 
@@ -155,7 +155,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
-            format!("Queried info about unknown package: {:?}", s),
+            format!("queried info about unknown package: {:?}", s),
         )),
     }
 }
@@ -290,7 +290,7 @@ where
     ///
     /// let mut credentials_handle = acq_cred_result.credentials_handle;
     ///
-    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// #[allow(unused_variables)]
     /// let mut builder = ntlm.initialize_security_context()
@@ -352,7 +352,7 @@ where
     ///     .execute(&mut client_ntlm)
     ///     .unwrap();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let mut builder = client_ntlm.initialize_security_context()
     ///     .with_credentials_handle(&mut client_acq_cred_result.credentials_handle)
@@ -369,7 +369,7 @@ where
     ///         .unwrap();
     ///
     /// let mut ntlm = sspi::Ntlm::new();
-    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let mut server_acq_cred_result = ntlm
     ///     .acquire_credentials_handle()
@@ -404,7 +404,7 @@ where
     ///
     /// # Parameters
     ///
-    /// * `token`: `SecurityBuffer` that contains the buffer descriptor for the entire message
+    /// * `token`: `SecurityBufferRef` that contains the buffer descriptor for the entire message
     ///
     /// # Returns
     ///
@@ -422,8 +422,8 @@ where
     /// let mut client_ntlm = sspi::Ntlm::new();
     /// let mut ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
+    /// let mut output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -488,7 +488,7 @@ where
     /// # MSDN
     ///
     /// * [CompleteAuthToken function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
-    fn complete_auth_token(&mut self, token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus>;
+    fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus>;
 
     /// Encrypts a message to provide privacy. The function allows the application to choose among cryptographic algorithms supported by the chosen mechanism.
     /// Some packages do not have messages to be encrypted or decrypted but rather provide an integrity hash that can be checked.
@@ -496,7 +496,7 @@ where
     /// # Parameters
     ///
     /// * `flags`: package-specific flags that indicate the quality of protection. A security package can use this parameter to enable the selection of cryptographic algorithms
-    /// * `message`: on input, the structure accepts one or more `SecurityBuffer` structures that can be of type `SecurityBufferType::Data`.
+    /// * `message`: on input, the structure accepts one or more `SecurityBufferRef` structures that can be of type `BufferType::Data`.
     ///   That buffer contains the message to be encrypted. The message is encrypted in place, overwriting the original contents of the structure.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
@@ -511,8 +511,8 @@ where
     /// let mut client_ntlm = sspi::Ntlm::new();
     /// let mut ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -575,8 +575,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// println!("Unencrypted: {:?}", msg_buffer[1].data());
@@ -599,7 +599,7 @@ where
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
@@ -691,8 +691,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message to be signed".as_bytes().to_vec();
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::Data(data.as_mut_slice()),
     /// ];
     ///
     /// println!("Input data: {:?}", msg_buffer[1].data());
@@ -706,7 +706,7 @@ where
     ///
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
-    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBuffer], sequence_number: u32)
+    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef], sequence_number: u32)
         -> crate::Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
@@ -795,8 +795,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg = [
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::Token(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::Data(data.as_mut_slice()),
     /// ];
     ///
     /// let _result = server_ntlm
@@ -805,8 +805,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.take_data()),
-    ///     sspi::SecurityBuffer::Data(data.take_data()),
+    ///     sspi::SecurityBufferRef::Token(token.take_data()),
+    ///     sspi::SecurityBufferRef::Data(data.take_data()),
     /// ];
     ///
     /// #[allow(unused_variables)]
@@ -819,14 +819,14 @@ where
     ///
     /// # MSDN
     /// * [VerifySignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-verifysignature)
-    fn verify_signature(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> crate::Result<u32>;
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32>;
 
     /// Decrypts a message. Some packages do not encrypt and decrypt messages but rather perform and check an integrity hash.
     ///
     /// # Parameters
     ///
-    /// * `message`: on input, the structure references one or more `SecurityBuffer` structures.
-    ///   At least one of these must be of type `SecurityBufferType::Data`.
+    /// * `message`: on input, the structure references one or more `SecurityBufferRef` structures.
+    ///   At least one of these must be of type `BufferType::Data`.
     ///   That buffer contains the encrypted message. The encrypted message is decrypted in place, overwriting the original contents of its buffer
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
@@ -846,8 +846,8 @@ where
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut server_ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -910,8 +910,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg = [
-    ///     sspi::SecurityBuffer::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBuffer::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// let _result = server_ntlm
@@ -920,8 +920,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBuffer::Token(token.take_data()),
-    ///     sspi::SecurityBuffer::Data(data.take_data()),
+    ///     sspi::SecurityBufferRef::token_buf(token.take_data()),
+    ///     sspi::SecurityBufferRef::data_buf(data.take_data()),
     /// ];
     ///
     /// #[allow(unused_variables)]
@@ -935,7 +935,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], sequence_number: u32) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///
@@ -1496,14 +1496,18 @@ pub enum DataRepresentation {
 ///
 /// * [SecBuffer structure](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[derive(Clone)]
-pub struct OwnedSecurityBuffer {
+pub struct SecurityBuffer {
     pub buffer: Vec<u8>,
     pub buffer_type: SecurityBufferType,
 }
 
-impl fmt::Debug for OwnedSecurityBuffer {
+impl fmt::Debug for SecurityBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SecurityBuffer {{ buffer_type: {:?}, buffer: 0x", self.buffer_type)?;
+        write!(
+            f,
+            "SecurityBufferRef {{ buffer_type: {:?}, buffer: 0x",
+            self.buffer_type
+        )?;
         self.buffer.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, " }}")?;
 
@@ -1511,34 +1515,37 @@ impl fmt::Debug for OwnedSecurityBuffer {
     }
 }
 
-impl OwnedSecurityBuffer {
-    pub fn new(buffer: Vec<u8>, buffer_type: SecurityBufferType) -> Self {
-        Self { buffer, buffer_type }
+impl SecurityBuffer {
+    pub fn new(buffer: Vec<u8>, buffer_type: BufferType) -> Self {
+        Self {
+            buffer,
+            buffer_type: SecurityBufferType {
+                buffer_type,
+                buffer_flags: SecurityBufferFlags::NONE,
+            },
+        }
     }
 
-    pub fn find_buffer(
-        buffers: &[OwnedSecurityBuffer],
-        buffer_type: SecurityBufferType,
-    ) -> Result<&OwnedSecurityBuffer> {
-        buffers.iter().find(|b| b.buffer_type == buffer_type).ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                format!("No buffer was provided with type {:?}", buffer_type),
-            )
-        })
-    }
-
-    pub fn find_buffer_mut(
-        buffers: &mut [OwnedSecurityBuffer],
-        buffer_type: SecurityBufferType,
-    ) -> Result<&mut OwnedSecurityBuffer> {
+    pub fn find_buffer(buffers: &[SecurityBuffer], buffer_type: BufferType) -> Result<&SecurityBuffer> {
         buffers
-            .iter_mut()
-            .find(|b| b.buffer_type == buffer_type)
+            .iter()
+            .find(|b| b.buffer_type.buffer_type == buffer_type)
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("No buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {:?}", buffer_type),
+                )
+            })
+    }
+
+    pub fn find_buffer_mut(buffers: &mut [SecurityBuffer], buffer_type: BufferType) -> Result<&mut SecurityBuffer> {
+        buffers
+            .iter_mut()
+            .find(|b| b.buffer_type.buffer_type == buffer_type)
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("no buffer was provided with type {:?}", buffer_type),
                 )
             })
     }
@@ -1551,7 +1558,7 @@ impl OwnedSecurityBuffer {
 /// * [SecBuffer structure (BufferType parameter)](https://docs.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default, FromPrimitive, ToPrimitive)]
-pub enum SecurityBufferType {
+pub enum BufferType {
     #[default]
     Empty = 0,
     /// The buffer contains common data. The security package can read and write this data, for example, to encrypt some or all of it.
@@ -1591,6 +1598,83 @@ pub enum SecurityBufferType {
     ReadOnly = 0x8000_0000,
     /// The buffer is read-only with a checksum.
     ReadOnlyWithChecksum = 0x1000_0000,
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+    /// Security buffer flags.
+    ///
+    /// [`SecBuffer` structure (sspi.h)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer).
+    pub struct SecurityBufferFlags: u32 {
+        /// There is no flags for the buffer.
+        const NONE = 0x0;
+        /// The buffer is read-only with no checksum. This flag is intended for sending header information to the security package for
+        /// computing the checksum. The package can read this buffer, but cannot modify it.
+        const SECBUFFER_READONLY = 0x80000000;
+        /// The buffer is read-only with a checksum.
+        const SECBUFFER_READONLY_WITH_CHECKSUM = 0x10000000;
+    }
+}
+
+/// Security buffer type.
+///
+/// Contains the actual security buffer type and its flags.
+#[derive(Clone, Copy, Eq, PartialEq, Default)]
+pub struct SecurityBufferType {
+    /// Security buffer type.
+    pub buffer_type: BufferType,
+    /// Security buffer flags.
+    pub buffer_flags: SecurityBufferFlags,
+}
+
+impl SecurityBufferType {
+    /// The buffer contains a bitmask for a `SECBUFFER_READONLY_WITH_CHECKSUM` buffer.
+    ///
+    /// [`SecBuffer` structure (sspi.h)](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
+    pub const SECBUFFER_ATTRMASK: u32 = 0xf0000000;
+}
+
+impl TryFrom<u32> for SecurityBufferType {
+    type Error = Error;
+
+    fn try_from(value: u32) -> Result<Self> {
+        use num_traits::cast::FromPrimitive;
+
+        let buffer_type = value & !Self::SECBUFFER_ATTRMASK;
+        let buffer_type = BufferType::from_u32(buffer_type).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InternalError,
+                format!("u32({}) to UnflaggedSecurityBuffer conversion error", buffer_type),
+            )
+        })?;
+
+        let buffer_flags = value & Self::SECBUFFER_ATTRMASK;
+        let buffer_flags = SecurityBufferFlags::from_bits(buffer_flags).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InternalError,
+                format!("invalid SecurityBufferFlags: {}", buffer_flags),
+            )
+        })?;
+
+        Ok(Self {
+            buffer_type,
+            buffer_flags,
+        })
+    }
+}
+
+impl From<SecurityBufferType> for u32 {
+    fn from(value: SecurityBufferType) -> u32 {
+        use num_traits::cast::ToPrimitive;
+
+        value.buffer_type.to_u32().unwrap() | value.buffer_flags.bits()
+    }
+}
+
+impl fmt::Debug for SecurityBufferType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("({:?}, {:?})", self.buffer_type, self.buffer_flags))
+    }
 }
 
 /// A flag that indicates how the credentials are used.
@@ -2064,7 +2148,7 @@ impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected RsaError happened: {}", value),
+            format!("an unexpected RsaError happened: {}", value),
         )
     }
 }
@@ -2168,13 +2252,13 @@ impl From<io::Error> for Error {
 
 impl From<rand::Error> for Error {
     fn from(err: rand::Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("Rand error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
     }
 }
 
 impl From<std::str::Utf8Error> for Error {
     fn from(err: std::str::Utf8Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-8 error: {:?}", err))
+        Self::new(ErrorKind::InternalError, err)
     }
 }
 
@@ -2201,13 +2285,13 @@ impl From<Error> for io::Error {
 
 impl From<std::num::TryFromIntError> for Error {
     fn from(_: std::num::TryFromIntError) -> Self {
-        Self::new(ErrorKind::InternalError, "Integer conversion error")
+        Self::new(ErrorKind::InternalError, "integer conversion error")
     }
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {
     fn from(_: std::sync::PoisonError<T>) -> Self {
-        Self::new(ErrorKind::InternalError, "Can not lock SspiHandle mutex")
+        Self::new(ErrorKind::InternalError, "can not lock SspiHandle mutex")
     }
 }
 
