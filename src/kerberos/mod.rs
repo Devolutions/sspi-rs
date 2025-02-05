@@ -17,7 +17,7 @@ use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringA
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
-use picky_krb::crypto::CipherSuite;
+use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
 use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
@@ -59,9 +59,9 @@ use crate::utils::{
 };
 use crate::{
     check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
-    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, OwnedSecurityBuffer,
-    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus,
+    BufferType, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
+    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
+    PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
@@ -286,7 +286,7 @@ impl Kerberos {
 
 impl Sspi for Kerberos {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         Ok(SecurityStatus::Ok)
     }
 
@@ -294,14 +294,16 @@ impl Sspi for Kerberos {
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
-        let _ = SecurityBuffer::find_buffer(message, SecurityBufferType::Token)?;
-        let data_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        let _ = SecurityBufferRef::find_buffer(message, BufferType::Token)?;
+        // Find `Data` buffers but skip `Data` buffers with the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+        let data_to_encrypt =
+            SecurityBufferRef::buffers_of_type_and_flags(message, BufferType::Data, SecurityBufferFlags::NONE);
 
         let cipher = self
             .encryption_params
@@ -318,14 +320,34 @@ impl Sspi for Kerberos {
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
 
-        let mut payload = data_buffer.data().to_vec();
+        let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
+            acc.extend_from_slice(buffer.data());
+            acc
+        });
         payload.extend_from_slice(&wrap_token.header());
 
-        let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
-        checksum.rotate_right(RRC.into());
+        let EncryptWithoutChecksum {
+            mut encrypted,
+            confounder,
+            ki: _,
+        } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
+
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign =
+            SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
+                acc.extend_from_slice(buffer.data());
+                acc
+            });
+
+        let checksum_suite = cipher.checksum_type().hasher();
+        let checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+
+        encrypted.extend_from_slice(&checksum);
+
+        encrypted.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
-        wrap_token.set_checksum(checksum);
+        wrap_token.set_checksum(encrypted);
 
         let mut raw_wrap_token = Vec::with_capacity(92);
         wrap_token.encode(&mut raw_wrap_token)?;
@@ -337,8 +359,18 @@ impl Sspi for Kerberos {
                 }
 
                 let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+
+                let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
+                    message,
+                    BufferType::Data,
+                    SecurityBufferFlags::NONE,
+                )
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
+
                 data_buffer.write_data(data)?;
-                let token_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+
+                let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
             _ => {
@@ -353,7 +385,7 @@ impl Sspi for Kerberos {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBuffer], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], _sequence_number: u32) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -369,13 +401,42 @@ impl Sspi for Kerberos {
 
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
-        let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
+        let wrap_token = WrapToken::decode(encrypted.as_slice())?;
 
-        wrap_token.checksum.rotate_left(RRC.into());
+        let mut checksum = wrap_token.checksum;
+        checksum.rotate_left(RRC.into());
 
-        let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
+        let DecryptWithoutChecksum {
+            plaintext: mut decrypted,
+            confounder,
+            checksum,
+            ki: _,
+        } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
+
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign =
+            SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
+                if buffer
+                    .buffer_flags()
+                    .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)
+                {
+                    acc.extend_from_slice(buffer.data());
+                } else {
+                    // The `Data` buffer contains encrypted data, but the checksum was calculated over the decrypted data.
+                    // So, we replace encrypted data with decrypted one.
+                    acc.extend_from_slice(&decrypted);
+                }
+                acc
+            });
+
+        let checksum_suite = cipher.checksum_type().hasher();
+        let calculated_checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+
+        if calculated_checksum != checksum {
+            return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
+        }
 
         save_decrypted_data(&decrypted, message)?;
 
@@ -483,7 +544,7 @@ impl SspiImpl for Kerberos {
 
         let status = match &self.state {
             KerberosState::ApExchange => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
                     .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
@@ -668,7 +729,7 @@ impl<'a> Kerberos {
                 let encoded_neg_token_init =
                     picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_token_init)?;
 
                 self.state = KerberosState::Preauthentication;
@@ -681,14 +742,13 @@ impl<'a> Kerberos {
                     .as_ref()
                     .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
-                    builder.input.as_ref().unwrap(),
-                    SecurityBufferType::ChannelBindings,
-                ) {
+                if let Ok(sec_buffer) =
+                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
+                {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
 
@@ -911,7 +971,7 @@ impl<'a> Kerberos {
 
                 let encoded_neg_ap_req = picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_req)?;
 
                 self.state = KerberosState::ApExchange;
@@ -923,7 +983,7 @@ impl<'a> Kerberos {
                     .input
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -953,7 +1013,7 @@ impl<'a> Kerberos {
 
                 let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
 
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
 
                 self.state = KerberosState::PubKeyAuth;
@@ -1053,7 +1113,7 @@ pub mod test_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EncryptionFlags, SecurityBuffer, Sspi};
+    use crate::{EncryptionFlags, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1067,8 +1127,8 @@ mod tests {
         let mut token = [0; 1024];
         let mut data = plain_message.to_vec();
         let mut message = [
-            SecurityBuffer::Token(token.as_mut_slice()),
-            SecurityBuffer::Data(data.as_mut_slice()),
+            SecurityBufferRef::token_buf(token.as_mut_slice()),
+            SecurityBufferRef::data_buf(data.as_mut_slice()),
         ];
 
         kerberos_server
@@ -1078,10 +1138,50 @@ mod tests {
         let mut buffer = message[0].data().to_vec();
         buffer.extend_from_slice(message[1].data());
 
-        let mut message = [SecurityBuffer::Stream(&mut buffer), SecurityBuffer::Data(&mut [])];
+        let mut message = [
+            SecurityBufferRef::stream_buf(&mut buffer),
+            SecurityBufferRef::data_buf(&mut []),
+        ];
 
         kerberos_client.decrypt_message(&mut message, 0).unwrap();
 
         assert_eq!(message[1].data(), plain_message);
+    }
+
+    #[test]
+    fn rpc_request_decryption() {
+        let mut kerberos_server = super::test_data::fake_server();
+        let mut kerberos_client = super::test_data::fake_client();
+
+        let plain_message_data = b"some plain message";
+        let mut plain_message = plain_message_data.to_vec();
+
+        let first_buff_data = b"test";
+        let mut first_buff = first_buff_data.to_vec();
+        let third_buff_data = b"msg";
+        let mut third_buff = third_buff_data.to_vec();
+        let mut token = [0; 1024];
+
+        let mut message = [
+            SecurityBufferRef::token_buf(&mut token),
+            SecurityBufferRef::data_buf(&mut first_buff)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::data_buf(&mut plain_message),
+            SecurityBufferRef::data_buf(&mut third_buff)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+        ];
+
+        kerberos_server
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .unwrap();
+
+        assert!(!message[0].data().is_empty());
+        assert_eq!(message[1].data(), first_buff_data);
+        assert!(!message[2].data().is_empty());
+        assert_eq!(message[3].data(), third_buff_data);
+
+        kerberos_client.decrypt_message(&mut message, 0).unwrap();
+
+        assert_eq!(message[2].data(), plain_message_data);
     }
 }

@@ -17,12 +17,12 @@ use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, CertTrustStatus,
-    ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags,
-    EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContextResult, OwnedSecurityBuffer, PackageCapabilities,
-    PackageInfo, SecurityBuffer, SecurityBufferType, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi,
-    SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
+    DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
+    SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
+    SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -256,8 +256,8 @@ impl SspiImpl for Ntlm {
             .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
@@ -265,11 +265,11 @@ impl SspiImpl for Ntlm {
                 server::write_challenge(self, &mut output_token.buffer)?
             }
             NtlmState::Authenticate => {
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 self.identity = builder.credentials_handle.cloned().flatten();
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::ChannelBindings) {
+                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, BufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -308,7 +308,7 @@ impl Ntlm {
 
         let status = match self.state {
             NtlmState::Initial => {
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 self.state = NtlmState::Negotiate;
 
                 self.signing = builder.context_requirements.contains(ClientRequestFlags::INTEGRITY);
@@ -329,13 +329,12 @@ impl Ntlm {
                         "Input buffers must be specified on subsequent calls",
                     )
                 })?;
-                let input_token = OwnedSecurityBuffer::find_buffer(input, SecurityBufferType::Token)?;
-                let output_token = OwnedSecurityBuffer::find_buffer_mut(builder.output, SecurityBufferType::Token)?;
+                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                if let Ok(sec_buffer) = OwnedSecurityBuffer::find_buffer(
-                    builder.input.as_ref().unwrap(),
-                    SecurityBufferType::ChannelBindings,
-                ) {
+                if let Ok(sec_buffer) =
+                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
+                {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
@@ -372,7 +371,7 @@ impl Ntlm {
 
 impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn complete_auth_token(&mut self, _token: &mut [OwnedSecurityBuffer]) -> crate::Result<SecurityStatus> {
+    fn complete_auth_token(&mut self, _token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         server::complete_authenticate(self)
     }
 
@@ -380,21 +379,33 @@ impl Sspi for Ntlm {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
 
-        SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?; // check if exists
-        let data = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Data)?;
+        // check if exists
+        SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign =
+            SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
+                acc.extend_from_slice(buffer.data());
+                acc
+            });
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(&self.send_signing_key, sequence_number, &data_to_sign)?;
+
+        // Find `Data` buffers without the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
+        let data =
+            SecurityBufferRef::buffers_of_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE)
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
         let encrypted_data = self.send_sealing_key.as_mut().unwrap().process(data.data());
         if encrypted_data.len() < data.buf_len() {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Data buffer is too small"));
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the Data buffer is too small"));
         }
         data.write_data(&encrypted_data)?;
 
@@ -404,9 +415,9 @@ impl Sspi for Ntlm {
             .unwrap()
             .process(&digest[0..SIGNATURE_CHECKSUM_SIZE]);
 
-        let signature_buffer = SecurityBuffer::find_buffer_mut(message, SecurityBufferType::Token)?;
+        let signature_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
-            return Err(Error::new(ErrorKind::BufferTooSmall, "The Token buffer is too small"));
+            return Err(Error::new(ErrorKind::BufferTooSmall, "the Token buffer is too small"));
         }
         let signature = compute_signature(&checksum, sequence_number);
         signature_buffer.write_data(signature.as_slice())?;
@@ -417,7 +428,7 @@ impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBuffer],
+        message: &mut [SecurityBufferRef],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
@@ -427,7 +438,7 @@ impl Sspi for Ntlm {
         let encrypted = extract_encrypted_data(message)?;
 
         if encrypted.len() < 16 {
-            return Err(Error::new(ErrorKind::MessageAltered, "Invalid encrypted message size!"));
+            return Err(Error::new(ErrorKind::MessageAltered, "invalid encrypted message size"));
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
@@ -436,7 +447,22 @@ impl Sspi for Ntlm {
 
         save_decrypted_data(&decrypted, message)?;
 
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, &decrypted)?;
+        // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
+        let data_to_sign =
+            SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
+                if buffer
+                    .buffer_flags()
+                    .contains(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM)
+                {
+                    acc.extend_from_slice(buffer.data());
+                } else {
+                    // The `Data` buffer contains encrypted data, but the checksum was calculated over the decrypted data.
+                    // So, we replace encrypted data with decrypted one.
+                    acc.extend_from_slice(&decrypted);
+                }
+                acc
+            });
+        let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -447,7 +473,7 @@ impl Sspi for Ntlm {
         if signature != expected_signature.as_ref() {
             return Err(Error::new(
                 ErrorKind::MessageAltered,
-                "Signature verification failed, something nasty is going on!",
+                "signature verification failed, something nasty is going on",
             ));
         }
 
