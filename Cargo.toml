@@ -26,7 +26,7 @@ exclude = [
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [workspace.dependencies]
-uuid = { version = "1.12", default-features = false }
+uuid = { version = "1.13", default-features = false }
 tracing = { version = "0.1",  default-features = false }
 bitflags = "2.8"
 rand = "0.8"
