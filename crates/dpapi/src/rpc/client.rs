@@ -133,7 +133,9 @@ impl RpcClient {
     ) -> DpapiResult<(Pdu, Option<(usize, usize)>)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
             write_padding::<4>(stub_data.len(), &mut stub_data)?;
-            stub_data.extend_from_slice(&verification_trailer.encode_to_vec()?);
+            let encoded_verification_trailer = verification_trailer.encode_to_vec()?;
+            println!("encoded_verification_trailer: {:?}", encoded_verification_trailer);
+            stub_data.extend_from_slice(&encoded_verification_trailer);
         }
 
         let (security_trailer, auth_len, encrypt_offsets) = if authenticate {
@@ -261,7 +263,10 @@ impl RpcClient {
         verification_trailer: Option<VerificationTrailer>,
         authenticate: bool,
     ) -> DpapiResult<Pdu> {
-        let (pdu, encrypt_offsets) = self.create_request(context_id, opnum, stub_data, verification_trailer, authenticate)?;
+        let (pdu, encrypt_offsets) =
+            self.create_request(context_id, opnum, stub_data, verification_trailer, authenticate)?;
+
+        println!("encrypt_offsets: {:?}", encrypt_offsets);
 
         self.send_pdu(pdu, encrypt_offsets)
     }
@@ -271,7 +276,8 @@ impl RpcClient {
             self.auth.acquire_credentials_handle()?;
             let security_trailer = self.auth.initialize_security_context(&[])?;
             let security_trailer = self.auth.initialize_security_context(&[])?;
-            
+            println!("first initiali: {:?}", security_trailer);
+
             self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?
         } else {
             self.create_bind_pdu(contexts.to_vec(), None)?

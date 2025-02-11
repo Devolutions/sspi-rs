@@ -20,6 +20,7 @@ num-traits = { workspace = true, default-features = true }
 uuid = { workspace = true, features = ["std"] }
 picky-asn1.workspace = true
 picky-asn1-der.workspace = true
+picky-krb.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 num-bigint-dig.workspace = true
 sha1.workspace = true
@@ -44,3 +45,4 @@ sspi = { path = "../..", features = ["network_client"] }
 
 [dev-dependencies]
 paste = "1.0"
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }

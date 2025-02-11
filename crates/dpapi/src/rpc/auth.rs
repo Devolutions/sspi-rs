@@ -1,9 +1,9 @@
+use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
-    BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, EncryptionFlags,
-    SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi, CredentialUse, AcquireCredentialsHandleResult,
+    AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi,
 };
-use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use thiserror::Error;
 
 use crate::rpc::pdu::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
@@ -51,14 +51,16 @@ impl AuthProvider {
     }
 
     pub fn get_empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
-        let header_len = self.security_context.query_context_stream_sizes()?.header;
+        // let header_len = self.security_context.query_context_stream_sizes()?.header;
+        // TODO:
+        let header_len = 76;
 
         Ok(SecurityTrailer {
             security_type: self.security_type,
             level: AuthenticationLevel::PktPrivacy,
             pad_length,
             context_id: 0,
-            auth_value: vec![0; header_len.try_into().unwrap()],
+            auth_value: vec![0; header_len],
         })
     }
 
@@ -92,8 +94,12 @@ impl AuthProvider {
             ]
         };
 
+        println!("message to wrap: {:?}", message);
+
         self.security_context
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
+
+        println!("output message: {:?}", message);
 
         Ok(message.iter().fold(Vec::new(), |mut result, buf| {
             result.extend_from_slice(buf.data());
