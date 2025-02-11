@@ -83,7 +83,7 @@ pub const RRC: u16 = 28;
 // wrap token header len
 pub const MAX_SIGNATURE: usize = 16;
 // minimal len to fit encrypted public key in wrap token
-pub const SECURITY_TRAILER: usize = 60;
+pub const SECURITY_TRAILER: usize = 76;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
@@ -343,11 +343,14 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+        // TODO: add doc comment.
+        wrap_token.ec = 16;
 
         let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
             acc.extend_from_slice(buffer.data());
             acc
         });
+        payload.extend_from_slice(&[0; 16]);
         payload.extend_from_slice(&wrap_token.header());
 
         let EncryptWithoutChecksum {
@@ -357,32 +360,33 @@ impl Sspi for Kerberos {
         } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign =
+        let mut data_to_sign =
             SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
+        data_to_sign.extend_from_slice(&[0; 16]);
+        data_to_sign.extend_from_slice(&wrap_token.header());
 
-        let checksum_suite = cipher.checksum_type().hasher();
-        let checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+        let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
 
         encrypted.extend_from_slice(&checksum);
 
-        encrypted.rotate_right(RRC.into());
+        encrypted.rotate_right(usize::from(RRC + 16));
 
         wrap_token.set_rrc(RRC);
         wrap_token.set_checksum(encrypted);
 
-        let mut raw_wrap_token = Vec::with_capacity(92);
+        let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + 16);
         wrap_token.encode(&mut raw_wrap_token)?;
 
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                if raw_wrap_token.len() < SECURITY_TRAILER {
-                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
-                }
-
-                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                let (token, data) = if raw_wrap_token.len() < SECURITY_TRAILER {
+                    (raw_wrap_token.as_slice(), &[] as &[u8])
+                } else {
+                    raw_wrap_token.split_at(SECURITY_TRAILER)
+                };
 
                 let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
                     message,
@@ -1178,13 +1182,11 @@ pub mod test_data {
 
 #[cfg(test)]
 mod tests {
-    use crate::{EncryptionFlags, SecurityBufferFlags, SecurityBufferRef, Sspi};
-
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
-    use crate::Kerberos;
+    use crate::{EncryptionFlags, Kerberos, SecurityBufferRef, SecurityBufferFlags, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1297,12 +1299,12 @@ mod tests {
         let mut trailer_data = trailer.to_vec();
         let mut token_data = security_trailer_data.to_vec();
         let mut message = vec![
-            SecurityBuffer::data_buf(&mut header_data)
+            SecurityBufferRef::data_buf(&mut header_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBuffer::data_buf(&mut encrypted_data),
-            SecurityBuffer::data_buf(&mut trailer_data)
+            SecurityBufferRef::data_buf(&mut encrypted_data),
+            SecurityBufferRef::data_buf(&mut trailer_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBuffer::token_buf(&mut token_data),
+            SecurityBufferRef::token_buf(&mut token_data),
         ];
 
         kerberos_server.decrypt_message(&mut message, 0).unwrap();
@@ -1313,39 +1315,52 @@ mod tests {
     }
 
     #[test]
-    fn rpc_request_decryption() {
+    fn rpc_request_encryption() {
         let mut kerberos_server = super::test_data::fake_server();
         let mut kerberos_client = super::test_data::fake_client();
 
-        let plain_message_data = b"some plain message";
-        let mut plain_message = plain_message_data.to_vec();
+        // RPC header
+        let header = [
+            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        // Unencrypted data in RPC Request
+        let plaintext = [
+            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
+            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
+            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
+            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
+            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+        ];
+        // RPC security trailer header
+        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
 
-        let first_buff_data = b"test";
-        let mut first_buff = first_buff_data.to_vec();
-        let third_buff_data = b"msg";
-        let mut third_buff = third_buff_data.to_vec();
-        let mut token = [0; 1024];
-
-        let mut message = [
-            SecurityBufferRef::token_buf(&mut token),
-            SecurityBufferRef::data_buf(&mut first_buff)
+        let mut header_data = header.to_vec();
+        let mut data = plaintext.to_vec();
+        let mut trailer_data = trailer.to_vec();
+        let mut token_data = vec![0; 76];
+        let mut message = vec![
+            SecurityBufferRef::data_buf(&mut header_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::data_buf(&mut plain_message),
-            SecurityBufferRef::data_buf(&mut third_buff)
+            SecurityBufferRef::data_buf(&mut data),
+            SecurityBufferRef::data_buf(&mut trailer_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::token_buf(&mut token_data),
         ];
 
-        kerberos_server
+        kerberos_client
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        assert!(!message[0].data().is_empty());
-        assert_eq!(message[1].data(), first_buff_data);
-        assert!(!message[2].data().is_empty());
-        assert_eq!(message[3].data(), third_buff_data);
+        assert_eq!(header[..], message[0].data()[..]);
+        assert_eq!(trailer[..], message[2].data()[..]);
 
-        kerberos_client.decrypt_message(&mut message, 0).unwrap();
+        kerberos_server.decrypt_message(&mut message, 0).unwrap();
 
-        assert_eq!(message[2].data(), plain_message_data);
+        assert_eq!(header[..], message[0].data()[..]);
+        assert_eq!(message[1].data(), plaintext);
+        assert_eq!(trailer[..], message[2].data()[..]);
     }
 }
