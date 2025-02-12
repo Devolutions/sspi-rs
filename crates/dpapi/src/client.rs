@@ -269,6 +269,8 @@ pub fn n_crypt_unprotect_secret(blob: &[u8], server: &str, username: &str, passw
         "",
     )?;
 
+    println!("decryption: key is here!");
+
     decrypt_blob(&dpapi_blob, &root_key)
 }
 
