@@ -1,13 +1,13 @@
 use std::io::{Read, Write};
 
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
 use crate::Result;
-use crate::rpc::{Encode, Decode, write_buf, read_vec, read_buf, read_padding, write_padding};
+use crate::rpc::{read_buf, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::rpc::bind::SyntaxId;
 
 #[derive(Debug, Error)]
@@ -96,13 +96,12 @@ impl Decode for BaseFloor {
         let lhs_len = reader.read_u16::<LittleEndian>()?;
 
         let protocol_value = reader.read_u8()?;
-        let protocol = FloorProtocol::from_u8(protocol_value)
-            .ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
+        let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
 
-        let mut lhs = read_vec(usize::from(lhs_len - 1), &mut reader)?;
+        let lhs = read_vec(usize::from(lhs_len - 1), &mut reader)?;
 
         let rhs_len = reader.read_u16::<LittleEndian>()?;
-        let mut rhs = read_vec(usize::from(rhs_len), &mut reader)?;
+        let rhs = read_vec(usize::from(rhs_len), &mut reader)?;
 
         Ok(Self { protocol, lhs, rhs })
     }
@@ -120,9 +119,11 @@ impl Encode for TcpFloor {
 }
 
 impl TcpFloor {
-    fn decode(lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
         if rhs.len() != 2 {
-            Err(EpmError::InvalidFloorValue("invalid TcpFloor rhs value length: expected exactly 2 bytes"))?;
+            Err(EpmError::InvalidFloorValue(
+                "invalid TcpFloor rhs value length: expected exactly 2 bytes",
+            ))?;
         }
 
         Ok(Self {
@@ -143,9 +144,11 @@ impl Encode for IpFloor {
 }
 
 impl IpFloor {
-    fn decode(lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
         if rhs.len() != 4 {
-            Err(EpmError::InvalidFloorValue("invalid IpFloor rhs value length: expected exactly 4 bytes"))?;
+            Err(EpmError::InvalidFloorValue(
+                "invalid IpFloor rhs value length: expected exactly 4 bytes",
+            ))?;
         }
 
         Ok(Self {
@@ -171,9 +174,11 @@ impl Encode for RpcConnectionOrientedFloor {
 }
 
 impl RpcConnectionOrientedFloor {
-    fn decode(lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
         if rhs.len() != 2 {
-            Err(EpmError::InvalidFloorValue("invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes"))?;
+            Err(EpmError::InvalidFloorValue(
+                "invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes",
+            ))?;
         }
 
         Ok(Self {
@@ -201,11 +206,15 @@ impl Encode for UuidFloor {
 impl UuidFloor {
     fn decode(lhs: &[u8], rhs: &[u8]) -> Result<Self> {
         if lhs.len() != 18 {
-            Err(EpmError::InvalidFloorValue("invalid UuidFloor lhs value length: expected exactly 18 bytes"))?;
+            Err(EpmError::InvalidFloorValue(
+                "invalid UuidFloor lhs value length: expected exactly 18 bytes",
+            ))?;
         }
 
         if rhs.len() != 2 {
-            Err(EpmError::InvalidFloorValue("invalid UuidFloor rhs value length: expected exactly 2 bytes"))?;
+            Err(EpmError::InvalidFloorValue(
+                "invalid UuidFloor rhs value length: expected exactly 2 bytes",
+            ))?;
         }
 
         Ok(Self {
@@ -246,9 +255,7 @@ impl Decode for Floor {
                 Floor::RpcConnectionOriented(RpcConnectionOrientedFloor::decode(&lhs, &rhs)?)
             }
             FloorProtocol::UuidId => Floor::Uuid(UuidFloor::decode(&lhs, &rhs)?),
-            protocol => {
-                Err(EpmError::UnsupportedFloor(protocol))?
-            }
+            protocol => Err(EpmError::UnsupportedFloor(protocol))?,
         })
     }
 }

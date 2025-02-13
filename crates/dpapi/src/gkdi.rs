@@ -13,7 +13,7 @@ use crate::crypto::{
     compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
 };
 use crate::rpc::bind::SyntaxId;
-use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode, EncodeExt};
+use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{Error, Result};
 
@@ -79,19 +79,19 @@ pub struct GetKey {
 impl GetKey {
     pub const OPNUM: u16 = 0;
 
+    /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
     pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
         let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
 
         let hresult = hresult_buf.read_u32::<LittleEndian>()?;
-        println!("hresult: {:x?}", hresult);
         if hresult != 0 {
             Err(GkdiError::BadHresult(hresult))?;
         }
 
         let mut reader = key_buf;
 
-        let key_length = reader.read_u32::<LittleEndian>()?;
-        // kip padding as well
+        let _key_length = reader.read_u32::<LittleEndian>()?;
+        // Skip padding
         reader.read_u32::<LittleEndian>()?;
 
         // Skip the referent id and double up on pointer size

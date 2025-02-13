@@ -551,7 +551,6 @@ dependencies = [
  "byteorder",
  "concat-kdf",
  "elliptic-curve",
- "hex",
  "hmac",
  "num-bigint-dig",
  "num-derive",
