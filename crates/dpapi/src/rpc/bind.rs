@@ -33,6 +33,12 @@ pub enum BindTimeFeatureNegotiationBitmask {
     KeepConnectionOnOrphanSupported = 0x02,
 }
 
+impl BindTimeFeatureNegotiationBitmask {
+    pub fn as_u64(&self) -> u64 {
+        *self as u64
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxId {
     pub uuid: Uuid,

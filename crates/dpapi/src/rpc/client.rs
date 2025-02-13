@@ -1,12 +1,35 @@
 use std::net::{TcpStream, ToSocketAddrs};
 
+use uuid::{uuid, Uuid};
+
 use crate::rpc::auth::AuthProvider;
-use crate::rpc::bind::{AlterContext, Bind, BindAck, ContextElement, ContextResultCode};
+use crate::rpc::bind::{
+    AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, SyntaxId,
+};
 use crate::rpc::pdu::*;
 use crate::rpc::request::Request;
 use crate::rpc::verification::VerificationTrailer;
 use crate::rpc::{write_padding, Decode, Encode, EncodeExt};
 use crate::DpapiResult;
+
+pub const NDR64: SyntaxId = SyntaxId {
+    uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),
+    version: 1,
+    version_minor: 0,
+};
+pub const NDR: SyntaxId = SyntaxId {
+    uuid: uuid!("8a885d04-1ceb-11c9-9fe8-08002b104860"),
+    version: 2,
+    version_minor: 0,
+};
+
+pub fn bind_time_feature_negotiation(flags: BindTimeFeatureNegotiationBitmask) -> SyntaxId {
+    SyntaxId {
+        uuid: Uuid::from_fields(0x6cb71c2c, 0x9812, 0x4540, &flags.as_u64().to_be_bytes()),
+        version: 1,
+        version_minor: 0,
+    }
+}
 
 pub struct RpcClient {
     stream: TcpStream,
