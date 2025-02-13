@@ -55,6 +55,7 @@ serde = "1"
 byteorder = "1.5"
 num-bigint-dig = "0.8"
 hmac = "0.12"
+url = "2.5"
 
 [features]
 default = ["aws-lc-rs"]
@@ -102,13 +103,13 @@ picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 num-bigint-dig.workspace = true
 hmac.workspace = true
+url.workspace = true
 
 md-5 = "0.10"
 md4 = "0.10"
 crypto-mac = "0.11"
 lazy_static = "1.5"
 serde_derive = "1"
-url = "2.5"
 oid = "0.2"
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }

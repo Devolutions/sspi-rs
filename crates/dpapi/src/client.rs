@@ -1,17 +1,33 @@
+use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
+use picky_asn1_x509::{AesAuthEncParams, AesMode, AesParameters};
+use sspi::credssp::SspiContext;
+use sspi::{AuthIdentity, Credentials, Kerberos, KerberosConfig, Secret, Username};
+use url::Url;
+use uuid::Uuid;
 use thiserror::Error;
 
-use crate::epm::{build_tcpip_tower, EptMap, EPM};
-use crate::gkdi::ISD_KEY;
+use crate::blob::{DpapiBlob, SidProtectionDescriptor};
+use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
+use crate::epm::{build_tcpip_tower, EptMap, EptMapResult, Floor, EPM};
+use crate::gkdi::{GetKey, GroupKeyEnvelope, ISD_KEY};
+use crate::rpc::auth::AuthError;
 use crate::rpc::bind::{BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode};
+use crate::rpc::pdu::SecurityTrailer;
 use crate::rpc::request::Response;
 use crate::rpc::verification::{Command, CommandFlags, CommandPContext, VerificationTrailer};
-use crate::rpc::{bind_time_feature_negotiation, NDR, NDR64};
-use crate::Result;
+use crate::rpc::{bind_time_feature_negotiation, AuthProvider, Decode, Encode, RpcClient, NDR, NDR64, EncodeExt};
+use crate::{Result, Error};
 
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("BindAcknowledge doesn't contain desired context element")]
     MissingDesiredContext,
+
+    #[error("TCP floor is missing in EptMap response")]
+    MissingTcpFloor,
+
+    #[error("bad EptMap response status: {0}")]
+    BadEptMapStatus(u32),
 }
 
 pub type ClientResult<T> = std::result::Result<T, ClientError>;
@@ -24,7 +40,7 @@ fn get_epm_contexts() -> Vec<ContextElement> {
     }]
 }
 
-fn get_isd_key_key_context() -> Vec<ContextElement> {
+fn get_isd_key_key_contexts() -> Vec<ContextElement> {
     vec![
         ContextElement {
             context_id: 0,
@@ -78,4 +94,194 @@ fn process_bind_result(
         .ok_or(ClientError::MissingDesiredContext)?;
 
     Ok(())
+}
+
+fn process_ept_map_result(response: &Response) -> Result<u16> {
+    let map_response = EptMapResult::decode(response.stub_data.as_slice())?;
+
+    if map_response.status != 0 {
+        Err(ClientError::BadEptMapStatus(map_response.status))?;
+    }
+
+    for tower in map_response.towers {
+        for floor in tower {
+            if let Floor::Tcp(tcp_floor) = floor {
+                return Ok(tcp_floor.port);
+            }
+        }
+    }
+
+    Err(Error::from(ClientError::MissingTcpFloor))
+}
+
+fn process_get_key_result(
+    response: &Response,
+    security_trailer: Option<SecurityTrailer>,
+) -> Result<GroupKeyEnvelope> {
+    let pad_length = response.stub_data.len()
+        - security_trailer
+            .as_ref()
+            .map(|sec_trailer| usize::from(sec_trailer.pad_length))
+            .unwrap_or_default();
+
+    let data = &response.stub_data[..response.stub_data.len() - pad_length];
+
+    GetKey::unpack_response(data)
+}
+
+fn decrypt_blob(blob: &DpapiBlob, key: &GroupKeyEnvelope) -> Result<Vec<u8>> {
+    let kek = key.get_kek(&blob.key_identifier)?;
+
+    // With the kek we can unwrap the encrypted cek in the LAPS payload.
+    let cek = cek_decrypt(&blob.enc_cek_algorithm_id, &kek, &blob.enc_cek)?;
+
+    // With the cek we can decrypt the encrypted content in the LAPS payload.
+    Ok(content_decrypt(&blob.enc_content_algorithm_id, &cek, &blob.enc_content)?)
+}
+
+fn encrypt_blob(
+    data: &[u8],
+    key: &GroupKeyEnvelope,
+    protection_descriptor: SidProtectionDescriptor,
+) -> Result<Vec<u8>> {
+    let enc_cek_algorithm_id = KeyEncryptionAlgorithmIdentifier::new_aes256_empty(AesMode::Wrap);
+    let (cek, iv) = cek_generate(&enc_cek_algorithm_id)?;
+
+    let enc_content_algorithm_id = ContentEncryptionAlgorithmIdentifier::new_aes256(
+        AesMode::Gcm,
+        AesParameters::AuthenticatedEncryptionParameters(AesAuthEncParams::new(iv, 16)),
+    );
+
+    let enc_content = content_encrypt(&enc_content_algorithm_id, &cek, data)?;
+
+    let (kek, key_identifier) = key.new_kek()?;
+    let enc_cek = cek_encrypt(&enc_cek_algorithm_id, &kek, &cek)?;
+
+    let mut buf = Vec::new();
+
+    DpapiBlob {
+        key_identifier,
+        protection_descriptor,
+        enc_cek,
+        enc_cek_algorithm_id,
+        enc_content,
+        enc_content_algorithm_id,
+    }
+    .encode(true, &mut buf)?;
+
+    Ok(buf)
+}
+
+fn get_key(
+    server: &str,
+    target_sd: Vec<u8>,
+    root_key_id: Option<Uuid>,
+    l0: i32,
+    l1: i32,
+    l2: i32,
+    username: &str,
+    password: String,
+    target_host: &str,
+) -> Result<GroupKeyEnvelope> {
+    let kerberos_config = KerberosConfig {
+        kdc_url: Some(Url::parse(server).unwrap()),
+        client_computer_name: None,
+    };
+    let username = Username::parse(username).expect("correct username");
+    let password: Secret<String> = password.into();
+
+    let isd_key_port = {
+        let mut rpc = RpcClient::connect(
+            (server, 135 /* default RPC port */),
+            AuthProvider::new(
+                SspiContext::Kerberos(Kerberos::new_client_from_config(kerberos_config.clone()).map_err(AuthError::from)?),
+                Credentials::AuthIdentity(AuthIdentity {
+                    username: username.clone(),
+                    password: password.clone(),
+                }),
+                target_host,
+            )?,
+        )?;
+
+        let epm_contexts = get_epm_contexts();
+        let context_id = epm_contexts[0].context_id;
+        let bind_ack = rpc.bind(&epm_contexts)?;
+        process_bind_result(&epm_contexts, bind_ack, context_id)?;
+
+        let ept_map = get_ept_map_isd_key();
+        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_to_vec()?)?;
+        process_ept_map_result(&response.try_into_response()?)?
+    };
+
+    let mut rpc = RpcClient::connect(
+        (server, isd_key_port),
+        AuthProvider::new(
+            SspiContext::Kerberos(Kerberos::new_client_from_config(kerberos_config).map_err(AuthError::from)?),
+            Credentials::AuthIdentity(AuthIdentity { username, password }),
+            target_host,
+        )?,
+    )?;
+
+    let isd_key_contexts = get_isd_key_key_contexts();
+    let context_id = isd_key_contexts[0].context_id;
+    let bind_ack = rpc.bind_authenticate(&isd_key_contexts)?;
+    process_bind_result(&isd_key_contexts, bind_ack, context_id)?;
+
+    let get_key = GetKey {
+        target_sd,
+        root_key_id,
+        l0_key_id: l0,
+        l1_key_id: l1,
+        l2_key_id: l2,
+    };
+
+    let response_pdu = rpc.authenticated_request(
+        context_id,
+        GetKey::OPNUM,
+        get_key.encode_to_vec()?,
+        Some(get_verification_trailer()),
+    )?;
+    let security_trailer = response_pdu.security_trailer.clone();
+
+    process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
+}
+
+pub fn n_crypt_unprotect_secret(blob: &[u8], server: &str, username: &str, password: String) -> Result<Vec<u8>> {
+    let dpapi_blob = DpapiBlob::decode(blob)?;
+    let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
+
+    let root_key = get_key(
+        server,
+        target_sd,
+        Some(dpapi_blob.key_identifier.root_key_identifier),
+        dpapi_blob.key_identifier.l0,
+        dpapi_blob.key_identifier.l1,
+        dpapi_blob.key_identifier.l2,
+        username,
+        password,
+        "",
+    )?;
+
+    decrypt_blob(&dpapi_blob, &root_key)
+}
+
+pub fn n_crypt_protect_secret(
+    data: &[u8],
+    sid: String,
+    root_key_identifier: Option<Uuid>,
+    server: &str,
+    domain_name: &str,
+    username: &str,
+    password: String,
+) -> Result<Vec<u8>> {
+    let l0 = -1;
+    let l1 = -1;
+    let l2 = -1;
+
+    let descriptor = SidProtectionDescriptor { sid };
+    let target_sd = descriptor.get_target_sd()?;
+
+    let root_key = get_key(server, target_sd, root_key_identifier, l0, l1, l2, username, password, "")?;
+
+    encrypt_blob(data, &root_key, descriptor)
 }

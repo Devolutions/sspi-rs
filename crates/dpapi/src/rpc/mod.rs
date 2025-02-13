@@ -5,6 +5,7 @@ pub mod pdu;
 pub mod request;
 pub mod verification;
 
+pub use auth::*;
 pub use client::*;
 
 use std::io::{ErrorKind as IoErrorKind, Read, Write};

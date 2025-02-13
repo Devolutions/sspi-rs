@@ -28,6 +28,7 @@ sha2.workspace = true
 rand.workspace = true
 hmac.workspace = true
 tracing = { workspace = true, default-features = true }
+url.workspace = true
 
 rust-kbkdf = { version = "1.1", git = "https://gitlab.com/TheBestTvarynka/rust-kbkdf.git", branch = "fix-key-generation" }
 elliptic-curve = { version = "0.13", features = ["sec1", "std"] }

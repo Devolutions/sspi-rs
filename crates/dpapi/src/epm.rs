@@ -322,6 +322,10 @@ pub struct EptMap {
     pub max_towers: u32,
 }
 
+impl EptMap {
+    pub const OPNUM: u16 = 3;
+}
+
 impl Encode for EptMap {
     fn encode(&self, mut writer: impl Write) -> Result<()> {
         // obj with a referent id of 1
