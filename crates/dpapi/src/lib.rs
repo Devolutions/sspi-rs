@@ -16,3 +16,4 @@ pub(crate) mod str;
 
 pub use client::*;
 pub use error::{Error, Result};
+pub use sspi::Secret;

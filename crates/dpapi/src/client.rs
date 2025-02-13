@@ -18,6 +18,8 @@ use crate::rpc::verification::{Command, CommandFlags, CommandPContext, Verificat
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, Decode, EncodeExt, RpcClient, NDR, NDR64};
 use crate::{Result, Error};
 
+const DEFAULT_RPC_PORT: u16 = 135;
+
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("BindAcknowledge doesn't contain desired context element")]
@@ -180,28 +182,39 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-#[instrument(level = "trace", ret)]
-fn get_key(
-    server: &str,
+struct GetKeyArgs<'server, 'username> {
+    server: &'server str,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
     l1: i32,
     l2: i32,
-    username: &str,
-    password: String,
-    target_host: &str,
+    username: &'username str,
+    password: Secret<String>,
+}
+
+#[instrument(level = "trace", ret)]
+fn get_key(
+    GetKeyArgs {
+        server,
+        target_sd,
+        root_key_id,
+        l0,
+        l1,
+        l2,
+        username,
+        password,
+    }: GetKeyArgs,
 ) -> Result<GroupKeyEnvelope> {
     let kerberos_config = KerberosConfig {
         kdc_url: Some(Url::parse(server).unwrap()),
         client_computer_name: None,
     };
     let username = Username::parse(username).expect("correct username");
-    let password: Secret<String> = password.into();
 
     let isd_key_port = {
         let mut rpc = RpcClient::connect(
-            (server, 135 /* default RPC port */),
+            (server, DEFAULT_RPC_PORT),
             AuthProvider::new(
                 SspiContext::Kerberos(
                     Kerberos::new_client_from_config(kerberos_config.clone()).map_err(AuthError::from)?,
@@ -210,7 +223,7 @@ fn get_key(
                     username: username.clone(),
                     password: password.clone(),
                 }),
-                target_host,
+                server,
             )?,
         )?;
 
@@ -236,7 +249,7 @@ fn get_key(
         AuthProvider::new(
             SspiContext::Kerberos(Kerberos::new_client_from_config(kerberos_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
-            target_host,
+            server,
         )?,
     )?;
 
@@ -275,24 +288,29 @@ fn get_key(
 ///
 /// This function simulated the `NCryptUnprotectSecret` function. Decryption requires making RPC calls to the domain.
 /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
+/// _Note_: `server` value should be target domain server hostname. Do not use IP address here.
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
-pub fn n_crypt_unprotect_secret(blob: &[u8], server: &str, username: &str, password: String) -> Result<Vec<u8>> {
+pub fn n_crypt_unprotect_secret(
+    blob: &[u8],
+    server: &str,
+    username: &str,
+    password: Secret<String>,
+) -> Result<Vec<u8>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
 
-    let root_key = get_key(
+    let root_key = get_key(GetKeyArgs {
         server,
         target_sd,
-        Some(dpapi_blob.key_identifier.root_key_identifier),
-        dpapi_blob.key_identifier.l0,
-        dpapi_blob.key_identifier.l1,
-        dpapi_blob.key_identifier.l2,
+        root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
+        l0: dpapi_blob.key_identifier.l0,
+        l1: dpapi_blob.key_identifier.l1,
+        l2: dpapi_blob.key_identifier.l2,
         username,
         password,
-        "",
-    )?;
+    })?;
 
     info!("Successfully requested root key.");
 
@@ -303,16 +321,17 @@ pub fn n_crypt_unprotect_secret(blob: &[u8], server: &str, username: &str, passw
 ///
 /// This function simulated the `NCryptProtectSecret` function. Encryption requires making RPCs call to the domain.
 /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
+/// _Note_: `server` value should be target domain server hostname. Do not use IP address here.
 ///
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
 pub fn n_crypt_protect_secret(
     data: &[u8],
     sid: String,
-    root_key_identifier: Option<Uuid>,
+    root_key_id: Option<Uuid>,
     server: &str,
     username: &str,
-    password: String,
+    password: Secret<String>,
 ) -> Result<Vec<u8>> {
     let l0 = -1;
     let l1 = -1;
@@ -321,17 +340,16 @@ pub fn n_crypt_protect_secret(
     let descriptor = SidProtectionDescriptor { sid };
     let target_sd = descriptor.get_target_sd()?;
 
-    let root_key = get_key(
+    let root_key = get_key(GetKeyArgs {
         server,
         target_sd,
-        root_key_identifier,
+        root_key_id,
         l0,
         l1,
         l2,
         username,
         password,
-        "",
-    )?;
+    })?;
 
     info!("Successfully requested root key.");
 
