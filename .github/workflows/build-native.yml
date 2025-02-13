@@ -6,7 +6,7 @@ on:
 jobs:
   preflight:
     name: Preflight
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     outputs:
       project-version: ${{ steps.get-version.outputs.project-version }}
       package-version: ${{ steps.get-version.outputs.package-version }}
@@ -41,11 +41,11 @@ jobs:
           - os: osx
             runner: macos-14
           - os: linux
-            runner: ubuntu-20.04
+            runner: ubuntu-latest
           - os: ios
             runner: macos-14
           - os: android
-            runner: ubuntu-20.04
+            runner: ubuntu-latest
         exclude:
           - arch: arm
             os: win
@@ -244,7 +244,7 @@ jobs:
 
   build-universal:
     name: Universal Build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     needs: [preflight, build-native]
     strategy:
       fail-fast: false
