@@ -4,7 +4,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use thiserror::Error;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use crate::Result;
 use crate::rpc::{Encode, Decode, write_buf, read_vec, read_buf, read_padding, write_padding};
@@ -21,6 +21,12 @@ pub enum EpmError {
     #[error("unsupported floor protocol: {0:?}")]
     UnsupportedFloor(FloorProtocol),
 }
+
+pub const EPM: SyntaxId = SyntaxId {
+    uuid: uuid!("e1af8308-5d1f-11c9-91a4-08002b14a0fa"),
+    version: 3,
+    version_minor: 0,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 #[repr(u8)]

@@ -6,15 +6,22 @@ use num_bigint_dig::BigUint;
 use rand::rngs::OsRng;
 use rand::Rng;
 use thiserror::Error;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use crate::blob::KeyIdentifier;
 use crate::crypto::{
     compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
 };
+use crate::rpc::bind::SyntaxId;
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{Error, Result};
+
+pub const ISD_KEY: SyntaxId = SyntaxId {
+    uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),
+    version: 1,
+    version_minor: 0,
+};
 
 #[derive(Debug, Error)]
 pub enum GkdiError {
