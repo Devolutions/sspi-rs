@@ -74,7 +74,7 @@ impl<'a, CredsHandle, AuthData, CredentialUseSet> AcquireCredentialsHandle<'a, C
 where
     CredentialUseSet: ToAssign,
 {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             phantom_cred_handle: PhantomData,
             phantom_cred_use_set: PhantomData,

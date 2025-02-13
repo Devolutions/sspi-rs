@@ -458,19 +458,29 @@ impl Decode for Pdu {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let header = PduHeader::decode(&mut reader)?;
 
+        let data_len = header.frag_len - header.auth_len - 16/* PDU header len */;
+        let security_trailer_len = if header.auth_len > 0 {
+            8 /* security trailer header */
+        } else {
+            0
+        } + header.auth_len;
+
         let data = PduData::decode(
             &header,
             header
                 .frag_len
                 .checked_sub(
-                    header.auth_len + 8 /* security trailer header */ + 16, /* PDU header len */
+                    security_trailer_len + 16, /* PDU header len */
                 )
                 .ok_or(PduError::InvalidFragLength(header.frag_len))?
                 .into(),
             &mut reader,
         )?;
+
+        let buf = read_to_end(reader)?;
+        println!("whole sec trailer: {:?}", buf);
         let security_trailer = if header.auth_len > 0 {
-            Some(SecurityTrailer::decode(reader)?)
+            Some(SecurityTrailer::decode(buf.as_slice())?)
         } else {
             None
         };

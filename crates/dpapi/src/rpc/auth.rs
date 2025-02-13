@@ -1,8 +1,9 @@
 use sspi::credssp::SspiContext;
 use sspi::{
     BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, EncryptionFlags,
-    SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi,
+    SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi, CredentialUse, AcquireCredentialsHandleResult,
 };
+use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use thiserror::Error;
 
 use crate::rpc::pdu::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
@@ -135,6 +136,17 @@ impl AuthProvider {
         Ok(message[1].data().to_vec())
     }
 
+    pub fn acquire_credentials_handle(&mut self) -> AuthResult<()> {
+        let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+        let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
+            .with_auth_data(&self.credentials)
+            .with_credential_use(CredentialUse::Outbound)
+            .execute(&mut self.security_context)?;
+        self.credentials_handle = credentials_handle;
+
+        Ok(())
+    }
+
     pub fn initialize_security_context(&mut self, in_token: &[u8]) -> AuthResult<SecurityTrailer> {
         let mut input_token = [SecurityBuffer::new(in_token.to_vec(), BufferType::Token)];
         let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
@@ -146,8 +158,9 @@ impl AuthProvider {
             .with_credentials_handle(&mut credentials_handle)
             .with_context_requirements(
                 ClientRequestFlags::MUTUAL_AUTH
-                    | ClientRequestFlags::USE_SESSION_KEY
+                    // | ClientRequestFlags::USE_SESSION_KEY
                     | ClientRequestFlags::INTEGRITY
+                    | ClientRequestFlags::DELEGATE
                     | ClientRequestFlags::USE_DCE_STYLE
                     | ClientRequestFlags::CONFIDENTIALITY,
             )

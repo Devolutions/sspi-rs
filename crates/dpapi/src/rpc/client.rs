@@ -129,19 +129,24 @@ impl RpcClient {
         opnum: u16,
         mut stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
-    ) -> DpapiResult<(Pdu, (usize, usize))> {
+        authenticate: bool,
+    ) -> DpapiResult<(Pdu, Option<(usize, usize)>)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
             write_padding::<4>(stub_data.len(), &mut stub_data)?;
             stub_data.extend_from_slice(&verification_trailer.encode_to_vec()?);
         }
 
-        // If the security trailer is present it must be aligned to the
-        // next 16 byte boundary after the stub data. This padding is
-        // included as part of the stub data to be encrypted.
-        let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
-        let security_trailer = self.auth.get_empty_trailer(padding_len.try_into()?)?;
-        let auth_len = security_trailer.auth_value.len();
-        let encrypt_offsets = (24, 24 + stub_data.len());
+        let (security_trailer, auth_len, encrypt_offsets) = if authenticate {
+            // If the security trailer is present it must be aligned to the
+            // next 16 byte boundary after the stub data. This padding is
+            // included as part of the stub data to be encrypted.
+            let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
+            let security_trailer = self.auth.get_empty_trailer(padding_len.try_into()?)?;
+            let auth_len = security_trailer.auth_value.len();
+            (Some(security_trailer), auth_len, Some((24, 24 + stub_data.len())))
+        } else {
+            (None, 0, None)
+        };
 
         Ok((
             Pdu {
@@ -158,7 +163,7 @@ impl RpcClient {
                     obj: None,
                     stub_data,
                 }),
-                security_trailer: Some(security_trailer),
+                security_trailer,
             },
             encrypt_offsets,
         ))
@@ -254,16 +259,24 @@ impl RpcClient {
         opnum: u16,
         stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
+        authenticate: bool,
     ) -> DpapiResult<Pdu> {
-        let (pdu, encrypt_offsets) = self.create_request(context_id, opnum, stub_data, verification_trailer)?;
+        let (pdu, encrypt_offsets) = self.create_request(context_id, opnum, stub_data, verification_trailer, authenticate)?;
 
-        self.send_pdu(pdu, Some(encrypt_offsets))
+        self.send_pdu(pdu, encrypt_offsets)
     }
 
-    pub fn bind(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
-        let security_trailer = self.auth.initialize_security_context(&[])?;
+    pub fn bind(&mut self, contexts: &[ContextElement], authenticate: bool) -> DpapiResult<BindAck> {
+        let bind = if authenticate {
+            self.auth.acquire_credentials_handle()?;
+            let security_trailer = self.auth.initialize_security_context(&[])?;
+            let security_trailer = self.auth.initialize_security_context(&[])?;
+            
+            self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?
+        } else {
+            self.create_bind_pdu(contexts.to_vec(), None)?
+        };
 
-        let bind = self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
         let pdu_resp = self.send_pdu(bind, None)?;
 
         let Pdu {
@@ -273,8 +286,14 @@ impl RpcClient {
         } = pdu_resp;
         let bind_ack = data.bind_ack()?;
 
+        if !authenticate {
+            return Ok(bind_ack);
+        }
+
         if !header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign) {
             self.sign_header = false;
+        } else {
+            self.sign_header = true;
         }
 
         let final_contexts = self.process_bind_ack(&bind_ack, contexts);
