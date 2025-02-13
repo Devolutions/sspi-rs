@@ -376,6 +376,7 @@ impl PduData {
     pub fn bind_ack(self) -> PduResult<BindAck> {
         match self {
             PduData::BindAck(bind_ack) => Ok(bind_ack),
+            PduData::AlterContextResponse(alter_context) => Ok(alter_context.0),
             _ => Err(PduError::RpcFail("BindAcknowledge PDU is expected")),
         }
     }

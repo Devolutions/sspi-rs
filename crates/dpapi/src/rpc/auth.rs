@@ -2,7 +2,7 @@ use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
-    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi, SecurityStatus,
 };
 use thiserror::Error;
 
@@ -71,7 +71,7 @@ impl AuthProvider {
         security_trailer_data: &[u8],
         sign_header: bool,
     ) -> AuthResult<Vec<u8>> {
-        let mut token = [0; 1024];
+        let mut token = [0; 76];
 
         let mut header = header_data.to_vec();
         let mut body = body_data.to_vec();
@@ -175,6 +175,7 @@ impl AuthProvider {
             .with_input(&mut input_token)
             .with_output(&mut output_token);
         let result = self.security_context.initialize_security_context_sync(&mut builder)?;
+        self.is_finished = result.status == SecurityStatus::Ok;
 
         self.credentials_handle = credentials_handle;
         let auth_value = output_token.remove(0).buffer;

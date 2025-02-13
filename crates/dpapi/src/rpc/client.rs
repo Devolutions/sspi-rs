@@ -308,7 +308,7 @@ impl RpcClient {
         while !self.auth.is_finished() {
             let security_trailer = self.auth.initialize_security_context(&in_token.unwrap_or_default())?;
 
-            if security_trailer.auth_value.is_empty() {
+            if security_trailer.auth_value.is_empty() || self.auth.is_finished() {
                 break;
             }
 
