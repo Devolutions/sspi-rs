@@ -85,13 +85,13 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
     let mut dynamic_data = Vec::new();
 
     // Length of the SD header bytes
-    let mut current_offset = 20;
+    let mut current_offset: u32 = 20;
 
     let mut sacl_offset = 0;
     if let Some(sacl) = sacl {
         let sacl_bytes = acl_to_bytes(sacl)?;
         sacl_offset = current_offset;
-        current_offset += sacl_bytes.len();
+        current_offset += u32::try_from(sacl_bytes.len())?;
 
         // SACL Present.
         control |= 0b00010000;
@@ -102,7 +102,7 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
     if let Some(dacl) = dacl {
         let dacl_bytes = acl_to_bytes(dacl)?;
         dacl_offset = current_offset;
-        current_offset += dacl_bytes.len();
+        current_offset += u32::try_from(dacl_bytes.len())?;
 
         // DACL Present.
         control |= 0b00000100;
@@ -111,7 +111,7 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
 
     let owner_bytes = sid_to_bytes(owner)?;
     let owner_offset = current_offset;
-    current_offset += owner_bytes.len();
+    current_offset += u32::try_from(owner_bytes.len())?;
     dynamic_data.extend_from_slice(&owner_bytes);
 
     let group_bytes = sid_to_bytes(group)?;

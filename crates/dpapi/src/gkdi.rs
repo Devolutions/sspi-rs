@@ -83,6 +83,7 @@ impl GetKey {
         let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
 
         let hresult = hresult_buf.read_u32::<LittleEndian>()?;
+        println!("hresult: {:x?}", hresult);
         if hresult != 0 {
             Err(GkdiError::BadHresult(hresult))?;
         }
