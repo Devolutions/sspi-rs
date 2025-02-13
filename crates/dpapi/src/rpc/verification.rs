@@ -97,10 +97,8 @@ impl Decode for Command {
         let command_type = cmd_field & 0x3fff;
         let command_flags = cmd_field & 0xc000;
 
-        let command =
-            CommandType::from_u16(command_type).ok_or(CommandError::InvalidCommandType(command_type))?;
-        let flags =
-            CommandFlags::from_bits(command_flags).ok_or(CommandError::InvalidCommandFlags(command_flags))?;
+        let command = CommandType::from_u16(command_type).ok_or(CommandError::InvalidCommandType(command_type))?;
+        let flags = CommandFlags::from_bits(command_flags).ok_or(CommandError::InvalidCommandFlags(command_flags))?;
 
         let value_len = reader.read_u16::<LittleEndian>()?;
         let value = read_vec(usize::from(value_len), reader)?;
@@ -275,9 +273,11 @@ impl Decode for VerificationTrailer {
         let mut commands = Vec::new();
         loop {
             let command = Command::decode(&mut reader)?;
-            commands.push(command.clone());
+            let flags = command.flags();
 
-            if command.flags().contains(CommandFlags::SecVtCommandEnd) {
+            commands.push(command);
+
+            if flags.contains(CommandFlags::SecVtCommandEnd) {
                 break;
             }
         }

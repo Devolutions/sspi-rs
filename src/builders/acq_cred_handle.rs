@@ -128,10 +128,11 @@ where
     }
 }
 
-impl<'a, CredsHandle, AuthData, CredentialUseSet> Default for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+impl<'a, CredsHandle, AuthData, CredentialUseSet> Default
+    for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
- {
+{
     fn default() -> Self {
         Self::new()
     }

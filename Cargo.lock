@@ -570,7 +570,7 @@ dependencies = [
  "sha2",
  "sspi",
  "thiserror 2.0.11",
- "tracing-subscriber",
+ "tracing",
  "typenum",
  "uuid",
 ]

@@ -194,6 +194,11 @@ pub struct PduHeader {
     pub call_id: u32,
 }
 
+impl PduHeader {
+    /// Length of the encoded [PduHeader].
+    pub const LENGTH: usize = 16;
+}
+
 impl Encode for PduHeader {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         writer.write_u8(self.version)?;
@@ -273,6 +278,11 @@ pub struct SecurityTrailer {
     pub pad_length: u8,
     pub context_id: u32,
     pub auth_value: Vec<u8>,
+}
+
+impl SecurityTrailer {
+    // `SecurityTrailer` size but without `auth_value`.
+    pub const HEADER_LEN: usize = 8;
 }
 
 impl Encode for SecurityTrailer {
@@ -373,6 +383,9 @@ pub enum PduData {
 }
 
 impl PduData {
+    /// Returns [BindAck] extracted from the inner data.
+    ///
+    /// Returns an error if the inner data is not `BindAck` or `AlterContextResponse`.
     pub fn bind_ack(self) -> PduResult<BindAck> {
         match self {
             PduData::BindAck(bind_ack) => Ok(bind_ack),
@@ -381,6 +394,7 @@ impl PduData {
         }
     }
 
+    /// Checks if the [PduData] contains any error PDU inside. Returns an error if so.
     pub fn check_error(&self) -> PduResult<()> {
         if let PduData::Fault(_) = self {
             Err(PduError::RpcFail("got unexpected Fault PDU"))
@@ -433,6 +447,9 @@ pub struct Pdu {
 }
 
 impl Pdu {
+    /// Tries to extract PDU Response from the inner data.
+    ///
+    /// Return an error if the PDU is any type then `Response`.
     pub fn try_into_response(self) -> PduResult<Response> {
         if let PduData::Response(response) = self.data {
             Ok(response)
@@ -460,25 +477,21 @@ impl Decode for Pdu {
         let header = PduHeader::decode(&mut reader)?;
 
         let security_trailer_len = if header.auth_len > 0 {
-            8 /* security trailer header */
+            SecurityTrailer::HEADER_LEN
         } else {
             0
-        } + header.auth_len;
+        } + usize::from(header.auth_len);
 
         let data = PduData::decode(
             &header,
-            header
-                .frag_len
-                .checked_sub(security_trailer_len + 16 /* PDU header len */)
-                .ok_or(PduError::InvalidFragLength(header.frag_len))?
-                .into(),
+            usize::from(header.frag_len)
+                .checked_sub(security_trailer_len + PduHeader::LENGTH)
+                .ok_or(PduError::InvalidFragLength(header.frag_len))?,
             &mut reader,
         )?;
 
-        let buf = read_to_end(reader)?;
-        println!("whole sec trailer: {:?}", buf);
         let security_trailer = if header.auth_len > 0 {
-            Some(SecurityTrailer::decode(buf.as_slice())?)
+            Some(SecurityTrailer::decode(reader)?)
         } else {
             None
         };

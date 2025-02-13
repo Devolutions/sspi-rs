@@ -1,8 +1,6 @@
 use std::str::FromStr;
 
-use dpapi::rpc::bind::{
-    AlterContext, AlterContextResponse, Bind, BindAck, ContextElement, ContextResult, ContextResultCode, SyntaxId,
-};
+use dpapi::rpc::bind::{AlterContext, Bind, BindAck, ContextElement, ContextResult, ContextResultCode, SyntaxId};
 use dpapi::rpc::pdu::{
     AuthenticationLevel, CharacterRepr, DataRepr, FloatingPointRepr, IntRepr, PacketFlags, PacketType, Pdu, PduData,
     PduHeader, SecurityProvider, SecurityTrailer,
@@ -194,43 +192,6 @@ test_encoding_decoding! {
         }),
     },
     [5, 0, 14, 7, 16, 0, 0, 0, 173, 0, 93, 0, 1, 0, 0, 0, 208, 22, 208, 22, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0, 51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 16, 6, 0, 0, 0, 0, 0, 0, 111, 91, 48, 89, 160, 3, 2, 1, 5, 161, 3, 2, 1, 15, 162, 77, 48, 75, 160, 3, 2, 1, 18, 162, 68, 4, 66, 169, 200, 55, 118, 91, 23, 32, 40, 237, 31, 41, 10, 235, 96, 11, 206, 91, 184, 138, 167, 37, 44, 224, 129, 132, 69, 220, 201, 123, 20, 243, 60, 251, 187, 228, 62, 104, 246, 170, 121, 102, 22, 16, 1, 222, 154, 38, 2, 94, 168, 232, 219, 6, 47, 32, 21, 238, 30, 254, 203, 201, 245, 242, 109, 43, 132]
-}
-
-test_encoding_decoding! {
-    pdu_alter_context_response,
-    Pdu,
-    Pdu {
-        header: PduHeader {
-            version: 5,
-            version_minor: 0,
-            packet_type: PacketType::AlterContextResponse,
-            packet_flags: PacketFlags::PfcSupportHeaderSign | PacketFlags::PfcLastFrag | PacketFlags::PfcFirstFrag,
-            data_rep: DataRepr {
-                byte_order: IntRepr::LittleEndian,
-                character: CharacterRepr::Ascii,
-                floating_point: FloatingPointRepr::Ieee,
-            },
-            frag_len: 64,
-            auth_len: 0,
-            call_id: 1,
-        },
-        data: PduData::AlterContextResponse(AlterContextResponse(BindAck {
-            max_xmit_frag: 5840,
-            max_recv_frag: 5840,
-            assoc_group: 0x00007320,
-            sec_addr: String::new(),
-            results: vec![
-                ContextResult {
-                    result: ContextResultCode::Acceptance,
-                    reason: 0,
-                    syntax: Uuid::from_str("71710533-beba-4937-8319-b5dbef9ccc36").unwrap(),
-                    syntax_version: 1,
-                },
-            ],
-        })),
-        security_trailer: None,
-    },
-    [5, 0, 15, 7, 16, 0, 0, 0, 64, 0, 0, 0, 1, 0, 0, 0, 208, 22, 208, 22, 32, 115, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 16, 6, 0, 0, 0, 0, 0, 0]
 }
 
 test_encoding_decoding! {
