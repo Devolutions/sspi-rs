@@ -431,6 +431,16 @@ pub struct Pdu {
     pub security_trailer: Option<SecurityTrailer>,
 }
 
+impl Pdu {
+    pub fn try_into_response(self) -> PduResult<Response> {
+        if let PduData::Response(response) = self.data {
+            Ok(response)
+        } else {
+            Err(PduError::RpcFail("got unexpected PDU: expected Response PDU"))
+        }
+    }
+}
+
 impl Encode for Pdu {
     fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
         self.header.encode(&mut writer)?;

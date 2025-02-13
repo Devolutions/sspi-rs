@@ -260,10 +260,10 @@ impl RpcClient {
         self.send_pdu(pdu, Some(encrypt_offsets))
     }
 
-    pub fn bind(&mut self, contexts: Vec<ContextElement>) -> DpapiResult<BindAck> {
+    pub fn bind(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
         let security_trailer = self.auth.initialize_security_context(&[])?;
 
-        let bind = self.create_bind_pdu(contexts.clone(), Some(security_trailer))?;
+        let bind = self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
         let pdu_resp = self.send_pdu(bind, None)?;
 
         let Pdu {
@@ -277,7 +277,7 @@ impl RpcClient {
             self.sign_header = false;
         }
 
-        let final_contexts = self.process_bind_ack(&bind_ack, &contexts);
+        let final_contexts = self.process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
         while !self.auth.is_finished() {

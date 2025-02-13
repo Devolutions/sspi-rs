@@ -1,5 +1,5 @@
 use sspi::credssp::SspiContext;
-use sspi::Sspi;
+use sspi::{Credentials, CredentialsBuffers, Sspi};
 use thiserror::Error;
 
 use crate::rpc::pdu::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
@@ -19,11 +19,13 @@ pub type AuthResult<T> = Result<T, AuthError>;
 pub struct AuthProvider {
     security_type: SecurityProvider,
     security_context: SspiContext,
+    credentials: Credentials,
+    credentials_handle: Option<CredentialsBuffers>,
     is_finished: bool,
 }
 
 impl AuthProvider {
-    pub fn new(security_context: SspiContext) -> AuthResult<Self> {
+    pub fn new(security_context: SspiContext, credentials: Credentials) -> AuthResult<Self> {
         let security_type = match &security_context {
             SspiContext::Ntlm(_) => SecurityProvider::Winnt,
             SspiContext::Kerberos(_) => SecurityProvider::GssKerberos,
@@ -35,6 +37,8 @@ impl AuthProvider {
             security_type,
             security_context,
             is_finished: false,
+            credentials,
+            credentials_handle: None,
         })
     }
 
