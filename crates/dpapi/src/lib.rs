@@ -10,8 +10,7 @@ pub mod rpc;
 pub(crate) mod sid;
 pub(crate) mod str;
 
-pub use client::*;
-pub use error::*;
+pub use error::{Error, DpapiResult};
 
 #[cfg(test)]
 mod tests {

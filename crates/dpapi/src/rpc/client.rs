@@ -9,7 +9,7 @@ use crate::rpc::bind::{
 use crate::rpc::pdu::*;
 use crate::rpc::request::Request;
 use crate::rpc::verification::VerificationTrailer;
-use crate::rpc::{write_padding, Decode, Encode, EncodeExt};
+use crate::rpc::{write_padding, Decode, EncodeExt};
 use crate::DpapiResult;
 
 pub const NDR64: SyntaxId = SyntaxId {
@@ -189,10 +189,8 @@ impl RpcClient {
     }
 
     fn process_bind_ack(&self, ack: &BindAck, contexts: &[ContextElement]) -> Vec<ContextElement> {
-        // TODO: other operations were moved out of this function:
-        // because here we don't have an access to the PDU header and sec_trailer.
         contexts
-            .into_iter()
+            .iter()
             .enumerate()
             .filter_map(|(index, context)| {
                 if let Some(result) = ack.results.get(index) {
@@ -274,7 +272,7 @@ impl RpcClient {
     pub fn bind(&mut self, contexts: &[ContextElement], authenticate: bool) -> DpapiResult<BindAck> {
         let bind = if authenticate {
             self.auth.acquire_credentials_handle()?;
-            let security_trailer = self.auth.initialize_security_context(&[])?;
+            let _security_trailer = self.auth.initialize_security_context(&[])?;
             let security_trailer = self.auth.initialize_security_context(&[])?;
             println!("first initiali: {:?}", security_trailer);
 
@@ -296,11 +294,7 @@ impl RpcClient {
             return Ok(bind_ack);
         }
 
-        if !header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign) {
-            self.sign_header = false;
-        } else {
-            self.sign_header = true;
-        }
+        self.sign_header = header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign);
 
         let final_contexts = self.process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
@@ -315,8 +309,8 @@ impl RpcClient {
             let alter_context = self.create_alter_context_pdu(final_contexts.clone(), security_trailer)?;
             let alter_context_resp = self.send_pdu(alter_context, None)?;
 
-            let bind_ack = alter_context_resp.data.bind_ack()?;
-            let final_contexts = self.process_bind_ack(&bind_ack, &final_contexts);
+            // let bind_ack = alter_context_resp.data.bind_ack()?;
+            // let _ = self.process_bind_ack(&bind_ack, &final_contexts);
             in_token = alter_context_resp
                 .security_trailer
                 .map(|security_trailer| security_trailer.auth_value);

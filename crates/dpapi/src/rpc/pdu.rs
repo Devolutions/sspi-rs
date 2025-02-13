@@ -382,9 +382,9 @@ impl PduData {
     }
 
     pub fn check_error(&self) -> PduResult<()> {
-        if let PduData::Fault(fault) = self {
+        if let PduData::Fault(_) = self {
             Err(PduError::RpcFail("got unexpected Fault PDU"))
-        } else if let PduData::BindNak(bind_nak) = self {
+        } else if let PduData::BindNak(_) = self {
             Err(PduError::RpcFail("got unexpected BindAcknowledge PDU"))
         } else {
             Ok(())
@@ -459,7 +459,6 @@ impl Decode for Pdu {
     fn decode(mut reader: impl Read) -> DpapiResult<Self> {
         let header = PduHeader::decode(&mut reader)?;
 
-        let data_len = header.frag_len - header.auth_len - 16/* PDU header len */;
         let security_trailer_len = if header.auth_len > 0 {
             8 /* security trailer header */
         } else {
@@ -470,9 +469,7 @@ impl Decode for Pdu {
             &header,
             header
                 .frag_len
-                .checked_sub(
-                    security_trailer_len + 16, /* PDU header len */
-                )
+                .checked_sub(security_trailer_len + 16 /* PDU header len */)
                 .ok_or(PduError::InvalidFragLength(header.frag_len))?
                 .into(),
             &mut reader,

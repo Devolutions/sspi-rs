@@ -8,8 +8,8 @@ use thiserror::Error;
 
 use crate::rpc::bind::SyntaxId;
 use crate::rpc::pdu::{DataRepr, PacketType};
-use crate::rpc::{read_buf, read_vec, write_buf, Decode, Encode, EncodeExt};
-use crate::{DpapiResult, Error};
+use crate::rpc::{read_vec, write_buf, Decode, Encode, EncodeExt};
+use crate::DpapiResult;
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -26,10 +26,7 @@ pub enum CommandError {
     InvalidPacketType(u8),
 
     #[error("invalid VerificationTrailer signature")]
-    InvalidVerificationTrailerSignature {
-        expected: &'static [u8],
-        actual: Vec<u8>,
-    },
+    InvalidVerificationTrailerSignature { expected: &'static [u8], actual: Vec<u8> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
@@ -100,10 +97,10 @@ impl Decode for Command {
         let command_type = cmd_field & 0x3fff;
         let command_flags = cmd_field & 0xc000;
 
-        let command = CommandType::from_u16(command_type)
-            .ok_or_else(|| CommandError::InvalidCommandType(command_type))?;
-        let flags = CommandFlags::from_bits(command_flags)
-            .ok_or_else(|| CommandError::InvalidCommandFlags(command_flags))?;
+        let command =
+            CommandType::from_u16(command_type).ok_or(CommandError::InvalidCommandType(command_type))?;
+        let flags =
+            CommandFlags::from_bits(command_flags).ok_or(CommandError::InvalidCommandFlags(command_flags))?;
 
         let value_len = reader.read_u16::<LittleEndian>()?;
         let value = read_vec(usize::from(value_len), reader)?;
@@ -135,7 +132,7 @@ impl CommandBitmask {
         let bits: [u8; 4] = value.try_into().expect("length should be checked");
 
         Ok(Self {
-            flags: flags,
+            flags,
             bits: u32::from_le_bytes(bits),
         })
     }

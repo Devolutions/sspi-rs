@@ -72,7 +72,7 @@ impl Decode for Uuid {
     }
 }
 
-pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, mut writer: impl Write) -> DpapiResult<usize> {
+pub fn write_padding<const ALIGNMENT: usize>(buf_len: usize, writer: impl Write) -> DpapiResult<usize> {
     let padding_len = (ALIGNMENT - (buf_len % ALIGNMENT)) % ALIGNMENT;
     let padding_buf = vec![0; padding_len];
 

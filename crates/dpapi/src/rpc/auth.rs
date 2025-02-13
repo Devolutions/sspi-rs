@@ -2,7 +2,7 @@ use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
-    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityBufferFlags, Sspi, SecurityStatus,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityStatus, Sspi,
 };
 use thiserror::Error;
 
@@ -79,7 +79,8 @@ impl AuthProvider {
 
         let mut message = if sign_header {
             vec![
-                SecurityBufferRef::data_buf(&mut header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+                SecurityBufferRef::data_buf(&mut header)
+                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
                 SecurityBufferRef::data_buf(&mut body),
                 SecurityBufferRef::data_buf(&mut trailer)
                     .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
@@ -122,7 +123,8 @@ impl AuthProvider {
 
         let mut message = if sign_header {
             vec![
-                SecurityBufferRef::data_buf(&mut header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+                SecurityBufferRef::data_buf(&mut header)
+                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
                 SecurityBufferRef::data_buf(&mut body),
                 SecurityBufferRef::data_buf(&mut trailer)
                     .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),

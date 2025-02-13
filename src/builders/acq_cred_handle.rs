@@ -128,6 +128,15 @@ where
     }
 }
 
+impl<'a, CredsHandle, AuthData, CredentialUseSet> Default for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+where
+    CredentialUseSet: ToAssign,
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'b, 'a: 'b, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
     /// Transforms the builder into new one with the other `AuthData` and `CredsHandle` types.
     /// Useful when we need to pass the builder into the security package with other `AuthData` and `CredsHandle` types.
