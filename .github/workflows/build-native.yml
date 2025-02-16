@@ -41,11 +41,11 @@ jobs:
           - os: osx
             runner: macos-14
           - os: linux
-            runner: ubuntu-20.04
+            runner: ubuntu-22.04
           - os: ios
             runner: macos-14
           - os: android
-            runner: ubuntu-20.04
+            runner: ubuntu-22.04
         exclude:
           - arch: arm
             os: win
@@ -141,18 +141,38 @@ jobs:
             echo "IPHONEOS_DEPLOYMENT_TARGET=12.1" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
           }
 
-      - name: Update runner
-        if: ${{ matrix.os == 'linux' }}
-        run: sudo apt-get update
-
-      # We need a newer version of GCC because aws-lc-rs rejects versions affected
-      # by this bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189
-      # These lines can be safely removed once we switch to ubuntu-22.04 runner.
-      - name: Install GCC 10.x
-        if: ${{ matrix.os == 'linux' }}
+      - name: Install clang+llvm
+        if: matrix.os == 'linux'
+        shell: pwsh
         run: |
-          sudo apt-get install gcc-10
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 60
+          $ClangLlvmVersion='18.1.8'
+          $ClangLlvmArch='x86_64'
+          $ClangLlvmPlatform=@{'win'='windows';'osx'='macos';'linux'='ubuntu-22.04'}['${{matrix.os}}']
+          $ClangLlvmBaseUrl="https://github.com/awakecoding/llvm-prebuilt/releases/download/v2025.2.0"
+          $ClangLlvmName="clang+llvm-${ClangLlvmVersion}-${ClangLlvmArch}-${ClangLlvmPlatform}"
+          wget -q "${ClangLlvmBaseUrl}/${ClangLlvmName}.tar.xz"
+          $LLVM_PREFIX="/opt/llvm"
+          tar -xf "${ClangLlvmName}.tar.xz" -C /tmp
+          sudo mv "/tmp/${ClangLlvmName}" $LLVM_PREFIX
+          $LLVM_BIN_PATH="$LLVM_PREFIX/bin"
+          echo "PATH=$LLVM_BIN_PATH$([IO.Path]::PathSeparator)$Env:PATH" >> $Env:GITHUB_ENV
+
+      - name: Configure CBake
+        if: matrix.os == 'linux'
+        shell: pwsh
+        run: |
+          $CBakeVersion = "v2025.02.18.0"
+          $CBakeRepoUrl = "https://github.com/Devolutions/CBake"
+          $CBakeDownloadUrl = "$CBakeRepoUrl/releases/download/$CBakeVersion"
+          git clone -b $CBakeVersion "https://github.com/Devolutions/CBake" cbake
+          @('ubuntu-20.04-amd64-sysroot.tar.xz', 'ubuntu-20.04-arm64-sysroot.tar.xz') | % {
+            curl -L --output "cbake/sysroots/$_" "$CBakeDownloadUrl/$_"
+            tar -C "cbake/sysroots" -xf "cbake/sysroots/$_"
+            Remove-Item "cbake/sysroots/$_" | Out-Null
+          }
+          $CBakeHome = Join-Path (Get-Location) 'cbake'
+          echo "CBAKE_HOME=$CBakeHome" >> $Env:GITHUB_ENV
+          sudo apt install ninja-build g++-aarch64-linux-gnu
 
       - name: Build sspi (${{matrix.os}}-${{matrix.arch}}) (${{matrix.build}})
         shell: pwsh
@@ -192,11 +212,6 @@ jobs:
             $Env:RUSTFLAGS="-C target-feature=+crt-static"
           }
 
-          if ($RustTarget -eq 'aarch64-unknown-linux-gnu') {
-            sudo apt-get install gcc-aarch64-linux-gnu
-            $Env:RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc"
-          }
-
           $ProjectVersion = '${{ needs.preflight.outputs.project-version }}'
           $PackageVersion = '${{ needs.preflight.outputs.package-version }}'
 
@@ -221,6 +236,21 @@ jobs:
           # For simplicity, we’re using the ring crypto backend.
           if ($DotNetOs -Eq 'android') {
             $CargoArgs += @('--no-default-features', '--features', 'scard,ring')
+          }
+
+          if ($DotNetOs -eq 'linux') {
+            $LinuxArch = @{'x64'='amd64';'arm64'='arm64'}[$DotNetArch]
+            $CMakeToolchainFile = Join-Path $Env:CBAKE_HOME "cmake/linux.toolchain.cmake"
+            $Env:SYSROOT_NAME = "ubuntu-20.04-$LinuxArch"
+            $CMakeSourceDir = "$Env:CBAKE_HOME/cargo"
+            $CMakeBuildDir = "$Env:CBAKE_HOME/cargo/${Env:SYSROOT_NAME}"
+            $CMakeArgs = @(
+              "-DSYSROOT_NAME=$Env:SYSROOT_NAME",
+              "-DCMAKE_TOOLCHAIN_FILE=$CMakeToolchainFile"
+            )
+            cmake $CMakeSourceDir -G Ninja -B $CMakeBuildDir $CMakeArgs
+            . "$HOME/.cargo/cbake/${RustTarget}-enter.ps1"
+            $Env:AWS_LC_SYS_CMAKE_BUILDER="true"
           }
 
           $CargoCmd = $(@('cargo') + $CargoArgs) -Join ' '
@@ -258,7 +288,7 @@ jobs:
 
       - name: Configure runner
         run: |
-          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2025.1.0/cctools-x86_64-ubuntu-24.04.tar.xz
+          wget -q https://github.com/awakecoding/llvm-prebuilt/releases/download/v2025.2.0/cctools-x86_64-ubuntu-24.04.tar.xz
           tar -xf cctools-x86_64-ubuntu-24.04.tar.xz -C /tmp
           sudo mv /tmp/cctools-x86_64-ubuntu-24.04/bin/lipo /usr/local/bin
           sudo mv /tmp/cctools-x86_64-ubuntu-24.04/bin/install_name_tool /usr/local/bin
