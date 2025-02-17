@@ -1,5 +1,6 @@
 use std::net::{TcpStream, ToSocketAddrs};
 
+use thiserror::Error;
 use uuid::{uuid, Uuid};
 
 use crate::rpc::auth::AuthProvider;
@@ -29,6 +30,12 @@ pub fn bind_time_feature_negotiation(flags: BindTimeFeatureNegotiationBitmask) -
         version: 1,
         version_minor: 0,
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RpcClientError {
+    #[error("invalid encryption offset: {0}")]
+    InvalidEncryptionOffset(&'static str),
 }
 
 /// Represents structural offsets in RPC PDU.
@@ -167,7 +174,7 @@ impl RpcClient {
             // next 16 byte boundary after the stub data. This padding is
             // included as part of the stub data to be encrypted.
             let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
-            let security_trailer = self.auth.get_empty_trailer(padding_len.try_into()?)?;
+            let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
             let auth_len = security_trailer.auth_value.len();
 
             (
@@ -216,15 +223,26 @@ impl RpcClient {
                 security_trailer_offset,
             } = encrypt_offsets;
 
-            let header = &pdu_encoded[0..pdu_header_len];
-            let body = &pdu_encoded[pdu_header_len..security_trailer_offset];
-            let sec_trailer =
-                &pdu_encoded[security_trailer_offset..security_trailer_offset + SecurityTrailer::HEADER_LEN];
+            if pdu_encoded.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
+                Err(RpcClientError::InvalidEncryptionOffset(
+                    "security trailer offset is too big or PDU is corrupted",
+                ))?;
+            }
 
-            Ok(self.auth.wrap(header, body, sec_trailer, self.sign_header)?)
-        } else {
-            Ok(pdu_encoded)
+            let (header, data) = pdu_encoded.split_at_mut(pdu_header_len);
+            let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
+            let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
+
+            self.auth.wrap(
+                header,
+                body,
+                sec_trailer_header,
+                sec_trailer_auth_value,
+                self.sign_header,
+            )?;
         }
+
+        Ok(pdu_encoded)
     }
 
     fn process_bind_ack(&self, ack: &BindAck, contexts: &[ContextElement]) -> Vec<ContextElement> {
@@ -259,18 +277,21 @@ impl RpcClient {
                 security_trailer_offset: _,
             } = encrypt_offsets.unwrap();
 
-            let sec_trailer_offset =
+            let security_trailer_offset =
                 usize::from(pdu_header.frag_len) - (usize::from(pdu_header.auth_len) - SecurityTrailer::HEADER_LEN);
-            let header = &response[0..pdu_header_len];
-            let body = &response[pdu_header_len..sec_trailer_offset];
-            let sec_trailer = &response[sec_trailer_offset..sec_trailer_offset + SecurityTrailer::HEADER_LEN];
-            let signature = &response[sec_trailer_offset + SecurityTrailer::HEADER_LEN..];
 
-            let decrypted_stub_data = self
-                .auth
-                .unwrap(header, body, sec_trailer, signature, self.sign_header)?;
+            if response.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
+                Err(RpcClientError::InvalidEncryptionOffset(
+                    "security trailer offset is too big or PDU is corrupted",
+                ))?;
+            }
 
-            response[pdu_header_len..sec_trailer_offset].copy_from_slice(&decrypted_stub_data);
+            let (header, data) = response.split_at_mut(pdu_header_len);
+            let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
+            let (sec_trailer_header, sec_trailer_data) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
+
+            self.auth
+                .unwrap(header, body, sec_trailer_header, sec_trailer_data, self.sign_header)?;
         }
 
         let pdu = Pdu::decode(response as &[u8])?;

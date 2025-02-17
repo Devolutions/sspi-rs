@@ -67,7 +67,7 @@ impl AuthProvider {
     }
 
     /// Returns an empty [SecurityTrailer] with correct parameters.
-    pub fn get_empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
+    pub fn empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
         Ok(SecurityTrailer {
             security_type: self.security_type,
             level: AuthenticationLevel::PktPrivacy,
@@ -87,99 +87,81 @@ impl AuthProvider {
     ///
     /// This method is an equivalent to `GSS_WrapEx()`. More info: [Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550).
     ///
-    /// **Important**. `header_data`, `body_data`, and `security_trailer_data` are parts of one RPC PDU:
-    /// * `header_data`: RPC PDU header + header data from the RPC PDU body.
-    /// * `body_data` contains data from the RPC PDU body that must be encrypted.
-    /// * `security_trailer_data`: RPC PDU security trailer header data (i.e. security trailer without `auth_value`).
+    /// **Important**. `header`, `body`, `security_trailer_header`, `security_trailer_data` are parts of one RPC PDU:
+    /// * `header`: RPC PDU header + header data from the RPC PDU body.
+    /// * `body` contains data from the RPC PDU body that must be encrypted.
+    /// * `security_trailer_header`: RPC PDU security trailer header data (i.e. security trailer without `auth_value`).
+    /// * `security_trailer_data`: RPC PDU security trailer `auth_value`. Basically, it's a Kerberos Wrap Token.
     ///
-    /// Returns encrypted concatenated data. This data represents an encrypted RPC PDU that is ready to be sent.
+    /// All encryption is performed in-place.
     #[instrument(ret, skip(self))]
     pub fn wrap(
         &mut self,
-        header_data: &[u8],
-        body_data: &[u8],
-        security_trailer_data: &[u8],
+        header: &mut [u8],
+        body: &mut [u8],
+        security_trailer_header: &mut [u8],
+        security_trailer_data: &mut [u8],
         sign_header: bool,
-    ) -> AuthResult<Vec<u8>> {
-        let mut token = vec![
-            0;
-            self.security_context
-                .query_context_sizes()?
-                .security_trailer
-                .try_into()?
-        ];
-
-        let mut header = header_data.to_vec();
-        let mut body = body_data.to_vec();
-        let mut trailer = security_trailer_data.to_vec();
-
+    ) -> AuthResult<()> {
         let mut message = if sign_header {
             vec![
-                SecurityBufferRef::data_buf(&mut header)
+                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+                SecurityBufferRef::data_buf(body),
+                SecurityBufferRef::data_buf(security_trailer_header)
                     .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::data_buf(&mut body),
-                SecurityBufferRef::data_buf(&mut trailer)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::token_buf(&mut token),
+                SecurityBufferRef::token_buf(security_trailer_data),
             ]
         } else {
             vec![
-                SecurityBufferRef::data_buf(&mut header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::data_buf(&mut body),
-                SecurityBufferRef::data_buf(&mut trailer).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::token_buf(&mut token),
+                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
+                SecurityBufferRef::data_buf(body),
+                SecurityBufferRef::data_buf(security_trailer_header)
+                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
+                SecurityBufferRef::token_buf(security_trailer_data),
             ]
         };
 
         self.security_context
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
 
-        Ok(message.iter().fold(Vec::new(), |mut result, buf| {
-            result.extend_from_slice(buf.data());
-            result
-        }))
+        Ok(())
     }
 
     /// Decrypts input buffers using inner SSPI security context.
     ///
     /// This method is an equivalent to `GSS_UnwrapEx()`. More info: [Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550) and [GSS_UnwrapEx() Call](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/9e3981a9-6564-4db6-a70e-4af4c07d03b3).
     ///
-    /// **Important**. `header_data`, `body_data`, and `security_trailer_data` are parts of one RPC PDU:
+    /// **Important**. `header_data`, `body_data`, `security_trailer_header`, and `security_trailer_data` are parts of one RPC PDU:
     /// * `header_data`: RPC PDU header + header data from the RPC PDU body.
     /// * `body_data` contains data from the RPC PDU body that needs to be decrypted.
-    /// * `security_trailer_data`: RPC PDU security trailer header data (i.e. security trailer without `auth_value`).
-    /// * `signature_data`: `auth_value` of the RPC PDU security trailer.
+    /// * `security_trailer_header`: RPC PDU security trailer header data (i.e. security trailer without `auth_value`).
+    /// * `security_trailer_data`: `auth_value` of the RPC PDU security trailer. Basically, it's a Kerberos Wrap Token.
     ///
-    /// Returns decrypted `body_data`.
+    /// All decryption is performed in-place.
     #[instrument(ret, skip(self))]
     pub fn unwrap(
         &mut self,
-        header_data: &[u8],
-        body_data: &[u8],
-        security_trailer_data: &[u8],
-        signature_data: &[u8],
+        header: &mut [u8],
+        body: &mut [u8],
+        security_trailer_header: &mut [u8],
+        security_trailer_data: &mut [u8],
         sign_header: bool,
     ) -> AuthResult<Vec<u8>> {
-        let mut header = header_data.to_vec();
-        let mut body = body_data.to_vec();
-        let mut trailer = security_trailer_data.to_vec();
-        let mut signature = signature_data.to_vec();
-
         let mut message = if sign_header {
             vec![
-                SecurityBufferRef::data_buf(&mut header)
+                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+                SecurityBufferRef::data_buf(body),
+                SecurityBufferRef::data_buf(security_trailer_header)
                     .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::data_buf(&mut body),
-                SecurityBufferRef::data_buf(&mut trailer)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::token_buf(&mut signature),
+                SecurityBufferRef::token_buf(security_trailer_data),
             ]
         } else {
             vec![
-                SecurityBufferRef::data_buf(&mut header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::data_buf(&mut body),
-                SecurityBufferRef::data_buf(&mut trailer).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::token_buf(&mut signature),
+                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
+                SecurityBufferRef::data_buf(body),
+                SecurityBufferRef::data_buf(security_trailer_header)
+                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
+                SecurityBufferRef::token_buf(security_trailer_data),
             ]
         };
 

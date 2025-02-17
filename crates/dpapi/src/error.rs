@@ -32,6 +32,9 @@ pub enum Error {
     Crypto(#[from] crate::crypto::CryptoError),
 
     #[error(transparent)]
+    RpcClient(#[from] crate::rpc::client::RpcClientError),
+
+    #[error(transparent)]
     Command(#[from] crate::rpc::verification::CommandError),
 
     #[error(transparent)]
