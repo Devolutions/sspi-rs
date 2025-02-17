@@ -107,7 +107,7 @@ impl Decode for BaseFloor {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpFloor {
     pub port: u16,
 }
@@ -132,7 +132,7 @@ impl TcpFloor {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IpFloor {
     pub addr: u32,
 }
@@ -157,7 +157,7 @@ impl IpFloor {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcConnectionOrientedFloor {
     pub version_minor: u16,
 }
@@ -187,7 +187,7 @@ impl RpcConnectionOrientedFloor {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UuidFloor {
     pub uuid: Uuid,
     pub version: u16,
@@ -219,13 +219,13 @@ impl UuidFloor {
 
         Ok(Self {
             uuid: Uuid::from_slice_le(&lhs[0..16])?,
-            version: u16::from_be_bytes(lhs[16..].try_into().unwrap()),
-            version_minor: u16::from_be_bytes(rhs.try_into().unwrap()),
+            version: u16::from_le_bytes(lhs[16..].try_into().unwrap()),
+            version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
         })
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Floor {
     Tcp(TcpFloor),
     Ip(IpFloor),
@@ -321,7 +321,7 @@ impl Decode for Option<EntryHandle> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EptMap {
     pub obj: Option<Uuid>,
     pub tower: Tower,
@@ -390,9 +390,6 @@ impl Decode for EptMap {
 
         read_padding::<8>((tower_length + 4).try_into()?, &mut reader)?;
 
-        let mut entry_handle_buf = [0; 20];
-        read_buf(&mut reader, &mut entry_handle_buf)?;
-
         let entry_handle = Option::decode(&mut reader)?;
         let max_towers = reader.read_u32::<LittleEndian>()?;
 
@@ -405,7 +402,7 @@ impl Decode for EptMap {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EptMapResult {
     pub entry_handle: Option<EntryHandle>,
     pub towers: Vec<Tower>,
@@ -424,8 +421,6 @@ impl Encode for EptMapResult {
         writer.write_u64::<LittleEndian>(0)?;
 
         writer.write_u64::<LittleEndian>(u64::try_from(self.towers.len())?)?;
-
-        writer.write_u32::<LittleEndian>(self.status)?;
 
         for idx in 0..self.towers.len() {
             writer.write_u64::<LittleEndian>((idx + 3).try_into()?)?;
@@ -449,9 +444,6 @@ impl Encode for EptMapResult {
 
 impl Decode for EptMapResult {
     fn decode(mut reader: impl Read) -> Result<Self> {
-        let mut entry_handle_buf = [0; 20];
-        read_buf(&mut reader, &mut entry_handle_buf)?;
-
         let entry_handle = Option::decode(&mut reader)?;
 
         // num towers

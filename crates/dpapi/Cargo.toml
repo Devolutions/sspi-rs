@@ -47,4 +47,3 @@ sspi = { path = "../..", features = ["network_client"] }
 
 [dev-dependencies]
 paste = "1.0"
-tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }

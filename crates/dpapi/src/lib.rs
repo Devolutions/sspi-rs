@@ -14,6 +14,6 @@ pub mod rpc;
 pub(crate) mod sid;
 pub(crate) mod str;
 
-pub use client::*;
 pub use error::{Error, Result};
+pub use client::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 pub use sspi::Secret;

@@ -47,6 +47,9 @@ pub enum GkdiError {
     #[error("l0 index does not match requested l0 index")]
     InvalidL0Index,
 
+    #[error("bad GetKey response: {0}")]
+    BadResponse(&'static str),
+
     #[error("bad GetKey hresult: {0:x?}")]
     BadHresult(u32),
 }
@@ -81,6 +84,9 @@ impl GetKey {
 
     /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
     pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
+        if data.len() < 4 {
+            Err(GkdiError::BadResponse("response data length is too small"))?;
+        }
         let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
 
         let hresult = hresult_buf.read_u32::<LittleEndian>()?;
