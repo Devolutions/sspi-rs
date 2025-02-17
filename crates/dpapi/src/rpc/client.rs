@@ -10,7 +10,7 @@ use crate::rpc::bind::{
 use crate::rpc::pdu::*;
 use crate::rpc::request::Request;
 use crate::rpc::verification::VerificationTrailer;
-use crate::rpc::{write_padding, Decode, EncodeExt};
+use crate::rpc::{read_buf, read_vec, write_padding, Decode, EncodeExt};
 use crate::DpapiResult;
 
 pub const NDR64: SyntaxId = SyntaxId {
@@ -91,14 +91,8 @@ impl RpcClient {
         }
     }
 
-    fn create_bind_pdu(
-        &mut self,
-        contexts: Vec<ContextElement>,
-        security_trailer: Option<SecurityTrailer>,
-    ) -> DpapiResult<Pdu> {
+    fn create_bind_pdu(contexts: Vec<ContextElement>, security_trailer: Option<SecurityTrailer>) -> DpapiResult<Pdu> {
         let (auth_len, packet_flags) = if let Some(security_trailer) = security_trailer.as_ref() {
-            self.sign_header = true;
-
             (security_trailer.auth_value.len(), PacketFlags::PfcSupportHeaderSign)
         } else {
             (0, PacketFlags::None)
@@ -205,40 +199,33 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn prepare_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> DpapiResult<Vec<u8>> {
-        let mut pdu_encoded = pdu.encode_to_vec()?;
-        let frag_len = u16::try_from(pdu_encoded.len())?;
-        // Set `frag_len` in the PDU header.
-        pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
+    fn encrypt_pdu(&mut self, pdu_encoded: &mut [u8], encrypt_offsets: EncryptionOffsets) -> DpapiResult<()> {
+        let EncryptionOffsets {
+            pdu_header_len,
+            security_trailer_offset,
+        } = encrypt_offsets;
 
-        if let Some(encrypt_offsets) = encrypt_offsets {
-            let EncryptionOffsets {
-                pdu_header_len,
-                security_trailer_offset,
-            } = encrypt_offsets;
-
-            if pdu_encoded.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
-                Err(RpcClientError::InvalidEncryptionOffset(
-                    "security trailer offset is too big or PDU is corrupted",
-                ))?;
-            }
-
-            let (header, data) = pdu_encoded.split_at_mut(pdu_header_len);
-            let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
-            let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
-
-            if self.sign_header {
-                self.auth
-                    .wrap_with_header_sign(header, body, sec_trailer_header, sec_trailer_auth_value)?;
-            } else {
-                self.auth.wrap(body, sec_trailer_auth_value)?;
-            }
+        if pdu_encoded.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
+            Err(RpcClientError::InvalidEncryptionOffset(
+                "security trailer offset is too big or PDU is corrupted",
+            ))?;
         }
 
-        Ok(pdu_encoded)
+        let (header, data) = pdu_encoded.split_at_mut(pdu_header_len);
+        let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
+        let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
+
+        if self.sign_header {
+            self.auth
+                .wrap_with_header_sign(header, body, sec_trailer_header, sec_trailer_auth_value)?;
+        } else {
+            self.auth.wrap(body, sec_trailer_auth_value)?;
+        }
+
+        Ok(())
     }
 
-    fn process_bind_ack(&self, ack: &BindAck, contexts: &[ContextElement]) -> Vec<ContextElement> {
+    fn process_bind_ack(ack: &BindAck, contexts: &[ContextElement]) -> Vec<ContextElement> {
         contexts
             .iter()
             .enumerate()
@@ -293,16 +280,23 @@ impl RpcClient {
 
     #[instrument(level = "trace", ret, skip(self))]
     fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> DpapiResult<Pdu> {
-        let pdu_encoded = self.prepare_pdu(pdu, encrypt_offsets)?;
+        let mut pdu_encoded = pdu.encode_to_vec()?;
+        let frag_len = u16::try_from(pdu_encoded.len())?;
+        // Set `frag_len` in the PDU header.
+        pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
+
+        if let Some(encrypt_offsets) = encrypt_offsets {
+            self.encrypt_pdu(&mut pdu_encoded, encrypt_offsets)?;
+        }
 
         super::write_buf(&pdu_encoded, &mut self.stream)?;
 
         // Read PDU header
-        let mut pdu_buf = super::read_vec(PduHeader::LENGTH, &mut self.stream)?;
+        let mut pdu_buf = read_vec(PduHeader::LENGTH, &mut self.stream)?;
         let pdu_header = PduHeader::decode(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        super::read_buf(&mut self.stream, &mut pdu_buf[PduHeader::LENGTH..])?;
+        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::LENGTH..])?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
@@ -340,7 +334,7 @@ impl RpcClient {
     /// Performs the RPC bind/bind_ack exchange.
     #[instrument(level = "trace", ret, skip(self))]
     pub fn bind(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
-        let bind = self.create_bind_pdu(contexts.to_vec(), None)?;
+        let bind = Self::create_bind_pdu(contexts.to_vec(), None)?;
         let pdu_resp = self.send_pdu(bind, None)?;
 
         let Pdu {
@@ -362,20 +356,20 @@ impl RpcClient {
         let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
 
         let security_trailer = self.auth.initialize_security_context(Vec::new())?;
-        let bind = self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
+        let bind = Self::create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
+
+        self.sign_header = true;
 
         let pdu_resp = self.send_pdu(bind, None)?;
 
         let Pdu {
-            header,
+            header: _,
             data,
             security_trailer,
         } = pdu_resp;
         let bind_ack = data.bind_ack()?;
 
-        self.sign_header = header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign);
-
-        let final_contexts = self.process_bind_ack(&bind_ack, contexts);
+        let final_contexts = Self::process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
         loop {
