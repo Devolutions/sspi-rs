@@ -395,13 +395,13 @@ impl PduData {
     }
 
     /// Checks if the [PduData] contains any error PDU inside. Returns an error if so.
-    pub fn check_error(&self) -> PduResult<()> {
+    pub fn into_error(self) -> PduResult<Self> {
         if let PduData::Fault(_) = self {
             Err(PduError::RpcFail("got unexpected Fault PDU"))
         } else if let PduData::BindNak(_) = self {
             Err(PduError::RpcFail("got unexpected BindAcknowledge PDU"))
         } else {
-            Ok(())
+            Ok(self)
         }
     }
 

@@ -32,9 +32,15 @@ pub enum CommandError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 #[repr(u16)]
 pub enum CommandType {
-    SecVtCommandBitmask1 = 0x0001,
-    SecVtCommandPcontext = 0x0002,
-    SecVtCommandHeader2 = 0x0003,
+    Bitmask1 = 0x0001,
+    Pcontext = 0x0002,
+    Header2 = 0x0003,
+}
+
+impl CommandType {
+    pub fn as_u16(self) -> u16 {
+        self as u16
+    }
 }
 
 bitflags! {
@@ -43,23 +49,6 @@ bitflags! {
         const None = 0;
         const SecVtCommandEnd = 0x4000;
         const SecVtMustProcessCommand = 0x8000;
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandBase {
-    pub command: CommandType,
-    pub flags: CommandFlags,
-    pub value: Vec<u8>,
-}
-
-impl Encode for CommandBase {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
-        writer.write_u16::<LittleEndian>(self.command as u16 | self.flags.bits())?;
-        writer.write_u16::<LittleEndian>(self.value.len().try_into()?)?;
-        write_buf(&self.value, writer)?;
-
-        Ok(())
     }
 }
 
@@ -73,19 +62,29 @@ pub enum Command {
 impl Command {
     pub fn flags(&self) -> CommandFlags {
         match self {
-            Command::Bitmask1(command) => command.flags(),
-            Command::Pcontext(command) => command.flags(),
-            Command::Header2(command) => command.flags(),
+            Command::Bitmask1(command) => command.flags,
+            Command::Pcontext(command) => command.flags,
+            Command::Header2(command) => command.flags,
+        }
+    }
+
+    pub fn command_type(&self) -> CommandType {
+        match self {
+            Command::Bitmask1(_) => CommandType::Bitmask1,
+            Command::Pcontext(_) => CommandType::Pcontext,
+            Command::Header2(_) => CommandType::Header2,
         }
     }
 }
 
 impl Encode for Command {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(self.command_type().as_u16() | self.flags().bits())?;
+
         match self {
-            Command::Bitmask1(command) => command.encode(writer),
-            Command::Pcontext(command) => command.encode(writer),
-            Command::Header2(command) => command.encode(writer),
+            Command::Bitmask1(command) => command.encode_value(writer),
+            Command::Pcontext(command) => command.encode_value(writer),
+            Command::Header2(command) => command.encode_value(writer),
         }
     }
 }
@@ -104,9 +103,9 @@ impl Decode for Command {
         let value = read_vec(usize::from(value_len), reader)?;
 
         Ok(match command {
-            CommandType::SecVtCommandBitmask1 => Self::Bitmask1(CommandBitmask::from_flags_and_value(flags, &value)?),
-            CommandType::SecVtCommandPcontext => Self::Pcontext(CommandPContext::from_flags_and_value(flags, &value)?),
-            CommandType::SecVtCommandHeader2 => Self::Header2(CommandHeader2::from_flags_and_value(flags, &value)?),
+            CommandType::Bitmask1 => Self::Bitmask1(CommandBitmask::from_flags_and_value(flags, &value)?),
+            CommandType::Pcontext => Self::Pcontext(CommandPContext::from_flags_and_value(flags, &value)?),
+            CommandType::Header2 => Self::Header2(CommandHeader2::from_flags_and_value(flags, &value)?),
         })
     }
 }
@@ -118,11 +117,7 @@ pub struct CommandBitmask {
 }
 
 impl CommandBitmask {
-    pub fn flags(&self) -> CommandFlags {
-        self.flags
-    }
-
-    pub fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
         if value.len() != 4 {
             Err(CommandError::InvalidCommandBitmaskValueLength(value.len()))?;
         }
@@ -134,16 +129,10 @@ impl CommandBitmask {
             bits: u32::from_le_bytes(bits),
         })
     }
-}
 
-impl Encode for CommandBitmask {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
-        CommandBase {
-            command: CommandType::SecVtCommandBitmask1,
-            flags: self.flags,
-            value: self.bits.to_le_bytes().to_vec(),
-        }
-        .encode(writer)
+    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
+        writer.write_u16::<LittleEndian>(4)?;
+        write_buf(self.bits.to_le_bytes().as_slice(), writer)
     }
 }
 
@@ -155,11 +144,7 @@ pub struct CommandPContext {
 }
 
 impl CommandPContext {
-    pub fn flags(&self) -> CommandFlags {
-        self.flags
-    }
-
-    pub fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
         let mut reader = value;
         let interface_id = SyntaxId::decode(&mut reader)?;
         let transfer_syntax = SyntaxId::decode(&mut reader)?;
@@ -170,20 +155,13 @@ impl CommandPContext {
             transfer_syntax,
         })
     }
-}
 
-impl Encode for CommandPContext {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
-        CommandBase {
-            command: CommandType::SecVtCommandPcontext,
-            flags: self.flags,
-            value: {
-                let mut value = self.interface_id.encode_to_vec()?;
-                self.transfer_syntax.encode(&mut value)?;
-                value
-            },
-        }
-        .encode(writer)
+    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
+        let mut value = self.interface_id.encode_to_vec()?;
+        self.transfer_syntax.encode(&mut value)?;
+
+        writer.write_u16::<LittleEndian>(value.len().try_into()?)?;
+        write_buf(&value, writer)
     }
 }
 
@@ -198,11 +176,7 @@ pub struct CommandHeader2 {
 }
 
 impl CommandHeader2 {
-    pub fn flags(&self) -> CommandFlags {
-        self.flags
-    }
-
-    pub fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
         let mut reader = value;
 
         Ok(Self {
@@ -217,10 +191,8 @@ impl CommandHeader2 {
             opnum: reader.read_u16::<LittleEndian>()?,
         })
     }
-}
 
-impl Encode for CommandHeader2 {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
         let mut value = vec![self.packet_type as u8];
         // Reserved
         value.extend_from_slice(&[0, 0, 0]);
@@ -229,12 +201,8 @@ impl Encode for CommandHeader2 {
         value.write_u16::<LittleEndian>(self.context_id)?;
         value.write_u16::<LittleEndian>(self.opnum)?;
 
-        CommandBase {
-            command: CommandType::SecVtCommandHeader2,
-            flags: self.flags,
-            value,
-        }
-        .encode(writer)
+        writer.write_u16::<LittleEndian>(value.len().try_into()?)?;
+        write_buf(&value, writer)
     }
 }
 
