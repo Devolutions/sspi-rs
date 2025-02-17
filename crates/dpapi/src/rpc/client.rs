@@ -23,6 +23,7 @@ pub const NDR: SyntaxId = SyntaxId {
     version: 2,
     version_minor: 0,
 };
+pub const CALL_ID: u32 = 1;
 
 pub fn bind_time_feature_negotiation(flags: BindTimeFeatureNegotiationBitmask) -> SyntaxId {
     SyntaxId {
@@ -104,12 +105,7 @@ impl RpcClient {
         };
 
         Ok(Pdu {
-            header: Self::create_pdu_header(
-                PacketType::Bind,
-                packet_flags,
-                auth_len.try_into()?,
-                1, /* call id */
-            ),
+            header: Self::create_pdu_header(PacketType::Bind, packet_flags, auth_len.try_into()?, CALL_ID),
             data: PduData::Bind(Bind {
                 max_xmit_frag: 5840,
                 max_recv_frag: 5840,
@@ -136,7 +132,7 @@ impl RpcClient {
                 PacketType::AlterContext,
                 packet_flags,
                 sec_trailer.auth_value.len().try_into()?,
-                1, /* call id */
+                CALL_ID,
             ),
             data: PduData::AlterContext(AlterContext(Bind {
                 max_xmit_frag: 5840,
@@ -149,38 +145,27 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn create_request(
+    fn create_authenticated_request(
         &mut self,
         context_id: u16,
         opnum: u16,
         mut stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
-        authenticate: bool,
-    ) -> DpapiResult<(Pdu, Option<EncryptionOffsets>)> {
+    ) -> DpapiResult<(Pdu, EncryptionOffsets)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
             write_padding::<4>(stub_data.len(), &mut stub_data)?;
             let encoded_verification_trailer = verification_trailer.encode_to_vec()?;
             stub_data.extend_from_slice(&encoded_verification_trailer);
         }
 
-        let (security_trailer, auth_len, encrypt_offsets) = if authenticate {
-            // If the security trailer is present it must be aligned to the
-            // next 16 byte boundary after the stub data. This padding is
-            // included as part of the stub data to be encrypted.
-            let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
-            let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
-            let auth_len = security_trailer.auth_value.len();
+        // The security trailer must be aligned to the next 16 byte boundary after the stub data.
+        // This padding is included as part of the stub data to be encrypted.
+        let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
+        let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
 
-            (
-                Some(security_trailer),
-                auth_len,
-                Some(EncryptionOffsets {
-                    pdu_header_len: EncryptionOffsets::REQUEST_PDU_HEADER_LEN,
-                    security_trailer_offset: EncryptionOffsets::REQUEST_PDU_HEADER_LEN + stub_data.len(),
-                }),
-            )
-        } else {
-            (None, 0, None)
+        let encrypt_offsets = EncryptionOffsets {
+            pdu_header_len: EncryptionOffsets::REQUEST_PDU_HEADER_LEN,
+            security_trailer_offset: EncryptionOffsets::REQUEST_PDU_HEADER_LEN + stub_data.len(),
         };
 
         Ok((
@@ -188,8 +173,8 @@ impl RpcClient {
                 header: Self::create_pdu_header(
                     PacketType::Request,
                     PacketFlags::None,
-                    auth_len.try_into()?,
-                    1, /* call id */
+                    security_trailer.auth_value.len().try_into()?,
+                    CALL_ID,
                 ),
                 data: PduData::Request(Request {
                     alloc_hint: stub_data.len().try_into()?,
@@ -198,10 +183,25 @@ impl RpcClient {
                     obj: None,
                     stub_data,
                 }),
-                security_trailer,
+                security_trailer: Some(security_trailer),
             },
             encrypt_offsets,
         ))
+    }
+
+    #[instrument(level = "trace", ret, skip(self))]
+    fn create_request(&self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> DpapiResult<Pdu> {
+        Ok(Pdu {
+            header: Self::create_pdu_header(PacketType::Request, PacketFlags::None, 0, CALL_ID),
+            data: PduData::Request(Request {
+                alloc_hint: stub_data.len().try_into()?,
+                context_id,
+                opnum,
+                obj: None,
+                stub_data,
+            }),
+            security_trailer: None,
+        })
     }
 
     #[instrument(level = "trace", ret, skip(self))]
@@ -314,39 +314,55 @@ impl RpcClient {
         Ok(pdu)
     }
 
-    /// Sends the RPC request.
+    /// Sends the authenticated RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn request(
+    pub fn authenticated_request(
         &mut self,
         context_id: u16,
         opnum: u16,
         stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
-        authenticate: bool,
     ) -> DpapiResult<Pdu> {
         let (pdu, encrypt_offsets) =
-            self.create_request(context_id, opnum, stub_data, verification_trailer, authenticate)?;
+            self.create_authenticated_request(context_id, opnum, stub_data, verification_trailer)?;
 
-        self.send_pdu(pdu, encrypt_offsets)
+        self.send_pdu(pdu, Some(encrypt_offsets))
+    }
+
+    /// Sends the RPC request.
+    #[instrument(level = "trace", ret, skip(self))]
+    pub fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> DpapiResult<Pdu> {
+        let pdu = self.create_request(context_id, opnum, stub_data)?;
+
+        self.send_pdu(pdu, None)
+    }
+
+    /// Performs the RPC bind/bind_ack exchange.
+    #[instrument(level = "trace", ret, skip(self))]
+    pub fn bind(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
+        let bind = self.create_bind_pdu(contexts.to_vec(), None)?;
+        let pdu_resp = self.send_pdu(bind, None)?;
+
+        let Pdu {
+            header: _,
+            data,
+            security_trailer: _,
+        } = pdu_resp;
+
+        Ok(data.bind_ack()?)
     }
 
     /// Performs the RPC bind/bind_ack exchange.
     ///
-    /// If the `authenticate` is set to `true`, then the bind/bind_ack exchange will continue
-    /// until authentication is finished.
+    /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind(&mut self, contexts: &[ContextElement], authenticate: bool) -> DpapiResult<BindAck> {
-        let bind = if authenticate {
-            // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
-            // We don't need its result in RPC authentication.
-            let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
+    pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
+        // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
+        // We don't need its result in RPC authentication.
+        let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
 
-            let security_trailer = self.auth.initialize_security_context(Vec::new())?;
-
-            self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?
-        } else {
-            self.create_bind_pdu(contexts.to_vec(), None)?
-        };
+        let security_trailer = self.auth.initialize_security_context(Vec::new())?;
+        let bind = self.create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
 
         let pdu_resp = self.send_pdu(bind, None)?;
 
@@ -357,19 +373,15 @@ impl RpcClient {
         } = pdu_resp;
         let bind_ack = data.bind_ack()?;
 
-        if !authenticate {
-            return Ok(bind_ack);
-        }
-
         self.sign_header = header.packet_flags.contains(PacketFlags::PfcSupportHeaderSign);
 
         let final_contexts = self.process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
-        while !self.auth.is_finished() {
+        loop {
             let security_trailer = self.auth.initialize_security_context(in_token.unwrap_or_default())?;
 
-            if security_trailer.auth_value.is_empty() || self.auth.is_finished() {
+            if self.auth.is_finished() {
                 break;
             }
 
