@@ -76,13 +76,7 @@ impl RpcClient {
         })
     }
 
-    fn create_pdu_header(
-        &self,
-        packet_type: PacketType,
-        packet_flags: PacketFlags,
-        auth_len: u16,
-        call_id: u32,
-    ) -> PduHeader {
+    fn create_pdu_header(packet_type: PacketType, packet_flags: PacketFlags, auth_len: u16, call_id: u32) -> PduHeader {
         PduHeader {
             version: 5,
             version_minor: 0,
@@ -110,7 +104,7 @@ impl RpcClient {
         };
 
         Ok(Pdu {
-            header: self.create_pdu_header(
+            header: Self::create_pdu_header(
                 PacketType::Bind,
                 packet_flags,
                 auth_len.try_into()?,
@@ -138,7 +132,7 @@ impl RpcClient {
         };
 
         Ok(Pdu {
-            header: self.create_pdu_header(
+            header: Self::create_pdu_header(
                 PacketType::AlterContext,
                 packet_flags,
                 sec_trailer.auth_value.len().try_into()?,
@@ -191,7 +185,7 @@ impl RpcClient {
 
         Ok((
             Pdu {
-                header: self.create_pdu_header(
+                header: Self::create_pdu_header(
                     PacketType::Request,
                     PacketFlags::None,
                     auth_len.try_into()?,
@@ -233,13 +227,12 @@ impl RpcClient {
             let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
             let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
 
-            self.auth.wrap(
-                header,
-                body,
-                sec_trailer_header,
-                sec_trailer_auth_value,
-                self.sign_header,
-            )?;
+            if self.sign_header {
+                self.auth
+                    .wrap_with_header_sign(header, body, sec_trailer_header, sec_trailer_auth_value)?;
+            } else {
+                self.auth.wrap(body, sec_trailer_auth_value)?;
+            }
         }
 
         Ok(pdu_encoded)
@@ -290,8 +283,12 @@ impl RpcClient {
             let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
             let (sec_trailer_header, sec_trailer_data) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
 
-            self.auth
-                .unwrap(header, body, sec_trailer_header, sec_trailer_data, self.sign_header)?;
+            if self.sign_header {
+                self.auth
+                    .unwrap_with_header_sign(header, body, sec_trailer_header, sec_trailer_data)?;
+            } else {
+                self.auth.unwrap(body, sec_trailer_data)?;
+            }
         }
 
         let pdu = Pdu::decode(response as &[u8])?;

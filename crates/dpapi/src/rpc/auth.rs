@@ -95,31 +95,41 @@ impl AuthProvider {
     ///
     /// All encryption is performed in-place.
     #[instrument(ret, skip(self))]
-    pub fn wrap(
+    pub fn wrap_with_header_sign(
         &mut self,
         header: &mut [u8],
         body: &mut [u8],
         security_trailer_header: &mut [u8],
         security_trailer_data: &mut [u8],
-        sign_header: bool,
     ) -> AuthResult<()> {
-        let mut message = if sign_header {
-            vec![
-                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::data_buf(body),
-                SecurityBufferRef::data_buf(security_trailer_header)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::token_buf(security_trailer_data),
-            ]
-        } else {
-            vec![
-                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::data_buf(body),
-                SecurityBufferRef::data_buf(security_trailer_header)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::token_buf(security_trailer_data),
-            ]
-        };
+        let mut message = vec![
+            SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::data_buf(body),
+            SecurityBufferRef::data_buf(security_trailer_header)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::token_buf(security_trailer_data),
+        ];
+
+        self.security_context
+            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
+
+        Ok(())
+    }
+
+    /// Encrypts input buffers using inner SSPI security context.
+    ///
+    /// This method is an equivalent to `GSS_WrapEx()`. More info: [Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550).
+    ///
+    /// **Important**. `body` and `security_trailer_data` are parts of one RPC PDU:
+    /// * `body` contains data from the RPC PDU body that must be encrypted.
+    /// * `security_trailer_data`: RPC PDU security trailer `auth_value`. Basically, it's a Kerberos Wrap Token.
+    ///
+    /// All encryption is performed in-place.
+    pub fn wrap(&mut self, body: &mut [u8], security_trailer_data: &mut [u8]) -> AuthResult<()> {
+        let mut message = vec![
+            SecurityBufferRef::data_buf(body),
+            SecurityBufferRef::token_buf(security_trailer_data),
+        ];
 
         self.security_context
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
@@ -131,39 +141,49 @@ impl AuthProvider {
     ///
     /// This method is an equivalent to `GSS_UnwrapEx()`. More info: [Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550) and [GSS_UnwrapEx() Call](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/9e3981a9-6564-4db6-a70e-4af4c07d03b3).
     ///
-    /// **Important**. `header_data`, `body_data`, `security_trailer_header`, and `security_trailer_data` are parts of one RPC PDU:
-    /// * `header_data`: RPC PDU header + header data from the RPC PDU body.
-    /// * `body_data` contains data from the RPC PDU body that needs to be decrypted.
+    /// **Important**. `header`, `body`, `security_trailer_header`, and `security_trailer_data` are parts of one RPC PDU:
+    /// * `header`: RPC PDU header + header data from the RPC PDU body.
+    /// * `body` contains data from the RPC PDU body that needs to be decrypted.
     /// * `security_trailer_header`: RPC PDU security trailer header data (i.e. security trailer without `auth_value`).
     /// * `security_trailer_data`: `auth_value` of the RPC PDU security trailer. Basically, it's a Kerberos Wrap Token.
     ///
     /// All decryption is performed in-place.
     #[instrument(ret, skip(self))]
-    pub fn unwrap(
+    pub fn unwrap_with_header_sign(
         &mut self,
         header: &mut [u8],
         body: &mut [u8],
         security_trailer_header: &mut [u8],
         security_trailer_data: &mut [u8],
-        sign_header: bool,
     ) -> AuthResult<Vec<u8>> {
-        let mut message = if sign_header {
-            vec![
-                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::data_buf(body),
-                SecurityBufferRef::data_buf(security_trailer_header)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-                SecurityBufferRef::token_buf(security_trailer_data),
-            ]
-        } else {
-            vec![
-                SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::data_buf(body),
-                SecurityBufferRef::data_buf(security_trailer_header)
-                    .with_flags(SecurityBufferFlags::SECBUFFER_READONLY),
-                SecurityBufferRef::token_buf(security_trailer_data),
-            ]
-        };
+        let mut message = vec![
+            SecurityBufferRef::data_buf(header).with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::data_buf(body),
+            SecurityBufferRef::data_buf(security_trailer_header)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::token_buf(security_trailer_data),
+        ];
+
+        self.security_context.decrypt_message(&mut message, 0)?;
+
+        Ok(message[1].data().to_vec())
+    }
+
+    /// Decrypts input buffers using inner SSPI security context.
+    ///
+    /// This method is an equivalent to `GSS_UnwrapEx()`. More info: [Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550) and [GSS_UnwrapEx() Call](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/9e3981a9-6564-4db6-a70e-4af4c07d03b3).
+    ///
+    /// **Important**. `body` and `security_trailer_data` are parts of one RPC PDU:
+    /// * `body` contains data from the RPC PDU body that needs to be decrypted.
+    /// * `security_trailer_data`: `auth_value` of the RPC PDU security trailer. Basically, it's a Kerberos Wrap Token.
+    ///
+    /// All decryption is performed in-place.
+    #[instrument(ret, skip(self))]
+    pub fn unwrap(&mut self, body: &mut [u8], security_trailer_data: &mut [u8]) -> AuthResult<Vec<u8>> {
+        let mut message = vec![
+            SecurityBufferRef::data_buf(body),
+            SecurityBufferRef::token_buf(security_trailer_data),
+        ];
 
         self.security_context.decrypt_message(&mut message, 0)?;
 
