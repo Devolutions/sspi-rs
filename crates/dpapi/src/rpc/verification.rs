@@ -183,6 +183,10 @@ impl CommandHeader2 {
             flags,
             packet_type: {
                 let packet_type = reader.read_u8()?;
+                reader.read_u8()?;
+                reader.read_u8()?;
+                reader.read_u8()?;
+
                 PacketType::from_u8(packet_type).ok_or(CommandError::InvalidPacketType(packet_type))?
             },
             data_rep: DataRepr::decode(&mut reader)?,
