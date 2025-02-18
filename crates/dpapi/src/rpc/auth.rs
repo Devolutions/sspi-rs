@@ -16,8 +16,8 @@ pub enum AuthError {
     #[error("SSPI authorization error: {0}")]
     Sspi(#[from] sspi::Error),
 
-    #[error(transparent)]
-    IntConversion(#[from] std::num::TryFromIntError),
+    #[error("{0}")]
+    IntConversion(String),
 }
 
 pub type AuthResult<T> = Result<T, AuthError>;
@@ -68,6 +68,7 @@ impl AuthProvider {
 
     /// Returns an empty [SecurityTrailer] with correct parameters.
     pub fn empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
+        let security_trailer_len = self.security_context.query_context_sizes()?.security_trailer;
         Ok(SecurityTrailer {
             security_type: self.security_type,
             level: AuthenticationLevel::PktPrivacy,
@@ -75,10 +76,12 @@ impl AuthProvider {
             context_id: 0,
             auth_value: vec![
                 0;
-                self.security_context
-                    .query_context_sizes()?
-                    .security_trailer
-                    .try_into()?
+                security_trailer_len
+                    .try_into()
+                    .map_err(|_| AuthError::IntConversion(format!(
+                        "cannot convert security trailer length ({}) to usize",
+                        security_trailer_len
+                    )))?
             ],
         })
     }
