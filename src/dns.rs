@@ -7,8 +7,7 @@ cfg_if::cfg_if! {
             core::*,
             Win32::NetworkManagement::Dns::*,
         };
-        use winreg::RegKey;
-        use winreg::enums::*;
+        use windows_registry::LOCAL_MACHINE;
         use std::ptr::{null_mut};
         use core::ffi::{c_void};
 
@@ -42,14 +41,14 @@ cfg_if::cfg_if! {
 
         pub fn get_dns_client_nrpt_rules() -> Vec<DnsClientNrptRule> {
             let mut rules: Vec<DnsClientNrptRule> = Vec::new();
-            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            let hklm = LOCAL_MACHINE;
             let dns_policy_config_key_path = "System\\CurrentControlSet\\Services\\Dnscache\\Parameters\\DnsPolicyConfig";
-            if let Ok(dns_policy_config_key) = hklm.open_subkey(dns_policy_config_key_path) {
-                for rule_name in dns_policy_config_key.enum_keys().map(|x| x.unwrap()) {
+            if let Ok(dns_policy_config_key) = hklm.open(dns_policy_config_key_path) {
+                for rule_name in dns_policy_config_key.keys().unwrap() {
                     let dns_policy_rule_key_path = format!("{}\\{}", dns_policy_config_key_path, &rule_name);
-                    if let Ok(dns_policy_rule_key) = hklm.open_subkey(dns_policy_rule_key_path) {
-                        let namespace: Option<String> = dns_policy_rule_key.get_value("Name").ok(); // REG_MULTI_SZ
-                        let name_server_list: Option<String> = dns_policy_rule_key.get_value("GenericDNSServers").ok(); // REG_SZ
+                    if let Ok(dns_policy_rule_key) = hklm.open(dns_policy_rule_key_path) {
+                        let namespace: Option<String> = dns_policy_rule_key.get_string("Name").ok(); // REG_MULTI_SZ
+                        let name_server_list: Option<String> = dns_policy_rule_key.get_string("GenericDNSServers").ok(); // REG_SZ
                         if let (Some(namespace), Some(name_server_list)) = (namespace, name_server_list) {
                             let name_servers: Vec<String> = name_server_list.split(';').map(|x| x.to_string()).collect();
                             rules.push(DnsClientNrptRule {
@@ -65,23 +64,23 @@ cfg_if::cfg_if! {
         }
 
         pub fn get_default_name_servers() -> Vec<String> {
-            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            let hklm = LOCAL_MACHINE;
             let tcpip_linkage_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Linkage";
             let tcpip_interfaces_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces";
             let dns_registered_adapters_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DNSRegisteredAdapters";
 
-            if let Ok(tcpip_linkage_key) = hklm.open_subkey(tcpip_linkage_key_path) {
-                let bind_devices: Vec<String> = tcpip_linkage_key.get_value("Bind").unwrap();
+            if let Ok(tcpip_linkage_key) = hklm.open(tcpip_linkage_key_path) {
+                let bind_devices: Vec<String> = tcpip_linkage_key.get_multi_string("Bind").unwrap();
                 let device_ids = bind_devices.iter().map(|x| x.strip_prefix("\\Device\\").unwrap());
 
                 for device_id in device_ids {
                     let interface_key_path = format!("{}\\{}", tcpip_interfaces_key_path, &device_id);
                     let dns_adapter_key_path = format!("{}\\{}", dns_registered_adapters_key_path, &device_id);
 
-                    if let (Ok(interface_key), Ok(dns_adapter_key)) = (hklm.open_subkey(interface_key_path), hklm.open_subkey(dns_adapter_key_path)) {
-                        let name_server: Option<String> = interface_key.get_value("NameServer").ok().filter(|x: &String| !x.is_empty());
-                        let dhcp_name_server: Option<String> = interface_key.get_value("DhcpNameServer").ok().filter(|x: &String| !x.is_empty());
-                        let stale_adapter: u32 = dns_adapter_key.get_value("StaleAdapter").unwrap_or(1);
+                    if let (Ok(interface_key), Ok(dns_adapter_key)) = (hklm.open(interface_key_path), hklm.open(dns_adapter_key_path)) {
+                        let name_server: Option<String> = interface_key.get_string("NameServer").ok().filter(|x: &String| !x.is_empty());
+                        let dhcp_name_server: Option<String> = interface_key.get_string("DhcpNameServer").ok().filter(|x: &String| !x.is_empty());
+                        let stale_adapter: u32 = dns_adapter_key.get_u32("StaleAdapter").unwrap_or(1);
 
                         if stale_adapter != 1 {
                             if let Some(name_server_list) = name_server.or(dhcp_name_server) {
