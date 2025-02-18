@@ -5,13 +5,15 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::rpc::{read_padding, read_vec, write_buf, write_padding, Decode, Encode};
-use crate::DpapiResult;
+use crate::Result;
 
 #[derive(Debug, Error)]
 pub enum BindError {
     #[error("invalid context result code value: {0}")]
     InvalidContextResultCode(u16),
 }
+
+pub type BindResult<T> = std::result::Result<T, BindError>;
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
 ///
@@ -33,6 +35,12 @@ pub enum BindTimeFeatureNegotiationBitmask {
     KeepConnectionOnOrphanSupported = 0x02,
 }
 
+impl BindTimeFeatureNegotiationBitmask {
+    pub fn as_u64(&self) -> u64 {
+        *self as u64
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyntaxId {
     pub uuid: Uuid,
@@ -41,7 +49,7 @@ pub struct SyntaxId {
 }
 
 impl Encode for SyntaxId {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         self.uuid.encode(&mut writer)?;
         writer.write_u16::<LittleEndian>(self.version)?;
         writer.write_u16::<LittleEndian>(self.version_minor)?;
@@ -51,7 +59,7 @@ impl Encode for SyntaxId {
 }
 
 impl Decode for SyntaxId {
-    fn decode(mut reader: impl Read) -> DpapiResult<SyntaxId> {
+    fn decode(mut reader: impl Read) -> Result<SyntaxId> {
         Ok(Self {
             uuid: Uuid::decode(&mut reader)?,
             version: reader.read_u16::<LittleEndian>()?,
@@ -68,7 +76,7 @@ pub struct ContextElement {
 }
 
 impl Encode for ContextElement {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.context_id)?;
         writer.write_u16::<LittleEndian>(self.transfer_syntaxes.len().try_into()?)?;
 
@@ -83,14 +91,14 @@ impl Encode for ContextElement {
 }
 
 impl Decode for ContextElement {
-    fn decode(mut reader: impl Read) -> DpapiResult<ContextElement> {
+    fn decode(mut reader: impl Read) -> Result<ContextElement> {
         let context_id = reader.read_u16::<LittleEndian>()?;
         let transfer_syntaxes_count = usize::from(reader.read_u16::<LittleEndian>()?);
         let abstract_syntax = SyntaxId::decode(&mut reader)?;
 
         let transfer_syntaxes = (0..transfer_syntaxes_count)
             .map(|_| SyntaxId::decode(&mut reader))
-            .collect::<DpapiResult<_>>()?;
+            .collect::<Result<_>>()?;
 
         Ok(Self {
             context_id,
@@ -122,7 +130,7 @@ impl ContextResultCode {
 impl TryFrom<u16> for ContextResultCode {
     type Error = BindError;
 
-    fn try_from(v: u16) -> Result<Self, Self::Error> {
+    fn try_from(v: u16) -> BindResult<Self> {
         match v {
             0 => Ok(Self::Acceptance),
             1 => Ok(Self::UserRejection),
@@ -142,7 +150,7 @@ pub struct ContextResult {
 }
 
 impl Encode for ContextResult {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.result.as_u16())?;
         writer.write_u16::<LittleEndian>(self.reason)?;
         self.syntax.encode(&mut writer)?;
@@ -153,7 +161,7 @@ impl Encode for ContextResult {
 }
 
 impl Decode for ContextResult {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             result: reader.read_u16::<LittleEndian>()?.try_into()?,
             reason: reader.read_u16::<LittleEndian>()?,
@@ -172,7 +180,7 @@ pub struct Bind {
 }
 
 impl Encode for Bind {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.max_xmit_frag)?;
         writer.write_u16::<LittleEndian>(self.max_recv_frag)?;
         writer.write_u32::<LittleEndian>(self.assoc_group)?;
@@ -187,7 +195,7 @@ impl Encode for Bind {
 }
 
 impl Decode for Bind {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let max_xmit_frag = reader.read_u16::<LittleEndian>()?;
         let max_recv_frag = reader.read_u16::<LittleEndian>()?;
         let assoc_group = reader.read_u32::<LittleEndian>()?;
@@ -195,7 +203,7 @@ impl Decode for Bind {
         let contexts_count = reader.read_u32::<LittleEndian>()?;
         let contexts = (0..contexts_count)
             .map(|_| ContextElement::decode(&mut reader))
-            .collect::<DpapiResult<_>>()?;
+            .collect::<Result<_>>()?;
 
         Ok(Self {
             max_xmit_frag,
@@ -216,7 +224,7 @@ pub struct BindAck {
 }
 
 impl Encode for BindAck {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.max_xmit_frag)?;
         writer.write_u16::<LittleEndian>(self.max_recv_frag)?;
         writer.write_u32::<LittleEndian>(self.assoc_group)?;
@@ -247,7 +255,7 @@ impl Encode for BindAck {
 }
 
 impl Decode for BindAck {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             max_xmit_frag: reader.read_u16::<LittleEndian>()?,
             max_recv_frag: reader.read_u16::<LittleEndian>()?,
@@ -273,7 +281,7 @@ impl Decode for BindAck {
                 let results_count = reader.read_u32::<LittleEndian>()?;
                 (0..results_count)
                     .map(|_| ContextResult::decode(&mut reader))
-                    .collect::<DpapiResult<_>>()?
+                    .collect::<Result<_>>()?
             },
         })
     }
@@ -286,7 +294,7 @@ pub struct BindNak {
 }
 
 impl Encode for BindNak {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.reason)?;
 
         writer.write_u8(self.versions.len().try_into()?)?;
@@ -296,19 +304,21 @@ impl Encode for BindNak {
         }
 
         let versions_buf_len = 1 /* len */ + 2 /* version size */ * self.versions.len();
-        write_padding::<4>(versions_buf_len, &mut writer)
+        write_padding::<4>(versions_buf_len, &mut writer)?;
+
+        Ok(())
     }
 }
 
 impl Decode for BindNak {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             reason: reader.read_u16::<LittleEndian>()?,
             versions: {
                 let versions_count = reader.read_u8()?;
                 let versions = (0..versions_count)
                     .map(|_| Ok((reader.read_u8()?, reader.read_u8()?)))
-                    .collect::<DpapiResult<Vec<_>>>()?;
+                    .collect::<Result<Vec<_>>>()?;
 
                 let versions_buf_len = 1 /* len */ + 2 /* version size */ * versions.len();
                 read_padding::<4>(versions_buf_len, reader)?;
@@ -324,13 +334,13 @@ impl Decode for BindNak {
 pub struct AlterContext(pub Bind);
 
 impl Encode for AlterContext {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, writer: impl Write) -> Result<()> {
         self.0.encode(writer)
     }
 }
 
 impl Decode for AlterContext {
-    fn decode(reader: impl Read) -> DpapiResult<Self> {
+    fn decode(reader: impl Read) -> Result<Self> {
         Ok(Self(Bind::decode(reader)?))
     }
 }
@@ -340,13 +350,13 @@ impl Decode for AlterContext {
 pub struct AlterContextResponse(pub BindAck);
 
 impl Encode for AlterContextResponse {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, writer: impl Write) -> Result<()> {
         self.0.encode(writer)
     }
 }
 
 impl Decode for AlterContextResponse {
-    fn decode(reader: impl Read) -> DpapiResult<Self> {
+    fn decode(reader: impl Read) -> Result<Self> {
         Ok(Self(BindAck::decode(reader)?))
     }
 }

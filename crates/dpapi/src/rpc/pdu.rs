@@ -8,7 +8,7 @@ use thiserror::Error;
 use super::{read_to_end, read_vec, write_buf, Decode, Encode};
 use crate::rpc::bind::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak};
 use crate::rpc::request::{Request, Response};
-use crate::DpapiResult;
+use crate::Result;
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -37,11 +37,16 @@ pub enum PduError {
     InvalidFaultFlags(u8),
 
     #[error("{0:?} PDU is not supported")]
-    PduNotSupported(crate::rpc::pdu::PacketType),
+    PduNotSupported(PacketType),
 
     #[error("invalid fragment (PDU) length: {0}")]
     InvalidFragLength(u16),
+
+    #[error("RPC failed: {0}")]
+    RpcFail(&'static str),
 }
+
+pub type PduResult<T> = std::result::Result<T, PduError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[repr(u8)]
@@ -141,7 +146,7 @@ pub struct DataRepr {
 }
 
 impl Encode for DataRepr {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         let first_octet = (self.byte_order.as_u8()) << 4 | self.character.as_u8();
         writer.write_u8(first_octet)?;
         writer.write_u8(self.floating_point.as_u8())?;
@@ -154,7 +159,7 @@ impl Encode for DataRepr {
 }
 
 impl Decode for DataRepr {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let first_octet = reader.read_u8()?;
 
         let integer_representation = (first_octet & 0b11110000) >> 4;
@@ -189,8 +194,13 @@ pub struct PduHeader {
     pub call_id: u32,
 }
 
+impl PduHeader {
+    /// Length of the encoded [PduHeader].
+    pub const LENGTH: usize = 16;
+}
+
 impl Encode for PduHeader {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u8(self.version)?;
         writer.write_u8(self.version_minor)?;
         writer.write_u8(self.packet_type.as_u8())?;
@@ -205,7 +215,7 @@ impl Encode for PduHeader {
 }
 
 impl Decode for PduHeader {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             version: reader.read_u8()?,
             version_minor: reader.read_u8()?,
@@ -270,8 +280,13 @@ pub struct SecurityTrailer {
     pub auth_value: Vec<u8>,
 }
 
+impl SecurityTrailer {
+    // `SecurityTrailer` size but without `auth_value`.
+    pub const HEADER_LEN: usize = 8;
+}
+
 impl Encode for SecurityTrailer {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u8(self.security_type.as_u8())?;
         writer.write_u8(self.level.as_u8())?;
         writer.write_u8(self.pad_length)?;
@@ -284,7 +299,7 @@ impl Encode for SecurityTrailer {
 }
 
 impl Decode for SecurityTrailer {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let security_provider = reader.read_u8()?;
         let authentication_level = reader.read_u8()?;
 
@@ -325,7 +340,7 @@ pub struct Fault {
 }
 
 impl Encode for Fault {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u32::<LittleEndian>(self.alloc_hint)?;
         writer.write_u16::<LittleEndian>(self.context_id)?;
         writer.write_u8(self.cancel_count)?;
@@ -340,7 +355,7 @@ impl Encode for Fault {
 }
 
 impl Decode for Fault {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             alloc_hint: reader.read_u32::<LittleEndian>()?,
             context_id: reader.read_u16::<LittleEndian>()?,
@@ -368,7 +383,29 @@ pub enum PduData {
 }
 
 impl PduData {
-    pub fn decode(pdu_header: &PduHeader, data_len: usize, reader: impl Read) -> DpapiResult<Self> {
+    /// Returns [BindAck] extracted from the inner data.
+    ///
+    /// Returns an error if the inner data is not `BindAck` or `AlterContextResponse`.
+    pub fn bind_ack(self) -> PduResult<BindAck> {
+        match self {
+            PduData::BindAck(bind_ack) => Ok(bind_ack),
+            PduData::AlterContextResponse(alter_context) => Ok(alter_context.0),
+            _ => Err(PduError::RpcFail("BindAcknowledge PDU is expected")),
+        }
+    }
+
+    /// Checks if the [PduData] contains any error PDU inside. Returns an error if so.
+    pub fn into_error(self) -> PduResult<Self> {
+        if let PduData::Fault(_) = self {
+            Err(PduError::RpcFail("got unexpected Fault PDU"))
+        } else if let PduData::BindNak(_) = self {
+            Err(PduError::RpcFail("got unexpected BindAcknowledge PDU"))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn decode(pdu_header: &PduHeader, data_len: usize, reader: impl Read) -> Result<Self> {
         let buf = read_vec(data_len, reader)?;
 
         match pdu_header.packet_type {
@@ -388,7 +425,7 @@ impl PduData {
 }
 
 impl Encode for PduData {
-    fn encode(&self, writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, writer: impl Write) -> Result<()> {
         match self {
             PduData::Bind(bind) => bind.encode(writer),
             PduData::BindAck(bind_ack) => bind_ack.encode(writer),
@@ -406,35 +443,58 @@ impl Encode for PduData {
 pub struct Pdu {
     pub header: PduHeader,
     pub data: PduData,
-    pub security_trailer: SecurityTrailer,
+    pub security_trailer: Option<SecurityTrailer>,
+}
+
+impl Pdu {
+    /// Tries to extract PDU Response from the inner data.
+    ///
+    /// Return an error if the PDU is any type then `Response`.
+    pub fn try_into_response(self) -> PduResult<Response> {
+        if let PduData::Response(response) = self.data {
+            Ok(response)
+        } else {
+            Err(PduError::RpcFail("got unexpected PDU: expected Response PDU"))
+        }
+    }
 }
 
 impl Encode for Pdu {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         self.header.encode(&mut writer)?;
         self.data.encode(&mut writer)?;
-        self.security_trailer.encode(writer)?;
+
+        if let Some(security_trailer) = self.security_trailer.as_ref() {
+            security_trailer.encode(writer)?;
+        }
 
         Ok(())
     }
 }
 
 impl Decode for Pdu {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let header = PduHeader::decode(&mut reader)?;
+
+        let security_trailer_len = if header.auth_len > 0 {
+            SecurityTrailer::HEADER_LEN
+        } else {
+            0
+        } + usize::from(header.auth_len);
 
         let data = PduData::decode(
             &header,
-            header
-                .frag_len
-                .checked_sub(
-                    header.auth_len + 8 /* security trailer header */ + 16, /* PDU header len */
-                )
-                .ok_or(PduError::InvalidFragLength(header.frag_len))?
-                .into(),
+            usize::from(header.frag_len)
+                .checked_sub(security_trailer_len + PduHeader::LENGTH)
+                .ok_or(PduError::InvalidFragLength(header.frag_len))?,
             &mut reader,
         )?;
-        let security_trailer = SecurityTrailer::decode(reader)?;
+
+        let security_trailer = if header.auth_len > 0 {
+            Some(SecurityTrailer::decode(reader)?)
+        } else {
+            None
+        };
 
         Ok(Self {
             header,

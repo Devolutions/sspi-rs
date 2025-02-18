@@ -14,7 +14,7 @@ use crate::crypto::{
 };
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
-use crate::{DpapiResult, Error};
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum GkdiError {
@@ -41,6 +41,8 @@ pub enum GkdiError {
     InvalidL0Index,
 }
 
+pub type GkdiResult<T> = std::result::Result<T, GkdiError>;
+
 const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
 /// GetKey RPC Request
@@ -65,7 +67,7 @@ pub struct GetKey {
 }
 
 impl Encode for GetKey {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         let target_sd_len = self.target_sd.len().try_into()?;
         // cbTargetSD
         writer.write_u64::<LittleEndian>(target_sd_len)?;
@@ -92,7 +94,7 @@ impl Encode for GetKey {
 }
 
 impl Decode for GetKey {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let target_sd_len = reader.read_u64::<LittleEndian>()?;
         let _offset = reader.read_u64::<LittleEndian>()?;
 
@@ -146,7 +148,7 @@ impl fmt::Display for HashAlg {
 impl TryFrom<&str> for HashAlg {
     type Error = GkdiError;
 
-    fn try_from(data: &str) -> Result<Self, Self::Error> {
+    fn try_from(data: &str) -> GkdiResult<Self> {
         match data {
             "SHA1" => Ok(HashAlg::Sha1),
             "SHA256" => Ok(HashAlg::Sha256),
@@ -173,7 +175,7 @@ impl KdfParameters {
 }
 
 impl Encode for KdfParameters {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
 
         write_buf(KdfParameters::MAGIC_IDENTIFIER_1, &mut writer)?;
@@ -186,7 +188,7 @@ impl Encode for KdfParameters {
 }
 
 impl Decode for KdfParameters {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let mut magic_identifier_1 = [0; 8];
         read_buf(&mut reader, &mut magic_identifier_1)?;
 
@@ -257,7 +259,7 @@ impl FfcdhParameters {
 }
 
 impl Encode for FfcdhParameters {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         // Calculate total structure length and write it.
         //
         // Length (4 bytes):  A 32-bit unsigned integer. This field MUST be the length, in bytes, of the entire structure. This field is encoded using little-endian format:
@@ -282,7 +284,7 @@ impl Encode for FfcdhParameters {
 }
 
 impl Decode for FfcdhParameters {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let _total_len = reader.read_u32::<LittleEndian>()?;
 
         let mut magic = [0; 4];
@@ -339,7 +341,7 @@ impl FfcdhKey {
 }
 
 impl Encode for FfcdhKey {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         write_buf(FfcdhKey::MAGIC, &mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.key_length)?;
@@ -363,7 +365,7 @@ impl Encode for FfcdhKey {
 }
 
 impl Decode for FfcdhKey {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let mut magic = [0; 4];
         read_buf(&mut reader, &mut magic)?;
 
@@ -410,7 +412,7 @@ impl From<EllipticCurve> for &[u8] {
 impl TryFrom<&[u8]> for EllipticCurve {
     type Error = GkdiError;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> GkdiResult<Self> {
         match value {
             b"ECK1" => Ok(EllipticCurve::P256),
             b"ECK3" => Ok(EllipticCurve::P384),
@@ -441,7 +443,7 @@ pub struct EcdhKey {
 }
 
 impl Encode for EcdhKey {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         write_buf(self.curve.into(), &mut writer)?;
 
         writer.write_u32::<LittleEndian>(self.key_length)?;
@@ -461,7 +463,7 @@ impl Encode for EcdhKey {
 }
 
 impl Decode for EcdhKey {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let mut curve_id = [0; 4];
         read_buf(&mut reader, &mut curve_id)?;
         let curve = EllipticCurve::try_from(curve_id.as_ref())?;
@@ -535,7 +537,7 @@ impl GroupKeyEnvelope {
         self.flags & 1 != 0
     }
 
-    pub fn new_kek(&self) -> DpapiResult<(Vec<u8>, KeyIdentifier)> {
+    pub fn new_kek(&self) -> Result<(Vec<u8>, KeyIdentifier)> {
         if self.kdf_alg != KDF_ALGORITHM_NAME {
             Err(GkdiError::InvalidKdfAlgName {
                 expected: KDF_ALGORITHM_NAME,
@@ -583,7 +585,7 @@ impl GroupKeyEnvelope {
         ))
     }
 
-    pub fn get_kek(&self, key_identifier: &KeyIdentifier) -> DpapiResult<Vec<u8>> {
+    pub fn get_kek(&self, key_identifier: &KeyIdentifier) -> Result<Vec<u8>> {
         if self.is_public_key() {
             Err(GkdiError::IsNotAuthorized)?;
         }
@@ -618,7 +620,7 @@ impl GroupKeyEnvelope {
 }
 
 impl Encode for GroupKeyEnvelope {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u32::<LittleEndian>(Self::VERSION)?;
 
         write_buf(GroupKeyEnvelope::MAGIC, &mut writer)?;
@@ -658,7 +660,7 @@ impl Encode for GroupKeyEnvelope {
 }
 
 impl Decode for GroupKeyEnvelope {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let version = reader.read_u32::<LittleEndian>()?;
 
         if version != Self::VERSION {

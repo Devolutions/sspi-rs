@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::rpc::{read_buf, read_to_end, read_vec, write_buf, Decode, Encode, EncodeExt};
 use crate::sid::{ace_to_bytes, sd_to_bytes};
 use crate::str::{encode_utf16_le, from_utf16_le};
-use crate::{DpapiResult, Error};
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum BlobError {
@@ -86,7 +86,7 @@ impl KeyIdentifier {
 }
 
 impl Encode for KeyIdentifier {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         let domain_name = encode_utf16_le(&self.domain_name);
         let forest_name = encode_utf16_le(&self.forest_name);
 
@@ -113,7 +113,7 @@ impl Encode for KeyIdentifier {
 }
 
 impl Decode for KeyIdentifier {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let version = reader.read_u32::<LittleEndian>()?;
 
         let mut magic = [0; 4];
@@ -195,7 +195,7 @@ pub struct SidProtectionDescriptor {
 }
 
 impl SidProtectionDescriptor {
-    pub fn get_target_sd(&self) -> DpapiResult<Vec<u8>> {
+    pub fn get_target_sd(&self) -> Result<Vec<u8>> {
         // Build the target security descriptor from the SID passed in. This SD
         // contains an ACE per target user with a mask of 0x3 and a final ACE of
         // the current user with a mask of 0x2. When viewing this over the wire
@@ -209,7 +209,7 @@ impl SidProtectionDescriptor {
         )
     }
 
-    pub fn encode_asn1(&self) -> DpapiResult<Vec<u8>> {
+    pub fn encode_asn1(&self) -> Result<Vec<u8>> {
         Ok(picky_asn1_der::to_vec(&GeneralProtectionDescriptor {
             descriptor_type: ObjectIdentifierAsn1::from(oids::sid_protection_descriptor()),
             descriptors: Asn1SequenceOf::from(vec![Asn1SequenceOf::from(vec![ProtectionDescriptor {
@@ -219,7 +219,7 @@ impl SidProtectionDescriptor {
         })?)
     }
 
-    pub fn decode_asn1(data: &[u8]) -> DpapiResult<Self> {
+    pub fn decode_asn1(data: &[u8]) -> Result<Self> {
         let general_protection_descriptor: GeneralProtectionDescriptor = picky_asn1_der::from_bytes(data)?;
 
         if general_protection_descriptor.descriptor_type.0 != oids::sid_protection_descriptor() {
@@ -273,7 +273,7 @@ impl DpapiBlob {
     // blob_in_envelope:
     // * `true` to store the encrypted blob in the EnvelopedData structure (NCryptProtectSecret general).
     // * `false` to append the encrypted blob after the EnvelopedData structure (LAPS style).
-    pub fn encode(&self, blob_in_envelope: bool, mut writer: impl Write) -> DpapiResult<()> {
+    pub fn encode(&self, blob_in_envelope: bool, mut writer: impl Write) -> Result<()> {
         picky_asn1_der::to_writer(
             &ContentInfo {
                 content_type: ObjectIdentifierAsn1::from(oids::enveloped_data()),
@@ -319,7 +319,7 @@ impl DpapiBlob {
 }
 
 impl Decode for DpapiBlob {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let content_info: ContentInfo = picky_asn1_der::from_reader(&mut reader)?;
 
         if content_info.content_type.0 != oids::enveloped_data() {

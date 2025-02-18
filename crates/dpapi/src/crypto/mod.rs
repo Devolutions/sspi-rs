@@ -14,7 +14,7 @@ use self::hmac_sha_prf::{HmacSha1Prf, HmacSha256Prf, HmacSha384Prf, HmacSha512Pr
 use crate::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
 use crate::rpc::{Decode, EncodeExt};
 use crate::str::encode_utf16_le;
-use crate::DpapiResult;
+use crate::Result;
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
@@ -62,7 +62,7 @@ pub enum CryptoError {
     InvalidKeyLength { expected: usize, actual: usize },
 }
 
-pub type CryptoResult<T> = Result<T, CryptoError>;
+pub type CryptoResult<T> = std::result::Result<T, CryptoError>;
 
 // "KDS service\0" encoded in UTF16 le.
 pub const KDS_SERVICE_LABEL: &[u8] = &[
@@ -338,7 +338,7 @@ pub fn compute_kek_from_public_key(
     secret_algorithm: &str,
     public_key: &[u8],
     private_key_length: usize,
-) -> DpapiResult<Vec<u8>> {
+) -> Result<Vec<u8>> {
     let encoded_secret_algorithm = encode_utf16_le(secret_algorithm);
 
     let private_key = kdf(
@@ -357,7 +357,7 @@ pub fn compute_kek(
     secret_algorithm: &str,
     private_key: &[u8],
     public_key: &[u8],
-) -> DpapiResult<Vec<u8>> {
+) -> Result<Vec<u8>> {
     let (shared_secret, secret_hash_algorithm) = if secret_algorithm == "DH" {
         let dh_pub_key = FfcdhKey::decode(public_key)?;
         let shared_secret = dh_pub_key
@@ -453,7 +453,7 @@ pub fn compute_kek(
     Ok(kdf(algorithm, &secret, KDS_SERVICE_LABEL, kek_context, 32)?)
 }
 
-pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_public_key: &[u8]) -> DpapiResult<Vec<u8>> {
+pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_public_key: &[u8]) -> Result<Vec<u8>> {
     if secret_algorithm == "DH" {
         let FfcdhKey {
             key_length,

@@ -31,6 +31,15 @@ pub enum Error {
     #[error(transparent)]
     Crypto(#[from] crate::crypto::CryptoError),
 
+    #[error(transparent)]
+    RpcClient(#[from] crate::rpc::client::RpcClientError),
+
+    #[error(transparent)]
+    Command(#[from] crate::rpc::verification::CommandError),
+
+    #[error(transparent)]
+    Auth(#[from] crate::rpc::auth::AuthError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
@@ -62,4 +71,4 @@ impl From<std::string::FromUtf16Error> for Error {
     }
 }
 
-pub type DpapiResult<T> = Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
