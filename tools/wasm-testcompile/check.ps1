@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 Push-Location -Path $PSScriptRoot
 
 try {
-	cargo build
+	cargo build -v
 
 	if ($LastExitCode -ne 0) {
 		throw "Compilation failed"
