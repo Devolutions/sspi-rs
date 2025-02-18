@@ -55,7 +55,6 @@ serde = "1"
 byteorder = "1.5"
 num-bigint-dig = "0.8"
 hmac = "0.12"
-url = "2.5"
 
 [features]
 default = ["aws-lc-rs"]
@@ -103,7 +102,7 @@ picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 num-bigint-dig.workspace = true
 hmac.workspace = true
-url.workspace = true
+url = "2.5"
 
 md-5 = "0.10"
 md4 = "0.10"
