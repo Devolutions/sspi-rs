@@ -2,4 +2,4 @@
 target = "wasm32-unknown-unknown"
 
 [target.'cfg(target_arch = "wasm32")']
-rustflags = "--cfg getrandom_backend=\"linux_getrandom\""
+rustflags = "--cfg getrandom_backend=\"wasm_js\""
