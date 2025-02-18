@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{read_to_end, write_buf, Decode, Encode};
 use crate::rpc::pdu::{PacketFlags, PduHeader};
-use crate::DpapiResult;
+use crate::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -17,7 +17,7 @@ pub struct Request {
 }
 
 impl Encode for Request {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u32::<LittleEndian>(self.alloc_hint)?;
         writer.write_u16::<LittleEndian>(self.context_id)?;
         writer.write_u16::<LittleEndian>(self.opnum)?;
@@ -31,7 +31,7 @@ impl Encode for Request {
 }
 
 impl Request {
-    pub fn decode(pdu_header: &PduHeader, mut reader: impl Read) -> DpapiResult<Self> {
+    pub fn decode(pdu_header: &PduHeader, mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             alloc_hint: reader.read_u32::<LittleEndian>()?,
             context_id: reader.read_u16::<LittleEndian>()?,
@@ -55,7 +55,7 @@ pub struct Response {
 }
 
 impl Encode for Response {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u32::<LittleEndian>(self.alloc_hint)?;
         writer.write_u16::<LittleEndian>(self.context_id)?;
         writer.write_u8(self.cancel_count)?;
@@ -69,7 +69,7 @@ impl Encode for Response {
 }
 
 impl Decode for Response {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         Ok(Self {
             alloc_hint: reader.read_u32::<LittleEndian>()?,
             context_id: reader.read_u16::<LittleEndian>()?,
