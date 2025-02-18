@@ -387,9 +387,9 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
+        // SAFETY: This function is safe to call because argument is validated.
         if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            // SAFETY:
-            // `user` and `password` are Rust vectors which is safe to read.
+            // SAFETY: This function is safe to call because arguments are validated.
             return unsafe { handle_smart_card_creds(user, password) };
         }
 
@@ -426,9 +426,9 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
+        // SAFETY: This function is safe to call because argument is validated.
         if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            // SAFETY:
-            // `user` and `password` are Rust vectors which is safe to read.
+            // SAFETY: This function is safe to call because arguments are validated.
             return unsafe { handle_smart_card_creds(user, password) };
         }
 
@@ -643,6 +643,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     // So, we need add the NULL terminator.
     username.extend_from_slice(&[0, 0]);
 
+    // SAFETY: This function is safe to call because the arguments are type-checked.
     if unsafe { CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) } == 0 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
@@ -659,10 +660,12 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
     let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
 
+    // SAFETY: This function is safe to call because `cert_credential` is validated.
     let (raw_certificate, certificate) =
         unsafe { sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)? };
 
     let username = string_to_utf16(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
+    // SAFETY: This function is safe to call because argument is type-checked.
     let SmartCardInfo {
         key_container_name,
         reader_name,
