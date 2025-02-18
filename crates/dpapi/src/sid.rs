@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use thiserror::Error;
 
-use crate::Result;
+use crate::{Result, Error};
 
 #[derive(Debug, Error)]
 pub enum SidError {
@@ -25,8 +25,16 @@ pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
         Err(SidError::InvalidSid(sid.to_owned()))?;
     }
 
-    let revision = parts[1].parse::<u8>()?;
-    let authority = parts[2].parse::<u64>()?;
+    let revision = parts[1].parse::<u8>().map_err(|error| Error::ParseInt {
+        description: "cannot parse SID part",
+        value: parts[1].to_owned(),
+        error,
+    })?;
+    let authority = parts[2].parse::<u64>().map_err(|error| Error::ParseInt {
+        description: "cannot parse SID part",
+        value: parts[2].to_owned(),
+        error,
+    })?;
 
     let mut data = Vec::new();
     data.extend_from_slice(&authority.to_be_bytes());
@@ -34,7 +42,11 @@ pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
     data[1] = u8::try_from(parts.len() - 3)?;
 
     for part in parts.iter().skip(3) {
-        let sub_auth = part.parse::<u32>()?;
+        let sub_auth = part.parse::<u32>().map_err(|error| Error::ParseInt {
+            description: "cannot parse SID part",
+            value: part.to_string(),
+            error,
+        })?;
         data.extend_from_slice(&sub_auth.to_le_bytes());
     }
 

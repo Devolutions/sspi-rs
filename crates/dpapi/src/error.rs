@@ -58,8 +58,12 @@ pub enum Error {
     #[error("provided buf contains invalid UTF-8 data")]
     Utf8(#[from] std::string::FromUtf8Error),
 
-    #[error(transparent)]
-    ParseInt(#[from] std::num::ParseIntError),
+    #[error("{description}: {value}: {error}")]
+    ParseInt {
+        description: &'static str,
+        value: String,
+        error: std::num::ParseIntError,
+    },
 
     #[error(transparent)]
     Asn1(#[from] picky_asn1_der::Asn1DerError),
@@ -69,9 +73,6 @@ pub enum Error {
 
     #[error("{0}")]
     FromUtf16(String),
-
-    #[error(transparent)]
-    TryFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl From<std::string::FromUtf16Error> for Error {

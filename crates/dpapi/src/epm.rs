@@ -312,7 +312,7 @@ impl Decode for Option<EntryHandle> {
 
         Ok(if entry_handle_buf != [0; 20] {
             Some((
-                u32::from_le_bytes(entry_handle_buf[0..4].try_into()?),
+                u32::from_le_bytes(entry_handle_buf[0..4].try_into().unwrap()),
                 Uuid::from_slice_le(&entry_handle_buf[4..])?,
             ))
         } else {
