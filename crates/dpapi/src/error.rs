@@ -71,4 +71,4 @@ impl From<std::string::FromUtf16Error> for Error {
     }
 }
 
-pub type DpapiResult<T> = Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;

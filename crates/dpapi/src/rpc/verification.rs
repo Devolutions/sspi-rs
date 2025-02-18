@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::rpc::bind::SyntaxId;
 use crate::rpc::pdu::{DataRepr, PacketType};
 use crate::rpc::{read_vec, write_buf, Decode, Encode, EncodeExt};
-use crate::DpapiResult;
+use crate::Result;
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -78,7 +78,7 @@ impl Command {
 }
 
 impl Encode for Command {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(self.command_type().as_u16() | self.flags().bits())?;
 
         match self {
@@ -90,7 +90,7 @@ impl Encode for Command {
 }
 
 impl Decode for Command {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let cmd_field = reader.read_u16::<LittleEndian>()?;
 
         let command_type = cmd_field & 0x3fff;
@@ -117,7 +117,7 @@ pub struct CommandBitmask {
 }
 
 impl CommandBitmask {
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         if value.len() != 4 {
             Err(CommandError::InvalidCommandBitmaskValueLength(value.len()))?;
         }
@@ -130,7 +130,7 @@ impl CommandBitmask {
         })
     }
 
-    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode_value(&self, mut writer: impl Write) -> Result<()> {
         writer.write_u16::<LittleEndian>(4)?;
         write_buf(self.bits.to_le_bytes().as_slice(), writer)
     }
@@ -144,7 +144,7 @@ pub struct CommandPContext {
 }
 
 impl CommandPContext {
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         let mut reader = value;
         let interface_id = SyntaxId::decode(&mut reader)?;
         let transfer_syntax = SyntaxId::decode(&mut reader)?;
@@ -156,7 +156,7 @@ impl CommandPContext {
         })
     }
 
-    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode_value(&self, mut writer: impl Write) -> Result<()> {
         let mut value = self.interface_id.encode_to_vec()?;
         self.transfer_syntax.encode(&mut value)?;
 
@@ -176,7 +176,7 @@ pub struct CommandHeader2 {
 }
 
 impl CommandHeader2 {
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DpapiResult<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         let mut reader = value;
 
         Ok(Self {
@@ -196,7 +196,7 @@ impl CommandHeader2 {
         })
     }
 
-    fn encode_value(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode_value(&self, mut writer: impl Write) -> Result<()> {
         let mut value = vec![self.packet_type as u8];
         // Reserved
         value.extend_from_slice(&[0, 0, 0]);
@@ -220,7 +220,7 @@ impl VerificationTrailer {
 }
 
 impl Encode for VerificationTrailer {
-    fn encode(&self, mut writer: impl Write) -> DpapiResult<()> {
+    fn encode(&self, mut writer: impl Write) -> Result<()> {
         write_buf(VerificationTrailer::SIGNATURE, &mut writer)?;
 
         for command in &self.commands {
@@ -232,7 +232,7 @@ impl Encode for VerificationTrailer {
 }
 
 impl Decode for VerificationTrailer {
-    fn decode(mut reader: impl Read) -> DpapiResult<Self> {
+    fn decode(mut reader: impl Read) -> Result<Self> {
         let signature = read_vec(VerificationTrailer::SIGNATURE.len(), &mut reader)?;
 
         if signature != VerificationTrailer::SIGNATURE {

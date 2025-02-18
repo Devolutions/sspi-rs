@@ -12,4 +12,4 @@ pub mod rpc;
 pub(crate) mod sid;
 pub(crate) mod str;
 
-pub use error::{DpapiResult, Error};
+pub use error::{Error, Result};

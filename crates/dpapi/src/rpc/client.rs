@@ -11,7 +11,7 @@ use crate::rpc::pdu::*;
 use crate::rpc::request::Request;
 use crate::rpc::verification::VerificationTrailer;
 use crate::rpc::{read_buf, read_vec, write_padding, Decode, EncodeExt};
-use crate::DpapiResult;
+use crate::Result;
 
 pub const NDR64: SyntaxId = SyntaxId {
     uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),
@@ -69,7 +69,7 @@ impl RpcClient {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub fn connect<A: ToSocketAddrs>(addr: A, auth: AuthProvider) -> DpapiResult<Self> {
+    pub fn connect<A: ToSocketAddrs>(addr: A, auth: AuthProvider) -> Result<Self> {
         Ok(Self {
             stream: TcpStream::connect(addr)?,
             sign_header: false,
@@ -91,7 +91,7 @@ impl RpcClient {
         }
     }
 
-    fn create_bind_pdu(contexts: Vec<ContextElement>, security_trailer: Option<SecurityTrailer>) -> DpapiResult<Pdu> {
+    fn create_bind_pdu(contexts: Vec<ContextElement>, security_trailer: Option<SecurityTrailer>) -> Result<Pdu> {
         let (auth_len, packet_flags) = if let Some(security_trailer) = security_trailer.as_ref() {
             (security_trailer.auth_value.len(), PacketFlags::PfcSupportHeaderSign)
         } else {
@@ -110,11 +110,7 @@ impl RpcClient {
         })
     }
 
-    fn create_alter_context_pdu(
-        &self,
-        contexts: Vec<ContextElement>,
-        sec_trailer: SecurityTrailer,
-    ) -> DpapiResult<Pdu> {
+    fn create_alter_context_pdu(&self, contexts: Vec<ContextElement>, sec_trailer: SecurityTrailer) -> Result<Pdu> {
         let packet_flags = if self.sign_header {
             PacketFlags::PfcSupportHeaderSign
         } else {
@@ -145,7 +141,7 @@ impl RpcClient {
         opnum: u16,
         mut stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
-    ) -> DpapiResult<(Pdu, EncryptionOffsets)> {
+    ) -> Result<(Pdu, EncryptionOffsets)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
             write_padding::<4>(stub_data.len(), &mut stub_data)?;
             let encoded_verification_trailer = verification_trailer.encode_to_vec()?;
@@ -184,7 +180,7 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn create_request(&self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> DpapiResult<Pdu> {
+    fn create_request(&self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
         Ok(Pdu {
             header: Self::create_pdu_header(PacketType::Request, PacketFlags::None, 0, CALL_ID),
             data: PduData::Request(Request {
@@ -199,7 +195,7 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn encrypt_pdu(&mut self, pdu_encoded: &mut [u8], encrypt_offsets: EncryptionOffsets) -> DpapiResult<()> {
+    fn encrypt_pdu(&mut self, pdu_encoded: &mut [u8], encrypt_offsets: EncryptionOffsets) -> Result<()> {
         let EncryptionOffsets {
             pdu_header_len,
             security_trailer_offset,
@@ -249,7 +245,7 @@ impl RpcClient {
         response: &mut [u8],
         pdu_header: &PduHeader,
         encrypt_offsets: EncryptionOffsets,
-    ) -> DpapiResult<()> {
+    ) -> Result<()> {
         let EncryptionOffsets {
             pdu_header_len,
             security_trailer_offset: _,
@@ -279,7 +275,7 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> DpapiResult<Pdu> {
+    fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
         let mut pdu_encoded = pdu.encode_to_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
@@ -316,7 +312,7 @@ impl RpcClient {
         opnum: u16,
         stub_data: Vec<u8>,
         verification_trailer: Option<VerificationTrailer>,
-    ) -> DpapiResult<Pdu> {
+    ) -> Result<Pdu> {
         let (pdu, encrypt_offsets) =
             self.create_authenticated_request(context_id, opnum, stub_data, verification_trailer)?;
 
@@ -325,7 +321,7 @@ impl RpcClient {
 
     /// Sends the RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> DpapiResult<Pdu> {
+    pub fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
         let pdu = self.create_request(context_id, opnum, stub_data)?;
 
         self.send_pdu(pdu, None)
@@ -333,7 +329,7 @@ impl RpcClient {
 
     /// Performs the RPC bind/bind_ack exchange.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
+    pub fn bind(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         let bind = Self::create_bind_pdu(contexts.to_vec(), None)?;
         let pdu_resp = self.send_pdu(bind, None)?;
 
@@ -350,7 +346,7 @@ impl RpcClient {
     ///
     /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> DpapiResult<BindAck> {
+    pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
         // We don't need its result in RPC authentication.
         let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
