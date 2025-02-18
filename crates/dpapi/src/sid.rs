@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use thiserror::Error;
 
-use crate::{Result, Error};
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum SidError {

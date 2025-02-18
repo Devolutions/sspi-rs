@@ -16,7 +16,7 @@ use crate::rpc::pdu::SecurityTrailer;
 use crate::rpc::request::Response;
 use crate::rpc::verification::{Command, CommandFlags, CommandPContext, VerificationTrailer};
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, Decode, EncodeExt, RpcClient, NDR, NDR64};
-use crate::{Result, Error};
+use crate::{Error, Result};
 
 const DEFAULT_RPC_PORT: u16 = 135;
 
@@ -77,11 +77,7 @@ fn get_verification_trailer() -> VerificationTrailer {
 }
 
 #[instrument(level = "trace", ret)]
-fn process_bind_result(
-    requested_contexts: &[ContextElement],
-    bind_ack: BindAck,
-    desired_context: u16,
-) -> Result<()> {
+fn process_bind_result(requested_contexts: &[ContextElement], bind_ack: BindAck, desired_context: u16) -> Result<()> {
     bind_ack
         .results
         .iter()
@@ -119,10 +115,7 @@ fn process_ept_map_result(response: &Response) -> Result<u16> {
 }
 
 #[instrument(level = "trace", ret)]
-fn process_get_key_result(
-    response: &Response,
-    security_trailer: Option<SecurityTrailer>,
-) -> Result<GroupKeyEnvelope> {
+fn process_get_key_result(response: &Response, security_trailer: Option<SecurityTrailer>) -> Result<GroupKeyEnvelope> {
     let pad_length = response.stub_data.len()
         - security_trailer
             .as_ref()

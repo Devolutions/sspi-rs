@@ -6,9 +6,9 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
-use crate::Result;
-use crate::rpc::{read_buf, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::rpc::bind::SyntaxId;
+use crate::rpc::{read_buf, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
+use crate::Result;
 
 #[derive(Debug, Error)]
 pub enum EpmError {
