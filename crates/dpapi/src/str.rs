@@ -1,4 +1,4 @@
-use crate::{DpapiResult, Error};
+use crate::{Error, Result};
 
 /// Decodes a UTF-16–encoded byte slice into a [String].
 ///
@@ -6,7 +6,7 @@ use crate::{DpapiResult, Error};
 /// Otherwise, the function will return an error.
 ///
 /// *Note*: this function does not expect a NULL-char at the end of the byte slice.
-pub fn from_utf16_le(data: &[u8]) -> DpapiResult<String> {
+pub fn from_utf16_le(data: &[u8]) -> Result<String> {
     if data.len() % 2 != 0 {
         return Err(Error::FromUtf16(
             "invalid UTF-16: byte slice should has the size multiple of two".into(),
