@@ -77,7 +77,7 @@ pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 // pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
-/// [MS-KILE](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
+// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
 pub const RRC: u16 = 28;
 // wrap token header len
@@ -87,6 +87,10 @@ pub const SECURITY_TRAILER: usize = 76;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
+
+// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
+// The extra count (EC) must not be zero. The sender should set extra count (EC) to 1 block - 16 bytes.
+const EC: u16 = 16;
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     capabilities: PackageCapabilities::empty(),
@@ -346,14 +350,19 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
-        // TODO: add doc comment.
-        wrap_token.ec = 16;
+        wrap_token.ec = EC;
 
         let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
             acc.extend_from_slice(buffer.data());
             acc
         });
-        payload.extend_from_slice(&[0; 16]);
+        // Add filler bytes to payload vector.
+        // More info:
+        // * [4.2.3.  EC Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.3):
+        //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
+        // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
+        //   payload = plaintext-data | filler | "header"
+        payload.extend_from_slice(&[0; EC]);
         payload.extend_from_slice(&wrap_token.header());
 
         let EncryptWithoutChecksum {
@@ -368,19 +377,27 @@ impl Sspi for Kerberos {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
-        data_to_sign.extend_from_slice(&[0; 16]);
+        // Add filler bytes to payload vector.
+        // More info:
+        // * [4.2.3.  EC Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.3):
+        //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
+        // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
+        //   payload = plaintext-data | filler | "header"
+        data_to_sign.extend_from_slice(&[0; EC]);
         data_to_sign.extend_from_slice(&wrap_token.header());
 
         let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
 
         encrypted.extend_from_slice(&checksum);
 
-        encrypted.rotate_right(usize::from(RRC + 16));
+        // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
+        // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
+        encrypted.rotate_right(usize::from(RRC + EC));
 
         wrap_token.set_rrc(RRC);
         wrap_token.set_checksum(encrypted);
 
-        let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + 16);
+        let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + WrapToken::header_len());
         wrap_token.encode(&mut raw_wrap_token)?;
 
         match self.state {
@@ -435,7 +452,8 @@ impl Sspi for Kerberos {
         let wrap_token = WrapToken::decode(encrypted.as_slice())?;
 
         let mut checksum = wrap_token.checksum;
-        // TODO: add doc comment
+        // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
+        // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
         checksum.rotate_left((RRC + wrap_token.ec).into());
 
         let DecryptWithoutChecksum {
