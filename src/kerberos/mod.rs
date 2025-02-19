@@ -38,7 +38,7 @@ use self::client::generators::{
 };
 use self::config::KerberosConfig;
 use self::pa_datas::AsReqPaDataOptions;
-use self::server::extractors::extract_tgt_ticket;
+use self::server::extractors::extract_tgt_ticket_and_oid;
 use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
@@ -118,6 +118,7 @@ pub struct Kerberos {
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
     dh_parameters: Option<DhParameters>,
+    krb5_user_to_user: bool,
 }
 
 impl Kerberos {
@@ -134,6 +135,7 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         })
     }
 
@@ -150,6 +152,7 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         })
     }
 
@@ -784,7 +787,12 @@ impl<'a> Kerberos {
 
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-                let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
+                let (tgt_ticket, mech_id) = if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_and_oid(&input_token.buffer)? {
+                    (Some(tbt_ticket), mech_oid.0)
+                } else {
+                    (None, oids::krb5())
+                };
+                self.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
 
                 let credentials = builder
                     .credentials_handle
@@ -986,13 +994,10 @@ impl<'a> Kerberos {
                 let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
                 info!(encoded_ap_req_authenticator = ?encoded_auth);
 
-                // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
-                let mech_id = oids::krb5_user_to_user();
-
                 let mut context_requirements = builder.context_requirements;
 
-                if mech_id == oids::krb5_user_to_user() {
-                    // KRB5 U2U always needs the use-session-key flag
+                if self.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
+                    warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
                     context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
                 }
 
@@ -1144,6 +1149,7 @@ pub mod test_data {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         }
     }
 
@@ -1167,6 +1173,7 @@ pub mod test_data {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         }
     }
 }
@@ -1213,99 +1220,6 @@ mod tests {
     }
 
     #[test]
-    fn fuck_this_rpc() {
-        // All values in this test (session keys, sequence number, encrypted and decrypted data) were extracted
-        // from the original Windows Kerberos implementation calls.
-        // We keep this test to guarantee full compatibility with the original Kerberos.
-
-        let session_key = [
-            158, 243, 59, 216, 59, 96, 61, 111, 31, 84, 30, 225, 131, 221, 224, 222, 248, 226, 94, 44, 142, 112, 181,
-            46, 237, 22, 166, 46, 151, 6, 148, 68,
-        ];
-        let sub_session_key = [
-            7, 118, 159, 162, 100, 46, 42, 22, 48, 73, 110, 125, 250, 178, 24, 178, 5, 210, 160, 235, 216, 53, 68, 151,
-            245, 80, 188, 25, 177, 110, 72, 15,
-        ];
-
-        let mut kerberos_server = Kerberos {
-            state: KerberosState::Final,
-            config: KerberosConfig {
-                kdc_url: None,
-                client_computer_name: None,
-            },
-            auth_identity: None,
-            encryption_params: EncryptionParams {
-                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key.to_vec()),
-                sub_session_key: Some(sub_session_key.to_vec()),
-                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
-                sspi_decrypt_key_usage: INITIATOR_SEAL,
-            },
-            seq_number: 681238048,
-            realm: None,
-            kdc_url: None,
-            channel_bindings: None,
-            dh_parameters: None,
-        };
-
-        // RPC header
-        let header = [
-            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        // RPC security trailer header
-        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
-        // Encrypted data in RPC Request
-        let enc_data = [
-            44, 224, 117, 27, 194, 34, 39, 79, 67, 21, 45, 170, 88, 158, 178, 69, 154, 37, 246, 48, 101, 169, 168, 122,
-            103, 14, 25, 154, 100, 217, 243, 189, 16, 251, 39, 129, 130, 50, 66, 121, 64, 161, 202, 196, 78, 252, 251,
-            155, 4, 46, 39, 184, 39, 29, 73, 83, 68, 12, 221, 243, 158, 164, 103, 242, 182, 103, 170, 190, 66, 200,
-            160, 161, 249, 94, 99, 204, 3, 242, 142, 146, 87, 69, 57, 29, 20, 195, 141, 237, 4, 59, 12, 150, 136, 71,
-            175, 216, 215, 96, 164, 59, 223, 43, 20, 185, 213, 98, 167, 1, 130, 176, 72, 201, 126, 23, 197, 185, 6, 52,
-            18, 113, 248, 127, 239, 79, 9, 168, 141, 108, 101, 69, 217, 20, 41, 117, 192, 169, 28, 203, 127, 44, 148,
-            155, 61, 251, 146, 66, 205, 210, 219, 49, 214, 3, 138, 162, 0, 167, 119, 181, 20, 7, 97, 113, 32, 117, 73,
-            240, 249, 2, 239, 197, 116, 112, 99, 112, 50, 209, 146, 2, 118, 110, 231, 234, 82, 255, 254, 216, 122, 250,
-            15, 76, 199, 167, 219, 220, 249, 2, 113, 95, 95, 163, 88, 167, 37, 8, 41, 147, 234, 154,
-        ];
-        // Unencrypted data in RPC Request
-        let plaintext = [
-            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
-            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
-            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
-            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
-            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
-            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0,
-        ];
-        // RPC Request security trailer data. Basically, it's a GSS API Wrap token
-        let security_trailer_data = [
-            5, 4, 6, 255, 0, 16, 0, 28, 0, 0, 0, 0, 244, 200, 31, 37, 10, 54, 129, 163, 26, 18, 133, 16, 252, 28, 64,
-            66, 240, 20, 122, 84, 102, 51, 174, 93, 163, 228, 230, 200, 120, 192, 183, 168, 18, 200, 44, 26, 103, 137,
-            81, 81, 65, 44, 35, 119, 172, 74, 16, 232, 228, 76, 80, 140, 63, 125, 105, 244, 190, 26, 95, 183, 254, 72,
-            9, 79,
-        ];
-
-        let mut header_data = header.to_vec();
-        let mut encrypted_data = enc_data.to_vec();
-        let mut trailer_data = trailer.to_vec();
-        let mut token_data = security_trailer_data.to_vec();
-        let mut message = vec![
-            SecurityBufferRef::data_buf(&mut header_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::data_buf(&mut encrypted_data),
-            SecurityBufferRef::data_buf(&mut trailer_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::token_buf(&mut token_data),
-        ];
-
-        kerberos_server.decrypt_message(&mut message, 0).unwrap();
-
-        assert_eq!(header[..], message[0].data()[..]);
-        assert_eq!(plaintext[..], message[1].data()[..]);
-        assert_eq!(trailer[..], message[2].data()[..]);
-    }
-
-    #[test]
     fn secbuffer_readonly_with_checksum() {
         // All values in this test (session keys, sequence number, encrypted and decrypted data) were extracted
         // from the original Windows Kerberos implementation calls.
@@ -1339,6 +1253,7 @@ mod tests {
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         };
 
         // RPC header
