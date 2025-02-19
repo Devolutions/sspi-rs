@@ -905,23 +905,4 @@ mod tests {
 
         assert_eq!(realm, "TBT.COM");
     }
-
-    #[test]
-    fn gss_flags_decode() {
-        let d1 = u32::from_le_bytes([62, 16, 0, 0]);
-        println!("{}", d1);
-
-        let flags = GssFlags::from_bits(d1).unwrap();
-        println!("{:?}", flags);
-
-        let client_request_flags = ClientRequestFlags::MUTUAL_AUTH
-            | ClientRequestFlags::INTEGRITY
-            | ClientRequestFlags::USE_DCE_STYLE
-            | ClientRequestFlags::SEQUENCE_DETECT
-            | ClientRequestFlags::REPLAY_DETECT
-            | ClientRequestFlags::CONFIDENTIALITY;
-        let gss_flags: GssFlags = client_request_flags.into();
-        println!("{:?}", gss_flags);
-        println!("{:?}", gss_flags.bits().to_le_bytes());
-    }
 }

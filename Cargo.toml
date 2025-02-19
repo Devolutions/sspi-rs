@@ -44,7 +44,7 @@ picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
 picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
 picky-krb = { path = "../picky-rs/picky-krb" }
 
-tokio = "1.41"
+tokio = "1.42"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
 rsa = { version = "0.9.7", default-features = false }
