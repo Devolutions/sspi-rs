@@ -7,6 +7,8 @@ pub mod verification;
 
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 
+pub use auth::AuthProvider;
+pub use client::{bind_time_feature_negotiation, RpcClient, NDR, NDR64};
 use thiserror::Error;
 use uuid::Uuid;
 
