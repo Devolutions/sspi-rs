@@ -102,13 +102,13 @@ picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 num-bigint-dig.workspace = true
 hmac.workspace = true
+url = "2.5"
 
 md-5 = "0.10"
 md4 = "0.10"
 crypto-mac = "0.11"
 lazy_static = "1.5"
 serde_derive = "1"
-url = "2.5"
 oid = "0.2"
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
