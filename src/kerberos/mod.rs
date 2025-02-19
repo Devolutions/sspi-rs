@@ -481,7 +481,7 @@ impl Sspi for Kerberos {
                     // So, we replace encrypted data with decrypted one.
                     // Note: our implementation expect maximum one plain `DATA` buffer but multiple `DATA` buffers
                     // with `SECBUFFER_READONLY_WITH_CHECKSUM` flag are allowed.
-                    acc.extend_from_slice(&plaintext);
+                    acc.extend_from_slice(plaintext);
                 }
                 acc
             });
@@ -805,11 +805,12 @@ impl<'a> Kerberos {
 
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-                let (tgt_ticket, mech_id) = if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_and_oid(&input_token.buffer)? {
-                    (Some(tbt_ticket), mech_oid.0)
-                } else {
-                    (None, oids::krb5())
-                };
+                let (tgt_ticket, mech_id) =
+                    if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_and_oid(&input_token.buffer)? {
+                        (Some(tbt_ticket), mech_oid.0)
+                    } else {
+                        (None, oids::krb5())
+                    };
                 self.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
 
                 let credentials = builder

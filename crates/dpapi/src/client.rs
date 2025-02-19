@@ -275,10 +275,7 @@ fn get_key(
     process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
 
-fn try_get_kerberos_config(
-    server: &str,
-    client_computer_name: Option<String>,
-) -> Result<KerberosConfig> {
+fn try_get_kerberos_config(server: &str, client_computer_name: Option<String>) -> Result<KerberosConfig> {
     let kdc_url = if let Ok(kdc_url) = std::env::var("SSPI_KDC_URL") {
         kdc_url
     } else {
