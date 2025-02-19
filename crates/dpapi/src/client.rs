@@ -200,8 +200,8 @@ fn get_key(
     }: GetKeyArgs,
 ) -> Result<GroupKeyEnvelope> {
     let kerberos_config = KerberosConfig {
-        kdc_url: Some(Url::parse(server).unwrap()),
-        client_computer_name: None,
+        kdc_url: Some(Url::parse(&format!("tcp://{}:88", server)).unwrap()),
+        client_computer_name: Some("DESKTOP-IHPPQ95".into()),
     };
     let username = Username::parse(username).expect("correct username");
 

@@ -57,7 +57,7 @@ mod tests {
             secret.as_bytes(),
             "S-1-5-21-1485435871-894665558-560847465-1104".into(),
             None,
-            "192.168.1.104",
+            "win-956cqossjtf.tbt.com",
             username,
             password.clone().into(),
         )
@@ -65,7 +65,7 @@ mod tests {
 
         println!("ENCRYPTED!!!!");
 
-        let plaintext = n_crypt_unprotect_secret(&blob, "192.168.1.104", username, password.into()).unwrap();
+        let plaintext = n_crypt_unprotect_secret(&blob, "win-956cqossjtf.tbt.com", username, password.into()).unwrap();
 
         println!("DECRYPTED!!!!");
 

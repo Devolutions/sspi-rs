@@ -68,6 +68,6 @@ pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
     if let Some(hostname) = hostname {
         Ok(hostname.into())
     } else {
-        Err(Error::new(ErrorKind::InvalidParameter, "The hostname is not provided"))
+        Err(Error::new(ErrorKind::InvalidParameter, "the hostname is not provided"))
     }
 }
