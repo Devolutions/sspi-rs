@@ -69,9 +69,12 @@ const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 
 /// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
+///
+/// **Important**: the last 4 bytes are [Checksum Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1).
+/// This value should be set separately based on provided [CLientRequestFlags] ot [GssFlags].
 pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
     0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x3E, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 // [MS-KILE] 3.3.5.6.1 Client Principal Lookup
@@ -344,25 +347,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
             IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
         ])),
         addresses: Optional::from(None),
-        enc_authorization_data: Optional::from(Some({
-            let data = &[
-                48_u8, 78, 48, 76, 160, 3, 2, 1, 1, 161, 69, 4, 67, 48, 65, 48, 63, 160, 4, 2, 2, 0, 141, 161, 55, 4,
-                53, 48, 51, 48, 49, 160, 3, 2, 1, 0, 161, 42, 4, 40, 1, 0, 0, 0, 0, 32, 0, 0, 74, 217, 77, 72, 42, 3,
-                21, 40, 133, 163, 78, 187, 14, 129, 78, 60, 143, 7, 133, 5, 92, 81, 159, 177, 99, 182, 145, 81, 102,
-                125, 84, 66,
-            ];
-
-            let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-            let cipher = encryption_type.cipher();
-
-            let enc_authorization_data = cipher.encrypt(&session_key, 4, data as &[u8])?;
-
-            ExplicitContextTag10::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x12])),
-                kvno: Optional::from(None),
-                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_authorization_data)),
-            })
-        })),
+        enc_authorization_data: Optional::from(None),
         additional_tickets: Optional::from(
             additional_tickets.map(|tickets| ExplicitContextTag11::from(Asn1SequenceOf::from(tickets))),
         ),
@@ -419,10 +404,7 @@ pub struct ChecksumValues {
 impl Default for ChecksumValues {
     fn default() -> Self {
         Self {
-            // inner: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
-            inner: vec![
-                16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 16, 0, 0,
-            ],
+            inner: AUTHENTICATOR_DEFAULT_CHECKSUM.to_vec(),
         }
     }
 }
@@ -457,17 +439,38 @@ impl ChecksumValues {
 }
 
 bitflags::bitflags! {
-    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1, this is crucial for LDAPS
+    /// The checksum "Flags" field is used to convey service options or extension negotiation information.
+    /// More info:
+    /// * https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1
     #[derive(Debug,Clone,Copy)]
     pub(crate) struct GssFlags: u32 {
-        const GSS_C_DELEG_FLAG      = 0b00000001;
-        const GSS_C_MUTUAL_FLAG     = 0b00000010;
-        const GSS_C_REPLAY_FLAG     = 0b00000100;
-        const GSS_C_SEQUENCE_FLAG   = 0b00001000;
-        const GSS_C_CONF_FLAG       = 0b00010000;
-        const GSS_C_INTEG_FLAG      = 0b00100000;
-        const GSS_C_ANON_FLAG       = 0b01000000;
-        const GSS_C_PROT_READY_FLAG = 0b10000000;
+        // [Checksum Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1).
+        const GSS_C_DELEG_FLAG      = 1;
+        const GSS_C_MUTUAL_FLAG     = 2;
+        const GSS_C_REPLAY_FLAG     = 4;
+        const GSS_C_SEQUENCE_FLAG   = 8;
+        const GSS_C_CONF_FLAG       = 16;
+        const GSS_C_INTEG_FLAG      = 32;
+
+        const GSS_C_ANON_FLAG       = 64;
+        const GSS_C_PROT_READY_FLAG = 128;
+        const GSS_C_TRANS_FLAG      = 256;
+        const GSS_C_DELEG_POLICY_FLAG = 32768;
+
+        // Additional GSS flags from MS-KILE specification:
+        // * [3.2.5.2 Authenticator Checksum Flags](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/387806fc-ed78-445e-afd8-c5639fe4a90a)
+
+        // [Mechanism Specific Changes](https://www.rfc-editor.org/rfc/rfc4757.html#section-7.1):
+        // Setting this flag indicates that the client wants to be informed of extended error information.  In
+        // particular, Windows 2000 status codes may be returned in the data field of a Kerberos error message.
+        // This allows the client to understand a server failure more precisely.
+        const GSS_C_EXTENDED_ERROR_FLAG = 0x4000;
+        // This flag allows the client to indicate to the server that it should only allow the server application to identify
+        // the client by name and ID, but not to impersonate the client.
+        const GSS_C_IDENTIFY_FLAG = 0x2000;
+        // This flag was added for use with Microsoft's implementation of Distributed Computing Environment Remote Procedure
+        // Call (DCE RPC), which initially expected three legs of authentication.
+        const GSS_C_DCE_STYLE = 0x1000;
     }
 }
 
@@ -504,6 +507,10 @@ impl From<ClientRequestFlags> for GssFlags {
 
         if value.contains(ClientRequestFlags::NO_INTEGRITY) {
             flags &= !GssFlags::GSS_C_INTEG_FLAG;
+        }
+
+        if value.contains(ClientRequestFlags::USE_DCE_STYLE) {
+            flags |= GssFlags::GSS_C_DCE_STYLE;
         }
 
         flags
@@ -549,23 +556,12 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
         microseconds = MAX_MICROSECONDS_IN_SECOND;
     }
 
-    // let authorization_data = Optional::from(channel_bindings.as_ref().map(|_| {
-    //     ExplicitContextTag8::from(AuthorizationData::from(vec![AuthorizationDataInner {
-    //         ad_type: ExplicitContextTag0::from(IntegerAsn1::from(AD_AUTH_DATA_AP_OPTION_TYPE.to_vec())),
-    //         ad_data: ExplicitContextTag1::from(OctetStringAsn1::from(KERB_AP_OPTIONS_CBT.to_vec())),
-    //     }]))
-    // }));
-    let authorization_data = Optional::from(Some(ExplicitContextTag8::from(AuthorizationData::from(vec![
-        AuthorizationDataInner {
-            ad_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0x01])),
-            ad_data: ExplicitContextTag1::from(OctetStringAsn1::from(vec![
-                48, 100, 48, 14, 160, 4, 2, 2, 0, 143, 161, 6, 4, 4, 0, 64, 0, 0, 48, 82, 160, 4, 2, 2, 0, 144, 161,
-                74, 4, 72, 104, 0, 111, 0, 115, 0, 116, 0, 47, 0, 119, 0, 105, 0, 110, 0, 45, 0, 57, 0, 53, 0, 54, 0,
-                99, 0, 113, 0, 111, 0, 115, 0, 115, 0, 106, 0, 116, 0, 102, 0, 46, 0, 116, 0, 98, 0, 116, 0, 46, 0, 99,
-                0, 111, 0, 109, 0, 64, 0, 84, 0, 66, 0, 84, 0, 46, 0, 67, 0, 79, 0, 77, 0,
-            ])),
-        },
-    ]))));
+    let authorization_data = Optional::from(channel_bindings.as_ref().map(|_| {
+        ExplicitContextTag8::from(AuthorizationData::from(vec![AuthorizationDataInner {
+            ad_type: ExplicitContextTag0::from(IntegerAsn1::from(AD_AUTH_DATA_AP_OPTION_TYPE.to_vec())),
+            ad_data: ExplicitContextTag1::from(OctetStringAsn1::from(KERB_AP_OPTIONS_CBT.to_vec())),
+        }]))
+    }));
 
     let cksum = if let Some(ChecksumOptions {
         checksum_type,
@@ -908,5 +904,24 @@ mod tests {
         let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
 
         assert_eq!(realm, "TBT.COM");
+    }
+
+    #[test]
+    fn gss_flags_decode() {
+        let d1 = u32::from_le_bytes([62, 16, 0, 0]);
+        println!("{}", d1);
+
+        let flags = GssFlags::from_bits(d1).unwrap();
+        println!("{:?}", flags);
+
+        let client_request_flags = ClientRequestFlags::MUTUAL_AUTH
+            | ClientRequestFlags::INTEGRITY
+            | ClientRequestFlags::USE_DCE_STYLE
+            | ClientRequestFlags::SEQUENCE_DETECT
+            | ClientRequestFlags::REPLAY_DETECT
+            | ClientRequestFlags::CONFIDENTIALITY;
+        let gss_flags: GssFlags = client_request_flags.into();
+        println!("{:?}", gss_flags);
+        println!("{:?}", gss_flags.bits().to_le_bytes());
     }
 }

@@ -965,7 +965,9 @@ impl<'a> Kerberos {
 
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
-                    // TODO: add doc comment why we increment but not save.
+                    // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap token generated
+                    // by the `encrypt_message` method. So, we set the next sequence number but do not increment the counter,
+                    // which will be incremented on each `encrypt_message` method call.
                     seq_num: Some(self.seq_number + 1),
                     sub_key: Some(EncKey {
                         key_type: enc_type.clone(),
@@ -1045,17 +1047,8 @@ impl<'a> Kerberos {
 
                 if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
                     use picky_krb::messages::ApRep;
-                    // use byteorder::{LittleEndian, ReadBytesExt};
-                    // use picky_asn1::wrapper::ObjectIdentifierAsn1;
 
-                    debug!("try to parse: {:?}", input_token.buffer);
-
-                    // let mut reader = &input_token.buffer.as_slice()[3..];
-                    // let _id: ObjectIdentifierAsn1 = picky_asn1_der::from_reader(&mut reader).unwrap();
-                    // let _krb_id = reader.read_u16::<LittleEndian>().unwrap();
                     let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer).unwrap();
-
-                    debug!("parsed dce ap rep");
 
                     let session_key = self.encryption_params.session_key.as_ref().unwrap();
                     let sub_session_key =
@@ -1067,7 +1060,6 @@ impl<'a> Kerberos {
                     self.encryption_params.sub_session_key = Some(sub_session_key);
 
                     let ap_rep = generate_ap_rep(session_key, seq_number, &self.encryption_params)?;
-
                     let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -1185,7 +1177,7 @@ mod tests {
     use picky_krb::crypto::CipherSuite;
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
-    use crate::{EncryptionFlags, Kerberos, SecurityBufferRef, SecurityBufferFlags, Sspi};
+    use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1226,8 +1218,14 @@ mod tests {
         // from the original Windows Kerberos implementation calls.
         // We keep this test to guarantee full compatibility with the original Kerberos.
 
-        let session_key = [158, 243, 59, 216, 59, 96, 61, 111, 31, 84, 30, 225, 131, 221, 224, 222, 248, 226, 94, 44, 142, 112, 181, 46, 237, 22, 166, 46, 151, 6, 148, 68];
-        let sub_session_key = [7, 118, 159, 162, 100, 46, 42, 22, 48, 73, 110, 125, 250, 178, 24, 178, 5, 210, 160, 235, 216, 53, 68, 151, 245, 80, 188, 25, 177, 110, 72, 15];
+        let session_key = [
+            158, 243, 59, 216, 59, 96, 61, 111, 31, 84, 30, 225, 131, 221, 224, 222, 248, 226, 94, 44, 142, 112, 181,
+            46, 237, 22, 166, 46, 151, 6, 148, 68,
+        ];
+        let sub_session_key = [
+            7, 118, 159, 162, 100, 46, 42, 22, 48, 73, 110, 125, 250, 178, 24, 178, 5, 210, 160, 235, 216, 53, 68, 151,
+            245, 80, 188, 25, 177, 110, 72, 15,
+        ];
 
         let mut kerberos_server = Kerberos {
             state: KerberosState::Final,
@@ -1258,7 +1256,15 @@ mod tests {
         let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
         // Encrypted data in RPC Request
         let enc_data = [
-        44, 224, 117, 27, 194, 34, 39, 79, 67, 21, 45, 170, 88, 158, 178, 69, 154, 37, 246, 48, 101, 169, 168, 122, 103, 14, 25, 154, 100, 217, 243, 189, 16, 251, 39, 129, 130, 50, 66, 121, 64, 161, 202, 196, 78, 252, 251, 155, 4, 46, 39, 184, 39, 29, 73, 83, 68, 12, 221, 243, 158, 164, 103, 242, 182, 103, 170, 190, 66, 200, 160, 161, 249, 94, 99, 204, 3, 242, 142, 146, 87, 69, 57, 29, 20, 195, 141, 237, 4, 59, 12, 150, 136, 71, 175, 216, 215, 96, 164, 59, 223, 43, 20, 185, 213, 98, 167, 1, 130, 176, 72, 201, 126, 23, 197, 185, 6, 52, 18, 113, 248, 127, 239, 79, 9, 168, 141, 108, 101, 69, 217, 20, 41, 117, 192, 169, 28, 203, 127, 44, 148, 155, 61, 251, 146, 66, 205, 210, 219, 49, 214, 3, 138, 162, 0, 167, 119, 181, 20, 7, 97, 113, 32, 117, 73, 240, 249, 2, 239, 197, 116, 112, 99, 112, 50, 209, 146, 2, 118, 110, 231, 234, 82, 255, 254, 216, 122, 250, 15, 76, 199, 167, 219, 220, 249, 2, 113, 95, 95, 163, 88, 167, 37, 8, 41, 147, 234, 154
+            44, 224, 117, 27, 194, 34, 39, 79, 67, 21, 45, 170, 88, 158, 178, 69, 154, 37, 246, 48, 101, 169, 168, 122,
+            103, 14, 25, 154, 100, 217, 243, 189, 16, 251, 39, 129, 130, 50, 66, 121, 64, 161, 202, 196, 78, 252, 251,
+            155, 4, 46, 39, 184, 39, 29, 73, 83, 68, 12, 221, 243, 158, 164, 103, 242, 182, 103, 170, 190, 66, 200,
+            160, 161, 249, 94, 99, 204, 3, 242, 142, 146, 87, 69, 57, 29, 20, 195, 141, 237, 4, 59, 12, 150, 136, 71,
+            175, 216, 215, 96, 164, 59, 223, 43, 20, 185, 213, 98, 167, 1, 130, 176, 72, 201, 126, 23, 197, 185, 6, 52,
+            18, 113, 248, 127, 239, 79, 9, 168, 141, 108, 101, 69, 217, 20, 41, 117, 192, 169, 28, 203, 127, 44, 148,
+            155, 61, 251, 146, 66, 205, 210, 219, 49, 214, 3, 138, 162, 0, 167, 119, 181, 20, 7, 97, 113, 32, 117, 73,
+            240, 249, 2, 239, 197, 116, 112, 99, 112, 50, 209, 146, 2, 118, 110, 231, 234, 82, 255, 254, 216, 122, 250,
+            15, 76, 199, 167, 219, 220, 249, 2, 113, 95, 95, 163, 88, 167, 37, 8, 41, 147, 234, 154,
         ];
         // Unencrypted data in RPC Request
         let plaintext = [
@@ -1272,19 +1278,24 @@ mod tests {
             0,
         ];
         // RPC Request security trailer data. Basically, it's a GSS API Wrap token
-        let security_trailer_data = [5, 4, 6, 255, 0, 16, 0, 28, 0, 0, 0, 0, 244, 200, 31, 37, 10, 54, 129, 163, 26, 18, 133, 16, 252, 28, 64, 66, 240, 20, 122, 84, 102, 51, 174, 93, 163, 228, 230, 200, 120, 192, 183, 168, 18, 200, 44, 26, 103, 137, 81, 81, 65, 44, 35, 119, 172, 74, 16, 232, 228, 76, 80, 140, 63, 125, 105, 244, 190, 26, 95, 183, 254, 72, 9, 79];
+        let security_trailer_data = [
+            5, 4, 6, 255, 0, 16, 0, 28, 0, 0, 0, 0, 244, 200, 31, 37, 10, 54, 129, 163, 26, 18, 133, 16, 252, 28, 64,
+            66, 240, 20, 122, 84, 102, 51, 174, 93, 163, 228, 230, 200, 120, 192, 183, 168, 18, 200, 44, 26, 103, 137,
+            81, 81, 65, 44, 35, 119, 172, 74, 16, 232, 228, 76, 80, 140, 63, 125, 105, 244, 190, 26, 95, 183, 254, 72,
+            9, 79,
+        ];
 
         let mut header_data = header.to_vec();
         let mut encrypted_data = enc_data.to_vec();
         let mut trailer_data = trailer.to_vec();
         let mut token_data = security_trailer_data.to_vec();
         let mut message = vec![
-            SecurityBuffer::data_buf(&mut header_data)
+            SecurityBufferRef::data_buf(&mut header_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBuffer::data_buf(&mut encrypted_data),
-            SecurityBuffer::data_buf(&mut trailer_data)
+            SecurityBufferRef::data_buf(&mut encrypted_data),
+            SecurityBufferRef::data_buf(&mut trailer_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBuffer::token_buf(&mut token_data),
+            SecurityBufferRef::token_buf(&mut token_data),
         ];
 
         kerberos_server.decrypt_message(&mut message, 0).unwrap();

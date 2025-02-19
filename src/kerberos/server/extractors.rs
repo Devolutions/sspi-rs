@@ -97,6 +97,10 @@ pub fn extract_sub_session_key_from_ap_rep(
 
 #[instrument(level = "trace", ret)]
 pub fn extract_tgt_ticket(data: &[u8]) -> Result<Option<Ticket>> {
+    if data.is_empty() {
+        return Ok(None);
+    }
+
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
 
     if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0 .0) {
