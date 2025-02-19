@@ -40,6 +40,12 @@ pub enum Error {
     #[error(transparent)]
     Auth(#[from] crate::rpc::auth::AuthError),
 
+    #[error(transparent)]
+    Epm(#[from] crate::epm::EpmError),
+
+    #[error(transparent)]
+    Client(#[from] crate::client::ClientError),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
 
@@ -52,8 +58,12 @@ pub enum Error {
     #[error("provided buf contains invalid UTF-8 data")]
     Utf8(#[from] std::string::FromUtf8Error),
 
-    #[error(transparent)]
-    ParseInt(#[from] std::num::ParseIntError),
+    #[error("{description}: {value}: {error}")]
+    ParseInt {
+        description: &'static str,
+        value: String,
+        error: std::num::ParseIntError,
+    },
 
     #[error(transparent)]
     Asn1(#[from] picky_asn1_der::Asn1DerError),

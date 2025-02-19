@@ -38,6 +38,7 @@ concat-kdf = { version = "0.1", features = ["std"] }
 typenum = "1.17"
 aes-kw = { version = "0.2", features = ["std"] }
 aes-gcm = { version = "0.10", features = ["std"] }
+url = "2.5"
 
 thiserror = "2.0"
 regex = "1.11"

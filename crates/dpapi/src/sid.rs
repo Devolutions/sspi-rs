@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use thiserror::Error;
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum SidError {
@@ -25,8 +25,16 @@ pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
         Err(SidError::InvalidSid(sid.to_owned()))?;
     }
 
-    let revision = parts[1].parse::<u8>()?;
-    let authority = parts[2].parse::<u64>()?;
+    let revision = parts[1].parse::<u8>().map_err(|error| Error::ParseInt {
+        description: "cannot parse SID part",
+        value: parts[1].to_owned(),
+        error,
+    })?;
+    let authority = parts[2].parse::<u64>().map_err(|error| Error::ParseInt {
+        description: "cannot parse SID part",
+        value: parts[2].to_owned(),
+        error,
+    })?;
 
     let mut data = Vec::new();
     data.extend_from_slice(&authority.to_be_bytes());
@@ -34,7 +42,11 @@ pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
     data[1] = u8::try_from(parts.len() - 3)?;
 
     for part in parts.iter().skip(3) {
-        let sub_auth = part.parse::<u32>()?;
+        let sub_auth = part.parse::<u32>().map_err(|error| Error::ParseInt {
+            description: "cannot parse SID part",
+            value: part.to_string(),
+            error,
+        })?;
         data.extend_from_slice(&sub_auth.to_le_bytes());
     }
 
@@ -85,13 +97,13 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
     let mut dynamic_data = Vec::new();
 
     // Length of the SD header bytes
-    let mut current_offset = 20;
+    let mut current_offset: u32 = 20;
 
     let mut sacl_offset = 0;
     if let Some(sacl) = sacl {
         let sacl_bytes = acl_to_bytes(sacl)?;
         sacl_offset = current_offset;
-        current_offset += sacl_bytes.len();
+        current_offset += u32::try_from(sacl_bytes.len())?;
 
         // SACL Present.
         control |= 0b00010000;
@@ -102,7 +114,7 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
     if let Some(dacl) = dacl {
         let dacl_bytes = acl_to_bytes(dacl)?;
         dacl_offset = current_offset;
-        current_offset += dacl_bytes.len();
+        current_offset += u32::try_from(dacl_bytes.len())?;
 
         // DACL Present.
         control |= 0b00000100;
@@ -111,7 +123,7 @@ pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Opt
 
     let owner_bytes = sid_to_bytes(owner)?;
     let owner_offset = current_offset;
-    current_offset += owner_bytes.len();
+    current_offset += u32::try_from(owner_bytes.len())?;
     dynamic_data.extend_from_slice(&owner_bytes);
 
     let group_bytes = sid_to_bytes(group)?;

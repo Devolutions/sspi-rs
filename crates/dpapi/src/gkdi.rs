@@ -6,15 +6,22 @@ use num_bigint_dig::BigUint;
 use rand::rngs::OsRng;
 use rand::Rng;
 use thiserror::Error;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use crate::blob::KeyIdentifier;
 use crate::crypto::{
     compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
 };
+use crate::rpc::bind::SyntaxId;
 use crate::rpc::{read_buf, read_c_str_utf16_le, read_padding, read_vec, write_buf, write_padding, Decode, Encode};
 use crate::str::{encode_utf16_le, from_utf16_le};
 use crate::{Error, Result};
+
+pub const ISD_KEY: SyntaxId = SyntaxId {
+    uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),
+    version: 1,
+    version_minor: 0,
+};
 
 #[derive(Debug, Error)]
 pub enum GkdiError {
@@ -39,6 +46,12 @@ pub enum GkdiError {
 
     #[error("l0 index does not match requested l0 index")]
     InvalidL0Index,
+
+    #[error("bad GetKey response: {0}")]
+    BadResponse(&'static str),
+
+    #[error("bad GetKey hresult: {0:x?}")]
+    BadHresult(u32),
 }
 
 pub type GkdiResult<T> = std::result::Result<T, GkdiError>;
@@ -64,6 +77,35 @@ pub struct GetKey {
     /// This parameter represents the L2 index of the requested group key.
     /// It MUST be a 32-bit integer between -1 and 31 (inclusive).
     pub l2_key_id: i32,
+}
+
+impl GetKey {
+    pub const OPNUM: u16 = 0;
+
+    /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
+    pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
+        if data.len() < 4 {
+            Err(GkdiError::BadResponse("response data length is too small"))?;
+        }
+        let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
+
+        let hresult = hresult_buf.read_u32::<LittleEndian>()?;
+        if hresult != 0 {
+            Err(GkdiError::BadHresult(hresult))?;
+        }
+
+        let mut reader = key_buf;
+
+        let _key_length = reader.read_u32::<LittleEndian>()?;
+        // Skip padding
+        reader.read_u32::<LittleEndian>()?;
+
+        // Skip the referent id and double up on pointer size
+        reader.read_u64::<LittleEndian>()?;
+        reader.read_u64::<LittleEndian>()?;
+
+        GroupKeyEnvelope::decode(reader)
+    }
 }
 
 impl Encode for GetKey {
