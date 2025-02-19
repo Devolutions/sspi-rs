@@ -617,6 +617,7 @@ dependencies = [
  "typenum",
  "url",
  "uuid",
+ "whoami",
 ]
 
 [[package]]

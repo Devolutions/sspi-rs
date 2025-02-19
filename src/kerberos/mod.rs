@@ -362,7 +362,7 @@ impl Sspi for Kerberos {
         //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
         // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
         //   payload = plaintext-data | filler | "header"
-        payload.extend_from_slice(&[0; EC]);
+        payload.extend_from_slice(&[0; EC as usize]);
         payload.extend_from_slice(&wrap_token.header());
 
         let EncryptWithoutChecksum {
@@ -383,7 +383,7 @@ impl Sspi for Kerberos {
         //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
         // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
         //   payload = plaintext-data | filler | "header"
-        data_to_sign.extend_from_slice(&[0; EC]);
+        data_to_sign.extend_from_slice(&[0; EC as usize]);
         data_to_sign.extend_from_slice(&wrap_token.header());
 
         let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;

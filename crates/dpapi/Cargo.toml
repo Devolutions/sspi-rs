@@ -28,6 +28,7 @@ sha2.workspace = true
 rand.workspace = true
 hmac.workspace = true
 tracing = { workspace = true, default-features = true }
+whoami.workspace = true
 
 kbkdf = "0.0.1"
 sha1-pre = { version = "0.11.0-pre.2", package = "sha1" }

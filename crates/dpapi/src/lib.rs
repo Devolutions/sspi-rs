@@ -60,12 +60,13 @@ mod tests {
             "win-956cqossjtf.tbt.com",
             username,
             password.clone().into(),
+            None,
         )
         .unwrap();
 
         println!("ENCRYPTED!!!!");
 
-        let plaintext = n_crypt_unprotect_secret(&blob, "win-956cqossjtf.tbt.com", username, password.into()).unwrap();
+        let plaintext = n_crypt_unprotect_secret(&blob, "win-956cqossjtf.tbt.com", username, password.into(), None).unwrap();
 
         println!("DECRYPTED!!!!");
 
