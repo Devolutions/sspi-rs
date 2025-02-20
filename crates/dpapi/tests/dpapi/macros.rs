@@ -7,7 +7,7 @@ macro_rules! test_encoding_decoding {
 
                 let data = $data;
 
-                let parsed = $type::decode(data.as_ref()).unwrap();
+                let parsed = $type::decode(data.as_slice()).unwrap();
                 let encoded = parsed.encode_to_vec().unwrap();
 
                 assert_eq!($expected, parsed);
