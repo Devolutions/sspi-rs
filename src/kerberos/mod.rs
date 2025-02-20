@@ -84,7 +84,7 @@ pub const RRC: u16 = 28;
 pub const MAX_SIGNATURE: usize = 16;
 /// Required `TOKEN` buffer length during data encryption (`encrypt_message` method call).
 ///
-/// **Note**: Actual the security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
+/// **Note**: Actual security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
 // during the authentication process.
 pub const SECURITY_TRAILER: usize = 60;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
