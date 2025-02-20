@@ -1,4 +1,4 @@
-mod hmac_sha_prf;
+mod kout;
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key};
@@ -10,7 +10,6 @@ use rand::Rng;
 use thiserror::Error;
 use uuid::Uuid;
 
-use self::hmac_sha_prf::{HmacSha1Prf, HmacSha256Prf, HmacSha384Prf, HmacSha512Prf, HmacShaPrfKey};
 use crate::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
 use crate::rpc::{Decode, EncodeExt};
 use crate::str::encode_utf16_le;
@@ -60,6 +59,12 @@ pub enum CryptoError {
 
     #[error("invalid key length: expected {expected} bytes but got {actual}")]
     InvalidKeyLength { expected: usize, actual: usize },
+
+    #[error("unsupported KBKDF output key length: {0}")]
+    UnsupportedKbkdfOutputKeyLength(usize),
+
+    #[error("key derivation error: {0}")]
+    Kbkdf(#[from] kbkdf::Error),
 }
 
 pub type CryptoResult<T> = std::result::Result<T, CryptoError>;
@@ -174,35 +179,38 @@ pub fn content_encrypt(
 }
 
 pub fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> CryptoResult<Vec<u8>> {
-    use rust_kbkdf::{kbkdf, CounterMode, InputType, KDFMode, SpecifiedInput};
+    use hmac_pre::Hmac;
+    use kbkdf::{Counter, Kbkdf, Params};
+    use kout::*;
 
-    let mut derived_key = vec![0; length];
-
-    macro_rules! kdf {
-        ($sha:ident) => {{
-            let key = HmacShaPrfKey::new(secret);
-            let mut hmac = $sha::new();
-
-            // KDF(HashAlg, KI, Label, Context, L)
-            // where KDF is SP800-108 in counter mode.
-            kbkdf(
-                &KDFMode::CounterMode(CounterMode { counter_length: 32 }),
-                &InputType::SpecifiedInput(SpecifiedInput { label, context }),
-                &key,
-                &mut hmac,
-                &mut derived_key,
-            )?;
-        }};
+    macro_rules! derive_key {
+        ($prf_ty:ty, { $($l_value:expr => $l_ty:ty,)* }) => {
+            $(
+                if $l_value == length {
+                    return Ok(Counter::<$prf_ty, $l_ty>::default()
+                        .derive(Params::builder(secret).with_label(label).with_context(context).use_counter(true).use_l(true).build())?
+                        .to_vec());
+                }
+            )*
+        };
     }
 
     match algorithm {
-        HashAlg::Sha1 => kdf!(HmacSha1Prf),
-        HashAlg::Sha256 => kdf!(HmacSha256Prf),
-        HashAlg::Sha384 => kdf!(HmacSha384Prf),
-        HashAlg::Sha512 => kdf!(HmacSha512Prf),
+        HashAlg::Sha1 => {
+            derive_key!(Hmac<sha1_pre::Sha1>, { 32 => Kout32, 64 => Kout64, });
+        }
+        HashAlg::Sha256 => {
+            derive_key!(Hmac<sha2_pre::Sha256>, { 32 => Kout32, 64 => Kout64, });
+        }
+        HashAlg::Sha384 => {
+            derive_key!(Hmac<sha2_pre::Sha384>, { 32 => Kout32, 64 => Kout64, });
+        }
+        HashAlg::Sha512 => {
+            derive_key!(Hmac<sha2_pre::Sha512>, { 32 => Kout32, 64 => Kout64, });
+        }
     }
 
-    Ok(derived_key)
+    Err(CryptoError::UnsupportedKbkdfOutputKeyLength(length))
 }
 
 fn kdf_concat(
