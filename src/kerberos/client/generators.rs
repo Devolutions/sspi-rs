@@ -71,7 +71,7 @@ const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 /// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
 ///
 /// **Important**: the last 4 bytes are [Checksum Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1).
-/// This value should be set separately based on provided [CLientRequestFlags] ot [GssFlags].
+/// This value should be set separately based on provided [CLientRequestFlags] or [GssFlags].
 pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
     0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
@@ -461,7 +461,7 @@ bitflags::bitflags! {
         // * [3.2.5.2 Authenticator Checksum Flags](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/387806fc-ed78-445e-afd8-c5639fe4a90a)
 
         // [Mechanism Specific Changes](https://www.rfc-editor.org/rfc/rfc4757.html#section-7.1):
-        // Setting this flag indicates that the client wants to be informed of extended error information.  In
+        // Setting this flag indicates that the client wants to be informed of extended error information. In
         // particular, Windows 2000 status codes may be returned in the data field of a Kerberos error message.
         // This allows the client to understand a server failure more precisely.
         const GSS_C_EXTENDED_ERROR_FLAG = 0x4000;
