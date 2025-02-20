@@ -103,7 +103,7 @@ pub fn extract_sub_session_key_from_ap_rep(
 ///
 /// We use this oid to choose between the regular Kerberos 5 and Kerberos 5 User-to-User authentication.
 #[instrument(level = "trace", ret)]
-pub fn extract_tgt_ticket_and_oid(data: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
+pub fn extract_tgt_ticket_with_oid(data: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
     if data.is_empty() {
         return Ok(None);
     }

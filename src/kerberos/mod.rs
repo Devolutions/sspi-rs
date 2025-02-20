@@ -38,7 +38,7 @@ use self::client::generators::{
 };
 use self::config::KerberosConfig;
 use self::pa_datas::AsReqPaDataOptions;
-use self::server::extractors::extract_tgt_ticket_and_oid;
+use self::server::extractors::extract_tgt_ticket_with_oid;
 use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
@@ -463,6 +463,10 @@ impl Sspi for Kerberos {
             ki: _,
         } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
 
+        if decrypted.len() < usize::from(wrap_token.ec) + WrapToken::header_len() {
+            return Err(Error::new(ErrorKind::DecryptFailure, "decrypted data is too short"));
+        }
+
         let plaintext_len = decrypted.len() - usize::from(wrap_token.ec) - WrapToken::header_len();
 
         let plaintext = &decrypted[0..plaintext_len];
@@ -806,7 +810,7 @@ impl<'a> Kerberos {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
                 let (tgt_ticket, mech_id) =
-                    if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_and_oid(&input_token.buffer)? {
+                    if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_with_oid(&input_token.buffer)? {
                         (Some(tbt_ticket), mech_oid.0)
                     } else {
                         (None, oids::krb5())
@@ -1022,7 +1026,10 @@ impl<'a> Kerberos {
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
-                    self.encryption_params.session_key.as_ref().unwrap(),
+                    self.encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?,
                     &authenticator,
                     &self.encryption_params,
                     context_requirements.into(),
@@ -1072,18 +1079,22 @@ impl<'a> Kerberos {
                 if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
                     use picky_krb::messages::ApRep;
 
-                    let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer).unwrap();
+                    let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
 
-                    let session_key = self.encryption_params.session_key.as_ref().unwrap();
+                    let session_key = self
+                        .encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
                     let sub_session_key =
                         extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
                     let seq_number = extract_seq_number_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
 
-                    debug!(?sub_session_key, "DCE AP_REP sub-session key");
+                    trace!(?sub_session_key, "DCE AP_REP sub-session key");
 
                     self.encryption_params.sub_session_key = Some(sub_session_key);
 
-                    let ap_rep = generate_ap_rep(session_key, seq_number, &self.encryption_params)?;
+                    let ap_rep = generate_ap_rep(session_key, &seq_number, &self.encryption_params)?;
                     let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -1093,6 +1104,28 @@ impl<'a> Kerberos {
 
                     SecurityStatus::ContinueNeeded
                 } else {
+                    let neg_token_targ = {
+                        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
+                        let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
+                        neg_token_targ
+                    };
+
+                    let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
+
+                    let session_key = self
+                        .encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
+                    let sub_session_key =
+                        extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
+
+                    self.encryption_params.sub_session_key = Some(sub_session_key);
+
+                    if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
+                        validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
+                    }
+
                     self.prepare_final_neg_token(builder)?;
                     self.state = KerberosState::PubKeyAuth;
                     SecurityStatus::Ok
