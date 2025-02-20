@@ -17,7 +17,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
         .response_token
         .0
         .as_ref()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response token in NegTokenTarg"))?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing response token in NegTokenTarg"))?
         .0
          .0;
 
@@ -47,7 +47,7 @@ pub fn extract_seq_number_from_ap_rep(
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
-                format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
+                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
             )
         })?;
 
@@ -57,7 +57,7 @@ pub fn extract_seq_number_from_ap_rep(
         .0
         .seq_number
         .0
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing sequence number in ap_rep"))?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sequence number in ap_rep"))?
         .0
          .0)
 }
@@ -79,7 +79,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
-                format!("Cannot decrypt ap_rep.enc_part: {:?}", err),
+                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
             )
         })?;
 
@@ -89,7 +89,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .0
         .subkey
         .0
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing sub-key in ap_req"))?
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sub-key in ap_req"))?
         .0
         .key_value
         .0
