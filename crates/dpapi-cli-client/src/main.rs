@@ -1,4 +1,5 @@
 mod cli;
+mod logging;
 
 use std::fs;
 use std::io::{stdin, stdout, Read, Result, Write};
@@ -16,6 +17,8 @@ fn main() -> Result<()> {
         computer_name,
     } = Cli::parse();
 
+    logging::init_logging();
+
     match command {
         Command::Encrypt { sid, secret } => {
             let secret = if let Some(secret) = secret {
@@ -24,9 +27,16 @@ fn main() -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let blob =
-                dpapi::n_crypt_protect_secret(&secret, sid, None, &server, &username, password.into(), computer_name)
-                    .unwrap();
+            let blob = dpapi::n_crypt_protect_secret(
+                secret.into(),
+                sid,
+                None,
+                &server,
+                &username,
+                password.into(),
+                computer_name,
+            )
+            .unwrap();
 
             stdout().write_all(&blob)?;
         }
@@ -40,7 +50,7 @@ fn main() -> Result<()> {
             let secret =
                 dpapi::n_crypt_unprotect_secret(&blob, &server, &username, password.into(), computer_name).unwrap();
 
-            stdout().write_all(&secret)?;
+            stdout().write_all(secret.as_ref())?;
         }
     }
 

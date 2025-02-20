@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 dpapi = { path = "../dpapi" }
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
