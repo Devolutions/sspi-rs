@@ -613,7 +613,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &EncryptionParams) -> Result<ApRep> {
+pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &EncryptionParams) -> Result<ApRep> {
     let current_date = OffsetDateTime::now_utc();
     let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
 
@@ -622,11 +622,8 @@ pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &
     let enc_ap_rep_part = EncApRepPart::from(EncApRepPartInner {
         ctime: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         cusec: ExplicitContextTag1::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-        subkey: Optional::from(Some(ExplicitContextTag2::from(EncryptionKey {
-            key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
-            key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_session_key.to_vec())),
-        }))),
-        seq_number: Optional::from(None),
+        subkey: Optional::from(None),
+        seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
     });
 
     let cipher = encryption_type.cipher();
