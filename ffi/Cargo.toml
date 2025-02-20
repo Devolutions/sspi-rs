@@ -18,6 +18,7 @@ tsssp = ["sspi/tsssp"]
 scard = ["sspi/scard", "dep:ffi-types", "dep:winscard", "dep:bitflags", "dep:picky-asn1-x509", "dep:picky"]
 aws-lc-rs = ["sspi/aws-lc-rs"]
 ring = ["sspi/ring"]
+dpapi = ["dep:dpapi", "dep:ffi-types"]
 
 [dependencies]
 cfg-if.workspace = true
@@ -27,6 +28,7 @@ ffi-types = { workspace = true, features = ["winscard"], optional = true }
 picky-asn1-der.workspace = true
 uuid.workspace = true
 winscard = { workspace = true, features = ["std"], optional = true }
+dpapi = { workspace = true, optional = true }
 # logging
 tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }

@@ -2708,6 +2708,7 @@ version = "0.0.0"
 dependencies = [
  "bitflags 2.8.0",
  "cfg-if",
+ "dpapi",
  "ffi-types",
  "libc",
  "num-traits",

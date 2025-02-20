@@ -5,6 +5,10 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "dpapi")]
+#[deny(unsafe_op_in_unsafe_fn)]
+#[deny(clippy::undocumented_unsafe_blocks)]
+pub mod dpapi;
 pub mod logging;
 pub mod sspi;
 mod utils;
