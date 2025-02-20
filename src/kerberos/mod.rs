@@ -77,19 +77,23 @@ pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 // pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
-// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
+/// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
 pub const RRC: u16 = 28;
 // wrap token header len
 pub const MAX_SIGNATURE: usize = 16;
-// minimal len to fit encrypted public key in wrap token
-pub const SECURITY_TRAILER: usize = 76;
+/// Required `TOKEN` buffer length during data encryption (`encrypt_message` method call).
+///
+/// **Note**: Actual the security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
+// during the authentication process.
+pub const SECURITY_TRAILER: usize = 60;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
 
-// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
-// The extra count (EC) must not be zero. The sender should set extra count (EC) to 1 block - 16 bytes.
+/// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
+///
+/// The extra count (EC) must not be zero. The sender should set extra count (EC) to 1 block - 16 bytes.
 const EC: u16 = 16;
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
@@ -350,7 +354,7 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
-        wrap_token.ec = EC;
+        wrap_token.ec = self.encryption_params.ec;
 
         let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
             acc.extend_from_slice(buffer.data());
@@ -362,7 +366,7 @@ impl Sspi for Kerberos {
         //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
         // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
         //   payload = plaintext-data | filler | "header"
-        payload.extend_from_slice(&[0; EC as usize]);
+        payload.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
         payload.extend_from_slice(&wrap_token.header());
 
         let EncryptWithoutChecksum {
@@ -383,7 +387,7 @@ impl Sspi for Kerberos {
         //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
         // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
         //   payload = plaintext-data | filler | "header"
-        data_to_sign.extend_from_slice(&[0; EC as usize]);
+        data_to_sign.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
         data_to_sign.extend_from_slice(&wrap_token.header());
 
         let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
@@ -392,7 +396,7 @@ impl Sspi for Kerberos {
 
         // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
         // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
-        encrypted.rotate_right(usize::from(RRC + EC));
+        encrypted.rotate_right(usize::from(RRC + self.encryption_params.ec));
 
         wrap_token.set_rrc(RRC);
         wrap_token.set_checksum(encrypted);
@@ -402,10 +406,12 @@ impl Sspi for Kerberos {
 
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                let (token, data) = if raw_wrap_token.len() < SECURITY_TRAILER {
+                let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
+
+                let (token, data) = if raw_wrap_token.len() < security_trailer_len {
                     (raw_wrap_token.as_slice(), &[] as &[u8])
                 } else {
-                    raw_wrap_token.split_at(SECURITY_TRAILER)
+                    raw_wrap_token.split_at(security_trailer_len)
                 };
 
                 let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
@@ -514,12 +520,22 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
-        Ok(ContextSizes {
-            max_token: PACKAGE_INFO.max_token_len,
-            max_signature: MAX_SIGNATURE as u32,
-            block: 0,
-            security_trailer: SECURITY_TRAILER as u32,
-        })
+        // We prevent users from calling `query_context_sizes` on a non-established security context
+        // because it can lead to invalid values being returned.
+        match self.state {
+            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => Ok(ContextSizes {
+                max_token: PACKAGE_INFO.max_token_len,
+                max_signature: MAX_SIGNATURE as u32,
+                block: 0,
+                security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
+            }),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    "Kerberos context is not established",
+                ))
+            }
+        }
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
@@ -1077,6 +1093,10 @@ impl<'a> Kerberos {
                 }
 
                 if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+                    // The `EC` field depends on the authentication type. For example, during RDP auth
+                    // it is equal to 0, but during RPC auth it is equal to EC.
+                    self.encryption_params.ec = EC;
+
                     use picky_krb::messages::ApRep;
 
                     let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -1195,6 +1215,7 @@ pub mod test_data {
                 sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+                ec: 0,
             },
             seq_number: 1234,
             realm: None,
@@ -1219,6 +1240,7 @@ pub mod test_data {
                 sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
+                ec: 0,
             },
             seq_number: 0,
             realm: None,
@@ -1299,6 +1321,7 @@ mod tests {
                 sub_session_key: Some(sub_session_key.to_vec()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
+                ec: 16,
             },
             seq_number: 681238048,
             realm: None,
