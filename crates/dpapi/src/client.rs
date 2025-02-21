@@ -184,6 +184,7 @@ struct GetKeyArgs<'server, 'username> {
     l2: i32,
     username: &'username str,
     password: Secret<String>,
+    kerberos_config: KerberosConfig,
 }
 
 #[instrument(level = "trace", ret)]
@@ -197,12 +198,9 @@ fn get_key(
         l2,
         username,
         password,
+        kerberos_config,
     }: GetKeyArgs,
 ) -> Result<GroupKeyEnvelope> {
-    let kerberos_config = KerberosConfig {
-        kdc_url: Some(Url::parse(server).unwrap()),
-        client_computer_name: None,
-    };
     let username = Username::parse(username).expect("correct username");
 
     let isd_key_port = {
@@ -277,6 +275,29 @@ fn get_key(
     process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
 
+fn try_get_kerberos_config(server: &str, client_computer_name: Option<String>) -> Result<KerberosConfig> {
+    let kdc_url = if let Ok(kdc_url) = std::env::var("SSPI_KDC_URL") {
+        kdc_url
+    } else {
+        format!("tcp://{}:88", server)
+    };
+
+    let client_computer_name = if let Some(name) = client_computer_name {
+        name
+    } else {
+        whoami::fallible::hostname()?
+    };
+
+    Ok(KerberosConfig {
+        kdc_url: Some(Url::parse(&kdc_url).map_err(|error| Error::InvalidUrl {
+            name: "KDC",
+            url: kdc_url,
+            error,
+        })?),
+        client_computer_name: Some(client_computer_name),
+    })
+}
+
 /// Decrypt the DPAPI blob.
 ///
 /// This function simulated the `NCryptUnprotectSecret` function. Decryption requires making RPC calls to the domain.
@@ -290,6 +311,7 @@ pub fn n_crypt_unprotect_secret(
     server: &str,
     username: &str,
     password: Secret<String>,
+    client_computer_name: Option<String>,
 ) -> Result<Vec<u8>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
@@ -303,6 +325,7 @@ pub fn n_crypt_unprotect_secret(
         l2: dpapi_blob.key_identifier.l2,
         username,
         password,
+        kerberos_config: try_get_kerberos_config(server, client_computer_name)?,
     })?;
 
     info!("Successfully requested root key.");
@@ -325,6 +348,7 @@ pub fn n_crypt_protect_secret(
     server: &str,
     username: &str,
     password: Secret<String>,
+    client_computer_name: Option<String>,
 ) -> Result<Vec<u8>> {
     let l0 = -1;
     let l1 = -1;
@@ -342,6 +366,7 @@ pub fn n_crypt_protect_secret(
         l2,
         username,
         password,
+        kerberos_config: try_get_kerberos_config(server, client_computer_name)?,
     })?;
 
     info!("Successfully requested root key.");
