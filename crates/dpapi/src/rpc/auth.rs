@@ -212,8 +212,9 @@ impl AuthProvider {
                 // if you enable the `ClientRequestFlags::USER_TO_USER`, then it will fail.
                 ClientRequestFlags::MUTUAL_AUTH
                     | ClientRequestFlags::INTEGRITY
-                    | ClientRequestFlags::DELEGATE
                     | ClientRequestFlags::USE_DCE_STYLE
+                    | ClientRequestFlags::SEQUENCE_DETECT
+                    | ClientRequestFlags::REPLAY_DETECT
                     | ClientRequestFlags::CONFIDENTIALITY,
             )
             .with_target_data_representation(DataRepresentation::Native)

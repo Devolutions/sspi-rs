@@ -28,10 +28,14 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
     raw_buffers
         .iter()
         .map(|raw_buffer| SecurityBuffer {
-            buffer: from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
-                .iter()
-                .map(|v| *v as u8)
-                .collect(),
+            buffer: if raw_buffer.pv_buffer.is_null() {
+                Vec::new()
+            } else {
+                from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
+                    .iter()
+                    .map(|v| *v as u8)
+                    .collect()
+            },
             buffer_type: SecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
         })
         .collect()

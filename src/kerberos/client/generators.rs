@@ -69,9 +69,12 @@ const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 
 /// [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
+///
+/// **Important**: the last 4 bytes are [Checksum Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1).
+/// This value should be set separately based on provided [CLientRequestFlags] or [GssFlags].
 pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
     0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x3E, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 // [MS-KILE] 3.3.5.6.1 Client Principal Lookup
@@ -421,9 +424,6 @@ impl From<[u8; 24]> for ChecksumValues {
 }
 
 impl ChecksumValues {
-    // FIXME: This code is unused because of the comment in the Kerberos implementation.
-    // Currently, we have an authentication error when using flags in the checksum.
-    #[allow(dead_code)]
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
         let flag_bytes = flag_bits.to_le_bytes();
@@ -436,17 +436,38 @@ impl ChecksumValues {
 }
 
 bitflags::bitflags! {
-    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1, this is crucial for LDAPS
+    /// The checksum "Flags" field is used to convey service options or extension negotiation information.
+    /// More info:
+    /// * https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1
     #[derive(Debug,Clone,Copy)]
     pub(crate) struct GssFlags: u32 {
-        const GSS_C_DELEG_FLAG      = 0b00000001;
-        const GSS_C_MUTUAL_FLAG     = 0b00000010;
-        const GSS_C_REPLAY_FLAG     = 0b00000100;
-        const GSS_C_SEQUENCE_FLAG   = 0b00001000;
-        const GSS_C_CONF_FLAG       = 0b00010000;
-        const GSS_C_INTEG_FLAG      = 0b00100000;
-        const GSS_C_ANON_FLAG       = 0b01000000;
-        const GSS_C_PROT_READY_FLAG = 0b10000000;
+        // [Checksum Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1).
+        const GSS_C_DELEG_FLAG      = 1;
+        const GSS_C_MUTUAL_FLAG     = 2;
+        const GSS_C_REPLAY_FLAG     = 4;
+        const GSS_C_SEQUENCE_FLAG   = 8;
+        const GSS_C_CONF_FLAG       = 16;
+        const GSS_C_INTEG_FLAG      = 32;
+
+        const GSS_C_ANON_FLAG       = 64;
+        const GSS_C_PROT_READY_FLAG = 128;
+        const GSS_C_TRANS_FLAG      = 256;
+        const GSS_C_DELEG_POLICY_FLAG = 32768;
+
+        // Additional GSS flags from MS-KILE specification:
+        // * [3.2.5.2 Authenticator Checksum Flags](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/387806fc-ed78-445e-afd8-c5639fe4a90a)
+
+        // [Mechanism Specific Changes](https://www.rfc-editor.org/rfc/rfc4757.html#section-7.1):
+        // Setting this flag indicates that the client wants to be informed of extended error information. In
+        // particular, Windows 2000 status codes may be returned in the data field of a Kerberos error message.
+        // This allows the client to understand a server failure more precisely.
+        const GSS_C_EXTENDED_ERROR_FLAG = 0x4000;
+        // This flag allows the client to indicate to the server that it should only allow the server application to identify
+        // the client by name and ID, but not to impersonate the client.
+        const GSS_C_IDENTIFY_FLAG = 0x2000;
+        // This flag was added for use with Microsoft's implementation of Distributed Computing Environment Remote Procedure
+        // Call (DCE RPC), which initially expected three legs of authentication.
+        const GSS_C_DCE_STYLE = 0x1000;
     }
 }
 
@@ -483,6 +504,10 @@ impl From<ClientRequestFlags> for GssFlags {
 
         if value.contains(ClientRequestFlags::NO_INTEGRITY) {
             flags &= !GssFlags::GSS_C_INTEG_FLAG;
+        }
+
+        if value.contains(ClientRequestFlags::USE_DCE_STYLE) {
+            flags |= GssFlags::GSS_C_DCE_STYLE;
         }
 
         flags
@@ -585,7 +610,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &EncryptionParams) -> Result<ApRep> {
+pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &EncryptionParams) -> Result<ApRep> {
     let current_date = OffsetDateTime::now_utc();
     let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
 
@@ -594,11 +619,8 @@ pub fn generate_ap_rep(session_key: &[u8], sub_session_key: &[u8], enc_params: &
     let enc_ap_rep_part = EncApRepPart::from(EncApRepPartInner {
         ctime: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         cusec: ExplicitContextTag1::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
-        subkey: Optional::from(Some(ExplicitContextTag2::from(EncryptionKey {
-            key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
-            key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_session_key.to_vec())),
-        }))),
-        seq_number: Optional::from(None),
+        subkey: Optional::from(None),
+        seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
     });
 
     let cipher = encryption_type.cipher();

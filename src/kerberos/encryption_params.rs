@@ -9,6 +9,15 @@ pub struct EncryptionParams {
     pub sub_session_key: Option<Vec<u8>>,
     pub sspi_encrypt_key_usage: i32,
     pub sspi_decrypt_key_usage: i32,
+    /// EC field of the Kerberos Wrap token.
+    ///
+    /// Related documentation:
+    /// * [RFC 4121: EC Field](https://www.rfc-editor.org/rfc/rfc4121#section-4.2.3).
+    /// * [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550).
+    ///
+    /// This value is different during RDP and RPC authentication.
+    /// We negotiate it during the authentication process.
+    pub ec: u16,
 }
 
 impl EncryptionParams {
@@ -19,6 +28,7 @@ impl EncryptionParams {
             sub_session_key: None,
             sspi_encrypt_key_usage: INITIATOR_SEAL,
             sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+            ec: 0,
         }
     }
 
@@ -29,6 +39,7 @@ impl EncryptionParams {
             sub_session_key: None,
             sspi_encrypt_key_usage: ACCEPTOR_SEAL,
             sspi_decrypt_key_usage: INITIATOR_SEAL,
+            ec: 0,
         }
     }
 
