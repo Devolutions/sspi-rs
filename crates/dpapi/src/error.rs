@@ -16,6 +16,13 @@ pub enum Error {
         actual: usize,
     },
 
+    #[error("invalid {name} url: {url}")]
+    InvalidUrl {
+        name: &'static str,
+        url: String,
+        error: url::ParseError,
+    },
+
     #[error(transparent)]
     Gkdi(#[from] crate::gkdi::GkdiError),
 

@@ -38,7 +38,7 @@ use self::client::generators::{
 };
 use self::config::KerberosConfig;
 use self::pa_datas::AsReqPaDataOptions;
-use self::server::extractors::extract_tgt_ticket;
+use self::server::extractors::extract_tgt_ticket_with_oid;
 use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
@@ -49,7 +49,9 @@ use crate::kerberos::client::generators::{
     GssFlags,
 };
 use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
-use crate::kerberos::server::extractors::{extract_ap_rep_from_neg_token_targ, extract_sub_session_key_from_ap_rep};
+use crate::kerberos::server::extractors::{
+    extract_ap_rep_from_neg_token_targ, extract_seq_number_from_ap_rep, extract_sub_session_key_from_ap_rep,
+};
 use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
 use crate::network_client::NetworkProtocol;
 use crate::pk_init::{self, DhParameters};
@@ -75,16 +77,24 @@ pub const CHANGE_PASSWORD_SERVICE_NAME: &str = "changepw";
 // pub const SSPI_KDC_URL_ENV: &str = "SSPI_KDC_URL";
 pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
-/// [MS-KILE](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
+/// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
 pub const RRC: u16 = 28;
 // wrap token header len
 pub const MAX_SIGNATURE: usize = 16;
-// minimal len to fit encrypted public key in wrap token
+/// Required `TOKEN` buffer length during data encryption (`encrypt_message` method call).
+///
+/// **Note**: Actual security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
+// during the authentication process.
 pub const SECURITY_TRAILER: usize = 60;
 /// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
 /// "The service accepts requests on UDP port 464 and TCP port 464 as well."
 const KPASSWD_PORT: u16 = 464;
+
+/// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
+///
+/// The extra count (EC) must not be zero. The sender should set extra count (EC) to 1 block - 16 bytes.
+const EC: u16 = 16;
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     capabilities: PackageCapabilities::empty(),
@@ -116,6 +126,7 @@ pub struct Kerberos {
     kdc_url: Option<Url>,
     channel_bindings: Option<ChannelBindings>,
     dh_parameters: Option<DhParameters>,
+    krb5_user_to_user: bool,
 }
 
 impl Kerberos {
@@ -132,6 +143,7 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         })
     }
 
@@ -148,6 +160,7 @@ impl Kerberos {
             kdc_url,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         })
     }
 
@@ -341,11 +354,19 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+        wrap_token.ec = self.encryption_params.ec;
 
         let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
             acc.extend_from_slice(buffer.data());
             acc
         });
+        // Add filler bytes to payload vector.
+        // More info:
+        // * [4.2.3.  EC Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.3):
+        //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
+        // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
+        //   payload = plaintext-data | filler | "header"
+        payload.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
         payload.extend_from_slice(&wrap_token.header());
 
         let EncryptWithoutChecksum {
@@ -355,32 +376,43 @@ impl Sspi for Kerberos {
         } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign =
+        let mut data_to_sign =
             SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
+        // Add filler bytes to payload vector.
+        // More info:
+        // * [4.2.3.  EC Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.3):
+        //   In Wrap tokens with confidentiality, the EC field SHALL be used to encode the number of octets in the filler.
+        // * [4.2.4.  Encryption and Checksum Operations](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.4):
+        //   payload = plaintext-data | filler | "header"
+        data_to_sign.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
+        data_to_sign.extend_from_slice(&wrap_token.header());
 
-        let checksum_suite = cipher.checksum_type().hasher();
-        let checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+        let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
 
         encrypted.extend_from_slice(&checksum);
 
-        encrypted.rotate_right(RRC.into());
+        // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
+        // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
+        encrypted.rotate_right(usize::from(RRC + self.encryption_params.ec));
 
         wrap_token.set_rrc(RRC);
         wrap_token.set_checksum(encrypted);
 
-        let mut raw_wrap_token = Vec::with_capacity(92);
+        let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + WrapToken::header_len());
         wrap_token.encode(&mut raw_wrap_token)?;
 
         match self.state {
             KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                if raw_wrap_token.len() < SECURITY_TRAILER {
-                    return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
-                }
+                let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
 
-                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                let (token, data) = if raw_wrap_token.len() < security_trailer_len {
+                    (raw_wrap_token.as_slice(), &[] as &[u8])
+                } else {
+                    raw_wrap_token.split_at(security_trailer_len)
+                };
 
                 let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
                     message,
@@ -426,19 +458,28 @@ impl Sspi for Kerberos {
         let wrap_token = WrapToken::decode(encrypted.as_slice())?;
 
         let mut checksum = wrap_token.checksum;
-        checksum.rotate_left(RRC.into());
+        // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
+        // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
+        checksum.rotate_left((RRC + wrap_token.ec).into());
 
         let DecryptWithoutChecksum {
-            plaintext: mut decrypted,
+            plaintext: decrypted,
             confounder,
             checksum,
             ki: _,
         } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
-        // remove wrap token header
-        decrypted.truncate(decrypted.len() - WrapToken::header_len());
+
+        if decrypted.len() < usize::from(wrap_token.ec) + WrapToken::header_len() {
+            return Err(Error::new(ErrorKind::DecryptFailure, "decrypted data is too short"));
+        }
+
+        let plaintext_len = decrypted.len() - usize::from(wrap_token.ec) - WrapToken::header_len();
+
+        let plaintext = &decrypted[0..plaintext_len];
+        let wrap_token_header = &decrypted[plaintext_len..];
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
-        let data_to_sign =
+        let mut data_to_sign =
             SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(confounder, |mut acc, buffer| {
                 if buffer
                     .buffer_flags()
@@ -448,19 +489,21 @@ impl Sspi for Kerberos {
                 } else {
                     // The `Data` buffer contains encrypted data, but the checksum was calculated over the decrypted data.
                     // So, we replace encrypted data with decrypted one.
-                    acc.extend_from_slice(&decrypted);
+                    // Note: our implementation expect maximum one plain `DATA` buffer but multiple `DATA` buffers
+                    // with `SECBUFFER_READONLY_WITH_CHECKSUM` flag are allowed.
+                    acc.extend_from_slice(plaintext);
                 }
                 acc
             });
+        data_to_sign.extend_from_slice(wrap_token_header);
 
-        let checksum_suite = cipher.checksum_type().hasher();
-        let calculated_checksum = checksum_suite.checksum(key, key_usage, &data_to_sign)?;
+        let calculated_checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
 
         if calculated_checksum != checksum {
             return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
         }
 
-        save_decrypted_data(&decrypted, message)?;
+        save_decrypted_data(plaintext, message)?;
 
         match self.state {
             KerberosState::PubKeyAuth => {
@@ -477,12 +520,22 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
-        Ok(ContextSizes {
-            max_token: PACKAGE_INFO.max_token_len,
-            max_signature: MAX_SIGNATURE as u32,
-            block: 0,
-            security_trailer: SECURITY_TRAILER as u32,
-        })
+        // We prevent users from calling `query_context_sizes` on a non-established security context
+        // because it can lead to invalid values being returned.
+        match self.state {
+            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => Ok(ContextSizes {
+                max_token: PACKAGE_INFO.max_token_len,
+                max_signature: MAX_SIGNATURE as u32,
+                block: 0,
+                security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
+            }),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    "Kerberos context is not established",
+                ))
+            }
+        }
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
@@ -791,7 +844,13 @@ impl<'a> Kerberos {
 
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-                let tgt_ticket = extract_tgt_ticket(&input_token.buffer)?;
+                let (tgt_ticket, mech_id) =
+                    if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_with_oid(&input_token.buffer)? {
+                        (Some(tbt_ticket), mech_oid.0)
+                    } else {
+                        (None, oids::krb5())
+                    };
+                self.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
 
                 let credentials = builder
                     .credentials_handle
@@ -939,8 +998,6 @@ impl<'a> Kerberos {
 
                 self.encryption_params.session_key = Some(session_key_2);
 
-                let seq_num = self.next_seq_number();
-
                 let enc_type = self
                     .encryption_params
                     .encryption_type
@@ -974,7 +1031,10 @@ impl<'a> Kerberos {
 
                 let authenticator_options = GenerateAuthenticatorOptions {
                     kdc_rep: &tgs_rep.0,
-                    seq_num: Some(seq_num),
+                    // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap token generated
+                    // by the `encrypt_message` method. So, we set the next sequence number but do not increment the counter,
+                    // which will be incremented on each `encrypt_message` method call.
+                    seq_num: Some(self.seq_number + 1),
                     sub_key: Some(EncKey {
                         key_type: enc_type.clone(),
                         key_value: authenticator_sub_key,
@@ -992,19 +1052,19 @@ impl<'a> Kerberos {
                 let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
                 info!(encoded_ap_req_authenticator = ?encoded_auth);
 
-                // FIXME: properly negotiate mech id - Windows always does KRB5 U2U
-                let mech_id = oids::krb5_user_to_user();
-
                 let mut context_requirements = builder.context_requirements;
 
-                if mech_id == oids::krb5_user_to_user() {
-                    // KRB5 U2U always needs the use-session-key flag
+                if self.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
+                    warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
                     context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
                 }
 
                 let ap_req = generate_ap_req(
                     tgs_rep.0.ticket.0,
-                    self.encryption_params.session_key.as_ref().unwrap(),
+                    self.encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?,
                     &authenticator,
                     &self.encryption_params,
                     context_requirements.into(),
@@ -1033,31 +1093,29 @@ impl<'a> Kerberos {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-                let neg_token_targ = {
-                    let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
-                    let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
-                    neg_token_targ
-                };
-
-                let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
-
-                let session_key = self.encryption_params.session_key.as_ref().unwrap();
-                let sub_session_key =
-                    extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
-
-                self.encryption_params.sub_session_key = Some(sub_session_key);
-
-                if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
-                    validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
-                }
-
                 if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                    let ap_rep = generate_ap_rep(
-                        session_key,
-                        self.encryption_params.sub_session_key.as_ref().unwrap(),
-                        &self.encryption_params,
-                    )?;
+                    // The `EC` field depends on the authentication type. For example, during RDP auth
+                    // it is equal to 0, but during RPC auth it is equal to EC.
+                    self.encryption_params.ec = EC;
 
+                    use picky_krb::messages::ApRep;
+
+                    let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
+
+                    let session_key = self
+                        .encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
+                    let sub_session_key =
+                        extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
+                    let seq_number = extract_seq_number_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
+
+                    trace!(?sub_session_key, "DCE AP_REP sub-session key");
+
+                    self.encryption_params.sub_session_key = Some(sub_session_key);
+
+                    let ap_rep = generate_ap_rep(session_key, seq_number, &self.encryption_params)?;
                     let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -1067,6 +1125,28 @@ impl<'a> Kerberos {
 
                     SecurityStatus::ContinueNeeded
                 } else {
+                    let neg_token_targ = {
+                        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
+                        let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
+                        neg_token_targ
+                    };
+
+                    let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
+
+                    let session_key = self
+                        .encryption_params
+                        .session_key
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
+                    let sub_session_key =
+                        extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
+
+                    self.encryption_params.sub_session_key = Some(sub_session_key);
+
+                    if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
+                        validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
+                    }
+
                     self.prepare_final_neg_token(builder)?;
                     self.state = KerberosState::PubKeyAuth;
                     SecurityStatus::Ok
@@ -1136,12 +1216,14 @@ pub mod test_data {
                 sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+                ec: 0,
             },
             seq_number: 1234,
             realm: None,
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         }
     }
 
@@ -1159,19 +1241,25 @@ pub mod test_data {
                 sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
+                ec: 0,
             },
             seq_number: 0,
             realm: None,
             kdc_url: None,
             channel_bindings: None,
             dh_parameters: None,
+            krb5_user_to_user: false,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{EncryptionFlags, SecurityBufferFlags, SecurityBufferRef, Sspi};
+    use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
+    use picky_krb::crypto::CipherSuite;
+
+    use super::{EncryptionParams, KerberosConfig, KerberosState};
+    use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1207,39 +1295,147 @@ mod tests {
     }
 
     #[test]
-    fn rpc_request_decryption() {
+    fn secbuffer_readonly_with_checksum() {
+        // All values in this test (session keys, sequence number, encrypted and decrypted data) were extracted
+        // from the original Windows Kerberos implementation calls.
+        // We keep this test to guarantee full compatibility with the original Kerberos.
+
+        let session_key = [
+            114, 67, 55, 26, 76, 210, 61, 0, 164, 44, 11, 133, 108, 220, 234, 145, 61, 144, 123, 45, 54, 175, 164, 168,
+            99, 18, 99, 240, 242, 157, 95, 134,
+        ];
+        let sub_session_key = [
+            91, 11, 188, 227, 10, 91, 180, 246, 64, 129, 251, 200, 118, 82, 109, 65, 241, 177, 109, 32, 124, 39, 127,
+            171, 222, 132, 199, 199, 126, 110, 3, 166,
+        ];
+
+        let mut kerberos_server = Kerberos {
+            state: KerberosState::Final,
+            config: KerberosConfig {
+                kdc_url: None,
+                client_computer_name: None,
+            },
+            auth_identity: None,
+            encryption_params: EncryptionParams {
+                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+                session_key: Some(session_key.to_vec()),
+                sub_session_key: Some(sub_session_key.to_vec()),
+                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
+                sspi_decrypt_key_usage: INITIATOR_SEAL,
+                ec: 16,
+            },
+            seq_number: 681238048,
+            realm: None,
+            kdc_url: None,
+            channel_bindings: None,
+            dh_parameters: None,
+            krb5_user_to_user: false,
+        };
+
+        // RPC header
+        let header = [
+            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        // RPC security trailer header
+        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
+        // Encrypted data in RPC Request
+        let enc_data = [
+            41, 85, 192, 239, 104, 188, 180, 100, 229, 73, 83, 199, 77, 83, 79, 17, 163, 206, 241, 29, 90, 28, 89, 203,
+            83, 176, 160, 252, 197, 221, 76, 113, 185, 141, 16, 200, 149, 55, 32, 96, 29, 49, 57, 124, 181, 147, 110,
+            198, 125, 116, 150, 47, 35, 224, 117, 25, 10, 229, 201, 222, 153, 101, 131, 93, 204, 32, 9, 145, 186, 45,
+            224, 160, 131, 23, 236, 111, 88, 48, 54, 4, 118, 114, 129, 119, 130, 164, 178, 4, 110, 74, 37, 1, 215, 177,
+            16, 204, 238, 83, 255, 40, 240, 32, 209, 213, 90, 19, 126, 58, 34, 33, 72, 15, 206, 96, 67, 15, 169, 248,
+            176, 9, 173, 196, 159, 239, 250, 120, 206, 52, 53, 229, 230, 66, 64, 109, 100, 21, 77, 193, 3, 40, 183,
+            209, 177, 152, 165, 171, 108, 151, 112, 134, 53, 165, 128, 145, 147, 167, 5, 72, 35, 101, 42, 183, 67, 101,
+            48, 255, 84, 208, 112, 199, 154, 62, 185, 87, 204, 228, 45, 30, 184, 47, 129, 145, 245, 168, 118, 174, 48,
+            98, 174, 167, 208, 0, 113, 246, 219, 29, 192, 171, 97, 117, 115, 120, 115, 45, 44, 113, 62, 39,
+        ];
+        // Unencrypted data in RPC Request
+        let plaintext = [
+            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
+            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
+            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
+            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
+            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+        ];
+        // RPC Request security trailer data. Basically, it's a GSS API Wrap token
+        let security_trailer_data = [
+            5, 4, 6, 255, 0, 16, 0, 28, 0, 0, 0, 0, 40, 154, 222, 33, 170, 177, 218, 93, 176, 5, 210, 44, 38, 242, 179,
+            168, 249, 202, 242, 199, 63, 162, 33, 40, 106, 186, 187, 28, 11, 229, 207, 219, 66, 86, 243, 16, 158, 100,
+            133, 159, 87, 153, 196, 14, 251, 169, 164, 12, 18, 85, 182, 56, 72, 30, 137, 238, 50, 122, 73, 95, 109,
+            194, 60, 120,
+        ];
+
+        let mut header_data = header.to_vec();
+        let mut encrypted_data = enc_data.to_vec();
+        let mut trailer_data = trailer.to_vec();
+        let mut token_data = security_trailer_data.to_vec();
+        let mut message = vec![
+            SecurityBufferRef::data_buf(&mut header_data)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::data_buf(&mut encrypted_data),
+            SecurityBufferRef::data_buf(&mut trailer_data)
+                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::token_buf(&mut token_data),
+        ];
+
+        kerberos_server.decrypt_message(&mut message, 0).unwrap();
+
+        assert_eq!(header[..], message[0].data()[..]);
+        assert_eq!(plaintext[..], message[1].data()[..]);
+        assert_eq!(trailer[..], message[2].data()[..]);
+    }
+
+    #[test]
+    fn rpc_request_encryption() {
         let mut kerberos_server = super::test_data::fake_server();
         let mut kerberos_client = super::test_data::fake_client();
 
-        let plain_message_data = b"some plain message";
-        let mut plain_message = plain_message_data.to_vec();
+        // RPC header
+        let header = [
+            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        // Unencrypted data in RPC Request
+        let plaintext = [
+            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
+            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
+            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
+            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
+            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
+            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+        ];
+        // RPC security trailer header
+        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
 
-        let first_buff_data = b"test";
-        let mut first_buff = first_buff_data.to_vec();
-        let third_buff_data = b"msg";
-        let mut third_buff = third_buff_data.to_vec();
-        let mut token = [0; 1024];
-
-        let mut message = [
-            SecurityBufferRef::token_buf(&mut token),
-            SecurityBufferRef::data_buf(&mut first_buff)
+        let mut header_data = header.to_vec();
+        let mut data = plaintext.to_vec();
+        let mut trailer_data = trailer.to_vec();
+        let mut token_data = vec![0; 76];
+        let mut message = vec![
+            SecurityBufferRef::data_buf(&mut header_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::data_buf(&mut plain_message),
-            SecurityBufferRef::data_buf(&mut third_buff)
+            SecurityBufferRef::data_buf(&mut data),
+            SecurityBufferRef::data_buf(&mut trailer_data)
                 .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
+            SecurityBufferRef::token_buf(&mut token_data),
         ];
 
-        kerberos_server
+        kerberos_client
             .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
             .unwrap();
 
-        assert!(!message[0].data().is_empty());
-        assert_eq!(message[1].data(), first_buff_data);
-        assert!(!message[2].data().is_empty());
-        assert_eq!(message[3].data(), third_buff_data);
+        assert_eq!(header[..], message[0].data()[..]);
+        assert_eq!(trailer[..], message[2].data()[..]);
 
-        kerberos_client.decrypt_message(&mut message, 0).unwrap();
+        kerberos_server.decrypt_message(&mut message, 0).unwrap();
 
-        assert_eq!(message[2].data(), plain_message_data);
+        assert_eq!(header[..], message[0].data()[..]);
+        assert_eq!(message[1].data(), plaintext);
+        assert_eq!(trailer[..], message[2].data()[..]);
     }
 }
