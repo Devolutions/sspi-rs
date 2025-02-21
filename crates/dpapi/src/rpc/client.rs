@@ -252,7 +252,7 @@ impl RpcClient {
         } = encrypt_offsets;
 
         let security_trailer_offset =
-            usize::from(pdu_header.frag_len) - (usize::from(pdu_header.auth_len) - SecurityTrailer::HEADER_LEN);
+            usize::from(pdu_header.frag_len) - usize::from(pdu_header.auth_len) - SecurityTrailer::HEADER_LEN;
 
         if response.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
             Err(RpcClientError::InvalidEncryptionOffset(
