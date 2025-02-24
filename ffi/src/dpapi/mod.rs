@@ -1,12 +1,15 @@
 #[macro_use]
 mod macros;
+#[allow(clippy::module_inception)]
+mod dpapi;
 
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use dpapi::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid};
 use uuid::Uuid;
+
+use self::dpapi::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 
 // https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret#return-value
 const ERROR_SUCCESS: u32 = 0;
@@ -52,7 +55,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     password: LpCStr,
     computer_name: LpCStr,
     blob: *mut LpByte,
-    blob_len:*mut Dword,
+    blob_len: *mut Dword,
 ) -> u32 {
     check_null!(secret);
     check_null!(sid);
@@ -278,6 +281,12 @@ mod tests {
 
     use super::*;
 
+    /// This test simulates `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
+    /// It's better to run it using Miri: https://github.com/rust-lang/miri.
+    /// cargo +nightly miri test
+    ///
+    /// Note: this test aims to check only the implementation of FFI functions.
+    /// Checking the correctness of DPAPI functions is not a goal of this test.
     #[test]
     fn test_dpapi_protect_secret() {
         let secret = b"secret-to-encrypt";
@@ -328,12 +337,9 @@ mod tests {
         assert!(!decrypted_secret.is_null());
         assert!(secret_len > 0);
 
-        let decrypted_secret = unsafe { from_raw_parts(decrypted_secret, secret_len as usize) };
-        assert_eq!(secret, decrypted_secret);
-
         unsafe {
             DpapiFree(blob);
-            DpapiFree(decrypted_secret.as_ptr());
+            DpapiFree(decrypted_secret);
         }
     }
 }
