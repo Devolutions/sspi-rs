@@ -45,6 +45,3 @@ EXPORTS
     QueryCredentialsAttributesExW=Rust_QueryCredentialsAttributesExW
     SspiEncodeStringsAsAuthIdentity=Rust_SspiEncodeStringsAsAuthIdentity
     SspiFreeAuthIdentity=Rust_SspiFreeAuthIdentity
-    DpapiProtectSecret
-    DpapiUnprotectSecret
-    DpapiFree

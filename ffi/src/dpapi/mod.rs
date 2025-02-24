@@ -36,6 +36,7 @@ const NTE_NO_MEMORY: u32 = 0x8009000e;
 ///   This parameter can be NULL. If it's NULL, the current computer name will be used.
 /// * `blob` is a pointer to the output buffer containing DPAPI blob. This parameter **cannot be NULL**.
 ///   The caller is responsible for freeing the memory using the [DpapiFree] function.
+/// * `blob_len` is a length of the output `blob` buffer. This parameter **cannot be NULL**.
 ///
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
@@ -51,6 +52,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     password: LpCStr,
     computer_name: LpCStr,
     blob: *mut LpByte,
+    blob_len:*mut Dword,
 ) -> u32 {
     check_null!(secret);
     check_null!(sid);
@@ -58,6 +60,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     check_null!(username);
     check_null!(password);
     check_null!(blob);
+    check_null!(blob_len);
 
     let secret =
         // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -137,7 +140,10 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     buf.copy_from_slice(blob_data.as_ref());
 
     // SAFETY: The `blob` pointer is not NULL (checked above).
-    unsafe { *blob = blob_buf };
+    unsafe {
+        *blob = blob_buf;
+        *blob_len = try_execute!(blob_data.len().try_into(), NTE_INTERNAL_ERROR);
+    }
 
     ERROR_SUCCESS
 }
@@ -162,6 +168,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 ///   This parameter can be NULL. If it's NULL, the current computer name will be used.
 /// * `secret` is a pointer to the output buffer containing decrypted secret. This parameter **cannot be NULL**.
 ///   The caller is responsible for freeing the memory using the [DpapiFree] function.
+/// * `secret_len` is a length of the output `secret` buffer. This parameter **cannot be NULL**.
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
@@ -175,6 +182,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
     password: LpCStr,
     computer_name: LpCStr,
     secret: *mut LpByte,
+    secret_len: *mut Dword,
 ) -> u32 {
     check_null!(blob);
     check_null!(server);
@@ -236,7 +244,10 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
     buf.copy_from_slice(secret_data.as_ref());
 
     // SAFETY: The `secret` pointer is not NULL (checked above).
-    unsafe { *secret = secret_buf };
+    unsafe {
+        *secret = secret_buf;
+        *secret_len = try_execute!(secret_data.as_ref().len().try_into(), NTE_INTERNAL_ERROR);
+    }
 
     ERROR_SUCCESS
 }
@@ -249,7 +260,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 /// [DpapiUnprotectSecret] functions and **cannot be NULL**.
 #[instrument(skip_all)]
 #[no_mangle]
-pub extern "system" fn DpapiFree(buf: LpByte) -> u32 {
+pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
     check_null!(buf);
 
     // SAFETY: blob pointer is not NULL (checked above).
@@ -259,4 +270,70 @@ pub extern "system" fn DpapiFree(buf: LpByte) -> u32 {
     }
 
     ERROR_SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::{null, null_mut};
+
+    use super::*;
+
+    #[test]
+    fn test_dpapi_protect_secret() {
+        let secret = b"secret-to-encrypt";
+        let secret_len = secret.len() as u32;
+        let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
+        let server = "win-956cqossjtf.tbt.com\0";
+        let username = "t2@tbt.com\0";
+        let password = "qqqQQQ111!!!\0";
+        let mut blob: LpByte = null_mut();
+        let mut blob_len = 0;
+
+        let result = unsafe {
+            DpapiProtectSecret(
+                secret.as_ptr(),
+                secret_len,
+                sid.as_ptr(),
+                null(),
+                server.as_ptr(),
+                username.as_ptr(),
+                password.as_ptr(),
+                null(),
+                &mut blob,
+                &mut blob_len,
+            )
+        };
+
+        assert_eq!(result, ERROR_SUCCESS);
+        assert!(!blob.is_null());
+        assert!(blob_len > 0);
+
+        let mut decrypted_secret: LpByte = null_mut();
+        let mut secret_len = 0;
+
+        let result = unsafe {
+            DpapiUnprotectSecret(
+                blob,
+                blob_len,
+                server.as_ptr(),
+                username.as_ptr(),
+                password.as_ptr(),
+                null(),
+                &mut decrypted_secret,
+                &mut secret_len,
+            )
+        };
+
+        assert_eq!(result, ERROR_SUCCESS);
+        assert!(!decrypted_secret.is_null());
+        assert!(secret_len > 0);
+
+        let decrypted_secret = unsafe { from_raw_parts(decrypted_secret, secret_len as usize) };
+        assert_eq!(secret, decrypted_secret);
+
+        unsafe {
+            DpapiFree(blob);
+            DpapiFree(decrypted_secret.as_ptr());
+        }
+    }
 }
