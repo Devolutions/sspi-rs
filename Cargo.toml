@@ -18,6 +18,7 @@ members = [
   "crates/winscard",
   "crates/ffi-types",
   "crates/dpapi",
+  "crates/dpapi-cli-client",
 ]
 exclude = [
   "tools/wasm-testcompile",
