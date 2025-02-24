@@ -306,13 +306,14 @@ fn try_get_kerberos_config(server: &str, client_computer_name: Option<String>) -
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
+#[instrument(err)]
 pub fn n_crypt_unprotect_secret(
     blob: &[u8],
     server: &str,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
 
@@ -330,7 +331,7 @@ pub fn n_crypt_unprotect_secret(
 
     info!("Successfully requested root key.");
 
-    decrypt_blob(&dpapi_blob, &root_key)
+    Ok(decrypt_blob(&dpapi_blob, &root_key)?.into())
 }
 
 /// Encrypts data to a specified protection descriptor.
@@ -341,8 +342,9 @@ pub fn n_crypt_unprotect_secret(
 ///
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
+#[instrument(ret)]
 pub fn n_crypt_protect_secret(
-    data: &[u8],
+    data: Secret<Vec<u8>>,
     sid: String,
     root_key_id: Option<Uuid>,
     server: &str,
@@ -371,5 +373,5 @@ pub fn n_crypt_protect_secret(
 
     info!("Successfully requested root key.");
 
-    encrypt_blob(data, &root_key, descriptor)
+    encrypt_blob(data.as_ref(), &root_key, descriptor)
 }

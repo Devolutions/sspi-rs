@@ -1,0 +1,9 @@
+[package]
+name = "dpapi-cli-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xflags = "0.3"
+dpapi = { path = "../dpapi" }
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
