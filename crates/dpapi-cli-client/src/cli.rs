@@ -1,64 +1,38 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+xflags::xflags! {
+    /// DPAPI cli client. This app is used to encrypt/decrypt secrets using the DPAPI.
+    cmd dpapi {
+        /// Target server hostname.
+        /// For example, win-956cqossjtf.tbt.com.
+        required --server server: String
 
-#[derive(Debug, Subcommand)]
-pub enum Command {
-    /// Encrypt secret.
-    ///
-    /// This command simulates the `NCryptProtectSecret` function. The encrypted secret (DPAPI blob) will be printed to stdout.
-    Encrypt {
-        /// User's SID.
-        #[arg(long, short = 'i')]
-        sid: String,
+        /// The username to decrypt/encrypt the DPAPI blob.
+        /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
+        required --username username: String
 
-        /// Secret to encrypt.
-        ///
-        /// This parameter is optional. If not provided, the app will try to read the secret from stdin.
-        #[arg(long)]
-        secret: Option<String>,
-    },
+        /// User's password.
+        required --password password: String
 
-    /// Decrypt DPAPI blob.
-    ///
-    /// This command simulates the `NCryptUnprotectSecret` function. The decrypted secret will be printed to stdout.
-    Decrypt {
-        /// Path to file that contains DPAPI blob.
-        ///
-        /// This parameter is optional. If not provided, the app will try to read the DPAPI blob from stdin.
-        #[arg(long, short = 'f')]
-        file: Option<PathBuf>,
-    },
-}
+        /// Client's computer name. This parameter is optional.
+        /// If not provided, the current computer name will be used.
+        optional --computer-name computer_name: String
 
-/// DPAPI cli client.
-///
-/// This app is used to encrypt/decrypt secrets using the DPAPI.
-#[derive(Debug, Parser)]
-#[command(version, about)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Command,
+        /// Encrypt secret.
+        /// This command simulates the `NCryptProtectSecret` function. The encrypted secret (DPAPI blob) will be printed to stdout.
+        cmd encrypt {
+            /// User's SID.
+            required --sid sid: String
 
-    /// Target server hostname.
-    ///
-    /// For example, `win-956cqossjtf.tbt.com`.
-    #[arg(long, short = 's')]
-    pub server: String,
+            /// Secret to encrypt.
+            /// This parameter is optional. If not provided, the app will try to read the secret from stdin.
+            optional --secret secret: String
+        }
 
-    /// The username to decrypt/encrypt the DPAPI blob.
-    ///
-    /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
-    #[arg(long, short = 'u')]
-    pub username: String,
-
-    /// User's password.
-    #[arg(long, short = 'p')]
-    pub password: String,
-
-    /// Client's computer name.
-    ///
-    /// This parameter is optional. If not provided, the current computer name will be used.
-    #[arg(long)]
-    pub computer_name: Option<String>,
+        cmd decrypt {
+            /// Path to file that contains DPAPI blob.
+            /// This parameter is optional. If not provided, the app will try to read the DPAPI blob from stdin.
+            optional --file file: PathBuf
+        }
+    }
 }

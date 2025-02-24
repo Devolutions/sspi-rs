@@ -4,23 +4,21 @@ mod logging;
 use std::fs;
 use std::io::{stdin, stdout, Read, Result, Write};
 
-use clap::Parser;
+use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 
-use self::cli::{Cli, Command};
+fn run(data: Dpapi) -> Result<()> {
+    logging::init_logging();
 
-fn main() -> Result<()> {
-    let Cli {
-        command,
+    let Dpapi {
         server,
         username,
         password,
         computer_name,
-    } = Cli::parse();
+        subcommand,
+    } = data;
 
-    logging::init_logging();
-
-    match command {
-        Command::Encrypt { sid, secret } => {
+    match subcommand {
+        DpapiCmd::Encrypt(Encrypt { sid, secret }) => {
             let secret = if let Some(secret) = secret {
                 secret.into_bytes()
             } else {
@@ -40,7 +38,7 @@ fn main() -> Result<()> {
 
             stdout().write_all(&blob)?;
         }
-        Command::Decrypt { file } => {
+        DpapiCmd::Decrypt(Decrypt { file }) => {
             let blob = if let Some(file) = file {
                 fs::read(file)?
             } else {
@@ -55,4 +53,11 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    match Dpapi::from_env() {
+        Ok(flags) => run(flags),
+        Err(err) => err.exit(),
+    }
 }
