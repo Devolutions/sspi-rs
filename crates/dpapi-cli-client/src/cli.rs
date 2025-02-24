@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 pub enum Command {
     /// Encrypt secret.
     ///
-    /// This command simulated the `NCryptProtectSecret` function. The encrypted secret (DPAPI blob) will be printed to stdout.
+    /// This command simulates the `NCryptProtectSecret` function. The encrypted secret (DPAPI blob) will be printed to stdout.
     Encrypt {
         /// User's SID.
         #[arg(long, short = 'i')]
@@ -21,7 +21,7 @@ pub enum Command {
 
     /// Decrypt DPAPI blob.
     ///
-    /// This command simulated the `NCryptUnprotectSecret` function. The decrypted secret will be printed to stdout.
+    /// This command simulates the `NCryptUnprotectSecret` function. The decrypted secret will be printed to stdout.
     Decrypt {
         /// Path to file that contains DPAPI blob.
         ///
@@ -46,7 +46,7 @@ pub struct Cli {
     #[arg(long, short = 's')]
     pub server: String,
 
-    /// Username the username to decrypt/encrypt the DPAPI blob.
+    /// The username to decrypt/encrypt the DPAPI blob.
     ///
     /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
     #[arg(long, short = 'u')]
@@ -56,7 +56,7 @@ pub struct Cli {
     #[arg(long, short = 'p')]
     pub password: String,
 
-    /// Client computer name.
+    /// Client's computer name.
     ///
     /// This parameter is optional. If not provided, the current computer name will be used.
     #[arg(long)]

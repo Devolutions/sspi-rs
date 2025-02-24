@@ -306,7 +306,7 @@ fn try_get_kerberos_config(server: &str, client_computer_name: Option<String>) -
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
-#[instrument(ret)]
+#[instrument(err)]
 pub fn n_crypt_unprotect_secret(
     blob: &[u8],
     server: &str,
