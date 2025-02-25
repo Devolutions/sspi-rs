@@ -1,7 +1,6 @@
 #[macro_use]
 mod macros;
-#[allow(clippy::module_inception)]
-mod dpapi;
+mod api;
 
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -9,7 +8,7 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid};
 use uuid::Uuid;
 
-use self::dpapi::{n_crypt_protect_secret, n_crypt_unprotect_secret};
+use self::api::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 
 // https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret#return-value
 const ERROR_SUCCESS: u32 = 0;
@@ -57,98 +56,100 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     blob: *mut LpByte,
     blob_len: *mut Dword,
 ) -> u32 {
-    check_null!(secret);
-    check_null!(sid);
-    check_null!(server);
-    check_null!(username);
-    check_null!(password);
-    check_null!(blob);
-    check_null!(blob_len);
+    catch_panic! {
+        check_null!(secret);
+        check_null!(sid);
+        check_null!(server);
+        check_null!(username);
+        check_null!(password);
+        check_null!(blob);
+        check_null!(blob_len);
 
-    let secret =
-        // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
-    let sid = try_execute!(
-        // SAFETY: The `sid` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(sid as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    )
-    .to_owned();
-    let root_key = if !root_key.is_null() {
-        // SAFETY: The `root_key` pointer is not NULL (checked above).
-        let id = unsafe { *root_key };
-        let root_key = Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4);
-
-        Some(root_key)
-    } else {
-        None
-    };
-    let server = try_execute!(
-        // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(server as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    );
-    let username = try_execute!(
-        // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(username as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    );
-    let password = try_execute!(
-        // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(password as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    )
-    .to_owned();
-    let computer_name = if !computer_name.is_null() {
-        Some(
-            try_execute!(
-                // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-                unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
-                NTE_INVALID_PARAMETER
-            )
-            .to_owned(),
+        let secret =
+            // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
+        let sid = try_execute!(
+            // SAFETY: The `sid` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(sid as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
         )
-    } else {
-        None
-    };
+        .to_owned();
+        let root_key = if !root_key.is_null() {
+            // SAFETY: The `root_key` pointer is not NULL (checked above).
+            let id = unsafe { *root_key };
+            let root_key = Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4);
 
-    let blob_data = try_execute!(
-        n_crypt_protect_secret(
-            secret.into(),
-            sid,
-            root_key,
-            server,
-            username,
-            password.into(),
-            computer_name
-        ),
-        NTE_INTERNAL_ERROR
-    );
+            Some(root_key)
+        } else {
+            None
+        };
+        let server = try_execute!(
+            // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(server as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
+        );
+        let username = try_execute!(
+            // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(username as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
+        );
+        let password = try_execute!(
+            // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(password as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
+        )
+        .to_owned();
+        let computer_name = if !computer_name.is_null() {
+            Some(
+                try_execute!(
+                    // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                    unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
+                    NTE_INVALID_PARAMETER
+                )
+                .to_owned(),
+            )
+        } else {
+            None
+        };
 
-    if blob_data.is_empty() {
-        error!("Output DPAPI blob is empty");
-        return NTE_INTERNAL_ERROR;
+        let blob_data = try_execute!(
+            n_crypt_protect_secret(
+                secret.into(),
+                sid,
+                root_key,
+                server,
+                username,
+                password.into(),
+                computer_name
+            ),
+            NTE_INTERNAL_ERROR
+        );
+
+        if blob_data.is_empty() {
+            error!("Output DPAPI blob is empty");
+            return NTE_INTERNAL_ERROR;
+        }
+
+        // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
+        let blob_buf = unsafe { libc::malloc(blob_data.len()) as *mut u8 };
+        if blob_buf.is_null() {
+            error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
+            return NTE_NO_MEMORY;
+        }
+
+        // SAFETY: The `blob_buf` pointer is not NULL (checked above). The slice construction is safe because `blob_buf`
+        // points to allocated, properly aligned, and not-empty bytes range.
+        let buf = unsafe { from_raw_parts_mut(blob_buf, blob_data.len()) };
+        buf.copy_from_slice(blob_data.as_ref());
+
+        // SAFETY: The `blob` pointer is not NULL (checked above).
+        unsafe {
+            *blob = blob_buf;
+            *blob_len = try_execute!(blob_data.len().try_into(), NTE_INTERNAL_ERROR);
+        }
+
+        ERROR_SUCCESS
     }
-
-    // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
-    let blob_buf = unsafe { libc::malloc(blob_data.len()) as *mut u8 };
-    if blob_buf.is_null() {
-        error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
-        return NTE_NO_MEMORY;
-    }
-
-    // SAFETY: The `blob_buf` pointer is not NULL (checked above). The slice construction is safe because `blob_buf`
-    // points to allocated, properly aligned, and not-empty bytes range.
-    let buf = unsafe { from_raw_parts_mut(blob_buf, blob_data.len()) };
-    buf.copy_from_slice(blob_data.as_ref());
-
-    // SAFETY: The `blob` pointer is not NULL (checked above).
-    unsafe {
-        *blob = blob_buf;
-        *blob_len = try_execute!(blob_data.len().try_into(), NTE_INTERNAL_ERROR);
-    }
-
-    ERROR_SUCCESS
 }
 
 /// Decrypt the DPAPI blob.
@@ -187,72 +188,74 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
     secret: *mut LpByte,
     secret_len: *mut Dword,
 ) -> u32 {
-    check_null!(blob);
-    check_null!(server);
-    check_null!(username);
-    check_null!(password);
-    check_null!(secret);
+    catch_panic! {
+        check_null!(blob);
+        check_null!(server);
+        check_null!(username);
+        check_null!(password);
+        check_null!(secret);
 
-    // SAFETY: The `blob` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-    let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
-    let server = try_execute!(
-        // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(server as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    );
-    let username = try_execute!(
-        // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(username as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    );
-    let password = try_execute!(
-        // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-        unsafe { CStr::from_ptr(password as *const _) }.to_str(),
-        NTE_INVALID_PARAMETER
-    )
-    .to_owned();
-    let computer_name = if !computer_name.is_null() {
-        Some(
-            try_execute!(
-                // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
-                unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
-                NTE_INVALID_PARAMETER
-            )
-            .to_owned(),
+        // SAFETY: The `blob` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+        let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
+        let server = try_execute!(
+            // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(server as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
+        );
+        let username = try_execute!(
+            // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(username as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
+        );
+        let password = try_execute!(
+            // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            unsafe { CStr::from_ptr(password as *const _) }.to_str(),
+            NTE_INVALID_PARAMETER
         )
-    } else {
-        None
-    };
+        .to_owned();
+        let computer_name = if !computer_name.is_null() {
+            Some(
+                try_execute!(
+                    // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                    unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
+                    NTE_INVALID_PARAMETER
+                )
+                .to_owned(),
+            )
+        } else {
+            None
+        };
 
-    let secret_data = try_execute!(
-        n_crypt_unprotect_secret(blob, server, username, password.into(), computer_name),
-        NTE_INTERNAL_ERROR
-    );
+        let secret_data = try_execute!(
+            n_crypt_unprotect_secret(blob, server, username, password.into(), computer_name),
+            NTE_INTERNAL_ERROR
+        );
 
-    if secret_data.as_ref().is_empty() {
-        error!("Decrypted secret is empty");
-        return NTE_INTERNAL_ERROR;
+        if secret_data.as_ref().is_empty() {
+            error!("Decrypted secret is empty");
+            return NTE_INTERNAL_ERROR;
+        }
+
+        // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
+        let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
+        if secret_buf.is_null() {
+            error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
+            return NTE_NO_MEMORY;
+        }
+
+        // SAFETY: The `secret_buf` pointer is not NULL (checked above). The slice construction is safe because `secret_buf`
+        // points to allocated, properly aligned, and not-empty bytes range.
+        let buf = unsafe { from_raw_parts_mut(secret_buf, secret_data.as_ref().len()) };
+        buf.copy_from_slice(secret_data.as_ref());
+
+        // SAFETY: The `secret` pointer is not NULL (checked above).
+        unsafe {
+            *secret = secret_buf;
+            *secret_len = try_execute!(secret_data.as_ref().len().try_into(), NTE_INTERNAL_ERROR);
+        }
+
+        ERROR_SUCCESS
     }
-
-    // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
-    let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
-    if secret_buf.is_null() {
-        error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
-        return NTE_NO_MEMORY;
-    }
-
-    // SAFETY: The `secret_buf` pointer is not NULL (checked above). The slice construction is safe because `secret_buf`
-    // points to allocated, properly aligned, and not-empty bytes range.
-    let buf = unsafe { from_raw_parts_mut(secret_buf, secret_data.as_ref().len()) };
-    buf.copy_from_slice(secret_data.as_ref());
-
-    // SAFETY: The `secret` pointer is not NULL (checked above).
-    unsafe {
-        *secret = secret_buf;
-        *secret_len = try_execute!(secret_data.as_ref().len().try_into(), NTE_INTERNAL_ERROR);
-    }
-
-    ERROR_SUCCESS
 }
 
 /// Frees the memory allocated by [DpapiProtectSecret] and [DpapiUnprotectSecret] functions.
@@ -264,15 +267,17 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 #[instrument(skip_all)]
 #[no_mangle]
 pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
-    check_null!(buf);
+    catch_panic! {
+        check_null!(buf);
 
-    // SAFETY: blob pointer is not NULL (checked above).
-    // The user should uphold all other guarantees.
-    unsafe {
-        libc::free(buf as _);
+        // SAFETY: blob pointer is not NULL (checked above).
+        // The user should uphold all other guarantees.
+        unsafe {
+            libc::free(buf as _);
+        }
+
+        ERROR_SUCCESS
     }
-
-    ERROR_SUCCESS
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ mod inner {
     /// high-level mock of [n_crypt_protect_secret] and [n_crypt_unprotect_secret] functions.
     ///
     /// **Note**: The goal is to test FFI functions, not the DPAPI implementation correctness.
-    /// The FIT tests should not care about returned data correctness but rather check
+    /// The FFI tests should not care about returned data correctness but rather check
     /// for memory corruptions and memory leaks.
     use sspi::Secret;
     use uuid::Uuid;

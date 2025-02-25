@@ -18,3 +18,14 @@ macro_rules! try_execute {
         }
     }};
 }
+
+macro_rules! catch_panic {
+    ($($tokens:tt)*) => {{
+        match std::panic::catch_unwind(move || { $($tokens)* }) {
+            Ok(val) => val,
+            Err(_) => {
+                return crate::dpapi::NTE_INTERNAL_ERROR;
+            }
+        }
+    }};
+}
