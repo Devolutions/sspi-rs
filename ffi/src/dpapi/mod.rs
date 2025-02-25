@@ -270,8 +270,7 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
     catch_panic! {
         check_null!(buf);
 
-        // SAFETY: blob pointer is not NULL (checked above).
-        // The user should uphold all other guarantees.
+        // SAFETY: The user should uphold that the passed pointer is a memory allocated by a out DPAPI functions.
         unsafe {
             libc::free(buf as _);
         }
