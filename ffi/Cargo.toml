@@ -13,7 +13,7 @@ name = "sspi"
 crate-type = ["cdylib"]
 
 [features]
-default = ["aws-lc-rs", "scard"]
+default = ["aws-lc-rs", "scard", "dpapi"]
 tsssp = ["sspi/tsssp"]
 scard = ["sspi/scard", "dep:ffi-types", "dep:winscard", "dep:bitflags", "dep:picky-asn1-x509", "dep:picky"]
 aws-lc-rs = ["sspi/aws-lc-rs"]
