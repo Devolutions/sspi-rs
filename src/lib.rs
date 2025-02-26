@@ -608,8 +608,8 @@ where
     ///
     /// # Parameters
     /// * `flags`: package-specific flags that indicate the quality of protection. A security package can use this parameter to enable the selection of cryptographic algorithms
-    /// * `message`: On input, the structure references one or more `SecurityBuffer` structures of `type SecurityBufferType::Data` that contain the message to be signed,
-    ///     and a `SecurityBuffer` of type `SecurityBufferType::Token` that receives the signature.
+    /// * `message`: On input, the structure references one or more `SecurityBufferRef` structures of type `BufferType::Data` that contain the message to be signed,
+    ///     and a `SecurityBufferRef` of type `BufferType::Token` that receives the signature.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Returns
@@ -627,8 +627,8 @@ where
     /// let mut client_ntlm = sspi::Ntlm::new();
     /// let mut ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -691,8 +691,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message to be signed".as_bytes().to_vec();
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBufferRef::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBufferRef::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// println!("Input data: {:?}", msg_buffer[1].data());
@@ -706,14 +706,18 @@ where
     ///
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
-    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef], sequence_number: u32)
-        -> crate::Result<()>;
+    fn make_signature(
+        &mut self,
+        flags: u32,
+        message: &mut [SecurityBufferRef],
+        sequence_number: u32,
+    ) -> crate::Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
     ///
     /// # Parameters
-    /// * `message`: On input, the structure references one or more `SecurityBuffer` structures of `type SecurityBufferType::Data` that contain the message to be verified,
-    ///     and a `SecurityBuffer` of type `SecurityBufferType::Token` that contains the signature.
+    /// * `message`: On input, the structure references one or more `SecurityBufferRef` structures of type `BufferType::Data` that contain the message to be verified,
+    ///     and a `SecurityBufferRef` of type `BufferType::Token` that contains the signature.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Returns
@@ -731,8 +735,8 @@ where
     /// let mut ntlm = sspi::Ntlm::new();
     /// let mut server_ntlm = sspi::Ntlm::new();
     ///
-    /// let mut client_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
-    /// let mut server_output_buffer = vec![sspi::OwnedSecurityBuffer::new(Vec::new(), sspi::SecurityBufferType::Token)];
+    /// let mut client_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
+    /// let mut server_output_buffer = vec![sspi::SecurityBuffer::new(Vec::new(), sspi::BufferType::Token)];
     ///
     /// let identity = sspi::AuthIdentity {
     ///     username: Username::parse("user").unwrap(),
@@ -795,8 +799,8 @@ where
     /// let mut token = [0; 128];
     /// let mut data = "This is a message".as_bytes().to_vec();
     /// let mut msg = [
-    ///     sspi::SecurityBufferRef::Token(token.as_mut_slice()),
-    ///     sspi::SecurityBufferRef::Data(data.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::token_buf(token.as_mut_slice()),
+    ///     sspi::SecurityBufferRef::data_buf(data.as_mut_slice()),
     /// ];
     ///
     /// let _result = server_ntlm
@@ -805,8 +809,8 @@ where
     /// let [mut token, mut data] = msg;
     ///
     /// let mut msg_buffer = vec![
-    ///     sspi::SecurityBufferRef::Token(token.take_data()),
-    ///     sspi::SecurityBufferRef::Data(data.take_data()),
+    ///     sspi::SecurityBufferRef::token_buf(token.take_data()),
+    ///     sspi::SecurityBufferRef::data_buf(data.take_data()),
     /// ];
     ///
     /// #[allow(unused_variables)]
