@@ -24,6 +24,7 @@ pub type Bool = i32;
 ///   unsigned char  Data4[8];
 /// } GUID;
 /// ```
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Guid {
     pub data1: u32,

@@ -46,6 +46,7 @@ picky-krb = "0.9"
 tokio = "1.43"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
+dpapi = { version = "0.1.0", path = "crates/dpapi" }
 rsa = { version = "0.9.7", default-features = false }
 windows-sys = "0.59"
 base64 = "0.22"

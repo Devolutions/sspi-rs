@@ -44,6 +44,8 @@ impl AuthProvider {
             SspiContext::Kerberos(_) => SecurityProvider::GssKerberos,
             SspiContext::Negotiate(_) => SecurityProvider::GssNegotiate,
             SspiContext::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(_) => Err(AuthError::SecurityProviderNotSupported("CredSSP"))?,
         };
 
         let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
