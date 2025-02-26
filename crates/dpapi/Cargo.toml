@@ -12,6 +12,9 @@ description = "A Rust implementation of Windows DPAPI"
 [lib]
 name = "dpapi"
 
+[features]
+tsssp = ["sspi/tsssp"]
+
 [dependencies]
 bitflags.workspace = true
 byteorder.workspace = true
