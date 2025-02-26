@@ -5,14 +5,15 @@ mod inner {
 
 #[cfg(any(test, miri))]
 mod inner {
-    /// We have FFI wrappers for DPAPI functions from the [dpapi] crate and we want to test them.
-    /// The DPAPI implementation is complex and makes calls to the RPC and KDC servers.
-    /// Implementing a mock for KDF and RPC servers is too hard and unreasonable. So, we wrote a simple
-    /// high-level mock of [n_crypt_protect_secret] and [n_crypt_unprotect_secret] functions.
-    ///
-    /// **Note**: The goal is to test FFI functions, not the DPAPI implementation correctness.
-    /// The FFI tests should not care about returned data correctness but rather check
-    /// for memory corruptions and memory leaks.
+    //! We have FFI wrappers for DPAPI functions from the [dpapi] crate and we want to test them.
+    //! The DPAPI implementation is complex and makes calls to the RPC and KDC servers.
+    //! Implementing a mock for KDF and RPC servers is too hard and unreasonable. So, we wrote a simple
+    //! high-level mock of [n_crypt_protect_secret] and [n_crypt_unprotect_secret] functions.
+    //!
+    //! **Note**: The goal is to test FFI functions, not the DPAPI implementation correctness.
+    //! The FFI tests should not care about returned data correctness but rather check
+    //! for memory corruptions and memory leaks.
+
     use sspi::Secret;
     use uuid::Uuid;
 

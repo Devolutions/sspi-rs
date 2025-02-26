@@ -270,7 +270,7 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
     catch_panic! {
         check_null!(buf);
 
-        // SAFETY: The user should uphold that the passed pointer is a memory allocated by a out DPAPI functions.
+        // SAFETY: The user should uphold that the passed pointer is a memory allocated by an out DPAPI functions.
         unsafe {
             libc::free(buf as _);
         }
