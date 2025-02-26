@@ -239,16 +239,16 @@ fn make_signature_verified_by_verify_signature() {
     let mut plain_test_data = TEST_DATA.to_vec();
     let mut signature_test_data = [0u8; 16];
     let mut make_signature_buffers = vec![
-        SecurityBufferRef::Data(&mut plain_test_data),
-        SecurityBufferRef::Token(&mut signature_test_data),
+        SecurityBufferRef::data_buf(&mut plain_test_data),
+        SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
     assert!(sender
         .make_signature(0, &mut make_signature_buffers, TEST_SEQ_NUM)
         .is_ok());
 
     let mut verify_signature_buffers = vec![
-        SecurityBufferRef::Data(&mut plain_test_data),
-        SecurityBufferref::Token(&mut signature_test_data),
+        SecurityBufferRef::data_buf(&mut plain_test_data),
+        SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
     assert!(reciever
         .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
@@ -267,7 +267,10 @@ fn verify_signature_fails_on_invalid_signature() {
         0x01, 0x00, 0x00, 0x00, 0x2e, 0xdf, 0xff, 0x61, 0x29, 0xd6, 0x4d, 0xa9, 0xd2, 0x02, 0x96, 0x49,
     ];
 
-    let mut verify_signature_buffers = vec![SecurityBuffer::Data(&mut test_data), SecurityBuffer::Token(&mut token)];
+    let mut verify_signature_buffers = vec![
+        SecurityBufferRef::data_buf(&mut test_data),
+        SecurityBufferRef::token_buf(&mut token),
+    ];
     assert!(context
         .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
         .is_err());
