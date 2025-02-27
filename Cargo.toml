@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.15.1"
+version = "0.15.2"
 edition = "2021"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -28,7 +28,7 @@ exclude = [
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [workspace.dependencies]
-uuid = { version = "1.14", default-features = false }
+uuid = { version = "1.15", default-features = false }
 tracing = { version = "0.1",  default-features = false }
 bitflags = "2.8"
 rand = "0.8"
@@ -123,7 +123,7 @@ async-recursion = "1.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows = { version = "0.59", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+windows = { version = "0.60", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
 windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
