@@ -45,7 +45,7 @@ p521 = { version = "0.13", features = ["ecdh"] }
 p256 = { version = "0.13", features = ["ecdh"] }
 p384 = { version = "0.13", features = ["ecdh"] }
 concat-kdf = { version = "0.1", features = ["std"] }
-typenum = "1.17"
+typenum = "1.18"
 aes-kw = { version = "0.2", features = ["std"] }
 aes-gcm = { version = "0.10", features = ["std"] }
 url = "2.5"
