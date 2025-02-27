@@ -187,7 +187,7 @@ impl Sspi for SspiHandle {
     fn change_password<'a>(
         &'a mut self,
         change_password: sspi::builders::ChangePassword<'a>,
-    ) -> Result<sspi::generator::GeneratorChangePassword> {
+    ) -> Result<sspi::generator::GeneratorChangePassword<'a>> {
         let mut context = self.sspi_context.lock()?;
         Ok(context.change_password_sync(change_password).into())
     }
