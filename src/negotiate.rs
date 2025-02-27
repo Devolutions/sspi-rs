@@ -369,7 +369,7 @@ impl Sspi for Negotiate {
     fn change_password<'a>(
         &'a mut self,
         change_password: builders::ChangePassword<'a>,
-    ) -> Result<GeneratorChangePassword> {
+    ) -> Result<GeneratorChangePassword<'a>> {
         Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password(&mut yield_point, change_password).await
         }))
@@ -496,7 +496,7 @@ impl SspiImpl for Negotiate {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext> {
+    ) -> Result<GeneratorInitSecurityContext<'a>> {
         Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))

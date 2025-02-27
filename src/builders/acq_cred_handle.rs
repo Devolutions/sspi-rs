@@ -52,8 +52,8 @@ where
     pub auth_data: Option<&'a AuthData>,
 }
 
-impl<'a, CredsHandle, AuthData, CredentialUseSet> Debug
-    for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+impl<CredsHandle, AuthData, CredentialUseSet> Debug
+    for AcquireCredentialsHandle<'_, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
     AuthData: Debug,
@@ -128,8 +128,8 @@ where
     }
 }
 
-impl<'a, CredsHandle, AuthData, CredentialUseSet> Default
-    for AcquireCredentialsHandle<'a, CredsHandle, AuthData, CredentialUseSet>
+impl<CredsHandle, AuthData, CredentialUseSet> Default
+    for AcquireCredentialsHandle<'_, CredsHandle, AuthData, CredentialUseSet>
 where
     CredentialUseSet: ToAssign,
 {
@@ -157,7 +157,7 @@ impl<'b, 'a: 'b, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, Creds
     }
 }
 
-impl<'a, CredsHandle, AuthData> FilledAcquireCredentialsHandle<'a, CredsHandle, AuthData> {
+impl<CredsHandle, AuthData> FilledAcquireCredentialsHandle<'_, CredsHandle, AuthData> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute(
         self,

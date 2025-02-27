@@ -51,8 +51,8 @@ impl<YieldTy, ResumeTy> Clone for YieldPoint<YieldTy, ResumeTy> {
     }
 }
 
-impl<'point, YieldTy, ResumeTy> YieldPoint<YieldTy, ResumeTy> {
-    pub fn suspend(&'point mut self, value: YieldTy) -> Interrupt<YieldTy, ResumeTy> {
+impl<YieldTy, ResumeTy> YieldPoint<YieldTy, ResumeTy> {
+    pub fn suspend(&mut self, value: YieldTy) -> Interrupt<YieldTy, ResumeTy> {
         Interrupt {
             value_to_yield: Some(value),
             yielded_value: Arc::clone(&self.yielded_value),
@@ -169,7 +169,7 @@ pub struct NetworkRequest {
     pub data: Vec<u8>, // avoid life time problem, suspend requires 'static life time
 }
 
-impl<'a, YieldTy, ResumeTy, OutTy> std::fmt::Debug for Generator<'a, YieldTy, ResumeTy, OutTy>
+impl<YieldTy, ResumeTy, OutTy> std::fmt::Debug for Generator<'_, YieldTy, ResumeTy, OutTy>
 where
     YieldTy: std::fmt::Debug,
     ResumeTy: std::fmt::Debug,

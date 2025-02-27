@@ -147,7 +147,7 @@ pub struct DataRepr {
 
 impl Encode for DataRepr {
     fn encode(&self, mut writer: impl Write) -> Result<()> {
-        let first_octet = (self.byte_order.as_u8()) << 4 | self.character.as_u8();
+        let first_octet = ((self.byte_order.as_u8()) << 4) | self.character.as_u8();
         writer.write_u8(first_octet)?;
         writer.write_u8(self.floating_point.as_u8())?;
 

@@ -480,7 +480,7 @@ enum SCardState {
     PinVerified,
 }
 
-impl<'a> WinScard for SmartCard<'a> {
+impl WinScard for SmartCard<'_> {
     fn status(&self) -> WinScardResult<winscard::Status> {
         Ok(winscard::Status {
             readers: vec![self.reader_name.clone()],

@@ -208,7 +208,7 @@ impl From<[u8; 17]> for Atr {
 #[derive(Debug, Clone)]
 pub struct Icon<'a>(Cow<'a, [u8]>);
 
-impl<'a> AsRef<[u8]> for Icon<'a> {
+impl AsRef<[u8]> for Icon<'_> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -439,7 +439,7 @@ pub struct Status<'a> {
     pub atr: Atr,
 }
 
-impl<'a> Status<'a> {
+impl Status<'_> {
     /// Returns owned [Status].
     pub fn into_owned(self) -> Status<'static> {
         let Status {
