@@ -394,7 +394,7 @@ impl<'a> ScardContext<'a> {
     }
 }
 
-impl<'a> WinScardContext for ScardContext<'a> {
+impl WinScardContext for ScardContext<'_> {
     fn connect(
         &self,
         reader_name: &str,
