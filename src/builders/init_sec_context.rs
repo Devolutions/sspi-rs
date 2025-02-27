@@ -294,7 +294,6 @@ impl<
 }
 
 impl<
-        'a,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -302,7 +301,7 @@ impl<
         OutputSet: ToAssign,
     > Default
     for InitializeSecurityContext<
-        'a,
+        '_,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,

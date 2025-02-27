@@ -1127,7 +1127,7 @@ where
     /// # MSDN
     ///
     /// * [ChangeAccountPasswordW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword>;
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword<'a>>;
 }
 
 /// Protocol used to establish connection.
@@ -1245,7 +1245,7 @@ pub trait SspiImpl {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext>;
+    ) -> Result<GeneratorInitSecurityContext<'a>>;
 
     fn accept_security_context_impl(
         &mut self,

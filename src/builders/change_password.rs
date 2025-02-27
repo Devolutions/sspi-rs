@@ -102,7 +102,7 @@ impl<'a> ChangePasswordBuilder<'a> {
     }
 }
 
-impl<'a> Default for ChangePasswordBuilder<'a> {
+impl Default for ChangePasswordBuilder<'_> {
     fn default() -> Self {
         Self::new()
     }

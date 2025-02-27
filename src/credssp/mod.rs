@@ -719,7 +719,7 @@ impl SspiImpl for SspiContext {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> crate::Result<GeneratorInitSecurityContext> {
+    ) -> crate::Result<GeneratorInitSecurityContext<'a>> {
         Ok(Generator::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))
@@ -942,7 +942,7 @@ impl Sspi for SspiContext {
     fn change_password<'a>(
         &'a mut self,
         change_password: ChangePassword<'a>,
-    ) -> crate::Result<GeneratorChangePassword> {
+    ) -> crate::Result<GeneratorChangePassword<'a>> {
         Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password_impl(&mut yield_point, change_password).await
         }))

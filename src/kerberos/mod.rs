@@ -184,7 +184,7 @@ impl Kerberos {
         }
     }
 
-    async fn send<'data>(&self, yield_point: &mut YieldPointLocal, data: &'data [u8]) -> Result<Vec<u8>> {
+    async fn send(&self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
         if let Some((realm, kdc_url)) = self.get_kdc() {
             let protocol = NetworkProtocol::from_url_scheme(kdc_url.scheme()).ok_or_else(|| {
                 Error::new(
@@ -572,7 +572,7 @@ impl Sspi for Kerberos {
         ))
     }
 
-    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword> {
+    fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword<'a>> {
         Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
             self.change_password(&mut yield_point, change_password).await
         }))
@@ -665,7 +665,7 @@ impl SspiImpl for Kerberos {
     fn initialize_security_context_impl<'a>(
         &'a mut self,
         builder: &'a mut crate::builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext> {
+    ) -> Result<GeneratorInitSecurityContext<'a>> {
         Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))
