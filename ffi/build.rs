@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 
 fn main() {
@@ -16,10 +17,39 @@ fn main() {
         // https://docs.microsoft.com/en-us/cpp/build/reference/exports
 
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let base_def_file = manifest_dir.join("sspi_base.def");
+        let merged_def_file = out_dir.join("sspi_merged.def");
+
+        let mut merged_content = fs::read_to_string(&base_def_file).expect("Failed to read sspi_base.def");
+
         #[cfg(feature = "scard")]
-        let sspi_def_file = manifest_dir.join("sspi_winscard.def");
-        #[cfg(not(feature = "scard"))]
-        let sspi_def_file = manifest_dir.join("sspi.def");
-        println!("cargo:rustc-link-arg=/DEF:{}", sspi_def_file.display());
+        {
+            let scard_def_file = manifest_dir.join("sspi_winscard.def");
+            let scard_content = fs::read_to_string(&scard_def_file).expect("Failed to read sspi_winscard.def");
+            let filtered_scard_content: String = scard_content
+                .lines()
+                .filter(|line| line.starts_with("    "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            merged_content.push('\n');
+            merged_content.push_str(&filtered_scard_content);
+        }
+
+        #[cfg(feature = "dpapi")]
+        {
+            let dpapi_def_file = manifest_dir.join("sspi_dpapi.def");
+            let dpapi_content = fs::read_to_string(&dpapi_def_file).expect("Failed to read sspi_dpapi.def");
+            let filtered_dpapi_content: String = dpapi_content
+                .lines()
+                .filter(|line| line.starts_with("    "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            merged_content.push('\n');
+            merged_content.push_str(&filtered_dpapi_content);
+        }
+
+        fs::write(&merged_def_file, merged_content).expect("Failed to write merged .def file");
+        println!("cargo:rustc-link-arg=/DEF:{}", merged_def_file.display());
     }
 }
