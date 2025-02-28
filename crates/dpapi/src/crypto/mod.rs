@@ -126,6 +126,8 @@ fn extract_iv(parameters: &AlgorithmIdentifierParameters) -> CryptoResult<&[u8]>
     if let AlgorithmIdentifierParameters::Aes(aes_parameters) = parameters {
         if let AesParameters::InitializationVector(iv) = aes_parameters {
             Ok(iv.0.as_slice())
+        } else if let AesParameters::AuthenticatedEncryptionParameters(enc_params) = aes_parameters {
+            Ok(enc_params.nonce())
         } else {
             Err(CryptoError::InvalidAesParams {
                 reason: "expected AES initialization vector",
