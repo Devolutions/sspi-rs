@@ -236,6 +236,10 @@ impl Negotiate {
         Ok(filtered_protocol)
     }
 
+    pub fn negotiated_protocol(&self) -> &NegotiatedProtocol {
+        &self.protocol
+    }
+
     fn is_protocol_ntlm(&self) -> bool {
         matches!(&self.protocol, NegotiatedProtocol::Ntlm(_))
     }

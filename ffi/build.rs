@@ -1,6 +1,5 @@
-use std::env;
-use std::fs;
 use std::path::PathBuf;
+use std::{env, fs};
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();

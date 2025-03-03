@@ -1,9 +1,9 @@
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
-use sspi::{AuthIdentity, Credentials, Kerberos, KerberosConfig, Secret, Username};
+use sspi::ntlm::NtlmConfig;
+use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
-use url::Url;
 use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
@@ -175,16 +175,16 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs<'server, 'username> {
+struct GetKeyArgs<'server> {
     server: &'server str,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
     l1: i32,
     l2: i32,
-    username: &'username str,
+    username: Username,
     password: Secret<String>,
-    kerberos_config: KerberosConfig,
+    negotiate_config: NegotiateConfig,
 }
 
 #[instrument(level = "trace", ret)]
@@ -198,18 +198,14 @@ fn get_key(
         l2,
         username,
         password,
-        kerberos_config,
+        negotiate_config,
     }: GetKeyArgs,
 ) -> Result<GroupKeyEnvelope> {
-    let username = Username::parse(username).expect("correct username");
-
     let isd_key_port = {
         let mut rpc = RpcClient::connect(
             (server, DEFAULT_RPC_PORT),
             AuthProvider::new(
-                SspiContext::Kerberos(
-                    Kerberos::new_client_from_config(kerberos_config.clone()).map_err(AuthError::from)?,
-                ),
+                SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
                 Credentials::AuthIdentity(AuthIdentity {
                     username: username.clone(),
                     password: password.clone(),
@@ -238,7 +234,7 @@ fn get_key(
     let mut rpc = RpcClient::connect(
         (server, isd_key_port),
         AuthProvider::new(
-            SspiContext::Kerberos(Kerberos::new_client_from_config(kerberos_config).map_err(AuthError::from)?),
+            SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
         )?,
@@ -275,27 +271,23 @@ fn get_key(
     process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
 
-fn try_get_kerberos_config(server: &str, client_computer_name: Option<String>) -> Result<KerberosConfig> {
-    let kdc_url = if let Ok(kdc_url) = std::env::var("SSPI_KDC_URL") {
-        kdc_url
-    } else {
-        format!("tcp://{}:88", server)
-    };
-
+fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<NegotiateConfig> {
     let client_computer_name = if let Some(name) = client_computer_name {
         name
     } else {
         whoami::fallible::hostname()?
     };
 
-    Ok(KerberosConfig {
-        kdc_url: Some(Url::parse(&kdc_url).map_err(|error| Error::InvalidUrl {
-            name: "KDC",
-            url: kdc_url,
-            error,
-        })?),
-        client_computer_name: Some(client_computer_name),
-    })
+    // `NtlmConfig` is enough. If the KDC is available, the `Negotiate` module will use Kerberos.
+    // So, we don't need to do any additional configurations here.
+    let protocol_config = Box::new(NtlmConfig {
+        client_computer_name: Some(client_computer_name.clone()),
+    });
+
+    Ok(NegotiateConfig::from_protocol_config(
+        protocol_config,
+        client_computer_name,
+    ))
 }
 
 /// Decrypt the DPAPI blob.
@@ -316,6 +308,9 @@ pub fn n_crypt_unprotect_secret(
 ) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
+    let username = Username::parse(username)
+        .map_err(sspi::Error::from)
+        .map_err(AuthError::from)?;
 
     let root_key = get_key(GetKeyArgs {
         server,
@@ -326,7 +321,7 @@ pub fn n_crypt_unprotect_secret(
         l2: dpapi_blob.key_identifier.l2,
         username,
         password,
-        kerberos_config: try_get_kerberos_config(server, client_computer_name)?,
+        negotiate_config: try_get_negotiate_config(client_computer_name)?,
     })?;
 
     info!("Successfully requested root key.");
@@ -358,6 +353,9 @@ pub fn n_crypt_protect_secret(
 
     let descriptor = SidProtectionDescriptor { sid };
     let target_sd = descriptor.get_target_sd()?;
+    let username = Username::parse(username)
+        .map_err(sspi::Error::from)
+        .map_err(AuthError::from)?;
 
     let root_key = get_key(GetKeyArgs {
         server,
@@ -368,7 +366,7 @@ pub fn n_crypt_protect_secret(
         l2,
         username,
         password,
-        kerberos_config: try_get_kerberos_config(server, client_computer_name)?,
+        negotiate_config: try_get_negotiate_config(client_computer_name)?,
     })?;
 
     info!("Successfully requested root key.");
