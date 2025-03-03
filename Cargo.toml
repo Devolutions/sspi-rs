@@ -30,7 +30,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 [workspace.dependencies]
 uuid = { version = "1.15", default-features = false }
 tracing = { version = "0.1",  default-features = false }
-bitflags = "2.8"
+bitflags = "2.9"
 rand = "0.8"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
