@@ -2148,6 +2148,12 @@ impl fmt::Display for Error {
     }
 }
 
+impl From<auth_identity::UsernameError> for Error {
+    fn from(value: auth_identity::UsernameError) -> Self {
+        Error::new(ErrorKind::UnknownCredentials, value)
+    }
+}
+
 impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(

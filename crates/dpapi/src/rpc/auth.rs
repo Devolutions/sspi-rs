@@ -2,7 +2,8 @@ use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
-    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityStatus, Sspi,
+    DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
+    SecurityStatus, Sspi,
 };
 use thiserror::Error;
 
@@ -29,7 +30,6 @@ pub type AuthResult<T> = Result<T, AuthError>;
 /// authentication parameters.
 #[derive(Debug)]
 pub struct AuthProvider {
-    security_type: SecurityProvider,
     security_context: SspiContext,
     credentials_handle: Option<CredentialsBuffers>,
     is_finished: bool,
@@ -39,15 +39,6 @@ pub struct AuthProvider {
 impl AuthProvider {
     /// Creates a new [AuthProvider].
     pub fn new(mut security_context: SspiContext, credentials: Credentials, target_host: &str) -> AuthResult<Self> {
-        let security_type = match &security_context {
-            SspiContext::Ntlm(_) => SecurityProvider::Winnt,
-            SspiContext::Kerberos(_) => SecurityProvider::GssKerberos,
-            SspiContext::Negotiate(_) => SecurityProvider::GssNegotiate,
-            SspiContext::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
-            #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(_) => Err(AuthError::SecurityProviderNotSupported("CredSSP"))?,
-        };
-
         let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
         let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
             .with_auth_data(&credentials)
@@ -55,11 +46,34 @@ impl AuthProvider {
             .execute(&mut security_context)?;
 
         Ok(Self {
-            security_type,
             security_context,
             is_finished: false,
             credentials_handle,
             target_name: format!("host/{}", target_host),
+        })
+    }
+
+    /// Returns [SecurityProvider] type in use.
+    ///
+    /// We determine [SecurityProvider] every time we need to construct [SecurityTrailer].
+    /// We cannot cache it, because it can be changed during the authentication in the case of [SspiContext::Negotiate].
+    fn security_type(&self) -> AuthResult<SecurityProvider> {
+        Ok(match &self.security_context {
+            SspiContext::Ntlm(_) => SecurityProvider::Winnt,
+            SspiContext::Kerberos(_) => SecurityProvider::GssKerberos,
+            // Note: we don't use `SecurityProvider::GssNegotiate` on purpose.
+            //
+            // Using `SecurityProvider::GssNegotiate` requires creating SPNEGO packets inside `Negotiate` module,
+            // which is not implemented. So, we use `SecurityProvider::Winnt` or `SecurityProvider::GssKerberos`
+            // even in the case of `Negotiate` module.
+            SspiContext::Negotiate(negotiate) => match negotiate.negotiated_protocol() {
+                NegotiatedProtocol::Ntlm(_) => SecurityProvider::Winnt,
+                NegotiatedProtocol::Kerberos(_) => SecurityProvider::GssKerberos,
+                NegotiatedProtocol::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
+            },
+            SspiContext::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(_) => Err(AuthError::SecurityProviderNotSupported("CredSSP"))?,
         })
     }
 
@@ -72,7 +86,7 @@ impl AuthProvider {
     pub fn empty_trailer(&mut self, pad_length: u8) -> AuthResult<SecurityTrailer> {
         let security_trailer_len = self.security_context.query_context_sizes()?.security_trailer;
         Ok(SecurityTrailer {
-            security_type: self.security_type,
+            security_type: self.security_type()?,
             level: AuthenticationLevel::PktPrivacy,
             pad_length,
             context_id: 0,
@@ -230,7 +244,7 @@ impl AuthProvider {
         let auth_value = output_token.remove(0).buffer;
 
         Ok(SecurityTrailer {
-            security_type: self.security_type,
+            security_type: self.security_type()?,
             level: AuthenticationLevel::PktPrivacy,
             pad_length: 0,
             context_id: 0,
