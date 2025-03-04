@@ -1147,6 +1147,7 @@ impl<'a> Kerberos {
                         validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
                     }
 
+                    self.next_seq_number();
                     self.prepare_final_neg_token(builder)?;
                     self.state = KerberosState::PubKeyAuth;
                     SecurityStatus::Ok
