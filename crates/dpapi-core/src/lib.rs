@@ -12,6 +12,7 @@ mod error;
 mod write_buf;
 
 pub use cursor::{ReadCursor, WriteCursor};
+pub use decode::{Decode, FindLength};
 pub use encode::Encode;
 pub use error::{Error, Result};
 pub use write_buf::WriteBuf;
