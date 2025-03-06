@@ -19,6 +19,7 @@ members = [
   "crates/ffi-types",
   "crates/dpapi",
   "crates/dpapi-cli-client",
+  "crates/dpapi-core",
 ]
 exclude = [
   "tools/wasm-testcompile",
