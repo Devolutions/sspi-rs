@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.2...sspi-v0.15.3)] - 2025-03-06
+
+### <!-- 1 -->Features
+
+- Use Negotiate module instead of hardcoded Kerberos (#388) ([9e939730a8](https://github.com/Devolutions/sspi-rs/commit/9e939730a854f8267afef42fdf70f430143c6d15)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Set correct seq number in MIC token (#390) ([69f03c2933](https://github.com/Devolutions/sspi-rs/commit/69f03c2933c1da106b64a565a757666cd4d94bde)) 
+
+  Fixes Kerberos LDAP auth.
+  The problem was in the invalid sequence number in MIC token.
+
+
+
 ## [[0.15.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.1...sspi-v0.15.2)] - 2025-02-27
 
 ### <!-- 1 -->Features
