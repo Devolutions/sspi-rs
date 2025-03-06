@@ -19,8 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fixes Kerberos LDAP auth.
   The problem was in the invalid sequence number in MIC token.
 
-
-
 ## [[0.15.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.1...sspi-v0.15.2)] - 2025-02-27
 
 ### <!-- 1 -->Features
