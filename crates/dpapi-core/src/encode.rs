@@ -1,5 +1,7 @@
 use alloc::vec::Vec;
 
+use uuid::Uuid;
+
 use crate::{Result, WriteBuf, WriteCursor};
 
 /// PDU that can be encoded into its binary form.
@@ -40,4 +42,43 @@ pub trait Encode {
 
     /// Computes size in bytes required for encoding of this PDU.
     fn frame_length(&self) -> usize;
+}
+
+impl<T: Encode> Encode for Vec<T> {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        for item in self.iter() {
+            item.encode_cursor(dst)?;
+        }
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        self.iter().map(|item| item.frame_length()).sum()
+    }
+}
+
+impl Encode for Uuid {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_slice(&self.to_bytes_le());
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        16
+    }
+}
+
+impl Encode for (u8, u8) {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u8(self.0);
+        dst.write_u8(self.1);
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2
+    }
 }

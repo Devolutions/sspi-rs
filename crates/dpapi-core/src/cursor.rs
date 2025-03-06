@@ -162,6 +162,11 @@ impl<'a> ReadCursor<'a> {
     pub fn peek_u32(&mut self) -> u32 {
         u32::from_le_bytes(self.peek::<4>())
     }
+
+    /// Advances the pointer of the cursor on a given `len`.
+    pub fn advance(&mut self, len: usize) {
+        self.pos += len;
+    }
 }
 
 /// WriteCursor is a wrapper around `&mut [u8]` and its purpose is to:

@@ -1,0 +1,380 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use thiserror::Error;
+use uuid::Uuid;
+
+use crate::{Decode, DecodeWithContext, Encode, Padding, ReadCursor, Result, WriteCursor};
+
+#[derive(Debug, Error)]
+pub enum BindError {
+    #[error("invalid context result code value: {0}")]
+    InvalidContextResultCode(u16),
+}
+
+pub type BindResult<T> = core::result::Result<T, BindError>;
+
+/// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
+///
+/// The bind time feature negotiation bitmask is an array of eight octets, each of which is interpreted as a bitmask.
+/// **Bitmask**: Currently, only the two least significant bits in the first element of the array are defined.
+///
+/// ```C
+/// typedef struct {
+///    unsigned char Bitmask[8];
+/// } BindTimeFeatureNegotiationBitmask;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum BindTimeFeatureNegotiationBitmask {
+    None = 0x0,
+    /// Client supports security context multiplexing, as specified in section [3.3.1.5.4](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/c8b3c80f-b2ba-4a78-bf36-dabba4278194).
+    SecurityContextMultiplexingSupported = 0x01,
+    /// Client supports keeping the connection open after sending the orphaned PDU, as specified in section [3.3.1.5.10](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/44d6f02e-55f3-4814-973e-cf0bc3287c44).
+    KeepConnectionOnOrphanSupported = 0x02,
+}
+
+impl BindTimeFeatureNegotiationBitmask {
+    pub fn as_u64(&self) -> u64 {
+        *self as u64
+    }
+}
+
+/// [RPC_SYNTAX_IDENTIFIER](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpcl/1831bd1c-738c-45dc-a2af-5d0b835af6f5)
+///
+/// This structure MUST contain a 0GUID and version information (MS-RPCE section 2.2.2.7). It is
+/// identical to the RPC_SYNTAX_IDENTIFIER structure used in the LocToLoc interface in section 3.1.4.
+/// This structure is used to represent the following:
+/// * Identifier and version of an interface.
+/// * Identifier and version of [transfer syntax](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpcl/55ec267c-87d9-4d97-a9d5-5681f5f283b8#gt_01216ea7-ac8a-4cc8-9d19-b901bc424c09) for an interface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxId {
+    pub uuid: Uuid,
+    pub version: u16,
+    pub version_minor: u16,
+}
+
+impl Encode for SyntaxId {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        self.uuid.encode_cursor(dst)?;
+        dst.write_u16(self.version);
+        dst.write_u16(self.version_minor);
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        16 /* uuid */ + 2 /* version */ + 2 /* version_minor */
+    }
+}
+
+impl Decode for SyntaxId {
+    fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
+        Ok(Self {
+            uuid: Uuid::decode_cursor(src)?,
+            version: src.read_u16(),
+            version_minor: src.read_u16(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextElement {
+    pub context_id: u16,
+    pub abstract_syntax: SyntaxId,
+    pub transfer_syntaxes: Vec<SyntaxId>,
+}
+
+impl Encode for ContextElement {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u16(self.context_id);
+        dst.write_u16(self.transfer_syntaxes.len().try_into()?);
+
+        self.abstract_syntax.encode_cursor(dst)?;
+        self.transfer_syntaxes.encode_cursor(dst)?;
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2 /* context_id */ + 2 /* transfer_syntaxes length */ + self.abstract_syntax.frame_length() + self.transfer_syntaxes.frame_length()
+    }
+}
+
+impl Decode for ContextElement {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<ContextElement> {
+        let context_id = src.read_u16();
+        let transfer_syntaxes_count = usize::from(src.read_u16());
+        let abstract_syntax = SyntaxId::decode_cursor(src)?;
+
+        let transfer_syntaxes = Vec::decode_cursor_with_context(src, transfer_syntaxes_count)?;
+
+        Ok(Self {
+            context_id,
+            abstract_syntax,
+            transfer_syntaxes,
+        })
+    }
+}
+
+/// [`p_cont_def_result_t` Enumerator](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/8df5c4d4-364d-468c-81fe-ec94c1b40917)
+///
+/// These extensions specify a new member, `negotiate_ack`, which is added to the `p_cont_def_result_t` enumeration
+/// (specified in C706 section 12.6), with the numeric value of `3`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u16)]
+pub enum ContextResultCode {
+    Acceptance = 0,
+    UserRejection = 1,
+    ProviderRejection = 2,
+    NegotiateAck = 3, // MS-RPCE extension
+}
+
+impl ContextResultCode {
+    pub fn as_u16(&self) -> u16 {
+        *self as u16
+    }
+}
+
+impl TryFrom<u16> for ContextResultCode {
+    type Error = BindError;
+
+    fn try_from(v: u16) -> BindResult<Self> {
+        match v {
+            0 => Ok(Self::Acceptance),
+            1 => Ok(Self::UserRejection),
+            2 => Ok(Self::ProviderRejection),
+            3 => Ok(Self::NegotiateAck),
+            v => Err(BindError::InvalidContextResultCode(v)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextResult {
+    pub result: ContextResultCode,
+    pub reason: u16,
+    pub syntax: Uuid,
+    pub syntax_version: u32,
+}
+
+impl Encode for ContextResult {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u16(self.result.as_u16());
+        dst.write_u16(self.reason);
+        self.syntax.encode_cursor(dst)?;
+        dst.write_u32(self.syntax_version);
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2 /* result */ + 2 /* reason */ + self.syntax.frame_length() + 4 /* syntax_version */
+    }
+}
+
+impl Decode for ContextResult {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        Ok(Self {
+            result: src.read_u16().try_into()?,
+            reason: src.read_u16(),
+            syntax: Uuid::decode_cursor(src)?,
+            syntax_version: src.read_u32(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bind {
+    pub max_xmit_frag: u16,
+    pub max_recv_frag: u16,
+    pub assoc_group: u32,
+    pub contexts: Vec<ContextElement>,
+}
+
+impl Encode for Bind {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u16(self.max_xmit_frag);
+        dst.write_u16(self.max_recv_frag);
+        dst.write_u32(self.assoc_group);
+        dst.write_u32(self.contexts.len().try_into()?);
+        self.contexts.encode_cursor(dst)?;
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 4 /* contexts length */ + self.contexts.frame_length()
+    }
+}
+
+impl Decode for Bind {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        let max_xmit_frag = src.read_u16();
+        let max_recv_frag = src.read_u16();
+        let assoc_group = src.read_u32();
+
+        let contexts_count = src.read_u32();
+        let contexts = Vec::decode_cursor_with_context(src, contexts_count.try_into()?)?;
+
+        Ok(Self {
+            max_xmit_frag,
+            max_recv_frag,
+            assoc_group,
+            contexts,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindAck {
+    pub max_xmit_frag: u16,
+    pub max_recv_frag: u16,
+    pub assoc_group: u32,
+    pub sec_addr: String,
+    pub results: Vec<ContextResult>,
+}
+
+impl Encode for BindAck {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u16(self.max_xmit_frag);
+        dst.write_u16(self.max_recv_frag);
+        dst.write_u32(self.assoc_group);
+
+        let sec_addr_len = if !self.sec_addr.is_empty() {
+            let sec_addr_len = self.sec_addr.len() + 1 /* null-byte */;
+            dst.write_u16(sec_addr_len.try_into()?);
+
+            dst.write_slice(self.sec_addr.as_bytes());
+            dst.write_u8(0);
+
+            sec_addr_len
+        } else {
+            dst.write_u16(0);
+
+            0
+        } + 2 /* length in bytes */;
+
+        Padding::<4>::write(sec_addr_len, dst);
+
+        dst.write_u32(self.results.len().try_into()?);
+        self.results.encode_cursor(dst)?;
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + self.results.frame_length()
+    }
+}
+
+impl Decode for BindAck {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        Ok(Self {
+            max_xmit_frag: src.read_u16(),
+            max_recv_frag: src.read_u16(),
+            assoc_group: src.read_u32(),
+            sec_addr: {
+                let sec_addr_len = usize::from(src.read_u16());
+                let sec_addr = if sec_addr_len > 0 {
+                    let buf = src.read_slice(sec_addr_len - 1 /* null byte */).to_vec();
+                    // Read null-terminator byte.
+                    src.read_u8();
+
+                    String::from_utf8(buf)?
+                } else {
+                    String::new()
+                };
+
+                Padding::<4>::read(sec_addr_len + 2 /* len */, src);
+
+                sec_addr
+            },
+            results: {
+                let results_count = src.read_u32();
+                Vec::decode_cursor_with_context(src, results_count.try_into()?)?
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindNak {
+    pub reason: u16,
+    pub versions: Vec<(u8, u8)>,
+}
+
+impl Encode for BindNak {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        dst.write_u16(self.reason);
+
+        dst.write_u8(self.versions.len().try_into()?);
+        self.versions.encode_cursor(dst)?;
+
+        let versions_buf_len = 1 /* len */ + self.versions.frame_length();
+        Padding::<4>::write(versions_buf_len, dst);
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        2 /* reason */ + 1 /* versions len */ + self.versions.frame_length()
+    }
+}
+
+impl Decode for BindNak {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        Ok(Self {
+            reason: src.read_u16(),
+            versions: {
+                let versions_count = usize::from(src.read_u8());
+                let versions = Vec::decode_cursor_with_context(src, versions_count)?;
+
+                let versions_buf_len = 1 /* len */ + versions.frame_length();
+                Padding::<4>::read(versions_buf_len, src);
+
+                versions
+            },
+        })
+    }
+}
+
+// `AlterContext` has the same layout as `Bind`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterContext(pub Bind);
+
+impl Encode for AlterContext {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        self.0.encode_cursor(dst)
+    }
+
+    fn frame_length(&self) -> usize {
+        self.0.frame_length()
+    }
+}
+
+impl Decode for AlterContext {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        Ok(Self(Bind::decode_cursor(src)?))
+    }
+}
+
+// `AlterContextResponse` has the same layout as `BindAck`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterContextResponse(pub BindAck);
+
+impl Encode for AlterContextResponse {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        self.0.encode_cursor(dst)
+    }
+
+    fn frame_length(&self) -> usize {
+        self.0.frame_length()
+    }
+}
+
+impl Decode for AlterContextResponse {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        Ok(Self(BindAck::decode_cursor(src)?))
+    }
+}

@@ -7,4 +7,6 @@ edition = "2024"
 std = []
 
 [dependencies]
+uuid = { workspace = true, features = ["std"] }
+
 thiserror = { version = "2.0", default-features = false }
