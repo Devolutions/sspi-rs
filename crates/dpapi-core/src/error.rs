@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error("provided buf contains invalid UTF-8 data")]
     Utf8(#[from] alloc::string::FromUtf8Error),
+
+    #[error(transparent)]
+    Pdu(#[from] crate::rpc::PduError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

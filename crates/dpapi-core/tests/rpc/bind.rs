@@ -1,4 +1,4 @@
-use dpapi_core::{ContextElement, ContextResult, ContextResultCode, SyntaxId};
+use dpapi_core::rpc::{ContextElement, ContextResult, ContextResultCode, SyntaxId};
 use uuid::uuid;
 
 test_encoding_decoding! {

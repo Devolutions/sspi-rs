@@ -11,7 +11,7 @@ mod encode;
 mod error;
 mod marker;
 mod padding;
-mod rpc;
+pub mod rpc;
 mod write_buf;
 
 pub use cursor::{ReadCursor, WriteCursor};
@@ -20,5 +20,4 @@ pub use encode::Encode;
 pub use error::{Error, Result};
 pub use marker::NeedsContext;
 pub use padding::Padding;
-pub use rpc::*;
 pub use write_buf::WriteBuf;

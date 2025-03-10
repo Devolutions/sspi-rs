@@ -632,6 +632,9 @@ dependencies = [
 name = "dpapi-core"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.8.0",
+ "num-derive",
+ "num-traits",
  "paste",
  "thiserror 2.0.12",
  "uuid",

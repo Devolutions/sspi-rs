@@ -58,6 +58,20 @@ impl<T: Encode> Encode for Vec<T> {
     }
 }
 
+impl<T: Encode> Encode for Option<T> {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        if let Some(obj) = self {
+            obj.encode_cursor(dst)?;
+        }
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        self.as_ref().map(|item| item.frame_length()).unwrap_or_default()
+    }
+}
+
 impl Encode for Uuid {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
         dst.write_slice(&self.to_bytes_le());
