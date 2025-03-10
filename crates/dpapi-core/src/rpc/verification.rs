@@ -127,7 +127,7 @@ pub struct CommandBitmask {
 
 impl CommandBitmask {
     fn value_length(&self) -> usize {
-        4 /* bits */
+        4 /* bits */ + 2 /* value length */
     }
 
     fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {

@@ -14,4 +14,5 @@ pub use pdu::{
 pub use request::{Request, Response};
 pub use verification::{
     Command, CommandBitmask, CommandError, CommandFlags, CommandHeader2, CommandPContext, CommandType,
+    VerificationTrailer,
 };
