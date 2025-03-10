@@ -5,6 +5,9 @@
 
 extern crate alloc;
 
+#[macro_use]
+mod macros;
+
 mod cursor;
 mod decode;
 mod encode;

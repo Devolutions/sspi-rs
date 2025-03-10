@@ -5,7 +5,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, WriteCursor};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -527,5 +527,19 @@ impl Decode for Pdu {
             data,
             security_trailer,
         })
+    }
+}
+
+impl FindLength for Pdu {
+    const FIXED_PART_SIZE: usize = PduHeader::LENGTH;
+
+    fn find_frame_length(bytes: &[u8]) -> Result<Option<usize>> {
+        if bytes.len() < Self::FIXED_PART_SIZE {
+            return Ok(None);
+        }
+
+        let pdu_header = PduHeader::decode(&bytes[0..Self::FIXED_PART_SIZE])?;
+
+        Ok(Some(usize::from(pdu_header.frag_len)))
     }
 }
