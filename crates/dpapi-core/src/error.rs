@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error(transparent)]
     Pdu(#[from] crate::rpc::PduError),
+
+    #[error(transparent)]
+    Command(#[from] crate::rpc::CommandError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

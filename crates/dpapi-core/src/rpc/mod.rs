@@ -1,6 +1,7 @@
 mod bind;
 mod pdu;
 mod request;
+mod verification;
 
 pub use bind::{
     AlterContext, AlterContextResponse, Bind, BindAck, BindError, BindNak, BindTimeFeatureNegotiationBitmask,
@@ -11,3 +12,6 @@ pub use pdu::{
     PacketType, Pdu, PduData, PduError, PduHeader, SecurityProvider, SecurityTrailer,
 };
 pub use request::{Request, Response};
+pub use verification::{
+    Command, CommandBitmask, CommandError, CommandFlags, CommandHeader2, CommandPContext, CommandType,
+};
