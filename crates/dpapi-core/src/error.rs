@@ -19,6 +19,9 @@ pub enum Error {
 
     #[error(transparent)]
     Command(#[from] crate::rpc::CommandError),
+
+    #[error(transparent)]
+    Epm(#[from] crate::rpc::EpmError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
