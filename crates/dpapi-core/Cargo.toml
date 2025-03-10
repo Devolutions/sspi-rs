@@ -10,3 +10,6 @@ std = []
 uuid = { workspace = true, features = ["std"] }
 
 thiserror = { version = "2.0", default-features = false }
+
+[dev-dependencies]
+paste = "1.0"

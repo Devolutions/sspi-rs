@@ -632,6 +632,7 @@ dependencies = [
 name = "dpapi-core"
 version = "0.1.0"
 dependencies = [
+ "paste",
  "thiserror 2.0.12",
  "uuid",
 ]

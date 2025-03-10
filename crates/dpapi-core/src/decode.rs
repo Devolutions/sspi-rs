@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use uuid::Uuid;
 
-use crate::{ReadCursor, Result};
+use crate::{NeedsContext, ReadCursor, Result};
 
 /// PDU that can be decoded from a binary input.
 pub trait Decode: Sized {
@@ -28,12 +28,6 @@ impl Decode for (u8, u8) {
     }
 }
 
-/// Bound used by other traits when a context struct is required.
-pub trait NeedsContext {
-    /// Required context.
-    type Context<'ctx>;
-}
-
 /// PDU that can be decoded from a binary input and provided context.
 pub trait DecodeWithContext: Sized + NeedsContext {
     /// Decodes PDU from a binary input with provided context.
@@ -44,10 +38,6 @@ pub trait DecodeWithContext: Sized + NeedsContext {
 
     /// Decodes PDU from a [`ReadCursor`] with provided context.
     fn decode_cursor_with_context<'ctx>(src: &mut ReadCursor<'_>, ctx: Self::Context<'ctx>) -> Result<Self>;
-}
-
-impl<T: Decode> NeedsContext for Vec<T> {
-    type Context<'ctx> = usize;
 }
 
 impl<T: Decode> DecodeWithContext for Vec<T> {

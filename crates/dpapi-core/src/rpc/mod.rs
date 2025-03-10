@@ -1,3 +1,5 @@
 mod bind;
 
-pub use bind::{BindError, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, SyntaxId};
+pub use bind::{
+    BindError, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResult, ContextResultCode, SyntaxId,
+};
