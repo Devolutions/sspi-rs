@@ -109,7 +109,6 @@ pub enum KerberosState {
     Negotiate,
     Preauthentication,
     ApExchange,
-    ApRepDce,
     PubKeyAuth,
     Credentials,
     Final,
@@ -1121,9 +1120,9 @@ impl<'a> Kerberos {
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                     output_token.buffer.write_all(&ap_rep)?;
 
-                    self.state = KerberosState::ApRepDce;
+                    self.state = KerberosState::PubKeyAuth;
 
-                    SecurityStatus::ContinueNeeded
+                    SecurityStatus::Ok
                 } else {
                     let neg_token_targ = {
                         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -1150,14 +1149,9 @@ impl<'a> Kerberos {
                     self.next_seq_number();
                     self.prepare_final_neg_token(builder)?;
                     self.state = KerberosState::PubKeyAuth;
+
                     SecurityStatus::Ok
                 }
-            }
-            KerberosState::ApRepDce => {
-                self.prepare_final_neg_token(builder)?;
-                self.state = KerberosState::PubKeyAuth;
-
-                SecurityStatus::Ok
             }
             _ => {
                 return Err(Error::new(
