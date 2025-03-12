@@ -19,12 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - NTLM RPC auth (#395) ([34d896c9ce](https://github.com/Devolutions/sspi-rs/commit/34d896c9cee7e0b3e0d5ee3c5002c781d9fc8fbf)) 
 
-### <!-- 7 -->Build
-
-- Bump tokio from 1.43.0 to 1.44.0 (#394) ([e4e15b3103](https://github.com/Devolutions/sspi-rs/commit/e4e15b3103d3ba4f6dcabbeb897fef8d01ab9e1b)) 
-
-- Bump the patch group across 1 directory with 4 updates (#393) ([bda97ded78](https://github.com/Devolutions/sspi-rs/commit/bda97ded7807e15f92ad796f881f85ef27839d96)) 
-
 ## [[0.15.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.1...sspi-v0.15.2)] - 2025-02-27
 
 ### <!-- 1 -->Features
