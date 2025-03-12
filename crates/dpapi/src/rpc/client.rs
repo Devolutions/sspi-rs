@@ -347,11 +347,18 @@ impl RpcClient {
     /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
     pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
-        // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
-        // We don't need its result in RPC authentication.
-        let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
-
         let security_trailer = self.auth.initialize_security_context(Vec::new())?;
+
+        // This is a small dirty trick. We do not have separate abstractions for SPNEGO and GSS API.
+        // Thus, our Kerberos implementation contains parts of SPNEGO and GSS API. But we do not need
+        // them during the RPC auth. We skip the unneeded output by calling the `initialize_security_context`
+        // method twice.
+        let security_trailer = if self.auth.needs_negotication() {
+            self.auth.initialize_security_context(Vec::new())?
+        } else {
+            security_trailer
+        };
+
         let bind = Self::create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
 
         self.sign_header = true;
@@ -368,12 +375,8 @@ impl RpcClient {
         let final_contexts = Self::process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
-        loop {
+        while !self.auth.is_finished() {
             let security_trailer = self.auth.initialize_security_context(in_token.unwrap_or_default())?;
-
-            if self.auth.is_finished() {
-                break;
-            }
 
             let alter_context = self.create_alter_context_pdu(final_contexts.clone(), security_trailer)?;
             let alter_context_resp = self.send_pdu(alter_context, None)?;

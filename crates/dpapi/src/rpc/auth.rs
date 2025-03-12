@@ -53,6 +53,22 @@ impl AuthProvider {
         })
     }
 
+    /// Determines if the selected authorization protocol needs negotiation.
+    ///
+    /// If the returned value is positive, then the client needs to call the `initialize_security_context` method
+    /// twice in order to skip the negotiation phase.
+    pub fn needs_negotication(&self) -> bool {
+        // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
+        // We don't need its result during the RPC authentication.
+        match &self.security_context {
+            SspiContext::Kerberos(_) => true,
+            SspiContext::Negotiate(negotiate) => {
+                matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Kerberos(_))
+            }
+            _ => false,
+        }
+    }
+
     /// Returns [SecurityProvider] type in use.
     ///
     /// We determine [SecurityProvider] every time we need to construct [SecurityTrailer].
