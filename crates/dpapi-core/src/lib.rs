@@ -12,13 +12,15 @@ mod cursor;
 mod decode;
 mod encode;
 mod error;
+pub mod gkdi;
 mod marker;
 mod padding;
 pub mod rpc;
+pub mod str;
 mod write_buf;
 
 pub use cursor::{ReadCursor, WriteCursor};
-pub use decode::{Decode, DecodeWithContext, FindLength};
+pub use decode::{Decode, DecodeWithContext, FindLength, read_c_str_utf16_le};
 pub use encode::Encode;
 pub use error::{Error, Result};
 pub use marker::NeedsContext;

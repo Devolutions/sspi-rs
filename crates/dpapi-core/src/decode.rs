@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use uuid::Uuid;
@@ -54,4 +55,24 @@ pub trait FindLength {
 
     /// Try to find the length of this frame given the first bytes.
     fn find_frame_length(bytes: &[u8]) -> Result<Option<usize>>;
+}
+
+pub fn read_c_str_utf16_le(len: usize, src: &mut ReadCursor<'_>) -> Result<String> {
+    use crate::Error;
+    use crate::str::from_utf16_le;
+
+    if len < 2 {
+        return Err(Error::InvalidLength {
+            name: "UTF-16 string",
+            expected: 2,
+            actual: len,
+        });
+    }
+
+    let buf = src.read_slice(len - 2 /* UTF16 null terminator */);
+
+    // Read UTF16 null terminator.
+    src.read_u16();
+
+    from_utf16_le(&buf)
 }

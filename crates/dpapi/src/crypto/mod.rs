@@ -3,6 +3,9 @@ mod kout;
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key};
 use aes_kw::KekAes256;
+use dpapi_core::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
+use dpapi_core::str::encode_utf16_le;
+use dpapi_core::{Decode, Encode};
 use num_bigint_dig::BigUint;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
@@ -10,9 +13,6 @@ use rand::Rng;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
-use crate::rpc::{Decode, EncodeExt};
-use crate::str::encode_utf16_le;
 use crate::Result;
 
 #[derive(Debug, Error)]
@@ -474,13 +474,13 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
 
         let my_pub_key = generator.modpow(&BigUint::from_bytes_be(private_key), &field_order);
 
-        FfcdhKey {
+        Ok(FfcdhKey {
             key_length,
             field_order,
             generator,
             public_key: my_pub_key,
         }
-        .encode_to_vec()
+        .encode_vec()?)
     } else if secret_algorithm.starts_with("ECDH_P") {
         use elliptic_curve::scalar::ScalarPrimitive;
         use elliptic_curve::sec1::ToEncodedPoint;
@@ -523,13 +523,13 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             }
         };
 
-        EcdhKey {
+        Ok(EcdhKey {
             curve: ecdh_pub_key_info.curve,
             key_length: ecdh_pub_key_info.key_length,
             x,
             y,
         }
-        .encode_to_vec()
+        .encode_vec()?)
     } else {
         Ok(Err(CryptoError::InvalidSecretAlg(secret_algorithm.to_owned()))?)
     }

@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::{Error, Result};
 
 /// Decodes a UTF-16–encoded byte slice into a [String].
@@ -26,7 +29,7 @@ pub fn from_utf16_le(data: &[u8]) -> Result<String> {
 /// *Note*: this function automatically appends a NULL-char.
 pub fn encode_utf16_le(data: &str) -> Vec<u8> {
     data.encode_utf16()
-        .chain(std::iter::once(0))
+        .chain(core::iter::once(0))
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>()
 }

@@ -398,7 +398,7 @@ impl Encode for EptMap {
 
     fn frame_length(&self) -> usize {
         let encoded_tower_length = 2 /* tokwer amount */ + self.tower.frame_length();
-        let padding_len = (8 - ((encoded_tower_length + 4) % 8)) % 8;
+        let padding_len = Padding::<8>::padding(encoded_tower_length + 4);
 
         8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */
         + encoded_tower_length + padding_len + self.entry_handle.frame_length() + 4 /* max_towers */
@@ -489,7 +489,7 @@ impl Encode for EptMapResult {
         self.entry_handle.frame_length() + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */
         + 8 /* towers len */ + self.towers.len() * 8 + self.towers.iter().map(|tower| {
             let encoded_tower_length = 2 /* tower len */ + tower.frame_length() + 8 /* encoded tower len */ + 4 /* encoded tower len */;
-            let padding_len = (4 - (encoded_tower_length % 4)) % 4;
+            let padding_len = Padding::<4>::padding(encoded_tower_length);
 
             encoded_tower_length + padding_len
         }).sum::<usize>() + 4 /* status */

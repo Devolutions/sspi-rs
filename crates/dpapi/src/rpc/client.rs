@@ -1,16 +1,14 @@
 use std::net::{TcpStream, ToSocketAddrs};
 
+use dpapi_core::rpc::{
+    AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
+    PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
+};
+use dpapi_core::{Decode, Encode, Padding};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
-use crate::rpc::auth::AuthProvider;
-use crate::rpc::bind::{
-    AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, SyntaxId,
-};
-use crate::rpc::pdu::{DataRepr, PacketFlags, PacketType, Pdu, PduData, PduHeader, SecurityTrailer};
-use crate::rpc::request::Request;
-use crate::rpc::verification::VerificationTrailer;
-use crate::rpc::{read_buf, read_vec, write_padding, Decode, EncodeExt};
+use crate::rpc::{read_buf, read_vec, AuthProvider};
 use crate::Result;
 
 pub const NDR64: SyntaxId = SyntaxId {
@@ -143,14 +141,16 @@ impl RpcClient {
         verification_trailer: Option<VerificationTrailer>,
     ) -> Result<(Pdu, EncryptionOffsets)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
-            write_padding::<4>(stub_data.len(), &mut stub_data)?;
-            let encoded_verification_trailer = verification_trailer.encode_to_vec()?;
+            stub_data.extend_from_slice(&vec![0; Padding::<4>::padding(stub_data.len())]);
+
+            let encoded_verification_trailer = verification_trailer.encode_vec()?;
             stub_data.extend_from_slice(&encoded_verification_trailer);
         }
 
         // The security trailer must be aligned to the next 16 byte boundary after the stub data.
         // This padding is included as part of the stub data to be encrypted.
-        let padding_len = write_padding::<16>(stub_data.len(), &mut stub_data)?;
+        let padding_len = Padding::<4>::padding(stub_data.len());
+        stub_data.extend_from_slice(&vec![0; padding_len]);
         let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
 
         let encrypt_offsets = EncryptionOffsets {
@@ -276,7 +276,7 @@ impl RpcClient {
 
     #[instrument(level = "trace", ret, skip(self))]
     fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
-        let mut pdu_encoded = pdu.encode_to_vec()?;
+        let mut pdu_encoded = pdu.encode_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
         pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
@@ -299,7 +299,7 @@ impl RpcClient {
         }
 
         let mut pdu = Pdu::decode(pdu_buf.as_slice())?;
-        pdu.data = pdu.data.into_error()?;
+        pdu.data = pdu.data.into_error().map_err(dpapi_core::Error::from)?;
 
         Ok(pdu)
     }
@@ -339,7 +339,7 @@ impl RpcClient {
             security_trailer: _,
         } = pdu_resp;
 
-        Ok(data.bind_ack()?)
+        Ok(data.bind_ack().map_err(dpapi_core::Error::from)?)
     }
 
     /// Performs the RPC bind/bind_ack exchange.
@@ -363,7 +363,7 @@ impl RpcClient {
             data,
             security_trailer,
         } = pdu_resp;
-        let bind_ack = data.bind_ack()?;
+        let bind_ack = data.bind_ack().map_err(dpapi_core::Error::from)?;
 
         let final_contexts = Self::process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);

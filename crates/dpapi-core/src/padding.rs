@@ -7,14 +7,14 @@ pub struct Padding<const ALIGNMENT: usize>;
 
 impl<const ALIGNMENT: usize> Padding<ALIGNMENT> {
     pub fn write(len: usize, dst: &mut WriteCursor<'_>) {
-        let padding_len = (ALIGNMENT - (len % ALIGNMENT)) % ALIGNMENT;
-
-        dst.write_slice(&vec![0; padding_len]);
+        dst.write_slice(&vec![0; Self::padding(len)]);
     }
 
     pub fn read(len: usize, src: &mut ReadCursor<'_>) {
-        let padding_len = (ALIGNMENT - (len % ALIGNMENT)) % ALIGNMENT;
+        src.advance(Self::padding(len));
+    }
 
-        src.advance(padding_len);
+    pub fn padding(len: usize) -> usize {
+        (ALIGNMENT - (len % ALIGNMENT)) % ALIGNMENT
     }
 }
