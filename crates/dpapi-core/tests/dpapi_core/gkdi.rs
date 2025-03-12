@@ -1,17 +1,13 @@
-use std::str::FromStr;
-
-use dpapi::gkdi::{
-    EcdhKey, EllipticCurve, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, HashAlg, KdfParameters,
-};
+use dpapi_core::gkdi::{KdfParameters, FfcdhParameters, FfcdhKey, EcdhKey, GroupKeyEnvelope, EllipticCurve, HashAlg, GetKey};
 use num_bigint_dig::BigUint;
-use uuid::Uuid;
+use uuid::uuid;
 
 test_encoding_decoding! {
     get_key,
     GetKey,
     GetKey {
         target_sd: vec![1, 2, 3, 4],
-        root_key_id: Some(Uuid::from_str("73294420-917f-416a-9ec3-86082afafb9e").unwrap()),
+        root_key_id: Some(uuid!("73294420-917f-416a-9ec3-86082afafb9e")),
         l0_key_id: -1,
         l1_key_id: 1,
         l2_key_id: 31,
@@ -71,7 +67,7 @@ test_encoding_decoding! {
         l0: 361,
         l1: 17,
         l2: 8,
-        root_key_identifier: Uuid::from_str("d778c271-9025-9a82-f6dc-b8960b8ad8c5").unwrap(),
+        root_key_identifier: uuid!("d778c271-9025-9a82-f6dc-b8960b8ad8c5"),
         kdf_alg: "SP800_108_CTR_HMAC".into(),
         kdf_parameters: vec![0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x00, 0x48, 0x00, 0x41, 0x00, 0x35, 0x00, 0x31, 0x00, 0x32, 0x00, 0x00, 0x00],
         secret_algorithm: "DH".into(),
