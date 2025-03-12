@@ -27,8 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump the patch group across 1 directory with 4 updates (#393) ([bda97ded78](https://github.com/Devolutions/sspi-rs/commit/bda97ded7807e15f92ad796f881f85ef27839d96)) 
 
-
-
 ## [[0.15.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.1...sspi-v0.15.2)] - 2025-02-27
 
 ### <!-- 1 -->Features
