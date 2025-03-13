@@ -236,7 +236,7 @@ impl CommandHeader2 {
 
     fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         let mut src = ReadCursor::new(value);
-        ensure_size!(in: src, size: Self::SIZE);
+        ensure_size!(in: src, size: Self::SIZE - 2 /* value length is already read */);
 
         Ok(Self {
             flags,

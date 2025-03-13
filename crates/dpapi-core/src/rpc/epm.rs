@@ -100,7 +100,7 @@ impl Encode for BaseFloor {
     }
 
     fn frame_length(&self) -> usize {
-        2 /* lhs len */ + self.lhs.len() + 1 /* protocol byte */ + 2 /* rhs len */ + self.rhs.len()
+        Self::FIXED_PART_SIZE + self.lhs.len() + 2 /* rhs len */ + self.rhs.len()
     }
 }
 
@@ -435,7 +435,7 @@ impl Encode for EptMap {
 
     fn frame_length(&self) -> usize {
         let encoded_tower_length = self.tower.frame_length();
-        let padding_len = Padding::<8>::padding(encoded_tower_length + 4);
+        let padding_len = Padding::<8>::padding(encoded_tower_length + 2 /* tower amount */ + 4);
 
         Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.frame_length() + 4 /* max_towers */
     }

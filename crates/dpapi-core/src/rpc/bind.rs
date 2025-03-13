@@ -119,7 +119,7 @@ impl Encode for ContextElement {
     }
 
     fn frame_length(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.abstract_syntax.frame_length() + self.transfer_syntaxes.frame_length()
+        Self::FIXED_PART_SIZE + self.transfer_syntaxes.frame_length()
     }
 }
 
