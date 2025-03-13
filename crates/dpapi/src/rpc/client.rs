@@ -288,11 +288,11 @@ impl RpcClient {
         super::write_buf(&pdu_encoded, &mut self.stream)?;
 
         // Read PDU header
-        let mut pdu_buf = read_vec(PduHeader::LENGTH, &mut self.stream)?;
+        let mut pdu_buf = read_vec(PduHeader::SIZE, &mut self.stream)?;
         let pdu_header = PduHeader::decode(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::LENGTH..])?;
+        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::SIZE..])?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;

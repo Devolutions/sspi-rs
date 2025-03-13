@@ -142,6 +142,10 @@ pub struct DataRepr {
     pub floating_point: FloatingPointRepr,
 }
 
+impl DataRepr {
+    pub const SIZE: usize = 1 /* first octet */ + 1 /* floating point */ + 2 /* padding */;
+}
+
 impl StaticName for DataRepr {
     const NAME: &'static str = "DataRepr";
 }
@@ -161,12 +165,14 @@ impl Encode for DataRepr {
     }
 
     fn frame_length(&self) -> usize {
-        1 /* first octet */ + 1 /* floating point */ + 2 /* padding */
+        Self::SIZE
     }
 }
 
 impl Decode for DataRepr {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::SIZE);
+
         let first_octet = src.read_u8();
 
         let integer_representation = (first_octet & 0b11110000) >> 4;
@@ -203,7 +209,7 @@ pub struct PduHeader {
 
 impl PduHeader {
     /// Length of the encoded [PduHeader].
-    pub const LENGTH: usize = 16;
+    pub const SIZE: usize = 16;
 }
 
 impl StaticName for PduHeader {
@@ -227,12 +233,14 @@ impl Encode for PduHeader {
     }
 
     fn frame_length(&self) -> usize {
-        Self::LENGTH
+        Self::SIZE
     }
 }
 
 impl Decode for PduHeader {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::SIZE);
+
         Ok(Self {
             version: src.read_u8(),
             version_minor: src.read_u8(),
@@ -327,6 +335,8 @@ impl Encode for SecurityTrailer {
 
 impl Decode for SecurityTrailer {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::HEADER_LEN);
+
         let security_provider = src.read_u8();
         let authentication_level = src.read_u8();
 
@@ -366,6 +376,10 @@ pub struct Fault {
     pub stub_data: Vec<u8>,
 }
 
+impl Fault {
+    const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4 /* status */ + 4 /* padding */;
+}
+
 impl StaticName for Fault {
     const NAME: &'static str = "Fault";
 }
@@ -387,12 +401,14 @@ impl Encode for Fault {
     }
 
     fn frame_length(&self) -> usize {
-        4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4 /* status */ + 4 /* padding */ + self.stub_data.len()
+        Self::FIXED_PART_SIZE + self.stub_data.len()
     }
 }
 
 impl Decode for Fault {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),
@@ -402,7 +418,12 @@ impl Decode for Fault {
                 FaultFlags::from_bits(fault_flags).ok_or(PduError::InvalidFaultFlags(fault_flags))?
             },
             status: src.read_u32(),
-            stub_data: src.read_remaining().to_vec(),
+            stub_data: {
+                // alignment padding
+                src.read_u32();
+
+                src.read_remaining().to_vec()
+            },
         })
     }
 }
@@ -460,8 +481,10 @@ impl DecodeWithContext for PduData {
         } + usize::from(pdu_header.auth_len);
 
         let data_len = usize::from(pdu_header.frag_len)
-            .checked_sub(security_trailer_len + PduHeader::LENGTH)
+            .checked_sub(security_trailer_len + PduHeader::SIZE)
             .ok_or(PduError::InvalidFragLength(pdu_header.frag_len))?;
+
+        ensure_size!(in: src, size: data_len);
         let buf = src.read_slice(data_len);
 
         match pdu_header.packet_type {
@@ -567,7 +590,7 @@ impl Decode for Pdu {
 }
 
 impl FindLength for Pdu {
-    const FIXED_PART_SIZE: usize = PduHeader::LENGTH;
+    const FIXED_PART_SIZE: usize = PduHeader::SIZE;
 
     fn find_frame_length(bytes: &[u8]) -> Result<Option<usize>> {
         if bytes.len() < Self::FIXED_PART_SIZE {

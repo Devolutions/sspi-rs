@@ -19,12 +19,16 @@ pub trait Decode: Sized {
 
 impl Decode for Uuid {
     fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
+        ensure_size!(in: src, size: 16);
+
         Ok(Uuid::from_slice_le(src.read_slice(16))?)
     }
 }
 
 impl Decode for (u8, u8) {
     fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
+        ensure_size!(name: "(u8, u8)", in: src, size: 2);
+
         Ok((src.read_u8(), src.read_u8()))
     }
 }
@@ -69,6 +73,7 @@ pub fn read_c_str_utf16_le(len: usize, src: &mut ReadCursor<'_>) -> Result<Strin
         });
     }
 
+    ensure_size!(name: "UTF16-le C str", in: src, size: len);
     let buf = src.read_slice(len - 2 /* UTF16 null terminator */);
 
     // Read UTF16 null terminator.

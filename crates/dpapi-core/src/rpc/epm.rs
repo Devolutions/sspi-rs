@@ -72,6 +72,10 @@ pub struct BaseFloor {
 }
 
 impl BaseFloor {
+    const FIXED_PART_SIZE: usize = 2 /* lhs + protocol byte length */ + 1 /* protocol byte */;
+}
+
+impl BaseFloor {
     pub fn new(protocol: FloorProtocol, lhs: Vec<u8>, rhs: Vec<u8>) -> Self {
         Self { protocol, lhs, rhs }
     }
@@ -102,15 +106,21 @@ impl Encode for BaseFloor {
 
 impl Decode for BaseFloor {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        let lhs_len = src.read_u16();
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
+        let lhs_len = usize::from(src.read_u16() - 1);
 
         let protocol_value = src.read_u8();
         let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
 
-        let lhs = src.read_slice(usize::from(lhs_len - 1 /* protocol byte */)).to_vec();
+        ensure_size!(in: src, size: lhs_len);
+        let lhs = src.read_slice(lhs_len).to_vec();
 
-        let rhs_len = src.read_u16();
-        let rhs = src.read_slice(usize::from(rhs_len)).to_vec();
+        ensure_size!(in: src, size: 2);
+        let rhs_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self { protocol, lhs, rhs })
     }
@@ -358,6 +368,8 @@ impl Encode for Option<EntryHandle> {
 
 impl Decode for Option<EntryHandle> {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: EMPTY_ENTRY_HANDLE.len());
+
         let entry_handle_buf = src.read_slice(EMPTY_ENTRY_HANDLE.len());
 
         Ok(if entry_handle_buf != EMPTY_ENTRY_HANDLE {
@@ -381,6 +393,7 @@ pub struct EptMap {
 
 impl EptMap {
     pub const OPNUM: u16 = 3;
+    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
 }
 
 impl StaticName for EptMap {
@@ -421,16 +434,17 @@ impl Encode for EptMap {
     }
 
     fn frame_length(&self) -> usize {
-        let encoded_tower_length = 2 /* tokwer amount */ + self.tower.frame_length();
+        let encoded_tower_length = self.tower.frame_length();
         let padding_len = Padding::<8>::padding(encoded_tower_length + 4);
 
-        8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */
-        + encoded_tower_length + padding_len + self.entry_handle.frame_length() + 4 /* max_towers */
+        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.frame_length() + 4 /* max_towers */
     }
 }
 
 impl Decode for EptMap {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         // obj with a referent id of 1
         src.read_u64();
 
@@ -453,9 +467,10 @@ impl Decode for EptMap {
             .map(|_| Floor::decode_cursor(src))
             .collect::<Result<Vec<Floor>>>()?;
 
-        Padding::<8>::read((tower_length + 4).try_into()?, src);
+        Padding::<8>::read((tower_length + 4).try_into()?, src)?;
 
         let entry_handle = Option::decode_cursor(src)?;
+        ensure_size!(in: src, size: 4);
         let max_towers = src.read_u32();
 
         Ok(Self {
@@ -530,14 +545,16 @@ impl Decode for EptMapResult {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
         let entry_handle = Option::decode_cursor(src)?;
 
+        ensure_size!(in: src, size: 4 /* num towers */ + 8 /* max towers cound */ + 8 /* tower offset */ + 8 /* tower count */);
         // num towers
         src.read_u32();
-        // mac tower count
+        // max tower count
         src.read_u64();
         // tower offset
         src.read_u64();
 
         let tower_count = usize::try_from(src.read_u64())?;
+        ensure_size!(in: src, size: tower_count * 8);
         // Ignore referent ids
         for _ in 0..tower_count {
             src.read_u64();
@@ -545,6 +562,8 @@ impl Decode for EptMapResult {
 
         let towers = (0..tower_count)
             .map(|_| {
+                ensure_size!(in: src, size: 8 /* tower length */ + 4 + 2 /* floor length */);
+
                 let tower_length = src.read_u64();
 
                 src.read_u32();
@@ -554,12 +573,13 @@ impl Decode for EptMapResult {
                     .map(|_| Floor::decode_cursor(src))
                     .collect::<Result<Vec<Floor>>>()?;
 
-                Padding::<8>::read((tower_length + 4).try_into()?, src);
+                Padding::<8>::read((tower_length + 4).try_into()?, src)?;
 
                 Ok(tower)
             })
             .collect::<Result<Vec<Tower>>>()?;
 
+        ensure_size!(in: src, size: 4);
         let status = src.read_u32();
 
         Ok(Self {

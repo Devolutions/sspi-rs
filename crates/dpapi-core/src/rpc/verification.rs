@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{Decode, Encode, ReadCursor, Result, WriteBuf, WriteCursor, StaticName};
+use crate::{Decode, Encode, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -57,6 +57,8 @@ pub enum Command {
 }
 
 impl Command {
+    const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
+
     pub fn flags(&self) -> CommandFlags {
         match self {
             Command::Bitmask1(command) => command.flags,
@@ -106,6 +108,8 @@ impl Encode for Command {
 
 impl Decode for Command {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let cmd_field = src.read_u16();
 
         let command_type = cmd_field & 0x3fff;
@@ -114,8 +118,10 @@ impl Decode for Command {
         let command = CommandType::from_u16(command_type).ok_or(CommandError::InvalidCommandType(command_type))?;
         let flags = CommandFlags::from_bits(command_flags).ok_or(CommandError::InvalidCommandFlags(command_flags))?;
 
-        let value_len = src.read_u16();
-        let value = src.read_slice(usize::from(value_len));
+        let value_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: value_len);
+        let value = src.read_slice(value_len);
 
         Ok(match command {
             CommandType::Bitmask1 => Self::Bitmask1(CommandBitmask::from_flags_and_value(flags, value)?),
@@ -222,12 +228,15 @@ impl StaticName for CommandHeader2 {
 }
 
 impl CommandHeader2 {
+    const SIZE: usize = 4 /* packet_type + reserved */ + DataRepr::SIZE + 4 /* call_id */ + 2 /* context_id */ + 2 /* opnum */ + 2 /* value length */;
+
     fn value_length(&self) -> usize {
-        4 /* packet_type + reserved */ + self.data_rep.frame_length() + 4 /* call_id */ + 2 /* context_id */ + 2 /* opnum */ + 2 /* value length */
+        Self::SIZE
     }
 
     fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         let mut src = ReadCursor::new(value);
+        ensure_size!(in: src, size: Self::SIZE);
 
         Ok(Self {
             flags,
@@ -274,6 +283,7 @@ pub struct VerificationTrailer {
 
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
+    const FIXED_PART_SIZE: usize = Self::SIGNATURE.len();
 }
 
 impl StaticName for VerificationTrailer {
@@ -298,6 +308,8 @@ impl Encode for VerificationTrailer {
 
 impl Decode for VerificationTrailer {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let signature = src.read_slice(VerificationTrailer::SIGNATURE.len());
 
         if signature != VerificationTrailer::SIGNATURE {

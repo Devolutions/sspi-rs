@@ -54,6 +54,10 @@ pub struct SyntaxId {
     pub version_minor: u16,
 }
 
+impl SyntaxId {
+    const SIZE: usize = 16 /* uuid */ + 2 /* version */ + 2 /* version_minor */;
+}
+
 impl StaticName for SyntaxId {
     const NAME: &'static str = "SyntaxId";
 }
@@ -70,12 +74,14 @@ impl Encode for SyntaxId {
     }
 
     fn frame_length(&self) -> usize {
-        16 /* uuid */ + 2 /* version */ + 2 /* version_minor */
+        Self::SIZE
     }
 }
 
 impl Decode for SyntaxId {
     fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
+        ensure_size!(in: src, size: Self::SIZE);
+
         Ok(Self {
             uuid: Uuid::decode_cursor(src)?,
             version: src.read_u16(),
@@ -89,6 +95,10 @@ pub struct ContextElement {
     pub context_id: u16,
     pub abstract_syntax: SyntaxId,
     pub transfer_syntaxes: Vec<SyntaxId>,
+}
+
+impl ContextElement {
+    const FIXED_PART_SIZE: usize = 2 /* context_id */ + 2 /* transfer_syntaxes length */ + SyntaxId::SIZE;
 }
 
 impl StaticName for ContextElement {
@@ -109,12 +119,14 @@ impl Encode for ContextElement {
     }
 
     fn frame_length(&self) -> usize {
-        2 /* context_id */ + 2 /* transfer_syntaxes length */ + self.abstract_syntax.frame_length() + self.transfer_syntaxes.frame_length()
+        Self::FIXED_PART_SIZE + self.abstract_syntax.frame_length() + self.transfer_syntaxes.frame_length()
     }
 }
 
 impl Decode for ContextElement {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<ContextElement> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let context_id = src.read_u16();
         let transfer_syntaxes_count = usize::from(src.read_u16());
         let abstract_syntax = SyntaxId::decode_cursor(src)?;
@@ -170,6 +182,10 @@ pub struct ContextResult {
     pub syntax_version: u32,
 }
 
+impl ContextResult {
+    const SIZE: usize = 2 /* result */ + 2 /* reason */ + 16 /* syntax */ + 4 /* syntax_version */;
+}
+
 impl StaticName for ContextResult {
     const NAME: &'static str = "ContextResult";
 }
@@ -187,12 +203,14 @@ impl Encode for ContextResult {
     }
 
     fn frame_length(&self) -> usize {
-        2 /* result */ + 2 /* reason */ + self.syntax.frame_length() + 4 /* syntax_version */
+        Self::SIZE
     }
 }
 
 impl Decode for ContextResult {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::SIZE);
+
         Ok(Self {
             result: src.read_u16().try_into()?,
             reason: src.read_u16(),
@@ -208,6 +226,10 @@ pub struct Bind {
     pub max_recv_frag: u16,
     pub assoc_group: u32,
     pub contexts: Vec<ContextElement>,
+}
+
+impl Bind {
+    const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 4 /* contexts length */;
 }
 
 impl StaticName for Bind {
@@ -228,12 +250,14 @@ impl Encode for Bind {
     }
 
     fn frame_length(&self) -> usize {
-        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 4 /* contexts length */ + self.contexts.frame_length()
+        Self::FIXED_PART_SIZE + self.contexts.frame_length()
     }
 }
 
 impl Decode for Bind {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let max_xmit_frag = src.read_u16();
         let max_recv_frag = src.read_u16();
         let assoc_group = src.read_u32();
@@ -257,6 +281,10 @@ pub struct BindAck {
     pub assoc_group: u32,
     pub sec_addr: String,
     pub results: Vec<ContextResult>,
+}
+
+impl BindAck {
+    const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 2 /* sec_addr lenght in bytes */;
 }
 
 impl StaticName for BindAck {
@@ -300,6 +328,8 @@ impl Encode for BindAck {
 
 impl Decode for BindAck {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         Ok(Self {
             max_xmit_frag: src.read_u16(),
             max_recv_frag: src.read_u16(),
@@ -307,6 +337,8 @@ impl Decode for BindAck {
             sec_addr: {
                 let sec_addr_len = usize::from(src.read_u16());
                 let sec_addr = if sec_addr_len > 0 {
+                    ensure_size!(in: src, size: sec_addr_len);
+
                     let buf = src.read_slice(sec_addr_len - 1 /* null byte */).to_vec();
                     // Read null-terminator byte.
                     src.read_u8();
@@ -316,12 +348,14 @@ impl Decode for BindAck {
                     String::new()
                 };
 
-                Padding::<4>::read(sec_addr_len + 2 /* len */, src);
+                Padding::<4>::read(sec_addr_len + 2 /* len */, src)?;
 
                 sec_addr
             },
             results: {
+                ensure_size!(in: src, size: 4);
                 let results_count = src.read_u32();
+
                 Vec::decode_cursor_with_context(src, results_count.try_into()?)?
             },
         })
@@ -332,6 +366,10 @@ impl Decode for BindAck {
 pub struct BindNak {
     pub reason: u16,
     pub versions: Vec<(u8, u8)>,
+}
+
+impl BindNak {
+    const FIXED_PART_SIZE: usize = 2 /* reason */ + 1 /* versions len */;
 }
 
 impl StaticName for BindNak {
@@ -354,12 +392,14 @@ impl Encode for BindNak {
     }
 
     fn frame_length(&self) -> usize {
-        2 /* reason */ + 1 /* versions len */ + self.versions.frame_length()
+        Self::FIXED_PART_SIZE + self.versions.frame_length()
     }
 }
 
 impl Decode for BindNak {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         Ok(Self {
             reason: src.read_u16(),
             versions: {
@@ -367,7 +407,7 @@ impl Decode for BindNak {
                 let versions = Vec::decode_cursor_with_context(src, versions_count)?;
 
                 let versions_buf_len = 1 /* len */ + versions.frame_length();
-                Padding::<4>::read(versions_buf_len, src);
+                Padding::<4>::read(versions_buf_len, src)?;
 
                 versions
             },

@@ -1,5 +1,5 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KDF_ALGORITHM_NAME, KeyIdentifier};
+use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_core::rpc::SyntaxId;
 use dpapi_core::{Decode, ReadCursor};
 use rand::rngs::OsRng;

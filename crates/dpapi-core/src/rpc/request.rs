@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, WriteCursor, StaticName};
+use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, StaticName, WriteCursor};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -12,6 +12,10 @@ pub struct Request {
     pub opnum: u16,
     pub obj: Option<Uuid>,
     pub stub_data: Vec<u8>,
+}
+
+impl Request {
+    const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 2 /* opnum */;
 }
 
 impl StaticName for Request {
@@ -32,7 +36,7 @@ impl Encode for Request {
     }
 
     fn frame_length(&self) -> usize {
-        4 /* alloc_hint */ + 2 /* context_id */ + 2 /* opnum */ + self.obj.frame_length() + self.stub_data.len()
+        Self::FIXED_PART_SIZE + self.obj.frame_length() + self.stub_data.len()
     }
 }
 
@@ -42,6 +46,8 @@ impl NeedsContext for Request {
 
 impl DecodeWithContext for Request {
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),
@@ -64,6 +70,10 @@ pub struct Response {
     pub stub_data: Vec<u8>,
 }
 
+impl Response {
+    const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* reserved */;
+}
+
 impl StaticName for Response {
     const NAME: &'static str = "Response";
 }
@@ -84,12 +94,14 @@ impl Encode for Response {
     }
 
     fn frame_length(&self) -> usize {
-        4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* reserved */ + self.stub_data.len()
+        Self::FIXED_PART_SIZE + self.stub_data.len()
     }
 }
 
 impl Decode for Response {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),

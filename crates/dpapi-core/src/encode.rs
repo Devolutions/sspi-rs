@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use uuid::Uuid;
 
-use crate::{Result, WriteBuf, WriteCursor, StaticName};
+use crate::{Result, StaticName, WriteBuf, WriteCursor};
 
 /// PDU that can be encoded into its binary form.
 ///

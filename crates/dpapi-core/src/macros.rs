@@ -2,18 +2,6 @@
 //!
 //! Some are exported and available to external crates
 
-/// Checks whether a received buffer has enough bytes.
-#[macro_export]
-macro_rules! check_size {
-    (in: $buf:ident, size: $expected:expr) => {{
-        let received = $buf.len();
-        let expected = $expected;
-        if !(received >= expected) {
-            return Ok(Option::<usize>::None);
-        }
-    }};
-}
-
 /// Ensures that a given buffer has the expected size.
 #[macro_export]
 macro_rules! ensure_size {

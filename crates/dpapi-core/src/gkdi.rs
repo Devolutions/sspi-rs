@@ -8,7 +8,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, from_utf16_le};
-use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, WriteCursor, read_c_str_utf16_le, StaticName};
+use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, StaticName, WriteCursor, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -111,19 +111,24 @@ impl Encode for GetKey {
 
 impl Decode for GetKey {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        let target_sd_len = src.read_u64();
+        ensure_size!(in: src, size: 8 /* target_sd_len */ + 8 /* offset */);
+
+        let target_sd_len = usize::try_from(src.read_u64())?;
         let _offset = src.read_u64();
 
-        let target_sd = src.read_slice(target_sd_len.try_into()?).to_vec();
+        ensure_size!(in: src, size: target_sd_len);
+        let target_sd = src.read_slice(target_sd_len).to_vec();
 
-        Padding::<8>::read(target_sd_len.try_into()?, src);
+        Padding::<8>::read(target_sd_len, src)?;
 
+        ensure_size!(in: src, size: 8);
         let root_key_id = if src.read_u64() != 0 {
             Some(Uuid::decode_cursor(src)?)
         } else {
             None
         };
 
+        ensure_size!(in: src, size: 4 * 3);
         let l0_key_id = src.read_i32();
         let l1_key_id = src.read_i32();
         let l2_key_id = src.read_i32();
@@ -190,6 +195,11 @@ impl KdfParameters {
     const MAGIC_IDENTIFIER_2: &[u8] = &[0x00, 0x00, 0x00, 0x00];
 }
 
+impl KdfParameters {
+    const FIXED_PART_SIZE: usize =
+        Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len();
+}
+
 impl StaticName for KdfParameters {
     const NAME: &'static str = "KdfParameters";
 }
@@ -211,12 +221,14 @@ impl Encode for KdfParameters {
     fn frame_length(&self) -> usize {
         let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
 
-        Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len() + encoded_hash_alg.len()
+        Self::FIXED_PART_SIZE + encoded_hash_alg.len()
     }
 }
 
 impl Decode for KdfParameters {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let magic_identifier_1 = src.read_slice(Self::MAGIC_IDENTIFIER_1.len());
 
         if magic_identifier_1 != Self::MAGIC_IDENTIFIER_1 {
@@ -248,6 +260,7 @@ impl Decode for KdfParameters {
             })?;
         }
 
+        ensure_size!(in: src, size: hash_name_len);
         let buf = src.read_slice(hash_name_len - 2 /* UTF-16 null terminator char */);
         // Skip UTF-16 null terminator char.
         src.read_u16();
@@ -282,6 +295,7 @@ impl FfcdhParameters {
     // The following magic value is defined in the Microsoft documentation:
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/e15ae269-ee21-446a-a480-de3ea243db5f
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x4d];
+    const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
 impl StaticName for FfcdhParameters {
@@ -315,12 +329,14 @@ impl Encode for FfcdhParameters {
     }
 
     fn frame_length(&self) -> usize {
-        4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */ + usize::try_from(self.key_length).unwrap() * 2
+        Self::FIXED_PART_SIZE + usize::try_from(self.key_length).unwrap() * 2
     }
 }
 
 impl Decode for FfcdhParameters {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let _total_len = src.read_u32();
 
         let magic = src.read_slice(Self::MAGIC.len());
@@ -334,10 +350,11 @@ impl Decode for FfcdhParameters {
         }
 
         let key_length = src.read_u32();
+        let key_len = key_length.try_into()?;
+        ensure_size!(in: src, size: key_len * 2);
 
-        let field_order = BigUint::from_bytes_be(src.read_slice(key_length.try_into()?));
-
-        let generator = BigUint::from_bytes_be(src.read_slice(key_length.try_into()?));
+        let field_order = BigUint::from_bytes_be(src.read_slice(key_len));
+        let generator = BigUint::from_bytes_be(src.read_slice(key_len));
 
         Ok(Self {
             key_length,
@@ -373,6 +390,7 @@ impl FfcdhKey {
     // The following magic value is defined in the Microsoft documentation:
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/f8770f01-036d-4bf6-a4cf-1bd0e3913404
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x42];
+    const FIXED_PART_SIZE: usize = Self::MAGIC.len() + 4 /* key length */;
 }
 
 impl StaticName for FfcdhKey {
@@ -405,12 +423,14 @@ impl Encode for FfcdhKey {
     }
 
     fn frame_length(&self) -> usize {
-        Self::MAGIC.len() + 4 /* key length */ + usize::try_from(self.key_length).unwrap() * 3
+        Self::FIXED_PART_SIZE + usize::try_from(self.key_length).unwrap() * 3
     }
 }
 
 impl Decode for FfcdhKey {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let magic = src.read_slice(Self::MAGIC.len());
 
         if magic != FfcdhKey::MAGIC {
@@ -422,12 +442,15 @@ impl Decode for FfcdhKey {
         }
 
         let key_length = src.read_u32();
+        let key_len = key_length.try_into()?;
+
+        ensure_size!(in: src, size: key_len * 3);
 
         Ok(Self {
             key_length,
-            field_order: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
-            generator: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
-            public_key: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
+            field_order: BigUint::from_bytes_be(src.read_slice(key_len)),
+            generator: BigUint::from_bytes_be(src.read_slice(key_len)),
+            public_key: BigUint::from_bytes_be(src.read_slice(key_len)),
         })
     }
 }
@@ -486,6 +509,10 @@ pub struct EcdhKey {
     pub y: BigUint,
 }
 
+impl EcdhKey {
+    const FIXED_PART_SIZE: usize = 4 /* encoded_curve len */ + 4 /* key_length */;
+}
+
 impl StaticName for EcdhKey {
     const NAME: &'static str = "EcdhKey";
 }
@@ -512,24 +539,27 @@ impl Encode for EcdhKey {
     }
 
     fn frame_length(&self) -> usize {
-        let encoded_curve: &[u8] = self.curve.into();
-
-        encoded_curve.len() + 4 /* key_length */ + 2 * usize::try_from(self.key_length).unwrap()
+        Self::FIXED_PART_SIZE + 2 * usize::try_from(self.key_length).unwrap()
     }
 }
 
 impl Decode for EcdhKey {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let curve_id = src.read_slice(4);
         let curve = EllipticCurve::try_from(curve_id)?;
 
         let key_length = src.read_u32();
+        let key_len = key_length.try_into()?;
+
+        ensure_size!(in: src, size: key_len * 2);
 
         Ok(Self {
             curve,
             key_length,
-            x: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
-            y: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
+            x: BigUint::from_bytes_be(src.read_slice(key_len)),
+            y: BigUint::from_bytes_be(src.read_slice(key_len)),
         })
     }
 }
@@ -565,6 +595,9 @@ pub struct KeyIdentifier {
 impl KeyIdentifier {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
+    const FIXED_PART_SIZE: usize = 4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
+        + 16 /* root_key_identifier */ + 4 /* key_info len */ + 4 /* domain_name len */
+        + 4 /* forest_name len */;
 
     pub fn is_public_key(&self) -> bool {
         self.flags & 1 != 0
@@ -604,14 +637,17 @@ impl Encode for KeyIdentifier {
     }
 
     fn frame_length(&self) -> usize {
-        4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
-        + self.root_key_identifier.frame_length() + 4 /* key_info len */ + 4 /* domain_name len */
-        + 4 /* forest_name len */ + self.key_info.len() + encode_utf16_le(&self.domain_name).len() + encode_utf16_le(&self.forest_name).len()
+        Self::FIXED_PART_SIZE
+            + self.key_info.len()
+            + encode_utf16_le(&self.domain_name).len()
+            + encode_utf16_le(&self.forest_name).len()
     }
 }
 
 impl Decode for KeyIdentifier {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let version = src.read_u32();
 
         let magic = src.read_slice(Self::MAGIC.len());
@@ -631,7 +667,7 @@ impl Decode for KeyIdentifier {
         let l2 = src.read_i32();
         let root_key_identifier = Uuid::decode_cursor(src)?;
 
-        let key_info_len = src.read_u32();
+        let key_info_len = src.read_u32().try_into()?;
 
         let domain_len = src.read_u32().try_into()?;
         if domain_len <= 2 {
@@ -653,12 +689,15 @@ impl Decode for KeyIdentifier {
         }
         let forest_len = forest_len - 2 /* UTF16 null terminator */;
 
-        let key_info = src.read_slice(key_info_len.try_into()?).to_vec();
+        ensure_size!(in: src, size: key_info_len);
+        let key_info = src.read_slice(key_info_len).to_vec();
 
+        ensure_size!(in: src, size: domain_len + 2);
         let domain_name = src.read_slice(domain_len);
         // Read UTF16 null terminator.
         src.read_u16();
 
+        ensure_size!(in: src, size: forest_len + 2);
         let forest_name = src.read_slice(forest_len);
         // Read UTF16 null terminator.
         src.read_u16();
@@ -730,6 +769,18 @@ impl GroupKeyEnvelope {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: &[u8] = &[0x4B, 0x44, 0x53, 0x4B];
     const VERSION: u32 = 1;
+    const FIXED_PART_SIZE: usize = 4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
+        + 16 /* root_key_identifier */
+        + 4 /* encoded_kdf_alg */
+        + 4 /* kdf_parameters */
+        + 4 /* encoded_secret_alg */
+        + 4 /* secret_parameters */
+        + 4 /* private_key_length */
+        + 4 /* public_key_length */
+        + 4 /* l1_key */
+        + 4 /* l2_key */
+        + 4 /* encoded_domain_name */
+        + 4 /* encoded_forest_name */;
 
     pub fn is_public_key(&self) -> bool {
         self.flags & 1 != 0
@@ -787,31 +838,22 @@ impl Encode for GroupKeyEnvelope {
         let encoded_domain_name = encode_utf16_le(&self.domain_name);
         let encoded_forest_name = encode_utf16_le(&self.forest_name);
 
-        4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
-        + self.root_key_identifier.frame_length()
-        + 4 /* encoded_kdf_alg */
-        + 4 /* kdf_parameters */
-        + 4 /* encoded_secret_alg */
-        + 4 /* secret_parameters */
-        + 4 /* private_key_length */
-        + 4 /* public_key_length */
-        + 4 /* l1_key */
-        + 4 /* l2_key */
-        + 4 /* encoded_domain_name */
-        + 4 /* encoded_forest_name */
-        + encoded_kdf_alg.len()
-        + self.kdf_parameters.len()
-        + encoded_secret_alg.len()
-        + self.secret_parameters.len()
-        + encoded_domain_name.len()
-        + encoded_forest_name.len()
-        + self.l1_key.len()
-        + self.l2_key.len()
+        Self::FIXED_PART_SIZE
+            + encoded_kdf_alg.len()
+            + self.kdf_parameters.len()
+            + encoded_secret_alg.len()
+            + self.secret_parameters.len()
+            + encoded_domain_name.len()
+            + encoded_forest_name.len()
+            + self.l1_key.len()
+            + self.l2_key.len()
     }
 }
 
 impl Decode for GroupKeyEnvelope {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let version = src.read_u32();
 
         if version != Self::VERSION {
@@ -839,27 +881,34 @@ impl Decode for GroupKeyEnvelope {
         let root_key_identifier = Uuid::decode_cursor(src)?;
 
         let kdf_alg_len = src.read_u32();
-        let kdf_parameters_len = src.read_u32();
+        let kdf_parameters_len = src.read_u32().try_into()?;
         let secret_alg_len = src.read_u32();
-        let secret_parameters_len = src.read_u32();
+        let secret_parameters_len = src.read_u32().try_into()?;
         let private_key_length = src.read_u32();
         let public_key_length = src.read_u32();
-        let l1_key_len = src.read_u32();
-        let l2_key_len = src.read_u32();
+        let l1_key_len = src.read_u32().try_into()?;
+        let l2_key_len = src.read_u32().try_into()?;
         let domain_len = src.read_u32();
         let forest_len = src.read_u32();
 
         let kdf_alg = read_c_str_utf16_le(kdf_alg_len.try_into()?, src)?;
-        let kdf_parameters = src.read_slice(kdf_parameters_len.try_into()?).to_vec();
+
+        ensure_size!(in: src, size: kdf_parameters_len);
+        let kdf_parameters = src.read_slice(kdf_parameters_len).to_vec();
 
         let secret_algorithm = read_c_str_utf16_le(secret_alg_len.try_into()?, src)?;
-        let secret_parameters = src.read_slice(secret_parameters_len.try_into()?).to_vec();
+
+        ensure_size!(in: src, size: secret_parameters_len);
+        let secret_parameters = src.read_slice(secret_parameters_len).to_vec();
 
         let domain_name = read_c_str_utf16_le(domain_len.try_into()?, src)?;
         let forest_name = read_c_str_utf16_le(forest_len.try_into()?, src)?;
 
-        let l1_key = src.read_slice(l1_key_len.try_into()?).to_vec();
-        let l2_key = src.read_slice(l2_key_len.try_into()?).to_vec();
+        ensure_size!(in: src, size: l1_key_len);
+        let l1_key = src.read_slice(l1_key_len).to_vec();
+
+        ensure_size!(in: src, size: l2_key_len);
+        let l2_key = src.read_slice(l2_key_len).to_vec();
 
         Ok(Self {
             flags,
