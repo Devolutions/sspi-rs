@@ -33,8 +33,12 @@ rand.workspace = true
 hmac.workspace = true
 tracing = { workspace = true, default-features = true }
 whoami.workspace = true
+
 dpapi-core = { workspace = true, features = ["alloc"] }
 dpapi-pdu.workspace = true
+reqwest = { version = "0.12", features = ["json"] }
+smol_str = { version = "0.3", features = ["serde"] }
+tungstenite = { version = "0.26", features = ["__rustls-tls"] }
 
 kbkdf = "0.0.1"
 sha1-pre = { version = "0.11.0-pre.2", package = "sha1" }
@@ -56,6 +60,8 @@ thiserror = "2.0"
 regex = "1.11"
 
 sspi = { path = "../..", version = "0.15", features = ["network_client"] }
+serde = { version = "1.0.219", features = ["derive"] }
+bytes = "1.10"
 
 [dev-dependencies]
 paste = "1.0"

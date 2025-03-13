@@ -10,7 +10,8 @@ use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
-use thiserror::Error;
+use std::net::{SocketAddr, ToSocketAddrs};
+use url::Url;
 use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
@@ -22,7 +23,13 @@ use crate::{Error, Result};
 
 const DEFAULT_RPC_PORT: u16 = 135;
 
-#[derive(Debug, Error)]
+pub const WSS_SCHEME: &str = "wss";
+
+pub const WS_SCHEME: &str = "ws";
+
+const TCP_SCHEME: &str = "tcp";
+
+#[derive(Debug, thiserror::Error)]
 pub enum ClientError {
     #[error("BindAcknowledge doesn't contain desired context element")]
     MissingDesiredContext,
@@ -177,6 +184,107 @@ fn encrypt_blob(
     Ok(buf)
 }
 
+#[derive(Debug, PartialEq)]
+pub enum WebAppAuth {
+    Custom { username: String, password: String },
+    None,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionUrlParseError {
+    #[error("expected a TCP URL and an optional WebSocket URL")]
+    IncorrectFormat,
+
+    #[error("{0}")]
+    InvalidUrl(&'static str),
+}
+/// RPC server connection options.
+#[derive(Debug, PartialEq)]
+pub enum ConnectionOptions {
+    /// Regular TCP connection.
+    Tcp(SocketAddr),
+    /// Tunneled connection via Devolutions Gateway using a WebSocket.
+    WebSocketTunnel {
+        websocket_url: Url,
+        web_app_auth: WebAppAuth,
+        tcp_addr: SocketAddr,
+    },
+}
+
+impl ConnectionOptions {
+    /// Parses the RPC server connection string.
+    /// If the TCP URL does not specify a port, `tcp_server_default_port` is used.
+    pub fn parse(urls: &str, tcp_server_default_port: u16) -> Result<Self> {
+        let url_to_socket_addr = |url: &Url| -> Result<SocketAddr> {
+            let tcp_host = url
+                .host_str()
+                .ok_or(ConnectionUrlParseError::InvalidUrl("URL does not contain a host"))?;
+            (tcp_host, url.port().unwrap_or(tcp_server_default_port))
+                .to_socket_addrs()?
+                .next()
+                .ok_or(ConnectionUrlParseError::InvalidUrl("cannot resolve the address of the TCP server").into())
+        };
+
+        let urls = urls.split(',').collect::<Vec<_>>();
+
+        match urls.len() {
+            1 => {
+                let tcp_url = if urls[0].contains("://") {
+                    if !urls[0].contains("tcp") {
+                        return Err(ConnectionUrlParseError::IncorrectFormat.into());
+                    }
+                    Url::parse(urls[0])?
+                } else {
+                    Url::parse(&format!("tcp://{}", urls[0]))?
+                };
+                Ok(ConnectionOptions::Tcp(url_to_socket_addr(&tcp_url)?))
+            }
+            2 => {
+                let url1 = Url::parse(urls[0])?;
+                let url2 = Url::parse(urls[1])?;
+
+                let (mut ws_url, tcp_url) = match (url1.scheme(), url2.scheme()) {
+                    (WS_SCHEME | WSS_SCHEME, TCP_SCHEME) => (url1, url2),
+                    (TCP_SCHEME, WS_SCHEME | WSS_SCHEME) => (url2, url1),
+                    _ => return Err(ConnectionUrlParseError::IncorrectFormat.into()),
+                };
+
+                let web_app_auth = match ws_url.username() {
+                    "" => WebAppAuth::None,
+                    username => {
+                        let username = username.to_owned();
+                        let password = ws_url.password().unwrap_or_default().to_owned();
+
+                        ws_url
+                            .set_username("")
+                            .expect("URL isn't `cannot-be-a-base`, so it should not fail");
+                        ws_url
+                            .set_password(None)
+                            .expect("URL isn't `cannot-be-a-base`, so it should not fail");
+
+                        WebAppAuth::Custom { username, password }
+                    }
+                };
+
+                Ok(ConnectionOptions::WebSocketTunnel {
+                    websocket_url: ws_url.to_owned(),
+                    web_app_auth,
+                    tcp_addr: url_to_socket_addr(&tcp_url)?,
+                })
+            }
+            _ => Err(ConnectionUrlParseError::IncorrectFormat.into()),
+        }
+    }
+
+    /// Sets the new port for the TCP server.
+    pub fn set_tcp_port(&mut self, new_port: u16) {
+        match self {
+            Self::Tcp(addr) => addr.set_port(new_port),
+            Self::WebSocketTunnel { tcp_addr, .. } => tcp_addr.set_port(new_port),
+        }
+    }
+}
+
 struct GetKeyArgs<'server> {
     server: &'server str,
     target_sd: Vec<u8>,
@@ -203,9 +311,11 @@ fn get_key(
         negotiate_config,
     }: GetKeyArgs,
 ) -> Result<GroupKeyEnvelope> {
+    let mut connection_options = ConnectionOptions::parse(server, DEFAULT_RPC_PORT)?;
+
     let isd_key_port = {
         let mut rpc = RpcClient::connect(
-            (server, DEFAULT_RPC_PORT),
+            &connection_options,
             AuthProvider::new(
                 SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
                 Credentials::AuthIdentity(AuthIdentity {
@@ -234,8 +344,10 @@ fn get_key(
 
     info!(isd_key_port);
 
+    connection_options.set_tcp_port(isd_key_port);
+
     let mut rpc = RpcClient::connect(
-        (server, isd_key_port),
+        &connection_options,
         AuthProvider::new(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),

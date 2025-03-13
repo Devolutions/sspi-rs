@@ -380,7 +380,7 @@ pub fn compute_kek(
             .modpow(&BigUint::from_bytes_be(private_key), &dh_pub_key.field_order);
         let mut shared_secret = shared_secret.to_bytes_be();
 
-        while shared_secret.len() < dh_pub_key.key_length.try_into()? {
+        while shared_secret.len() < usize::try_from(dh_pub_key.key_length)? {
             shared_secret.insert(0, 0);
         }
 

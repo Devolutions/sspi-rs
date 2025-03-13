@@ -1,14 +1,15 @@
 use dpapi_core::{DecodeError, EncodeError};
 use thiserror::Error;
 
+use crate::client::ConnectionUrlParseError;
+
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid {name} url: {url}")]
-    InvalidUrl {
-        name: &'static str,
-        url: String,
-        error: url::ParseError,
-    },
+    #[error("invalid url `{url}`: {description}")]
+    InvalidUrl { url: String, description: String },
+
+    #[error(transparent)]
+    UrlParse(#[from] url::ParseError),
 
     #[error("{0}")]
     DecodeError(DecodeError),
@@ -43,8 +44,17 @@ pub enum Error {
     #[error(transparent)]
     Client(#[from] crate::client::ClientError),
 
+    #[error(transparent)]
+    HttpRequest(#[from] reqwest::Error),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    WebSocket(#[from] tungstenite::Error),
+
+    #[error(transparent)]
+    ConnectionUrlParse(#[from] ConnectionUrlParseError),
 
     #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),
