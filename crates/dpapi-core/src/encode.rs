@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 
 use uuid::Uuid;
 
-use crate::{Result, WriteBuf, WriteCursor};
+use crate::{Result, WriteBuf, WriteCursor, StaticName};
 
 /// PDU that can be encoded into its binary form.
 ///
@@ -72,8 +72,14 @@ impl<T: Encode> Encode for Option<T> {
     }
 }
 
+impl StaticName for Uuid {
+    const NAME: &'static str = "Uuid";
+}
+
 impl Encode for Uuid {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_slice(&self.to_bytes_le());
 
         Ok(())
@@ -86,6 +92,8 @@ impl Encode for Uuid {
 
 impl Encode for (u8, u8) {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(name: "(u8, u8)", in: dst, size: self.frame_length());
+
         dst.write_u8(self.0);
         dst.write_u8(self.1);
 

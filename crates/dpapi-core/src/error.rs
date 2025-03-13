@@ -5,6 +5,13 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("received {name} data was insufficient to meet the expected size: expected {expected} but got {received}")]
+    NotEnoughBytes {
+        name: &'static str,
+        received: usize,
+        expected: usize,
+    },
+
     #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),
 

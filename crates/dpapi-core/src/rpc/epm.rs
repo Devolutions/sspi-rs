@@ -7,7 +7,7 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{Decode, Encode, Padding, ReadCursor, Result, WriteBuf, WriteCursor};
+use crate::{Decode, Encode, Padding, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -77,8 +77,14 @@ impl BaseFloor {
     }
 }
 
+impl StaticName for BaseFloor {
+    const NAME: &'static str = "BaseFloor";
+}
+
 impl Encode for BaseFloor {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16((self.lhs.len() + 1/* protocol byte */).try_into()?);
         dst.write_u8(self.protocol.as_u8());
         dst.write_slice(&self.lhs);
@@ -260,8 +266,14 @@ pub enum Floor {
     Uuid(UuidFloor),
 }
 
+impl StaticName for Floor {
+    const NAME: &'static str = "Floor";
+}
+
 impl Encode for Floor {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         match self {
             Floor::Tcp(tcp_floor) => tcp_floor.encode_cursor(dst),
             Floor::Ip(ip_floor) => ip_floor.encode_cursor(dst),
@@ -321,8 +333,14 @@ pub fn build_tcpip_tower(service: SyntaxId, data_rep: SyntaxId, port: u16, addr:
 pub type EntryHandle = (u32, Uuid);
 const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
 
+impl StaticName for Option<EntryHandle> {
+    const NAME: &'static str = "Option<EntryHandle>";
+}
+
 impl Encode for Option<EntryHandle> {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         if let Some(entry_handle) = self {
             dst.write_u32(entry_handle.0);
             entry_handle.1.encode_cursor(dst)?;
@@ -365,8 +383,14 @@ impl EptMap {
     pub const OPNUM: u16 = 3;
 }
 
+impl StaticName for EptMap {
+    const NAME: &'static str = "EptMap";
+}
+
 impl Encode for EptMap {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         // obj with a referent id of 1
         dst.write_slice(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 
@@ -450,8 +474,14 @@ pub struct EptMapResult {
     pub status: u32,
 }
 
+impl StaticName for EptMapResult {
+    const NAME: &'static str = "EptMapResult";
+}
+
 impl Encode for EptMapResult {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         self.entry_handle.encode_cursor(dst)?;
 
         dst.write_u32(u32::try_from(self.towers.len())?);

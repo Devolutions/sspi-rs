@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{Decode, Encode, ReadCursor, Result, WriteBuf, WriteCursor};
+use crate::{Decode, Encode, ReadCursor, Result, WriteBuf, WriteCursor, StaticName};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -82,8 +82,14 @@ impl Command {
     }
 }
 
+impl StaticName for Command {
+    const NAME: &'static str = "Command";
+}
+
 impl Encode for Command {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.command_type().as_u16() | self.flags().bits());
 
         match self {
@@ -125,6 +131,10 @@ pub struct CommandBitmask {
     pub flags: CommandFlags,
 }
 
+impl StaticName for CommandBitmask {
+    const NAME: &'static str = "CommandBitmask";
+}
+
 impl CommandBitmask {
     fn value_length(&self) -> usize {
         4 /* bits */ + 2 /* value length */
@@ -144,6 +154,8 @@ impl CommandBitmask {
     }
 
     fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.value_length());
+
         dst.write_u16(4);
         dst.write_slice(self.bits.to_le_bytes().as_slice());
 
@@ -156,6 +168,10 @@ pub struct CommandPContext {
     pub flags: CommandFlags,
     pub interface_id: SyntaxId,
     pub transfer_syntax: SyntaxId,
+}
+
+impl StaticName for CommandPContext {
+    const NAME: &'static str = "CommandPContext";
 }
 
 impl CommandPContext {
@@ -177,6 +193,8 @@ impl CommandPContext {
     }
 
     fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.value_length());
+
         let mut buf = WriteBuf::new();
 
         self.interface_id.encode_buf(&mut buf)?;
@@ -197,6 +215,10 @@ pub struct CommandHeader2 {
     pub call_id: u32,
     pub context_id: u16,
     pub opnum: u16,
+}
+
+impl StaticName for CommandHeader2 {
+    const NAME: &'static str = "CommandHeader2";
 }
 
 impl CommandHeader2 {
@@ -225,6 +247,8 @@ impl CommandHeader2 {
     }
 
     fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.value_length());
+
         let mut buf = WriteBuf::new();
 
         buf.write_u8(self.packet_type.as_u8());
@@ -252,8 +276,14 @@ impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
 }
 
+impl StaticName for VerificationTrailer {
+    const NAME: &'static str = "VerificationTrailer";
+}
+
 impl Encode for VerificationTrailer {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_slice(Self::SIGNATURE);
 
         self.commands.encode_cursor(dst)?;

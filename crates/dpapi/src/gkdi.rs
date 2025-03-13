@@ -1,12 +1,11 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KDF_ALGORITHM_NAME};
+use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KDF_ALGORITHM_NAME, KeyIdentifier};
 use dpapi_core::rpc::SyntaxId;
 use dpapi_core::{Decode, ReadCursor};
 use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::uuid;
 
-use crate::blob::KeyIdentifier;
 use crate::crypto::{
     compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
 };

@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, WriteCursor, StaticName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -14,8 +14,14 @@ pub struct Request {
     pub stub_data: Vec<u8>,
 }
 
+impl StaticName for Request {
+    const NAME: &'static str = "Request";
+}
+
 impl Encode for Request {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
         dst.write_u16(self.opnum);
@@ -58,8 +64,14 @@ pub struct Response {
     pub stub_data: Vec<u8>,
 }
 
+impl StaticName for Response {
+    const NAME: &'static str = "Response";
+}
+
 impl Encode for Response {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
         dst.write_u8(self.cancel_count);

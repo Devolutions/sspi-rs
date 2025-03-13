@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{Decode, DecodeWithContext, Encode, Padding, ReadCursor, Result, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, Padding, ReadCursor, Result, StaticName, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -54,8 +54,14 @@ pub struct SyntaxId {
     pub version_minor: u16,
 }
 
+impl StaticName for SyntaxId {
+    const NAME: &'static str = "SyntaxId";
+}
+
 impl Encode for SyntaxId {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         self.uuid.encode_cursor(dst)?;
         dst.write_u16(self.version);
         dst.write_u16(self.version_minor);
@@ -85,8 +91,14 @@ pub struct ContextElement {
     pub transfer_syntaxes: Vec<SyntaxId>,
 }
 
+impl StaticName for ContextElement {
+    const NAME: &'static str = "ContextElement";
+}
+
 impl Encode for ContextElement {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.context_id);
         dst.write_u16(self.transfer_syntaxes.len().try_into()?);
 
@@ -158,8 +170,14 @@ pub struct ContextResult {
     pub syntax_version: u32,
 }
 
+impl StaticName for ContextResult {
+    const NAME: &'static str = "ContextResult";
+}
+
 impl Encode for ContextResult {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.result.as_u16());
         dst.write_u16(self.reason);
         self.syntax.encode_cursor(dst)?;
@@ -192,8 +210,14 @@ pub struct Bind {
     pub contexts: Vec<ContextElement>,
 }
 
+impl StaticName for Bind {
+    const NAME: &'static str = "Bind";
+}
+
 impl Encode for Bind {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.max_xmit_frag);
         dst.write_u16(self.max_recv_frag);
         dst.write_u32(self.assoc_group);
@@ -235,8 +259,14 @@ pub struct BindAck {
     pub results: Vec<ContextResult>,
 }
 
+impl StaticName for BindAck {
+    const NAME: &'static str = "BindAck";
+}
+
 impl Encode for BindAck {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.max_xmit_frag);
         dst.write_u16(self.max_recv_frag);
         dst.write_u32(self.assoc_group);
@@ -304,8 +334,14 @@ pub struct BindNak {
     pub versions: Vec<(u8, u8)>,
 }
 
+impl StaticName for BindNak {
+    const NAME: &'static str = "BindNak";
+}
+
 impl Encode for BindNak {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u16(self.reason);
 
         dst.write_u8(self.versions.len().try_into()?);
@@ -343,8 +379,14 @@ impl Decode for BindNak {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterContext(pub Bind);
 
+impl StaticName for AlterContext {
+    const NAME: &'static str = "AlterContext";
+}
+
 impl Encode for AlterContext {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         self.0.encode_cursor(dst)
     }
 
@@ -363,8 +405,14 @@ impl Decode for AlterContext {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterContextResponse(pub BindAck);
 
+impl StaticName for AlterContextResponse {
+    const NAME: &'static str = "AlterContextResponse";
+}
+
 impl Encode for AlterContextResponse {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         self.0.encode_cursor(dst)
     }
 

@@ -5,7 +5,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, StaticName, WriteCursor};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -142,8 +142,14 @@ pub struct DataRepr {
     pub floating_point: FloatingPointRepr,
 }
 
+impl StaticName for DataRepr {
+    const NAME: &'static str = "DataRepr";
+}
+
 impl Encode for DataRepr {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         let first_octet = ((self.byte_order.as_u8()) << 4) | self.character.as_u8();
         dst.write_u8(first_octet);
         dst.write_u8(self.floating_point.as_u8());
@@ -200,8 +206,14 @@ impl PduHeader {
     pub const LENGTH: usize = 16;
 }
 
+impl StaticName for PduHeader {
+    const NAME: &'static str = "PduHeader";
+}
+
 impl Encode for PduHeader {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u8(self.version);
         dst.write_u8(self.version_minor);
         dst.write_u8(self.packet_type.as_u8());
@@ -290,8 +302,14 @@ impl SecurityTrailer {
     pub const HEADER_LEN: usize = 8;
 }
 
+impl StaticName for SecurityTrailer {
+    const NAME: &'static str = "SecurityTrailer";
+}
+
 impl Encode for SecurityTrailer {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u8(self.security_type.as_u8());
         dst.write_u8(self.level.as_u8());
         dst.write_u8(self.pad_length);
@@ -348,8 +366,14 @@ pub struct Fault {
     pub stub_data: Vec<u8>,
 }
 
+impl StaticName for Fault {
+    const NAME: &'static str = "Fault";
+}
+
 impl Encode for Fault {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
         dst.write_u8(self.cancel_count);
@@ -423,6 +447,10 @@ impl NeedsContext for PduData {
     type Context<'ctx> = &'ctx PduHeader;
 }
 
+impl StaticName for PduData {
+    const NAME: &'static str = "PduData";
+}
+
 impl DecodeWithContext for PduData {
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
         let security_trailer_len = if pdu_header.auth_len > 0 {
@@ -452,6 +480,8 @@ impl DecodeWithContext for PduData {
 
 impl Encode for PduData {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         match self {
             PduData::Bind(bind) => bind.encode_cursor(dst),
             PduData::BindAck(bind_ack) => bind_ack.encode_cursor(dst),
@@ -498,8 +528,14 @@ impl Pdu {
     }
 }
 
+impl StaticName for Pdu {
+    const NAME: &'static str = "Pdu";
+}
+
 impl Encode for Pdu {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         self.header.encode_cursor(dst)?;
         self.data.encode_cursor(dst)?;
         self.security_trailer.encode_cursor(dst)?;

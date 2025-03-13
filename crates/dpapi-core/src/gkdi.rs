@@ -8,7 +8,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, from_utf16_le};
-use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, WriteCursor, read_c_str_utf16_le};
+use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, WriteCursor, read_c_str_utf16_le, StaticName};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -70,8 +70,14 @@ impl GetKey {
     pub const OPNUM: u16 = 0;
 }
 
+impl StaticName for GetKey {
+    const NAME: &'static str = "GetKey";
+}
+
 impl Encode for GetKey {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         let target_sd_len = self.target_sd.len().try_into()?;
         // cbTargetSD
         dst.write_u64(target_sd_len);
@@ -184,8 +190,14 @@ impl KdfParameters {
     const MAGIC_IDENTIFIER_2: &[u8] = &[0x00, 0x00, 0x00, 0x00];
 }
 
+impl StaticName for KdfParameters {
+    const NAME: &'static str = "KdfParameters";
+}
+
 impl Encode for KdfParameters {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
 
         dst.write_slice(Self::MAGIC_IDENTIFIER_1);
@@ -272,8 +284,14 @@ impl FfcdhParameters {
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x4d];
 }
 
+impl StaticName for FfcdhParameters {
+    const NAME: &'static str = "SyntaxId";
+}
+
 impl Encode for FfcdhParameters {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         // Calculate total structure length and write it.
         //
         // Length (4 bytes):  A 32-bit unsigned integer. This field MUST be the length, in bytes, of the entire structure. This field is encoded using little-endian format:
@@ -357,8 +375,14 @@ impl FfcdhKey {
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x42];
 }
 
+impl StaticName for FfcdhKey {
+    const NAME: &'static str = "FfcdhKey";
+}
+
 impl Encode for FfcdhKey {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_slice(Self::MAGIC);
 
         dst.write_u32(self.key_length);
@@ -462,8 +486,14 @@ pub struct EcdhKey {
     pub y: BigUint,
 }
 
+impl StaticName for EcdhKey {
+    const NAME: &'static str = "EcdhKey";
+}
+
 impl Encode for EcdhKey {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_slice(self.curve.into());
 
         dst.write_u32(self.key_length);
@@ -500,6 +530,149 @@ impl Decode for EcdhKey {
             key_length,
             x: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
             y: BigUint::from_bytes_be(src.read_slice(key_length.try_into()?)),
+        })
+    }
+}
+
+/// Key Identifier
+///
+/// This contains the key identifier info that can be used by MS-GKDI GetKey to retrieve the group key seed values.
+/// This structure is not defined publicly by Microsoft but it closely matches the [GroupKeyEnvelope] structure.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct KeyIdentifier {
+    /// The version of the structure.
+    pub version: u32,
+    /// Flags describing the values inside the structure.
+    pub flags: u32,
+
+    /// The L0 index of the key.
+    pub l0: i32,
+    /// The L1 index of the key.
+    pub l1: i32,
+    /// The L2 index of the key.
+    pub l2: i32,
+    /// A GUID that identifies a root key.
+    pub root_key_identifier: Uuid,
+
+    /// Key info.
+    pub key_info: Vec<u8>,
+    /// The domain name of the server in DNS format.
+    pub domain_name: String,
+    /// The forest name of the server in DNS format.
+    pub forest_name: String,
+}
+
+impl KeyIdentifier {
+    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
+    const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
+
+    pub fn is_public_key(&self) -> bool {
+        self.flags & 1 != 0
+    }
+}
+
+impl StaticName for KeyIdentifier {
+    const NAME: &'static str = "KeyIdentifier";
+}
+
+impl Encode for KeyIdentifier {
+    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
+        let domain_name = encode_utf16_le(&self.domain_name);
+        let forest_name = encode_utf16_le(&self.forest_name);
+
+        dst.write_u32(self.version);
+        dst.write_slice(&Self::MAGIC);
+        dst.write_u32(self.flags);
+
+        dst.write_i32(self.l0);
+        dst.write_i32(self.l1);
+        dst.write_i32(self.l2);
+
+        self.root_key_identifier.encode_cursor(dst)?;
+
+        dst.write_u32(self.key_info.len().try_into()?);
+        dst.write_u32(domain_name.len().try_into()?);
+        dst.write_u32(forest_name.len().try_into()?);
+
+        dst.write_slice(&self.key_info);
+        dst.write_slice(&domain_name);
+        dst.write_slice(&forest_name);
+
+        Ok(())
+    }
+
+    fn frame_length(&self) -> usize {
+        4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
+        + self.root_key_identifier.frame_length() + 4 /* key_info len */ + 4 /* domain_name len */
+        + 4 /* forest_name len */ + self.key_info.len() + encode_utf16_le(&self.domain_name).len() + encode_utf16_le(&self.forest_name).len()
+    }
+}
+
+impl Decode for KeyIdentifier {
+    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        let version = src.read_u32();
+
+        let magic = src.read_slice(Self::MAGIC.len());
+
+        if magic != Self::MAGIC {
+            return Err(Error::InvalidMagic {
+                name: "KeyIdentifier",
+                expected: Self::MAGIC.as_slice(),
+                actual: magic.to_vec(),
+            });
+        }
+
+        let flags = src.read_u32();
+
+        let l0 = src.read_i32();
+        let l1 = src.read_i32();
+        let l2 = src.read_i32();
+        let root_key_identifier = Uuid::decode_cursor(src)?;
+
+        let key_info_len = src.read_u32();
+
+        let domain_len = src.read_u32().try_into()?;
+        if domain_len <= 2 {
+            return Err(Error::InvalidLength {
+                name: "KeyIdentifier domain name",
+                expected: 2,
+                actual: domain_len,
+            });
+        }
+        let domain_len = domain_len - 2 /* UTF16 null terminator */;
+
+        let forest_len = src.read_u32().try_into()?;
+        if forest_len <= 2 {
+            return Err(Error::InvalidLength {
+                name: "KeyIdentifier forest name",
+                expected: 2,
+                actual: forest_len,
+            });
+        }
+        let forest_len = forest_len - 2 /* UTF16 null terminator */;
+
+        let key_info = src.read_slice(key_info_len.try_into()?).to_vec();
+
+        let domain_name = src.read_slice(domain_len);
+        // Read UTF16 null terminator.
+        src.read_u16();
+
+        let forest_name = src.read_slice(forest_len);
+        // Read UTF16 null terminator.
+        src.read_u16();
+
+        Ok(Self {
+            version,
+            flags,
+            l0,
+            l1,
+            l2,
+            root_key_identifier,
+            key_info,
+            domain_name: from_utf16_le(domain_name)?,
+            forest_name: from_utf16_le(forest_name)?,
         })
     }
 }
@@ -563,8 +736,14 @@ impl GroupKeyEnvelope {
     }
 }
 
+impl StaticName for GroupKeyEnvelope {
+    const NAME: &'static str = "GroupKeyEnvelope";
+}
+
 impl Encode for GroupKeyEnvelope {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+        ensure_size!(in: dst, size: self.frame_length());
+
         dst.write_u32(Self::VERSION);
 
         dst.write_slice(Self::MAGIC);
