@@ -32,13 +32,13 @@ impl Decode for (u8, u8) {
 /// PDU that can be decoded from a binary input and provided context.
 pub trait DecodeWithContext: Sized + NeedsContext {
     /// Decodes PDU from a binary input with provided context.
-    fn decode_with_context<'ctx>(src: &[u8], ctx: Self::Context<'ctx>) -> Result<Self> {
+    fn decode_with_context(src: &[u8], ctx: Self::Context<'_>) -> Result<Self> {
         let mut cursor = ReadCursor::new(src);
         Self::decode_cursor_with_context(&mut cursor, ctx)
     }
 
     /// Decodes PDU from a [`ReadCursor`] with provided context.
-    fn decode_cursor_with_context<'ctx>(src: &mut ReadCursor<'_>, ctx: Self::Context<'ctx>) -> Result<Self>;
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self>;
 }
 
 impl<T: Decode> DecodeWithContext for Vec<T> {
@@ -74,5 +74,5 @@ pub fn read_c_str_utf16_le(len: usize, src: &mut ReadCursor<'_>) -> Result<Strin
     // Read UTF16 null terminator.
     src.read_u16();
 
-    from_utf16_le(&buf)
+    from_utf16_le(buf)
 }

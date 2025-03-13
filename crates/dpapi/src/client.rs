@@ -132,7 +132,7 @@ fn process_get_key_result(response: &Response, security_trailer: Option<Security
 
 #[instrument(ret)]
 fn decrypt_blob(blob: &DpapiBlob, key: &GroupKeyEnvelope) -> Result<Vec<u8>> {
-    let kek = get_kek(&key, &blob.key_identifier)?;
+    let kek = get_kek(key, &blob.key_identifier)?;
 
     // With the kek we can unwrap the encrypted cek in the LAPS payload.
     let cek = cek_decrypt(&blob.enc_cek_algorithm_id, &kek, &blob.enc_cek)?;
@@ -159,7 +159,7 @@ fn encrypt_blob(
 
     let enc_content = content_encrypt(&enc_content_algorithm_id, &cek, data)?;
 
-    let (kek, key_identifier) = new_kek(&key)?;
+    let (kek, key_identifier) = new_kek(key)?;
     let enc_cek = cek_encrypt(&enc_cek_algorithm_id, &kek, &cek)?;
 
     let mut buf = Vec::new();

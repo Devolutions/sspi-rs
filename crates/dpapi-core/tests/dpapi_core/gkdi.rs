@@ -1,4 +1,6 @@
-use dpapi_core::gkdi::{KdfParameters, FfcdhParameters, FfcdhKey, EcdhKey, GroupKeyEnvelope, EllipticCurve, HashAlg, GetKey};
+use dpapi_core::gkdi::{
+    EcdhKey, EllipticCurve, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, HashAlg, KdfParameters,
+};
 use num_bigint_dig::BigUint;
 use uuid::uuid;
 

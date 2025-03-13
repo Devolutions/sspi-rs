@@ -413,7 +413,7 @@ impl Decode for EptMap {
         let obj = src.read_slice(16);
 
         let obj = if obj != [0; 16] {
-            Some(Uuid::from_slice_le(&obj)?)
+            Some(Uuid::from_slice_le(obj)?)
         } else {
             None
         };

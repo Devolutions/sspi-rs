@@ -424,7 +424,7 @@ impl NeedsContext for PduData {
 }
 
 impl DecodeWithContext for PduData {
-    fn decode_cursor_with_context<'ctx>(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'ctx>) -> Result<Self> {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
         let security_trailer_len = if pdu_header.auth_len > 0 {
             SecurityTrailer::HEADER_LEN
         } else {

@@ -35,7 +35,7 @@ impl NeedsContext for Request {
 }
 
 impl DecodeWithContext for Request {
-    fn decode_cursor_with_context<'ctx>(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'ctx>) -> Result<Self> {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),

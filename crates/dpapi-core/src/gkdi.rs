@@ -241,7 +241,7 @@ impl Decode for KdfParameters {
         src.read_u16();
 
         Ok(Self {
-            hash_alg: from_utf16_le(&buf)?.as_str().try_into()?,
+            hash_alg: from_utf16_le(buf)?.as_str().try_into()?,
         })
     }
 }
