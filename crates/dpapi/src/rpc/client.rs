@@ -149,7 +149,7 @@ impl RpcClient {
 
         // The security trailer must be aligned to the next 16 byte boundary after the stub data.
         // This padding is included as part of the stub data to be encrypted.
-        let padding_len = Padding::<4>::padding(stub_data.len());
+        let padding_len = Padding::<16>::padding(stub_data.len());
         stub_data.extend_from_slice(&vec![0; padding_len]);
         let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
 
