@@ -7,7 +7,9 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{Decode, Encode, Padding, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
+use crate::{
+    Decode, DecodeWithContext, Encode, NeedsContext, Padding, ReadCursor, Result, StaticName, WriteBuf, WriteCursor,
+};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -104,28 +106,6 @@ impl Encode for BaseFloor {
     }
 }
 
-impl Decode for BaseFloor {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
-
-        let lhs_len = usize::from(src.read_u16() - 1);
-
-        let protocol_value = src.read_u8();
-        let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
-
-        ensure_size!(in: src, size: lhs_len);
-        let lhs = src.read_slice(lhs_len).to_vec();
-
-        ensure_size!(in: src, size: 2);
-        let rhs_len = usize::from(src.read_u16());
-
-        ensure_size!(in: src, size: rhs_len);
-        let rhs = src.read_slice(rhs_len).to_vec();
-
-        Ok(Self { protocol, lhs, rhs })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcpFloor {
     pub port: u16,
@@ -141,8 +121,26 @@ impl Encode for TcpFloor {
     }
 }
 
-impl TcpFloor {
-    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+impl StaticName for TcpFloor {
+    const NAME: &'static str = "TcpFloor";
+}
+
+impl NeedsContext for TcpFloor {
+    type Context<'ctx> = usize;
+}
+
+impl DecodeWithContext for TcpFloor {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: ctx);
+
+        let _lhs = src.read_slice(ctx);
+
+        ensure_size!(in: src, size: 2);
+        let rhs_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
+
         if rhs.len() != 2 {
             Err(EpmError::InvalidFloorValue(
                 "invalid TcpFloor rhs value length: expected exactly 2 bytes",
@@ -160,6 +158,14 @@ pub struct IpFloor {
     pub addr: u32,
 }
 
+impl StaticName for IpFloor {
+    const NAME: &'static str = "IpFloor";
+}
+
+impl NeedsContext for IpFloor {
+    type Context<'ctx> = usize;
+}
+
 impl Encode for IpFloor {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
         BaseFloor::new(FloorProtocol::Ip, Vec::new(), self.addr.to_be_bytes().to_vec()).encode_cursor(dst)
@@ -170,8 +176,18 @@ impl Encode for IpFloor {
     }
 }
 
-impl IpFloor {
-    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+impl DecodeWithContext for IpFloor {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: ctx);
+
+        let _lhs = src.read_slice(ctx);
+
+        ensure_size!(in: src, size: 2);
+        let rhs_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
+
         if rhs.len() != 4 {
             Err(EpmError::InvalidFloorValue(
                 "invalid IpFloor rhs value length: expected exactly 4 bytes",
@@ -187,6 +203,14 @@ impl IpFloor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcConnectionOrientedFloor {
     pub version_minor: u16,
+}
+
+impl StaticName for RpcConnectionOrientedFloor {
+    const NAME: &'static str = "RpcConnectionOrientedFloor";
+}
+
+impl NeedsContext for RpcConnectionOrientedFloor {
+    type Context<'ctx> = usize;
 }
 
 impl Encode for RpcConnectionOrientedFloor {
@@ -209,8 +233,18 @@ impl Encode for RpcConnectionOrientedFloor {
     }
 }
 
-impl RpcConnectionOrientedFloor {
-    fn decode(_lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+impl DecodeWithContext for RpcConnectionOrientedFloor {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: ctx);
+
+        let _lhs = src.read_slice(ctx);
+
+        ensure_size!(in: src, size: 2);
+        let rhs_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
+
         if rhs.len() != 2 {
             Err(EpmError::InvalidFloorValue(
                 "invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes",
@@ -230,6 +264,14 @@ pub struct UuidFloor {
     pub version_minor: u16,
 }
 
+impl StaticName for UuidFloor {
+    const NAME: &'static str = "UuidFloor";
+}
+
+impl NeedsContext for UuidFloor {
+    type Context<'ctx> = usize;
+}
+
 impl Encode for UuidFloor {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
         let mut lhs = self.uuid.to_bytes_le().to_vec();
@@ -246,8 +288,18 @@ impl Encode for UuidFloor {
     }
 }
 
-impl UuidFloor {
-    fn decode(lhs: &[u8], rhs: &[u8]) -> Result<Self> {
+impl DecodeWithContext for UuidFloor {
+    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: ctx);
+
+        let lhs = src.read_slice(ctx);
+
+        ensure_size!(in: src, size: 2);
+        let rhs_len = usize::from(src.read_u16());
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
+
         if lhs.len() != 18 {
             Err(EpmError::InvalidFloorValue(
                 "invalid UuidFloor lhs value length: expected exactly 18 bytes",
@@ -282,8 +334,6 @@ impl StaticName for Floor {
 
 impl Encode for Floor {
     fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
-
         match self {
             Floor::Tcp(tcp_floor) => tcp_floor.encode_cursor(dst),
             Floor::Ip(ip_floor) => ip_floor.encode_cursor(dst),
@@ -306,15 +356,20 @@ impl Encode for Floor {
 
 impl Decode for Floor {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        let BaseFloor { protocol, lhs, rhs } = BaseFloor::decode_cursor(src)?;
+        ensure_size!(in: src, size: BaseFloor::FIXED_PART_SIZE);
+
+        let lhs_len = usize::from(src.read_u16() - 1);
+
+        let protocol_value = src.read_u8();
+        let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
 
         Ok(match protocol {
-            FloorProtocol::Tcp => Floor::Tcp(TcpFloor::decode(&lhs, &rhs)?),
-            FloorProtocol::Ip => Floor::Ip(IpFloor::decode(&lhs, &rhs)?),
+            FloorProtocol::Tcp => Floor::Tcp(TcpFloor::decode_cursor_with_context(src, lhs_len)?),
+            FloorProtocol::Ip => Floor::Ip(IpFloor::decode_cursor_with_context(src, lhs_len)?),
             FloorProtocol::RpcConnectionOriented => {
-                Floor::RpcConnectionOriented(RpcConnectionOrientedFloor::decode(&lhs, &rhs)?)
+                Floor::RpcConnectionOriented(RpcConnectionOrientedFloor::decode_cursor_with_context(src, lhs_len)?)
             }
-            FloorProtocol::UuidId => Floor::Uuid(UuidFloor::decode(&lhs, &rhs)?),
+            FloorProtocol::UuidId => Floor::Uuid(UuidFloor::decode_cursor_with_context(src, lhs_len)?),
             protocol => Err(EpmError::UnsupportedFloor(protocol))?,
         })
     }

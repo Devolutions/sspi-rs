@@ -5,7 +5,9 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, StaticName, WriteCursor, Padding};
+use crate::{
+    Decode, DecodeWithContext, Encode, FindLength, NeedsContext, Padding, ReadCursor, Result, StaticName, WriteCursor,
+};
 
 #[derive(Error, Debug)]
 pub enum PduError {
