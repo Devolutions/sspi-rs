@@ -86,7 +86,7 @@ impl Encode for GetKey {
 
         dst.write_slice(&self.target_sd);
 
-        Padding::<8>::write(self.target_sd.len(), dst);
+        Padding::<8>::write(self.target_sd.len(), dst)?;
 
         if let Some(root_key_id) = self.root_key_id.as_ref() {
             dst.write_slice(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);

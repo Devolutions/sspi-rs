@@ -302,4 +302,9 @@ impl<'a> WriteCursor<'a> {
     pub fn write_f64(&mut self, value: f64) {
         self.write_array(&value.to_le_bytes())
     }
+    
+    /// Advances the pointer of the cursor on a given `len`.
+    pub fn advance(&mut self, len: usize) {
+        self.pos += len;
+    }
 }

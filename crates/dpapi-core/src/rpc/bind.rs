@@ -313,7 +313,7 @@ impl Encode for BindAck {
             0
         } + 2 /* length in bytes */;
 
-        Padding::<4>::write(sec_addr_len, dst);
+        Padding::<4>::write(sec_addr_len, dst)?;
 
         dst.write_u32(self.results.len().try_into()?);
         self.results.encode_cursor(dst)?;
@@ -386,7 +386,7 @@ impl Encode for BindNak {
         self.versions.encode_cursor(dst)?;
 
         let versions_buf_len = 1 /* len */ + self.versions.frame_length();
-        Padding::<4>::write(versions_buf_len, dst);
+        Padding::<4>::write(versions_buf_len, dst)?;
 
         Ok(())
     }

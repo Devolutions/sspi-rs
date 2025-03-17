@@ -5,7 +5,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, StaticName, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, FindLength, NeedsContext, ReadCursor, Result, StaticName, WriteCursor, Padding};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -158,8 +158,7 @@ impl Encode for DataRepr {
         dst.write_u8(first_octet);
         dst.write_u8(self.floating_point.as_u8());
 
-        // Padding
-        dst.write_u16(0);
+        Padding::<4>::write(2, dst)?;
 
         Ok(())
     }

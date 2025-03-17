@@ -394,6 +394,8 @@ pub struct EptMap {
 impl EptMap {
     pub const OPNUM: u16 = 3;
     const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
+    const TOWER_REFERENT_ID_1: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    const TOWER_REFERENT_ID_2: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
 impl StaticName for EptMap {
@@ -405,7 +407,7 @@ impl Encode for EptMap {
         ensure_size!(in: dst, size: self.frame_length());
 
         // obj with a referent id of 1
-        dst.write_slice(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        dst.write_slice(Self::TOWER_REFERENT_ID_1);
 
         if let Some(uuid) = self.obj {
             uuid.encode_cursor(dst)?;
@@ -414,7 +416,7 @@ impl Encode for EptMap {
         }
 
         // Tower referent id 2
-        dst.write_slice(&[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        dst.write_slice(Self::TOWER_REFERENT_ID_2);
 
         let mut encoded_tower = WriteBuf::new();
         encoded_tower.write_u16(u16::try_from(self.tower.len())?);
@@ -425,7 +427,7 @@ impl Encode for EptMap {
 
         dst.write_slice(encoded_tower.filled());
 
-        Padding::<8>::write(encoded_tower.filled_len() + 4, dst);
+        Padding::<8>::write(encoded_tower.filled_len() + 4, dst)?;
 
         self.entry_handle.encode_cursor(dst)?;
         dst.write_u32(self.max_towers);
@@ -522,7 +524,7 @@ impl Encode for EptMapResult {
             dst.write_u32(u32::try_from(encoded_tower.filled_len())?);
             dst.write_slice(encoded_tower.filled());
 
-            Padding::<4>::write(encoded_tower.filled_len(), dst);
+            Padding::<4>::write(encoded_tower.filled_len(), dst)?;
         }
 
         dst.write_u32(self.status);

@@ -1,7 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_core::rpc::SyntaxId;
-use dpapi_core::{Decode, ReadCursor};
+use dpapi_core::{ensure_size, Decode, Padding, ReadCursor};
 use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::uuid;
@@ -31,11 +31,13 @@ pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
 
     let mut src = ReadCursor::new(key_buf);
 
+    ensure_size!(name: "RPC GetKey Response", in: src, size: 4 /* key length */);
     let _key_length = src.read_u32();
-    // Skip padding
-    src.read_u32();
+
+    Padding::<8>::read(4, &mut src)?;
 
     // Skip the referent id and double up on pointer size
+    ensure_size!(name: "RPC GetKey Response", in: src, size: 16);
     src.read_u64();
     src.read_u64();
 
