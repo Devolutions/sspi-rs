@@ -6,7 +6,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{Decode, Encode, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
+use crate::{Decode, Encode, FixedPartSize, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -57,8 +57,6 @@ pub enum Command {
 }
 
 impl Command {
-    const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
-
     pub fn flags(&self) -> CommandFlags {
         match self {
             Command::Bitmask1(command) => command.flags,
@@ -82,6 +80,10 @@ impl Command {
             Command::Header2(command) => command.value_length(),
         }
     }
+}
+
+impl FixedPartSize for Command {
+    const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
 }
 
 impl StaticName for Command {
@@ -228,15 +230,13 @@ impl StaticName for CommandHeader2 {
 }
 
 impl CommandHeader2 {
-    const SIZE: usize = 4 /* packet_type + reserved */ + DataRepr::SIZE + 4 /* call_id */ + 2 /* context_id */ + 2 /* opnum */ + 2 /* value length */;
-
     fn value_length(&self) -> usize {
-        Self::SIZE
+        Self::FIXED_PART_SIZE
     }
 
     fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
         let mut src = ReadCursor::new(value);
-        ensure_size!(in: src, size: Self::SIZE - 2 /* value length is already read */);
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE - 2 /* value length is already read */);
 
         Ok(Self {
             flags,
@@ -276,6 +276,10 @@ impl CommandHeader2 {
     }
 }
 
+impl FixedPartSize for CommandHeader2 {
+    const FIXED_PART_SIZE: usize = 4 /* packet_type + reserved */ + DataRepr::FIXED_PART_SIZE + 4 /* call_id */ + 2 /* context_id */ + 2 /* opnum */ + 2 /* value length */;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerificationTrailer {
     pub commands: Vec<Command>,
@@ -283,6 +287,9 @@ pub struct VerificationTrailer {
 
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
+}
+
+impl FixedPartSize for VerificationTrailer {
     const FIXED_PART_SIZE: usize = Self::SIGNATURE.len();
 }
 

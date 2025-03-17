@@ -51,12 +51,15 @@ impl<T: Decode> DecodeWithContext for Vec<T> {
     }
 }
 
-/// Finds the precise byte count required to decode the frame from a possibly partial input.
-/// Incorrectly reading too few or too many bytes will lead to program malfunctions.
-pub trait FindLength {
+/// Fixed size of the srtructure.
+pub trait FixedPartSize {
     /// Size of the fixed part of frame.
     const FIXED_PART_SIZE: usize;
+}
 
+/// Finds the precise byte count required to decode the frame from a possibly partial input.
+/// Incorrectly reading too few or too many bytes will lead to program malfunctions.
+pub trait FindLength: FixedPartSize {
     /// Try to find the length of this frame given the first bytes.
     fn find_frame_length(bytes: &[u8]) -> Result<Option<usize>>;
 }

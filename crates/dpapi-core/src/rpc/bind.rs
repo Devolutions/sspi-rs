@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{Decode, DecodeWithContext, Encode, Padding, ReadCursor, Result, StaticName, WriteCursor};
+use crate::{Decode, DecodeWithContext, Encode, FixedPartSize, Padding, ReadCursor, Result, StaticName, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -54,8 +54,8 @@ pub struct SyntaxId {
     pub version_minor: u16,
 }
 
-impl SyntaxId {
-    const SIZE: usize = 16 /* uuid */ + 2 /* version */ + 2 /* version_minor */;
+impl FixedPartSize for SyntaxId {
+    const FIXED_PART_SIZE: usize = 16 /* uuid */ + 2 /* version */ + 2 /* version_minor */;
 }
 
 impl StaticName for SyntaxId {
@@ -74,13 +74,13 @@ impl Encode for SyntaxId {
     }
 
     fn frame_length(&self) -> usize {
-        Self::SIZE
+        Self::FIXED_PART_SIZE
     }
 }
 
 impl Decode for SyntaxId {
     fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
-        ensure_size!(in: src, size: Self::SIZE);
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
             uuid: Uuid::decode_cursor(src)?,
@@ -97,8 +97,8 @@ pub struct ContextElement {
     pub transfer_syntaxes: Vec<SyntaxId>,
 }
 
-impl ContextElement {
-    const FIXED_PART_SIZE: usize = 2 /* context_id */ + 2 /* transfer_syntaxes length */ + SyntaxId::SIZE;
+impl FixedPartSize for ContextElement {
+    const FIXED_PART_SIZE: usize = 2 /* context_id */ + 2 /* transfer_syntaxes length */ + SyntaxId::FIXED_PART_SIZE;
 }
 
 impl StaticName for ContextElement {
@@ -182,8 +182,8 @@ pub struct ContextResult {
     pub syntax_version: u32,
 }
 
-impl ContextResult {
-    const SIZE: usize = 2 /* result */ + 2 /* reason */ + 16 /* syntax */ + 4 /* syntax_version */;
+impl FixedPartSize for ContextResult {
+    const FIXED_PART_SIZE: usize = 2 /* result */ + 2 /* reason */ + 16 /* syntax */ + 4 /* syntax_version */;
 }
 
 impl StaticName for ContextResult {
@@ -203,13 +203,13 @@ impl Encode for ContextResult {
     }
 
     fn frame_length(&self) -> usize {
-        Self::SIZE
+        Self::FIXED_PART_SIZE
     }
 }
 
 impl Decode for ContextResult {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: Self::SIZE);
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
             result: src.read_u16().try_into()?,
@@ -228,7 +228,7 @@ pub struct Bind {
     pub contexts: Vec<ContextElement>,
 }
 
-impl Bind {
+impl FixedPartSize for Bind {
     const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 4 /* contexts length */;
 }
 
@@ -283,7 +283,7 @@ pub struct BindAck {
     pub results: Vec<ContextResult>,
 }
 
-impl BindAck {
+impl FixedPartSize for BindAck {
     const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 2 /* sec_addr lenght in bytes */;
 }
 
@@ -368,7 +368,7 @@ pub struct BindNak {
     pub versions: Vec<(u8, u8)>,
 }
 
-impl BindNak {
+impl FixedPartSize for BindNak {
     const FIXED_PART_SIZE: usize = 2 /* reason */ + 1 /* versions len */;
 }
 
@@ -419,6 +419,10 @@ impl Decode for BindNak {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterContext(pub Bind);
 
+impl FixedPartSize for AlterContext {
+    const FIXED_PART_SIZE: usize = Bind::FIXED_PART_SIZE;
+}
+
 impl StaticName for AlterContext {
     const NAME: &'static str = "AlterContext";
 }
@@ -444,6 +448,10 @@ impl Decode for AlterContext {
 // `AlterContextResponse` has the same layout as `BindAck`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterContextResponse(pub BindAck);
+
+impl FixedPartSize for AlterContextResponse {
+    const FIXED_PART_SIZE: usize = BindAck::FIXED_PART_SIZE;
+}
 
 impl StaticName for AlterContextResponse {
     const NAME: &'static str = "AlterContextResponse";

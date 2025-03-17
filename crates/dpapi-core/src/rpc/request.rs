@@ -3,7 +3,9 @@ use alloc::vec::Vec;
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{Decode, DecodeWithContext, Encode, NeedsContext, ReadCursor, Result, StaticName, WriteCursor};
+use crate::{
+    Decode, DecodeWithContext, Encode, FixedPartSize, NeedsContext, ReadCursor, Result, StaticName, WriteCursor,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -14,7 +16,7 @@ pub struct Request {
     pub stub_data: Vec<u8>,
 }
 
-impl Request {
+impl FixedPartSize for Request {
     const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 2 /* opnum */;
 }
 
@@ -70,7 +72,7 @@ pub struct Response {
     pub stub_data: Vec<u8>,
 }
 
-impl Response {
+impl FixedPartSize for Response {
     const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* reserved */;
 }
 

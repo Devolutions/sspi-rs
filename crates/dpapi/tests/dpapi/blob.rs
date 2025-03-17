@@ -1,4 +1,5 @@
 use dpapi::blob::*;
+use dpapi_core::gkdi::KeyIdentifier;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesAuthEncParams, AesMode, AesParameters};
 use uuid::uuid;

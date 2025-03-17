@@ -8,7 +8,8 @@ use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
 use crate::{
-    Decode, DecodeWithContext, Encode, NeedsContext, Padding, ReadCursor, Result, StaticName, WriteBuf, WriteCursor,
+    Decode, DecodeWithContext, Encode, FixedPartSize, NeedsContext, Padding, ReadCursor, Result, StaticName, WriteBuf,
+    WriteCursor,
 };
 
 #[derive(Debug, Error)]
@@ -73,7 +74,7 @@ pub struct BaseFloor {
     pub rhs: Vec<u8>,
 }
 
-impl BaseFloor {
+impl FixedPartSize for BaseFloor {
     const FIXED_PART_SIZE: usize = 2 /* lhs + protocol byte length */ + 1 /* protocol byte */;
 }
 
@@ -328,6 +329,10 @@ pub enum Floor {
     Uuid(UuidFloor),
 }
 
+impl FixedPartSize for Floor {
+    const FIXED_PART_SIZE: usize = 2 /* lhs + protocol byte length */ + 1 /* protocol byte */;
+}
+
 impl StaticName for Floor {
     const NAME: &'static str = "Floor";
 }
@@ -356,7 +361,7 @@ impl Encode for Floor {
 
 impl Decode for Floor {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: BaseFloor::FIXED_PART_SIZE);
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let lhs_len = usize::from(src.read_u16() - 1);
 
@@ -398,6 +403,10 @@ pub fn build_tcpip_tower(service: SyntaxId, data_rep: SyntaxId, port: u16, addr:
 pub type EntryHandle = (u32, Uuid);
 const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
 
+impl FixedPartSize for Option<EntryHandle> {
+    const FIXED_PART_SIZE: usize = EMPTY_ENTRY_HANDLE.len();
+}
+
 impl StaticName for Option<EntryHandle> {
     const NAME: &'static str = "Option<EntryHandle>";
 }
@@ -417,15 +426,15 @@ impl Encode for Option<EntryHandle> {
     }
 
     fn frame_length(&self) -> usize {
-        EMPTY_ENTRY_HANDLE.len()
+        Self::FIXED_PART_SIZE
     }
 }
 
 impl Decode for Option<EntryHandle> {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: EMPTY_ENTRY_HANDLE.len());
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        let entry_handle_buf = src.read_slice(EMPTY_ENTRY_HANDLE.len());
+        let entry_handle_buf = src.read_slice(Self::FIXED_PART_SIZE);
 
         Ok(if entry_handle_buf != EMPTY_ENTRY_HANDLE {
             Some((
@@ -448,9 +457,12 @@ pub struct EptMap {
 
 impl EptMap {
     pub const OPNUM: u16 = 3;
-    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
     const TOWER_REFERENT_ID_1: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     const TOWER_REFERENT_ID_2: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+impl FixedPartSize for EptMap {
+    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
 }
 
 impl StaticName for EptMap {
@@ -546,6 +558,10 @@ pub struct EptMapResult {
     pub status: u32,
 }
 
+impl FixedPartSize for EptMapResult {
+    const FIXED_PART_SIZE: usize = Option::<EntryHandle>::FIXED_PART_SIZE + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */ + 8 /* towers len */;
+}
+
 impl StaticName for EptMapResult {
     const NAME: &'static str = "EptMapResult";
 }
@@ -588,8 +604,7 @@ impl Encode for EptMapResult {
     }
 
     fn frame_length(&self) -> usize {
-        self.entry_handle.frame_length() + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */
-        + 8 /* towers len */ + self.towers.len() * 8 + self.towers.iter().map(|tower| {
+        Self::FIXED_PART_SIZE + self.towers.len() * 8 + self.towers.iter().map(|tower| {
             let encoded_tower_length = 2 /* tower len */ + tower.frame_length() + 8 /* encoded tower len */ + 4 /* encoded tower len */;
             let padding_len = Padding::<4>::padding(encoded_tower_length);
 
@@ -600,9 +615,10 @@ impl Encode for EptMapResult {
 
 impl Decode for EptMapResult {
     fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
         let entry_handle = Option::decode_cursor(src)?;
 
-        ensure_size!(in: src, size: 4 /* num towers */ + 8 /* max towers cound */ + 8 /* tower offset */ + 8 /* tower count */);
         // num towers
         src.read_u32();
         // max tower count

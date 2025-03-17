@@ -4,7 +4,7 @@ use dpapi_core::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_core::{Decode, Encode, Padding};
+use dpapi_core::{Decode, Encode, FixedPartSize, Padding};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
@@ -201,7 +201,7 @@ impl RpcClient {
             security_trailer_offset,
         } = encrypt_offsets;
 
-        if pdu_encoded.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
+        if pdu_encoded.len() < security_trailer_offset + SecurityTrailer::FIXED_PART_SIZE {
             Err(RpcClientError::InvalidEncryptionOffset(
                 "security trailer offset is too big or PDU is corrupted",
             ))?;
@@ -209,7 +209,7 @@ impl RpcClient {
 
         let (header, data) = pdu_encoded.split_at_mut(pdu_header_len);
         let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
-        let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
+        let (sec_trailer_header, sec_trailer_auth_value) = data.split_at_mut(SecurityTrailer::FIXED_PART_SIZE);
 
         if self.sign_header {
             self.auth
@@ -252,9 +252,9 @@ impl RpcClient {
         } = encrypt_offsets;
 
         let security_trailer_offset =
-            usize::from(pdu_header.frag_len) - usize::from(pdu_header.auth_len) - SecurityTrailer::HEADER_LEN;
+            usize::from(pdu_header.frag_len) - usize::from(pdu_header.auth_len) - SecurityTrailer::FIXED_PART_SIZE;
 
-        if response.len() < security_trailer_offset + SecurityTrailer::HEADER_LEN {
+        if response.len() < security_trailer_offset + SecurityTrailer::FIXED_PART_SIZE {
             Err(RpcClientError::InvalidEncryptionOffset(
                 "security trailer offset is too big or PDU is corrupted",
             ))?;
@@ -262,7 +262,7 @@ impl RpcClient {
 
         let (header, data) = response.split_at_mut(pdu_header_len);
         let (body, data) = data.split_at_mut(security_trailer_offset - pdu_header_len);
-        let (sec_trailer_header, sec_trailer_data) = data.split_at_mut(SecurityTrailer::HEADER_LEN);
+        let (sec_trailer_header, sec_trailer_data) = data.split_at_mut(SecurityTrailer::FIXED_PART_SIZE);
 
         if self.sign_header {
             self.auth
@@ -288,11 +288,11 @@ impl RpcClient {
         super::write_buf(&pdu_encoded, &mut self.stream)?;
 
         // Read PDU header
-        let mut pdu_buf = read_vec(PduHeader::SIZE, &mut self.stream)?;
+        let mut pdu_buf = read_vec(PduHeader::FIXED_PART_SIZE, &mut self.stream)?;
         let pdu_header = PduHeader::decode(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::SIZE..])?;
+        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::FIXED_PART_SIZE..])?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
