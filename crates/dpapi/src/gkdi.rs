@@ -21,10 +21,10 @@ pub const ISD_KEY: SyntaxId = SyntaxId {
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
     // status
-    if data.len() < 4 {
+    if data.len() < size_of::<u32>() {
         Err(GkdiError::BadResponse("response data length is too small"))?;
     }
-    let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
+    let (key_buf, mut hresult_buf) = data.split_at(data.len() - size_of::<u32>());
 
     let hresult = hresult_buf.read_u32::<LittleEndian>()?;
     if hresult != 0 {
@@ -39,7 +39,7 @@ pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
     Padding::<8>::read(4 /* key length */, &mut src)?;
 
     // Skip the referent id and double up on pointer size
-    ensure_size!(name: "RPC GetKey Response", in: src, size: 16);
+    ensure_size!(name: "RPC GetKey Response", in: src, size: 8 /* referent id */ + 8 /* pointer size */);
     src.read_u64();
     src.read_u64();
 
