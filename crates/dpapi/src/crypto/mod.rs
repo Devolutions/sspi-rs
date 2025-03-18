@@ -9,6 +9,7 @@ use dpapi_core::{Decode, Encode};
 use num_bigint_dig::BigUint;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
+use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::Rng;
 use thiserror::Error;
 use uuid::Uuid;
@@ -460,7 +461,13 @@ pub fn compute_kek(
         KDS_SERVICE_LABEL,
     )?;
 
-    Ok(kdf(algorithm, &secret, KDS_SERVICE_LABEL, kek_context, 32)?)
+    Ok(kdf(
+        algorithm,
+        &secret,
+        KDS_SERVICE_LABEL,
+        kek_context,
+        AES256_KEY_SIZE,
+    )?)
 }
 
 pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_public_key: &[u8]) -> Result<Vec<u8>> {

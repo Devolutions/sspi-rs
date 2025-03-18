@@ -588,6 +588,7 @@ pub struct KeyIdentifier {
 }
 
 impl KeyIdentifier {
+    pub const DEFAULT_VERSION: u32 = 1;
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
     const FIXED_PART_SIZE: usize = 4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */

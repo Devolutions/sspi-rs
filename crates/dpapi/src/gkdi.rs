@@ -2,6 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_core::rpc::SyntaxId;
 use dpapi_core::{ensure_size, Decode, Padding, ReadCursor};
+use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::OsRng;
 use rand::Rng;
 use uuid::uuid;
@@ -19,9 +20,8 @@ pub const ISD_KEY: SyntaxId = SyntaxId {
 
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
-    if data.len() < 4
-    /* status */
-    {
+    // status
+    if data.len() < 4 {
         Err(GkdiError::BadResponse("response data length is too small"))?;
     }
     let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
@@ -36,7 +36,7 @@ pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
     ensure_size!(name: "RPC GetKey Response", in: src, size: 4 /* key length */);
     let _key_length = src.read_u32();
 
-    Padding::<8>::read(4, &mut src)?;
+    Padding::<8>::read(4 /* key length */, &mut src)?;
 
     // Skip the referent id and double up on pointer size
     ensure_size!(name: "RPC GetKey Response", in: src, size: 16);
@@ -70,8 +70,14 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
 
         (kek, key_info)
     } else {
-        let key_info = rand.gen::<[u8; 32]>();
-        let kek = kdf(hash_alg, &group_key.l2_key, KDS_SERVICE_LABEL, &key_info, 32)?;
+        let key_info = rand.gen::<[u8; AES256_KEY_SIZE]>();
+        let kek = kdf(
+            hash_alg,
+            &group_key.l2_key,
+            KDS_SERVICE_LABEL,
+            &key_info,
+            AES256_KEY_SIZE,
+        )?;
 
         (kek, key_info.to_vec())
     };
@@ -79,7 +85,7 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
     Ok((
         kek,
         KeyIdentifier {
-            version: 1,
+            version: KeyIdentifier::DEFAULT_VERSION,
             flags: group_key.flags,
 
             l0: group_key.l0,
@@ -123,6 +129,12 @@ pub fn get_kek(group_key: &GroupKeyEnvelope, key_identifier: &KeyIdentifier) -> 
             group_key.private_key_length.div_ceil(8).try_into()?,
         )?)
     } else {
-        Ok(kdf(hash_alg, &l2_key, KDS_SERVICE_LABEL, &key_identifier.key_info, 32)?)
+        Ok(kdf(
+            hash_alg,
+            &l2_key,
+            KDS_SERVICE_LABEL,
+            &key_identifier.key_info,
+            AES256_KEY_SIZE,
+        )?)
     }
 }
