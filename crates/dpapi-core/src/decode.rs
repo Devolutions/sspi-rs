@@ -1,5 +1,4 @@
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use uuid::Uuid;
 
@@ -43,12 +42,6 @@ pub trait DecodeWithContext: Sized + NeedsContext {
 
     /// Decodes PDU from a [`ReadCursor`] with provided context.
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self>;
-}
-
-impl<T: Decode> DecodeWithContext for Vec<T> {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
-        (0..ctx).map(|_| T::decode_cursor(src)).collect()
-    }
 }
 
 /// Fixed size of the srtructure.

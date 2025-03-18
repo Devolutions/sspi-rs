@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{Decode, DecodeWithContext, Encode, FixedPartSize, Padding, ReadCursor, Result, StaticName, WriteCursor};
+use crate::{Decode, Encode, FixedPartSize, Padding, ReadCursor, Result, StaticName, WriteCursor};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -131,7 +131,9 @@ impl Decode for ContextElement {
         let transfer_syntaxes_count = usize::from(src.read_u16());
         let abstract_syntax = SyntaxId::decode_cursor(src)?;
 
-        let transfer_syntaxes = Vec::decode_cursor_with_context(src, transfer_syntaxes_count)?;
+        let transfer_syntaxes = (0..transfer_syntaxes_count)
+            .map(|_| SyntaxId::decode_cursor(src))
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             context_id,
@@ -263,7 +265,9 @@ impl Decode for Bind {
         let assoc_group = src.read_u32();
 
         let contexts_count = src.read_u32();
-        let contexts = Vec::decode_cursor_with_context(src, contexts_count.try_into()?)?;
+        let contexts = (0..contexts_count)
+            .map(|_| ContextElement::decode_cursor(src))
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             max_xmit_frag,
@@ -356,7 +360,9 @@ impl Decode for BindAck {
                 ensure_size!(in: src, size: 4);
                 let results_count = src.read_u32();
 
-                Vec::decode_cursor_with_context(src, results_count.try_into()?)?
+                (0..results_count)
+                    .map(|_| ContextResult::decode_cursor(src))
+                    .collect::<Result<Vec<_>>>()?
             },
         })
     }
@@ -404,7 +410,9 @@ impl Decode for BindNak {
             reason: src.read_u16(),
             versions: {
                 let versions_count = usize::from(src.read_u8());
-                let versions = Vec::decode_cursor_with_context(src, versions_count)?;
+                let versions = (0..versions_count)
+                    .map(|_| <(u8, u8)>::decode_cursor(src))
+                    .collect::<Result<Vec<_>>>()?;
 
                 let versions_buf_len = 1 /* len */ + versions.frame_length();
                 Padding::<4>::read(versions_buf_len, src)?;
