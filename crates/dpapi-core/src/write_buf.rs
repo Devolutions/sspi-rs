@@ -26,7 +26,6 @@ impl WriteBuf {
     /// Constructs a new, empty `WriteBuf`.
     ///
     /// The underlying buffer will not allocate until bytes are written to it.
-    #[inline]
     pub const fn new() -> Self {
         Self {
             inner: Vec::new(),
@@ -35,7 +34,6 @@ impl WriteBuf {
     }
 
     /// Constructs a new with a given buffer.
-    #[inline]
     pub const fn from_vec(buffer: Vec<u8>) -> Self {
         Self {
             inner: buffer,
@@ -44,7 +42,6 @@ impl WriteBuf {
     }
 
     /// Returns the underlying inner buffer.
-    #[inline]
     pub fn into_inner(self) -> Vec<u8> {
         self.inner
     }
@@ -52,20 +49,17 @@ impl WriteBuf {
     /// Returns the length of the filled region.
     ///
     /// This is always equal to the starting index for the unfilled initialized portion of the buffer.
-    #[inline]
     pub const fn filled_len(&self) -> usize {
         self.filled
     }
 
     /// Returns a shared reference to the filled portion of the buffer.
-    #[inline]
     #[track_caller]
     pub fn filled(&self) -> &[u8] {
         &self.inner[..self.filled]
     }
 
     /// Ensures initialized and unfilled portion of the buffer is big enough for `additional` more bytes.
-    #[inline]
     pub fn initialize(&mut self, additional: usize) {
         if self.inner.len() < self.filled + additional {
             self.inner.resize(self.filled + additional, 0);
@@ -74,7 +68,6 @@ impl WriteBuf {
 
     /// Returns a mutable reference to the first `n` bytes of the unfilled part of the buffer,
     /// allocating additional memory as necessary.
-    #[inline]
     #[track_caller]
     pub fn unfilled_to(&mut self, n: usize) -> &mut [u8] {
         self.initialize(n);
@@ -82,14 +75,12 @@ impl WriteBuf {
     }
 
     /// Returns a mutable reference to the unfilled part of the buffer.
-    #[inline]
     #[track_caller]
     pub fn unfilled_mut(&mut self) -> &mut [u8] {
         &mut self.inner[self.filled..]
     }
 
     /// Writes an array of length `N` into `Self`.
-    #[inline]
     #[track_caller]
     pub fn write_array<const N: usize>(&mut self, array: [u8; N]) {
         self.initialize(N);
@@ -98,7 +89,6 @@ impl WriteBuf {
     }
 
     /// Writes a slice of bytes into `Self`.
-    #[inline]
     #[track_caller]
     pub fn write_slice(&mut self, slice: &[u8]) {
         let n = slice.len();
@@ -108,28 +98,24 @@ impl WriteBuf {
     }
 
     /// Writes `u8` into `Self`.
-    #[inline]
     #[track_caller]
     pub fn write_u8(&mut self, value: u8) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u16` into `Self` in a little endian byte order.
-    #[inline]
     #[track_caller]
     pub fn write_u16(&mut self, value: u16) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u32` into `Self` in a little endian byte order.
-    #[inline]
     #[track_caller]
     pub fn write_u32(&mut self, value: u32) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u64` into `Self` in a little endian byte order.
-    #[inline]
     #[track_caller]
     pub fn write_u64(&mut self, value: u64) {
         self.write_array(value.to_le_bytes())
@@ -138,14 +124,12 @@ impl WriteBuf {
     /// Set the filled cursor to the very beginning of the buffer.
     ///
     /// If the buffer grew big, it is shrunk in order to reclaim memory.
-    #[inline]
     pub fn clear(&mut self) {
         self.filled = 0;
         self.inner.shrink_to(MAX_CAPACITY_WHEN_CLEARED);
     }
 
     /// Advances the buffer’s cursor of `len` bytes.
-    #[inline]
     #[track_caller]
     pub fn advance(&mut self, len: usize) {
         self.filled += len;
@@ -155,13 +139,11 @@ impl WriteBuf {
 
 #[cfg(feature = "std")]
 impl std::io::Write for WriteBuf {
-    #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.write_slice(buf);
         Ok(buf.len())
     }
 
-    #[inline]
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -172,7 +154,6 @@ impl std::io::Write for WriteBuf {
 impl Index<Range<usize>> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, range: Range<usize>) -> &Self::Output {
         &self.filled()[range]
     }
@@ -181,7 +162,6 @@ impl Index<Range<usize>> for WriteBuf {
 impl Index<RangeFrom<usize>> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, range: RangeFrom<usize>) -> &Self::Output {
         &self.filled()[range]
     }
@@ -190,7 +170,6 @@ impl Index<RangeFrom<usize>> for WriteBuf {
 impl Index<RangeFull> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, _: RangeFull) -> &Self::Output {
         self.filled()
     }
@@ -199,7 +178,6 @@ impl Index<RangeFull> for WriteBuf {
 impl Index<RangeInclusive<usize>> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, range: RangeInclusive<usize>) -> &Self::Output {
         &self.filled()[range]
     }
@@ -208,7 +186,6 @@ impl Index<RangeInclusive<usize>> for WriteBuf {
 impl Index<RangeTo<usize>> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, range: RangeTo<usize>) -> &Self::Output {
         &self.filled()[range]
     }
@@ -217,7 +194,6 @@ impl Index<RangeTo<usize>> for WriteBuf {
 impl Index<RangeToInclusive<usize>> for WriteBuf {
     type Output = [u8];
 
-    #[inline]
     fn index(&self, range: RangeToInclusive<usize>) -> &Self::Output {
         &self.filled()[range]
     }
