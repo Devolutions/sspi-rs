@@ -7,7 +7,7 @@ use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::str::encode_utf16_le;
+use crate::str::{encode_utf16_le, str_utf16_len};
 use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, StaticName, WriteCursor, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
@@ -219,9 +219,9 @@ impl Encode for KdfParameters {
     }
 
     fn frame_length(&self) -> usize {
-        let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
+        let encoded_hash_alg_len = str_utf16_len(&self.hash_alg.to_string());
 
-        Self::FIXED_PART_SIZE + encoded_hash_alg.len()
+        Self::FIXED_PART_SIZE + encoded_hash_alg_len
     }
 }
 
@@ -635,8 +635,8 @@ impl Encode for KeyIdentifier {
     fn frame_length(&self) -> usize {
         Self::FIXED_PART_SIZE
             + self.key_info.len()
-            + encode_utf16_le(&self.domain_name).len()
-            + encode_utf16_le(&self.forest_name).len()
+            + str_utf16_len(&self.domain_name)
+            + str_utf16_len(&self.forest_name)
     }
 }
 
@@ -817,18 +817,18 @@ impl Encode for GroupKeyEnvelope {
     }
 
     fn frame_length(&self) -> usize {
-        let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
-        let encoded_secret_alg = encode_utf16_le(&self.secret_algorithm);
-        let encoded_domain_name = encode_utf16_le(&self.domain_name);
-        let encoded_forest_name = encode_utf16_le(&self.forest_name);
+        let encoded_kdf_alg_len = str_utf16_len(&self.kdf_alg);
+        let encoded_secret_alg_len = str_utf16_len(&self.secret_algorithm);
+        let encoded_domain_name_len = str_utf16_len(&self.domain_name);
+        let encoded_forest_name_len = str_utf16_len(&self.forest_name);
 
         Self::FIXED_PART_SIZE
-            + encoded_kdf_alg.len()
+            + encoded_kdf_alg_len
             + self.kdf_parameters.len()
-            + encoded_secret_alg.len()
+            + encoded_secret_alg_len
             + self.secret_parameters.len()
-            + encoded_domain_name.len()
-            + encoded_forest_name.len()
+            + encoded_domain_name_len
+            + encoded_forest_name_len
             + self.l1_key.len()
             + self.l2_key.len()
     }

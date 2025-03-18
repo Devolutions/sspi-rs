@@ -33,3 +33,11 @@ pub fn encode_utf16_le(data: &str) -> Vec<u8> {
         .flat_map(|v| v.to_le_bytes())
         .collect::<Vec<_>>()
 }
+
+/// Calculates the size in bytes of the UTF16 encoded representation of
+/// the string slice.
+///
+/// *Note*: this function automatically counts a NULL-char.
+pub fn str_utf16_len(data: &str) -> usize {
+    data.encode_utf16().chain(core::iter::once(0)).count() * 2
+}
