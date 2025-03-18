@@ -19,9 +19,9 @@ pub trait Decode: Sized {
 
 impl Decode for Uuid {
     fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
-        ensure_size!(in: src, size: 16);
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        Ok(Uuid::from_slice_le(src.read_slice(16))?)
+        Ok(Uuid::from_slice_le(src.read_slice(Self::FIXED_PART_SIZE))?)
     }
 }
 
@@ -55,6 +55,10 @@ impl<T: Decode> DecodeWithContext for Vec<T> {
 pub trait FixedPartSize {
     /// Size of the fixed part of frame.
     const FIXED_PART_SIZE: usize;
+}
+
+impl FixedPartSize for Uuid {
+    const FIXED_PART_SIZE: usize = 16;
 }
 
 /// Finds the precise byte count required to decode the frame from a possibly partial input.

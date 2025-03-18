@@ -59,6 +59,7 @@ impl WriteBuf {
 
     /// Returns a shared reference to the filled portion of the buffer.
     #[inline]
+    #[track_caller]
     pub fn filled(&self) -> &[u8] {
         &self.inner[..self.filled]
     }
@@ -74,6 +75,7 @@ impl WriteBuf {
     /// Returns a mutable reference to the first `n` bytes of the unfilled part of the buffer,
     /// allocating additional memory as necessary.
     #[inline]
+    #[track_caller]
     pub fn unfilled_to(&mut self, n: usize) -> &mut [u8] {
         self.initialize(n);
         &mut self.inner[self.filled..self.filled + n]
@@ -81,12 +83,14 @@ impl WriteBuf {
 
     /// Returns a mutable reference to the unfilled part of the buffer.
     #[inline]
+    #[track_caller]
     pub fn unfilled_mut(&mut self) -> &mut [u8] {
         &mut self.inner[self.filled..]
     }
 
     /// Writes an array of length `N` into `Self`.
     #[inline]
+    #[track_caller]
     pub fn write_array<const N: usize>(&mut self, array: [u8; N]) {
         self.initialize(N);
         self.inner[self.filled..self.filled + N].copy_from_slice(&array);
@@ -95,6 +99,7 @@ impl WriteBuf {
 
     /// Writes a slice of bytes into `Self`.
     #[inline]
+    #[track_caller]
     pub fn write_slice(&mut self, slice: &[u8]) {
         let n = slice.len();
         self.initialize(n);
@@ -104,24 +109,28 @@ impl WriteBuf {
 
     /// Writes `u8` into `Self`.
     #[inline]
+    #[track_caller]
     pub fn write_u8(&mut self, value: u8) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u16` into `Self` in a little endian byte order.
     #[inline]
+    #[track_caller]
     pub fn write_u16(&mut self, value: u16) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u32` into `Self` in a little endian byte order.
     #[inline]
+    #[track_caller]
     pub fn write_u32(&mut self, value: u32) {
         self.write_array(value.to_le_bytes())
     }
 
     /// Writes `u64` into `Self` in a little endian byte order.
     #[inline]
+    #[track_caller]
     pub fn write_u64(&mut self, value: u64) {
         self.write_array(value.to_le_bytes())
     }
@@ -137,6 +146,7 @@ impl WriteBuf {
 
     /// Advances the buffer’s cursor of `len` bytes.
     #[inline]
+    #[track_caller]
     pub fn advance(&mut self, len: usize) {
         self.filled += len;
         debug_assert!(self.filled <= self.inner.len());

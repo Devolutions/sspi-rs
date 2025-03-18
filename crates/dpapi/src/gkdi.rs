@@ -19,7 +19,9 @@ pub const ISD_KEY: SyntaxId = SyntaxId {
 
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
-    if data.len() < 4 {
+    if data.len() < 4
+    /* status */
+    {
         Err(GkdiError::BadResponse("response data length is too small"))?;
     }
     let (key_buf, mut hresult_buf) = data.split_at(data.len() - 4);
@@ -60,7 +62,7 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
     let (kek, key_info) = if group_key.is_public_key() {
         // the L2 key is the peer's public key
 
-        let mut private_key = vec![group_key.private_key_length.div_ceil(8).try_into()?];
+        let mut private_key = vec![0; group_key.private_key_length.div_ceil(8).try_into()?];
         rand.fill(private_key.as_mut_slice());
 
         let kek = compute_kek(hash_alg, &group_key.secret_algorithm, &private_key, &group_key.l2_key)?;

@@ -7,7 +7,7 @@ use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::str::{encode_utf16_le, from_utf16_le};
+use crate::str::encode_utf16_le;
 use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, StaticName, WriteCursor, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
@@ -260,13 +260,8 @@ impl Decode for KdfParameters {
             })?;
         }
 
-        ensure_size!(in: src, size: hash_name_len);
-        let buf = src.read_slice(hash_name_len - 2 /* UTF-16 null terminator char */);
-        // Skip UTF-16 null terminator char.
-        src.read_u16();
-
         Ok(Self {
-            hash_alg: from_utf16_le(buf)?.as_str().try_into()?,
+            hash_alg: read_c_str_utf16_le(hash_name_len, src)?.as_str().try_into()?,
         })
     }
 }
@@ -677,7 +672,6 @@ impl Decode for KeyIdentifier {
                 actual: domain_len,
             });
         }
-        let domain_len = domain_len - 2 /* UTF16 null terminator */;
 
         let forest_len = src.read_u32().try_into()?;
         if forest_len <= 2 {
@@ -687,20 +681,9 @@ impl Decode for KeyIdentifier {
                 actual: forest_len,
             });
         }
-        let forest_len = forest_len - 2 /* UTF16 null terminator */;
 
         ensure_size!(in: src, size: key_info_len);
         let key_info = src.read_slice(key_info_len).to_vec();
-
-        ensure_size!(in: src, size: domain_len + 2);
-        let domain_name = src.read_slice(domain_len);
-        // Read UTF16 null terminator.
-        src.read_u16();
-
-        ensure_size!(in: src, size: forest_len + 2);
-        let forest_name = src.read_slice(forest_len);
-        // Read UTF16 null terminator.
-        src.read_u16();
 
         Ok(Self {
             version,
@@ -710,8 +693,8 @@ impl Decode for KeyIdentifier {
             l2,
             root_key_identifier,
             key_info,
-            domain_name: from_utf16_le(domain_name)?,
-            forest_name: from_utf16_le(forest_name)?,
+            domain_name: read_c_str_utf16_le(domain_len, src)?,
+            forest_name: read_c_str_utf16_le(forest_len, src)?,
         })
     }
 }

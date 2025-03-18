@@ -419,8 +419,10 @@ impl Decode for Fault {
             },
             status: src.read_u32(),
             stub_data: {
-                // alignment padding
-                src.read_u32();
+                Padding::<8>::read(
+                    4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4, /* status */
+                    src,
+                )?;
 
                 src.read_remaining().to_vec()
             },

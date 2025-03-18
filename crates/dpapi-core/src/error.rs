@@ -13,7 +13,7 @@ pub enum Error {
     },
 
     #[error("UUID error: {0}")]
-    Uuid(#[from] uuid::Error),
+    Uuid(uuid::Error),
 
     #[error(transparent)]
     IntConversion(#[from] core::num::TryFromIntError),
@@ -52,6 +52,14 @@ pub enum Error {
         expected: usize,
         actual: usize,
     },
+}
+
+// The `uuid::Error` implementes the `std::error::Error` trait only with `std` feature enabled.
+// So, we need to implement this conversion manually, because the `dpapi-core` is `no_std` by default.
+impl From<uuid::Error> for Error {
+    fn from(err: uuid::Error) -> Self {
+        Self::Uuid(err)
+    }
 }
 
 impl From<alloc::string::FromUtf16Error> for Error {

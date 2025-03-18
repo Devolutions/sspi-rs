@@ -179,11 +179,10 @@ impl Encode for IpFloor {
 
 impl DecodeWithContext for IpFloor {
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: ctx);
+        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
         let _lhs = src.read_slice(ctx);
 
-        ensure_size!(in: src, size: 2);
         let rhs_len = usize::from(src.read_u16());
 
         ensure_size!(in: src, size: rhs_len);
@@ -236,21 +235,19 @@ impl Encode for RpcConnectionOrientedFloor {
 
 impl DecodeWithContext for RpcConnectionOrientedFloor {
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
-        ensure_size!(in: src, size: ctx);
+        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
         let _lhs = src.read_slice(ctx);
 
-        ensure_size!(in: src, size: 2);
         let rhs_len = usize::from(src.read_u16());
-
-        ensure_size!(in: src, size: rhs_len);
-        let rhs = src.read_slice(rhs_len).to_vec();
-
-        if rhs.len() != 2 {
+        if rhs_len != 2 {
             Err(EpmError::InvalidFloorValue(
                 "invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes",
             ))?;
         }
+
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
             version_minor: u16::from_be_bytes(rhs.try_into().unwrap()),
@@ -291,6 +288,14 @@ impl Encode for UuidFloor {
 
 impl DecodeWithContext for UuidFloor {
     fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+        if ctx != Uuid::FIXED_PART_SIZE + 2
+        /* versioh */
+        {
+            Err(EpmError::InvalidFloorValue(
+                "invalid UuidFloor lhs value length: expected exactly 18 bytes",
+            ))?;
+        }
+
         ensure_size!(in: src, size: ctx);
 
         let lhs = src.read_slice(ctx);
@@ -298,24 +303,20 @@ impl DecodeWithContext for UuidFloor {
         ensure_size!(in: src, size: 2);
         let rhs_len = usize::from(src.read_u16());
 
-        ensure_size!(in: src, size: rhs_len);
-        let rhs = src.read_slice(rhs_len).to_vec();
-
-        if lhs.len() != 18 {
-            Err(EpmError::InvalidFloorValue(
-                "invalid UuidFloor lhs value length: expected exactly 18 bytes",
-            ))?;
-        }
-
-        if rhs.len() != 2 {
+        if rhs_len != 2
+        /* version minor */
+        {
             Err(EpmError::InvalidFloorValue(
                 "invalid UuidFloor rhs value length: expected exactly 2 bytes",
             ))?;
         }
 
+        ensure_size!(in: src, size: rhs_len);
+        let rhs = src.read_slice(rhs_len).to_vec();
+
         Ok(Self {
-            uuid: Uuid::from_slice_le(&lhs[0..16])?,
-            version: u16::from_le_bytes(lhs[16..].try_into().unwrap()),
+            uuid: Uuid::from_slice_le(&lhs[0..Uuid::FIXED_PART_SIZE])?,
+            version: u16::from_le_bytes(lhs[Uuid::FIXED_PART_SIZE..].try_into().unwrap()),
             version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
         })
     }
