@@ -1,7 +1,8 @@
 use std::io::{Read, Write};
 
+use dpapi_core::core::decode_owned;
 use dpapi_core::gkdi::KeyIdentifier;
-use dpapi_core::{Decode, Encode};
+use dpapi_core::EncodeVec;
 use picky_asn1::restricted_string::Utf8String;
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ImplicitContextTag0, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
@@ -224,7 +225,7 @@ impl DpapiBlob {
             })?;
         }
 
-        let key_identifier = KeyIdentifier::decode(&kek_info.kek_id.key_identifier.0 as &[u8])?;
+        let key_identifier: KeyIdentifier = decode_owned(&kek_info.kek_id.key_identifier.0 as &[u8])?;
 
         let protection_descriptor = if let Some(OtherKeyAttribute { key_attr_id, key_attr }) = &kek_info.kek_id.other.0
         {

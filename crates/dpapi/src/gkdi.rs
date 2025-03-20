@@ -1,10 +1,12 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use dpapi_core::gkdi::{GkdiError, GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
+use dpapi_core::core::{decode_owned, DecodeOwned, ReadCursor};
+use dpapi_core::gkdi::{GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_core::rpc::SyntaxId;
-use dpapi_core::{ensure_size, Decode, Padding, ReadCursor};
+use dpapi_core::Padding;
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::OsRng;
 use rand::Rng;
+use thiserror::Error;
 use uuid::uuid;
 
 use crate::crypto::{
@@ -18,12 +20,32 @@ pub const ISD_KEY: SyntaxId = SyntaxId {
     version_minor: 0,
 };
 
+#[derive(Debug, Error)]
+pub enum GkdiError {
+    #[error("invalid kdf algorithm name: expected {expected} but got {actual}")]
+    InvalidKdfAlgName { expected: &'static str, actual: String },
+
+    #[error("current user is not authorized to retrieve the KEK information")]
+    IsNotAuthorized,
+
+    #[error("l0 index does not match requested l0 index")]
+    InvalidL0Index,
+
+    #[error("bad GetKey response: {0}")]
+    BadResponse(&'static str),
+
+    #[error("bad GetKey hresult: {0:x?}")]
+    BadHresult(u32),
+}
+
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
-    // status
-    if data.len() < size_of::<u32>() {
+    if data.len() < 4 /* key_lenght */ + 4 /* padding */ + 8 /* referent id */ + 8 /* pointer size */ + 4
+    /* status */
+    {
         Err(GkdiError::BadResponse("response data length is too small"))?;
     }
+
     let (key_buf, mut hresult_buf) = data.split_at(data.len() - size_of::<u32>());
 
     let hresult = hresult_buf.read_u32::<LittleEndian>()?;
@@ -33,17 +55,15 @@ pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
 
     let mut src = ReadCursor::new(key_buf);
 
-    ensure_size!(name: "RPC GetKey Response", in: src, size: 4 /* key length */);
     let _key_length = src.read_u32();
 
     Padding::<8>::read(4 /* key length */, &mut src)?;
 
     // Skip the referent id and double up on pointer size
-    ensure_size!(name: "RPC GetKey Response", in: src, size: 8 /* referent id */ + 8 /* pointer size */);
     src.read_u64();
     src.read_u64();
 
-    Ok(GroupKeyEnvelope::decode_cursor(&mut src)?)
+    Ok(GroupKeyEnvelope::decode_owned(&mut src)?)
 }
 
 pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)> {
@@ -54,7 +74,7 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
         })?;
     }
 
-    let kdf_parameters = KdfParameters::decode(group_key.kdf_parameters.as_slice())?;
+    let kdf_parameters: KdfParameters = decode_owned(group_key.kdf_parameters.as_slice())?;
     let hash_alg = kdf_parameters.hash_alg;
 
     let mut rand = OsRng;
@@ -116,7 +136,7 @@ pub fn get_kek(group_key: &GroupKeyEnvelope, key_identifier: &KeyIdentifier) -> 
         })?;
     }
 
-    let kdf_parameters = KdfParameters::decode(group_key.kdf_parameters.as_slice())?;
+    let kdf_parameters: KdfParameters = decode_owned(group_key.kdf_parameters.as_slice())?;
     let hash_alg = kdf_parameters.hash_alg;
     let l2_key = compute_l2_key(hash_alg, key_identifier.l1, key_identifier.l2, group_key)?;
 

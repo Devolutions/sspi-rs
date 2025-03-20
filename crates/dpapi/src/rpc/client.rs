@@ -1,10 +1,11 @@
 use std::net::{TcpStream, ToSocketAddrs};
 
+use dpapi_core::core::decode_owned;
 use dpapi_core::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_core::{Decode, Encode, FixedPartSize, Padding};
+use dpapi_core::{EncodeVec, FixedPartSize, Padding};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
@@ -289,7 +290,7 @@ impl RpcClient {
 
         // Read PDU header
         let mut pdu_buf = read_vec(PduHeader::FIXED_PART_SIZE, &mut self.stream)?;
-        let pdu_header = PduHeader::decode(pdu_buf.as_slice())?;
+        let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
         read_buf(&mut self.stream, &mut pdu_buf[PduHeader::FIXED_PART_SIZE..])?;
@@ -298,8 +299,8 @@ impl RpcClient {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
         }
 
-        let mut pdu = Pdu::decode(pdu_buf.as_slice())?;
-        pdu.data = pdu.data.into_error().map_err(dpapi_core::Error::from)?;
+        let mut pdu: Pdu = decode_owned(pdu_buf.as_slice())?;
+        pdu.data = pdu.data.into_error()?;
 
         Ok(pdu)
     }
@@ -339,7 +340,7 @@ impl RpcClient {
             security_trailer: _,
         } = pdu_resp;
 
-        Ok(data.bind_ack().map_err(dpapi_core::Error::from)?)
+        Ok(data.bind_ack()?)
     }
 
     /// Performs the RPC bind/bind_ack exchange.
@@ -363,7 +364,7 @@ impl RpcClient {
             data,
             security_trailer,
         } = pdu_resp;
-        let bind_ack = data.bind_ack().map_err(dpapi_core::Error::from)?;
+        let bind_ack = data.bind_ack()?;
 
         let final_contexts = Self::process_bind_ack(&bind_ack, contexts);
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);

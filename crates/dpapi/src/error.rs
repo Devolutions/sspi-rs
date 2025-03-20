@@ -1,3 +1,4 @@
+use dpapi_core::core::{DecodeError, EncodeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -9,11 +10,20 @@ pub enum Error {
         error: url::ParseError,
     },
 
+    #[error("{0}")]
+    DecodeError(DecodeError),
+
+    #[error("{0}")]
+    EncodeError(EncodeError),
+
+    #[error(transparent)]
+    PduError(#[from] dpapi_core::rpc::PduError),
+
     #[error(transparent)]
     DpapiCore(#[from] dpapi_core::Error),
 
     #[error(transparent)]
-    Gkdi(#[from] dpapi_core::gkdi::GkdiError),
+    Gkdi(#[from] crate::gkdi::GkdiError),
 
     #[error(transparent)]
     Blob(#[from] crate::blob::BlobError),
@@ -60,3 +70,15 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<DecodeError> for Error {
+    fn from(err: DecodeError) -> Self {
+        Self::DecodeError(err)
+    }
+}
+
+impl From<EncodeError> for Error {
+    fn from(err: EncodeError) -> Self {
+        Self::EncodeError(err)
+    }
+}

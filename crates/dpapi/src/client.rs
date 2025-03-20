@@ -1,10 +1,11 @@
+use dpapi_core::core::decode_owned;
 use dpapi_core::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_core::rpc::{
     build_tcpip_tower, BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext,
     ContextElement, ContextResultCode, EptMap, EptMapResult, Floor, Response, SecurityTrailer, VerificationTrailer,
     EPM,
 };
-use dpapi_core::{Decode, Encode};
+use dpapi_core::EncodeVec;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
@@ -99,7 +100,7 @@ fn process_bind_result(requested_contexts: &[ContextElement], bind_ack: BindAck,
 
 #[instrument(level = "trace", ret)]
 fn process_ept_map_result(response: &Response) -> Result<u16> {
-    let map_response = EptMapResult::decode(response.stub_data.as_slice())?;
+    let map_response: EptMapResult = decode_owned(response.stub_data.as_slice())?;
 
     if map_response.status != 0 {
         Err(ClientError::BadEptMapStatus(map_response.status))?;
@@ -228,7 +229,8 @@ fn get_key(
 
         let ept_map = get_ept_map_isd_key();
         let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?)?;
-        process_ept_map_result(&response.try_into_response().map_err(dpapi_core::Error::from)?)?
+
+        process_ept_map_result(&response.try_into_response()?)?
     };
 
     info!(isd_key_port);
@@ -270,10 +272,7 @@ fn get_key(
 
     info!("RPC GetKey Request finished successfully!");
 
-    process_get_key_result(
-        &response_pdu.try_into_response().map_err(dpapi_core::Error::from)?,
-        security_trailer,
-    )
+    process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
 
 fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<NegotiateConfig> {

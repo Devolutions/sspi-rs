@@ -3,9 +3,10 @@ mod kout;
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key};
 use aes_kw::KekAes256;
+use dpapi_core::core::decode_owned;
 use dpapi_core::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
 use dpapi_core::str::encode_utf16_le;
-use dpapi_core::{Decode, Encode};
+use dpapi_core::EncodeVec;
 use num_bigint_dig::BigUint;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
@@ -370,7 +371,7 @@ pub fn compute_kek(
     public_key: &[u8],
 ) -> Result<Vec<u8>> {
     let (shared_secret, secret_hash_algorithm) = if secret_algorithm == "DH" {
-        let dh_pub_key = FfcdhKey::decode(public_key)?;
+        let dh_pub_key: FfcdhKey = decode_owned(public_key)?;
         let shared_secret = dh_pub_key
             .public_key
             .modpow(&BigUint::from_bytes_be(private_key), &dh_pub_key.field_order);
@@ -386,7 +387,7 @@ pub fn compute_kek(
         use elliptic_curve::sec1::FromEncodedPoint;
         use elliptic_curve::{PublicKey, SecretKey};
 
-        let ecdh_pub_key_info = EcdhKey::decode(public_key)?;
+        let ecdh_pub_key_info: EcdhKey = decode_owned(public_key)?;
 
         match ecdh_pub_key_info.curve {
             EllipticCurve::P256 => {
@@ -477,7 +478,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             field_order,
             generator,
             public_key: _,
-        } = FfcdhKey::decode(peer_public_key)?;
+        } = decode_owned(peer_public_key)?;
 
         let my_pub_key = generator.modpow(&BigUint::from_bytes_be(private_key), &field_order);
 
@@ -492,7 +493,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
         use elliptic_curve::scalar::ScalarPrimitive;
         use elliptic_curve::sec1::ToEncodedPoint;
 
-        let ecdh_pub_key_info = EcdhKey::decode(peer_public_key)?;
+        let ecdh_pub_key_info: EcdhKey = decode_owned(peer_public_key)?;
 
         let (x, y) = match ecdh_pub_key_info.curve {
             EllipticCurve::P256 => {
