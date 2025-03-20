@@ -6,7 +6,7 @@ mod verification;
 
 pub use bind::{
     AlterContext, AlterContextResponse, Bind, BindAck, BindError, BindNak, BindTimeFeatureNegotiationBitmask,
-    ContextElement, ContextResult, ContextResultCode, SyntaxId,
+    ContextElement, ContextResult, ContextResultCode, SyntaxId, Version,
 };
 pub use epm::{
     BaseFloor, EPM, EntryHandle, EpmError, EptMap, EptMapResult, Floor, FloorProtocol, IpFloor,

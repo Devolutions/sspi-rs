@@ -1,12 +1,16 @@
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
+use ironrdp_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteBuf, WriteCursor,
+    cast_length, encode_buf, ensure_size,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{Decode, Encode, FixedPartSize, ReadCursor, Result, StaticName, WriteBuf, WriteCursor};
+use crate::{EncodeExt, FixedPartSize};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -86,13 +90,9 @@ impl FixedPartSize for Command {
     const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
 }
 
-impl StaticName for Command {
-    const NAME: &'static str = "Command";
-}
-
 impl Encode for Command {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.command_type().as_u16() | self.flags().bits());
 
@@ -103,13 +103,27 @@ impl Encode for Command {
         }
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "Command"
+    }
+
+    fn size(&self) -> usize {
         2 /* command_type + command_flags */ + self.value_length()
     }
 }
 
-impl Decode for Command {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl EncodeExt for Command {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for Command {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let cmd_field = src.read_u16();
@@ -117,8 +131,14 @@ impl Decode for Command {
         let command_type = cmd_field & 0x3fff;
         let command_flags = cmd_field & 0xc000;
 
-        let command = CommandType::from_u16(command_type).ok_or(CommandError::InvalidCommandType(command_type))?;
-        let flags = CommandFlags::from_bits(command_flags).ok_or(CommandError::InvalidCommandFlags(command_flags))?;
+        let command = CommandType::from_u16(command_type).ok_or(
+            DecodeError::invalid_field("invalid Command", "command type", "invalid type")
+                .with_source(CommandError::InvalidCommandType(command_type)),
+        )?;
+        let flags = CommandFlags::from_bits(command_flags).ok_or(
+            DecodeError::invalid_field("Command", "command flags", "invalid flags")
+                .with_source(CommandError::InvalidCommandFlags(command_flags)),
+        )?;
 
         let value_len = usize::from(src.read_u16());
 
@@ -139,18 +159,17 @@ pub struct CommandBitmask {
     pub flags: CommandFlags,
 }
 
-impl StaticName for CommandBitmask {
-    const NAME: &'static str = "CommandBitmask";
-}
-
 impl CommandBitmask {
     fn value_length(&self) -> usize {
         4 /* bits */ + 2 /* value length */
     }
 
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DecodeResult<Self> {
         if value.len() != 4 {
-            Err(CommandError::InvalidCommandBitmaskValueLength(value.len()))?;
+            Err(
+                DecodeError::invalid_field("CommandBitmask", "value", "invalid value length")
+                    .with_source(CommandError::InvalidCommandBitmaskValueLength(value.len())),
+            )?;
         }
 
         let bits: [u8; 4] = value.try_into().expect("length is checked above");
@@ -161,7 +180,7 @@ impl CommandBitmask {
         })
     }
 
-    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.value_length());
 
         dst.write_u16(4);
@@ -178,20 +197,16 @@ pub struct CommandPContext {
     pub transfer_syntax: SyntaxId,
 }
 
-impl StaticName for CommandPContext {
-    const NAME: &'static str = "CommandPContext";
-}
-
 impl CommandPContext {
     fn value_length(&self) -> usize {
-        self.interface_id.frame_length() + self.transfer_syntax.frame_length() + 2 /* value length */
+        self.interface_id.size() + self.transfer_syntax.size() + 2 /* value length */
     }
 
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DecodeResult<Self> {
         let mut src = ReadCursor::new(value);
 
-        let interface_id = SyntaxId::decode_cursor(&mut src)?;
-        let transfer_syntax = SyntaxId::decode_cursor(&mut src)?;
+        let interface_id = SyntaxId::decode_owned(&mut src)?;
+        let transfer_syntax = SyntaxId::decode_owned(&mut src)?;
 
         Ok(Self {
             flags,
@@ -200,15 +215,19 @@ impl CommandPContext {
         })
     }
 
-    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.value_length());
 
         let mut buf = WriteBuf::new();
 
-        self.interface_id.encode_buf(&mut buf)?;
-        self.transfer_syntax.encode_buf(&mut buf)?;
+        encode_buf(&self.interface_id, &mut buf)?;
+        encode_buf(&self.transfer_syntax, &mut buf)?;
 
-        dst.write_u16(buf.filled_len().try_into()?);
+        dst.write_u16(cast_length!(
+            "CommandPContext",
+            "encoded value length",
+            buf.filled_len()
+        )?);
         dst.write_slice(buf.filled());
 
         Ok(())
@@ -225,16 +244,12 @@ pub struct CommandHeader2 {
     pub opnum: u16,
 }
 
-impl StaticName for CommandHeader2 {
-    const NAME: &'static str = "CommandHeader2";
-}
-
 impl CommandHeader2 {
     fn value_length(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 
-    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> Result<Self> {
+    fn from_flags_and_value(flags: CommandFlags, value: &[u8]) -> DecodeResult<Self> {
         let mut src = ReadCursor::new(value);
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE - 2 /* value length is already read */);
 
@@ -246,16 +261,19 @@ impl CommandHeader2 {
                 src.read_u8();
                 src.read_u8();
 
-                PacketType::from_u8(packet_type).ok_or(CommandError::InvalidPacketType(packet_type))?
+                PacketType::from_u8(packet_type).ok_or(
+                    DecodeError::invalid_field("CommandHeader2", "packet type", "invalid value")
+                        .with_source(CommandError::InvalidPacketType(packet_type)),
+                )?
             },
-            data_rep: DataRepr::decode_cursor(&mut src)?,
+            data_rep: DataRepr::decode_owned(&mut src)?,
             call_id: src.read_u32(),
             context_id: src.read_u16(),
             opnum: src.read_u16(),
         })
     }
 
-    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode_value(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.value_length());
 
         let mut buf = WriteBuf::new();
@@ -263,13 +281,17 @@ impl CommandHeader2 {
         buf.write_u8(self.packet_type.as_u8());
         // Reserved
         buf.write_slice(&[0, 0, 0]);
-        self.data_rep.encode_buf(&mut buf)?;
+        encode_buf(&self.data_rep, &mut buf)?;
 
         buf.write_u32(self.call_id);
         buf.write_u16(self.context_id);
         buf.write_u16(self.opnum);
 
-        dst.write_u16(buf.filled_len().try_into()?);
+        dst.write_u16(cast_length!(
+            "CommandHeader2",
+            "encoded value length",
+            buf.filled_len()
+        )?);
         dst.write_slice(buf.filled());
 
         Ok(())
@@ -293,42 +315,46 @@ impl FixedPartSize for VerificationTrailer {
     const FIXED_PART_SIZE: usize = Self::SIGNATURE.len();
 }
 
-impl StaticName for VerificationTrailer {
-    const NAME: &'static str = "VerificationTrailer";
-}
-
 impl Encode for VerificationTrailer {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_slice(Self::SIGNATURE);
 
-        self.commands.encode_cursor(dst)?;
+        self.commands.encode_ext(dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        Self::SIGNATURE.len() + self.commands.frame_length()
+    fn name(&self) -> &'static str {
+        "VerificationTrailer"
+    }
+
+    fn size(&self) -> usize {
+        Self::SIGNATURE.len() + self.commands.size_ext()
     }
 }
 
-impl Decode for VerificationTrailer {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for VerificationTrailer {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let signature = src.read_slice(VerificationTrailer::SIGNATURE.len());
 
         if signature != VerificationTrailer::SIGNATURE {
-            Err(CommandError::InvalidVerificationTrailerSignature {
-                expected: VerificationTrailer::SIGNATURE,
-                actual: signature.to_vec(),
-            })?;
+            Err(
+                DecodeError::invalid_field("VerificationTrailer", "signature", "invalid data").with_source(
+                    CommandError::InvalidVerificationTrailerSignature {
+                        expected: VerificationTrailer::SIGNATURE,
+                        actual: signature.to_vec(),
+                    },
+                ),
+            )?;
         }
 
         let mut commands = Vec::new();
         loop {
-            let command = Command::decode_cursor(src)?;
+            let command = Command::decode_owned(src)?;
             let flags = command.flags();
 
             commands.push(command);

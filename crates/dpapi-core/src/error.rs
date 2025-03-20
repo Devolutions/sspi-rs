@@ -1,50 +1,12 @@
 use alloc::string::String;
-use alloc::vec::Vec;
 
+use ironrdp_core::{DecodeError, InvalidFieldErr};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("received {name} data was insufficient to meet the expected size: expected {expected} but got {received}")]
-    NotEnoughBytes {
-        name: &'static str,
-        received: usize,
-        expected: usize,
-    },
-
-    #[error("UUID error: {0}")]
-    Uuid(uuid::Error),
-
-    #[error(transparent)]
-    IntConversion(#[from] core::num::TryFromIntError),
-
-    #[error(transparent)]
-    Bind(#[from] crate::rpc::BindError),
-
-    #[error("provided buf contains invalid UTF-8 data")]
-    Utf8(#[from] alloc::string::FromUtf8Error),
-
-    #[error(transparent)]
-    Pdu(#[from] crate::rpc::PduError),
-
-    #[error(transparent)]
-    Command(#[from] crate::rpc::CommandError),
-
-    #[error(transparent)]
-    Epm(#[from] crate::rpc::EpmError),
-
-    #[error(transparent)]
-    Gkdi(#[from] crate::gkdi::GkdiError),
-
     #[error("{0}")]
     FromUtf16(String),
-
-    #[error("invalid {name} magic bytes")]
-    InvalidMagic {
-        name: &'static str,
-        expected: &'static [u8],
-        actual: Vec<u8>,
-    },
 
     #[error("invalid {name} length: expected at least {expected} bytes but got {actual}")]
     InvalidLength {
@@ -54,11 +16,13 @@ pub enum Error {
     },
 }
 
-// The `uuid::Error` implementes the `std::error::Error` trait only with `std` feature enabled.
-// So, we need to implement this conversion manually, because the `dpapi-core` is `no_std` by default.
-impl From<uuid::Error> for Error {
-    fn from(err: uuid::Error) -> Self {
-        Self::Uuid(err)
+impl From<Error> for DecodeError {
+    fn from(err: Error) -> Self {
+        match &err {
+            Error::FromUtf16(_) => DecodeError::invalid_field("", "UTF-16 string", "invalid value"),
+            Error::InvalidLength { .. } => DecodeError::invalid_field("", "length", "invalid value"),
+        }
+        .with_source(err)
     }
 }
 

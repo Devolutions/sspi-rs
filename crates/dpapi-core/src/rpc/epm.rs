@@ -1,16 +1,17 @@
-use alloc::vec;
 use alloc::vec::Vec;
+use alloc::{format, vec};
 
+use ironrdp_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, UnsupportedValueErr,
+    WriteBuf, WriteCursor, cast_int, cast_length, ensure_size,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{
-    Decode, DecodeWithContext, Encode, FixedPartSize, NeedsContext, Padding, ReadCursor, Result, StaticName, WriteBuf,
-    WriteCursor,
-};
+use crate::{DecodeOwnedExt, DecodeWithContextOwned, EncodeExt, FixedPartSize, NeedsContext, Padding, encode_buf};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -22,6 +23,19 @@ pub enum EpmError {
 
     #[error("unsupported floor protocol: {0:?}")]
     UnsupportedFloor(FloorProtocol),
+}
+
+impl From<EpmError> for DecodeError {
+    fn from(err: EpmError) -> Self {
+        match &err {
+            EpmError::InvalidFloorProtocol(_) => DecodeError::invalid_field("Floor", "floor protocol", "invalid value"),
+            EpmError::InvalidFloorValue(_) => DecodeError::invalid_field("Floor", "floor value", "invalid value"),
+            EpmError::UnsupportedFloor(floor_protocol) => {
+                DecodeError::unsupported_value("Floor", "floor", format!("{:?}", floor_protocol))
+            }
+        }
+        .with_source(err)
+    }
 }
 
 pub const EPM: SyntaxId = SyntaxId {
@@ -84,25 +98,29 @@ impl BaseFloor {
     }
 }
 
-impl StaticName for BaseFloor {
-    const NAME: &'static str = "BaseFloor";
-}
-
 impl Encode for BaseFloor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        dst.write_u16((self.lhs.len() + 1/* protocol byte */).try_into()?);
+        dst.write_u16(cast_length!(
+            "Floor",
+            "lhs + protocol byte len",
+            self.lhs.len() + 1 /* protocol byte */
+        )?);
         dst.write_u8(self.protocol.as_u8());
         dst.write_slice(&self.lhs);
 
-        dst.write_u16(self.rhs.len().try_into()?);
+        dst.write_u16(cast_length!("Floor", "rhs len", self.rhs.len())?);
         dst.write_slice(&self.rhs);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "BaseFloor"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.lhs.len() + 2 /* rhs len */ + self.rhs.len()
     }
 }
@@ -113,25 +131,25 @@ pub struct TcpFloor {
 }
 
 impl Encode for TcpFloor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        BaseFloor::new(FloorProtocol::Tcp, Vec::new(), self.port.to_be_bytes().to_vec()).encode_cursor(dst)
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        BaseFloor::new(FloorProtocol::Tcp, Vec::new(), self.port.to_be_bytes().to_vec()).encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
-        BaseFloor::new(FloorProtocol::Tcp, Vec::new(), self.port.to_be_bytes().to_vec()).frame_length()
+    fn name(&self) -> &'static str {
+        "TcpFloor"
     }
-}
 
-impl StaticName for TcpFloor {
-    const NAME: &'static str = "TcpFloor";
+    fn size(&self) -> usize {
+        BaseFloor::new(FloorProtocol::Tcp, Vec::new(), self.port.to_be_bytes().to_vec()).size()
+    }
 }
 
 impl NeedsContext for TcpFloor {
     type Context<'ctx> = usize;
 }
 
-impl DecodeWithContext for TcpFloor {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for TcpFloor {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: ctx);
 
         let _lhs = src.read_slice(ctx);
@@ -159,26 +177,26 @@ pub struct IpFloor {
     pub addr: u32,
 }
 
-impl StaticName for IpFloor {
-    const NAME: &'static str = "IpFloor";
-}
-
 impl NeedsContext for IpFloor {
     type Context<'ctx> = usize;
 }
 
 impl Encode for IpFloor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        BaseFloor::new(FloorProtocol::Ip, Vec::new(), self.addr.to_be_bytes().to_vec()).encode_cursor(dst)
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        BaseFloor::new(FloorProtocol::Ip, Vec::new(), self.addr.to_be_bytes().to_vec()).encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
-        BaseFloor::new(FloorProtocol::Ip, Vec::new(), self.addr.to_be_bytes().to_vec()).frame_length()
+    fn name(&self) -> &'static str {
+        "IpFloor"
+    }
+
+    fn size(&self) -> usize {
+        BaseFloor::new(FloorProtocol::Ip, Vec::new(), self.addr.to_be_bytes().to_vec()).size()
     }
 }
 
-impl DecodeWithContext for IpFloor {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for IpFloor {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
         let _lhs = src.read_slice(ctx);
@@ -205,36 +223,36 @@ pub struct RpcConnectionOrientedFloor {
     pub version_minor: u16,
 }
 
-impl StaticName for RpcConnectionOrientedFloor {
-    const NAME: &'static str = "RpcConnectionOrientedFloor";
-}
-
 impl NeedsContext for RpcConnectionOrientedFloor {
     type Context<'ctx> = usize;
 }
 
 impl Encode for RpcConnectionOrientedFloor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         BaseFloor::new(
             FloorProtocol::RpcConnectionOriented,
             Vec::new(),
             self.version_minor.to_le_bytes().to_vec(),
         )
-        .encode_cursor(dst)
+        .encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "RpcConnectionOrientedFloor"
+    }
+
+    fn size(&self) -> usize {
         BaseFloor::new(
             FloorProtocol::RpcConnectionOriented,
             Vec::new(),
             self.version_minor.to_le_bytes().to_vec(),
         )
-        .frame_length()
+        .size()
     }
 }
 
-impl DecodeWithContext for RpcConnectionOrientedFloor {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
         let _lhs = src.read_slice(ctx);
@@ -262,32 +280,32 @@ pub struct UuidFloor {
     pub version_minor: u16,
 }
 
-impl StaticName for UuidFloor {
-    const NAME: &'static str = "UuidFloor";
-}
-
 impl NeedsContext for UuidFloor {
     type Context<'ctx> = usize;
 }
 
 impl Encode for UuidFloor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         let mut lhs = self.uuid.to_bytes_le().to_vec();
         lhs.extend_from_slice(&self.version.to_le_bytes());
 
-        BaseFloor::new(FloorProtocol::UuidId, lhs, self.version_minor.to_le_bytes().to_vec()).encode_cursor(dst)
+        BaseFloor::new(FloorProtocol::UuidId, lhs, self.version_minor.to_le_bytes().to_vec()).encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "UuidFloor"
+    }
+
+    fn size(&self) -> usize {
         let mut lhs = self.uuid.to_bytes_le().to_vec();
         lhs.extend_from_slice(&self.version.to_le_bytes());
 
-        BaseFloor::new(FloorProtocol::UuidId, lhs, self.version_minor.to_le_bytes().to_vec()).frame_length()
+        BaseFloor::new(FloorProtocol::UuidId, lhs, self.version_minor.to_le_bytes().to_vec()).size()
     }
 }
 
-impl DecodeWithContext for UuidFloor {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for UuidFloor {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
         if ctx != Uuid::FIXED_PART_SIZE + 2
         /* versioh */
         {
@@ -315,7 +333,7 @@ impl DecodeWithContext for UuidFloor {
         let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
-            uuid: Uuid::from_slice_le(&lhs[0..Uuid::FIXED_PART_SIZE])?,
+            uuid: Uuid::decode_owned(&mut ReadCursor::new(&lhs[0..Uuid::FIXED_PART_SIZE]))?,
             version: u16::from_le_bytes(lhs[Uuid::FIXED_PART_SIZE..].try_into().unwrap()),
             version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
         })
@@ -334,34 +352,42 @@ impl FixedPartSize for Floor {
     const FIXED_PART_SIZE: usize = 2 /* lhs + protocol byte length */ + 1 /* protocol byte */;
 }
 
-impl StaticName for Floor {
-    const NAME: &'static str = "Floor";
-}
-
 impl Encode for Floor {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         match self {
-            Floor::Tcp(tcp_floor) => tcp_floor.encode_cursor(dst),
-            Floor::Ip(ip_floor) => ip_floor.encode_cursor(dst),
-            Floor::RpcConnectionOriented(rpc_connection_oriented_floor) => {
-                rpc_connection_oriented_floor.encode_cursor(dst)
-            }
-            Floor::Uuid(uuid_floor) => uuid_floor.encode_cursor(dst),
+            Floor::Tcp(tcp_floor) => tcp_floor.encode(dst),
+            Floor::Ip(ip_floor) => ip_floor.encode(dst),
+            Floor::RpcConnectionOriented(rpc_connection_oriented_floor) => rpc_connection_oriented_floor.encode(dst),
+            Floor::Uuid(uuid_floor) => uuid_floor.encode(dst),
         }
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "Floor"
+    }
+
+    fn size(&self) -> usize {
         match self {
-            Floor::Tcp(tcp_floor) => tcp_floor.frame_length(),
-            Floor::Ip(ip_floor) => ip_floor.frame_length(),
-            Floor::RpcConnectionOriented(rpc_connection_oriented_floor) => rpc_connection_oriented_floor.frame_length(),
-            Floor::Uuid(uuid_floor) => uuid_floor.frame_length(),
+            Floor::Tcp(tcp_floor) => tcp_floor.size(),
+            Floor::Ip(ip_floor) => ip_floor.size(),
+            Floor::RpcConnectionOriented(rpc_connection_oriented_floor) => rpc_connection_oriented_floor.size(),
+            Floor::Uuid(uuid_floor) => uuid_floor.size(),
         }
     }
 }
 
-impl Decode for Floor {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl EncodeExt for Floor {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for Floor {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let lhs_len = usize::from(src.read_u16() - 1);
@@ -370,12 +396,12 @@ impl Decode for Floor {
         let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
 
         Ok(match protocol {
-            FloorProtocol::Tcp => Floor::Tcp(TcpFloor::decode_cursor_with_context(src, lhs_len)?),
-            FloorProtocol::Ip => Floor::Ip(IpFloor::decode_cursor_with_context(src, lhs_len)?),
+            FloorProtocol::Tcp => Floor::Tcp(TcpFloor::decode_with_context_owned(src, lhs_len)?),
+            FloorProtocol::Ip => Floor::Ip(IpFloor::decode_with_context_owned(src, lhs_len)?),
             FloorProtocol::RpcConnectionOriented => {
-                Floor::RpcConnectionOriented(RpcConnectionOrientedFloor::decode_cursor_with_context(src, lhs_len)?)
+                Floor::RpcConnectionOriented(RpcConnectionOrientedFloor::decode_with_context_owned(src, lhs_len)?)
             }
-            FloorProtocol::UuidId => Floor::Uuid(UuidFloor::decode_cursor_with_context(src, lhs_len)?),
+            FloorProtocol::UuidId => Floor::Uuid(UuidFloor::decode_with_context_owned(src, lhs_len)?),
             protocol => Err(EpmError::UnsupportedFloor(protocol))?,
         })
     }
@@ -408,17 +434,13 @@ impl FixedPartSize for Option<EntryHandle> {
     const FIXED_PART_SIZE: usize = EMPTY_ENTRY_HANDLE.len();
 }
 
-impl StaticName for Option<EntryHandle> {
-    const NAME: &'static str = "Option<EntryHandle>";
-}
-
-impl Encode for Option<EntryHandle> {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+impl EncodeExt for Option<EntryHandle> {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size_ext());
 
         if let Some(entry_handle) = self {
             dst.write_u32(entry_handle.0);
-            entry_handle.1.encode_cursor(dst)?;
+            entry_handle.1.encode_ext(dst)?;
         } else {
             dst.write_slice(EMPTY_ENTRY_HANDLE);
         }
@@ -426,13 +448,13 @@ impl Encode for Option<EntryHandle> {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn size_ext(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl Decode for Option<EntryHandle> {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwnedExt for Option<EntryHandle> {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let entry_handle_buf = src.read_slice(Self::FIXED_PART_SIZE);
@@ -440,7 +462,7 @@ impl Decode for Option<EntryHandle> {
         Ok(if entry_handle_buf != EMPTY_ENTRY_HANDLE {
             Some((
                 u32::from_le_bytes(entry_handle_buf[0..4].try_into().unwrap()),
-                Uuid::from_slice_le(&entry_handle_buf[4..])?,
+                Uuid::decode_owned(&mut ReadCursor::new(&entry_handle_buf[4..]))?,
             ))
         } else {
             None
@@ -466,19 +488,15 @@ impl FixedPartSize for EptMap {
     const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
 }
 
-impl StaticName for EptMap {
-    const NAME: &'static str = "EptMap";
-}
-
 impl Encode for EptMap {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         // obj with a referent id of 1
         dst.write_slice(Self::TOWER_REFERENT_ID_1);
 
         if let Some(uuid) = self.obj {
-            uuid.encode_cursor(dst)?;
+            uuid.encode_ext(dst)?;
         } else {
             dst.write_slice(&[0; 16]);
         }
@@ -487,32 +505,36 @@ impl Encode for EptMap {
         dst.write_slice(Self::TOWER_REFERENT_ID_2);
 
         let mut encoded_tower = WriteBuf::new();
-        encoded_tower.write_u16(u16::try_from(self.tower.len())?);
-        self.tower.encode_buf(&mut encoded_tower)?;
+        encoded_tower.write_u16(cast_length!("EptMap", "towers count", self.tower.len())?);
+        encode_buf(&self.tower, &mut encoded_tower)?;
 
-        dst.write_u64(u64::try_from(encoded_tower.filled_len())?);
-        dst.write_u32(u32::try_from(encoded_tower.filled_len())?);
+        dst.write_u64(cast_length!("EptMap", "encoded tower", encoded_tower.filled_len())?);
+        dst.write_u32(cast_length!("EptMap", "encoded tower", encoded_tower.filled_len())?);
 
         dst.write_slice(encoded_tower.filled());
 
         Padding::<8>::write(encoded_tower.filled_len() + 4, dst)?;
 
-        self.entry_handle.encode_cursor(dst)?;
+        self.entry_handle.encode_ext(dst)?;
         dst.write_u32(self.max_towers);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        let encoded_tower_length = self.tower.frame_length();
+    fn name(&self) -> &'static str {
+        "EptMap"
+    }
+
+    fn size(&self) -> usize {
+        let encoded_tower_length = self.tower.size_ext();
         let padding_len = Padding::<8>::padding(encoded_tower_length + 2 /* tower amount */ + 4);
 
-        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.frame_length() + 4 /* max_towers */
+        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size_ext() + 4 /* max_towers */
     }
 }
 
-impl Decode for EptMap {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for EptMap {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         // obj with a referent id of 1
@@ -521,7 +543,7 @@ impl Decode for EptMap {
         let obj = src.read_slice(16);
 
         let obj = if obj != [0; 16] {
-            Some(Uuid::from_slice_le(obj)?)
+            Some(Uuid::decode_owned(&mut ReadCursor::new(obj))?)
         } else {
             None
         };
@@ -534,12 +556,15 @@ impl Decode for EptMap {
 
         let floor_length = usize::from(src.read_u16());
         let tower = (0..floor_length)
-            .map(|_| Floor::decode_cursor(src))
-            .collect::<Result<Vec<Floor>>>()?;
+            .map(|_| Floor::decode_owned(src))
+            .collect::<DecodeResult<Vec<Floor>>>()?;
 
-        Padding::<8>::read((tower_length + 4).try_into()?, src)?;
+        Padding::<8>::read(
+            { cast_length!("RptMap", "towers count", tower_length + 4) as DecodeResult<_> }?,
+            src,
+        )?;
 
-        let entry_handle = Option::decode_cursor(src)?;
+        let entry_handle = Option::decode_owned(src)?;
         ensure_size!(in: src, size: 4);
         let max_towers = src.read_u32();
 
@@ -563,37 +588,41 @@ impl FixedPartSize for EptMapResult {
     const FIXED_PART_SIZE: usize = Option::<EntryHandle>::FIXED_PART_SIZE + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */ + 8 /* towers len */;
 }
 
-impl StaticName for EptMapResult {
-    const NAME: &'static str = "EptMapResult";
-}
-
 impl Encode for EptMapResult {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        self.entry_handle.encode_cursor(dst)?;
+        self.entry_handle.encode_ext(dst)?;
 
-        dst.write_u32(u32::try_from(self.towers.len())?);
+        dst.write_u32(cast_length!("EptMapResult", "towers count", self.towers.len())?);
         // max_tower_count
-        dst.write_u64(u64::try_from(self.towers.len())?);
+        dst.write_u64(cast_length!("EptMapResult", "max tower count", self.towers.len())?);
 
         // Tower pointer offset
         dst.write_u64(0);
 
-        dst.write_u64(u64::try_from(self.towers.len())?);
+        dst.write_u64(cast_length!("EptMapResult", "towers count", self.towers.len())?);
 
         for idx in 0..self.towers.len() {
-            dst.write_u64((idx + 3).try_into()?);
+            dst.write_u64(cast_length!("EptMapResult", "tower index", idx + 3)?);
         }
 
         for tower in &self.towers {
             let mut encoded_tower = WriteBuf::new();
 
-            encoded_tower.write_u16(u16::try_from(tower.len())?);
-            tower.encode_buf(&mut encoded_tower)?;
+            encoded_tower.write_u16(cast_length!("EptMapResult", "tower len", tower.len())?);
+            encode_buf(tower, &mut encoded_tower)?;
 
-            dst.write_u64(u64::try_from(encoded_tower.filled_len())?);
-            dst.write_u32(u32::try_from(encoded_tower.filled_len())?);
+            dst.write_u64(cast_length!(
+                "EptMapResult",
+                "encoded tower len",
+                encoded_tower.filled_len()
+            )?);
+            dst.write_u32(cast_length!(
+                "EptMapResult",
+                "encoded tower len",
+                encoded_tower.filled_len()
+            )?);
             dst.write_slice(encoded_tower.filled());
 
             Padding::<4>::write(encoded_tower.filled_len(), dst)?;
@@ -604,9 +633,13 @@ impl Encode for EptMapResult {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "EptMapResult"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.towers.len() * 8 + self.towers.iter().map(|tower| {
-            let encoded_tower_length = 2 /* tower len */ + tower.frame_length() + 8 /* encoded tower len */ + 4 /* encoded tower len */;
+            let encoded_tower_length = 2 /* tower len */ + tower.size_ext() + 8 /* encoded tower len */ + 4 /* encoded tower len */;
             let padding_len = Padding::<4>::padding(encoded_tower_length);
 
             encoded_tower_length + padding_len
@@ -614,11 +647,11 @@ impl Encode for EptMapResult {
     }
 }
 
-impl Decode for EptMapResult {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for EptMapResult {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        let entry_handle = Option::decode_cursor(src)?;
+        let entry_handle = Option::decode_owned(src)?;
 
         // num towers
         src.read_u32();
@@ -627,7 +660,7 @@ impl Decode for EptMapResult {
         // tower offset
         src.read_u64();
 
-        let tower_count = usize::try_from(src.read_u64())?;
+        let tower_count: usize = { cast_int!("EprMapResult", "tower count", src.read_u64()) as DecodeResult<_> }?;
         ensure_size!(in: src, size: tower_count * 8);
         // Ignore referent ids
         for _ in 0..tower_count {
@@ -644,14 +677,17 @@ impl Decode for EptMapResult {
 
                 let floor_length = src.read_u16();
                 let tower = (0..floor_length)
-                    .map(|_| Floor::decode_cursor(src))
-                    .collect::<Result<Vec<Floor>>>()?;
+                    .map(|_| Floor::decode_owned(src))
+                    .collect::<DecodeResult<Vec<Floor>>>()?;
 
-                Padding::<8>::read((tower_length + 4).try_into()?, src)?;
+                Padding::<8>::read(
+                    { cast_length!("EptMapResult", "tower length", tower_length + 4) as DecodeResult<_> }?,
+                    src,
+                )?;
 
                 Ok(tower)
             })
-            .collect::<Result<Vec<Tower>>>()?;
+            .collect::<DecodeResult<Vec<Tower>>>()?;
 
         ensure_size!(in: src, size: 4);
         let status = src.read_u32();

@@ -1,15 +1,30 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use ironrdp_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteCursor,
+    cast_length, ensure_size,
+};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{Decode, Encode, FixedPartSize, Padding, ReadCursor, Result, StaticName, WriteCursor};
+use crate::{DecodeOwnedExt, EncodeExt, FixedPartSize, Padding};
 
 #[derive(Debug, Error)]
 pub enum BindError {
     #[error("invalid context result code value: {0}")]
     InvalidContextResultCode(u16),
+}
+
+impl From<BindError> for DecodeError {
+    fn from(err: BindError) -> Self {
+        match &err {
+            BindError::InvalidContextResultCode(_) => {
+                DecodeError::invalid_field("ContextResult", "context result code", "invalid value")
+            }
+        }
+        .with_source(err)
+    }
 }
 
 pub type BindResult<T> = core::result::Result<T, BindError>;
@@ -58,32 +73,42 @@ impl FixedPartSize for SyntaxId {
     const FIXED_PART_SIZE: usize = 16 /* uuid */ + 2 /* version */ + 2 /* version_minor */;
 }
 
-impl StaticName for SyntaxId {
-    const NAME: &'static str = "SyntaxId";
-}
-
 impl Encode for SyntaxId {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        self.uuid.encode_cursor(dst)?;
+        self.uuid.encode_ext(dst)?;
         dst.write_u16(self.version);
         dst.write_u16(self.version_minor);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "SyntaxId"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl Decode for SyntaxId {
-    fn decode_cursor(src: &mut ReadCursor) -> Result<Self> {
+impl EncodeExt for SyntaxId {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for SyntaxId {
+    fn decode_owned(src: &mut ReadCursor) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
-            uuid: Uuid::decode_cursor(src)?,
+            uuid: Uuid::decode_owned(src)?,
             version: src.read_u16(),
             version_minor: src.read_u16(),
         })
@@ -101,39 +126,53 @@ impl FixedPartSize for ContextElement {
     const FIXED_PART_SIZE: usize = 2 /* context_id */ + 2 /* transfer_syntaxes length */ + SyntaxId::FIXED_PART_SIZE;
 }
 
-impl StaticName for ContextElement {
-    const NAME: &'static str = "ContextElement";
-}
-
 impl Encode for ContextElement {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.context_id);
-        dst.write_u16(self.transfer_syntaxes.len().try_into()?);
+        dst.write_u16(cast_length!(
+            "ContextElement",
+            "transfer syntaxes count",
+            self.transfer_syntaxes.len()
+        )?);
 
-        self.abstract_syntax.encode_cursor(dst)?;
-        self.transfer_syntaxes.encode_cursor(dst)?;
+        self.abstract_syntax.encode(dst)?;
+        self.transfer_syntaxes.encode_ext(dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.transfer_syntaxes.frame_length()
+    fn name(&self) -> &'static str {
+        "ContextElement"
+    }
+
+    fn size(&self) -> usize {
+        Self::FIXED_PART_SIZE + self.transfer_syntaxes.size_ext()
     }
 }
 
-impl Decode for ContextElement {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<ContextElement> {
+impl EncodeExt for ContextElement {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for ContextElement {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<ContextElement> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let context_id = src.read_u16();
         let transfer_syntaxes_count = usize::from(src.read_u16());
-        let abstract_syntax = SyntaxId::decode_cursor(src)?;
+        let abstract_syntax = SyntaxId::decode_owned(src)?;
 
         let transfer_syntaxes = (0..transfer_syntaxes_count)
-            .map(|_| SyntaxId::decode_cursor(src))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|_| SyntaxId::decode_owned(src))
+            .collect::<DecodeResult<Vec<_>>>()?;
 
         Ok(Self {
             context_id,
@@ -188,35 +227,45 @@ impl FixedPartSize for ContextResult {
     const FIXED_PART_SIZE: usize = 2 /* result */ + 2 /* reason */ + 16 /* syntax */ + 4 /* syntax_version */;
 }
 
-impl StaticName for ContextResult {
-    const NAME: &'static str = "ContextResult";
-}
-
 impl Encode for ContextResult {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.result.as_u16());
         dst.write_u16(self.reason);
-        self.syntax.encode_cursor(dst)?;
+        self.syntax.encode_ext(dst)?;
         dst.write_u32(self.syntax_version);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "ContextResult"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl Decode for ContextResult {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl EncodeExt for ContextResult {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for ContextResult {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
             result: src.read_u16().try_into()?,
             reason: src.read_u16(),
-            syntax: Uuid::decode_cursor(src)?,
+            syntax: Uuid::decode_owned(src)?,
             syntax_version: src.read_u32(),
         })
     }
@@ -234,30 +283,30 @@ impl FixedPartSize for Bind {
     const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 4 /* contexts length */;
 }
 
-impl StaticName for Bind {
-    const NAME: &'static str = "Bind";
-}
-
 impl Encode for Bind {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.max_xmit_frag);
         dst.write_u16(self.max_recv_frag);
         dst.write_u32(self.assoc_group);
-        dst.write_u32(self.contexts.len().try_into()?);
-        self.contexts.encode_cursor(dst)?;
+        dst.write_u32(cast_length!("Bind", "contexts count", self.contexts.len())?);
+        self.contexts.encode_ext(dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.contexts.frame_length()
+    fn name(&self) -> &'static str {
+        "Bind"
+    }
+
+    fn size(&self) -> usize {
+        Self::FIXED_PART_SIZE + self.contexts.size_ext()
     }
 }
 
-impl Decode for Bind {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for Bind {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let max_xmit_frag = src.read_u16();
@@ -266,8 +315,8 @@ impl Decode for Bind {
 
         let contexts_count = src.read_u32();
         let contexts = (0..contexts_count)
-            .map(|_| ContextElement::decode_cursor(src))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|_| ContextElement::decode_owned(src))
+            .collect::<DecodeResult<Vec<_>>>()?;
 
         Ok(Self {
             max_xmit_frag,
@@ -291,13 +340,9 @@ impl FixedPartSize for BindAck {
     const FIXED_PART_SIZE: usize = 2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + 2 /* sec_addr lenght in bytes */;
 }
 
-impl StaticName for BindAck {
-    const NAME: &'static str = "BindAck";
-}
-
 impl Encode for BindAck {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.max_xmit_frag);
         dst.write_u16(self.max_recv_frag);
@@ -305,7 +350,7 @@ impl Encode for BindAck {
 
         let sec_addr_len = if !self.sec_addr.is_empty() {
             let sec_addr_len = self.sec_addr.len() + 1 /* null-byte */;
-            dst.write_u16(sec_addr_len.try_into()?);
+            dst.write_u16(cast_length!("BindAck", "security address len", sec_addr_len)?);
 
             dst.write_slice(self.sec_addr.as_bytes());
             dst.write_u8(0);
@@ -319,19 +364,23 @@ impl Encode for BindAck {
 
         Padding::<4>::write(sec_addr_len, dst)?;
 
-        dst.write_u32(self.results.len().try_into()?);
-        self.results.encode_cursor(dst)?;
+        dst.write_u32(cast_length!("BindAck", "results count", self.results.len())?);
+        self.results.encode_ext(dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + self.results.frame_length()
+    fn name(&self) -> &'static str {
+        "BindAck"
+    }
+
+    fn size(&self) -> usize {
+        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + self.results.size_ext()
     }
 }
 
-impl Decode for BindAck {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for BindAck {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
@@ -347,7 +396,9 @@ impl Decode for BindAck {
                     // Read null-terminator byte.
                     src.read_u8();
 
-                    String::from_utf8(buf)?
+                    String::from_utf8(buf).map_err(|err| {
+                        DecodeError::invalid_field("BindAck", "security address", "broken UTF-8").with_source(err)
+                    })?
                 } else {
                     String::new()
                 };
@@ -361,49 +412,93 @@ impl Decode for BindAck {
                 let results_count = src.read_u32();
 
                 (0..results_count)
-                    .map(|_| ContextResult::decode_cursor(src))
-                    .collect::<Result<Vec<_>>>()?
+                    .map(|_| ContextResult::decode_owned(src))
+                    .collect::<DecodeResult<Vec<_>>>()?
             },
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Version(u8, u8);
+
+impl FixedPartSize for Version {
+    const FIXED_PART_SIZE: usize = 2;
+}
+
+impl Encode for Version {
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
+
+        dst.write_u8(self.0);
+        dst.write_u8(self.1);
+
+        Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "Version"
+    }
+
+    fn size(&self) -> usize {
+        Self::FIXED_PART_SIZE
+    }
+}
+
+impl EncodeExt for Version {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for Version {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
+        ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
+
+        Ok(Version(src.read_u8(), src.read_u8()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BindNak {
     pub reason: u16,
-    pub versions: Vec<(u8, u8)>,
+    pub versions: Vec<Version>,
 }
 
 impl FixedPartSize for BindNak {
     const FIXED_PART_SIZE: usize = 2 /* reason */ + 1 /* versions len */;
 }
 
-impl StaticName for BindNak {
-    const NAME: &'static str = "BindNak";
-}
-
 impl Encode for BindNak {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u16(self.reason);
 
-        dst.write_u8(self.versions.len().try_into()?);
-        self.versions.encode_cursor(dst)?;
+        dst.write_u8(cast_length!("BindNak", "versions count", self.versions.len())?);
+        self.versions.encode_ext(dst)?;
 
-        let versions_buf_len = 1 /* len */ + self.versions.frame_length();
+        let versions_buf_len = 1 /* len */ + self.versions.size_ext();
         Padding::<4>::write(versions_buf_len, dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.versions.frame_length()
+    fn name(&self) -> &'static str {
+        "BindAck"
+    }
+
+    fn size(&self) -> usize {
+        Self::FIXED_PART_SIZE + self.versions.size_ext()
     }
 }
 
-impl Decode for BindNak {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for BindNak {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
@@ -411,10 +506,10 @@ impl Decode for BindNak {
             versions: {
                 let versions_count = usize::from(src.read_u8());
                 let versions = (0..versions_count)
-                    .map(|_| <(u8, u8)>::decode_cursor(src))
-                    .collect::<Result<Vec<_>>>()?;
+                    .map(|_| Version::decode_owned(src))
+                    .collect::<DecodeResult<Vec<_>>>()?;
 
-                let versions_buf_len = 1 /* len */ + versions.frame_length();
+                let versions_buf_len = 1 /* len */ + versions.size_ext();
                 Padding::<4>::read(versions_buf_len, src)?;
 
                 versions
@@ -431,25 +526,25 @@ impl FixedPartSize for AlterContext {
     const FIXED_PART_SIZE: usize = Bind::FIXED_PART_SIZE;
 }
 
-impl StaticName for AlterContext {
-    const NAME: &'static str = "AlterContext";
-}
-
 impl Encode for AlterContext {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        self.0.encode_cursor(dst)
+        self.0.encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
-        self.0.frame_length()
+    fn name(&self) -> &'static str {
+        "AlterContext"
+    }
+
+    fn size(&self) -> usize {
+        self.0.size()
     }
 }
 
-impl Decode for AlterContext {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        Ok(Self(Bind::decode_cursor(src)?))
+impl DecodeOwned for AlterContext {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
+        Ok(Self(Bind::decode_owned(src)?))
     }
 }
 
@@ -461,24 +556,24 @@ impl FixedPartSize for AlterContextResponse {
     const FIXED_PART_SIZE: usize = BindAck::FIXED_PART_SIZE;
 }
 
-impl StaticName for AlterContextResponse {
-    const NAME: &'static str = "AlterContextResponse";
-}
-
 impl Encode for AlterContextResponse {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        self.0.encode_cursor(dst)
+        self.0.encode(dst)
     }
 
-    fn frame_length(&self) -> usize {
-        self.0.frame_length()
+    fn name(&self) -> &'static str {
+        "AlterContextResponse"
+    }
+
+    fn size(&self) -> usize {
+        self.0.size()
     }
 }
 
-impl Decode for AlterContextResponse {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        Ok(Self(BindAck::decode_cursor(src)?))
+impl DecodeOwned for AlterContextResponse {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
+        Ok(Self(BindAck::decode_owned(src)?))
     }
 }

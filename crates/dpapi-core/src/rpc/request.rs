@@ -1,11 +1,10 @@
 use alloc::vec::Vec;
 
+use ironrdp_core::{DecodeOwned, DecodeResult, Encode, EncodeResult, ReadCursor, WriteCursor, ensure_size};
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{
-    Decode, DecodeWithContext, Encode, FixedPartSize, NeedsContext, ReadCursor, Result, StaticName, WriteCursor,
-};
+use crate::{DecodeOwnedExt, DecodeWithContextOwned, EncodeExt, FixedPartSize, NeedsContext};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -20,25 +19,25 @@ impl FixedPartSize for Request {
     const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 2 /* opnum */;
 }
 
-impl StaticName for Request {
-    const NAME: &'static str = "Request";
-}
-
 impl Encode for Request {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
         dst.write_u16(self.opnum);
-        self.obj.encode_cursor(dst)?;
+        self.obj.encode_ext(dst)?;
         dst.write_slice(&self.stub_data);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.obj.frame_length() + self.stub_data.len()
+    fn name(&self) -> &'static str {
+        "Request"
+    }
+
+    fn size(&self) -> usize {
+        Self::FIXED_PART_SIZE + self.obj.size_ext() + self.stub_data.len()
     }
 }
 
@@ -46,8 +45,8 @@ impl NeedsContext for Request {
     type Context<'ctx> = &'ctx PduHeader;
 }
 
-impl DecodeWithContext for Request {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for Request {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
@@ -55,7 +54,7 @@ impl DecodeWithContext for Request {
             context_id: src.read_u16(),
             opnum: src.read_u16(),
             obj: if pdu_header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
-                Some(Uuid::decode_cursor(src)?)
+                Some(Uuid::decode_owned(src)?)
             } else {
                 None
             },
@@ -76,13 +75,9 @@ impl FixedPartSize for Response {
     const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* reserved */;
 }
 
-impl StaticName for Response {
-    const NAME: &'static str = "Response";
-}
-
 impl Encode for Response {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
@@ -95,13 +90,17 @@ impl Encode for Response {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "Response"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.stub_data.len()
     }
 }
 
-impl Decode for Response {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for Response {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {

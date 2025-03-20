@@ -634,6 +634,7 @@ name = "dpapi-core"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.8.0",
+ "ironrdp-core",
  "num-bigint-dig",
  "num-derive",
  "num-traits",
@@ -1349,6 +1350,21 @@ name = "ipnet"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
+
+[[package]]
+name = "ironrdp-core"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56c0fd3307a9cc576741cbcc1fdf4d94289ab127cb69692228cfb921829f0eb2"
+dependencies = [
+ "ironrdp-error",
+]
+
+[[package]]
+name = "ironrdp-error"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0b4a16ca91adeef52d1178cdd87baa713c34772e03d84ff3c399f538549476f"
 
 [[package]]
 name = "iso7816"

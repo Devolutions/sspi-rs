@@ -1,14 +1,16 @@
+use alloc::format;
 use alloc::vec::Vec;
 
+use ironrdp_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, OtherErr, ReadCursor,
+    UnsupportedValueErr, WriteCursor, ensure_size,
+};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{
-    Decode, DecodeWithContext, Encode, FindLength, FixedPartSize, NeedsContext, Padding, ReadCursor, Result,
-    StaticName, WriteCursor,
-};
+use crate::{DecodeWithContextOwned, EncodeExt, FindLength, FixedPartSize, NeedsContext, Padding};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -44,6 +46,37 @@ pub enum PduError {
 
     #[error("RPC failed: {0}")]
     RpcFail(&'static str),
+}
+
+impl From<PduError> for DecodeError {
+    fn from(err: PduError) -> Self {
+        match &err {
+            PduError::InvalidIntRepr(_) => DecodeError::invalid_field("PDU Header", "int repr", "invalid value"),
+            PduError::InvalidCharacterRepr(_) => {
+                DecodeError::invalid_field("PDU Header", "character repr", "invalid value")
+            }
+            PduError::InvalidFloatingPointRepr(_) => {
+                DecodeError::invalid_field("PDU Header", "floating pint repr", "invalid value")
+            }
+            PduError::InvalidPacketType(_) => DecodeError::invalid_field("PDU Header", "packet type", "invalid value"),
+            PduError::InvalidPacketFlags(_) => {
+                DecodeError::invalid_field("PDU Header", "packet flags", "invalid value")
+            }
+            PduError::InvalidSecurityProvider(_) => {
+                DecodeError::invalid_field("PDU Security Trailer", "security provider", "invalid value")
+            }
+            PduError::InvalidAuthenticationLevel(_) => {
+                DecodeError::invalid_field("PDU Security Trailer", "authentication level", "invalid value")
+            }
+            PduError::InvalidFaultFlags(_) => DecodeError::invalid_field("Fault PDU", "fault flags", "invalid value"),
+            PduError::PduNotSupported(packet_type) => {
+                DecodeError::unsupported_value("", "PDU", format!("{:?}", packet_type))
+            }
+            PduError::InvalidFragLength(_) => DecodeError::invalid_field("PDU Header", "frag len", "instal value"),
+            PduError::RpcFail(_) => DecodeError::other("RPC", "RPC failed"),
+        }
+        .with_source(err)
+    }
 }
 
 pub type PduResult<T> = core::result::Result<T, PduError>;
@@ -149,13 +182,9 @@ impl FixedPartSize for DataRepr {
     const FIXED_PART_SIZE: usize = 1 /* first octet */ + 1 /* floating point */ + 2 /* padding */;
 }
 
-impl StaticName for DataRepr {
-    const NAME: &'static str = "DataRepr";
-}
-
 impl Encode for DataRepr {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         let first_octet = ((self.byte_order.as_u8()) << 4) | self.character.as_u8();
         dst.write_u8(first_octet);
@@ -166,13 +195,17 @@ impl Encode for DataRepr {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "DataRepr"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl Decode for DataRepr {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for DataRepr {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let first_octet = src.read_u8();
@@ -212,19 +245,15 @@ impl FixedPartSize for PduHeader {
     const FIXED_PART_SIZE: usize = 16;
 }
 
-impl StaticName for PduHeader {
-    const NAME: &'static str = "PduHeader";
-}
-
 impl Encode for PduHeader {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u8(self.version);
         dst.write_u8(self.version_minor);
         dst.write_u8(self.packet_type.as_u8());
         dst.write_u8(self.packet_flags.bits());
-        self.data_rep.encode_cursor(dst)?;
+        self.data_rep.encode(dst)?;
         dst.write_u16(self.frag_len);
         dst.write_u16(self.auth_len);
         dst.write_u32(self.call_id);
@@ -232,13 +261,17 @@ impl Encode for PduHeader {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "PduHeader"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl Decode for PduHeader {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for PduHeader {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
@@ -252,7 +285,7 @@ impl Decode for PduHeader {
                 let packet_flags = src.read_u8();
                 PacketFlags::from_bits(packet_flags).ok_or(PduError::InvalidPacketFlags(packet_flags))?
             },
-            data_rep: DataRepr::decode_cursor(src)?,
+            data_rep: DataRepr::decode_owned(src)?,
             frag_len: src.read_u16(),
             auth_len: src.read_u16(),
             call_id: src.read_u32(),
@@ -310,13 +343,9 @@ impl FixedPartSize for SecurityTrailer {
     const FIXED_PART_SIZE: usize = 8;
 }
 
-impl StaticName for SecurityTrailer {
-    const NAME: &'static str = "SecurityTrailer";
-}
-
 impl Encode for SecurityTrailer {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u8(self.security_type.as_u8());
         dst.write_u8(self.level.as_u8());
@@ -328,13 +357,27 @@ impl Encode for SecurityTrailer {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "SecurityTrailer"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.auth_value.len()
     }
 }
 
-impl Decode for SecurityTrailer {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl EncodeExt for SecurityTrailer {
+    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        self.encode(dst)
+    }
+
+    fn size_ext(&self) -> usize {
+        self.size()
+    }
+}
+
+impl DecodeOwned for SecurityTrailer {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let security_provider = src.read_u8();
@@ -380,13 +423,9 @@ impl FixedPartSize for Fault {
     const FIXED_PART_SIZE: usize = 4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4 /* status */ + 4 /* padding */;
 }
 
-impl StaticName for Fault {
-    const NAME: &'static str = "Fault";
-}
-
 impl Encode for Fault {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
@@ -400,13 +439,17 @@ impl Encode for Fault {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "Fault PDU"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.stub_data.len()
     }
 }
 
-impl Decode for Fault {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for Fault {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
@@ -470,12 +513,8 @@ impl NeedsContext for PduData {
     type Context<'ctx> = &'ctx PduHeader;
 }
 
-impl StaticName for PduData {
-    const NAME: &'static str = "PduData";
-}
-
-impl DecodeWithContext for PduData {
-    fn decode_cursor_with_context(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> Result<Self> {
+impl DecodeWithContextOwned for PduData {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> DecodeResult<Self> {
         let security_trailer_len = if pdu_header.auth_len > 0 {
             SecurityTrailer::FIXED_PART_SIZE
         } else {
@@ -484,51 +523,62 @@ impl DecodeWithContext for PduData {
 
         let data_len = usize::from(pdu_header.frag_len)
             .checked_sub(security_trailer_len + PduHeader::FIXED_PART_SIZE)
-            .ok_or(PduError::InvalidFragLength(pdu_header.frag_len))?;
+            .ok_or(
+                DecodeError::invalid_field("PDU", "frag len", "frag len is too small")
+                    .with_source(PduError::InvalidFragLength(pdu_header.frag_len)),
+            )?;
 
         ensure_size!(in: src, size: data_len);
-        let buf = src.read_slice(data_len);
+        let mut buf = ReadCursor::new(src.read_slice(data_len));
 
         match pdu_header.packet_type {
-            PacketType::Bind => Ok(PduData::Bind(Bind::decode(buf)?)),
-            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode(buf)?)),
-            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode(buf)?)),
-            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode(buf)?)),
-            PacketType::AlterContextResponse => Ok(PduData::AlterContextResponse(AlterContextResponse::decode(buf)?)),
-            PacketType::Request => Ok(PduData::Request(Request::decode_with_context(buf, pdu_header)?)),
-            PacketType::Response => Ok(PduData::Response(Response::decode(buf)?)),
-            PacketType::Fault => Ok(PduData::Fault(Fault::decode(buf)?)),
+            PacketType::Bind => Ok(PduData::Bind(Bind::decode_owned(&mut buf)?)),
+            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode_owned(&mut buf)?)),
+            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode_owned(&mut buf)?)),
+            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode_owned(&mut buf)?)),
+            PacketType::AlterContextResponse => Ok(PduData::AlterContextResponse(AlterContextResponse::decode_owned(
+                &mut buf,
+            )?)),
+            PacketType::Request => Ok(PduData::Request(Request::decode_with_context_owned(
+                &mut buf, pdu_header,
+            )?)),
+            PacketType::Response => Ok(PduData::Response(Response::decode_owned(&mut buf)?)),
+            PacketType::Fault => Ok(PduData::Fault(Fault::decode_owned(&mut buf)?)),
             packet_type => Err(PduError::PduNotSupported(packet_type))?,
         }
     }
 }
 
 impl Encode for PduData {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         match self {
-            PduData::Bind(bind) => bind.encode_cursor(dst),
-            PduData::BindAck(bind_ack) => bind_ack.encode_cursor(dst),
-            PduData::BindNak(bind_nak) => bind_nak.encode_cursor(dst),
-            PduData::AlterContext(alter_context) => alter_context.encode_cursor(dst),
-            PduData::AlterContextResponse(alter_context_response) => alter_context_response.encode_cursor(dst),
-            PduData::Request(request) => request.encode_cursor(dst),
-            PduData::Response(response) => response.encode_cursor(dst),
-            PduData::Fault(fault) => fault.encode_cursor(dst),
+            PduData::Bind(bind) => bind.encode(dst),
+            PduData::BindAck(bind_ack) => bind_ack.encode(dst),
+            PduData::BindNak(bind_nak) => bind_nak.encode(dst),
+            PduData::AlterContext(alter_context) => alter_context.encode(dst),
+            PduData::AlterContextResponse(alter_context_response) => alter_context_response.encode(dst),
+            PduData::Request(request) => request.encode(dst),
+            PduData::Response(response) => response.encode(dst),
+            PduData::Fault(fault) => fault.encode(dst),
         }
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "PduData"
+    }
+
+    fn size(&self) -> usize {
         match self {
-            PduData::Bind(bind) => bind.frame_length(),
-            PduData::BindAck(bind_ack) => bind_ack.frame_length(),
-            PduData::BindNak(bind_nak) => bind_nak.frame_length(),
-            PduData::AlterContext(alter_context) => alter_context.frame_length(),
-            PduData::AlterContextResponse(alter_context_response) => alter_context_response.frame_length(),
-            PduData::Request(request) => request.frame_length(),
-            PduData::Response(response) => response.frame_length(),
-            PduData::Fault(fault) => fault.frame_length(),
+            PduData::Bind(bind) => bind.size(),
+            PduData::BindAck(bind_ack) => bind_ack.size(),
+            PduData::BindNak(bind_nak) => bind_nak.size(),
+            PduData::AlterContext(alter_context) => alter_context.size(),
+            PduData::AlterContextResponse(alter_context_response) => alter_context_response.size(),
+            PduData::Request(request) => request.size(),
+            PduData::Response(response) => response.size(),
+            PduData::Fault(fault) => fault.size(),
         }
     }
 }
@@ -553,32 +603,32 @@ impl Pdu {
     }
 }
 
-impl StaticName for Pdu {
-    const NAME: &'static str = "Pdu";
-}
-
 impl Encode for Pdu {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        self.header.encode_cursor(dst)?;
-        self.data.encode_cursor(dst)?;
-        self.security_trailer.encode_cursor(dst)?;
+        self.header.encode(dst)?;
+        self.data.encode(dst)?;
+        self.security_trailer.encode_ext(dst)?;
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
-        self.header.frame_length() + self.data.frame_length() + self.security_trailer.frame_length()
+    fn name(&self) -> &'static str {
+        "PDU"
+    }
+
+    fn size(&self) -> usize {
+        self.header.size() + self.data.size() + self.security_trailer.size_ext()
     }
 }
 
-impl Decode for Pdu {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
-        let header = PduHeader::decode_cursor(src)?;
-        let data = PduData::decode_cursor_with_context(src, &header)?;
+impl DecodeOwned for Pdu {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
+        let header = PduHeader::decode_owned(src)?;
+        let data = PduData::decode_with_context_owned(src, &header)?;
         let security_trailer = if header.auth_len > 0 {
-            Some(SecurityTrailer::decode_cursor(src)?)
+            Some(SecurityTrailer::decode_owned(src)?)
         } else {
             None
         };
@@ -596,12 +646,12 @@ impl FixedPartSize for Pdu {
 }
 
 impl FindLength for Pdu {
-    fn find_frame_length(bytes: &[u8]) -> Result<Option<usize>> {
+    fn find_frame_length(bytes: &[u8]) -> DecodeResult<Option<usize>> {
         if bytes.len() < Self::FIXED_PART_SIZE {
             return Ok(None);
         }
 
-        let pdu_header = PduHeader::decode(&bytes[0..Self::FIXED_PART_SIZE])?;
+        let pdu_header = PduHeader::decode_owned(&mut ReadCursor::new(&bytes[0..Self::FIXED_PART_SIZE]))?;
 
         Ok(Some(usize::from(pdu_header.frag_len)))
     }

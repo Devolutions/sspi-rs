@@ -3,12 +3,16 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use ironrdp_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteCursor, cast_int,
+    cast_length, ensure_size,
+};
 use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, str_utf16_len};
-use crate::{Decode, Encode, Error, Padding, ReadCursor, Result, StaticName, WriteCursor, read_c_str_utf16_le};
+use crate::{DecodeOwnedExt, EncodeExt, Error, Padding, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -24,26 +28,34 @@ pub enum GkdiError {
         actual: u32,
     },
 
+    #[error("invalid {name} magic bytes")]
+    InvalidMagic {
+        name: &'static str,
+        expected: &'static [u8],
+        actual: Vec<u8>,
+    },
+
     #[error("invalid elliptic curve id")]
     InvalidEllipticCurveId(Vec<u8>),
-
-    #[error("invalid kdf algorithm name: expected {expected} but got {actual}")]
-    InvalidKdfAlgName { expected: &'static str, actual: String },
-
-    #[error("current user is not authorized to retrieve the KEK information")]
-    IsNotAuthorized,
-
-    #[error("l0 index does not match requested l0 index")]
-    InvalidL0Index,
-
-    #[error("bad GetKey response: {0}")]
-    BadResponse(&'static str),
-
-    #[error("bad GetKey hresult: {0:x?}")]
-    BadHresult(u32),
 }
 
 pub type GkdiResult<T> = core::result::Result<T, GkdiError>;
+
+impl From<GkdiError> for DecodeError {
+    fn from(err: GkdiError) -> Self {
+        match &err {
+            GkdiError::InvalidHashName(_) => {
+                DecodeError::invalid_field("KdfParameters", "hash algorithm", "invalid value")
+            }
+            GkdiError::InvalidVersion { .. } => DecodeError::invalid_field("", "version", "invalid version"),
+            GkdiError::InvalidEllipticCurveId(_) => {
+                DecodeError::invalid_field("EcdhKey", "elliptic curve id", "invalid value")
+            }
+            GkdiError::InvalidMagic { .. } => DecodeError::invalid_field("", "magic", "invalid value"),
+        }
+        .with_source(err)
+    }
+}
 
 /// GetKey RPC Request
 ///
@@ -70,15 +82,11 @@ impl GetKey {
     pub const OPNUM: u16 = 0;
 }
 
-impl StaticName for GetKey {
-    const NAME: &'static str = "GetKey";
-}
-
 impl Encode for GetKey {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
-        let target_sd_len = self.target_sd.len().try_into()?;
+        let target_sd_len = cast_length!("GetKey", "target_sd", self.target_sd.len())?;
         // cbTargetSD
         dst.write_u64(target_sd_len);
         // pbTargetSD - pointer header includes the length + padding
@@ -90,7 +98,7 @@ impl Encode for GetKey {
 
         if let Some(root_key_id) = self.root_key_id.as_ref() {
             dst.write_slice(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);
-            root_key_id.encode_cursor(dst)?;
+            root_key_id.encode_ext(dst)?;
         } else {
             dst.write_u64(0);
         };
@@ -102,18 +110,22 @@ impl Encode for GetKey {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "GetKey"
+    }
+
+    fn size(&self) -> usize {
         8 /* cbTargetSD */ + 8 /* pbTartetSD */ + self.target_sd.len() + Padding::<8>::padding(self.target_sd.len())
-        + if let Some(root_key_id) = self.root_key_id.as_ref() { 8 + root_key_id.frame_length() } else { 8 }
+        + if let Some(root_key_id) = self.root_key_id.as_ref() { 8 + root_key_id.size_ext() } else { 8 }
         + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
     }
 }
 
-impl Decode for GetKey {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for GetKey {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: 8 /* target_sd_len */ + 8 /* offset */);
 
-        let target_sd_len = usize::try_from(src.read_u64())?;
+        let target_sd_len = { cast_int!("GetKey", "target_sd len", src.read_u64()) as DecodeResult<_> }?;
         let _offset = src.read_u64();
 
         ensure_size!(in: src, size: target_sd_len);
@@ -123,7 +135,7 @@ impl Decode for GetKey {
 
         ensure_size!(in: src, size: 8);
         let root_key_id = if src.read_u64() != 0 {
-            Some(Uuid::decode_cursor(src)?)
+            Some(Uuid::decode_owned(src)?)
         } else {
             None
         };
@@ -200,55 +212,55 @@ impl KdfParameters {
         Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len();
 }
 
-impl StaticName for KdfParameters {
-    const NAME: &'static str = "KdfParameters";
-}
-
 impl Encode for KdfParameters {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
 
         dst.write_slice(Self::MAGIC_IDENTIFIER_1);
-        dst.write_u32(encoded_hash_alg.len().try_into()?);
+        dst.write_u32(cast_int!("GetKey", "target_sd len", encoded_hash_alg.len())?);
         dst.write_slice(Self::MAGIC_IDENTIFIER_2);
         dst.write_slice(&encoded_hash_alg);
 
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "KdfParameters"
+    }
+
+    fn size(&self) -> usize {
         let encoded_hash_alg_len = str_utf16_len(&self.hash_alg.to_string());
 
         Self::FIXED_PART_SIZE + encoded_hash_alg_len
     }
 }
 
-impl Decode for KdfParameters {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for KdfParameters {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let magic_identifier_1 = src.read_slice(Self::MAGIC_IDENTIFIER_1.len());
 
         if magic_identifier_1 != Self::MAGIC_IDENTIFIER_1 {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "KdfParameters::MAGIC_IDENTIFIER_1",
                 expected: Self::MAGIC_IDENTIFIER_1,
                 actual: magic_identifier_1.to_vec(),
-            });
+            })?;
         }
 
-        let hash_name_len: usize = src.read_u32().try_into()?;
+        let hash_name_len = { cast_int!("KdfParameters", "hash name len", src.read_u32()) as DecodeResult<_> }?;
 
         let magic_identifier_2 = src.read_slice(Self::MAGIC_IDENTIFIER_2.len());
 
         if magic_identifier_2 != Self::MAGIC_IDENTIFIER_2 {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "KdfParameters::MAGIC_IDENTIFIER_1",
                 expected: Self::MAGIC_IDENTIFIER_2,
                 actual: magic_identifier_2.to_vec(),
-            });
+            })?;
         }
 
         // The smallest possible hash algorithm name is "SHA1\0", 10 bytes long in UTF-16 encoding.
@@ -293,13 +305,9 @@ impl FfcdhParameters {
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
-impl StaticName for FfcdhParameters {
-    const NAME: &'static str = "SyntaxId";
-}
-
 impl Encode for FfcdhParameters {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         // Calculate total structure length and write it.
         //
@@ -310,7 +318,7 @@ impl Encode for FfcdhParameters {
         dst.write_slice(Self::MAGIC);
         dst.write_u32(self.key_length);
 
-        let key_len = self.key_length.try_into()?;
+        let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
 
         let mut field_order = self.field_order.to_bytes_be();
         field_order.resize(key_len, 0);
@@ -323,13 +331,17 @@ impl Encode for FfcdhParameters {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "FfcdhParameters"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + usize::try_from(self.key_length).unwrap() * 2
     }
 }
 
-impl Decode for FfcdhParameters {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for FfcdhParameters {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let _total_len = src.read_u32();
@@ -337,15 +349,15 @@ impl Decode for FfcdhParameters {
         let magic = src.read_slice(Self::MAGIC.len());
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "FfcdhParameters",
                 expected: Self::MAGIC,
                 actual: magic.to_vec(),
-            });
+            })?;
         }
 
         let key_length = src.read_u32();
-        let key_len = key_length.try_into()?;
+        let key_len = { cast_int!("FfcdhParameters", "key len", key_length) as DecodeResult<_> }?;
         ensure_size!(in: src, size: key_len * 2);
 
         let field_order = BigUint::from_bytes_be(src.read_slice(key_len));
@@ -388,19 +400,15 @@ impl FfcdhKey {
     const FIXED_PART_SIZE: usize = Self::MAGIC.len() + 4 /* key length */;
 }
 
-impl StaticName for FfcdhKey {
-    const NAME: &'static str = "FfcdhKey";
-}
-
 impl Encode for FfcdhKey {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_slice(Self::MAGIC);
 
         dst.write_u32(self.key_length);
 
-        let key_len = self.key_length.try_into()?;
+        let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
 
         let mut field_order = self.field_order.to_bytes_be();
         field_order.resize(key_len, 0);
@@ -417,27 +425,31 @@ impl Encode for FfcdhKey {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "FfcdhKey"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + usize::try_from(self.key_length).unwrap() * 3
     }
 }
 
-impl Decode for FfcdhKey {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for FfcdhKey {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let magic = src.read_slice(Self::MAGIC.len());
 
         if magic != FfcdhKey::MAGIC {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "FfcdhKey",
                 expected: Self::MAGIC,
                 actual: magic.to_vec(),
-            });
+            })?;
         }
 
         let key_length = src.read_u32();
-        let key_len = key_length.try_into()?;
+        let key_len = { cast_int!("FfcdhKey", "key len", key_length) as DecodeResult<_> }?;
 
         ensure_size!(in: src, size: key_len * 3);
 
@@ -508,19 +520,15 @@ impl EcdhKey {
     const FIXED_PART_SIZE: usize = 4 /* encoded_curve len */ + 4 /* key_length */;
 }
 
-impl StaticName for EcdhKey {
-    const NAME: &'static str = "EcdhKey";
-}
-
 impl Encode for EcdhKey {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_slice(self.curve.into());
 
         dst.write_u32(self.key_length);
 
-        let key_len: usize = self.key_length.try_into()?;
+        let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
 
         let mut x = self.x.to_bytes_be();
         x.resize(key_len, 0);
@@ -533,20 +541,24 @@ impl Encode for EcdhKey {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "EcshKey"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + 2 * usize::try_from(self.key_length).unwrap()
     }
 }
 
-impl Decode for EcdhKey {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for EcdhKey {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let curve_id = src.read_slice(4);
         let curve = EllipticCurve::try_from(curve_id)?;
 
         let key_length = src.read_u32();
-        let key_len = key_length.try_into()?;
+        let key_len = { cast_int!("EcdgKey", "key len", key_length) as DecodeResult<_> }?;
 
         ensure_size!(in: src, size: key_len * 2);
 
@@ -600,13 +612,9 @@ impl KeyIdentifier {
     }
 }
 
-impl StaticName for KeyIdentifier {
-    const NAME: &'static str = "KeyIdentifier";
-}
-
 impl Encode for KeyIdentifier {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         let domain_name = encode_utf16_le(&self.domain_name);
         let forest_name = encode_utf16_le(&self.forest_name);
@@ -619,11 +627,11 @@ impl Encode for KeyIdentifier {
         dst.write_i32(self.l1);
         dst.write_i32(self.l2);
 
-        self.root_key_identifier.encode_cursor(dst)?;
+        self.root_key_identifier.encode_ext(dst)?;
 
-        dst.write_u32(self.key_info.len().try_into()?);
-        dst.write_u32(domain_name.len().try_into()?);
-        dst.write_u32(forest_name.len().try_into()?);
+        dst.write_u32(cast_length!("KeyIdentifier", "key len", self.key_info.len())?);
+        dst.write_u32(cast_length!("KeyIdentifier", "domain name len", domain_name.len())?);
+        dst.write_u32(cast_length!("KeyIdentifier", "forest name len", forest_name.len())?);
 
         dst.write_slice(&self.key_info);
         dst.write_slice(&domain_name);
@@ -632,7 +640,11 @@ impl Encode for KeyIdentifier {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "KeyIndentifier"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
             + self.key_info.len()
             + str_utf16_len(&self.domain_name)
@@ -640,8 +652,8 @@ impl Encode for KeyIdentifier {
     }
 }
 
-impl Decode for KeyIdentifier {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for KeyIdentifier {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let version = src.read_u32();
@@ -649,11 +661,11 @@ impl Decode for KeyIdentifier {
         let magic = src.read_slice(Self::MAGIC.len());
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "KeyIdentifier",
                 expected: Self::MAGIC.as_slice(),
                 actual: magic.to_vec(),
-            });
+            })?;
         }
 
         let flags = src.read_u32();
@@ -661,26 +673,26 @@ impl Decode for KeyIdentifier {
         let l0 = src.read_i32();
         let l1 = src.read_i32();
         let l2 = src.read_i32();
-        let root_key_identifier = Uuid::decode_cursor(src)?;
+        let root_key_identifier = Uuid::decode_owned(src)?;
 
-        let key_info_len = src.read_u32().try_into()?;
+        let key_info_len = { cast_int!("KeyIdentifier", "key info len", src.read_u32()) as DecodeResult<_> }?;
 
-        let domain_len = src.read_u32().try_into()?;
+        let domain_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
         if domain_len <= 2 {
-            return Err(Error::InvalidLength {
+            Err(Error::InvalidLength {
                 name: "KeyIdentifier domain name",
                 expected: 2,
                 actual: domain_len,
-            });
+            })?;
         }
 
-        let forest_len = src.read_u32().try_into()?;
+        let forest_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
         if forest_len <= 2 {
-            return Err(Error::InvalidLength {
+            Err(Error::InvalidLength {
                 name: "KeyIdentifier forest name",
                 expected: 2,
                 actual: forest_len,
-            });
+            })?;
         }
 
         ensure_size!(in: src, size: key_info_len);
@@ -771,13 +783,9 @@ impl GroupKeyEnvelope {
     }
 }
 
-impl StaticName for GroupKeyEnvelope {
-    const NAME: &'static str = "GroupKeyEnvelope";
-}
-
 impl Encode for GroupKeyEnvelope {
-    fn encode_cursor(&self, dst: &mut WriteCursor<'_>) -> Result<()> {
-        ensure_size!(in: dst, size: self.frame_length());
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
 
         dst.write_u32(Self::VERSION);
 
@@ -786,23 +794,23 @@ impl Encode for GroupKeyEnvelope {
         dst.write_i32(self.l0);
         dst.write_i32(self.l1);
         dst.write_i32(self.l2);
-        self.root_key_identifier.encode_cursor(dst)?;
+        self.root_key_identifier.encode_ext(dst)?;
 
         let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
         let encoded_secret_alg = encode_utf16_le(&self.secret_algorithm);
         let encoded_domain_name = encode_utf16_le(&self.domain_name);
         let encoded_forest_name = encode_utf16_le(&self.forest_name);
 
-        dst.write_u32(encoded_kdf_alg.len().try_into()?);
-        dst.write_u32(self.kdf_parameters.len().try_into()?);
-        dst.write_u32(encoded_secret_alg.len().try_into()?);
-        dst.write_u32(self.secret_parameters.len().try_into()?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_kdf_alg.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.kdf_parameters.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_secret_alg.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.secret_parameters.len())?);
         dst.write_u32(self.private_key_length);
         dst.write_u32(self.public_key_length);
-        dst.write_u32(self.l1_key.len().try_into()?);
-        dst.write_u32(self.l2_key.len().try_into()?);
-        dst.write_u32(encoded_domain_name.len().try_into()?);
-        dst.write_u32(encoded_forest_name.len().try_into()?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l1_key.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l2_key.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_domain_name.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_forest_name.len())?);
 
         dst.write_slice(&encoded_kdf_alg);
         dst.write_slice(&self.kdf_parameters);
@@ -816,7 +824,11 @@ impl Encode for GroupKeyEnvelope {
         Ok(())
     }
 
-    fn frame_length(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "GroupKeyEnvelope"
+    }
+
+    fn size(&self) -> usize {
         let encoded_kdf_alg_len = str_utf16_len(&self.kdf_alg);
         let encoded_secret_alg_len = str_utf16_len(&self.secret_algorithm);
         let encoded_domain_name_len = str_utf16_len(&self.domain_name);
@@ -834,8 +846,8 @@ impl Encode for GroupKeyEnvelope {
     }
 }
 
-impl Decode for GroupKeyEnvelope {
-    fn decode_cursor(src: &mut ReadCursor<'_>) -> Result<Self> {
+impl DecodeOwned for GroupKeyEnvelope {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let version = src.read_u32();
@@ -851,42 +863,42 @@ impl Decode for GroupKeyEnvelope {
         let magic = src.read_slice(Self::MAGIC.len());
 
         if magic != Self::MAGIC {
-            return Err(Error::InvalidMagic {
+            Err(GkdiError::InvalidMagic {
                 name: "GroupKeyEnvelope",
                 expected: Self::MAGIC,
                 actual: magic.to_vec(),
-            });
+            })?;
         }
 
         let flags = src.read_u32();
         let l0 = src.read_i32();
         let l1 = src.read_i32();
         let l2 = src.read_i32();
-        let root_key_identifier = Uuid::decode_cursor(src)?;
+        let root_key_identifier = Uuid::decode_owned(src)?;
 
-        let kdf_alg_len = src.read_u32();
-        let kdf_parameters_len = src.read_u32().try_into()?;
-        let secret_alg_len = src.read_u32();
-        let secret_parameters_len = src.read_u32().try_into()?;
+        let kdf_alg_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let kdf_parameters_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let secret_alg_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let secret_parameters_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
         let private_key_length = src.read_u32();
         let public_key_length = src.read_u32();
-        let l1_key_len = src.read_u32().try_into()?;
-        let l2_key_len = src.read_u32().try_into()?;
-        let domain_len = src.read_u32();
-        let forest_len = src.read_u32();
+        let l1_key_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let l2_key_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let domain_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let forest_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
 
-        let kdf_alg = read_c_str_utf16_le(kdf_alg_len.try_into()?, src)?;
+        let kdf_alg = read_c_str_utf16_le(kdf_alg_len, src)?;
 
         ensure_size!(in: src, size: kdf_parameters_len);
         let kdf_parameters = src.read_slice(kdf_parameters_len).to_vec();
 
-        let secret_algorithm = read_c_str_utf16_le(secret_alg_len.try_into()?, src)?;
+        let secret_algorithm = read_c_str_utf16_le(secret_alg_len, src)?;
 
         ensure_size!(in: src, size: secret_parameters_len);
         let secret_parameters = src.read_slice(secret_parameters_len).to_vec();
 
-        let domain_name = read_c_str_utf16_le(domain_len.try_into()?, src)?;
-        let forest_name = read_c_str_utf16_le(forest_len.try_into()?, src)?;
+        let domain_name = read_c_str_utf16_le(domain_len, src)?;
+        let forest_name = read_c_str_utf16_le(forest_len, src)?;
 
         ensure_size!(in: src, size: l1_key_len);
         let l1_key = src.read_slice(l1_key_len).to_vec();
