@@ -1,4 +1,4 @@
-use dpapi::epm::{EptMap, EptMapResult, Floor, IpFloor, RpcConnectionOrientedFloor, TcpFloor, UuidFloor};
+use dpapi_core::rpc::{EptMap, EptMapResult, Floor, IpFloor, RpcConnectionOrientedFloor, TcpFloor, UuidFloor};
 use uuid::uuid;
 
 test_encoding_decoding! {
