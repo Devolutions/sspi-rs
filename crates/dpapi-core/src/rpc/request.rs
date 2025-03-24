@@ -4,7 +4,7 @@ use ironrdp_core::{DecodeOwned, DecodeResult, Encode, EncodeResult, ReadCursor, 
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{DecodeOwnedExt, DecodeWithContextOwned, FixedPartSize, NeedsContext, encode_uuid};
+use crate::{DecodeWithContextOwned, FixedPartSize, NeedsContext, decode_uuid, encode_uuid};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -60,7 +60,7 @@ impl DecodeWithContextOwned for Request {
             context_id: src.read_u16(),
             opnum: src.read_u16(),
             obj: if pdu_header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
-                Some(Uuid::decode_owned(src)?)
+                Some(decode_uuid(src)?)
             } else {
                 None
             },

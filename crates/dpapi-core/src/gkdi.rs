@@ -12,7 +12,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, str_utf16_len};
-use crate::{DecodeOwnedExt, Error, FixedPartSize, Padding, encode_uuid, read_c_str_utf16_le};
+use crate::{Error, FixedPartSize, Padding, decode_uuid, encode_uuid, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -135,7 +135,7 @@ impl DecodeOwned for GetKey {
 
         ensure_size!(in: src, size: 8);
         let root_key_id = if src.read_u64() != 0 {
-            Some(Uuid::decode_owned(src)?)
+            Some(decode_uuid(src)?)
         } else {
             None
         };
@@ -673,7 +673,7 @@ impl DecodeOwned for KeyIdentifier {
         let l0 = src.read_i32();
         let l1 = src.read_i32();
         let l2 = src.read_i32();
-        let root_key_identifier = Uuid::decode_owned(src)?;
+        let root_key_identifier = decode_uuid(src)?;
 
         let key_info_len = { cast_int!("KeyIdentifier", "key info len", src.read_u32()) as DecodeResult<_> }?;
 
@@ -874,7 +874,7 @@ impl DecodeOwned for GroupKeyEnvelope {
         let l0 = src.read_i32();
         let l1 = src.read_i32();
         let l2 = src.read_i32();
-        let root_key_identifier = Uuid::decode_owned(src)?;
+        let root_key_identifier = decode_uuid(src)?;
 
         let kdf_alg_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
         let kdf_parameters_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;

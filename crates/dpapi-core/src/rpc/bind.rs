@@ -8,7 +8,7 @@ use ironrdp_core::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{DecodeOwnedExt, FixedPartSize, Padding, encode_seq, encode_uuid, size_seq};
+use crate::{FixedPartSize, Padding, decode_uuid, encode_seq, encode_uuid, size_seq};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -98,7 +98,7 @@ impl DecodeOwned for SyntaxId {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
-            uuid: Uuid::decode_owned(src)?,
+            uuid: decode_uuid(src)?,
             version: src.read_u16(),
             version_minor: src.read_u16(),
         })
@@ -235,7 +235,7 @@ impl DecodeOwned for ContextResult {
         Ok(Self {
             result: src.read_u16().try_into()?,
             reason: src.read_u16(),
-            syntax: Uuid::decode_owned(src)?,
+            syntax: decode_uuid(src)?,
             syntax_version: src.read_u32(),
         })
     }

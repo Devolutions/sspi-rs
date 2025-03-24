@@ -2,8 +2,8 @@ use dpapi_core::core::decode_owned;
 use dpapi_core::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_core::rpc::{
     build_tcpip_tower, BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext,
-    ContextElement, ContextResultCode, EptMap, EptMapResult, Floor, Response, SecurityTrailer, VerificationTrailer,
-    EPM,
+    ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
+    VerificationTrailer, EPM,
 };
 use dpapi_core::EncodeVec;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
@@ -64,7 +64,7 @@ fn get_ept_map_isd_key() -> EptMap {
     EptMap {
         obj: None,
         tower: build_tcpip_tower(ISD_KEY, NDR, 135, 0),
-        entry_handle: None,
+        entry_handle: EntryHandle(None),
         max_towers: 4,
     }
 }

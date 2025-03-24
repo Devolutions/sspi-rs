@@ -11,7 +11,7 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{DecodeOwnedExt, DecodeWithContextOwned, FixedPartSize, NeedsContext, Padding, encode_uuid, size_seq};
+use crate::{DecodeWithContextOwned, FixedPartSize, NeedsContext, Padding, decode_uuid, encode_uuid, size_seq};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -333,7 +333,7 @@ impl DecodeWithContextOwned for UuidFloor {
         let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
-            uuid: Uuid::decode_owned(&mut ReadCursor::new(&lhs[0..Uuid::FIXED_PART_SIZE]))?,
+            uuid: decode_uuid(&mut ReadCursor::new(&lhs[0..Uuid::FIXED_PART_SIZE]))?,
             version: u16::from_le_bytes(lhs[Uuid::FIXED_PART_SIZE..].try_into().unwrap()),
             version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
         })
@@ -460,7 +460,7 @@ impl DecodeOwned for EntryHandle {
         Ok(if entry_handle_buf != Self::EMPTY_ENTRY_HANDLE {
             Self(Some((
                 u32::from_le_bytes(entry_handle_buf[0..4].try_into().unwrap()),
-                Uuid::decode_owned(&mut ReadCursor::new(&entry_handle_buf[4..]))?,
+                decode_uuid(&mut ReadCursor::new(&entry_handle_buf[4..]))?,
             )))
         } else {
             Self(None)
@@ -541,10 +541,10 @@ impl DecodeOwned for EptMap {
         // obj with a referent id of 1
         src.read_u64();
 
-        let obj = src.read_slice(16);
+        let obj = src.read_slice(Uuid::FIXED_PART_SIZE);
 
-        let obj = if obj != [0; 16] {
-            Some(Uuid::decode_owned(&mut ReadCursor::new(obj))?)
+        let obj = if obj != [0; Uuid::FIXED_PART_SIZE] {
+            Some(decode_uuid(&mut ReadCursor::new(obj))?)
         } else {
             None
         };

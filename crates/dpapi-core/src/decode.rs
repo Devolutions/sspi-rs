@@ -5,17 +5,11 @@ use uuid::Uuid;
 
 use crate::NeedsContext;
 
-pub trait DecodeOwnedExt: Sized {
-    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self>;
-}
+pub fn decode_uuid(src: &mut ReadCursor<'_>) -> DecodeResult<Uuid> {
+    ensure_size!(in: src, size: Uuid::FIXED_PART_SIZE);
 
-impl DecodeOwnedExt for Uuid {
-    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
-        ensure_size!(in: src, size: Uuid::FIXED_PART_SIZE);
-
-        Uuid::from_slice_le(src.read_slice(Self::FIXED_PART_SIZE))
-            .map_err(|err| DecodeError::invalid_field("", "uuid", "invalid data").with_source(err))
-    }
+    Uuid::from_slice_le(src.read_slice(Uuid::FIXED_PART_SIZE))
+        .map_err(|err| DecodeError::invalid_field("", "uuid", "invalid data").with_source(err))
 }
 
 /// PDU that can be decoded from a binary input and provided context.
