@@ -383,7 +383,7 @@ pub unsafe extern "system" fn SCardTransmit(
     if out_apdu_len
         > try_execute!(
             // SAFETY: The `pcb_recv_length` parameter cannot be null (checked above). So, it's safe to deref.
-            unsafe { *pcb_recv_length }.try_into(),
+            usize::try_from(unsafe { *pcb_recv_length }),
             ErrorKind::InsufficientBuffer
         )
         || pb_recv_buffer.is_null()
