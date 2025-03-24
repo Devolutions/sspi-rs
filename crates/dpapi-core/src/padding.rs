@@ -22,7 +22,7 @@ impl<const ALIGNMENT: usize> Padding<ALIGNMENT> {
         Ok(())
     }
 
-    pub fn padding(len: usize) -> usize {
+    pub const fn padding(len: usize) -> usize {
         (ALIGNMENT - (len % ALIGNMENT)) % ALIGNMENT
     }
 }
