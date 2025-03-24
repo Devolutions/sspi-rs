@@ -10,7 +10,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{EncodeExt, FixedPartSize};
+use crate::{FixedPartSize, encode_seq, size_seq};
 
 #[derive(Debug, Error)]
 pub enum CommandError {
@@ -109,16 +109,6 @@ impl Encode for Command {
 
     fn size(&self) -> usize {
         2 /* command_type + command_flags */ + self.value_length()
-    }
-}
-
-impl EncodeExt for Command {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
     }
 }
 
@@ -321,7 +311,7 @@ impl Encode for VerificationTrailer {
 
         dst.write_slice(Self::SIGNATURE);
 
-        self.commands.encode_ext(dst)?;
+        encode_seq(&self.commands, dst)?;
 
         Ok(())
     }
@@ -331,7 +321,7 @@ impl Encode for VerificationTrailer {
     }
 
     fn size(&self) -> usize {
-        Self::SIGNATURE.len() + self.commands.size_ext()
+        Self::SIGNATURE.len() + size_seq(&self.commands)
     }
 }
 

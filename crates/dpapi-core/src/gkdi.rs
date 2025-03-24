@@ -12,7 +12,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, str_utf16_len};
-use crate::{DecodeOwnedExt, EncodeExt, Error, Padding, read_c_str_utf16_le};
+use crate::{DecodeOwnedExt, Error, FixedPartSize, Padding, encode_uuid, read_c_str_utf16_le};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -98,7 +98,7 @@ impl Encode for GetKey {
 
         if let Some(root_key_id) = self.root_key_id.as_ref() {
             dst.write_slice(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);
-            root_key_id.encode_ext(dst)?;
+            encode_uuid(*root_key_id, dst)?;
         } else {
             dst.write_u64(0);
         };
@@ -116,7 +116,7 @@ impl Encode for GetKey {
 
     fn size(&self) -> usize {
         8 /* cbTargetSD */ + 8 /* pbTartetSD */ + self.target_sd.len() + Padding::<8>::padding(self.target_sd.len())
-        + if let Some(root_key_id) = self.root_key_id.as_ref() { 8 + root_key_id.size_ext() } else { 8 }
+        + if self.root_key_id.is_some() { 8 + Uuid::FIXED_PART_SIZE } else { 8 }
         + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
     }
 }
@@ -604,7 +604,7 @@ impl KeyIdentifier {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/192c061c-e740-4aa0-ab1d-6954fb3e58f7
     const MAGIC: [u8; 4] = [0x4b, 0x44, 0x53, 0x4b];
     const FIXED_PART_SIZE: usize = 4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
-        + 16 /* root_key_identifier */ + 4 /* key_info len */ + 4 /* domain_name len */
+        + Uuid::FIXED_PART_SIZE /* root_key_identifier */ + 4 /* key_info len */ + 4 /* domain_name len */
         + 4 /* forest_name len */;
 
     pub fn is_public_key(&self) -> bool {
@@ -627,7 +627,7 @@ impl Encode for KeyIdentifier {
         dst.write_i32(self.l1);
         dst.write_i32(self.l2);
 
-        self.root_key_identifier.encode_ext(dst)?;
+        encode_uuid(self.root_key_identifier, dst)?;
 
         dst.write_u32(cast_length!("KeyIdentifier", "key len", self.key_info.len())?);
         dst.write_u32(cast_length!("KeyIdentifier", "domain name len", domain_name.len())?);
@@ -766,7 +766,7 @@ impl GroupKeyEnvelope {
     const MAGIC: &[u8] = &[0x4B, 0x44, 0x53, 0x4B];
     const VERSION: u32 = 1;
     const FIXED_PART_SIZE: usize = 4 /* version */ + Self::MAGIC.len() + 4 /* flags */ + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
-        + 16 /* root_key_identifier */
+        + Uuid::FIXED_PART_SIZE /* root_key_identifier */
         + 4 /* encoded_kdf_alg */
         + 4 /* kdf_parameters */
         + 4 /* encoded_secret_alg */
@@ -794,7 +794,7 @@ impl Encode for GroupKeyEnvelope {
         dst.write_i32(self.l0);
         dst.write_i32(self.l1);
         dst.write_i32(self.l2);
-        self.root_key_identifier.encode_ext(dst)?;
+        encode_uuid(self.root_key_identifier, dst)?;
 
         let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
         let encoded_secret_alg = encode_utf16_le(&self.secret_algorithm);

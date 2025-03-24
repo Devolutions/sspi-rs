@@ -3,7 +3,7 @@ use alloc::{format, vec};
 
 use ironrdp_core::{
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, UnsupportedValueErr,
-    WriteBuf, WriteCursor, cast_int, cast_length, ensure_size,
+    WriteBuf, WriteCursor, cast_int, cast_length, encode_buf, ensure_size,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -11,7 +11,7 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{DecodeOwnedExt, DecodeWithContextOwned, EncodeExt, FixedPartSize, NeedsContext, Padding, encode_buf};
+use crate::{DecodeOwnedExt, DecodeWithContextOwned, FixedPartSize, NeedsContext, Padding, encode_uuid, size_seq};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -376,16 +376,6 @@ impl Encode for Floor {
     }
 }
 
-impl EncodeExt for Floor {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
-    }
-}
-
 impl DecodeOwned for Floor {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
@@ -427,45 +417,53 @@ pub fn build_tcpip_tower(service: SyntaxId, data_rep: SyntaxId, port: u16, addr:
     ]
 }
 
-pub type EntryHandle = (u32, Uuid);
-const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryHandle(pub Option<(u32, Uuid)>);
 
-impl FixedPartSize for Option<EntryHandle> {
-    const FIXED_PART_SIZE: usize = EMPTY_ENTRY_HANDLE.len();
+impl EntryHandle {
+    const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
 }
 
-impl EncodeExt for Option<EntryHandle> {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        ensure_size!(in: dst, size: self.size_ext());
+impl FixedPartSize for EntryHandle {
+    const FIXED_PART_SIZE: usize = Self::EMPTY_ENTRY_HANDLE.len();
+}
 
-        if let Some(entry_handle) = self {
+impl Encode for EntryHandle {
+    fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
+        ensure_size!(in: dst, size: self.size());
+
+        if let Some(entry_handle) = self.0.as_ref() {
             dst.write_u32(entry_handle.0);
-            entry_handle.1.encode_ext(dst)?;
+            encode_uuid(entry_handle.1, dst)?;
         } else {
-            dst.write_slice(EMPTY_ENTRY_HANDLE);
+            dst.write_slice(Self::EMPTY_ENTRY_HANDLE);
         }
 
         Ok(())
     }
 
-    fn size_ext(&self) -> usize {
+    fn name(&self) -> &'static str {
+        "EntryHandle"
+    }
+
+    fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
     }
 }
 
-impl DecodeOwnedExt for Option<EntryHandle> {
+impl DecodeOwned for EntryHandle {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         let entry_handle_buf = src.read_slice(Self::FIXED_PART_SIZE);
 
-        Ok(if entry_handle_buf != EMPTY_ENTRY_HANDLE {
-            Some((
+        Ok(if entry_handle_buf != Self::EMPTY_ENTRY_HANDLE {
+            Self(Some((
                 u32::from_le_bytes(entry_handle_buf[0..4].try_into().unwrap()),
                 Uuid::decode_owned(&mut ReadCursor::new(&entry_handle_buf[4..]))?,
-            ))
+            )))
         } else {
-            None
+            Self(None)
         })
     }
 }
@@ -474,7 +472,7 @@ impl DecodeOwnedExt for Option<EntryHandle> {
 pub struct EptMap {
     pub obj: Option<Uuid>,
     pub tower: Tower,
-    pub entry_handle: Option<EntryHandle>,
+    pub entry_handle: EntryHandle,
     pub max_towers: u32,
 }
 
@@ -496,7 +494,7 @@ impl Encode for EptMap {
         dst.write_slice(Self::TOWER_REFERENT_ID_1);
 
         if let Some(uuid) = self.obj {
-            uuid.encode_ext(dst)?;
+            encode_uuid(uuid, dst)?;
         } else {
             dst.write_slice(&[0; 16]);
         }
@@ -506,7 +504,10 @@ impl Encode for EptMap {
 
         let mut encoded_tower = WriteBuf::new();
         encoded_tower.write_u16(cast_length!("EptMap", "towers count", self.tower.len())?);
-        encode_buf(&self.tower, &mut encoded_tower)?;
+
+        for floor in &self.tower {
+            encode_buf(floor, &mut encoded_tower)?;
+        }
 
         dst.write_u64(cast_length!("EptMap", "encoded tower", encoded_tower.filled_len())?);
         dst.write_u32(cast_length!("EptMap", "encoded tower", encoded_tower.filled_len())?);
@@ -515,7 +516,7 @@ impl Encode for EptMap {
 
         Padding::<8>::write(encoded_tower.filled_len() + 4, dst)?;
 
-        self.entry_handle.encode_ext(dst)?;
+        self.entry_handle.encode(dst)?;
         dst.write_u32(self.max_towers);
 
         Ok(())
@@ -526,10 +527,10 @@ impl Encode for EptMap {
     }
 
     fn size(&self) -> usize {
-        let encoded_tower_length = self.tower.size_ext();
+        let encoded_tower_length = size_seq(&self.tower);
         let padding_len = Padding::<8>::padding(encoded_tower_length + 2 /* tower amount */ + 4);
 
-        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size_ext() + 4 /* max_towers */
+        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
     }
 }
 
@@ -564,7 +565,7 @@ impl DecodeOwned for EptMap {
             src,
         )?;
 
-        let entry_handle = Option::decode_owned(src)?;
+        let entry_handle = EntryHandle::decode_owned(src)?;
         ensure_size!(in: src, size: 4);
         let max_towers = src.read_u32();
 
@@ -579,20 +580,20 @@ impl DecodeOwned for EptMap {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EptMapResult {
-    pub entry_handle: Option<EntryHandle>,
+    pub entry_handle: EntryHandle,
     pub towers: Vec<Tower>,
     pub status: u32,
 }
 
 impl FixedPartSize for EptMapResult {
-    const FIXED_PART_SIZE: usize = Option::<EntryHandle>::FIXED_PART_SIZE + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */ + 8 /* towers len */;
+    const FIXED_PART_SIZE: usize = EntryHandle::FIXED_PART_SIZE + 4 /* towers len */ + 8 /* towers len */ + 8 /* tower pointer offset */ + 8 /* towers len */;
 }
 
 impl Encode for EptMapResult {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
-        self.entry_handle.encode_ext(dst)?;
+        self.entry_handle.encode(dst)?;
 
         dst.write_u32(cast_length!("EptMapResult", "towers count", self.towers.len())?);
         // max_tower_count
@@ -611,7 +612,10 @@ impl Encode for EptMapResult {
             let mut encoded_tower = WriteBuf::new();
 
             encoded_tower.write_u16(cast_length!("EptMapResult", "tower len", tower.len())?);
-            encode_buf(tower, &mut encoded_tower)?;
+
+            for floor in tower {
+                encode_buf(floor, &mut encoded_tower)?;
+            }
 
             dst.write_u64(cast_length!(
                 "EptMapResult",
@@ -639,7 +643,7 @@ impl Encode for EptMapResult {
 
     fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.towers.len() * 8 + self.towers.iter().map(|tower| {
-            let encoded_tower_length = 2 /* tower len */ + tower.size_ext() + 8 /* encoded tower len */ + 4 /* encoded tower len */;
+            let encoded_tower_length = 2 /* tower len */ + size_seq(tower) + 8 /* encoded tower len */ + 4 /* encoded tower len */;
             let padding_len = Padding::<4>::padding(encoded_tower_length);
 
             encoded_tower_length + padding_len
@@ -651,7 +655,7 @@ impl DecodeOwned for EptMapResult {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        let entry_handle = Option::decode_owned(src)?;
+        let entry_handle = EntryHandle::decode_owned(src)?;
 
         // num towers
         src.read_u32();

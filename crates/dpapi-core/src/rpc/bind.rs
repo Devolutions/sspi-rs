@@ -8,7 +8,7 @@ use ironrdp_core::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{DecodeOwnedExt, EncodeExt, FixedPartSize, Padding};
+use crate::{DecodeOwnedExt, FixedPartSize, Padding, encode_seq, encode_uuid, size_seq};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -77,7 +77,7 @@ impl Encode for SyntaxId {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
-        self.uuid.encode_ext(dst)?;
+        encode_uuid(self.uuid, dst)?;
         dst.write_u16(self.version);
         dst.write_u16(self.version_minor);
 
@@ -90,16 +90,6 @@ impl Encode for SyntaxId {
 
     fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
-    }
-}
-
-impl EncodeExt for SyntaxId {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
     }
 }
 
@@ -138,7 +128,7 @@ impl Encode for ContextElement {
         )?);
 
         self.abstract_syntax.encode(dst)?;
-        self.transfer_syntaxes.encode_ext(dst)?;
+        encode_seq(&self.transfer_syntaxes, dst)?;
 
         Ok(())
     }
@@ -148,17 +138,7 @@ impl Encode for ContextElement {
     }
 
     fn size(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.transfer_syntaxes.size_ext()
-    }
-}
-
-impl EncodeExt for ContextElement {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
+        Self::FIXED_PART_SIZE + size_seq(&self.transfer_syntaxes)
     }
 }
 
@@ -233,7 +213,7 @@ impl Encode for ContextResult {
 
         dst.write_u16(self.result.as_u16());
         dst.write_u16(self.reason);
-        self.syntax.encode_ext(dst)?;
+        encode_uuid(self.syntax, dst)?;
         dst.write_u32(self.syntax_version);
 
         Ok(())
@@ -245,16 +225,6 @@ impl Encode for ContextResult {
 
     fn size(&self) -> usize {
         Self::FIXED_PART_SIZE
-    }
-}
-
-impl EncodeExt for ContextResult {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
     }
 }
 
@@ -291,7 +261,7 @@ impl Encode for Bind {
         dst.write_u16(self.max_recv_frag);
         dst.write_u32(self.assoc_group);
         dst.write_u32(cast_length!("Bind", "contexts count", self.contexts.len())?);
-        self.contexts.encode_ext(dst)?;
+        encode_seq(&self.contexts, dst)?;
 
         Ok(())
     }
@@ -301,7 +271,7 @@ impl Encode for Bind {
     }
 
     fn size(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.contexts.size_ext()
+        Self::FIXED_PART_SIZE + size_seq(&self.contexts)
     }
 }
 
@@ -365,7 +335,7 @@ impl Encode for BindAck {
         Padding::<4>::write(sec_addr_len, dst)?;
 
         dst.write_u32(cast_length!("BindAck", "results count", self.results.len())?);
-        self.results.encode_ext(dst)?;
+        encode_seq(&self.results, dst)?;
 
         Ok(())
     }
@@ -375,7 +345,7 @@ impl Encode for BindAck {
     }
 
     fn size(&self) -> usize {
-        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + self.results.size_ext()
+        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + size_seq(&self.results)
     }
 }
 
@@ -445,16 +415,6 @@ impl Encode for Version {
     }
 }
 
-impl EncodeExt for Version {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
-    }
-}
-
 impl DecodeOwned for Version {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
@@ -480,9 +440,9 @@ impl Encode for BindNak {
         dst.write_u16(self.reason);
 
         dst.write_u8(cast_length!("BindNak", "versions count", self.versions.len())?);
-        self.versions.encode_ext(dst)?;
+        encode_seq(&self.versions, dst)?;
 
-        let versions_buf_len = 1 /* len */ + self.versions.size_ext();
+        let versions_buf_len = 1 /* len */ + size_seq(&self.versions);
         Padding::<4>::write(versions_buf_len, dst)?;
 
         Ok(())
@@ -493,7 +453,7 @@ impl Encode for BindNak {
     }
 
     fn size(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.versions.size_ext()
+        Self::FIXED_PART_SIZE + size_seq(&self.versions)
     }
 }
 
@@ -509,7 +469,7 @@ impl DecodeOwned for BindNak {
                     .map(|_| Version::decode_owned(src))
                     .collect::<DecodeResult<Vec<_>>>()?;
 
-                let versions_buf_len = 1 /* len */ + versions.size_ext();
+                let versions_buf_len = 1 /* len */ + size_seq(&versions);
                 Padding::<4>::read(versions_buf_len, src)?;
 
                 versions

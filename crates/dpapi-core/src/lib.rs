@@ -15,7 +15,7 @@ pub mod rpc;
 pub mod str;
 
 pub use decode::{DecodeOwnedExt, DecodeWithContextOwned, FindLength, FixedPartSize, read_c_str_utf16_le};
-pub use encode::{EncodeExt, EncodeVec, encode_buf};
+pub use encode::{EncodeVec, encode_seq, encode_uuid, size_seq};
 pub use error::{Error, Result};
 pub use ironrdp_core as core;
 pub use marker::NeedsContext;

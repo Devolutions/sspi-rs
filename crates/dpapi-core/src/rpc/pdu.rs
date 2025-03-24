@@ -10,7 +10,7 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{DecodeWithContextOwned, EncodeExt, FindLength, FixedPartSize, NeedsContext, Padding};
+use crate::{DecodeWithContextOwned, FindLength, FixedPartSize, NeedsContext, Padding};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -366,16 +366,6 @@ impl Encode for SecurityTrailer {
     }
 }
 
-impl EncodeExt for SecurityTrailer {
-    fn encode_ext(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
-        self.encode(dst)
-    }
-
-    fn size_ext(&self) -> usize {
-        self.size()
-    }
-}
-
 impl DecodeOwned for SecurityTrailer {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
@@ -609,7 +599,10 @@ impl Encode for Pdu {
 
         self.header.encode(dst)?;
         self.data.encode(dst)?;
-        self.security_trailer.encode_ext(dst)?;
+
+        if let Some(security_trailer) = self.security_trailer.as_ref() {
+            security_trailer.encode(dst)?;
+        }
 
         Ok(())
     }
@@ -619,7 +612,13 @@ impl Encode for Pdu {
     }
 
     fn size(&self) -> usize {
-        self.header.size() + self.data.size() + self.security_trailer.size_ext()
+        self.header.size()
+            + self.data.size()
+            + self
+                .security_trailer
+                .as_ref()
+                .map(|security_trailer| security_trailer.size())
+                .unwrap_or_default()
     }
 }
 

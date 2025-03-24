@@ -4,7 +4,7 @@ use ironrdp_core::{DecodeOwned, DecodeResult, Encode, EncodeResult, ReadCursor, 
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{DecodeOwnedExt, DecodeWithContextOwned, EncodeExt, FixedPartSize, NeedsContext};
+use crate::{DecodeOwnedExt, DecodeWithContextOwned, FixedPartSize, NeedsContext, encode_uuid};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
@@ -26,7 +26,11 @@ impl Encode for Request {
         dst.write_u32(self.alloc_hint);
         dst.write_u16(self.context_id);
         dst.write_u16(self.opnum);
-        self.obj.encode_ext(dst)?;
+
+        if let Some(obj) = self.obj.as_ref() {
+            encode_uuid(*obj, dst)?;
+        }
+
         dst.write_slice(&self.stub_data);
 
         Ok(())
@@ -37,7 +41,9 @@ impl Encode for Request {
     }
 
     fn size(&self) -> usize {
-        Self::FIXED_PART_SIZE + self.obj.size_ext() + self.stub_data.len()
+        Self::FIXED_PART_SIZE
+            + self.obj.as_ref().map(|_| Uuid::FIXED_PART_SIZE).unwrap_or_default()
+            + self.stub_data.len()
     }
 }
 
