@@ -1,11 +1,10 @@
-use dpapi_core::core::decode_owned;
 use dpapi_core::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_core::rpc::{
     build_tcpip_tower, BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext,
     ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
     VerificationTrailer, EPM,
 };
-use dpapi_core::EncodeVec;
+use dpapi_core::{decode_owned, EncodeVec};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;

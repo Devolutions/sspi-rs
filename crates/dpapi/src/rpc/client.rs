@@ -1,11 +1,10 @@
 use std::net::{TcpStream, ToSocketAddrs};
 
-use dpapi_core::core::decode_owned;
 use dpapi_core::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_core::{EncodeVec, FixedPartSize, Padding};
+use dpapi_core::{decode_owned, EncodeVec, FixedPartSize, Padding};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 

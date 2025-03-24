@@ -1,4 +1,4 @@
-use dpapi_core::core::{DecodeError, EncodeError};
+use dpapi_core::{DecodeError, EncodeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
