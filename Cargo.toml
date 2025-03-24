@@ -123,7 +123,7 @@ async-recursion = "1.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows = { version = "0.60", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+windows = { version = "0.61", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
 windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
