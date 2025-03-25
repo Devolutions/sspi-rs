@@ -1,10 +1,8 @@
-use std::str::FromStr;
-
 use dpapi::blob::*;
-use dpapi::rpc::Decode;
+use dpapi_pdu::gkdi::KeyIdentifier;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesAuthEncParams, AesMode, AesParameters};
-use uuid::Uuid;
+use uuid::uuid;
 
 const DPAPI_BLOB_DATA: &[u8] = &[
     48, 130, 4, 77, 6, 9, 42, 134, 72, 134, 247, 13, 1, 7, 3, 160, 130, 4, 62, 48, 130, 4, 58, 2, 1, 2, 49, 130, 4, 6,
@@ -65,7 +63,7 @@ fn testing_blob() -> DpapiBlob {
             l0: 361,
             l1: 16,
             l2: 3,
-            root_key_identifier: Uuid::from_str("d778c271-9025-9a82-f6dc-b8960b8ad8c5").unwrap(),
+            root_key_identifier: uuid!("d778c271-9025-9a82-f6dc-b8960b8ad8c5"),
             key_info: vec![
                 68, 72, 80, 66, 0, 1, 0, 0, 135, 168, 230, 29, 180, 182, 102, 60, 255, 187, 209, 156, 101, 25, 89, 153,
                 140, 238, 246, 8, 102, 13, 208, 242, 93, 44, 238, 212, 67, 94, 59, 0, 224, 13, 248, 241, 214, 25, 87,

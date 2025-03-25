@@ -1,0 +1,20 @@
+[package]
+name = "dpapi-pdu"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+std = []
+
+[dependencies]
+dpapi-core = { workspace = true, features = ["alloc"] }
+uuid.workspace = true
+num-bigint-dig = { workspace = true, default-features = false }
+bitflags.workspace = true
+num-derive.workspace = true
+num-traits = { workspace = true, default-features = true }
+
+thiserror = { version = "2.0", default-features = false }
+
+[dev-dependencies]
+paste = "1.0"
