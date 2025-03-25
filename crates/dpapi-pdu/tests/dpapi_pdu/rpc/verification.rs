@@ -1,4 +1,4 @@
-use dpapi_core::rpc::{
+use dpapi_pdu::rpc::{
     CharacterRepr, Command, CommandBitmask, CommandFlags, CommandHeader2, CommandPContext, DataRepr, FloatingPointRepr,
     IntRepr, PacketType, SyntaxId, VerificationTrailer,
 };

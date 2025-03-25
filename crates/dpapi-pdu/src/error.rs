@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-use ironrdp_core::{DecodeError, InvalidFieldErr};
+use dpapi_core::{DecodeError, InvalidFieldErr};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -28,7 +28,7 @@ impl From<Error> for DecodeError {
 
 impl From<alloc::string::FromUtf16Error> for Error {
     fn from(err: alloc::string::FromUtf16Error) -> Self {
-        use crate::alloc::string::ToString;
+        use alloc::string::ToString;
 
         Self::FromUtf16(err.to_string())
     }

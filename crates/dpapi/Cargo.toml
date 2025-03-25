@@ -33,7 +33,8 @@ rand.workspace = true
 hmac.workspace = true
 tracing = { workspace = true, default-features = true }
 whoami.workspace = true
-dpapi-core.workspace = true
+dpapi-core = { workspace = true, features = ["alloc"] }
+dpapi-pdu.workspace = true
 
 kbkdf = "0.0.1"
 sha1-pre = { version = "0.11.0-pre.2", package = "sha1" }

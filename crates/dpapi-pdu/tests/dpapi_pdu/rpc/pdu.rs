@@ -1,4 +1,4 @@
-use dpapi_core::rpc::{
+use dpapi_pdu::rpc::{
     AlterContext, AuthenticationLevel, Bind, BindAck, CharacterRepr, ContextElement, ContextResult, ContextResultCode,
     DataRepr, FloatingPointRepr, IntRepr, PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, Response,
     SecurityProvider, SecurityTrailer, SyntaxId,

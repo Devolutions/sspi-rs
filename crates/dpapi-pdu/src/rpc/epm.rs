@@ -1,9 +1,10 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use ironrdp_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, UnsupportedValueErr,
-    WriteBuf, WriteCursor, cast_int, cast_length, encode_buf, ensure_size,
+use dpapi_core::{
+    DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
+    InvalidFieldErr, NeedsContext, ReadCursor, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int, cast_length,
+    compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq, write_padding,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -11,10 +12,6 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{
-    DecodeWithContextOwned, FixedPartSize, NeedsContext, compute_padding, decode_uuid, encode_uuid, read_padding,
-    size_seq, write_padding,
-};
 
 #[derive(Debug, Error)]
 pub enum EpmError {

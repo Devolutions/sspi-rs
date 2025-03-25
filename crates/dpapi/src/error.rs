@@ -17,10 +17,10 @@ pub enum Error {
     EncodeError(EncodeError),
 
     #[error(transparent)]
-    PduError(#[from] dpapi_core::rpc::PduError),
+    PduError(#[from] dpapi_pdu::rpc::PduError),
 
     #[error(transparent)]
-    DpapiCore(#[from] dpapi_core::Error),
+    DpapiCore(#[from] dpapi_pdu::Error),
 
     #[error(transparent)]
     Gkdi(#[from] crate::gkdi::GkdiError),

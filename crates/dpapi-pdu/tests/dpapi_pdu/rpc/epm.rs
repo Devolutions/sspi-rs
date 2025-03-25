@@ -1,4 +1,4 @@
-use dpapi_core::rpc::{
+use dpapi_pdu::rpc::{
     EntryHandle, EptMap, EptMapResult, Floor, IpFloor, RpcConnectionOrientedFloor, TcpFloor, UuidFloor,
 };
 use uuid::uuid;

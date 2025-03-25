@@ -1,16 +1,13 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use ironrdp_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteCursor,
-    cast_length, ensure_size,
+use dpapi_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
+    WriteCursor, cast_length, compute_padding, decode_uuid, encode_seq, encode_uuid, ensure_size, read_padding,
+    size_seq, write_padding,
 };
 use thiserror::Error;
 use uuid::Uuid;
-
-use crate::{
-    FixedPartSize, compute_padding, decode_uuid, encode_seq, encode_uuid, read_padding, size_seq, write_padding,
-};
 
 #[derive(Debug, Error)]
 pub enum BindError {

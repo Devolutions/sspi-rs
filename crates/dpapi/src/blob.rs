@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
-use dpapi_core::gkdi::KeyIdentifier;
 use dpapi_core::{decode_owned, EncodeVec};
+use dpapi_pdu::gkdi::KeyIdentifier;
 use picky_asn1::restricted_string::Utf8String;
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ImplicitContextTag0, ObjectIdentifierAsn1, OctetStringAsn1, Optional,

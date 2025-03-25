@@ -1,4 +1,4 @@
-use dpapi_core::gkdi::{
+use dpapi_pdu::gkdi::{
     EcdhKey, EllipticCurve, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, HashAlg, KdfParameters,
 };
 use num_bigint_dig::BigUint;

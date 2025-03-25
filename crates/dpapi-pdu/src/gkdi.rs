@@ -3,16 +3,17 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use ironrdp_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteCursor, cast_int,
-    cast_length, ensure_size,
+use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
+use dpapi_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
+    WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size, read_padding,
+    write_padding,
 };
 use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
-use crate::{Error, FixedPartSize, compute_padding, decode_uuid, encode_uuid, read_padding, write_padding};
+use crate::Error;
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 

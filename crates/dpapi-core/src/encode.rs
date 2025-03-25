@@ -1,6 +1,4 @@
-use alloc::vec::Vec;
-
-use ironrdp_core::{Encode, EncodeResult, WriteBuf, WriteCursor, ensure_size};
+use ironrdp_core::{Encode, EncodeResult, WriteCursor, ensure_size};
 use uuid::Uuid;
 
 use crate::FixedPartSize;
@@ -28,17 +26,27 @@ pub fn size_seq<T: Encode>(data: &[T]) -> usize {
     data.iter().map(|item| item.size()).sum()
 }
 
-/// Extension trait which allows to encode PDU into [Vec].
-pub trait EncodeVec {
-    /// Encodes this PDU into a [Vec] allocating a memory on fly.
-    fn encode_vec(&self) -> EncodeResult<Vec<u8>>;
-}
+#[cfg(feature = "alloc")]
+mod encode_vec {
+    use alloc::vec::Vec;
 
-impl<T: Encode> EncodeVec for T {
-    fn encode_vec(&self) -> EncodeResult<Vec<u8>> {
-        let mut buf = WriteBuf::new();
-        ironrdp_core::encode_buf(self, &mut buf)?;
+    use ironrdp_core::{Encode, EncodeResult, WriteBuf, encode_buf};
 
-        Ok(buf.into_inner())
+    /// Extension trait which allows to encode PDU into [Vec].
+    pub trait EncodeVec {
+        /// Encodes this PDU into a [Vec] allocating a memory on fly.
+        fn encode_vec(&self) -> EncodeResult<Vec<u8>>;
+    }
+
+    impl<T: Encode> EncodeVec for T {
+        fn encode_vec(&self) -> EncodeResult<Vec<u8>> {
+            let mut buf = WriteBuf::new();
+            encode_buf(self, &mut buf)?;
+
+            Ok(buf.into_inner())
+        }
     }
 }
+
+#[cfg(feature = "alloc")]
+pub use encode_vec::*;

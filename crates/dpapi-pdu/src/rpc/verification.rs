@@ -1,16 +1,15 @@
 use alloc::vec::Vec;
 
 use bitflags::bitflags;
-use ironrdp_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, InvalidFieldErr, ReadCursor, WriteBuf, WriteCursor,
-    cast_length, encode_buf, ensure_size,
+use dpapi_core::{
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor, WriteBuf,
+    WriteCursor, cast_length, encode_buf, encode_seq, ensure_size, size_seq,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{DataRepr, PacketType, SyntaxId};
-use crate::{FixedPartSize, encode_seq, size_seq};
 
 #[derive(Debug, Error)]
 pub enum CommandError {

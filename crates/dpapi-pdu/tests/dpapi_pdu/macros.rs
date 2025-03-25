@@ -3,8 +3,7 @@ macro_rules! test_encoding_decoding {
         paste::paste! {
             #[test]
             fn [<$name:lower _encoding_decoding>]() {
-                use ironrdp_core::{DecodeOwned, ReadCursor};
-                use dpapi_core::EncodeVec;
+                use dpapi_core::{EncodeVec, DecodeOwned, ReadCursor};
 
                 let data = $data;
 

@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::NeedsContext;
 
+/// Decodes [Uuid] from provided source [ReadCursor].
 pub fn decode_uuid(src: &mut ReadCursor<'_>) -> DecodeResult<Uuid> {
     ensure_size!(in: src, size: Uuid::FIXED_PART_SIZE);
 

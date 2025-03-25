@@ -1,5 +1,6 @@
 use ironrdp_core::{DecodeResult, EncodeResult, ReadCursor, WriteCursor, ensure_size};
 
+/// Write padding bytes into [WriteCursor].
 pub fn write_padding(mut padding_len: usize, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
     ensure_size!(ctx: "Padding", in: dst, size: padding_len);
 
@@ -28,6 +29,7 @@ pub fn write_padding(mut padding_len: usize, dst: &mut WriteCursor<'_>) -> Encod
     Ok(())
 }
 
+/// Reads padding bytes from the provided [ReadCursor].
 pub fn read_padding(padding_len: usize, src: &mut ReadCursor<'_>) -> DecodeResult<()> {
     ensure_size!(ctx: "Padding", in: src, size: padding_len);
 

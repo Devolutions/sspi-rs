@@ -1,4 +1,4 @@
-use dpapi_core::rpc::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
+use dpapi_pdu::rpc::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{

@@ -590,6 +590,7 @@ dependencies = [
  "concat-kdf",
  "digest 0.11.0-pre.9",
  "dpapi-core",
+ "dpapi-pdu",
  "elliptic-curve",
  "hmac 0.12.1",
  "hmac 0.13.0-pre.4",
@@ -633,8 +634,16 @@ dependencies = [
 name = "dpapi-core"
 version = "0.1.0"
 dependencies = [
- "bitflags 2.8.0",
  "ironrdp-core",
+ "uuid",
+]
+
+[[package]]
+name = "dpapi-pdu"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.8.0",
+ "dpapi-core",
  "num-bigint-dig",
  "num-derive",
  "num-traits",

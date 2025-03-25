@@ -1,10 +1,12 @@
 use alloc::vec::Vec;
 
-use ironrdp_core::{DecodeOwned, DecodeResult, Encode, EncodeResult, ReadCursor, WriteCursor, ensure_size};
+use dpapi_core::{
+    DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize, NeedsContext, ReadCursor,
+    WriteCursor, decode_uuid, encode_uuid, ensure_size,
+};
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
-use crate::{DecodeWithContextOwned, FixedPartSize, NeedsContext, decode_uuid, encode_uuid};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
