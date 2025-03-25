@@ -8,7 +8,9 @@ use ironrdp_core::{
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{FixedPartSize, Padding, decode_uuid, encode_seq, encode_uuid, size_seq};
+use crate::{
+    FixedPartSize, compute_padding, decode_uuid, encode_seq, encode_uuid, read_padding, size_seq, write_padding,
+};
 
 #[derive(Debug, Error)]
 pub enum BindError {
@@ -332,7 +334,7 @@ impl Encode for BindAck {
             0
         } + 2 /* length in bytes */;
 
-        Padding::<4>::write(sec_addr_len, dst)?;
+        write_padding(compute_padding(4, sec_addr_len), dst)?;
 
         dst.write_u32(cast_length!("BindAck", "results count", self.results.len())?);
         encode_seq(&self.results, dst)?;
@@ -345,7 +347,9 @@ impl Encode for BindAck {
     }
 
     fn size(&self) -> usize {
-        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */ + 4 /* results length */ + size_seq(&self.results)
+        let sec_addr_len = if !self.sec_addr.is_empty() { self.sec_addr.len() + 1 } else { 0 } + 2 /* sec_addr lenght in bytes */;
+
+        2 /* max_xmit_frag */ + 2 /* max_recv_frag */ + 4 /* assoc_group */ + sec_addr_len + compute_padding(4, sec_addr_len) + 4 /* results length */ + size_seq(&self.results)
     }
 }
 
@@ -373,7 +377,7 @@ impl DecodeOwned for BindAck {
                     String::new()
                 };
 
-                Padding::<4>::read(sec_addr_len + 2 /* len */, src)?;
+                read_padding(compute_padding(4, sec_addr_len + 2), src)?;
 
                 sec_addr
             },
@@ -443,7 +447,7 @@ impl Encode for BindNak {
         encode_seq(&self.versions, dst)?;
 
         let versions_buf_len = 1 /* len */ + size_seq(&self.versions);
-        Padding::<4>::write(versions_buf_len, dst)?;
+        write_padding(compute_padding(4, versions_buf_len), dst)?;
 
         Ok(())
     }
@@ -453,7 +457,9 @@ impl Encode for BindNak {
     }
 
     fn size(&self) -> usize {
-        Self::FIXED_PART_SIZE + size_seq(&self.versions)
+        let versions_size = size_seq(&self.versions);
+
+        Self::FIXED_PART_SIZE + versions_size + compute_padding(4, versions_size + 1 /* versions len */)
     }
 }
 
@@ -470,7 +476,7 @@ impl DecodeOwned for BindNak {
                     .collect::<DecodeResult<Vec<_>>>()?;
 
                 let versions_buf_len = 1 /* len */ + size_seq(&versions);
-                Padding::<4>::read(versions_buf_len, src)?;
+                read_padding(compute_padding(4, versions_buf_len), src)?;
 
                 versions
             },

@@ -1,7 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use dpapi_core::gkdi::{GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_core::rpc::SyntaxId;
-use dpapi_core::{decode_owned, DecodeOwned, Padding, ReadCursor};
+use dpapi_core::{compute_padding, decode_owned, read_padding, DecodeOwned, ReadCursor};
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::OsRng;
 use rand::Rng;
@@ -56,7 +56,7 @@ pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
 
     let _key_length = src.read_u32();
 
-    Padding::<8>::read(4 /* key length */, &mut src)?;
+    read_padding(compute_padding(8, 4 /* key length */), &mut src)?;
 
     // Skip the referent id and double up on pointer size
     src.read_u64();

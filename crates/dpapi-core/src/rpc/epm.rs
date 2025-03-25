@@ -11,7 +11,10 @@ use thiserror::Error;
 use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
-use crate::{DecodeWithContextOwned, FixedPartSize, NeedsContext, Padding, decode_uuid, encode_uuid, size_seq};
+use crate::{
+    DecodeWithContextOwned, FixedPartSize, NeedsContext, compute_padding, decode_uuid, encode_uuid, read_padding,
+    size_seq, write_padding,
+};
 
 #[derive(Debug, Error)]
 pub enum EpmError {
@@ -514,7 +517,7 @@ impl Encode for EptMap {
 
         dst.write_slice(encoded_tower.filled());
 
-        Padding::<8>::write(encoded_tower.filled_len() + 4, dst)?;
+        write_padding(compute_padding(8, encoded_tower.filled_len() + 4), dst)?;
 
         self.entry_handle.encode(dst)?;
         dst.write_u32(self.max_towers);
@@ -528,7 +531,7 @@ impl Encode for EptMap {
 
     fn size(&self) -> usize {
         let encoded_tower_length = size_seq(&self.tower);
-        let padding_len = Padding::<8>::padding(encoded_tower_length + 2 /* tower amount */ + 4);
+        let padding_len = compute_padding(8, encoded_tower_length + 2 /* tower amount */ + 4);
 
         Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
     }
@@ -560,8 +563,10 @@ impl DecodeOwned for EptMap {
             .map(|_| Floor::decode_owned(src))
             .collect::<DecodeResult<Vec<Floor>>>()?;
 
-        Padding::<8>::read(
-            { cast_length!("RptMap", "towers count", tower_length + 4) as DecodeResult<_> }?,
+        read_padding(
+            compute_padding(8, {
+                cast_length!("RptMap", "towers count", tower_length + 4) as DecodeResult<_>
+            }?),
             src,
         )?;
 
@@ -629,7 +634,7 @@ impl Encode for EptMapResult {
             )?);
             dst.write_slice(encoded_tower.filled());
 
-            Padding::<4>::write(encoded_tower.filled_len(), dst)?;
+            write_padding(compute_padding(4, encoded_tower.filled_len()), dst)?;
         }
 
         dst.write_u32(self.status);
@@ -644,7 +649,7 @@ impl Encode for EptMapResult {
     fn size(&self) -> usize {
         Self::FIXED_PART_SIZE + self.towers.len() * 8 + self.towers.iter().map(|tower| {
             let encoded_tower_length = 2 /* tower len */ + size_seq(tower) + 8 /* encoded tower len */ + 4 /* encoded tower len */;
-            let padding_len = Padding::<4>::padding(encoded_tower_length);
+            let padding_len = compute_padding(4, encoded_tower_length);
 
             encoded_tower_length + padding_len
         }).sum::<usize>() + 4 /* status */
@@ -684,8 +689,10 @@ impl DecodeOwned for EptMapResult {
                     .map(|_| Floor::decode_owned(src))
                     .collect::<DecodeResult<Vec<Floor>>>()?;
 
-                Padding::<8>::read(
-                    { cast_length!("EptMapResult", "tower length", tower_length + 4) as DecodeResult<_> }?,
+                read_padding(
+                    compute_padding(4, {
+                        cast_length!("EptMapResult", "tower length", tower_length + 4) as DecodeResult<_>
+                    }?),
                     src,
                 )?;
 

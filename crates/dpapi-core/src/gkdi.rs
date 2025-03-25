@@ -12,7 +12,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::str::{encode_utf16_le, str_utf16_len};
-use crate::{Error, FixedPartSize, Padding, decode_uuid, encode_uuid, read_c_str_utf16_le};
+use crate::{
+    Error, FixedPartSize, compute_padding, decode_uuid, encode_uuid, read_c_str_utf16_le, read_padding, write_padding,
+};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -94,7 +96,7 @@ impl Encode for GetKey {
 
         dst.write_slice(&self.target_sd);
 
-        Padding::<8>::write(self.target_sd.len(), dst)?;
+        write_padding(compute_padding(8, self.target_sd.len()), dst)?;
 
         if let Some(root_key_id) = self.root_key_id.as_ref() {
             dst.write_slice(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00]);
@@ -115,7 +117,7 @@ impl Encode for GetKey {
     }
 
     fn size(&self) -> usize {
-        8 /* cbTargetSD */ + 8 /* pbTartetSD */ + self.target_sd.len() + Padding::<8>::padding(self.target_sd.len())
+        8 /* cbTargetSD */ + 8 /* pbTartetSD */ + self.target_sd.len() + compute_padding(8, self.target_sd.len())
         + if self.root_key_id.is_some() { 8 + Uuid::FIXED_PART_SIZE } else { 8 }
         + 4 /* l0 */ + 4 /* l1 */ + 4 /* l2 */
     }
@@ -131,7 +133,7 @@ impl DecodeOwned for GetKey {
         ensure_size!(in: src, size: target_sd_len);
         let target_sd = src.read_slice(target_sd_len).to_vec();
 
-        Padding::<8>::read(target_sd_len, src)?;
+        read_padding(compute_padding(8, target_sd_len), src)?;
 
         ensure_size!(in: src, size: 8);
         let root_key_id = if src.read_u64() != 0 {

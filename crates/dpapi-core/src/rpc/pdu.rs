@@ -10,7 +10,9 @@ use num_traits::FromPrimitive;
 use thiserror::Error;
 
 use crate::rpc::{AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Request, Response};
-use crate::{DecodeWithContextOwned, FindLength, FixedPartSize, NeedsContext, Padding};
+use crate::{
+    DecodeWithContextOwned, FindLength, FixedPartSize, NeedsContext, compute_padding, read_padding, write_padding,
+};
 
 #[derive(Error, Debug)]
 pub enum PduError {
@@ -190,7 +192,7 @@ impl Encode for DataRepr {
         dst.write_u8(first_octet);
         dst.write_u8(self.floating_point.as_u8());
 
-        Padding::<4>::write(2, dst)?;
+        write_padding(compute_padding(4, 2), dst)?;
 
         Ok(())
     }
@@ -223,7 +225,7 @@ impl DecodeOwned for DataRepr {
                 .ok_or(PduError::InvalidFloatingPointRepr(floating_representation))?,
         };
 
-        Padding::<4>::read(2, src)?;
+        read_padding(compute_padding(4, 2), src)?;
 
         Ok(data_representation)
     }
@@ -452,8 +454,11 @@ impl DecodeOwned for Fault {
             },
             status: src.read_u32(),
             stub_data: {
-                Padding::<8>::read(
-                    4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4, /* status */
+                read_padding(
+                    compute_padding(
+                        8,
+                        4 /* alloc_hint */ + 2 /* context_id */ + 1 /* cancel_count */ + 1 /* flags */ + 4, /* status */
+                    ),
                     src,
                 )?;
 

@@ -4,7 +4,7 @@ use dpapi_core::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_core::{decode_owned, EncodeVec, FixedPartSize, Padding};
+use dpapi_core::{compute_padding, decode_owned, EncodeVec, FixedPartSize};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
@@ -141,7 +141,7 @@ impl RpcClient {
         verification_trailer: Option<VerificationTrailer>,
     ) -> Result<(Pdu, EncryptionOffsets)> {
         if let Some(verification_trailer) = verification_trailer.as_ref() {
-            stub_data.extend_from_slice(&vec![0; Padding::<4>::padding(stub_data.len())]);
+            stub_data.extend_from_slice(&vec![0; compute_padding(4, stub_data.len())]);
 
             let encoded_verification_trailer = verification_trailer.encode_vec()?;
             stub_data.extend_from_slice(&encoded_verification_trailer);
@@ -149,7 +149,7 @@ impl RpcClient {
 
         // The security trailer must be aligned to the next 16 byte boundary after the stub data.
         // This padding is included as part of the stub data to be encrypted.
-        let padding_len = Padding::<16>::padding(stub_data.len());
+        let padding_len = compute_padding(16, stub_data.len());
         stub_data.extend_from_slice(&vec![0; padding_len]);
         let security_trailer = self.auth.empty_trailer(padding_len.try_into()?)?;
 

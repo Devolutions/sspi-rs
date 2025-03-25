@@ -19,4 +19,4 @@ pub use encode::{EncodeVec, encode_seq, encode_uuid, size_seq};
 pub use error::{Error, Result};
 pub use ironrdp_core::{DecodeError, DecodeOwned, Encode, EncodeError, ReadCursor, WriteCursor, decode_owned};
 pub use marker::NeedsContext;
-pub use padding::Padding;
+pub use padding::{compute_padding, read_padding, write_padding};
