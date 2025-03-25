@@ -1,12 +1,9 @@
-use std::str::FromStr;
-
-use dpapi::rpc::bind::{AlterContext, Bind, BindAck, ContextElement, ContextResult, ContextResultCode, SyntaxId};
-use dpapi::rpc::pdu::{
-    AuthenticationLevel, CharacterRepr, DataRepr, FloatingPointRepr, IntRepr, PacketFlags, PacketType, Pdu, PduData,
-    PduHeader, SecurityProvider, SecurityTrailer,
+use dpapi_pdu::rpc::{
+    AlterContext, AuthenticationLevel, Bind, BindAck, CharacterRepr, ContextElement, ContextResult, ContextResultCode,
+    DataRepr, FloatingPointRepr, IntRepr, PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, Response,
+    SecurityProvider, SecurityTrailer, SyntaxId,
 };
-use dpapi::rpc::request::{Request, Response};
-use uuid::Uuid;
+use uuid::uuid;
 
 test_encoding_decoding! {
     data_rep,
@@ -54,13 +51,13 @@ test_encoding_decoding! {
                 ContextElement {
                     context_id: 0,
                     abstract_syntax: SyntaxId {
-                        uuid: Uuid::from_str("b9785960-524f-11df-8b6d-83dcded72085").unwrap(),
+                        uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),
                         version: 1,
                         version_minor: 0,
                     },
                     transfer_syntaxes: vec![
                         SyntaxId {
-                            uuid: Uuid::from_str("71710533-beba-4937-8319-b5dbef9ccc36").unwrap(),
+                            uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),
                             version: 1,
                             version_minor: 0,
                         }
@@ -69,13 +66,13 @@ test_encoding_decoding! {
                 ContextElement {
                     context_id: 1,
                     abstract_syntax: SyntaxId {
-                        uuid: Uuid::from_str("b9785960-524f-11df-8b6d-83dcded72085").unwrap(),
+                        uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),
                         version: 1,
                         version_minor: 0,
                     },
                     transfer_syntaxes: vec![
                         SyntaxId {
-                            uuid: Uuid::from_str("6cb71c2c-9812-4540-0000-000000000000").unwrap(),
+                            uuid: uuid!("6cb71c2c-9812-4540-0000-000000000000"),
                             version: 1,
                             version_minor: 0,
                         }
@@ -121,13 +118,13 @@ test_encoding_decoding! {
                 ContextResult {
                     result: ContextResultCode::Acceptance,
                     reason: 0,
-                    syntax: Uuid::from_str("71710533-beba-4937-8319-b5dbef9ccc36").unwrap(),
+                    syntax: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),
                     syntax_version: 1,
                 },
                 ContextResult {
                     result: ContextResultCode::NegotiateAck,
                     reason: 0,
-                    syntax: Uuid::from_str("00000000-0000-0000-0000-000000000000").unwrap(),
+                    syntax: uuid!("00000000-0000-0000-0000-000000000000"),
                     syntax_version: 0,
                 },
             ],
@@ -169,13 +166,13 @@ test_encoding_decoding! {
                 ContextElement {
                     context_id: 0,
                     abstract_syntax: SyntaxId {
-                        uuid: Uuid::from_str("b9785960-524f-11df-8b6d-83dcded72085").unwrap(),
+                        uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),
                         version: 1,
                         version_minor: 0,
                     },
                     transfer_syntaxes: vec![
                         SyntaxId {
-                            uuid: Uuid::from_str("71710533-beba-4937-8319-b5dbef9ccc36").unwrap(),
+                            uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),
                             version: 1,
                             version_minor: 0,
                         }

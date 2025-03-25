@@ -1,7 +1,7 @@
 use dpapi::crypto::{
     cek_decrypt, cek_encrypt, compute_kek, compute_public_key, content_decrypt, content_encrypt, kdf, KDS_SERVICE_LABEL,
 };
-use dpapi::gkdi::HashAlg;
+use dpapi_pdu::gkdi::HashAlg;
 use picky_asn1::wrapper::OctetStringAsn1;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};

@@ -1,4 +1,6 @@
-use dpapi::epm::{EptMap, EptMapResult, Floor, IpFloor, RpcConnectionOrientedFloor, TcpFloor, UuidFloor};
+use dpapi_pdu::rpc::{
+    EntryHandle, EptMap, EptMapResult, Floor, IpFloor, RpcConnectionOrientedFloor, TcpFloor, UuidFloor,
+};
 use uuid::uuid;
 
 test_encoding_decoding! {
@@ -27,7 +29,7 @@ test_encoding_decoding! {
                 addr: 0,
             }),
         ],
-        entry_handle: None,
+        entry_handle: EntryHandle(None),
         max_towers: 4,
     },
     [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 0, 0, 75, 0, 0, 0, 5, 0, 19, 0, 13, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 2, 0, 0, 0, 19, 0, 13, 4, 93, 136, 138, 235, 28, 201, 17, 159, 232, 8, 0, 43, 16, 72, 96, 2, 0, 2, 0, 0, 0, 1, 0, 11, 2, 0, 0, 0, 1, 0, 7, 2, 0, 0, 135, 1, 0, 9, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0]
@@ -37,7 +39,7 @@ test_encoding_decoding! {
     ept_map_result,
     EptMapResult,
     EptMapResult {
-        entry_handle: None,
+        entry_handle: EntryHandle(None),
         towers: vec![
             vec![
                 Floor::Uuid(UuidFloor {

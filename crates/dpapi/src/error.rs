@@ -1,21 +1,8 @@
+use dpapi_core::{DecodeError, EncodeError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid {name} magic bytes")]
-    InvalidMagic {
-        name: &'static str,
-        expected: &'static [u8],
-        actual: Vec<u8>,
-    },
-
-    #[error("invalid {name} length: expected at least {expected} bytes but got {actual}")]
-    InvalidLength {
-        name: &'static str,
-        expected: usize,
-        actual: usize,
-    },
-
     #[error("invalid {name} url: {url}")]
     InvalidUrl {
         name: &'static str,
@@ -23,14 +10,23 @@ pub enum Error {
         error: url::ParseError,
     },
 
+    #[error("{0}")]
+    DecodeError(DecodeError),
+
+    #[error("{0}")]
+    EncodeError(EncodeError),
+
+    #[error(transparent)]
+    PduError(#[from] dpapi_pdu::rpc::PduError),
+
+    #[error(transparent)]
+    DpapiCore(#[from] dpapi_pdu::Error),
+
     #[error(transparent)]
     Gkdi(#[from] crate::gkdi::GkdiError),
 
     #[error(transparent)]
     Blob(#[from] crate::blob::BlobError),
-
-    #[error(transparent)]
-    Rpc(#[from] crate::rpc::RpcError),
 
     #[error(transparent)]
     Sid(#[from] crate::sid::SidError),
@@ -42,13 +38,7 @@ pub enum Error {
     RpcClient(#[from] crate::rpc::client::RpcClientError),
 
     #[error(transparent)]
-    Command(#[from] crate::rpc::verification::CommandError),
-
-    #[error(transparent)]
     Auth(#[from] crate::rpc::auth::AuthError),
-
-    #[error(transparent)]
-    Epm(#[from] crate::epm::EpmError),
 
     #[error(transparent)]
     Client(#[from] crate::client::ClientError),
@@ -77,15 +67,18 @@ pub enum Error {
 
     #[error(transparent)]
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
-
-    #[error("{0}")]
-    FromUtf16(String),
-}
-
-impl From<std::string::FromUtf16Error> for Error {
-    fn from(err: std::string::FromUtf16Error) -> Self {
-        Self::FromUtf16(err.to_string())
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<DecodeError> for Error {
+    fn from(err: DecodeError) -> Self {
+        Self::DecodeError(err)
+    }
+}
+
+impl From<EncodeError> for Error {
+    fn from(err: EncodeError) -> Self {
+        Self::EncodeError(err)
+    }
+}
