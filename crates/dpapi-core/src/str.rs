@@ -30,7 +30,10 @@ pub fn from_utf16_le(data: &[u8]) -> DecodeResult<String> {
 /// Encodes str into a UTF-16 encoded byte array.
 ///
 /// *Note*: this function automatically appends a NULL-char.
-/// *Panic*: panics when cursor's internal buffer doesn't have enough space.
+///
+/// # Panics
+///
+/// Panics when cursor's internal buffer doesn't have enough space.
 pub fn encode_utf16_le(data: &str, dst: &mut WriteCursor) {
     data.encode_utf16()
         .chain(core::iter::once(0))
