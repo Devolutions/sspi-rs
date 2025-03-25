@@ -1,3 +1,10 @@
+use dpapi_core::{decode_owned, EncodeVec};
+use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
+use dpapi_pdu::rpc::{
+    build_tcpip_tower, BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext,
+    ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
+    VerificationTrailer, EPM,
+};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
@@ -8,14 +15,9 @@ use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
 use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
-use crate::epm::{build_tcpip_tower, EptMap, EptMapResult, Floor, EPM};
-use crate::gkdi::{GetKey, GroupKeyEnvelope, ISD_KEY};
+use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
 use crate::rpc::auth::AuthError;
-use crate::rpc::bind::{BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode};
-use crate::rpc::pdu::SecurityTrailer;
-use crate::rpc::request::Response;
-use crate::rpc::verification::{Command, CommandFlags, CommandPContext, VerificationTrailer};
-use crate::rpc::{bind_time_feature_negotiation, AuthProvider, Decode, EncodeExt, RpcClient, NDR, NDR64};
+use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
 use crate::{Error, Result};
 
 const DEFAULT_RPC_PORT: u16 = 135;
@@ -61,7 +63,7 @@ fn get_ept_map_isd_key() -> EptMap {
     EptMap {
         obj: None,
         tower: build_tcpip_tower(ISD_KEY, NDR, 135, 0),
-        entry_handle: None,
+        entry_handle: EntryHandle(None),
         max_towers: 4,
     }
 }
@@ -97,7 +99,7 @@ fn process_bind_result(requested_contexts: &[ContextElement], bind_ack: BindAck,
 
 #[instrument(level = "trace", ret)]
 fn process_ept_map_result(response: &Response) -> Result<u16> {
-    let map_response = EptMapResult::decode(response.stub_data.as_slice())?;
+    let map_response: EptMapResult = decode_owned(response.stub_data.as_slice())?;
 
     if map_response.status != 0 {
         Err(ClientError::BadEptMapStatus(map_response.status))?;
@@ -125,12 +127,12 @@ fn process_get_key_result(response: &Response, security_trailer: Option<Security
 
     let data = &response.stub_data[..pad_length];
 
-    GetKey::unpack_response(data)
+    unpack_response(data)
 }
 
 #[instrument(ret)]
 fn decrypt_blob(blob: &DpapiBlob, key: &GroupKeyEnvelope) -> Result<Vec<u8>> {
-    let kek = key.get_kek(&blob.key_identifier)?;
+    let kek = get_kek(key, &blob.key_identifier)?;
 
     // With the kek we can unwrap the encrypted cek in the LAPS payload.
     let cek = cek_decrypt(&blob.enc_cek_algorithm_id, &kek, &blob.enc_cek)?;
@@ -157,7 +159,7 @@ fn encrypt_blob(
 
     let enc_content = content_encrypt(&enc_content_algorithm_id, &cek, data)?;
 
-    let (kek, key_identifier) = key.new_kek()?;
+    let (kek, key_identifier) = new_kek(key)?;
     let enc_cek = cek_encrypt(&enc_cek_algorithm_id, &kek, &cek)?;
 
     let mut buf = Vec::new();
@@ -225,7 +227,8 @@ fn get_key(
         process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
         let ept_map = get_ept_map_isd_key();
-        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_to_vec()?)?;
+        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?)?;
+
         process_ept_map_result(&response.try_into_response()?)?
     };
 
@@ -261,7 +264,7 @@ fn get_key(
     let response_pdu = rpc.authenticated_request(
         context_id,
         GetKey::OPNUM,
-        get_key.encode_to_vec()?,
+        get_key.encode_vec()?,
         Some(get_verification_trailer()),
     )?;
     let security_trailer = response_pdu.security_trailer.clone();

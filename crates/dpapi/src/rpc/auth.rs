@@ -1,3 +1,4 @@
+use dpapi_pdu::rpc::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
@@ -6,8 +7,6 @@ use sspi::{
     SecurityStatus, Sspi,
 };
 use thiserror::Error;
-
-use crate::rpc::pdu::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
 
 #[derive(Error, Debug)]
 pub enum AuthError {

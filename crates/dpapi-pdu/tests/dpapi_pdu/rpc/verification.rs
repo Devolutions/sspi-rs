@@ -1,7 +1,6 @@
-use dpapi::rpc::bind::SyntaxId;
-use dpapi::rpc::pdu::{CharacterRepr, DataRepr, FloatingPointRepr, IntRepr, PacketType};
-use dpapi::rpc::verification::{
-    Command, CommandBitmask, CommandFlags, CommandHeader2, CommandPContext, VerificationTrailer,
+use dpapi_pdu::rpc::{
+    CharacterRepr, Command, CommandBitmask, CommandFlags, CommandHeader2, CommandPContext, DataRepr, FloatingPointRepr,
+    IntRepr, PacketType, SyntaxId, VerificationTrailer,
 };
 use uuid::uuid;
 

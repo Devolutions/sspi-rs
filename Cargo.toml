@@ -19,6 +19,8 @@ members = [
   "crates/ffi-types",
   "crates/dpapi",
   "crates/dpapi-cli-client",
+  "crates/dpapi-core",
+  "crates/dpapi-pdu",
 ]
 exclude = [
   "tools/wasm-testcompile",
@@ -47,6 +49,8 @@ tokio = "1.43"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
 dpapi = { version = "0.1.0", path = "crates/dpapi" }
+dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
+dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 rsa = { version = "0.9.7", default-features = false }
 windows-sys = "0.59"
 base64 = "0.22"
@@ -55,7 +59,7 @@ tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
-num-bigint-dig = "0.8"
+num-bigint-dig = { version = "0.8", default-features = false }
 hmac = "0.12"
 
 [features]
