@@ -4,8 +4,8 @@ use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key};
 use aes_kw::KekAes256;
 use dpapi_core::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
-use dpapi_core::str::encode_utf16_le;
-use dpapi_core::{decode_owned, EncodeVec};
+use dpapi_core::str::{encode_utf16_le, str_utf16_len};
+use dpapi_core::{decode_owned, EncodeVec, WriteCursor};
 use num_bigint_dig::BigUint;
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
@@ -350,7 +350,11 @@ pub fn compute_kek_from_public_key(
     public_key: &[u8],
     private_key_length: usize,
 ) -> Result<Vec<u8>> {
-    let encoded_secret_algorithm = encode_utf16_le(secret_algorithm);
+    let mut encoded_secret_algorithm = vec![0; str_utf16_len(secret_algorithm)];
+    encode_utf16_le(
+        secret_algorithm,
+        &mut WriteCursor::new(encoded_secret_algorithm.as_mut_slice()),
+    );
 
     let private_key = kdf(
         algorithm,

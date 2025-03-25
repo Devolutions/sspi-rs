@@ -11,10 +11,8 @@ use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::str::{encode_utf16_le, str_utf16_len};
-use crate::{
-    Error, FixedPartSize, compute_padding, decode_uuid, encode_uuid, read_c_str_utf16_le, read_padding, write_padding,
-};
+use crate::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
+use crate::{Error, FixedPartSize, compute_padding, decode_uuid, encode_uuid, read_padding, write_padding};
 
 pub const KDF_ALGORITHM_NAME: &str = "SP800_108_CTR_HMAC";
 
@@ -218,12 +216,12 @@ impl Encode for KdfParameters {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
-        let encoded_hash_alg = encode_utf16_le(&self.hash_alg.to_string());
+        let hash_alg = self.hash_alg.to_string();
 
         dst.write_slice(Self::MAGIC_IDENTIFIER_1);
-        dst.write_u32(cast_int!("GetKey", "target_sd len", encoded_hash_alg.len())?);
+        dst.write_u32(cast_int!("GetKey", "target_sd len", str_utf16_len(&hash_alg))?);
         dst.write_slice(Self::MAGIC_IDENTIFIER_2);
-        dst.write_slice(&encoded_hash_alg);
+        encode_utf16_le(&hash_alg, dst);
 
         Ok(())
     }
@@ -618,9 +616,6 @@ impl Encode for KeyIdentifier {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
-        let domain_name = encode_utf16_le(&self.domain_name);
-        let forest_name = encode_utf16_le(&self.forest_name);
-
         dst.write_u32(self.version);
         dst.write_slice(&Self::MAGIC);
         dst.write_u32(self.flags);
@@ -632,12 +627,20 @@ impl Encode for KeyIdentifier {
         encode_uuid(self.root_key_identifier, dst)?;
 
         dst.write_u32(cast_length!("KeyIdentifier", "key len", self.key_info.len())?);
-        dst.write_u32(cast_length!("KeyIdentifier", "domain name len", domain_name.len())?);
-        dst.write_u32(cast_length!("KeyIdentifier", "forest name len", forest_name.len())?);
+        dst.write_u32(cast_length!(
+            "KeyIdentifier",
+            "domain name len",
+            str_utf16_len(&self.domain_name)
+        )?);
+        dst.write_u32(cast_length!(
+            "KeyIdentifier",
+            "forest name len",
+            str_utf16_len(&self.forest_name)
+        )?);
 
         dst.write_slice(&self.key_info);
-        dst.write_slice(&domain_name);
-        dst.write_slice(&forest_name);
+        encode_utf16_le(&self.domain_name, dst);
+        encode_utf16_le(&self.forest_name, dst);
 
         Ok(())
     }
@@ -798,28 +801,28 @@ impl Encode for GroupKeyEnvelope {
         dst.write_i32(self.l2);
         encode_uuid(self.root_key_identifier, dst)?;
 
-        let encoded_kdf_alg = encode_utf16_le(&self.kdf_alg);
-        let encoded_secret_alg = encode_utf16_le(&self.secret_algorithm);
-        let encoded_domain_name = encode_utf16_le(&self.domain_name);
-        let encoded_forest_name = encode_utf16_le(&self.forest_name);
+        let encoded_kdf_alg_len = str_utf16_len(&self.kdf_alg);
+        let encoded_secret_alg_len = str_utf16_len(&self.secret_algorithm);
+        let encoded_domain_name_len = str_utf16_len(&self.domain_name);
+        let encoded_forest_name_len = str_utf16_len(&self.forest_name);
 
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_kdf_alg.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_kdf_alg_len)?);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.kdf_parameters.len())?);
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_secret_alg.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_secret_alg_len)?);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.secret_parameters.len())?);
         dst.write_u32(self.private_key_length);
         dst.write_u32(self.public_key_length);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l1_key.len())?);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l2_key.len())?);
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_domain_name.len())?);
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_forest_name.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_domain_name_len)?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_forest_name_len)?);
 
-        dst.write_slice(&encoded_kdf_alg);
+        encode_utf16_le(&self.kdf_alg, dst);
         dst.write_slice(&self.kdf_parameters);
-        dst.write_slice(&encoded_secret_alg);
+        encode_utf16_le(&self.secret_algorithm, dst);
         dst.write_slice(&self.secret_parameters);
-        dst.write_slice(&encoded_domain_name);
-        dst.write_slice(&encoded_forest_name);
+        encode_utf16_le(&self.domain_name, dst);
+        encode_utf16_le(&self.forest_name, dst);
         dst.write_slice(&self.l1_key);
         dst.write_slice(&self.l2_key);
 

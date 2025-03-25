@@ -1,6 +1,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use ironrdp_core::{DecodeError, DecodeResult, InvalidFieldErr, ReadCursor, WriteCursor, ensure_size};
+
 use crate::{Error, Result};
 
 /// Decodes a UTF-16–encoded byte slice into a [String].
@@ -27,11 +29,11 @@ pub fn from_utf16_le(data: &[u8]) -> Result<String> {
 /// Encodes str into a UTF-16 encoded byte array.
 ///
 /// *Note*: this function automatically appends a NULL-char.
-pub fn encode_utf16_le(data: &str) -> Vec<u8> {
+/// *Panic*: panics when cursor's internal buffer doesn't have enough space.
+pub fn encode_utf16_le(data: &str, dst: &mut WriteCursor) {
     data.encode_utf16()
         .chain(core::iter::once(0))
-        .flat_map(|v| v.to_le_bytes())
-        .collect::<Vec<_>>()
+        .for_each(|v| dst.write_u16(v));
 }
 
 /// Calculates the size in bytes of the UTF16 encoded representation of
@@ -40,4 +42,30 @@ pub fn encode_utf16_le(data: &str) -> Vec<u8> {
 /// *Note*: this function automatically counts a NULL-char.
 pub fn str_utf16_len(data: &str) -> usize {
     data.encode_utf16().chain(core::iter::once(0)).count() * 2
+}
+
+/// Reads UTF-16 C-str from [ReadCursor].
+pub fn read_c_str_utf16_le(len: usize, src: &mut ReadCursor<'_>) -> DecodeResult<String> {
+    use crate::Error;
+    use crate::str::from_utf16_le;
+
+    if len < 2 {
+        return Err(
+            DecodeError::invalid_field("", "C UTF-16 str", "expected at least 2 bytes").with_source(
+                Error::InvalidLength {
+                    name: "UTF-16 string",
+                    expected: 2,
+                    actual: len,
+                },
+            ),
+        );
+    }
+
+    ensure_size!(ctx: "UTF16-le C str", in: src, size: len);
+    let buf = src.read_slice(len - 2 /* UTF16 null terminator */);
+
+    // Read UTF16 null terminator.
+    src.read_u16();
+
+    Ok(from_utf16_le(buf)?)
 }

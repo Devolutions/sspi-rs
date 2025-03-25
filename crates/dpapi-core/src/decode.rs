@@ -1,5 +1,3 @@
-use alloc::string::String;
-
 use ironrdp_core::{DecodeError, DecodeResult, InvalidFieldErr, ReadCursor, ensure_size};
 use uuid::Uuid;
 
@@ -18,7 +16,7 @@ pub trait DecodeWithContextOwned: Sized + NeedsContext {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self>;
 }
 
-/// Fixed size of the srtructure.
+/// Fixed size of the structure.
 pub trait FixedPartSize {
     /// Size of the fixed part of frame.
     const FIXED_PART_SIZE: usize;
@@ -33,29 +31,4 @@ impl FixedPartSize for Uuid {
 pub trait FindLength: FixedPartSize {
     /// Try to find the length of this frame given the first bytes.
     fn find_frame_length(bytes: &[u8]) -> DecodeResult<Option<usize>>;
-}
-
-pub fn read_c_str_utf16_le(len: usize, src: &mut ReadCursor<'_>) -> DecodeResult<String> {
-    use crate::Error;
-    use crate::str::from_utf16_le;
-
-    if len < 2 {
-        return Err(
-            DecodeError::invalid_field("", "C UTF-16 str", "expected at least 2 bytes").with_source(
-                Error::InvalidLength {
-                    name: "UTF-16 string",
-                    expected: 2,
-                    actual: len,
-                },
-            ),
-        );
-    }
-
-    ensure_size!(ctx: "UTF16-le C str", in: src, size: len);
-    let buf = src.read_slice(len - 2 /* UTF16 null terminator */);
-
-    // Read UTF16 null terminator.
-    src.read_u16();
-
-    Ok(from_utf16_le(buf)?)
 }

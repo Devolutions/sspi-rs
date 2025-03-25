@@ -14,7 +14,7 @@ mod padding;
 pub mod rpc;
 pub mod str;
 
-pub use decode::{DecodeWithContextOwned, FindLength, FixedPartSize, decode_uuid, read_c_str_utf16_le};
+pub use decode::{DecodeWithContextOwned, FindLength, FixedPartSize, decode_uuid};
 pub use encode::{EncodeVec, encode_seq, encode_uuid, size_seq};
 pub use error::{Error, Result};
 pub use ironrdp_core::{DecodeError, DecodeOwned, Encode, EncodeError, ReadCursor, WriteCursor, decode_owned};
