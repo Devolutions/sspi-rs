@@ -641,16 +641,18 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         Ok(match self {
             SspiContext::Ntlm(ntlm) => {
-                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
-                    identity
-                } else {
-                    return Err(Error::new(
-                        ErrorKind::NoCredentials,
-                        "Auth identity is not provided for the Ntlm",
-                    ));
+                let auth_identity = match builder.auth_data {
+                    Some(Credentials::AuthIdentity(identity)) => Some(identity),
+                    Some(_) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "only password-based auth is supported in NTLM",
+                        ))
+                    }
+                    None => None,
                 };
                 builder
-                    .full_transform(Some(auth_identity))
+                    .full_transform(auth_identity)
                     .execute(ntlm)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
@@ -686,16 +688,23 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let auth_identity =
-                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-                        identity.clone()
-                    } else {
+                let mut auth_identity = match builder.credentials_handle {
+                    Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
+                    Some(Some(_)) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "only password-based auth is supported in NTLM",
+                        ))
+                    }
+                    Some(None) => None,
+                    None => {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
-                            "Auth identity is not provided for the Ntlm",
-                        ));
-                    };
-                builder.full_transform(Some(&mut Some(auth_identity))).execute(ntlm)
+                            "Credentials handle is not provided for the NTLM",
+                        ))
+                    }
+                };
+                builder.full_transform(Some(&mut auth_identity)).execute(ntlm)
             }
             SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos),
             SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate),
