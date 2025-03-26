@@ -1,4 +1,6 @@
-use sspi::credssp::{ClientMode, CredSspClient, CredSspMode, CredSspServer};
+use std::mem;
+
+use sspi::credssp::{ClientMode, ClientState, CredSspClient, CredSspMode, CredSspServer, ServerState, TsRequest};
 use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, Secret, Username};
 
@@ -11,7 +13,6 @@ fn run_credssp() {
         password: Secret::from("test_password".to_owned()),
     };
     let credentials = Credentials::AuthIdentity(auth_identity.clone());
-    let target_name = "TERMSRV/DESKTOP-8F33RFH.example.com";
     let public_key = [
         48, 130, 2, 34, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 130, 2, 15, 0, 48, 130, 2, 10, 2,
         130, 2, 1, 0, 153, 85, 210, 206, 231, 176, 16, 84, 146, 20, 255, 201, 74, 62, 122, 183, 157, 210, 202, 111, 17,
@@ -56,4 +57,27 @@ fn run_credssp() {
         }),
     )
     .unwrap();
+
+    let mut ts_request = TsRequest::default();
+
+    for i in 0..3 {
+        ts_request = match client
+            .process(mem::take(&mut ts_request))
+            .resolve_with_default_network_client()
+            .unwrap()
+        {
+            ClientState::ReplyNeeded(ts_request) => ts_request,
+            ClientState::FinalMessage(ts_request) => ts_request,
+        };
+
+        match server.process(ts_request).unwrap() {
+            ServerState::ReplyNeeded(server_ts_request) => ts_request = server_ts_request,
+            ServerState::Finished(received_auth_identity) => {
+                assert_eq!(auth_identity, received_auth_identity);
+                return;
+            }
+        };
+    }
+
+    panic!("CredSSP authentication should not exceed 3 steps.")
 }
