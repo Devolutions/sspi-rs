@@ -52,7 +52,7 @@ fn run_ntlm(config: NtlmConfig) {
         ..
     } = builder
         .with_auth_data(&credentials)
-        .with_credential_use(CredentialUse::Outbound)
+        .with_credential_use(CredentialUse::Inbound)
         .execute(&mut server)
         .unwrap();
 
@@ -102,7 +102,7 @@ fn run_ntlm(config: NtlmConfig) {
 #[test]
 fn ntlm_with_computer_name() {
     run_ntlm(NtlmConfig {
-        client_computer_name: Some("".to_owned()),
+        client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
     });
 }
 
