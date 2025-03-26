@@ -60,7 +60,7 @@ fn run_credssp() {
 
     let mut ts_request = TsRequest::default();
 
-    for i in 0..3 {
+    for _ in 0..3 {
         ts_request = match client
             .process(mem::take(&mut ts_request))
             .resolve_with_default_network_client()

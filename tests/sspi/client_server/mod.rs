@@ -1,4 +1,4 @@
 mod credssp;
 mod ntlm;
 
-// TODO: add Kerberos test when the Kerberos server-side is implemented.
+// TODO(@TheBestTvarynka): add Kerberos test when the Kerberos server-side is implemented.
