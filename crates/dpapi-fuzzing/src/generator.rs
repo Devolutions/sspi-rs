@@ -1,6 +1,9 @@
 use dpapi_core::{DecodeOwned, DecodeResult, EncodeResult, ReadCursor, StaticName, WriteBuf, encode_buf};
 use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters};
-use dpapi_pdu::rpc::Pdu;
+use dpapi_pdu::rpc::{
+    AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Command, ContextElement, ContextResult, EptMap,
+    EptMapResult, Floor, Pdu, Request, Response, SyntaxId, VerificationTrailer,
+};
 
 macro_rules! wrapper {
     (pub enum $name:ident ; structs $( $msg_ty:ident, )+ ) => {
@@ -37,11 +40,35 @@ macro_rules! wrapper {
 wrapper! {
     pub enum AnyStruct;
     structs
+        // bind
+        SyntaxId,
+        ContextElement,
+        ContextResult,
+        Bind,
+        BindAck,
+        BindNak,
+        AlterContext,
+        AlterContextResponse,
+
+        // epm
+        // Floor, --------
+        // EptMap,
+        // EptMapResult,
+
+        // request
+        // Request, -> decode with context
+        Response,
+
+        // verification
+        Command,
+        VerificationTrailer,
+
+        // gkdi
         GetKey,
         KdfParameters,
-        FfcdhParameters,
-        FfcdhKey,
-        EcdhKey,
+        // FfcdhParameters,
+        // FfcdhKey,
+        // EcdhKey,
         GroupKeyEnvelope,
         Pdu,
 }

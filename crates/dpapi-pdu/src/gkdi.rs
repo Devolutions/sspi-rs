@@ -5,8 +5,8 @@ use core::fmt;
 
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
-    StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size,
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, FixedPartSize, InvalidFieldErr,
+    ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size,
     read_padding, write_padding,
 };
 use num_bigint_dig::BigUint;
@@ -293,7 +293,6 @@ impl DecodeOwned for KdfParameters {
 /// ([SP800-56A](https://csrc.nist.gov/pubs/sp/800/56/a/r1/final) section 5.7.1) keys,
 /// as specified in section [3.1.4.1.2](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/5d373568-dd68-499b-bd06-a3ce16ca7117).
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FfcdhParameters {
     /// A 32-bit unsigned integer. This field MUST be the length, in bytes, of the public key.
     /// This field is encoded using little-endian format.
@@ -315,6 +314,27 @@ impl FfcdhParameters {
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for FfcdhParameters {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let key_length = u.int_in_range(0..=1000)?;
+
+        Ok(Self {
+            key_length,
+            field_order: {
+                let t: BigUint = u.arbitrary()?;
+                // BigUint does not expose `normalize` function to the public API.
+                // So, to normalize it, we make a workaround and re-init the value.
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+            generator: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+        })
+    }
+}
+
 impl StaticName for FfcdhParameters {
     const NAME: &'static str = "FfcdhParameters";
 }
@@ -333,6 +353,10 @@ impl Encode for FfcdhParameters {
         dst.write_u32(self.key_length);
 
         let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
+
+        if key_len < (self.field_order.bits() + 7) / 8 || key_len < (self.generator.bits() + 7) / 8 {
+            return Err(EncodeError::invalid_field("FfcdhParameters", "key_length", "too small"));
+        }
 
         let mut field_order = self.field_order.to_bytes_be();
         field_order.resize(key_len, 0);
@@ -389,7 +413,6 @@ impl DecodeOwned for FfcdhParameters {
 ///
 /// The following specifies the format and field descriptions for the FFC DH Key structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FfcdhKey {
     /// A 32-bit unsigned integer. The value in this field MUST be equal to the length, in bytes,
     /// of the Public key field. This parameter is encoded using little-endian format.
@@ -415,6 +438,27 @@ impl FfcdhKey {
     const FIXED_PART_SIZE: usize = Self::MAGIC.len() + 4 /* key length */;
 }
 
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for FfcdhKey {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            key_length: u.int_in_range(0..=1000)?,
+            field_order: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+            generator: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+            public_key: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+        })
+    }
+}
+
 impl StaticName for FfcdhKey {
     const NAME: &'static str = "FfcdhKey";
 }
@@ -428,6 +472,13 @@ impl Encode for FfcdhKey {
         dst.write_u32(self.key_length);
 
         let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
+
+        if key_len < (self.field_order.bits() + 7) / 8
+            || key_len < (self.generator.bits() + 7) / 8
+            || key_len < (self.public_key.bits() + 7) / 8
+        {
+            return Err(EncodeError::invalid_field("FfcdhKey", "key_length", "too small"));
+        }
 
         let mut field_order = self.field_order.to_bytes_be();
         field_order.resize(key_len, 0);
@@ -520,7 +571,6 @@ impl TryFrom<&[u8]> for EllipticCurve {
 ///
 /// The following specifies the format and field descriptions for the Elliptic Curve Diffie-Hellman (ECDH) Key structure [RFC5114](https://www.rfc-editor.org/info/rfc5114).
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EcdhKey {
     /// Represents the ECDH field parameters.
     pub curve: EllipticCurve,
@@ -541,6 +591,24 @@ impl EcdhKey {
     const FIXED_PART_SIZE: usize = 4 /* encoded_curve len */ + 4 /* key_length */;
 }
 
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for EcdhKey {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            curve: u.arbitrary()?,
+            key_length: u.int_in_range(0..=1000)?,
+            x: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+            y: {
+                let t: BigUint = u.arbitrary()?;
+                BigUint::from_bytes_be(&t.to_bytes_be())
+            },
+        })
+    }
+}
+
 impl StaticName for EcdhKey {
     const NAME: &'static str = "EcdhKey";
 }
@@ -554,6 +622,10 @@ impl Encode for EcdhKey {
         dst.write_u32(self.key_length);
 
         let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
+
+        if key_len < (self.x.bits() + 7) / 8 || key_len < (self.y.bits() + 7) / 8 {
+            return Err(EncodeError::invalid_field("EcdhKey", "key_length", "too small"));
+        }
 
         let mut x = self.x.to_bytes_be();
         x.resize(key_len, 0);
