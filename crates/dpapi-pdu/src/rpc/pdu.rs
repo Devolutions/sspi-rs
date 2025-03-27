@@ -557,21 +557,28 @@ impl DecodeWithContextOwned for PduData {
         ensure_size!(in: src, size: data_len);
         let mut buf = ReadCursor::new(src.read_slice(data_len));
 
-        match pdu_header.packet_type {
-            PacketType::Bind => Ok(PduData::Bind(Bind::decode_owned(&mut buf)?)),
-            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode_owned(&mut buf)?)),
-            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode_owned(&mut buf)?)),
-            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode_owned(&mut buf)?)),
-            PacketType::AlterContextResponse => Ok(PduData::AlterContextResponse(AlterContextResponse::decode_owned(
-                &mut buf,
-            )?)),
-            PacketType::Request => Ok(PduData::Request(Request::decode_with_context_owned(
-                &mut buf, pdu_header,
-            )?)),
-            PacketType::Response => Ok(PduData::Response(Response::decode_owned(&mut buf)?)),
-            PacketType::Fault => Ok(PduData::Fault(Fault::decode_owned(&mut buf)?)),
-            packet_type => Err(PduError::PduNotSupported(packet_type))?,
+        let pdu_data = match pdu_header.packet_type {
+            PacketType::Bind => PduData::Bind(Bind::decode_owned(&mut buf)?),
+            PacketType::BindAck => PduData::BindAck(BindAck::decode_owned(&mut buf)?),
+            PacketType::BindNak => PduData::BindNak(BindNak::decode_owned(&mut buf)?),
+            PacketType::AlterContext => PduData::AlterContext(AlterContext::decode_owned(&mut buf)?),
+            PacketType::AlterContextResponse => {
+                PduData::AlterContextResponse(AlterContextResponse::decode_owned(&mut buf)?)
+            }
+            PacketType::Request => PduData::Request(Request::decode_with_context_owned(&mut buf, pdu_header)?),
+            PacketType::Response => PduData::Response(Response::decode_owned(&mut buf)?),
+            PacketType::Fault => PduData::Fault(Fault::decode_owned(&mut buf)?),
+            packet_type => return Err(PduError::PduNotSupported(packet_type).into()),
+        };
+
+        if !buf.is_empty() {
+            return Err(DecodeError::other(
+                "invalid PDU data",
+                "PDU header or PDU data is invalid: too much data to decode",
+            ));
         }
+
+        Ok(pdu_data)
     }
 }
 
@@ -610,7 +617,6 @@ impl Encode for PduData {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Pdu {
     pub header: PduHeader,
     pub data: PduData,
@@ -627,6 +633,66 @@ impl Pdu {
         } else {
             Err(PduError::RpcFail("got unexpected PDU: expected Response PDU"))
         }
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for Pdu {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let mut header = PduHeader::arbitrary(u)?;
+
+        let data = match header.packet_type {
+            PacketType::Bind => PduData::Bind(Bind::arbitrary(u)?),
+            PacketType::BindAck => PduData::BindAck(BindAck::arbitrary(u)?),
+            PacketType::BindNak => PduData::BindNak(BindNak::arbitrary(u)?),
+            PacketType::AlterContext => PduData::AlterContext(AlterContext::arbitrary(u)?),
+            PacketType::AlterContextResponse => PduData::AlterContextResponse(AlterContextResponse::arbitrary(u)?),
+            PacketType::Request => {
+                let mut request = Request::arbitrary(u)?;
+
+                if header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
+                    if request.obj.is_none() {
+                        request.obj = Some(u.arbitrary()?);
+                    }
+                } else {
+                    if request.obj.is_some() {
+                        request.obj = None;
+                    }
+                }
+
+                PduData::Request(request)
+            }
+            PacketType::Response => PduData::Response(Response::arbitrary(u)?),
+            PacketType::Fault => PduData::Fault(Fault::arbitrary(u)?),
+            _ => return Err(arbitrary::Error::IncorrectFormat),
+        };
+
+        let encoded_len: u16 = data.size().try_into().map_err(|_| arbitrary::Error::IncorrectFormat)?;
+
+        let security_trailer = SecurityTrailer::arbitrary(u)?;
+
+        let security_trailer = if security_trailer.auth_value.is_empty() {
+            header.frag_len = encoded_len + 16 /* PDU header */;
+            header.auth_len = 0;
+
+            None
+        } else {
+            header.auth_len = security_trailer
+                .auth_value
+                .len()
+                .try_into()
+                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
+
+            header.frag_len = encoded_len + header.auth_len + 16 + 8 /* headers length */;
+
+            Some(security_trailer)
+        };
+
+        Ok(Self {
+            header,
+            data,
+            security_trailer,
+        })
     }
 }
 

@@ -306,6 +306,8 @@ pub struct VerificationTrailer {
     pub commands: Vec<Command>,
 }
 
+// implement the arbitrary trait manually
+
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
 }
@@ -356,7 +358,7 @@ impl DecodeOwned for VerificationTrailer {
         }
 
         let mut commands = Vec::new();
-        loop {
+        while !src.is_empty() {
             let command = Command::decode_owned(src)?;
             let flags = command.flags();
 

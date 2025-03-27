@@ -9,7 +9,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
 use rand::Rng;
-pub use ts_request::{NStatusCode, TsRequest, read_ts_credentials, write_ts_credentials};
+pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
