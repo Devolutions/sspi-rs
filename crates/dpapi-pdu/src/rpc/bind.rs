@@ -3,8 +3,8 @@ use alloc::vec::Vec;
 
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
-    WriteCursor, cast_length, compute_padding, decode_uuid, encode_seq, encode_uuid, ensure_size, read_padding,
-    size_seq, write_padding,
+    StaticName, WriteCursor, cast_length, compute_padding, decode_uuid, encode_seq, encode_uuid, ensure_size,
+    read_padding, size_seq, write_padding,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -62,10 +62,15 @@ impl BindTimeFeatureNegotiationBitmask {
 /// * Identifier and version of an interface.
 /// * Identifier and version of [transfer syntax](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpcl/55ec267c-87d9-4d97-a9d5-5681f5f283b8#gt_01216ea7-ac8a-4cc8-9d19-b901bc424c09) for an interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SyntaxId {
     pub uuid: Uuid,
     pub version: u16,
     pub version_minor: u16,
+}
+
+impl StaticName for SyntaxId {
+    const NAME: &'static str = "SyntaxId";
 }
 
 impl FixedPartSize for SyntaxId {
@@ -84,7 +89,7 @@ impl Encode for SyntaxId {
     }
 
     fn name(&self) -> &'static str {
-        "SyntaxId"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -105,10 +110,15 @@ impl DecodeOwned for SyntaxId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ContextElement {
     pub context_id: u16,
     pub abstract_syntax: SyntaxId,
     pub transfer_syntaxes: Vec<SyntaxId>,
+}
+
+impl StaticName for ContextElement {
+    const NAME: &'static str = "ContextElement";
 }
 
 impl FixedPartSize for ContextElement {
@@ -133,7 +143,7 @@ impl Encode for ContextElement {
     }
 
     fn name(&self) -> &'static str {
-        "ContextElement"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -166,6 +176,7 @@ impl DecodeOwned for ContextElement {
 /// These extensions specify a new member, `negotiate_ack`, which is added to the `p_cont_def_result_t` enumeration
 /// (specified in C706 section 12.6), with the numeric value of `3`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub enum ContextResultCode {
     Acceptance = 0,
@@ -195,11 +206,16 @@ impl TryFrom<u16> for ContextResultCode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ContextResult {
     pub result: ContextResultCode,
     pub reason: u16,
     pub syntax: Uuid,
     pub syntax_version: u32,
+}
+
+impl StaticName for ContextResult {
+    const NAME: &'static str = "ContextResult";
 }
 
 impl FixedPartSize for ContextResult {
@@ -219,7 +235,7 @@ impl Encode for ContextResult {
     }
 
     fn name(&self) -> &'static str {
-        "ContextResult"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -241,11 +257,16 @@ impl DecodeOwned for ContextResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Bind {
     pub max_xmit_frag: u16,
     pub max_recv_frag: u16,
     pub assoc_group: u32,
     pub contexts: Vec<ContextElement>,
+}
+
+impl StaticName for Bind {
+    const NAME: &'static str = "Bind";
 }
 
 impl FixedPartSize for Bind {
@@ -266,7 +287,7 @@ impl Encode for Bind {
     }
 
     fn name(&self) -> &'static str {
-        "Bind"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -297,12 +318,17 @@ impl DecodeOwned for Bind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BindAck {
     pub max_xmit_frag: u16,
     pub max_recv_frag: u16,
     pub assoc_group: u32,
     pub sec_addr: String,
     pub results: Vec<ContextResult>,
+}
+
+impl StaticName for BindAck {
+    const NAME: &'static str = "BindAck";
 }
 
 impl FixedPartSize for BindAck {
@@ -340,7 +366,7 @@ impl Encode for BindAck {
     }
 
     fn name(&self) -> &'static str {
-        "BindAck"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -391,7 +417,12 @@ impl DecodeOwned for BindAck {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Version(u8, u8);
+
+impl StaticName for Version {
+    const NAME: &'static str = "Version";
+}
 
 impl FixedPartSize for Version {
     const FIXED_PART_SIZE: usize = 2;
@@ -408,7 +439,7 @@ impl Encode for Version {
     }
 
     fn name(&self) -> &'static str {
-        "Version"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -425,9 +456,14 @@ impl DecodeOwned for Version {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BindNak {
     pub reason: u16,
     pub versions: Vec<Version>,
+}
+
+impl StaticName for BindNak {
+    const NAME: &'static str = "BindNak";
 }
 
 impl FixedPartSize for BindNak {
@@ -450,7 +486,7 @@ impl Encode for BindNak {
     }
 
     fn name(&self) -> &'static str {
-        "BindAck"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -483,7 +519,12 @@ impl DecodeOwned for BindNak {
 
 // `AlterContext` has the same layout as `Bind`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AlterContext(pub Bind);
+
+impl StaticName for AlterContext {
+    const NAME: &'static str = "AlterContext";
+}
 
 impl FixedPartSize for AlterContext {
     const FIXED_PART_SIZE: usize = Bind::FIXED_PART_SIZE;
@@ -497,7 +538,7 @@ impl Encode for AlterContext {
     }
 
     fn name(&self) -> &'static str {
-        "AlterContext"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -513,7 +554,12 @@ impl DecodeOwned for AlterContext {
 
 // `AlterContextResponse` has the same layout as `BindAck`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AlterContextResponse(pub BindAck);
+
+impl StaticName for AlterContextResponse {
+    const NAME: &'static str = "AlterContextResponse";
+}
 
 impl FixedPartSize for AlterContextResponse {
     const FIXED_PART_SIZE: usize = BindAck::FIXED_PART_SIZE;
@@ -527,7 +573,7 @@ impl Encode for AlterContextResponse {
     }
 
     fn name(&self) -> &'static str {
-        "AlterContextResponse"
+        Self::NAME
     }
 
     fn size(&self) -> usize {

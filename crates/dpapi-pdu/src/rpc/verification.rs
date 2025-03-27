@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 use bitflags::bitflags;
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor, WriteBuf,
-    WriteCursor, cast_length, encode_buf, encode_seq, ensure_size, size_seq,
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
+    StaticName, WriteBuf, WriteCursor, cast_length, encode_buf, encode_seq, ensure_size, size_seq,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -45,6 +45,7 @@ impl CommandType {
 
 bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub struct CommandFlags: u16 {
         const None = 0;
         const SecVtCommandEnd = 0x4000;
@@ -53,6 +54,7 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Command {
     Bitmask1(CommandBitmask),
     Pcontext(CommandPContext),
@@ -85,6 +87,10 @@ impl Command {
     }
 }
 
+impl StaticName for Command {
+    const NAME: &'static str = "Command";
+}
+
 impl FixedPartSize for Command {
     const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
 }
@@ -103,7 +109,7 @@ impl Encode for Command {
     }
 
     fn name(&self) -> &'static str {
-        "Command"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -143,6 +149,7 @@ impl DecodeOwned for Command {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandBitmask {
     pub bits: u32,
     pub flags: CommandFlags,
@@ -180,6 +187,7 @@ impl CommandBitmask {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandPContext {
     pub flags: CommandFlags,
     pub interface_id: SyntaxId,
@@ -224,6 +232,7 @@ impl CommandPContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandHeader2 {
     pub flags: CommandFlags,
     pub packet_type: PacketType,
@@ -292,12 +301,17 @@ impl FixedPartSize for CommandHeader2 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct VerificationTrailer {
     pub commands: Vec<Command>,
 }
 
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
+}
+
+impl StaticName for VerificationTrailer {
+    const NAME: &'static str = "VerificationTrailer";
 }
 
 impl FixedPartSize for VerificationTrailer {
@@ -316,7 +330,7 @@ impl Encode for VerificationTrailer {
     }
 
     fn name(&self) -> &'static str {
-        "VerificationTrailer"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
