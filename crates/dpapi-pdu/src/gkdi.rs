@@ -6,8 +6,8 @@ use core::fmt;
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
-    WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size, read_padding,
-    write_padding,
+    StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size,
+    read_padding, write_padding,
 };
 use num_bigint_dig::BigUint;
 use thiserror::Error;
@@ -63,6 +63,7 @@ impl From<GkdiError> for DecodeError {
 /// This can be used to build the stub data for the GetKey RPC request.
 /// The syntax for this function is defined in []`MS-GKDI 3.1.4.1 GetKey (Opnum 0)`](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/4cac87a3-521e-4918-a272-240f8fabed39)
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GetKey {
     /// The the security descriptor for which the group key is being requested.
     pub target_sd: Vec<u8>,
@@ -81,6 +82,10 @@ pub struct GetKey {
 
 impl GetKey {
     pub const OPNUM: u16 = 0;
+}
+
+impl StaticName for GetKey {
+    const NAME: &'static str = "GetKey";
 }
 
 impl Encode for GetKey {
@@ -112,7 +117,7 @@ impl Encode for GetKey {
     }
 
     fn name(&self) -> &'static str {
-        "GetKey"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -161,6 +166,7 @@ impl DecodeOwned for GetKey {
 /// It contains hash algorithms that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HashAlg {
     Sha1,
     Sha256,
@@ -197,6 +203,7 @@ impl TryFrom<&str> for HashAlg {
 ///
 /// The following specifies the format and field descriptions for the key derivation function (KDF) parameters structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KdfParameters {
     pub hash_alg: HashAlg,
 }
@@ -206,11 +213,12 @@ impl KdfParameters {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
     const MAGIC_IDENTIFIER_1: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
     const MAGIC_IDENTIFIER_2: &[u8] = &[0x00, 0x00, 0x00, 0x00];
-}
-
-impl KdfParameters {
     const FIXED_PART_SIZE: usize =
         Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len();
+}
+
+impl StaticName for KdfParameters {
+    const NAME: &'static str = "KdfParameters";
 }
 
 impl Encode for KdfParameters {
@@ -228,7 +236,7 @@ impl Encode for KdfParameters {
     }
 
     fn name(&self) -> &'static str {
-        "KdfParameters"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -285,6 +293,7 @@ impl DecodeOwned for KdfParameters {
 /// ([SP800-56A](https://csrc.nist.gov/pubs/sp/800/56/a/r1/final) section 5.7.1) keys,
 /// as specified in section [3.1.4.1.2](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/5d373568-dd68-499b-bd06-a3ce16ca7117).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FfcdhParameters {
     /// A 32-bit unsigned integer. This field MUST be the length, in bytes, of the public key.
     /// This field is encoded using little-endian format.
@@ -304,6 +313,10 @@ impl FfcdhParameters {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/e15ae269-ee21-446a-a480-de3ea243db5f
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x4d];
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
+}
+
+impl StaticName for FfcdhParameters {
+    const NAME: &'static str = "FfcdhParameters";
 }
 
 impl Encode for FfcdhParameters {
@@ -333,7 +346,7 @@ impl Encode for FfcdhParameters {
     }
 
     fn name(&self) -> &'static str {
-        "FfcdhParameters"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -376,6 +389,7 @@ impl DecodeOwned for FfcdhParameters {
 ///
 /// The following specifies the format and field descriptions for the FFC DH Key structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FfcdhKey {
     /// A 32-bit unsigned integer. The value in this field MUST be equal to the length, in bytes,
     /// of the Public key field. This parameter is encoded using little-endian format.
@@ -399,6 +413,10 @@ impl FfcdhKey {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/f8770f01-036d-4bf6-a4cf-1bd0e3913404
     const MAGIC: &[u8] = &[0x44, 0x48, 0x50, 0x42];
     const FIXED_PART_SIZE: usize = Self::MAGIC.len() + 4 /* key length */;
+}
+
+impl StaticName for FfcdhKey {
+    const NAME: &'static str = "FfcdhKey";
 }
 
 impl Encode for FfcdhKey {
@@ -427,7 +445,7 @@ impl Encode for FfcdhKey {
     }
 
     fn name(&self) -> &'static str {
-        "FfcdhKey"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -468,6 +486,7 @@ impl DecodeOwned for FfcdhKey {
 /// It contains elliptic curves that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/24876a37-9a92-4187-9052-222bb6f85d4a
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EllipticCurve {
     P256,
     P384,
@@ -501,6 +520,7 @@ impl TryFrom<&[u8]> for EllipticCurve {
 ///
 /// The following specifies the format and field descriptions for the Elliptic Curve Diffie-Hellman (ECDH) Key structure [RFC5114](https://www.rfc-editor.org/info/rfc5114).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EcdhKey {
     /// Represents the ECDH field parameters.
     pub curve: EllipticCurve,
@@ -519,6 +539,10 @@ pub struct EcdhKey {
 
 impl EcdhKey {
     const FIXED_PART_SIZE: usize = 4 /* encoded_curve len */ + 4 /* key_length */;
+}
+
+impl StaticName for EcdhKey {
+    const NAME: &'static str = "EcdhKey";
 }
 
 impl Encode for EcdhKey {
@@ -543,7 +567,7 @@ impl Encode for EcdhKey {
     }
 
     fn name(&self) -> &'static str {
-        "EcshKey"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -577,6 +601,7 @@ impl DecodeOwned for EcdhKey {
 /// This contains the key identifier info that can be used by MS-GKDI GetKey to retrieve the group key seed values.
 /// This structure is not defined publicly by Microsoft but it closely matches the [GroupKeyEnvelope] structure.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyIdentifier {
     /// The version of the structure.
     pub version: u32,
@@ -613,6 +638,10 @@ impl KeyIdentifier {
     }
 }
 
+impl StaticName for KeyIdentifier {
+    const NAME: &'static str = "KeyIdentifier";
+}
+
 impl Encode for KeyIdentifier {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -647,7 +676,7 @@ impl Encode for KeyIdentifier {
     }
 
     fn name(&self) -> &'static str {
-        "KeyIndentifier"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -722,6 +751,7 @@ impl DecodeOwned for KeyIdentifier {
 ///
 /// The following specifies the format and field descriptions for the Group Key Envelope structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GroupKeyEnvelope {
     /// A 32-bit unsigned integer. Bit 31 (LSB) MUST be set to 1 when this structure is being used to
     /// transport a public key, otherwise set to 0. Bit 30 MUST be set to 1 when the key being transported
@@ -789,6 +819,10 @@ impl GroupKeyEnvelope {
     }
 }
 
+impl StaticName for GroupKeyEnvelope {
+    const NAME: &'static str = "GroupKeyEnvelope";
+}
+
 impl Encode for GroupKeyEnvelope {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -831,7 +865,7 @@ impl Encode for GroupKeyEnvelope {
     }
 
     fn name(&self) -> &'static str {
-        "GroupKeyEnvelope"
+        Self::NAME
     }
 
     fn size(&self) -> usize {

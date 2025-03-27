@@ -3,8 +3,9 @@ use alloc::{format, vec};
 
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
-    InvalidFieldErr, NeedsContext, ReadCursor, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int, cast_length,
-    compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq, write_padding,
+    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int,
+    cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
+    write_padding,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -126,6 +127,7 @@ impl Encode for BaseFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TcpFloor {
     pub port: u16,
 }
@@ -173,6 +175,7 @@ impl DecodeWithContextOwned for TcpFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct IpFloor {
     pub addr: u32,
 }
@@ -219,6 +222,7 @@ impl DecodeWithContextOwned for IpFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RpcConnectionOrientedFloor {
     pub version_minor: u16,
 }
@@ -274,6 +278,7 @@ impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UuidFloor {
     pub uuid: Uuid,
     pub version: u16,
@@ -341,11 +346,16 @@ impl DecodeWithContextOwned for UuidFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Floor {
     Tcp(TcpFloor),
     Ip(IpFloor),
     RpcConnectionOriented(RpcConnectionOrientedFloor),
     Uuid(UuidFloor),
+}
+
+impl StaticName for Floor {
+    const NAME: &'static str = "Floor";
 }
 
 impl FixedPartSize for Floor {
@@ -363,7 +373,7 @@ impl Encode for Floor {
     }
 
     fn name(&self) -> &'static str {
-        "Floor"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -418,7 +428,12 @@ pub fn build_tcpip_tower(service: SyntaxId, data_rep: SyntaxId, port: u16, addr:
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EntryHandle(pub Option<(u32, Uuid)>);
+
+impl StaticName for EntryHandle {
+    const NAME: &'static str = "EntryHandle";
+}
 
 impl EntryHandle {
     const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
@@ -443,7 +458,7 @@ impl Encode for EntryHandle {
     }
 
     fn name(&self) -> &'static str {
-        "EntryHandle"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -469,6 +484,7 @@ impl DecodeOwned for EntryHandle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EptMap {
     pub obj: Option<Uuid>,
     pub tower: Tower,
@@ -480,6 +496,10 @@ impl EptMap {
     pub const OPNUM: u16 = 3;
     const TOWER_REFERENT_ID_1: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
     const TOWER_REFERENT_ID_2: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+impl StaticName for EptMap {
+    const NAME: &'static str = "EptMap";
 }
 
 impl FixedPartSize for EptMap {
@@ -523,7 +543,7 @@ impl Encode for EptMap {
     }
 
     fn name(&self) -> &'static str {
-        "EptMap"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -581,10 +601,15 @@ impl DecodeOwned for EptMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EptMapResult {
     pub entry_handle: EntryHandle,
     pub towers: Vec<Tower>,
     pub status: u32,
+}
+
+impl StaticName for EptMapResult {
+    const NAME: &'static str = "EptMapResult";
 }
 
 impl FixedPartSize for EptMapResult {
@@ -640,7 +665,7 @@ impl Encode for EptMapResult {
     }
 
     fn name(&self) -> &'static str {
-        "EptMapResult"
+        Self::NAME
     }
 
     fn size(&self) -> usize {

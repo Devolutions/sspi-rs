@@ -2,19 +2,24 @@ use alloc::vec::Vec;
 
 use dpapi_core::{
     DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize, NeedsContext, ReadCursor,
-    WriteCursor, decode_uuid, encode_uuid, ensure_size,
+    StaticName, WriteCursor, decode_uuid, encode_uuid, ensure_size,
 };
 use uuid::Uuid;
 
 use crate::rpc::{PacketFlags, PduHeader};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Request {
     pub alloc_hint: u32,
     pub context_id: u16,
     pub opnum: u16,
     pub obj: Option<Uuid>,
     pub stub_data: Vec<u8>,
+}
+
+impl StaticName for Request {
+    const NAME: &'static str = "Request";
 }
 
 impl FixedPartSize for Request {
@@ -39,7 +44,7 @@ impl Encode for Request {
     }
 
     fn name(&self) -> &'static str {
-        "Request"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -72,11 +77,16 @@ impl DecodeWithContextOwned for Request {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Response {
     pub alloc_hint: u32,
     pub context_id: u16,
     pub cancel_count: u8,
     pub stub_data: Vec<u8>,
+}
+
+impl StaticName for Response {
+    const NAME: &'static str = "Response";
 }
 
 impl FixedPartSize for Response {
@@ -99,7 +109,7 @@ impl Encode for Response {
     }
 
     fn name(&self) -> &'static str {
-        "Response"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
