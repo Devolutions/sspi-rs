@@ -79,5 +79,5 @@ fn run_credssp() {
         };
     }
 
-    panic!("CredSSP authentication should not exceed 3 steps.")
+    panic!("CredSSP authentication should not exceed 3 steps")
 }
