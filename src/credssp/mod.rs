@@ -125,7 +125,7 @@ impl EarlyUserAuthResult {
         EarlyUserAuthResult::from_u32(result).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Got invalid Early User Authorization Result: {:x}", result),
+                format!("got invalid Early User Authorization Result: {:x}", result),
             )
         })
     }
@@ -345,7 +345,7 @@ impl CredSspClient {
                 let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
                     crate::Error::new(
                         crate::ErrorKind::InvalidToken,
-                        String::from("Expected an encrypted public key"),
+                        String::from("expected an encrypted public key"),
                     )
                 })?;
                 let peer_version = self
@@ -480,7 +480,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     ts_request.auth_info.take().ok_or_else(|| {
                         crate::Error::new(
                             crate::ErrorKind::InvalidToken,
-                            String::from("Expected an encrypted ts credentials"),
+                            String::from("expected an encrypted ts credentials"),
                         )
                     }),
                     ts_request
@@ -558,13 +558,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                             ts_request.pub_key_auth.take().ok_or_else(|| {
                                 crate::Error::new(
                                     crate::ErrorKind::InvalidToken,
-                                    String::from("Expected an encrypted public key"),
+                                    String::from("expected an encrypted public key"),
                                 )
                             }),
                             ts_request
                         );
                         let peer_version = self.context.as_ref().unwrap().peer_version.expect(
-                            "An decrypt public key server function cannot be fired without any incoming TSRequest",
+                            "an decrypt public key server function cannot be fired without any incoming TSRequest",
                         );
                         try_cred_ssp_server!(
                             self.context.as_mut().unwrap().decrypt_public_key(
@@ -641,16 +641,18 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         Ok(match self {
             SspiContext::Ntlm(ntlm) => {
-                let auth_identity = if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
-                    identity
-                } else {
-                    return Err(Error::new(
-                        ErrorKind::NoCredentials,
-                        "Auth identity is not provided for the Ntlm",
-                    ));
+                let auth_identity = match builder.auth_data {
+                    Some(Credentials::AuthIdentity(identity)) => Some(identity),
+                    Some(_) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "only password-based auth is supported in NTLM",
+                        ))
+                    }
+                    None => None,
                 };
                 builder
-                    .full_transform(Some(auth_identity))
+                    .full_transform(auth_identity)
                     .execute(ntlm)?
                     .transform_credentials_handle(&|a: Option<AuthIdentityBuffers>| {
                         a.map(CredentialsBuffers::AuthIdentity)
@@ -664,7 +666,7 @@ impl SspiImpl for SspiContext {
                 } else {
                     return Err(Error::new(
                         ErrorKind::NoCredentials,
-                        "Auth identity is not provided for the Pku2u",
+                        "auth identity is not provided for the Pku2u",
                     ));
                 };
                 builder
@@ -686,16 +688,23 @@ impl SspiImpl for SspiContext {
     ) -> crate::Result<AcceptSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let auth_identity =
-                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-                        identity.clone()
-                    } else {
+                let mut auth_identity = match builder.credentials_handle {
+                    Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
+                    Some(Some(_)) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "only password-based auth is supported in NTLM",
+                        ))
+                    }
+                    Some(None) => None,
+                    None => {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
-                            "Auth identity is not provided for the Ntlm",
-                        ));
-                    };
-                builder.full_transform(Some(&mut Some(auth_identity))).execute(ntlm)
+                            "credentials handle is not provided for the NTLM",
+                        ))
+                    }
+                };
+                builder.full_transform(Some(&mut auth_identity)).execute(ntlm)
             }
             SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos),
             SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate),
@@ -706,7 +715,7 @@ impl SspiImpl for SspiContext {
                     } else {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
-                            "Auth identity is not provided for the Pku2u",
+                            "auth identity is not provided for the Pku2u",
                         ));
                     };
                 builder.full_transform(Some(&mut Some(auth_identity))).execute(pku2u)
@@ -738,7 +747,7 @@ impl<'a> SspiContext {
             SspiContext::Negotiate(negotiate) => negotiate.change_password(yield_point, change_password).await,
             _ => Err(crate::Error::new(
                 ErrorKind::UnsupportedFunction,
-                "Change password not supported for this protocol",
+                "change password not supported for this protocol",
             )),
         }
     }
@@ -983,7 +992,7 @@ impl SspiEx for SspiContext {
             SspiContext::Ntlm(ntlm) => ntlm.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
                 Error::new(
                     ErrorKind::IncompleteCredentials,
-                    "Provided credentials are not password-based",
+                    "provided credentials are not password-based",
                 )
             })?),
             SspiContext::Kerberos(kerberos) => kerberos.custom_set_auth_identity(identity),
@@ -991,7 +1000,7 @@ impl SspiEx for SspiContext {
             SspiContext::Pku2u(pku2u) => pku2u.custom_set_auth_identity(identity.auth_identity().ok_or_else(|| {
                 Error::new(
                     ErrorKind::IncompleteCredentials,
-                    "Provided credentials are not password-based",
+                    "provided credentials are not password-based",
                 )
             })?),
             #[cfg(feature = "tsssp")]
@@ -1133,7 +1142,7 @@ impl CredSspContext {
 
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
-                String::from("Could not verify a public key echo"),
+                String::from("could not verify a public key echo"),
             ));
         }
 
@@ -1159,7 +1168,7 @@ impl CredSspContext {
 
             return Err(crate::Error::new(
                 crate::ErrorKind::MessageAltered,
-                String::from("Could not verify a public key hash"),
+                String::from("could not verify a public key hash"),
             ));
         }
 

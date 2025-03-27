@@ -25,7 +25,7 @@ impl<'a> CredentialsProxyImpl<'a> {
     }
 }
 
-impl<'a> credssp::CredentialsProxy for CredentialsProxyImpl<'a> {
+impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
     type AuthenticationData = AuthIdentity;
 
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData> {

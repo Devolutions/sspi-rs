@@ -1,11 +1,10 @@
-pub mod common;
+use sspi::Ntlm;
 
-use common::{
+use crate::common::{
     check_messages_encryption, create_client_credentials_handle, create_server_credentials_handle,
     process_authentication_without_complete, set_identity_and_try_complete_authentication, try_complete_authentication,
     CredentialsProxyImpl, CREDENTIALS,
 };
-use sspi::Ntlm;
 
 #[test]
 fn successful_ntlm_authentication_with_client_auth_data() {
