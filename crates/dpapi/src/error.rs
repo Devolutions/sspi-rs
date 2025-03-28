@@ -5,8 +5,11 @@ use crate::client::ConnectionUrlParseError;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid url `{url}`: {description}")]
+    #[error("invalid URL `{url}`: {description}")]
     InvalidUrl { url: String, description: String },
+
+    #[error("unsupported transport: {0}")]
+    UnsupportedTransport(String),
 
     #[error(transparent)]
     UrlParse(#[from] url::ParseError),
@@ -44,14 +47,11 @@ pub enum Error {
     #[error(transparent)]
     Client(#[from] crate::client::ClientError),
 
-    #[error(transparent)]
-    HttpRequest(#[from] reqwest::Error),
+    #[error("HTTP request error: {0}")]
+    HttpRequest(String),
 
     #[error("IO error")]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    WebSocket(#[from] tungstenite::Error),
 
     #[error(transparent)]
     ConnectionUrlParse(#[from] ConnectionUrlParseError),
@@ -77,6 +77,9 @@ pub enum Error {
 
     #[error(transparent)]
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
+
+    #[error("transport connection error: {0}")]
+    TransportConnection(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

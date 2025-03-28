@@ -1,16 +1,23 @@
+#![warn(clippy::large_futures)]
+
 mod cli;
 mod logging;
+mod network_client;
+mod transport;
 
+use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
+use crate::network_client::ReqwestNetworkClient;
+use crate::transport::NativeTransport;
+use dpapi::client::CryptProtectSecretArgs;
 use std::fs;
 use std::io::{stdin, stdout, Read, Result, Write};
 
-use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
-
-fn run(data: Dpapi) -> Result<()> {
+async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
 
     let Dpapi {
         server,
+        proxy_address,
         username,
         password,
         computer_name,
@@ -25,15 +32,20 @@ fn run(data: Dpapi) -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let blob = dpapi::n_crypt_protect_secret(
-                secret.into(),
-                sid,
-                None,
-                &server,
-                &username,
-                password.into(),
-                computer_name,
-            )
+            let blob = Box::pin(dpapi::n_crypt_protect_secret::<NativeTransport>(
+                CryptProtectSecretArgs {
+                    data: secret.into(),
+                    sid,
+                    root_key_id: None,
+                    server: &server,
+                    proxy_addr: proxy_address,
+                    username: &username,
+                    password: password.into(),
+                    client_computer_name: computer_name,
+                },
+                &mut ReqwestNetworkClient::new(),
+            ))
+            .await
             .unwrap();
 
             stdout().write_all(&blob)?;
@@ -45,8 +57,17 @@ fn run(data: Dpapi) -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let secret =
-                dpapi::n_crypt_unprotect_secret(&blob, &server, &username, password.into(), computer_name).unwrap();
+            let secret = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
+                &blob,
+                &server,
+                proxy_address,
+                &username,
+                password.into(),
+                computer_name,
+                &mut ReqwestNetworkClient::new(),
+            ))
+            .await
+            .unwrap();
 
             stdout().write_all(secret.as_ref())?;
         }
@@ -55,9 +76,10 @@ fn run(data: Dpapi) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     match Dpapi::from_env() {
-        Ok(flags) => run(flags),
+        Ok(flags) => run(flags).await,
         Err(err) => err.exit(),
     }
 }

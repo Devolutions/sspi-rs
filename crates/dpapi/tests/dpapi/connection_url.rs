@@ -40,7 +40,7 @@ fn test_websocket_tunnel_url_parse() {
     let expected = ConnectionOptions::WebSocketTunnel {
         websocket_url: Url::parse("ws://192.168.0.1:1234/path/path2").unwrap(),
         web_app_auth: WebAppAuth::None,
-        tcp_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
+        destination: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
     };
     assert_eq!(expected, options);
 }
@@ -54,7 +54,7 @@ fn test_websocket_tunnel_url_tcp_url_first_parse() {
     let expected = ConnectionOptions::WebSocketTunnel {
         websocket_url: Url::parse("ws://192.168.0.1:1234/path/path2").unwrap(),
         web_app_auth: WebAppAuth::None,
-        tcp_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
+        destination: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
     };
     assert_eq!(expected, options);
 }
@@ -81,7 +81,7 @@ fn test_websocket_url_with_custom_auth() {
             username: String::from("username"),
             password: String::from("password"),
         },
-        tcp_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
+        destination: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), DEFAULT_PORT)),
     };
     assert_eq!(expected, options);
 }

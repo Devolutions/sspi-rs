@@ -1,18 +1,15 @@
-use std::net::{SocketAddr, TcpStream};
-
 use dpapi_core::{compute_padding, decode_owned, EncodeVec, FixedPartSize};
+use crate::client::ConnectionOptions;
 use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use crate::client::{ConnectionOptions, WebAppAuth, WSS_SCHEME, WS_SCHEME};
 use crate::rpc::AuthProvider;
-use crate::stream::{Stream, StreamWrapper, WebSocketWrapper};
-use crate::webapp_http_client::GatewayWebAppHttpClient;
-use crate::{Error, Result};
+
+use crate::stream::Transport;
+use crate::{LocalStream, Result};
+use sspi::AsyncNetworkClient;
 use thiserror::Error;
-use tungstenite::handshake::client::Response;
-use url::Url;
 use uuid::{uuid, Uuid};
 
 pub const NDR64: SyntaxId = SyntaxId {
@@ -61,83 +58,24 @@ impl EncryptionOffsets {
 ///
 /// All RPC communication is done using this RPC client. It can connect to RPC server,
 /// authenticate, and send RPC requests.
-pub struct RpcClient {
-    stream: StreamWrapper<Stream>,
+pub struct RpcClient<T: Transport> {
+    stream: T::Stream,
     sign_header: bool,
     auth: AuthProvider,
 }
 
-impl RpcClient {
+impl<T: Transport> RpcClient<T> {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub fn connect(connection_options: &ConnectionOptions, auth: AuthProvider) -> Result<Self> {
-        let stream = match connection_options {
-            ConnectionOptions::Tcp(addr) => Box::new(TcpStream::connect(addr)?) as Stream,
-            ConnectionOptions::WebSocketTunnel {
-                websocket_url,
-                web_app_auth,
-                tcp_addr,
-            } => {
-                let (ws, _) = Self::ws_connect(websocket_url, web_app_auth, tcp_addr)?;
-                ws
-            }
-        };
+    pub async fn connect(connection_options: &ConnectionOptions, auth: AuthProvider) -> Result<Self> {
+        let stream = T::connect(connection_options).await?;
 
         Ok(Self {
-            stream: StreamWrapper::new(stream),
+            stream,
             sign_header: false,
             auth,
         })
-    }
-
-    /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
-    fn ws_connect(ws_request: &Url, web_app_auth: &WebAppAuth, destination: &SocketAddr) -> Result<(Stream, Response)> {
-        let is_secure = match ws_request.scheme() {
-            WSS_SCHEME => true,
-            WS_SCHEME => false,
-            _ => {
-                return Err(Error::InvalidUrl {
-                    url: ws_request.to_string(),
-                    description: format!("invalid URL scheme for WebSocket: {}", ws_request.scheme()),
-                })
-            }
-        };
-
-        let host = ws_request.host_str().ok_or(Error::InvalidUrl {
-            url: ws_request.to_string(),
-            description: "host has to be specified".to_owned(),
-        })?;
-
-        let port = ws_request.port().ok_or(Error::InvalidUrl {
-            url: ws_request.to_string(),
-            description: "port has to be specified".to_owned(),
-        })?;
-
-        let http_client = GatewayWebAppHttpClient::new(host, port, is_secure);
-
-        let session_id = Uuid::new_v4();
-
-        let web_app_token = http_client.request_web_app_token(web_app_auth)?;
-        let session_token = http_client.request_session_token(&destination.to_string(), &web_app_token, session_id)?;
-
-        let mut ws_request_owned = ws_request.clone();
-
-        ws_request_owned
-            .path_segments_mut()
-            .map_err(|_| Error::InvalidUrl {
-                url: ws_request.to_string(),
-                description: "URL cannot be base".to_owned(),
-            })?
-            .push(session_id.to_string().as_str());
-
-        ws_request_owned
-            .query_pairs_mut()
-            .append_pair("token", session_token.as_str());
-
-        let (ws, response) = tungstenite::connect(ws_request_owned.as_str())?;
-
-        Ok((Box::new(WebSocketWrapper::new(ws)) as Stream, response))
     }
 
     fn create_pdu_header(packet_type: PacketType, packet_flags: PacketFlags, auth_len: u16, call_id: u32) -> PduHeader {
@@ -340,7 +278,7 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
+    async fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
         let mut pdu_encoded = pdu.encode_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
@@ -350,14 +288,14 @@ impl RpcClient {
             self.encrypt_pdu(&mut pdu_encoded, encrypt_offsets)?;
         }
 
-        self.stream.write_all(&pdu_encoded)?;
+        self.stream.write_all(&pdu_encoded).await?;
 
         // Read PDU header
-        let mut pdu_buf = self.stream.read_exact(PduHeader::FIXED_PART_SIZE)?;
+        let mut pdu_buf = self.stream.read_exact(PduHeader::FIXED_PART_SIZE).await?;
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        self.stream.read_buf(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..])?;
+        self.stream.read_buf(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..]).await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
@@ -371,7 +309,7 @@ impl RpcClient {
 
     /// Sends the authenticated RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn authenticated_request(
+    pub async fn authenticated_request(
         &mut self,
         context_id: u16,
         opnum: u16,
@@ -381,22 +319,22 @@ impl RpcClient {
         let (pdu, encrypt_offsets) =
             self.create_authenticated_request(context_id, opnum, stub_data, verification_trailer)?;
 
-        self.send_pdu(pdu, Some(encrypt_offsets))
+        self.send_pdu(pdu, Some(encrypt_offsets)).await
     }
 
     /// Sends the RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
+    pub async fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
         let pdu = self.create_request(context_id, opnum, stub_data)?;
 
-        self.send_pdu(pdu, None)
+        self.send_pdu(pdu, None).await
     }
 
     /// Performs the RPC bind/bind_ack exchange.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
+    pub async fn bind(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         let bind = Self::create_bind_pdu(contexts.to_vec(), None)?;
-        let pdu_resp = self.send_pdu(bind, None)?;
+        let pdu_resp = self.send_pdu(bind, None).await?;
 
         let Pdu {
             header: _,
@@ -411,17 +349,27 @@ impl RpcClient {
     ///
     /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
+    pub async fn bind_authenticate(
+        &mut self,
+        contexts: &[ContextElement],
+        network_client: &mut dyn AsyncNetworkClient,
+    ) -> Result<BindAck> {
         // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
         // We don't need its result in RPC authentication.
-        let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
+        let _security_trailer = self
+            .auth
+            .initialize_security_context(Vec::new(), network_client)
+            .await?;
 
-        let security_trailer = self.auth.initialize_security_context(Vec::new())?;
+        let security_trailer = self
+            .auth
+            .initialize_security_context(Vec::new(), network_client)
+            .await?;
         let bind = Self::create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
 
         self.sign_header = true;
 
-        let pdu_resp = self.send_pdu(bind, None)?;
+        let pdu_resp = self.send_pdu(bind, None).await?;
 
         let Pdu {
             header: _,
@@ -434,14 +382,17 @@ impl RpcClient {
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
         loop {
-            let security_trailer = self.auth.initialize_security_context(in_token.unwrap_or_default())?;
+            let security_trailer = self
+                .auth
+                .initialize_security_context(in_token.unwrap_or_default(), network_client)
+                .await?;
 
             if self.auth.is_finished() {
                 break;
             }
 
             let alter_context = self.create_alter_context_pdu(final_contexts.clone(), security_trailer)?;
-            let alter_context_resp = self.send_pdu(alter_context, None)?;
+            let alter_context_resp = self.send_pdu(alter_context, None).await?;
 
             in_token = alter_context_resp
                 .security_trailer

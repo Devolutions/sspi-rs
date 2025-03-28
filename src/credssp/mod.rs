@@ -24,10 +24,10 @@ use crate::kerberos::{self, Kerberos};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
-    negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
-    BufferType, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error,
-    ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AsyncNetworkClient, AuthIdentity,
+    AuthIdentityBuffers, BufferType, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferRef,
     SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
 };
@@ -752,6 +752,18 @@ impl<'a> SspiContext {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         })
         .resolve_with_default_network_client()
+    }
+
+    pub async fn initialize_security_context_async(
+        &mut self,
+        builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        network_client: &mut dyn AsyncNetworkClient,
+    ) -> crate::Result<InitializeSecurityContextResult> {
+        Generator::new(move |mut yield_point| async move {
+            self.initialize_security_context_impl(&mut yield_point, builder).await
+        })
+        .resolve_with_async_client(network_client)
+        .await
     }
 
     #[cfg(feature = "network_client")]

@@ -1,6 +1,7 @@
-use crate::client::WebAppAuth;
-use crate::Result;
-use reqwest::blocking;
+use dpapi::client::WebAppAuth;
+use dpapi::{Error, Result};
+
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use url::Url;
@@ -65,7 +66,7 @@ struct SessionTokenSignRequest {
 pub struct GatewayWebAppHttpClient {
     server_host: String,
     port: u16,
-    client: blocking::Client,
+    client: Client,
     scheme: &'static str,
 }
 
@@ -77,13 +78,13 @@ impl GatewayWebAppHttpClient {
         Self {
             server_host: server_host.to_owned(),
             port,
-            client: blocking::Client::new(),
+            client: Client::new(),
             scheme: if use_https { "https" } else { "http" },
         }
     }
 
     /// Requests a web token from a Devolutions Gateway WebApp.
-    pub fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String> {
+    pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String> {
         let url = Url::parse(&format!(
             "{}://{}:{}/jet/webapp/app-token",
             self.scheme, self.server_host, self.port
@@ -107,15 +108,25 @@ impl GatewayWebAppHttpClient {
                 subject: username,
                 lifetime: Some(Self::WEB_APP_TOKEN_LIFETIME),
             })
-            .send()?
-            .error_for_status()?
-            .text()?;
+            .send()
+            .await
+            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .error_for_status()
+            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| Error::HttpRequest(e.to_string()))?;
 
         Ok(token)
     }
 
     /// Requests a session token from a Devolutions Gateway WebApp.
-    pub fn request_session_token(&self, destination: &str, web_app_token: &str, session_id: Uuid) -> Result<String> {
+    pub async fn request_session_token(
+        &self,
+        destination: &str,
+        web_app_token: &str,
+        session_id: Uuid,
+    ) -> Result<String> {
         let url = Url::parse(&format!(
             "{}://{}:{}/jet/webapp/session-token?token={}",
             self.scheme, self.server_host, self.port, web_app_token
@@ -132,9 +143,14 @@ impl GatewayWebAppHttpClient {
                 },
                 lifetime: Self::SESSION_TOKEN_LIFETIME,
             })
-            .send()?
-            .error_for_status()?
-            .text()?;
+            .send()
+            .await
+            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .error_for_status()
+            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| Error::HttpRequest(e.to_string()))?;
 
         Ok(token)
     }

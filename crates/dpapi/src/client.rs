@@ -1,3 +1,10 @@
+use crate::blob::{DpapiBlob, SidProtectionDescriptor};
+use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
+use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
+use crate::rpc::auth::AuthError;
+use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
+use crate::{Error, Result, Transport};
+
 use dpapi_core::{decode_owned, EncodeVec};
 use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_pdu::rpc::{
@@ -9,17 +16,11 @@ use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyE
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
-use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use std::fmt::Debug;
 use std::net::{SocketAddr, ToSocketAddrs};
 use url::Url;
 use uuid::Uuid;
-
-use crate::blob::{DpapiBlob, SidProtectionDescriptor};
-use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
-use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
-use crate::rpc::auth::AuthError;
-use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
-use crate::{Error, Result};
 
 const DEFAULT_RPC_PORT: u16 = 135;
 
@@ -186,7 +187,7 @@ fn encrypt_blob(
 
 #[derive(Debug, PartialEq)]
 pub enum WebAppAuth {
-    Custom { username: String, password: String },
+    Custom { username: String, password: Secret<String> },
     None,
 }
 
@@ -198,6 +199,7 @@ pub enum ConnectionUrlParseError {
     #[error("{0}")]
     InvalidUrl(&'static str),
 }
+
 /// RPC server connection options.
 #[derive(Debug, PartialEq)]
 pub enum ConnectionOptions {
@@ -207,14 +209,14 @@ pub enum ConnectionOptions {
     WebSocketTunnel {
         websocket_url: Url,
         web_app_auth: WebAppAuth,
-        tcp_addr: SocketAddr,
+        destination: SocketAddr,
     },
 }
 
 impl ConnectionOptions {
     /// Parses the RPC server connection string.
     /// If the TCP URL does not specify a port, `tcp_server_default_port` is used.
-    pub fn parse(urls: &str, tcp_server_default_port: u16) -> Result<Self> {
+    pub fn parse(destination: &str, proxy_addr: Option<String>, tcp_server_default_port: u16) -> Result<Self> {
         let url_to_socket_addr = |url: &Url| -> Result<SocketAddr> {
             let tcp_host = url
                 .host_str()
@@ -225,54 +227,57 @@ impl ConnectionOptions {
                 .ok_or(ConnectionUrlParseError::InvalidUrl("cannot resolve the address of the TCP server").into())
         };
 
-        let urls = urls.split(',').collect::<Vec<_>>();
+        if let Some(proxy_addr) = proxy_addr {
+            let mut ws_url = Url::parse(&proxy_addr)?;
+            let destination_url = if destination.contains("://") {
+                if !destination.contains("tcp") {
+                    return Err(ConnectionUrlParseError::IncorrectFormat.into());
+                }
+                Url::parse(destination)?
+            } else {
+                Url::parse(&format!("tcp://{}", destination))?
+            };
 
-        match urls.len() {
-            1 => {
-                let tcp_url = if urls[0].contains("://") {
-                    if !urls[0].contains("tcp") {
-                        return Err(ConnectionUrlParseError::IncorrectFormat.into());
-                    }
-                    Url::parse(urls[0])?
-                } else {
-                    Url::parse(&format!("tcp://{}", urls[0]))?
-                };
-                Ok(ConnectionOptions::Tcp(url_to_socket_addr(&tcp_url)?))
+            match (ws_url.scheme(), destination_url.scheme()) {
+                (WS_SCHEME | WSS_SCHEME, TCP_SCHEME) => (),
+                _ => return Err(ConnectionUrlParseError::IncorrectFormat.into()),
             }
-            2 => {
-                let url1 = Url::parse(urls[0])?;
-                let url2 = Url::parse(urls[1])?;
 
-                let (mut ws_url, tcp_url) = match (url1.scheme(), url2.scheme()) {
-                    (WS_SCHEME | WSS_SCHEME, TCP_SCHEME) => (url1, url2),
-                    (TCP_SCHEME, WS_SCHEME | WSS_SCHEME) => (url2, url1),
-                    _ => return Err(ConnectionUrlParseError::IncorrectFormat.into()),
-                };
+            let web_app_auth = match ws_url.username() {
+                "" => WebAppAuth::None,
+                username => {
+                    let username = username.to_owned();
+                    let password = ws_url.password().unwrap_or_default().to_owned();
 
-                let web_app_auth = match ws_url.username() {
-                    "" => WebAppAuth::None,
-                    username => {
-                        let username = username.to_owned();
-                        let password = ws_url.password().unwrap_or_default().to_owned();
+                    ws_url
+                        .set_username("")
+                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
+                    ws_url
+                        .set_password(None)
+                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
 
-                        ws_url
-                            .set_username("")
-                            .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-                        ws_url
-                            .set_password(None)
-                            .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-
-                        WebAppAuth::Custom { username, password }
+                    WebAppAuth::Custom {
+                        username,
+                        password: password.into(),
                     }
-                };
+                }
+            };
 
-                Ok(ConnectionOptions::WebSocketTunnel {
-                    websocket_url: ws_url.to_owned(),
-                    web_app_auth,
-                    tcp_addr: url_to_socket_addr(&tcp_url)?,
-                })
-            }
-            _ => Err(ConnectionUrlParseError::IncorrectFormat.into()),
+            Ok(ConnectionOptions::WebSocketTunnel {
+                websocket_url: ws_url.to_owned(),
+                web_app_auth,
+                destination: url_to_socket_addr(&destination_url)?,
+            })
+        } else {
+            let tcp_url = if destination.contains("://") {
+                if !destination.contains("tcp") {
+                    return Err(ConnectionUrlParseError::IncorrectFormat.into());
+                }
+                Url::parse(destination)?
+            } else {
+                Url::parse(&format!("tcp://{}", destination))?
+            };
+            Ok(ConnectionOptions::Tcp(url_to_socket_addr(&tcp_url)?))
         }
     }
 
@@ -280,13 +285,16 @@ impl ConnectionOptions {
     pub fn set_tcp_port(&mut self, new_port: u16) {
         match self {
             Self::Tcp(addr) => addr.set_port(new_port),
-            Self::WebSocketTunnel { tcp_addr, .. } => tcp_addr.set_port(new_port),
+            Self::WebSocketTunnel {
+                destination: tcp_addr, ..
+            } => tcp_addr.set_port(new_port),
         }
     }
 }
 
 struct GetKeyArgs<'server> {
     server: &'server str,
+    proxy_addr: Option<String>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
@@ -298,9 +306,10 @@ struct GetKeyArgs<'server> {
 }
 
 #[instrument(level = "trace", ret)]
-fn get_key(
+async fn get_key<T: Transport + Debug>(
     GetKeyArgs {
         server,
+        proxy_addr,
         target_sd,
         root_key_id,
         l0,
@@ -309,12 +318,13 @@ fn get_key(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs,
+    }: GetKeyArgs<'_>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<GroupKeyEnvelope> {
-    let mut connection_options = ConnectionOptions::parse(server, DEFAULT_RPC_PORT)?;
+    let mut connection_options = ConnectionOptions::parse(server, proxy_addr, DEFAULT_RPC_PORT)?;
 
     let isd_key_port = {
-        let mut rpc = RpcClient::connect(
+        let mut rpc = RpcClient::<T>::connect(
             &connection_options,
             AuthProvider::new(
                 SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
@@ -324,20 +334,21 @@ fn get_key(
                 }),
                 server,
             )?,
-        )?;
+        )
+        .await?;
 
         info!("RPC connection has been established.");
 
         let epm_contexts = get_epm_contexts();
         let context_id = epm_contexts[0].context_id;
-        let bind_ack = rpc.bind(&epm_contexts)?;
+        let bind_ack = rpc.bind(&epm_contexts).await?;
 
         info!("RPC bind/bind_ack finished successfully.");
 
         process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
         let ept_map = get_ept_map_isd_key();
-        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?)?;
+        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
         process_ept_map_result(&response.try_into_response()?)?
     };
@@ -346,20 +357,21 @@ fn get_key(
 
     connection_options.set_tcp_port(isd_key_port);
 
-    let mut rpc = RpcClient::connect(
+    let mut rpc = RpcClient::<T>::connect(
         &connection_options,
         AuthProvider::new(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
         )?,
-    )?;
+    )
+    .await?;
 
     info!("RPC connection has been established.");
 
     let isd_key_contexts = get_isd_key_key_contexts();
     let context_id = isd_key_contexts[0].context_id;
-    let bind_ack = rpc.bind_authenticate(&isd_key_contexts)?;
+    let bind_ack = rpc.bind_authenticate(&isd_key_contexts, network_client).await?;
 
     info!("RPC bind/bind_ack finished successfully.");
 
@@ -373,12 +385,14 @@ fn get_key(
         l2_key_id: l2,
     };
 
-    let response_pdu = rpc.authenticated_request(
-        context_id,
-        GetKey::OPNUM,
-        get_key.encode_vec()?,
-        Some(get_verification_trailer()),
-    )?;
+    let response_pdu = rpc
+        .authenticated_request(
+            context_id,
+            GetKey::OPNUM,
+            get_key.encode_vec()?,
+            Some(get_verification_trailer()),
+        )
+        .await?;
     let security_trailer = response_pdu.security_trailer.clone();
 
     info!("RPC GetKey Request finished successfully!");
@@ -414,12 +428,14 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
 #[instrument(err)]
-pub fn n_crypt_unprotect_secret(
+pub async fn n_crypt_unprotect_secret<T: Transport + Debug>(
     blob: &[u8],
     server: &str,
+    proxy_addr: Option<String>,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
@@ -427,21 +443,46 @@ pub fn n_crypt_unprotect_secret(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = get_key(GetKeyArgs {
-        server,
-        target_sd,
-        root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
-        l0: dpapi_blob.key_identifier.l0,
-        l1: dpapi_blob.key_identifier.l1,
-        l2: dpapi_blob.key_identifier.l2,
-        username,
-        password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
-    })?;
+    let root_key = get_key::<T>(
+        GetKeyArgs {
+            server,
+            proxy_addr,
+            target_sd,
+            root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
+            l0: dpapi_blob.key_identifier.l0,
+            l1: dpapi_blob.key_identifier.l1,
+            l2: dpapi_blob.key_identifier.l2,
+            username,
+            password,
+            negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        },
+        network_client,
+    )
+    .await?;
 
     info!("Successfully requested root key.");
 
     Ok(decrypt_blob(&dpapi_blob, &root_key)?.into())
+}
+
+/// Arguments for `n_crypt_protect_secret` function.
+pub struct CryptProtectSecretArgs<'a> {
+    /// Secret to encrypt.
+    pub data: Secret<Vec<u8>>,
+    /// User's SID.
+    pub sid: String,
+    /// Root key id.
+    pub root_key_id: Option<Uuid>,
+    /// Target server hostname.
+    pub server: &'a str,
+    /// Websocket proxy address.
+    pub proxy_addr: Option<String>,
+    /// Username to encrypt the DPAPI blob.
+    pub username: &'a str,
+    /// User's password.
+    pub password: Secret<String>,
+    /// Client's computer name.
+    pub client_computer_name: Option<String>,
 }
 
 /// Encrypts data to a specified protection descriptor.
@@ -453,14 +494,18 @@ pub fn n_crypt_unprotect_secret(
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
 #[instrument(ret)]
-pub fn n_crypt_protect_secret(
-    data: Secret<Vec<u8>>,
-    sid: String,
-    root_key_id: Option<Uuid>,
-    server: &str,
-    username: &str,
-    password: Secret<String>,
-    client_computer_name: Option<String>,
+pub async fn n_crypt_protect_secret<T: Transport + Debug>(
+    CryptProtectSecretArgs {
+        data,
+        sid,
+        root_key_id,
+        server,
+        proxy_addr,
+        username,
+        password,
+        client_computer_name,
+    }: CryptProtectSecretArgs<'_>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Vec<u8>> {
     let l0 = -1;
     let l1 = -1;
@@ -472,17 +517,22 @@ pub fn n_crypt_protect_secret(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = get_key(GetKeyArgs {
-        server,
-        target_sd,
-        root_key_id,
-        l0,
-        l1,
-        l2,
-        username,
-        password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
-    })?;
+    let root_key = get_key::<T>(
+        GetKeyArgs {
+            server,
+            proxy_addr,
+            target_sd,
+            root_key_id,
+            l0,
+            l1,
+            l2,
+            username,
+            password,
+            negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        },
+        network_client,
+    )
+    .await?;
 
     info!("Successfully requested root key.");
 

@@ -12,8 +12,10 @@ pub mod gkdi;
 pub mod rpc;
 pub(crate) mod sid;
 mod stream;
-mod webapp_http_client;
 
 pub use client::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 pub use error::{Error, Result};
-pub use sspi::Secret;
+pub use stream::{LocalStream, Transport};
+
+// Re-export
+pub use sspi;

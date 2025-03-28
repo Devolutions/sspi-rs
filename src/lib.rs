@@ -118,6 +118,8 @@ use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
 };
+pub use generator::NetworkRequest;
+pub use network_client::{AsyncNetworkClient, NetworkProtocol};
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;
