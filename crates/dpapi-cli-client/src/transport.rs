@@ -1,9 +1,8 @@
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 
-use dpapi::client::{ConnectionOptions, WebAppAuth};
-use dpapi::{Error, LocalStream, Result, Transport};
-use dpapi_ws::prepare_ws_request_for_gateway_webapp;
+use dpapi::{ConnectionOptions, Error, LocalStream, Result, Transport, WebAppAuth};
+use dpapi_ws::prepare_ws_connection_url;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -70,11 +69,11 @@ pub struct NativeTransport;
 impl NativeTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
     async fn ws_connect(
-        ws_request: &Url,
+        ws_request: Url,
         web_app_auth: &WebAppAuth,
         destination: &SocketAddr,
     ) -> Result<TokioStream<ErasedReadWrite>> {
-        let ws_request = prepare_ws_request_for_gateway_webapp(ws_request, web_app_auth, destination).await?;
+        let ws_request = prepare_ws_connection_url(ws_request, web_app_auth, destination).await?;
 
         let (ws, _) = tokio_tungstenite::connect_async(ws_request.as_str())
             .await
@@ -126,7 +125,7 @@ impl Transport for NativeTransport {
                 websocket_url,
                 web_app_auth,
                 destination,
-            } => Self::ws_connect(websocket_url, web_app_auth, destination).await,
+            } => Self::ws_connect(websocket_url.clone(), web_app_auth, destination).await,
         }
     }
 }

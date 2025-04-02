@@ -7,10 +7,9 @@ use sspi::AsyncNetworkClient;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
-use crate::client::ConnectionOptions;
 use crate::rpc::AuthProvider;
 use crate::stream::Transport;
-use crate::{LocalStream, Result};
+use crate::{ConnectionOptions, LocalStream, Result};
 
 pub const NDR64: SyntaxId = SyntaxId {
     uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),

@@ -1,5 +1,4 @@
-use dpapi::client::WebAppAuth;
-use dpapi::{Error, Result};
+use dpapi::{Error, Result, WebAppAuth};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -63,31 +62,24 @@ struct SessionTokenSignRequest {
 
 /// An HTTP Client that is used to request authentication tokens from a Devolutions Gateway WebApp.
 pub struct GatewayWebAppHttpClient {
-    server_host: String,
-    port: u16,
     client: Client,
-    scheme: &'static str,
+    gateway_url: Url,
 }
 
 impl GatewayWebAppHttpClient {
     const WEB_APP_TOKEN_LIFETIME: u64 = 60 * 60 * 8;
     const SESSION_TOKEN_LIFETIME: u64 = 60 * 60;
 
-    pub fn new(server_host: &str, port: u16, use_https: bool) -> Self {
+    pub fn new(gateway_url: Url) -> Self {
         Self {
-            server_host: server_host.to_owned(),
-            port,
             client: Client::new(),
-            scheme: if use_https { "https" } else { "http" },
+            gateway_url,
         }
     }
 
     /// Requests a web token from a Devolutions Gateway WebApp.
     pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String> {
-        let url = Url::parse(&format!(
-            "{}://{}:{}/jet/webapp/app-token",
-            self.scheme, self.server_host, self.port
-        ))?;
+        let url = self.gateway_url.clone().join("jet/webapp/app-token")?;
 
         let mut request_builder = self.client.post(url);
 
@@ -98,7 +90,7 @@ impl GatewayWebAppHttpClient {
         let username = if let WebAppAuth::Custom { username, .. } = web_app_auth {
             username.to_owned()
         } else {
-            String::from("DPAPI client")
+            "DPAPI client".to_owned()
         };
 
         let token = request_builder
@@ -126,10 +118,8 @@ impl GatewayWebAppHttpClient {
         web_app_token: &str,
         session_id: Uuid,
     ) -> Result<String> {
-        let url = Url::parse(&format!(
-            "{}://{}:{}/jet/webapp/session-token?token={}",
-            self.scheme, self.server_host, self.port, web_app_token
-        ))?;
+        let mut url = self.gateway_url.clone().join("jet/webapp/session-token")?;
+        url.query_pairs_mut().append_pair("token", web_app_token);
 
         let token = self
             .client

@@ -1,12 +1,13 @@
 use dpapi_core::{DecodeError, EncodeError};
 use thiserror::Error;
+use url::Url;
 
-use crate::client::ConnectionUrlParseError;
+use crate::ConnectionUrlParseError;
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("invalid URL `{url}`: {description}")]
-    InvalidUrl { url: String, description: String },
+    InvalidUrl { url: Url, description: &'static str },
 
     #[error("unsupported transport: {0}")]
     UnsupportedTransport(String),

@@ -8,7 +8,7 @@ mod transport;
 use std::fs;
 use std::io::{stdin, stdout, Read, Result, Write};
 
-use dpapi::client::CryptProtectSecretArgs;
+use dpapi::CryptProtectSecretArgs;
 
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 use crate::network_client::ReqwestNetworkClient;
@@ -40,7 +40,7 @@ async fn run(data: Dpapi) -> Result<()> {
                     sid,
                     root_key_id: None,
                     server: &server,
-                    proxy_addr: proxy_address,
+                    proxy: proxy_address,
                     username: &username,
                     password: password.into(),
                     client_computer_name: computer_name,

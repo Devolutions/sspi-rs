@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::net::{SocketAddr, ToSocketAddrs};
 
 use dpapi_core::{decode_owned, EncodeVec};
 use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
@@ -21,15 +20,7 @@ use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, con
 use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
 use crate::rpc::auth::AuthError;
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
-use crate::{Error, Result, Transport};
-
-const DEFAULT_RPC_PORT: u16 = 135;
-
-pub const WSS_SCHEME: &str = "wss";
-
-pub const WS_SCHEME: &str = "ws";
-
-const TCP_SCHEME: &str = "tcp";
+use crate::{ConnectionOptions, Error, Result, Transport};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -186,116 +177,9 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-#[derive(Debug, PartialEq)]
-pub enum WebAppAuth {
-    Custom { username: String, password: Secret<String> },
-    None,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConnectionUrlParseError {
-    #[error("expected a TCP URL and an optional WebSocket URL")]
-    IncorrectFormat,
-
-    #[error("{0}")]
-    InvalidUrl(&'static str),
-}
-
-/// RPC server connection options.
-#[derive(Debug, PartialEq)]
-pub enum ConnectionOptions {
-    /// Regular TCP connection.
-    Tcp(SocketAddr),
-    /// Tunneled connection via Devolutions Gateway using a WebSocket.
-    WebSocketTunnel {
-        websocket_url: Url,
-        web_app_auth: WebAppAuth,
-        destination: SocketAddr,
-    },
-}
-
-impl ConnectionOptions {
-    /// Parses the RPC server connection string.
-    /// If the TCP URL does not specify a port, `tcp_server_default_port` is used.
-    pub fn parse(destination: &str, proxy_addr: Option<String>, tcp_server_default_port: u16) -> Result<Self> {
-        let url_to_socket_addr = |url: &Url| -> Result<SocketAddr> {
-            let tcp_host = url
-                .host_str()
-                .ok_or(ConnectionUrlParseError::InvalidUrl("URL does not contain a host"))?;
-            (tcp_host, url.port().unwrap_or(tcp_server_default_port))
-                .to_socket_addrs()?
-                .next()
-                .ok_or(ConnectionUrlParseError::InvalidUrl("cannot resolve the address of the TCP server").into())
-        };
-
-        if let Some(proxy_addr) = proxy_addr {
-            let mut ws_url = Url::parse(&proxy_addr)?;
-            let destination_url = if destination.contains("://") {
-                if !destination.contains("tcp") {
-                    return Err(ConnectionUrlParseError::IncorrectFormat.into());
-                }
-                Url::parse(destination)?
-            } else {
-                Url::parse(&format!("tcp://{}", destination))?
-            };
-
-            match (ws_url.scheme(), destination_url.scheme()) {
-                (WS_SCHEME | WSS_SCHEME, TCP_SCHEME) => (),
-                _ => return Err(ConnectionUrlParseError::IncorrectFormat.into()),
-            }
-
-            let web_app_auth = match ws_url.username() {
-                "" => WebAppAuth::None,
-                username => {
-                    let username = username.to_owned();
-                    let password = ws_url.password().unwrap_or_default().to_owned();
-
-                    ws_url
-                        .set_username("")
-                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-                    ws_url
-                        .set_password(None)
-                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-
-                    WebAppAuth::Custom {
-                        username,
-                        password: password.into(),
-                    }
-                }
-            };
-
-            Ok(ConnectionOptions::WebSocketTunnel {
-                websocket_url: ws_url.to_owned(),
-                web_app_auth,
-                destination: url_to_socket_addr(&destination_url)?,
-            })
-        } else {
-            let tcp_url = if destination.contains("://") {
-                if !destination.contains("tcp") {
-                    return Err(ConnectionUrlParseError::IncorrectFormat.into());
-                }
-                Url::parse(destination)?
-            } else {
-                Url::parse(&format!("tcp://{}", destination))?
-            };
-            Ok(ConnectionOptions::Tcp(url_to_socket_addr(&tcp_url)?))
-        }
-    }
-
-    /// Sets the new port for the TCP server.
-    pub fn set_tcp_port(&mut self, new_port: u16) {
-        match self {
-            Self::Tcp(addr) => addr.set_port(new_port),
-            Self::WebSocketTunnel {
-                destination: tcp_addr, ..
-            } => tcp_addr.set_port(new_port),
-        }
-    }
-}
-
-struct GetKeyArgs<'server> {
-    server: &'server str,
-    proxy_addr: Option<String>,
+struct GetKeyArgs {
+    server: Url,
+    proxy: Option<Url>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
@@ -310,7 +194,7 @@ struct GetKeyArgs<'server> {
 async fn get_key<T: Transport + Debug>(
     GetKeyArgs {
         server,
-        proxy_addr,
+        proxy,
         target_sd,
         root_key_id,
         l0,
@@ -319,10 +203,17 @@ async fn get_key<T: Transport + Debug>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs<'_>,
+    }: GetKeyArgs,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<GroupKeyEnvelope> {
-    let mut connection_options = ConnectionOptions::parse(server, proxy_addr, DEFAULT_RPC_PORT)?;
+    let target_host = server
+        .host()
+        .map(|host| host.to_string())
+        .ok_or_else(|| Error::InvalidUrl {
+            url: server.clone(),
+            description: "the host is missing in target server url",
+        })?;
+    let mut connection_options = ConnectionOptions::parse(server, proxy)?;
 
     let isd_key_port = {
         let mut rpc = RpcClient::<T>::connect(
@@ -333,7 +224,7 @@ async fn get_key<T: Transport + Debug>(
                     username: username.clone(),
                     password: password.clone(),
                 }),
-                server,
+                &target_host,
             )?,
         )
         .await?;
@@ -356,14 +247,14 @@ async fn get_key<T: Transport + Debug>(
 
     info!(isd_key_port);
 
-    connection_options.set_tcp_port(isd_key_port);
+    connection_options.set_destination_port(isd_key_port);
 
     let mut rpc = RpcClient::<T>::connect(
         &connection_options,
         AuthProvider::new(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
-            server,
+            &target_host,
         )?,
     )
     .await?;
@@ -432,7 +323,7 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 pub async fn n_crypt_unprotect_secret<T: Transport + Debug>(
     blob: &[u8],
     server: &str,
-    proxy_addr: Option<String>,
+    proxy: Option<String>,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
@@ -443,11 +334,13 @@ pub async fn n_crypt_unprotect_secret<T: Transport + Debug>(
     let username = Username::parse(username)
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
+    let server = Url::parse(server)?;
+    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
     let root_key = get_key::<T>(
         GetKeyArgs {
             server,
-            proxy_addr,
+            proxy,
             target_sd,
             root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
             l0: dpapi_blob.key_identifier.l0,
@@ -467,7 +360,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport + Debug>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'a> {
+pub struct CryptProtectSecretArgs<'server, 'proxy> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -475,11 +368,11 @@ pub struct CryptProtectSecretArgs<'a> {
     /// Root key id.
     pub root_key_id: Option<Uuid>,
     /// Target server hostname.
-    pub server: &'a str,
+    pub server: &'server str,
     /// Websocket proxy address.
-    pub proxy_addr: Option<String>,
+    pub proxy: Option<String>,
     /// Username to encrypt the DPAPI blob.
-    pub username: &'a str,
+    pub username: &'proxy str,
     /// User's password.
     pub password: Secret<String>,
     /// Client's computer name.
@@ -501,13 +394,16 @@ pub async fn n_crypt_protect_secret<T: Transport + Debug>(
         sid,
         root_key_id,
         server,
-        proxy_addr,
+        proxy,
         username,
         password,
         client_computer_name,
-    }: CryptProtectSecretArgs<'_>,
+    }: CryptProtectSecretArgs<'_, '_>,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Vec<u8>> {
+    let server = Url::parse(server)?;
+    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
+
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;
@@ -521,7 +417,7 @@ pub async fn n_crypt_protect_secret<T: Transport + Debug>(
     let root_key = get_key::<T>(
         GetKeyArgs {
             server,
-            proxy_addr,
+            proxy,
             target_sd,
             root_key_id,
             l0,

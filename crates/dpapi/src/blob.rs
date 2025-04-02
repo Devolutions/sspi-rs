@@ -1,5 +1,3 @@
-use std::io::{Read, Write};
-
 use dpapi_core::{decode_owned, EncodeVec};
 use dpapi_pdu::gkdi::KeyIdentifier;
 use picky_asn1::restricted_string::Utf8String;
@@ -17,7 +15,6 @@ use picky_asn1_x509::enveloped_data::{
 use picky_asn1_x509::oids;
 use thiserror::Error;
 
-use crate::rpc::{read_to_end, write_buf};
 use crate::sid::{ace_to_bytes, sd_to_bytes};
 
 #[derive(Debug, Error)]
@@ -139,7 +136,7 @@ impl DpapiBlob {
     // blob_in_envelope:
     // * `true` to store the encrypted blob in the EnvelopedData structure (NCryptProtectSecret general).
     // * `false` to append the encrypted blob after the EnvelopedData structure (LAPS style).
-    pub fn encode(&self, blob_in_envelope: bool, mut writer: impl Write) -> crate::Result<()> {
+    pub fn encode(&self, blob_in_envelope: bool, dst: &mut Vec<u8>) -> crate::Result<()> {
         picky_asn1_der::to_writer(
             &ContentInfo {
                 content_type: ObjectIdentifierAsn1::from(oids::enveloped_data()),
@@ -173,18 +170,18 @@ impl DpapiBlob {
                     unprotected_attrs: Optional::from(None),
                 })?)),
             },
-            &mut writer,
+            &mut *dst,
         )?;
 
         if !blob_in_envelope {
-            write_buf(&self.enc_content, &mut writer)?;
+            dst.extend_from_slice(&self.enc_content);
         }
 
         Ok(())
     }
 
-    pub fn decode(mut reader: impl Read) -> crate::Result<Self> {
-        let content_info: ContentInfo = picky_asn1_der::from_reader(&mut reader)?;
+    pub fn decode(mut src: &[u8]) -> crate::Result<Self> {
+        let content_info: ContentInfo = picky_asn1_der::from_bytes(&mut src)?;
 
         if content_info.content_type.0 != oids::enveloped_data() {
             let expected_content_type: String = oids::enveloped_data().into();
@@ -252,12 +249,12 @@ impl DpapiBlob {
             // Some DPAPI blobs don't include the content in the PKCS7 payload but
             // just append it after the blob.
             if enc_content.0 .0.is_empty() {
-                read_to_end(reader)?
+                src.to_vec()
             } else {
                 enc_content.0 .0
             }
         } else {
-            read_to_end(reader)?
+            src.to_vec()
         };
         let enc_content_algorithm_id = enveloped_data.encrypted_content_info.content_encryption_algorithm;
 

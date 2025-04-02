@@ -4,7 +4,7 @@ use sspi::credssp::SspiContext;
 use sspi::{
     AcquireCredentialsHandleResult, AsyncNetworkClient, BufferType, ClientRequestFlags, CredentialUse, Credentials,
     CredentialsBuffers, DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags,
-    SecurityBufferRef, SecurityStatus, Sspi,
+    SecurityBufferRef, SecurityStatus, Sspi, SspiImpl,
 };
 use thiserror::Error;
 
@@ -242,7 +242,8 @@ impl AuthProvider {
             .with_output(&mut output_token);
         let result = self
             .security_context
-            .initialize_security_context_async(&mut builder, network_client)
+            .initialize_security_context_impl(&mut builder)?
+            .resolve_with_async_client(network_client)
             .await?;
         self.is_finished = result.status == SecurityStatus::Ok;
 
