@@ -1,5 +1,6 @@
-use dpapi::sspi::{AsyncNetworkClient, Error, ErrorKind, NetworkProtocol, NetworkRequest, Result};
 use std::pin::Pin;
+
+use dpapi::sspi::{AsyncNetworkClient, Error, ErrorKind, NetworkProtocol, NetworkRequest, Result};
 
 #[derive(Debug)]
 pub(crate) struct WasmNetworkClient;

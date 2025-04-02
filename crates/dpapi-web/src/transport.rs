@@ -1,12 +1,13 @@
+use std::io::ErrorKind;
+use std::net::SocketAddr;
+use std::time::Duration;
+
 use dpapi::client::{ConnectionOptions, WebAppAuth};
 use dpapi::{Error, LocalStream, Result, Transport};
 use dpapi_ws::prepare_ws_request_for_gateway_webapp;
 use futures_util::{AsyncRead, AsyncWrite};
 use gloo_net::websocket;
 use gloo_net::websocket::futures::WebSocket;
-use std::io::ErrorKind;
-use std::net::SocketAddr;
-use std::time::Duration;
 use url::Url;
 
 pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin {}

@@ -1,8 +1,9 @@
-use crate::generator::NetworkRequest;
-use crate::Result;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
+
+use crate::generator::NetworkRequest;
+use crate::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NetworkProtocol {

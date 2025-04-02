@@ -1,9 +1,11 @@
-use crate::webapp_http_client::GatewayWebAppHttpClient;
+use std::net::SocketAddr;
+
 use dpapi::client::{WS_SCHEME, WSS_SCHEME, WebAppAuth};
 use dpapi::{Error, Result};
-use std::net::SocketAddr;
 use url::Url;
 use uuid::Uuid;
+
+use crate::webapp_http_client::GatewayWebAppHttpClient;
 
 mod webapp_http_client;
 

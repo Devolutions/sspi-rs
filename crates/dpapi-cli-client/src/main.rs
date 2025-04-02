@@ -5,12 +5,14 @@ mod logging;
 mod network_client;
 mod transport;
 
+use std::fs;
+use std::io::{stdin, stdout, Read, Result, Write};
+
+use dpapi::client::CryptProtectSecretArgs;
+
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 use crate::network_client::ReqwestNetworkClient;
 use crate::transport::NativeTransport;
-use dpapi::client::CryptProtectSecretArgs;
-use std::fs;
-use std::io::{stdin, stdout, Read, Result, Write};
 
 async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();

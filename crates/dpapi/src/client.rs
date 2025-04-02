@@ -1,9 +1,5 @@
-use crate::blob::{DpapiBlob, SidProtectionDescriptor};
-use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
-use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
-use crate::rpc::auth::AuthError;
-use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
-use crate::{Error, Result, Transport};
+use std::fmt::Debug;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 use dpapi_core::{decode_owned, EncodeVec};
 use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
@@ -17,10 +13,15 @@ use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
-use std::fmt::Debug;
-use std::net::{SocketAddr, ToSocketAddrs};
 use url::Url;
 use uuid::Uuid;
+
+use crate::blob::{DpapiBlob, SidProtectionDescriptor};
+use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
+use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
+use crate::rpc::auth::AuthError;
+use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
+use crate::{Error, Result, Transport};
 
 const DEFAULT_RPC_PORT: u16 = 135;
 

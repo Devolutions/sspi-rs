@@ -1,6 +1,5 @@
 use dpapi::client::WebAppAuth;
 use dpapi::{Error, Result};
-
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;

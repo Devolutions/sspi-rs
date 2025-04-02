@@ -15,7 +15,6 @@ mod stream;
 
 pub use client::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 pub use error::{Error, Result};
-pub use stream::{LocalStream, Transport};
-
 // Re-export
 pub use sspi;
+pub use stream::{LocalStream, Transport};

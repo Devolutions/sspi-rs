@@ -1,6 +1,7 @@
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
 use dpapi::client::{ConnectionOptions, ConnectionUrlParseError, WebAppAuth};
 use dpapi::Error;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use url::Url;
 
 const DEFAULT_PORT: u16 = 135;

@@ -86,7 +86,9 @@ use std::{error, fmt, io, result, str, string};
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
+pub use generator::NetworkRequest;
 use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
+pub use network_client::{AsyncNetworkClient, NetworkProtocol};
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
@@ -118,8 +120,6 @@ use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
 };
-pub use generator::NetworkRequest;
-pub use network_client::{AsyncNetworkClient, NetworkProtocol};
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;

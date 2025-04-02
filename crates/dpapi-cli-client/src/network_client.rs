@@ -1,8 +1,9 @@
-use dpapi::sspi::{AsyncNetworkClient, Error, ErrorKind, NetworkProtocol, NetworkRequest, Result};
-use reqwest::Client;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
+
+use dpapi::sspi::{AsyncNetworkClient, Error, ErrorKind, NetworkProtocol, NetworkRequest, Result};
+use reqwest::Client;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use url::Url;

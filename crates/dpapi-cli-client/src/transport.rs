@@ -1,8 +1,9 @@
+use std::io::ErrorKind;
+use std::net::SocketAddr;
+
 use dpapi::client::{ConnectionOptions, WebAppAuth};
 use dpapi::{Error, LocalStream, Result, Transport};
 use dpapi_ws::prepare_ws_request_for_gateway_webapp;
-use std::io::ErrorKind;
-use std::net::SocketAddr;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;

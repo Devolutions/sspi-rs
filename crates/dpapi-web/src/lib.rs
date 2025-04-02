@@ -4,14 +4,16 @@ mod error;
 mod network_client;
 mod transport;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use anyhow::Context;
+use dpapi::client::CryptProtectSecretArgs;
+use wasm_bindgen::prelude::*;
+
 use crate::error::DpapiError;
 use crate::network_client::WasmNetworkClient;
 use crate::transport::WasmTransport;
-use anyhow::Context;
-use dpapi::client::CryptProtectSecretArgs;
-use std::cell::RefCell;
-use std::rc::Rc;
-use wasm_bindgen::prelude::*;
 
 #[macro_use]
 extern crate tracing;
