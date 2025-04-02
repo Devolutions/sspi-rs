@@ -35,12 +35,15 @@ tracing-subscriber = { version = "0.3", features = ["time"] }
 # code size when deploying.
 console_error_panic_hook = { version = "0.1", optional = true }
 
-# Enable WebAssembly support for a few crates
-getrandom_v2 = { package = "getrandom", version = "0.2", features = ["js"] }
-getrandom_v3 = { package = "getrandom", version = "0.3.1", features = ["wasm_js"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 rustls-pki-types = { version = "1.11", features = ["web"] }
 
 # Utils
 anyhow = "1"
 url = "2.5"
+
+# Enable WebAssembly support for a few crates
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
+getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
+uuid = { workspace = true, default-features = false, features = ["rng-getrandom", "js"] }

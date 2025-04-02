@@ -1,5 +1,4 @@
 use std::io::{Error, ErrorKind};
-use std::net::SocketAddr;
 
 use dpapi_transport::WebAppAuth;
 use url::Url;
@@ -12,7 +11,7 @@ mod webapp_http_client;
 pub async fn prepare_ws_connection_url(
     gateway_url: Url,
     web_app_auth: &WebAppAuth,
-    destination: &SocketAddr,
+    destination: &Url,
 ) -> Result<Url, Error> {
     let http_client = GatewayWebAppHttpClient::new(gateway_url.clone());
 
@@ -20,7 +19,7 @@ pub async fn prepare_ws_connection_url(
 
     let web_app_token = http_client.request_web_app_token(web_app_auth).await?;
     let session_token = http_client
-        .request_session_token(&destination.to_string(), &web_app_token, session_id)
+        .request_session_token(destination.as_str(), &web_app_token, session_id)
         .await?;
 
     let mut connection_url = gateway_url;

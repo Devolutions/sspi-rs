@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use dpapi_core::{decode_owned, EncodeVec};
 use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_pdu::rpc::{
@@ -13,6 +11,7 @@ use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
@@ -23,7 +22,7 @@ use crate::rpc::auth::AuthError;
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
 use crate::{Error, Result};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum ClientError {
     #[error("BindAcknowledge doesn't contain desired context element")]
     MissingDesiredContext,
@@ -191,8 +190,8 @@ struct GetKeyArgs {
     negotiate_config: NegotiateConfig,
 }
 
-#[instrument(level = "trace", ret)]
-async fn get_key<T: Transport + Debug>(
+#[instrument(level = "trace", err)]
+async fn get_key<T: Transport>(
     GetKeyArgs {
         server,
         proxy,
@@ -321,7 +320,7 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
 #[instrument(err)]
-pub async fn n_crypt_unprotect_secret<T: Transport + Debug>(
+pub async fn n_crypt_unprotect_secret<T: Transport>(
     blob: &[u8],
     server: &str,
     proxy: Option<String>,
@@ -389,7 +388,7 @@ pub struct CryptProtectSecretArgs<'server, 'proxy> {
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
 #[instrument(ret)]
-pub async fn n_crypt_protect_secret<T: Transport + Debug>(
+pub async fn n_crypt_protect_secret<T: Transport>(
     CryptProtectSecretArgs {
         data,
         sid,

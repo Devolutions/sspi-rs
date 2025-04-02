@@ -1,8 +1,7 @@
 use std::io::{Error, ErrorKind};
-use std::net::SocketAddr;
 use std::time::Duration;
 
-use dpapi_transport::{ConnectionOptions, DEFAULT_RPC_PORT, LocalStream, Transport, WebAppAuth};
+use dpapi_transport::{ConnectionOptions, LocalStream, Transport, WebAppAuth};
 use dpapi_ws::prepare_ws_connection_url;
 use futures_util::{AsyncRead, AsyncWrite};
 use gloo_net::websocket;
@@ -63,7 +62,6 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct WasmTransport;
 
 impl WasmTransport {
@@ -71,7 +69,7 @@ impl WasmTransport {
     async fn ws_connect(
         proxy: Url,
         web_app_auth: &WebAppAuth,
-        destination: &SocketAddr,
+        destination: &Url,
     ) -> Result<FuturesStream<ErasedReadWrite>, Error> {
         let connection_url = prepare_ws_connection_url(proxy.clone(), web_app_auth, destination).await?;
 
@@ -117,22 +115,7 @@ impl Transport for WasmTransport {
                 websocket_url,
                 web_app_auth,
                 destination,
-            } => {
-                Self::ws_connect(
-                    websocket_url.clone(),
-                    web_app_auth,
-                    destination
-                        .socket_addrs(|| Some(DEFAULT_RPC_PORT))?
-                        .first()
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::InvalidInput,
-                                "cannot convert destination URL to socket address",
-                            )
-                        })?,
-                )
-                .await
-            }
+            } => Self::ws_connect(websocket_url.clone(), web_app_auth, destination).await,
         }
     }
 }

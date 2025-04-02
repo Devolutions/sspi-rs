@@ -61,4 +61,3 @@ sspi = { path = "../..", version = "0.15" }
 
 [dev-dependencies]
 paste = "1.0"
-

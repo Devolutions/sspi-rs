@@ -64,7 +64,6 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct NativeTransport;
 
 impl NativeTransport {
@@ -72,7 +71,7 @@ impl NativeTransport {
     async fn ws_connect(
         ws_request: Url,
         web_app_auth: &WebAppAuth,
-        destination: &SocketAddr,
+        destination: &Url,
     ) -> Result<TokioStream<ErasedReadWrite>, Error> {
         let ws_request = prepare_ws_connection_url(ws_request, web_app_auth, destination).await?;
 
@@ -139,7 +138,7 @@ impl Transport for NativeTransport {
                 websocket_url,
                 web_app_auth,
                 destination,
-            } => Self::ws_connect(websocket_url.clone(), web_app_auth, &url_to_socket_addr(destination)?).await,
+            } => Self::ws_connect(websocket_url.clone(), web_app_auth, destination).await,
         }
     }
 }
