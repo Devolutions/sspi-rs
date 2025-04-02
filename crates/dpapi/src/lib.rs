@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-#![allow(dead_code)]
+#![warn(clippy::large_futures)]
 
 #[macro_use]
 extern crate tracing;

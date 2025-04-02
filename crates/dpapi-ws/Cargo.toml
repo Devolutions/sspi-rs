@@ -5,8 +5,10 @@ edition = "2024"
 
 [dependencies]
 dpapi-transport.workspace = true
+tracing = { workspace = true, features = ["attributes"] }
+
 serde = { version = "1.0", features = ["derive"] }
 smol_str = { version = "0.3", features = ["serde"] }
 url = "2.5"
 uuid = { workspace = true, features = ["serde", "v4"]}
-reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }

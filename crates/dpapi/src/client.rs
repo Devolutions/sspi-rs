@@ -34,8 +34,6 @@ pub enum ClientError {
     BadEptMapStatus(u32),
 }
 
-pub type ClientResult<T> = std::result::Result<T, ClientError>;
-
 fn get_epm_contexts() -> Vec<ContextElement> {
     vec![ContextElement {
         context_id: 0,
@@ -177,8 +175,8 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs {
-    server: Url,
+struct GetKeyArgs<'server> {
+    server: &'server str,
     proxy: Option<Url>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
@@ -203,16 +201,9 @@ async fn get_key<T: Transport>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs,
+    }: GetKeyArgs<'_>,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<GroupKeyEnvelope> {
-    let target_host = server
-        .host()
-        .map(|host| host.to_string())
-        .ok_or_else(|| Error::InvalidUrl {
-            url: server.clone(),
-            description: "the host is missing in target server url",
-        })?;
     let mut connection_options = ConnectionOptions::new(server, proxy)?;
 
     let isd_key_port = {
@@ -224,7 +215,7 @@ async fn get_key<T: Transport>(
                     username: username.clone(),
                     password: password.clone(),
                 }),
-                &target_host,
+                server,
             )?,
         )
         .await?;
@@ -254,7 +245,7 @@ async fn get_key<T: Transport>(
         AuthProvider::new(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
-            &target_host,
+            server,
         )?,
     )
     .await?;
@@ -334,7 +325,6 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     let username = Username::parse(username)
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
-    let server = Url::parse(server)?;
     let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
     let root_key = get_key::<T>(
@@ -401,7 +391,6 @@ pub async fn n_crypt_protect_secret<T: Transport>(
     }: CryptProtectSecretArgs<'_, '_>,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Vec<u8>> {
-    let server = Url::parse(server)?;
     let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
     let l0 = -1;

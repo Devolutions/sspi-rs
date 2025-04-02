@@ -1,5 +1,8 @@
 #![allow(clippy::new_without_default)] // Default trait can’t be used by wasm consumer anyway
 
+#[macro_use]
+extern crate tracing;
+
 mod error;
 mod network_client;
 mod transport;
@@ -14,9 +17,6 @@ use wasm_bindgen::prelude::*;
 use crate::error::DpapiError;
 use crate::network_client::WasmNetworkClient;
 use crate::transport::WasmTransport;
-
-#[macro_use]
-extern crate tracing;
 
 #[derive(Clone)]
 enum Command {

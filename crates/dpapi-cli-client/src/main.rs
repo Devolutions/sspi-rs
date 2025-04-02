@@ -1,5 +1,8 @@
 #![warn(clippy::large_futures)]
 
+#[macro_use]
+extern crate tracing;
+
 mod cli;
 mod logging;
 mod network_client;

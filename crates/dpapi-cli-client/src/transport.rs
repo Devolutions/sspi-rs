@@ -68,6 +68,7 @@ pub struct NativeTransport;
 
 impl NativeTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
+    #[instrument(skip(web_app_auth), err)]
     async fn ws_connect(
         ws_request: Url,
         web_app_auth: &WebAppAuth,
@@ -77,7 +78,10 @@ impl NativeTransport {
 
         let (ws, _) = tokio_tungstenite::connect_async(ws_request.as_str())
             .await
-            .map_err(|err| Error::new(ErrorKind::Other, err))?;
+            .map_err(|err| {
+                error!(?err, "Failed to establish WS connection.");
+                Error::new(ErrorKind::Other, err)
+            })?;
 
         {
             use futures_util::{future, SinkExt as _, StreamExt as _};
@@ -127,6 +131,7 @@ fn url_to_socket_addr(url: &Url) -> Result<SocketAddr, Error> {
 impl Transport for NativeTransport {
     type Stream = TokioStream<ErasedReadWrite>;
 
+    #[instrument(skip(connection_options), err)]
     async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream, Error> {
         match connection_options {
             ConnectionOptions::Tcp(addr) => {

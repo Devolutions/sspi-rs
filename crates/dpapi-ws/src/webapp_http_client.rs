@@ -72,14 +72,29 @@ impl GatewayWebAppHttpClient {
     const WEB_APP_TOKEN_LIFETIME: u64 = 60 * 60 * 8;
     const SESSION_TOKEN_LIFETIME: u64 = 60 * 60;
 
-    pub fn new(gateway_url: Url) -> Self {
-        Self {
+    pub fn new(mut gateway_url: Url) -> Result<Self, Error> {
+        let http_scheme = match gateway_url.scheme() {
+            "ws" => "http",
+            "wss" => "https",
+            scheme => {
+                return Err(Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("invalid proxy URL scheme: {scheme}"),
+                ));
+            }
+        };
+        gateway_url
+            .set_scheme(http_scheme)
+            .map_err(|()| Error::new(ErrorKind::InvalidInput, "failed to set HTTP scheme for proxy URL"))?;
+
+        Ok(Self {
             client: Client::new(),
             gateway_url,
-        }
+        })
     }
 
     /// Requests a web token from a Devolutions Gateway WebApp.
+    #[instrument(level = "trace", skip(self), err)]
     pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String, Error> {
         let url = self
             .gateway_url
@@ -118,6 +133,7 @@ impl GatewayWebAppHttpClient {
     }
 
     /// Requests a session token from a Devolutions Gateway WebApp.
+    #[instrument(level = "trace", skip(self), err)]
     pub async fn request_session_token(
         &self,
         destination: &str,

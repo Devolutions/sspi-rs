@@ -11,6 +11,9 @@ const TCP_SCHEME: &str = "tcp";
 pub enum Error {
     #[error("invalid URL: {0}")]
     InvalidUrl(&'static str),
+
+    #[error(transparent)]
+    UrlParse(#[from] url::ParseError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -35,7 +38,13 @@ pub enum ConnectionOptions {
 }
 
 impl ConnectionOptions {
-    pub fn new(mut destination: Url, proxy: Option<Url>) -> Result<Self> {
+    pub fn new(destination: &str, proxy: Option<Url>) -> Result<Self> {
+        let mut destination = Url::parse(&if destination.contains("://") {
+            destination.to_owned()
+        } else {
+            format!("tcp://{destination}")
+        })?;
+
         if destination.scheme().is_empty() {
             destination.set_scheme(TCP_SCHEME).expect("TCP_SCHEME value is valid");
         }
