@@ -7,6 +7,7 @@ use dpapi_pdu::rpc::{
     ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
     VerificationTrailer, EPM,
 };
+use dpapi_transport::{ConnectionOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
@@ -20,7 +21,7 @@ use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, con
 use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
 use crate::rpc::auth::AuthError;
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
-use crate::{ConnectionOptions, Error, Result, Transport};
+use crate::{Error, Result};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -213,7 +214,7 @@ async fn get_key<T: Transport + Debug>(
             url: server.clone(),
             description: "the host is missing in target server url",
         })?;
-    let mut connection_options = ConnectionOptions::parse(server, proxy)?;
+    let mut connection_options = ConnectionOptions::new(server, proxy)?;
 
     let isd_key_port = {
         let mut rpc = RpcClient::<T>::connect(

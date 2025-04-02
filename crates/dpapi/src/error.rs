@@ -1,8 +1,7 @@
 use dpapi_core::{DecodeError, EncodeError};
+use dpapi_transport::ConnectionOptionsError;
 use thiserror::Error;
 use url::Url;
-
-use crate::ConnectionUrlParseError;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -55,7 +54,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    ConnectionUrlParse(#[from] ConnectionUrlParseError),
+    ConnectionUrlParse(#[from] ConnectionOptionsError),
 
     #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),

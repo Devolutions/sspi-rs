@@ -629,6 +629,7 @@ dependencies = [
  "digest 0.11.0-pre.10",
  "dpapi-core",
  "dpapi-pdu",
+ "dpapi-transport",
  "elliptic-curve",
  "hmac 0.12.1",
  "hmac 0.13.0-pre.5",
@@ -664,6 +665,7 @@ name = "dpapi-cli-client"
 version = "0.0.0"
 dependencies = [
  "dpapi",
+ "dpapi-transport",
  "dpapi-ws",
  "futures 0.3.31",
  "futures-util",
@@ -699,12 +701,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dpapi-transport"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.12",
+ "url",
+]
+
+[[package]]
 name = "dpapi-web"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
  "dpapi",
+ "dpapi-transport",
  "dpapi-ws",
  "futures-util",
  "getrandom 0.2.15",
@@ -726,7 +737,7 @@ dependencies = [
 name = "dpapi-ws"
 version = "0.1.0"
 dependencies = [
- "dpapi",
+ "dpapi-transport",
  "reqwest",
  "serde",
  "smol_str",

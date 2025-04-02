@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 #[macro_use]
 mod macros;
 mod api;
@@ -6,6 +8,7 @@ use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid};
+use sspi::Secret;
 use uuid::Uuid;
 
 use self::api::{n_crypt_protect_secret, n_crypt_unprotect_secret};
@@ -112,18 +115,19 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             None
         };
 
-        let blob_data = try_execute!(
-            n_crypt_protect_secret(
-                secret.into(),
-                sid,
-                root_key,
-                server,
-                username,
-                password.into(),
-                computer_name
-            ),
-            NTE_INTERNAL_ERROR
-        );
+        // let blob_data = try_execute!(
+        //     n_crypt_protect_secret(
+        //         secret.into(),
+        //         sid,
+        //         root_key,
+        //         server,
+        //         username,
+        //         password.into(),
+        //         computer_name
+        //     ),
+        //     NTE_INTERNAL_ERROR
+        // );
+        let blob_data: Vec<u8> = todo!();
 
         if blob_data.is_empty() {
             error!("Output DPAPI blob is empty");
@@ -226,10 +230,11 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             None
         };
 
-        let secret_data = try_execute!(
-            n_crypt_unprotect_secret(blob, server, username, password.into(), computer_name),
-            NTE_INTERNAL_ERROR
-        );
+        // let secret_data = try_execute!(
+        //     n_crypt_unprotect_secret(blob, server, username, password.into(), computer_name),
+        //     NTE_INTERNAL_ERROR
+        // );
+        let secret_data: Secret<Vec<u8>> = todo!();
 
         if secret_data.as_ref().is_empty() {
             error!("Decrypted secret is empty");

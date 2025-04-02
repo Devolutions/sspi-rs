@@ -12,8 +12,9 @@ url = { version = "2.5" }
 reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
 transport = { git = "https://github.com/Devolutions/devolutions-gateway.git", rev = "4fd9c22" }
 
-dpapi = { path = "../dpapi" }
-dpapi-ws = { path = "../dpapi-ws" }
+dpapi.workspace = true
+dpapi-ws.workspace = true
+dpapi-transport.workspace = true
 
 tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
 futures-util = {  version = "0.3" }

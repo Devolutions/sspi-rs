@@ -1,4 +1,6 @@
-use dpapi::{Error, Result, WebAppAuth};
+use std::io::{Error, ErrorKind};
+
+use dpapi_transport::WebAppAuth;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -8,13 +10,13 @@ use uuid::Uuid;
 /// [AppTokenContentType](https://github.com/Devolutions/devolutions-gateway/blob/6e74bcc4256e5b6c67f798d3835b5277cc245633/devolutions-gateway/src/api/webapp.rs#L40-L42)
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
-enum AppTokenContentType {
+pub enum AppTokenContentType {
     WebApp,
 }
 
 /// [AppTokenSignRequest](https://github.com/Devolutions/devolutions-gateway/blob/6e74bcc4256e5b6c67f798d3835b5277cc245633/devolutions-gateway/src/api/webapp.rs#L46-L56)
 #[derive(Debug, Serialize, Deserialize)]
-struct AppTokenSignRequest {
+pub struct AppTokenSignRequest {
     /// The content type for the web app token.
     content_type: AppTokenContentType,
     /// The username used to request the app token.
@@ -29,7 +31,7 @@ struct AppTokenSignRequest {
 /// [ApplicationProtocol](https://github.com/Devolutions/devolutions-gateway/blob/6e74bcc4256e5b6c67f798d3835b5277cc245633/devolutions-gateway/src/token.rs#L136-L139)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(untagged)]
-enum ApplicationProtocol {
+pub enum ApplicationProtocol {
     Unknown(SmolStr),
 }
 
@@ -37,7 +39,7 @@ enum ApplicationProtocol {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(tag = "content_type")]
-enum SessionTokenContentType {
+pub enum SessionTokenContentType {
     Association {
         /// Protocol for the session (e.g.: "rdp")
         protocol: ApplicationProtocol,
@@ -50,7 +52,7 @@ enum SessionTokenContentType {
 
 /// [SessionTokenSignRequest](https://github.com/Devolutions/devolutions-gateway/blob/6e74bcc4256e5b6c67f798d3835b5277cc245633/devolutions-gateway/src/api/webapp.rs#L260-L268)
 #[derive(Debug, Serialize, Deserialize)]
-struct SessionTokenSignRequest {
+pub struct SessionTokenSignRequest {
     /// The content type for the session token
     #[serde(flatten)]
     content_type: SessionTokenContentType,
@@ -78,8 +80,12 @@ impl GatewayWebAppHttpClient {
     }
 
     /// Requests a web token from a Devolutions Gateway WebApp.
-    pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String> {
-        let url = self.gateway_url.clone().join("jet/webapp/app-token")?;
+    pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String, Error> {
+        let url = self
+            .gateway_url
+            .clone()
+            .join("jet/webapp/app-token")
+            .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
 
         let mut request_builder = self.client.post(url);
 
@@ -101,12 +107,12 @@ impl GatewayWebAppHttpClient {
             })
             .send()
             .await
-            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .map_err(|err| Error::new(ErrorKind::Other, err))?
             .error_for_status()
-            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .map_err(|err| Error::new(ErrorKind::Other, err))?
             .text()
             .await
-            .map_err(|e| Error::HttpRequest(e.to_string()))?;
+            .map_err(|err| Error::new(ErrorKind::Other, err))?;
 
         Ok(token)
     }
@@ -117,8 +123,12 @@ impl GatewayWebAppHttpClient {
         destination: &str,
         web_app_token: &str,
         session_id: Uuid,
-    ) -> Result<String> {
-        let mut url = self.gateway_url.clone().join("jet/webapp/session-token")?;
+    ) -> Result<String, Error> {
+        let mut url = self
+            .gateway_url
+            .clone()
+            .join("jet/webapp/session-token")
+            .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
         url.query_pairs_mut().append_pair("token", web_app_token);
 
         let token = self
@@ -134,12 +144,12 @@ impl GatewayWebAppHttpClient {
             })
             .send()
             .await
-            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .map_err(|err| Error::new(ErrorKind::Other, err))?
             .error_for_status()
-            .map_err(|e| Error::HttpRequest(e.to_string()))?
+            .map_err(|err| Error::new(ErrorKind::Other, err))?
             .text()
             .await
-            .map_err(|e| Error::HttpRequest(e.to_string()))?;
+            .map_err(|err| Error::new(ErrorKind::Other, err))?;
 
         Ok(token)
     }

@@ -181,7 +181,7 @@ impl DpapiBlob {
     }
 
     pub fn decode(mut src: &[u8]) -> crate::Result<Self> {
-        let content_info: ContentInfo = picky_asn1_der::from_bytes(&mut src)?;
+        let content_info: ContentInfo = picky_asn1_der::from_reader(&mut src)?;
 
         if content_info.content_type.0 != oids::enveloped_data() {
             let expected_content_type: String = oids::enveloped_data().into();

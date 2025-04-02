@@ -1,6 +1,7 @@
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi::{Error, Result, WebAppAuth};
+use dpapi_transport::WebAppAuth;
 use url::Url;
 use uuid::Uuid;
 
@@ -12,7 +13,7 @@ pub async fn prepare_ws_connection_url(
     gateway_url: Url,
     web_app_auth: &WebAppAuth,
     destination: &SocketAddr,
-) -> Result<Url> {
+) -> Result<Url, Error> {
     let http_client = GatewayWebAppHttpClient::new(gateway_url.clone());
 
     let session_id = Uuid::new_v4();
@@ -27,10 +28,10 @@ pub async fn prepare_ws_connection_url(
     if let Ok(mut segments) = connection_url.path_segments_mut() {
         segments.push(session_id.to_string().as_str());
     } else {
-        return Err(Error::InvalidUrl {
-            url: connection_url.clone(),
-            description: "URL is `cannot-be-a-base`",
-        });
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            format!("provided URL ({:?}) is `cannot-be-a-base`", connection_url),
+        ));
     }
 
     connection_url

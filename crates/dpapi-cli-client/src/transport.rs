@@ -1,7 +1,7 @@
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi::{ConnectionOptions, Error, LocalStream, Result, Transport, WebAppAuth};
+use dpapi_transport::{ConnectionOptions, LocalStream, Transport, WebAppAuth, DEFAULT_RPC_PORT};
 use dpapi_ws::prepare_ws_connection_url;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
@@ -29,13 +29,14 @@ impl<S> LocalStream for TokioStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>> {
+    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>, Error> {
         let mut buf = vec![0; length];
         self.read_buf(&mut buf).await?;
+
         Ok(buf)
     }
 
-    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<()> {
+    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
         use tokio::io::AsyncReadExt as _;
 
         while !buf.is_empty() {
@@ -43,14 +44,14 @@ where
             buf = &mut buf[bytes_read..];
 
             if bytes_read == 0 {
-                return Err(Error::Io(ErrorKind::UnexpectedEof.into()));
+                return Err(ErrorKind::UnexpectedEof.into());
             }
         }
 
         Ok(())
     }
 
-    async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+    async fn write_all(&mut self, buf: &[u8]) -> Result<(), Error> {
         use tokio::io::AsyncWriteExt as _;
 
         Box::pin(async {
@@ -72,12 +73,12 @@ impl NativeTransport {
         ws_request: Url,
         web_app_auth: &WebAppAuth,
         destination: &SocketAddr,
-    ) -> Result<TokioStream<ErasedReadWrite>> {
+    ) -> Result<TokioStream<ErasedReadWrite>, Error> {
         let ws_request = prepare_ws_connection_url(ws_request, web_app_auth, destination).await?;
 
         let (ws, _) = tokio_tungstenite::connect_async(ws_request.as_str())
             .await
-            .map_err(|e| Error::TransportConnection(e.to_string()))?;
+            .map_err(|err| Error::new(ErrorKind::Other, err))?;
 
         {
             use futures_util::{future, SinkExt as _, StreamExt as _};
@@ -112,20 +113,33 @@ impl NativeTransport {
     }
 }
 
+fn url_to_socket_addr(url: &Url) -> Result<SocketAddr, Error> {
+    url.socket_addrs(|| Some(DEFAULT_RPC_PORT))?
+        .first()
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidInput,
+                "cannot convert destination URL to socket address",
+            )
+        })
+        .copied()
+}
+
 impl Transport for NativeTransport {
     type Stream = TokioStream<ErasedReadWrite>;
 
-    async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream> {
+    async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream, Error> {
         match connection_options {
             ConnectionOptions::Tcp(addr) => {
-                let stream = TokioStream::new(Box::new(TcpStream::connect(addr).await?) as ErasedReadWrite);
+                let stream =
+                    TokioStream::new(Box::new(TcpStream::connect(url_to_socket_addr(addr)?).await?) as ErasedReadWrite);
                 Ok(stream)
             }
             ConnectionOptions::WebSocketTunnel {
                 websocket_url,
                 web_app_auth,
                 destination,
-            } => Self::ws_connect(websocket_url.clone(), web_app_auth, destination).await,
+            } => Self::ws_connect(websocket_url.clone(), web_app_auth, &url_to_socket_addr(destination)?).await,
         }
     }
 }

@@ -3,13 +3,13 @@ use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
+use dpapi_transport::{ConnectionOptions, LocalStream, Transport};
 use sspi::AsyncNetworkClient;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
 use crate::rpc::AuthProvider;
-use crate::stream::Transport;
-use crate::{ConnectionOptions, LocalStream, Result};
+use crate::Result;
 
 pub const NDR64: SyntaxId = SyntaxId {
     uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),

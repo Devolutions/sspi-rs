@@ -1,10 +1,9 @@
-use std::io::ErrorKind;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use dpapi::client::{ConnectionOptions, WebAppAuth};
-use dpapi::{Error, LocalStream, Result, Transport};
-use dpapi_ws::prepare_ws_request_for_gateway_webapp;
+use dpapi_transport::{ConnectionOptions, DEFAULT_RPC_PORT, LocalStream, Transport, WebAppAuth};
+use dpapi_ws::prepare_ws_connection_url;
 use futures_util::{AsyncRead, AsyncWrite};
 use gloo_net::websocket;
 use gloo_net::websocket::futures::WebSocket;
@@ -30,13 +29,13 @@ impl<S> LocalStream for FuturesStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>> {
+    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>, Error> {
         let mut buf = vec![0; length];
         self.read_buf(&mut buf).await?;
         Ok(buf)
     }
 
-    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<()> {
+    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
         use futures_util::AsyncReadExt as _;
 
         while !buf.is_empty() {
@@ -44,14 +43,14 @@ where
             buf = &mut buf[bytes_read..];
 
             if bytes_read == 0 {
-                return Err(Error::Io(ErrorKind::UnexpectedEof.into()));
+                return Err(ErrorKind::UnexpectedEof.into());
             }
         }
 
         Ok(())
     }
 
-    async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+    async fn write_all(&mut self, buf: &[u8]) -> Result<(), Error> {
         use futures_util::AsyncWriteExt as _;
 
         Box::pin(async {
@@ -70,13 +69,13 @@ pub struct WasmTransport;
 impl WasmTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
     async fn ws_connect(
-        ws_request: &Url,
+        proxy: Url,
         web_app_auth: &WebAppAuth,
         destination: &SocketAddr,
-    ) -> Result<FuturesStream<ErasedReadWrite>> {
-        let ws_request = prepare_ws_request_for_gateway_webapp(ws_request, web_app_auth, destination).await?;
+    ) -> Result<FuturesStream<ErasedReadWrite>, Error> {
+        let connection_url = prepare_ws_connection_url(proxy.clone(), web_app_auth, destination).await?;
 
-        let ws = WebSocket::open(ws_request.as_str()).map_err(|e| Error::TransportConnection(e.to_string()))?;
+        let ws = WebSocket::open(connection_url.as_str()).map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
 
         // NOTE: ideally, when the WebSocket can’t be opened, the above call should fail with details on why is that
         // (e.g., the proxy hostname could not be resolved, proxy service is not running), but errors are never
@@ -85,17 +84,17 @@ impl WasmTransport {
         loop {
             match ws.state() {
                 websocket::State::Closing | websocket::State::Closed => {
-                    return Err(Error::TransportConnection(format!(
-                        "Failed to connect to {ws_request} (WebSocket is `{:?}`)",
-                        ws.state()
-                    )));
+                    return Err(Error::new(
+                        ErrorKind::BrokenPipe,
+                        format!("failed to open a WS connection: {:?}", ws.state()),
+                    ));
                 }
                 websocket::State::Connecting => {
-                    trace!("WebSocket is connecting to proxy at {ws_request}...");
+                    trace!("WebSocket is connecting to proxy at {proxy}...");
                     gloo_timers::future::sleep(Duration::from_millis(50)).await;
                 }
                 websocket::State::Open => {
-                    debug!("WebSocket connected to {ws_request} with success");
+                    debug!("WebSocket connected to {proxy} with success");
                     break;
                 }
             }
@@ -108,16 +107,32 @@ impl WasmTransport {
 impl Transport for WasmTransport {
     type Stream = FuturesStream<ErasedReadWrite>;
 
-    async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream> {
+    async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream, Error> {
         match connection_options {
-            ConnectionOptions::Tcp(_) => Err(Error::UnsupportedTransport(
-                "tcp is not supported for wasm32 target".to_string(),
+            ConnectionOptions::Tcp(_) => Err(Error::new(
+                ErrorKind::Unsupported,
+                "tcp transport is not supported for wasm32 target",
             )),
             ConnectionOptions::WebSocketTunnel {
                 websocket_url,
                 web_app_auth,
                 destination,
-            } => Self::ws_connect(websocket_url, web_app_auth, destination).await,
+            } => {
+                Self::ws_connect(
+                    websocket_url.clone(),
+                    web_app_auth,
+                    destination
+                        .socket_addrs(|| Some(DEFAULT_RPC_PORT))?
+                        .first()
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidInput,
+                                "cannot convert destination URL to socket address",
+                            )
+                        })?,
+                )
+                .await
+            }
         }
     }
 }

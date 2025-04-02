@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use anyhow::Context;
-use dpapi::client::CryptProtectSecretArgs;
+use dpapi::CryptProtectSecretArgs;
 use wasm_bindgen::prelude::*;
 
 use crate::error::DpapiError;
@@ -31,7 +31,7 @@ pub struct DpapiConfig(Rc<RefCell<DpapiConfigInner>>);
 #[derive(Default)]
 struct DpapiConfigInner {
     server: Option<String>,
-    proxy_addr: Option<String>,
+    proxy: Option<String>,
     username: Option<String>,
     password: Option<String>,
     computer_name: Option<String>,
@@ -51,8 +51,8 @@ impl DpapiConfig {
     }
 
     /// Required
-    pub fn proxy_addr(&mut self, proxy_addr: String) -> DpapiConfig {
-        self.0.borrow_mut().proxy_addr = Some(proxy_addr);
+    pub fn proxy(&mut self, proxy_addr: Option<String>) -> DpapiConfig {
+        self.0.borrow_mut().proxy = proxy_addr;
         self.clone()
     }
 
@@ -87,13 +87,13 @@ impl DpapiConfig {
     }
 
     pub async fn run(&self) -> Result<Vec<u8>, DpapiError> {
-        let (server, proxy_addr, username, password, computer_name, command);
+        let (server, proxy, username, password, computer_name, command);
 
         {
             let inner = self.0.borrow_mut();
 
             server = inner.server.clone().context("server address missing")?;
-            proxy_addr = inner.proxy_addr.clone().context("proxy address missing")?;
+            proxy = inner.proxy.clone();
             username = inner.username.clone().context("username missing")?;
             password = inner.password.clone().context("password missing")?;
             computer_name = inner.computer_name.clone();
@@ -107,7 +107,7 @@ impl DpapiConfig {
                     sid,
                     root_key_id: None,
                     server: &server,
-                    proxy_addr: Some(proxy_addr),
+                    proxy,
                     username: &username,
                     password: password.into(),
                     client_computer_name: computer_name,
@@ -118,7 +118,7 @@ impl DpapiConfig {
             Command::Decrypt { blob } => Ok(dpapi::n_crypt_unprotect_secret::<WasmTransport>(
                 &blob,
                 &server,
-                Some(proxy_addr),
+                proxy,
                 &username,
                 password.into(),
                 computer_name,
