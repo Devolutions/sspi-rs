@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 #![warn(clippy::large_futures)]
 
 #[macro_use]

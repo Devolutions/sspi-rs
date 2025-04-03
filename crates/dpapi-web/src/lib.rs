@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 #![allow(clippy::new_without_default)] // Default trait can’t be used by wasm consumer anyway
 
 #[macro_use]
@@ -18,12 +20,24 @@ use crate::error::DpapiError;
 use crate::network_client::WasmNetworkClient;
 use crate::transport::WasmTransport;
 
+/// DPAPI command.
 #[derive(Clone)]
 enum Command {
-    Encrypt { sid: String, secret: String },
-    Decrypt { blob: Vec<u8> },
+    /// Encrypts the secret.
+    Encrypt {
+        /// User's SID.
+        sid: String,
+        /// Secret to encrypt.
+        secret: String,
+    },
+    /// Decrypts the DPAPI blob.
+    Decrypt {
+        /// DPAPI blob.
+        blob: Vec<u8>,
+    },
 }
 
+/// DPAPI config.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct DpapiConfig(Rc<RefCell<DpapiConfigInner>>);
@@ -40,52 +54,68 @@ struct DpapiConfigInner {
 
 #[wasm_bindgen]
 impl DpapiConfig {
+    /// Initilized the config.
     pub fn new() -> DpapiConfig {
         Self(Rc::new(RefCell::new(DpapiConfigInner::default())))
     }
 
-    /// Required
+    /// Set the target RPC server address.
+    ///
+    /// **Required**.
     pub fn server(&mut self, server: String) -> DpapiConfig {
         self.0.borrow_mut().server = Some(server);
         self.clone()
     }
 
-    /// Required
+    /// Set the proxy address.
+    ///
+    /// **Optional**.
     pub fn proxy(&mut self, proxy_addr: Option<String>) -> DpapiConfig {
         self.0.borrow_mut().proxy = proxy_addr;
         self.clone()
     }
 
-    /// Required
+    /// Set the AD user name.
+    ///
+    /// **Required**.
     pub fn username(&mut self, username: String) -> DpapiConfig {
         self.0.borrow_mut().username = Some(username);
         self.clone()
     }
 
-    /// Required
+    /// Set the AD user password.
+    ///
+    /// **Required**.
     pub fn password(&mut self, password: String) -> DpapiConfig {
         self.0.borrow_mut().password = Some(password);
         self.clone()
     }
 
-    /// Optional
+    /// Set the client's computer name.
+    ///
+    /// **Optional**.
     pub fn computer_name(&mut self, computer_name: String) -> DpapiConfig {
         self.0.borrow_mut().computer_name = Some(computer_name);
         self.clone()
     }
 
-    /// Optional
+    /// Set the encrypt command.
+    ///
+    /// Either [encrypt] or [decrypt] must be called.
     pub fn encrypt(&mut self, sid: String, secret: String) -> DpapiConfig {
         self.0.borrow_mut().command = Some(Command::Encrypt { sid, secret });
         self.clone()
     }
 
-    /// Optional
+    /// Set the decrypt command.
+    ///
+    /// Either [encrypt] or [decrypt] must be called.
     pub fn decrypt(&mut self, blob: Vec<u8>) -> DpapiConfig {
         self.0.borrow_mut().command = Some(Command::Decrypt { blob });
         self.clone()
     }
 
+    /// Run the DPAPI client.
     pub async fn run(&self) -> Result<Vec<u8>, DpapiError> {
         let (server, proxy, username, password, computer_name, command);
 
@@ -101,7 +131,7 @@ impl DpapiConfig {
         }
 
         match command {
-            Command::Encrypt { sid, secret } => Ok(dpapi::n_crypt_protect_secret::<WasmTransport>(
+            Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(
                 CryptProtectSecretArgs {
                     data: secret.into_bytes().into(),
                     sid,
@@ -113,9 +143,9 @@ impl DpapiConfig {
                     client_computer_name: computer_name,
                 },
                 &mut WasmNetworkClient,
-            )
+            ))
             .await?),
-            Command::Decrypt { blob } => Ok(dpapi::n_crypt_unprotect_secret::<WasmTransport>(
+            Command::Decrypt { blob } => Ok(Box::pin(dpapi::n_crypt_unprotect_secret::<WasmTransport>(
                 &blob,
                 &server,
                 proxy,
@@ -123,7 +153,7 @@ impl DpapiConfig {
                 password.into(),
                 computer_name,
                 &mut WasmNetworkClient,
-            )
+            ))
             .await?
             .as_ref()
             .to_owned()),
@@ -131,6 +161,7 @@ impl DpapiConfig {
     }
 }
 
+/// Initializes the panic hook and logger.
 #[wasm_bindgen]
 pub fn dpapi_init(log_level: &str) {
     // When the `console_error_panic_hook` feature is enabled, we can call the

@@ -29,14 +29,14 @@ impl<S> LocalStream for TokioStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>, Error> {
+    async fn read_vec(&mut self, length: usize) -> Result<Vec<u8>, Error> {
         let mut buf = vec![0; length];
-        self.read_buf(&mut buf).await?;
+        self.read_exact(&mut buf).await?;
 
         Ok(buf)
     }
 
-    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
+    async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
         use tokio::io::AsyncReadExt as _;
 
         while !buf.is_empty() {
@@ -139,7 +139,7 @@ impl Transport for NativeTransport {
                     TokioStream::new(Box::new(TcpStream::connect(url_to_socket_addr(addr)?).await?) as ErasedReadWrite);
                 Ok(stream)
             }
-            ConnectionOptions::WebSocketTunnel {
+            ConnectionOptions::WsTunnel {
                 websocket_url,
                 web_app_auth,
                 destination,

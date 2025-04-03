@@ -290,11 +290,13 @@ impl<T: Transport> RpcClient<T> {
         self.stream.write_all(&pdu_encoded).await?;
 
         // Read PDU header
-        let mut pdu_buf = self.stream.read_exact(PduHeader::FIXED_PART_SIZE).await?;
+        let mut pdu_buf = self.stream.read_vec(PduHeader::FIXED_PART_SIZE).await?;
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        self.stream.read_buf(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..]).await?;
+        self.stream
+            .read_exact(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..])
+            .await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;

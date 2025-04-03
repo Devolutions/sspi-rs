@@ -72,6 +72,7 @@ impl GatewayClient {
     const WEB_APP_TOKEN_LIFETIME: u64 = 60 * 60 * 8;
     const SESSION_TOKEN_LIFETIME: u64 = 60 * 60;
 
+    /// Creates a new [GatewayClient].
     pub fn new(mut gateway_url: Url) -> Result<Self, Error> {
         let http_scheme = match gateway_url.scheme() {
             "ws" => "http",
@@ -93,7 +94,7 @@ impl GatewayClient {
         })
     }
 
-    /// Requests a web token from a Devolutions Gateway WebApp.
+    /// Requests a web token from a Devolutions Gateway.
     #[instrument(level = "trace", skip(self), err)]
     pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String, Error> {
         let url = self
@@ -132,7 +133,7 @@ impl GatewayClient {
         Ok(token)
     }
 
-    /// Requests a session token from a Devolutions Gateway WebApp.
+    /// Requests a session token from a Devolutions Gateway.
     #[instrument(level = "trace", skip(self), err)]
     pub async fn request_session_token(
         &self,

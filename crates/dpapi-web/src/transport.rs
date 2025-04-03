@@ -28,13 +28,13 @@ impl<S> LocalStream for FuturesStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    async fn read_exact(&mut self, length: usize) -> Result<Vec<u8>, Error> {
+    async fn read_vec(&mut self, length: usize) -> Result<Vec<u8>, Error> {
         let mut buf = vec![0; length];
-        self.read_buf(&mut buf).await?;
+        self.read_exact(&mut buf).await?;
         Ok(buf)
     }
 
-    async fn read_buf(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
+    async fn read_exact(&mut self, mut buf: &mut [u8]) -> Result<(), Error> {
         use futures_util::AsyncReadExt as _;
 
         while !buf.is_empty() {
@@ -111,7 +111,7 @@ impl Transport for WasmTransport {
                 ErrorKind::Unsupported,
                 "tcp transport is not supported for wasm32 target",
             )),
-            ConnectionOptions::WebSocketTunnel {
+            ConnectionOptions::WsTunnel {
                 websocket_url,
                 web_app_auth,
                 destination,

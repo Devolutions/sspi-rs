@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 #![warn(clippy::large_futures)]
 
 #[macro_use]
@@ -13,6 +15,13 @@ use uuid::Uuid;
 
 use crate::gateway_client::GatewayClient;
 
+/// Authenticates to the proxy, obtains the needed session token, and returns
+/// WS connection URL with the session token included in.
+///
+/// Paramers:
+/// * `gatway_url` - proxy (Devolutions Gateway) address.
+/// * `web_app_auth` - authentication data.
+/// * `destination` - target RPC server address.
 #[instrument(level = "trace", err)]
 pub async fn prepare_ws_connection_url(
     gateway_url: Url,

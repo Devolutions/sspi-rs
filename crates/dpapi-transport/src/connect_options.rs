@@ -1,43 +1,69 @@
 use thiserror::Error;
 use url::Url;
 
+/// Default port for RPC communication.
 pub const DEFAULT_RPC_PORT: u16 = 135;
 
 const WSS_SCHEME: &str = "wss";
 const WS_SCHEME: &str = "ws";
 const TCP_SCHEME: &str = "tcp";
 
+/// An error returned
 #[derive(Debug, Error)]
 pub enum Error {
+    /// The RPC server (destination) or proxy URL is invalid.
     #[error("invalid URL: {0}")]
     InvalidUrl(&'static str),
 
+    /// Failed to parse URL.
     #[error(transparent)]
     UrlParse(#[from] url::ParseError),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+/// Authentication data.
 #[derive(Debug, PartialEq)]
 pub enum WebAppAuth {
-    Custom { username: String, password: String },
+    /// Password based authentication.
+    Custom {
+        /// Name of the user for proxy authentication.
+        username: String,
+        /// User's password.
+        password: String,
+    },
+
+    /// No authentication data is needed.
     None,
 }
 
-/// RPC server connection options.
+/// Target server connection options.
 #[derive(Debug, PartialEq)]
 pub enum ConnectionOptions {
-    /// Regular TCP connection.
+    /// Regular TCP connection. Contains target RPC server address.
     Tcp(Url),
+
     /// Tunneled connection via Devolutions Gateway using a WebSocket.
-    WebSocketTunnel {
+    WsTunnel {
+        /// Devolutions Gateway address.
         websocket_url: Url,
+
+        /// Authentication data.
         web_app_auth: WebAppAuth,
+
+        /// Target RPC server address.
         destination: Url,
     },
 }
 
 impl ConnectionOptions {
+    /// Constructs a new [ConnectionOptions] object.
+    ///
+    /// Parameters:
+    /// * `destination` - target RPC server URL.
+    /// * `proxy` - optional Devilution Gateway URl.
+    ///
+    /// Returns an error if the provided URLs are not valid.
     pub fn new(destination: &str, proxy: Option<Url>) -> Result<Self> {
         let mut destination = Url::parse(&if destination.contains("://") {
             destination.to_owned()
@@ -81,7 +107,7 @@ impl ConnectionOptions {
                 }
             };
 
-            Ok(ConnectionOptions::WebSocketTunnel {
+            Ok(ConnectionOptions::WsTunnel {
                 websocket_url: proxy,
                 web_app_auth,
                 destination,
@@ -101,7 +127,7 @@ impl ConnectionOptions {
     pub fn set_destination_port(&mut self, new_port: u16) {
         match self {
             Self::Tcp(addr) => addr.set_port(Some(new_port)),
-            Self::WebSocketTunnel {
+            Self::WsTunnel {
                 destination: tcp_addr, ..
             } => tcp_addr.set_port(Some(new_port)),
         }
