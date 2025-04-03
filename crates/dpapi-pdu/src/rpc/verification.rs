@@ -339,9 +339,7 @@ impl arbitrary::Arbitrary<'_> for VerificationTrailer {
             }
         });
 
-        Ok(Self {
-            commands,
-        })
+        Ok(Self { commands })
     }
 }
 

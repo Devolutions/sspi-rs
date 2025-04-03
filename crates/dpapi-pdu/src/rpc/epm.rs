@@ -390,7 +390,11 @@ impl DecodeOwned for Floor {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        let lhs_len = usize::from(src.read_u16() - 1);
+        let lhs_len = usize::from(src.read_u16().checked_sub(1).ok_or(DecodeError::invalid_field(
+            "Floor",
+            "lhs length",
+            "lhs length is less then 1",
+        ))?);
 
         let protocol_value = src.read_u8();
         let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
@@ -692,7 +696,12 @@ impl DecodeOwned for EptMapResult {
         src.read_u64();
 
         let tower_count: usize = { cast_int!("EprMapResult", "tower count", src.read_u64()) as DecodeResult<_> }?;
-        ensure_size!(in: src, size: tower_count * 8);
+        ensure_size!(in: src, size: tower_count.checked_mul(8).ok_or(DecodeError::invalid_field(
+                "EptMapResult",
+                "tower count",
+                "tower count is too big",
+            ))?
+        );
         // Ignore referent ids
         for _ in 0..tower_count {
             src.read_u64();
