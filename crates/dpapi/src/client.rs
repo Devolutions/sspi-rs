@@ -327,7 +327,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
         .map_err(AuthError::from)?;
     let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
-    let root_key = get_key::<T>(
+    let root_key = Box::pin(get_key::<T>(
         GetKeyArgs {
             server,
             proxy,
@@ -341,7 +341,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
             negotiate_config: try_get_negotiate_config(client_computer_name)?,
         },
         network_client,
-    )
+    ))
     .await?;
 
     info!("Successfully requested root key.");
@@ -350,7 +350,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'server, 'proxy> {
+pub struct CryptProtectSecretArgs<'server, 'username> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -362,7 +362,7 @@ pub struct CryptProtectSecretArgs<'server, 'proxy> {
     /// Websocket proxy address.
     pub proxy: Option<String>,
     /// Username to encrypt the DPAPI blob.
-    pub username: &'proxy str,
+    pub username: &'username str,
     /// User's password.
     pub password: Secret<String>,
     /// Client's computer name.
@@ -403,7 +403,7 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = get_key::<T>(
+    let root_key = Box::pin(get_key::<T>(
         GetKeyArgs {
             server,
             proxy,
@@ -417,7 +417,7 @@ pub async fn n_crypt_protect_secret<T: Transport>(
             negotiate_config: try_get_negotiate_config(client_computer_name)?,
         },
         network_client,
-    )
+    ))
     .await?;
 
     info!("Successfully requested root key.");
