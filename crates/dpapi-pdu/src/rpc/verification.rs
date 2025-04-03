@@ -62,6 +62,14 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn set_flags(&mut self, flags: CommandFlags) {
+        match self {
+            Command::Bitmask1(command) => command.flags = flags,
+            Command::Pcontext(command) => command.flags = flags,
+            Command::Header2(command) => command.flags = flags,
+        }
+    }
+
     pub fn flags(&self) -> CommandFlags {
         match self {
             Command::Bitmask1(command) => command.flags,
@@ -301,12 +309,41 @@ impl FixedPartSize for CommandHeader2 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct VerificationTrailer {
     pub commands: Vec<Command>,
 }
 
-// implement the arbitrary trait manually
+// We provide the custom Arbitrary trait implementation to ensure that the last command has `SecVtCommandEnd` flag turned on.
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for VerificationTrailer {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let mut commands = Vec::new();
+
+        for _ in 0..u.int_in_range(1..=16)? {
+            let command: Command = u.arbitrary()?;
+            let flags = command.flags();
+
+            commands.push(command);
+
+            if flags.contains(CommandFlags::SecVtCommandEnd) {
+                break;
+            }
+        }
+
+        commands.last_mut().map(|command| {
+            let mut flags = command.flags();
+            if !flags.contains(CommandFlags::SecVtCommandEnd) {
+                flags.set(CommandFlags::SecVtCommandEnd, true);
+
+                command.set_flags(flags);
+            }
+        });
+
+        Ok(Self {
+            commands,
+        })
+    }
+}
 
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
