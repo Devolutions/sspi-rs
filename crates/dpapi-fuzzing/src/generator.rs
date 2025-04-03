@@ -1,5 +1,5 @@
 use dpapi_core::{DecodeOwned, DecodeResult, EncodeResult, ReadCursor, StaticName, WriteBuf, encode_buf};
-use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters};
+use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters, KeyIdentifier};
 use dpapi_pdu::rpc::{
     AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Command, ContextElement, ContextResult, EptMap,
     EptMapResult, Floor, Pdu, Request, Response, SyntaxId, VerificationTrailer, PduHeader, SecurityTrailer, Fault,
@@ -72,8 +72,9 @@ wrapper! {
         // gkdi
         GetKey,
         KdfParameters,
-        // FfcdhParameters,
-        // FfcdhKey,
-        // EcdhKey,
+        FfcdhParameters,
+        FfcdhKey,
+        EcdhKey,
+        KeyIdentifier,
         GroupKeyEnvelope,
 }

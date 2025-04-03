@@ -314,23 +314,29 @@ impl FfcdhParameters {
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
+fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) {
+    while buf.len() < key_length {
+        buf.insert(0, 0);
+    }
+}
+
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhParameters {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let key_length = u.int_in_range(0..=1000)?;
+        let key_length = u.int_in_range(512..=2048)?;
+
+        let mut buf = vec![0; key_length];
+
+        u.fill_buffer(&mut buf)?;
+        let field_order = BigUint::from_bytes_be(&buf);
+
+        u.fill_buffer(&mut buf)?;
+        let generator = BigUint::from_bytes_be(&buf);
 
         Ok(Self {
-            key_length,
-            field_order: {
-                let t: BigUint = u.arbitrary()?;
-                // BigUint does not expose `normalize` function to the public API.
-                // So, to normalize it, we make a workaround and re-init the value.
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
-            generator: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
+            key_length: u32::try_from(key_length).unwrap(),
+            field_order,
+            generator,
         })
     }
 }
@@ -359,11 +365,11 @@ impl Encode for FfcdhParameters {
         }
 
         let mut field_order = self.field_order.to_bytes_be();
-        field_order.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut field_order);
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        generator.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut generator);
         dst.write_slice(&generator);
 
         Ok(())
@@ -441,20 +447,24 @@ impl FfcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let key_length = u.int_in_range(512..=2048)?;
+
+        let mut buf = vec![0; key_length];
+
+        u.fill_buffer(&mut buf)?;
+        let field_order = BigUint::from_bytes_be(&buf);
+
+        u.fill_buffer(&mut buf)?;
+        let generator = BigUint::from_bytes_be(&buf);
+
+        u.fill_buffer(&mut buf)?;
+        let public_key = BigUint::from_bytes_be(&buf);
+
         Ok(Self {
-            key_length: u.int_in_range(0..=1000)?,
-            field_order: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
-            generator: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
-            public_key: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
+            key_length: u32::try_from(key_length).unwrap(),
+            field_order,
+            generator,
+            public_key,
         })
     }
 }
@@ -481,15 +491,15 @@ impl Encode for FfcdhKey {
         }
 
         let mut field_order = self.field_order.to_bytes_be();
-        field_order.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut field_order);
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        generator.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut generator);
         dst.write_slice(&generator);
 
         let mut public_key = self.public_key.to_bytes_be();
-        public_key.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut public_key);
         dst.write_slice(&public_key);
 
         Ok(())
@@ -594,17 +604,21 @@ impl EcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for EcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let key_length = u.int_in_range(512..=2048)?;
+
+        let mut buf = vec![0; key_length];
+
+        u.fill_buffer(&mut buf)?;
+        let x = BigUint::from_bytes_be(&buf);
+
+        u.fill_buffer(&mut buf)?;
+        let y = BigUint::from_bytes_be(&buf);
+
         Ok(Self {
             curve: u.arbitrary()?,
-            key_length: u.int_in_range(0..=1000)?,
-            x: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
-            y: {
-                let t: BigUint = u.arbitrary()?;
-                BigUint::from_bytes_be(&t.to_bytes_be())
-            },
+            key_length: u32::try_from(key_length).unwrap(),
+            x,
+            y,
         })
     }
 }
@@ -628,11 +642,11 @@ impl Encode for EcdhKey {
         }
 
         let mut x = self.x.to_bytes_be();
-        x.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut x);
         dst.write_slice(&x);
 
         let mut y = self.y.to_bytes_be();
-        y.resize(key_len, 0);
+        pad_key_buffer(key_len, &mut y);
         dst.write_slice(&y);
 
         Ok(())
@@ -784,8 +798,8 @@ impl DecodeOwned for KeyIdentifier {
 
         let key_info_len = { cast_int!("KeyIdentifier", "key info len", src.read_u32()) as DecodeResult<_> }?;
 
-        let domain_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
-        if domain_len <= 2 {
+        let domain_len = { cast_int!("KeyIdentifier", "domain name len", src.read_u32()) as DecodeResult<_> }?;
+        if domain_len < 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier domain name",
                 expected: 2,
@@ -794,7 +808,7 @@ impl DecodeOwned for KeyIdentifier {
         }
 
         let forest_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
-        if forest_len <= 2 {
+        if forest_len < 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier forest name",
                 expected: 2,
