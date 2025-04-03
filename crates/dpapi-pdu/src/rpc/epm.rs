@@ -272,7 +272,7 @@ impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
         let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
-            version_minor: u16::from_be_bytes(rhs.try_into().unwrap()),
+            version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
         })
     }
 }

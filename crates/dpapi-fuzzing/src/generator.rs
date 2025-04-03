@@ -2,7 +2,7 @@ use dpapi_core::{DecodeOwned, DecodeResult, EncodeResult, ReadCursor, StaticName
 use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters};
 use dpapi_pdu::rpc::{
     AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Command, ContextElement, ContextResult, EptMap,
-    EptMapResult, Floor, Pdu, Request, Response, SyntaxId, VerificationTrailer,
+    EptMapResult, Floor, Pdu, Request, Response, SyntaxId, VerificationTrailer, PduHeader, SecurityTrailer, Fault,
 };
 
 macro_rules! wrapper {
@@ -51,9 +51,15 @@ wrapper! {
         AlterContextResponse,
 
         // epm
-        // Floor, --------
-        // EptMap,
-        // EptMapResult,
+        Floor,
+        EptMap,
+        EptMapResult,
+
+        // pdu
+        PduHeader,
+        SecurityTrailer,
+        Fault,
+        Pdu,
 
         // request
         // Request, -> decode with context
@@ -70,5 +76,4 @@ wrapper! {
         // FfcdhKey,
         // EcdhKey,
         GroupKeyEnvelope,
-        Pdu,
 }
