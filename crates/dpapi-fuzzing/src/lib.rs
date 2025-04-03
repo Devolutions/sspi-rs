@@ -1,8 +1,11 @@
 pub mod generator;
 
 use dpapi_core::{DecodeOwned, Encode, ReadCursor, WriteBuf};
-use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope};
-use dpapi_pdu::rpc::Pdu;
+use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters, KeyIdentifier};
+use dpapi_pdu::rpc::{
+    AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Command, ContextElement, ContextResult, EptMap,
+    EptMapResult, Fault, Floor, Pdu, PduHeader, Request, Response, SecurityTrailer, SyntaxId, VerificationTrailer,
+};
 
 use crate::generator::AnyStruct;
 
@@ -17,14 +20,42 @@ pub fn round_trip(any: AnyStruct) {
 }
 
 pub fn structure_decoding(data: &[u8]) {
+    // bind
+    decode::<SyntaxId>(data);
+    decode::<ContextElement>(data);
+    decode::<ContextResult>(data);
+    decode::<Bind>(data);
+    decode::<BindAck>(data);
+    decode::<BindNak>(data);
+    decode::<AlterContext>(data);
+    decode::<AlterContextResponse>(data);
+
+    // epm
+    decode::<Floor>(data);
+    decode::<EptMap>(data);
+    decode::<EptMapResult>(data);
+
+    // pdu
+    decode::<PduHeader>(data);
+    decode::<SecurityTrailer>(data);
+    decode::<Fault>(data);
+    decode::<Pdu>(data);
+
+    // request
+    decode::<Response>(data);
+
+    // verification
+    decode::<Command>(data);
+    decode::<VerificationTrailer>(data);
+
+    // gkdi
     decode::<GetKey>(data);
-    // KdfParameters has very few number of valid payloads, as its only field cannot have an arbitrary value.
-    // decode::<KdfParameters>(data);
+    decode::<KdfParameters>(data);
     decode::<FfcdhParameters>(data);
     decode::<FfcdhKey>(data);
     decode::<EcdhKey>(data);
+    decode::<KeyIdentifier>(data);
     decode::<GroupKeyEnvelope>(data);
-    decode::<Pdu>(data);
 }
 
 fn decode<S>(data: &[u8])
