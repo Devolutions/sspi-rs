@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate tracing;
 
-mod webapp_http_client;
+mod gateway_client;
 
 use std::io::{Error, ErrorKind};
 
@@ -11,7 +11,7 @@ use dpapi_transport::WebAppAuth;
 use url::Url;
 use uuid::Uuid;
 
-use crate::webapp_http_client::GatewayWebAppHttpClient;
+use crate::gateway_client::GatewayClient;
 
 #[instrument(level = "trace", err)]
 pub async fn prepare_ws_connection_url(
@@ -19,7 +19,7 @@ pub async fn prepare_ws_connection_url(
     web_app_auth: &WebAppAuth,
     destination: &Url,
 ) -> Result<Url, Error> {
-    let http_client = GatewayWebAppHttpClient::new(gateway_url.clone())?;
+    let http_client = GatewayClient::new(gateway_url.clone())?;
 
     let session_id = Uuid::new_v4();
 

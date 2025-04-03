@@ -63,12 +63,12 @@ pub struct SessionTokenSignRequest {
 }
 
 /// An HTTP Client that is used to request authentication tokens from a Devolutions Gateway WebApp.
-pub struct GatewayWebAppHttpClient {
+pub struct GatewayClient {
     client: Client,
     gateway_url: Url,
 }
 
-impl GatewayWebAppHttpClient {
+impl GatewayClient {
     const WEB_APP_TOKEN_LIFETIME: u64 = 60 * 60 * 8;
     const SESSION_TOKEN_LIFETIME: u64 = 60 * 60;
 
