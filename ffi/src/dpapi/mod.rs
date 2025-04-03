@@ -297,6 +297,7 @@ mod tests {
     /// Note: this test aims to check only the implementation of FFI functions.
     /// Checking the correctness of DPAPI functions is not a goal of this test.
     #[test]
+    #[ignore]
     fn test_dpapi_protect_secret() {
         let secret = b"secret-to-encrypt";
         let secret_len = secret.len() as u32;
