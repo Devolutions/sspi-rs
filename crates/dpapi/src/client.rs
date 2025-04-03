@@ -5,12 +5,14 @@ use dpapi_pdu::rpc::{
     ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
     VerificationTrailer, EPM,
 };
+use dpapi_transport::{ConnectionOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
-use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
+use url::Url;
 use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
@@ -19,8 +21,6 @@ use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
 use crate::rpc::auth::AuthError;
 use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
 use crate::{Error, Result};
-
-const DEFAULT_RPC_PORT: u16 = 135;
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -33,8 +33,6 @@ pub enum ClientError {
     #[error("bad EptMap response status: {0}")]
     BadEptMapStatus(u32),
 }
-
-pub type ClientResult<T> = std::result::Result<T, ClientError>;
 
 fn get_epm_contexts() -> Vec<ContextElement> {
     vec![ContextElement {
@@ -179,6 +177,7 @@ fn encrypt_blob(
 
 struct GetKeyArgs<'server> {
     server: &'server str,
+    proxy: Option<Url>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
@@ -189,10 +188,11 @@ struct GetKeyArgs<'server> {
     negotiate_config: NegotiateConfig,
 }
 
-#[instrument(level = "trace", ret)]
-fn get_key(
+#[instrument(level = "trace", err)]
+async fn get_key<T: Transport>(
     GetKeyArgs {
         server,
+        proxy,
         target_sd,
         root_key_id,
         l0,
@@ -201,11 +201,14 @@ fn get_key(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs,
+    }: GetKeyArgs<'_>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<GroupKeyEnvelope> {
+    let mut connection_options = ConnectionOptions::new(server, proxy)?;
+
     let isd_key_port = {
-        let mut rpc = RpcClient::connect(
-            (server, DEFAULT_RPC_PORT),
+        let mut rpc = RpcClient::<T>::connect(
+            &connection_options,
             AuthProvider::new(
                 SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
                 Credentials::AuthIdentity(AuthIdentity {
@@ -214,40 +217,44 @@ fn get_key(
                 }),
                 server,
             )?,
-        )?;
+        )
+        .await?;
 
         info!("RPC connection has been established.");
 
         let epm_contexts = get_epm_contexts();
         let context_id = epm_contexts[0].context_id;
-        let bind_ack = rpc.bind(&epm_contexts)?;
+        let bind_ack = rpc.bind(&epm_contexts).await?;
 
         info!("RPC bind/bind_ack finished successfully.");
 
         process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
         let ept_map = get_ept_map_isd_key();
-        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?)?;
+        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
         process_ept_map_result(&response.try_into_response()?)?
     };
 
     info!(isd_key_port);
 
-    let mut rpc = RpcClient::connect(
-        (server, isd_key_port),
+    connection_options.set_destination_port(isd_key_port);
+
+    let mut rpc = RpcClient::<T>::connect(
+        &connection_options,
         AuthProvider::new(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
         )?,
-    )?;
+    )
+    .await?;
 
     info!("RPC connection has been established.");
 
     let isd_key_contexts = get_isd_key_key_contexts();
     let context_id = isd_key_contexts[0].context_id;
-    let bind_ack = rpc.bind_authenticate(&isd_key_contexts)?;
+    let bind_ack = rpc.bind_authenticate(&isd_key_contexts, network_client).await?;
 
     info!("RPC bind/bind_ack finished successfully.");
 
@@ -261,12 +268,14 @@ fn get_key(
         l2_key_id: l2,
     };
 
-    let response_pdu = rpc.authenticated_request(
-        context_id,
-        GetKey::OPNUM,
-        get_key.encode_vec()?,
-        Some(get_verification_trailer()),
-    )?;
+    let response_pdu = rpc
+        .authenticated_request(
+            context_id,
+            GetKey::OPNUM,
+            get_key.encode_vec()?,
+            Some(get_verification_trailer()),
+        )
+        .await?;
     let security_trailer = response_pdu.security_trailer.clone();
 
     info!("RPC GetKey Request finished successfully!");
@@ -302,34 +311,62 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
 #[instrument(err)]
-pub fn n_crypt_unprotect_secret(
+pub async fn n_crypt_unprotect_secret<T: Transport>(
     blob: &[u8],
     server: &str,
+    proxy: Option<String>,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
     let username = Username::parse(username)
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
+    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
-    let root_key = get_key(GetKeyArgs {
-        server,
-        target_sd,
-        root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
-        l0: dpapi_blob.key_identifier.l0,
-        l1: dpapi_blob.key_identifier.l1,
-        l2: dpapi_blob.key_identifier.l2,
-        username,
-        password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
-    })?;
+    let root_key = Box::pin(get_key::<T>(
+        GetKeyArgs {
+            server,
+            proxy,
+            target_sd,
+            root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
+            l0: dpapi_blob.key_identifier.l0,
+            l1: dpapi_blob.key_identifier.l1,
+            l2: dpapi_blob.key_identifier.l2,
+            username,
+            password,
+            negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        },
+        network_client,
+    ))
+    .await?;
 
     info!("Successfully requested root key.");
 
     Ok(decrypt_blob(&dpapi_blob, &root_key)?.into())
+}
+
+/// Arguments for `n_crypt_protect_secret` function.
+pub struct CryptProtectSecretArgs<'server, 'username> {
+    /// Secret to encrypt.
+    pub data: Secret<Vec<u8>>,
+    /// User's SID.
+    pub sid: String,
+    /// Root key id.
+    pub root_key_id: Option<Uuid>,
+    /// Target server hostname.
+    pub server: &'server str,
+    /// Websocket proxy address.
+    pub proxy: Option<String>,
+    /// Username to encrypt the DPAPI blob.
+    pub username: &'username str,
+    /// User's password.
+    pub password: Secret<String>,
+    /// Client's computer name.
+    pub client_computer_name: Option<String>,
 }
 
 /// Encrypts data to a specified protection descriptor.
@@ -341,15 +378,21 @@ pub fn n_crypt_unprotect_secret(
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
 #[instrument(ret)]
-pub fn n_crypt_protect_secret(
-    data: Secret<Vec<u8>>,
-    sid: String,
-    root_key_id: Option<Uuid>,
-    server: &str,
-    username: &str,
-    password: Secret<String>,
-    client_computer_name: Option<String>,
+pub async fn n_crypt_protect_secret<T: Transport>(
+    CryptProtectSecretArgs {
+        data,
+        sid,
+        root_key_id,
+        server,
+        proxy,
+        username,
+        password,
+        client_computer_name,
+    }: CryptProtectSecretArgs<'_, '_>,
+    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Vec<u8>> {
+    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
+
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;
@@ -360,17 +403,22 @@ pub fn n_crypt_protect_secret(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = get_key(GetKeyArgs {
-        server,
-        target_sd,
-        root_key_id,
-        l0,
-        l1,
-        l2,
-        username,
-        password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
-    })?;
+    let root_key = Box::pin(get_key::<T>(
+        GetKeyArgs {
+            server,
+            proxy,
+            target_sd,
+            root_key_id,
+            l0,
+            l1,
+            l2,
+            username,
+            password,
+            negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        },
+        network_client,
+    ))
+    .await?;
 
     info!("Successfully requested root key.");
 

@@ -1,14 +1,18 @@
 use dpapi_core::{DecodeError, EncodeError};
+use dpapi_transport::ConnectionOptionsError;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid {name} url: {url}")]
-    InvalidUrl {
-        name: &'static str,
-        url: String,
-        error: url::ParseError,
-    },
+    #[error("invalid URL `{url}`: {description}")]
+    InvalidUrl { url: Url, description: &'static str },
+
+    #[error("unsupported transport: {0}")]
+    UnsupportedTransport(String),
+
+    #[error(transparent)]
+    UrlParse(#[from] url::ParseError),
 
     #[error("{0}")]
     DecodeError(DecodeError),
@@ -43,8 +47,14 @@ pub enum Error {
     #[error(transparent)]
     Client(#[from] crate::client::ClientError),
 
+    #[error("HTTP request error: {0}")]
+    HttpRequest(String),
+
     #[error("IO error")]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    ConnectionUrlParse(#[from] ConnectionOptionsError),
 
     #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),
@@ -67,6 +77,9 @@ pub enum Error {
 
     #[error(transparent)]
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
+
+    #[error("transport connection error: {0}")]
+    TransportConnection(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
