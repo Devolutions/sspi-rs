@@ -667,12 +667,13 @@ impl arbitrary::Arbitrary<'_> for Pdu {
             _ => return Err(arbitrary::Error::IncorrectFormat),
         };
 
-        let encoded_len: u16 = data.size().try_into().map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        let encoded_len = data.size();
 
         let security_trailer = SecurityTrailer::arbitrary(u)?;
 
         let security_trailer = if security_trailer.auth_value.is_empty() {
-            header.frag_len = encoded_len + 16 /* PDU header */;
+            header.frag_len = u16::try_from(encoded_len + PduHeader::FIXED_PART_SIZE)
+                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
             header.auth_len = 0;
 
             None
@@ -683,7 +684,13 @@ impl arbitrary::Arbitrary<'_> for Pdu {
                 .try_into()
                 .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
-            header.frag_len = encoded_len + header.auth_len + 16 + 8 /* headers length */;
+            header.frag_len = u16::try_from(
+                encoded_len
+                    + usize::from(header.auth_len)
+                    + PduHeader::FIXED_PART_SIZE
+                    + SecurityTrailer::FIXED_PART_SIZE,
+            )
+            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
 
             Some(security_trailer)
         };
