@@ -152,11 +152,15 @@ impl NeedsContext for TcpFloor {
 
 impl DecodeWithContextOwned for TcpFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        ensure_size!(in: src, size: ctx);
+        if ctx != 0 {
+            return Err(DecodeError::invalid_field(
+                "TcpFloor",
+                "lhs len",
+                "lhs len is greater then 0",
+            ));
+        }
 
-        let _lhs = src.read_slice(ctx);
-
-        ensure_size!(in: src, size: 2);
+        ensure_size!(in: src, size: 2 /* rhs len */);
         let rhs_len = usize::from(src.read_u16());
 
         ensure_size!(in: src, size: rhs_len);
@@ -200,10 +204,15 @@ impl Encode for IpFloor {
 
 impl DecodeWithContextOwned for IpFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
+        if ctx != 0 {
+            return Err(DecodeError::invalid_field(
+                "IpFloor",
+                "lhs len",
+                "lhs len is greater then 0",
+            ));
+        }
 
-        let _lhs = src.read_slice(ctx);
-
+        ensure_size!(in: src, size: 2 /* rhs len */);
         let rhs_len = usize::from(src.read_u16());
 
         ensure_size!(in: src, size: rhs_len);
@@ -257,11 +266,17 @@ impl Encode for RpcConnectionOrientedFloor {
 
 impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
+        if ctx != 0 {
+            return Err(DecodeError::invalid_field(
+                "RpcConnectionOrientedFloor",
+                "lhs len",
+                "lhs len is greater then 0",
+            ));
+        }
 
-        let _lhs = src.read_slice(ctx);
-
+        ensure_size!(in: src, size: 2 /* rhs len */);
         let rhs_len = usize::from(src.read_u16());
+
         if rhs_len != 2 {
             Err(EpmError::InvalidFloorValue(
                 "invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes",
@@ -557,11 +572,6 @@ impl Encode for EptMap {
             encoded_tower_length + 2 /* tower amount */ + 4, /* encoded tower length */
         );
 
-        println!(
-            "pad: {padding_len}: {}",
-            encoded_tower_length + 2 /* tower amount */ + 4 /* encoded tower length */
-        );
-
         Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
     }
 }
@@ -618,7 +628,6 @@ impl DecodeOwned for EptMap {
             ) as DecodeResult<_>
         }?);
         read_padding(pad, src)?;
-        println!("padding: {pad}: {}", tower_length + 4);
 
         let entry_handle = EntryHandle::decode_owned(src)?;
         ensure_size!(in: src, size: 4);

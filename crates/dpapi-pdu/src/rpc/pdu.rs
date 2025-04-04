@@ -565,7 +565,9 @@ impl DecodeWithContextOwned for PduData {
             PacketType::AlterContextResponse => {
                 PduData::AlterContextResponse(AlterContextResponse::decode_owned(&mut buf)?)
             }
-            PacketType::Request => PduData::Request(Request::decode_with_context_owned(&mut buf, pdu_header)?),
+            PacketType::Request => {
+                PduData::Request(Request::decode_with_context_owned(&mut buf, pdu_header.packet_flags)?)
+            }
             PacketType::Response => PduData::Response(Response::decode_owned(&mut buf)?),
             PacketType::Fault => PduData::Fault(Fault::decode_owned(&mut buf)?),
             packet_type => return Err(PduError::PduNotSupported(packet_type).into()),
@@ -654,10 +656,8 @@ impl arbitrary::Arbitrary<'_> for Pdu {
                     if request.obj.is_none() {
                         request.obj = Some(u.arbitrary()?);
                     }
-                } else {
-                    if request.obj.is_some() {
-                        request.obj = None;
-                    }
+                } else if request.obj.is_some() {
+                    request.obj = None;
                 }
 
                 PduData::Request(request)
