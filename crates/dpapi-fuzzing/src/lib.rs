@@ -1,5 +1,7 @@
 pub mod generator;
 
+use std::fmt::Debug;
+
 use dpapi_core::{DecodeOwned, Encode, ReadCursor, WriteBuf};
 use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters, KeyIdentifier};
 use dpapi_pdu::rpc::{
@@ -60,7 +62,7 @@ pub fn structure_decoding(data: &[u8]) {
 
 fn decode<S>(data: &[u8])
 where
-    S: DecodeOwned + Encode,
+    S: DecodeOwned + Encode + Debug,
 {
     let mut reader = ReadCursor::new(data);
 
@@ -69,6 +71,7 @@ where
 
     match decoded {
         Ok(decoded) => {
+            println!("{:?}", decoded);
             assert_eq!(decoded.size(), bytes_read);
         }
         Err(_) => (),
