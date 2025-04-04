@@ -29,8 +29,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "structure_decoding"
-path = "fuzz_targets/structure_decoding.rs"
+name = "dpapi_decoding"
+path = "fuzz_targets/dpapi_decoding.rs"
 test = false
 doc = false
 bench = false

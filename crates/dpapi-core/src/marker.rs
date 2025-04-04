@@ -4,7 +4,7 @@ pub trait NeedsContext {
     type Context<'ctx>;
 }
 
-/// TODO
+/// Represents named PDU.
 pub trait StaticName {
     /// Static name of the PDU.
     const NAME: &'static str;

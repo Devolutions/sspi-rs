@@ -23,6 +23,8 @@ members = [
   "crates/dpapi-transport",
   "crates/dpapi-native-transport",
   "crates/dpapi-fuzzing",
+  "crates/dpapi-pdu",
+  "crates/dpapi-fuzzing",
 ]
 exclude = [
   "tools/wasm-testcompile",
