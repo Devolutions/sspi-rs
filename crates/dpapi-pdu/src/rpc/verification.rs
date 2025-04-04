@@ -213,6 +213,13 @@ impl CommandPContext {
         let interface_id = SyntaxId::decode_owned(&mut src)?;
         let transfer_syntax = SyntaxId::decode_owned(&mut src)?;
 
+        if !src.is_empty() {
+            Err(
+                DecodeError::invalid_field("CommandPContext", "value", "invalid value length")
+                    .with_source(CommandError::InvalidCommandBitmaskValueLength(value.len())),
+            )?;
+        }
+
         Ok(Self {
             flags,
             interface_id,
@@ -259,7 +266,7 @@ impl CommandHeader2 {
         let mut src = ReadCursor::new(value);
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE - 2 /* value length is already read */);
 
-        Ok(Self {
+        let command_header2 = Self {
             flags,
             packet_type: {
                 let packet_type = src.read_u8();
@@ -276,7 +283,16 @@ impl CommandHeader2 {
             call_id: src.read_u32(),
             context_id: src.read_u16(),
             opnum: src.read_u16(),
-        })
+        };
+
+        if !src.is_empty() {
+            Err(
+                DecodeError::invalid_field("CommandHeader2", "value", "invalid value length")
+                    .with_source(CommandError::InvalidCommandBitmaskValueLength(value.len())),
+            )?;
+        }
+
+        Ok(command_header2)
     }
 
     fn encode_value(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
@@ -330,14 +346,15 @@ impl arbitrary::Arbitrary<'_> for VerificationTrailer {
             }
         }
 
-        commands.last_mut().map(|command| {
+        if let Some(command) = commands.last_mut() {
             let mut flags = command.flags();
+
             if !flags.contains(CommandFlags::SecVtCommandEnd) {
                 flags.set(CommandFlags::SecVtCommandEnd, true);
 
                 command.set_flags(flags);
             }
-        });
+        }
 
         Ok(Self { commands })
     }

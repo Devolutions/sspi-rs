@@ -6,7 +6,7 @@ use dpapi_core::{
 };
 use uuid::Uuid;
 
-use crate::rpc::{PacketFlags, PduHeader};
+use crate::rpc::PacketFlags;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -55,18 +55,18 @@ impl Encode for Request {
 }
 
 impl NeedsContext for Request {
-    type Context<'ctx> = &'ctx PduHeader;
+    type Context<'ctx> = PacketFlags;
 }
 
 impl DecodeWithContextOwned for Request {
-    fn decode_with_context_owned(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> DecodeResult<Self> {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, flags: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),
             opnum: src.read_u16(),
-            obj: if pdu_header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
+            obj: if flags.contains(PacketFlags::PfcObjectUuid) {
                 Some(decode_uuid(src)?)
             } else {
                 None
