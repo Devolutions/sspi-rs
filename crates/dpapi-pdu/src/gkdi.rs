@@ -1,13 +1,13 @@
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::fmt;
+use core::{fmt, mem};
 
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, FixedPartSize, InvalidFieldErr,
-    ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size,
-    read_padding, write_padding,
+    OtherErr, ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid,
+    ensure_size, read_padding, write_padding,
 };
 use num_bigint_dig::BigUint;
 use thiserror::Error;
@@ -314,10 +314,19 @@ impl FfcdhParameters {
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
-fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) {
-    while buf.len() < key_length {
-        buf.insert(0, 0);
+fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
+    if buf.len() > key_length {
+        return Err(EncodeError::other("key", "key is bigger then specified key length"));
     }
+
+    let mut key = vec![0; key_length];
+
+    let start = key_length - buf.len();
+    key[start..].copy_from_slice(&buf);
+
+    mem::swap(&mut key, buf);
+
+    Ok(())
 }
 
 #[cfg(feature = "arbitrary")]
@@ -360,16 +369,16 @@ impl Encode for FfcdhParameters {
 
         let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
 
-        if key_len < (self.field_order.bits() + 7) / 8 || key_len < (self.generator.bits() + 7) / 8 {
+        if key_len < self.field_order.bits().div_ceil(8) || key_len < self.generator.bits().div_ceil(8) {
             return Err(EncodeError::invalid_field("FfcdhParameters", "key_length", "too small"));
         }
 
         let mut field_order = self.field_order.to_bytes_be();
-        pad_key_buffer(key_len, &mut field_order);
+        pad_key_buffer(key_len, &mut field_order)?;
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        pad_key_buffer(key_len, &mut generator);
+        pad_key_buffer(key_len, &mut generator)?;
         dst.write_slice(&generator);
 
         Ok(())
@@ -483,23 +492,23 @@ impl Encode for FfcdhKey {
 
         let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
 
-        if key_len < (self.field_order.bits() + 7) / 8
-            || key_len < (self.generator.bits() + 7) / 8
-            || key_len < (self.public_key.bits() + 7) / 8
+        if key_len < self.field_order.bits().div_ceil(8)
+            || key_len < self.generator.bits().div_ceil(8)
+            || key_len < self.public_key.bits().div_ceil(8)
         {
             return Err(EncodeError::invalid_field("FfcdhKey", "key_length", "too small"));
         }
 
         let mut field_order = self.field_order.to_bytes_be();
-        pad_key_buffer(key_len, &mut field_order);
+        pad_key_buffer(key_len, &mut field_order)?;
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        pad_key_buffer(key_len, &mut generator);
+        pad_key_buffer(key_len, &mut generator)?;
         dst.write_slice(&generator);
 
         let mut public_key = self.public_key.to_bytes_be();
-        pad_key_buffer(key_len, &mut public_key);
+        pad_key_buffer(key_len, &mut public_key)?;
         dst.write_slice(&public_key);
 
         Ok(())
@@ -637,16 +646,16 @@ impl Encode for EcdhKey {
 
         let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
 
-        if key_len < (self.x.bits() + 7) / 8 || key_len < (self.y.bits() + 7) / 8 {
+        if key_len < self.x.bits().div_ceil(8) || key_len < self.y.bits().div_ceil(8) {
             return Err(EncodeError::invalid_field("EcdhKey", "key_length", "too small"));
         }
 
         let mut x = self.x.to_bytes_be();
-        pad_key_buffer(key_len, &mut x);
+        pad_key_buffer(key_len, &mut x)?;
         dst.write_slice(&x);
 
         let mut y = self.y.to_bytes_be();
-        pad_key_buffer(key_len, &mut y);
+        pad_key_buffer(key_len, &mut y)?;
         dst.write_slice(&y);
 
         Ok(())

@@ -335,7 +335,7 @@ impl arbitrary::Arbitrary<'_> for VerificationTrailer {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         let mut commands = Vec::new();
 
-        for _ in 0..u.int_in_range(1..=16)? {
+        for _ in 0..u.arbitrary_len::<Command>()? {
             let command: Command = u.arbitrary()?;
             let flags = command.flags();
 
