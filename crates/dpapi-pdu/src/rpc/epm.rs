@@ -507,7 +507,7 @@ impl StaticName for EptMap {
 }
 
 impl FixedPartSize for EptMap {
-    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
+    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + Uuid::FIXED_PART_SIZE + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* floor length */;
 }
 
 impl Encode for EptMap {
@@ -552,7 +552,15 @@ impl Encode for EptMap {
 
     fn size(&self) -> usize {
         let encoded_tower_length = size_seq(&self.tower);
-        let padding_len = compute_padding(8, encoded_tower_length + 2 /* tower amount */ + 4);
+        let padding_len = compute_padding(
+            8,
+            encoded_tower_length + 2 /* tower amount */ + 4, /* encoded tower length */
+        );
+
+        println!(
+            "pad: {padding_len}: {}",
+            encoded_tower_length + 2 /* tower amount */ + 4 /* encoded tower length */
+        );
 
         Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
     }
@@ -576,20 +584,41 @@ impl DecodeOwned for EptMap {
         // Tower referent id 2
         src.read_u64();
 
-        let tower_length = src.read_u64();
+        let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
+        if tower_length < 2
+        /* floor length */
+        {
+            return Err(DecodeError::invalid_field(
+                "EptMap",
+                "tower length",
+                "tower length is too small",
+            ));
+        }
+        // encoded tower length
         src.read_u32();
 
+        let tower_start = src.pos();
+
         let floor_length = usize::from(src.read_u16());
+
         let tower = (0..floor_length)
             .map(|_| Floor::decode_owned(src))
             .collect::<DecodeResult<Vec<Floor>>>()?;
 
-        read_padding(
-            compute_padding(8, {
-                cast_length!("RptMap", "towers count", tower_length + 4) as DecodeResult<_>
-            }?),
-            src,
-        )?;
+        // invalid tower_length can lead to invalid padding and corrupted entry_handle and other fields.
+        if src.pos() - tower_start != tower_length {
+            return Err(DecodeError::invalid_field("EptMap", "tower length", "invalid value"));
+        }
+
+        let pad = compute_padding(8, {
+            cast_length!(
+                "RptMap",
+                "towers count",
+                tower_length + 4 /* encoded tower length */
+            ) as DecodeResult<_>
+        }?);
+        read_padding(pad, src)?;
+        println!("padding: {pad}: {}", tower_length + 4);
 
         let entry_handle = EntryHandle::decode_owned(src)?;
         ensure_size!(in: src, size: 4);
@@ -711,18 +740,42 @@ impl DecodeOwned for EptMapResult {
             .map(|_| {
                 ensure_size!(in: src, size: 8 /* tower length */ + 4 + 2 /* floor length */);
 
-                let tower_length = src.read_u64();
+                let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
+                if tower_length < 2
+                /* floor length */
+                {
+                    return Err(DecodeError::invalid_field(
+                        "EptMap",
+                        "tower length",
+                        "tower length is too small",
+                    ));
+                }
 
+                // encoded tower length
                 src.read_u32();
 
+                let tower_start = src.pos();
                 let floor_length = src.read_u16();
                 let tower = (0..floor_length)
                     .map(|_| Floor::decode_owned(src))
                     .collect::<DecodeResult<Vec<Floor>>>()?;
 
+                // invalid tower_length can lead to invalid padding and corrupted fields.
+                if src.pos() - tower_start != tower_length {
+                    return Err(DecodeError::invalid_field("EptMap", "tower length", "invalid value"));
+                }
+
                 read_padding(
                     compute_padding(4, {
-                        cast_length!("EptMapResult", "tower length", tower_length + 4) as DecodeResult<_>
+                        cast_length!(
+                            "EptMapResult",
+                            "tower length",
+                            tower_length.checked_add(4).ok_or(DecodeError::invalid_field(
+                                "EptMapResult",
+                                "tower length",
+                                "tower length is too big",
+                            ))?
+                        ) as DecodeResult<_>
                     }?),
                     src,
                 )?;
