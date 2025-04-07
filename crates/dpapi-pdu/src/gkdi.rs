@@ -332,18 +332,14 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhParameters {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let key_length = u.int_in_range(512..=2048)?;
+        let field_order = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let generator = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
 
-        let mut buf = vec![0; key_length];
-
-        u.fill_buffer(&mut buf)?;
-        let field_order = BigUint::from_bytes_be(&buf);
-
-        u.fill_buffer(&mut buf)?;
-        let generator = BigUint::from_bytes_be(&buf);
+        let bits = field_order.bits().max(generator.bits());
+        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
-            key_length: u32::try_from(key_length).unwrap(),
+            key_length,
             field_order,
             generator,
         })
@@ -456,21 +452,15 @@ impl FfcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let key_length = u.int_in_range(512..=2048)?;
+        let field_order = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let generator = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let public_key = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
 
-        let mut buf = vec![0; key_length];
-
-        u.fill_buffer(&mut buf)?;
-        let field_order = BigUint::from_bytes_be(&buf);
-
-        u.fill_buffer(&mut buf)?;
-        let generator = BigUint::from_bytes_be(&buf);
-
-        u.fill_buffer(&mut buf)?;
-        let public_key = BigUint::from_bytes_be(&buf);
+        let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
+        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
-            key_length: u32::try_from(key_length).unwrap(),
+            key_length,
             field_order,
             generator,
             public_key,
@@ -613,19 +603,15 @@ impl EcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for EcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let key_length = u.int_in_range(512..=2048)?;
+        let x = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let y = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
 
-        let mut buf = vec![0; key_length];
-
-        u.fill_buffer(&mut buf)?;
-        let x = BigUint::from_bytes_be(&buf);
-
-        u.fill_buffer(&mut buf)?;
-        let y = BigUint::from_bytes_be(&buf);
+        let bits = x.bits().max(y.bits());
+        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
             curve: u.arbitrary()?,
-            key_length: u32::try_from(key_length).unwrap(),
+            key_length,
             x,
             y,
         })
