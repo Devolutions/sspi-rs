@@ -322,7 +322,7 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
     let mut key = vec![0; key_length];
 
     let start = key_length - buf.len();
-    key[start..].copy_from_slice(&buf);
+    key[start..].copy_from_slice(buf);
 
     mem::swap(&mut key, buf);
 
@@ -330,16 +330,24 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
 }
 
 #[cfg(feature = "arbitrary")]
+fn check_if_data_valid_for_big_uint(data: Vec<u32>) -> arbitrary::Result<Vec<u32>> {
+    if data.is_empty() || data.last() == Some(&0) {
+        Err(arbitrary::Error::IncorrectFormat)
+    } else {
+        Ok(data)
+    }
+}
+
+#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhParameters {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
-        let generator = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
 
         let bits = field_order.bits().max(generator.bits());
-        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
-            key_length,
+            key_length: (bits as u32).div_ceil(8),
             field_order,
             generator,
         })
@@ -452,15 +460,14 @@ impl FfcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
-        let generator = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
-        let public_key = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let public_key = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
 
         let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
-        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
-            key_length,
+            key_length: (bits as u32).div_ceil(8),
             field_order,
             generator,
             public_key,
@@ -603,15 +610,14 @@ impl EcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for EcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let x = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
-        let y = BigUint::from_bytes_be(&u.arbitrary::<BigUint>()?.to_bytes_be());
+        let x = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let y = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
 
         let bits = x.bits().max(y.bits());
-        let key_length = if bits == 0 { 1 } else { (bits as u32).div_ceil(8) };
 
         Ok(Self {
             curve: u.arbitrary()?,
-            key_length,
+            key_length: (bits as u32).div_ceil(8),
             x,
             y,
         })
