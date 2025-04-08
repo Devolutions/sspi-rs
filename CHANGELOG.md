@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.4...sspi-v0.15.5)] - 2025-04-08
+
+### <!-- 7 -->Build
+
+- Bump the patch group across 1 directory with 2 updates (#411) ([3b02a72c51](https://github.com/Devolutions/sspi-rs/commit/3b02a72c5116445df9aa72cfc1d66072dfa71ef8)) 
+
+
+
 ## [[0.15.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.3...sspi-v0.15.4)] - 2025-03-24
 
 ### <!-- 7 -->Build
