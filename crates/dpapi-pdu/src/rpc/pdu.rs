@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FindLength, FixedPartSize,
-    InvalidFieldErr, NeedsContext, OtherErr, ReadCursor, StaticName, UnsupportedValueErr, WriteCursor, compute_padding,
+    InvalidFieldErr, NeedsContext, OtherErr, ReadCursor, UnsupportedValueErr, WriteCursor, compute_padding,
     ensure_size, read_padding, write_padding,
 };
 use num_derive::FromPrimitive;
@@ -82,7 +82,6 @@ impl From<PduError> for DecodeError {
 pub type PduResult<T> = core::result::Result<T, PduError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum IntRepr {
     BigEndian = 0,
@@ -97,7 +96,6 @@ impl IntRepr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum CharacterRepr {
     #[default]
@@ -112,7 +110,6 @@ impl CharacterRepr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum FloatingPointRepr {
     #[default]
@@ -129,7 +126,6 @@ impl FloatingPointRepr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum PacketType {
     Request = 0,
@@ -161,7 +157,6 @@ impl PacketType {
 
 bitflags::bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub struct PacketFlags: u8 {
         const None = 0x00;
         const PfcFirstFrag = 0x01;
@@ -177,15 +172,10 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct DataRepr {
     pub byte_order: IntRepr,
     pub character: CharacterRepr,
     pub floating_point: FloatingPointRepr,
-}
-
-impl StaticName for DataRepr {
-    const NAME: &'static str = "DataRepr";
 }
 
 impl FixedPartSize for DataRepr {
@@ -206,7 +196,7 @@ impl Encode for DataRepr {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "DataRepr"
     }
 
     fn size(&self) -> usize {
@@ -240,7 +230,6 @@ impl DecodeOwned for DataRepr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PduHeader {
     pub version: u8,
     pub version_minor: u8,
@@ -250,10 +239,6 @@ pub struct PduHeader {
     pub frag_len: u16,
     pub auth_len: u16,
     pub call_id: u32,
-}
-
-impl StaticName for PduHeader {
-    const NAME: &'static str = "PduHeader";
 }
 
 impl FixedPartSize for PduHeader {
@@ -277,7 +262,7 @@ impl Encode for PduHeader {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "PduHeader"
     }
 
     fn size(&self) -> usize {
@@ -309,7 +294,6 @@ impl DecodeOwned for PduHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum SecurityProvider {
     None = 0x00,
@@ -328,7 +312,6 @@ impl SecurityProvider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum AuthenticationLevel {
     Default = 0x00,
@@ -347,17 +330,12 @@ impl AuthenticationLevel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SecurityTrailer {
     pub security_type: SecurityProvider,
     pub level: AuthenticationLevel,
     pub pad_length: u8,
     pub context_id: u32,
     pub auth_value: Vec<u8>,
-}
-
-impl StaticName for SecurityTrailer {
-    const NAME: &'static str = "SecurityTrailer";
 }
 
 impl FixedPartSize for SecurityTrailer {
@@ -380,7 +358,7 @@ impl Encode for SecurityTrailer {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "SecurityTrailer"
     }
 
     fn size(&self) -> usize {
@@ -414,7 +392,6 @@ impl DecodeOwned for SecurityTrailer {
 
 bitflags::bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub struct FaultFlags: u8 {
         const None = 0x00;
         const ExtendedErrorPresent = 0x01;
@@ -422,7 +399,6 @@ bitflags::bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Fault {
     pub alloc_hint: u32,
     pub context_id: u16,
@@ -431,10 +407,6 @@ pub struct Fault {
     pub flags: FaultFlags,
     pub status: u32,
     pub stub_data: Vec<u8>,
-}
-
-impl StaticName for Fault {
-    const NAME: &'static str = "Fault PDU";
 }
 
 impl FixedPartSize for Fault {
@@ -458,7 +430,7 @@ impl Encode for Fault {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "Fault PDU"
     }
 
     fn size(&self) -> usize {
@@ -495,7 +467,6 @@ impl DecodeOwned for Fault {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum PduData {
     Bind(Bind),
     BindAck(BindAck),
@@ -531,10 +502,6 @@ impl PduData {
     }
 }
 
-impl StaticName for PduData {
-    const NAME: &'static str = "PduData";
-}
-
 impl NeedsContext for PduData {
     type Context<'ctx> = &'ctx PduHeader;
 }
@@ -557,30 +524,21 @@ impl DecodeWithContextOwned for PduData {
         ensure_size!(in: src, size: data_len);
         let mut buf = ReadCursor::new(src.read_slice(data_len));
 
-        let pdu_data = match pdu_header.packet_type {
-            PacketType::Bind => PduData::Bind(Bind::decode_owned(&mut buf)?),
-            PacketType::BindAck => PduData::BindAck(BindAck::decode_owned(&mut buf)?),
-            PacketType::BindNak => PduData::BindNak(BindNak::decode_owned(&mut buf)?),
-            PacketType::AlterContext => PduData::AlterContext(AlterContext::decode_owned(&mut buf)?),
-            PacketType::AlterContextResponse => {
-                PduData::AlterContextResponse(AlterContextResponse::decode_owned(&mut buf)?)
-            }
-            PacketType::Request => {
-                PduData::Request(Request::decode_with_context_owned(&mut buf, pdu_header.packet_flags)?)
-            }
-            PacketType::Response => PduData::Response(Response::decode_owned(&mut buf)?),
-            PacketType::Fault => PduData::Fault(Fault::decode_owned(&mut buf)?),
-            packet_type => return Err(PduError::PduNotSupported(packet_type).into()),
-        };
-
-        if !buf.is_empty() {
-            return Err(DecodeError::other(
-                "invalid PDU data",
-                "PDU header or PDU data is invalid: too much data to decode",
-            ));
+        match pdu_header.packet_type {
+            PacketType::Bind => Ok(PduData::Bind(Bind::decode_owned(&mut buf)?)),
+            PacketType::BindAck => Ok(PduData::BindAck(BindAck::decode_owned(&mut buf)?)),
+            PacketType::BindNak => Ok(PduData::BindNak(BindNak::decode_owned(&mut buf)?)),
+            PacketType::AlterContext => Ok(PduData::AlterContext(AlterContext::decode_owned(&mut buf)?)),
+            PacketType::AlterContextResponse => Ok(PduData::AlterContextResponse(AlterContextResponse::decode_owned(
+                &mut buf,
+            )?)),
+            PacketType::Request => Ok(PduData::Request(Request::decode_with_context_owned(
+                &mut buf, pdu_header,
+            )?)),
+            PacketType::Response => Ok(PduData::Response(Response::decode_owned(&mut buf)?)),
+            PacketType::Fault => Ok(PduData::Fault(Fault::decode_owned(&mut buf)?)),
+            packet_type => Err(PduError::PduNotSupported(packet_type))?,
         }
-
-        Ok(pdu_data)
     }
 }
 
@@ -601,7 +559,7 @@ impl Encode for PduData {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "PduData"
     }
 
     fn size(&self) -> usize {
@@ -638,75 +596,6 @@ impl Pdu {
     }
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary<'_> for Pdu {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let mut header = PduHeader::arbitrary(u)?;
-
-        let data = match header.packet_type {
-            PacketType::Bind => PduData::Bind(Bind::arbitrary(u)?),
-            PacketType::BindAck => PduData::BindAck(BindAck::arbitrary(u)?),
-            PacketType::BindNak => PduData::BindNak(BindNak::arbitrary(u)?),
-            PacketType::AlterContext => PduData::AlterContext(AlterContext::arbitrary(u)?),
-            PacketType::AlterContextResponse => PduData::AlterContextResponse(AlterContextResponse::arbitrary(u)?),
-            PacketType::Request => {
-                let mut request = Request::arbitrary(u)?;
-
-                if header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
-                    if request.obj.is_none() {
-                        request.obj = Some(u.arbitrary()?);
-                    }
-                } else if request.obj.is_some() {
-                    request.obj = None;
-                }
-
-                PduData::Request(request)
-            }
-            PacketType::Response => PduData::Response(Response::arbitrary(u)?),
-            PacketType::Fault => PduData::Fault(Fault::arbitrary(u)?),
-            _ => return Err(arbitrary::Error::IncorrectFormat),
-        };
-
-        let encoded_len = data.size();
-
-        let security_trailer = SecurityTrailer::arbitrary(u)?;
-
-        let security_trailer = if security_trailer.auth_value.is_empty() {
-            header.frag_len = u16::try_from(encoded_len + PduHeader::FIXED_PART_SIZE)
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-            header.auth_len = 0;
-
-            None
-        } else {
-            header.auth_len = security_trailer
-                .auth_value
-                .len()
-                .try_into()
-                .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-
-            header.frag_len = u16::try_from(
-                encoded_len
-                    + usize::from(header.auth_len)
-                    + PduHeader::FIXED_PART_SIZE
-                    + SecurityTrailer::FIXED_PART_SIZE,
-            )
-            .map_err(|_| arbitrary::Error::IncorrectFormat)?;
-
-            Some(security_trailer)
-        };
-
-        Ok(Self {
-            header,
-            data,
-            security_trailer,
-        })
-    }
-}
-
-impl StaticName for Pdu {
-    const NAME: &'static str = "PDU";
-}
-
 impl Encode for Pdu {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -722,7 +611,7 @@ impl Encode for Pdu {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "PDU"
     }
 
     fn size(&self) -> usize {

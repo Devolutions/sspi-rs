@@ -2,24 +2,19 @@ use alloc::vec::Vec;
 
 use dpapi_core::{
     DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize, NeedsContext, ReadCursor,
-    StaticName, WriteCursor, decode_uuid, encode_uuid, ensure_size,
+    WriteCursor, decode_uuid, encode_uuid, ensure_size,
 };
 use uuid::Uuid;
 
-use crate::rpc::PacketFlags;
+use crate::rpc::{PacketFlags, PduHeader};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Request {
     pub alloc_hint: u32,
     pub context_id: u16,
     pub opnum: u16,
     pub obj: Option<Uuid>,
     pub stub_data: Vec<u8>,
-}
-
-impl StaticName for Request {
-    const NAME: &'static str = "Request";
 }
 
 impl FixedPartSize for Request {
@@ -44,7 +39,7 @@ impl Encode for Request {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "Request"
     }
 
     fn size(&self) -> usize {
@@ -55,18 +50,18 @@ impl Encode for Request {
 }
 
 impl NeedsContext for Request {
-    type Context<'ctx> = PacketFlags;
+    type Context<'ctx> = &'ctx PduHeader;
 }
 
 impl DecodeWithContextOwned for Request {
-    fn decode_with_context_owned(src: &mut ReadCursor<'_>, flags: Self::Context<'_>) -> DecodeResult<Self> {
+    fn decode_with_context_owned(src: &mut ReadCursor<'_>, pdu_header: Self::Context<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {
             alloc_hint: src.read_u32(),
             context_id: src.read_u16(),
             opnum: src.read_u16(),
-            obj: if flags.contains(PacketFlags::PfcObjectUuid) {
+            obj: if pdu_header.packet_flags.contains(PacketFlags::PfcObjectUuid) {
                 Some(decode_uuid(src)?)
             } else {
                 None
@@ -77,16 +72,11 @@ impl DecodeWithContextOwned for Request {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Response {
     pub alloc_hint: u32,
     pub context_id: u16,
     pub cancel_count: u8,
     pub stub_data: Vec<u8>,
-}
-
-impl StaticName for Response {
-    const NAME: &'static str = "Response";
 }
 
 impl FixedPartSize for Response {
@@ -109,7 +99,7 @@ impl Encode for Response {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "Response"
     }
 
     fn size(&self) -> usize {

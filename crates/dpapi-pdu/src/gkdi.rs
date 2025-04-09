@@ -1,14 +1,13 @@
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
-use core::{fmt, mem};
+use core::fmt;
 
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, FixedPartSize, InvalidFieldErr,
-    OtherErr, ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid,
-    ensure_size, read_padding, write_padding,
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
+    WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size, read_padding,
+    write_padding,
 };
 use num_bigint_dig::BigUint;
 use thiserror::Error;
@@ -64,7 +63,6 @@ impl From<GkdiError> for DecodeError {
 /// This can be used to build the stub data for the GetKey RPC request.
 /// The syntax for this function is defined in []`MS-GKDI 3.1.4.1 GetKey (Opnum 0)`](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/4cac87a3-521e-4918-a272-240f8fabed39)
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GetKey {
     /// The the security descriptor for which the group key is being requested.
     pub target_sd: Vec<u8>,
@@ -83,10 +81,6 @@ pub struct GetKey {
 
 impl GetKey {
     pub const OPNUM: u16 = 0;
-}
-
-impl StaticName for GetKey {
-    const NAME: &'static str = "GetKey";
 }
 
 impl Encode for GetKey {
@@ -118,7 +112,7 @@ impl Encode for GetKey {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "GetKey"
     }
 
     fn size(&self) -> usize {
@@ -167,7 +161,6 @@ impl DecodeOwned for GetKey {
 /// It contains hash algorithms that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum HashAlg {
     Sha1,
     Sha256,
@@ -204,7 +197,6 @@ impl TryFrom<&str> for HashAlg {
 ///
 /// The following specifies the format and field descriptions for the key derivation function (KDF) parameters structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KdfParameters {
     pub hash_alg: HashAlg,
 }
@@ -214,12 +206,11 @@ impl KdfParameters {
     // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/9946aeff-a914-45e9-b9e5-6cb5b4059187
     const MAGIC_IDENTIFIER_1: &[u8] = &[0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
     const MAGIC_IDENTIFIER_2: &[u8] = &[0x00, 0x00, 0x00, 0x00];
-    const FIXED_PART_SIZE: usize =
-        Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len();
 }
 
-impl StaticName for KdfParameters {
-    const NAME: &'static str = "KdfParameters";
+impl KdfParameters {
+    const FIXED_PART_SIZE: usize =
+        Self::MAGIC_IDENTIFIER_1.len() + 4 /* encoded_hash_alg len */ + Self::MAGIC_IDENTIFIER_2.len();
 }
 
 impl Encode for KdfParameters {
@@ -237,7 +228,7 @@ impl Encode for KdfParameters {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "KdfParameters"
     }
 
     fn size(&self) -> usize {
@@ -315,50 +306,6 @@ impl FfcdhParameters {
     const FIXED_PART_SIZE: usize = 4 /* structure length */ + Self::MAGIC.len() + 4 /* key length */;
 }
 
-fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
-    if buf.len() > key_length {
-        return Err(EncodeError::other("key", "key is bigger then specified key length"));
-    }
-
-    let mut key = vec![0; key_length];
-
-    let start = key_length - buf.len();
-    key[start..].copy_from_slice(buf);
-
-    mem::swap(&mut key, buf);
-
-    Ok(())
-}
-
-#[cfg(feature = "arbitrary")]
-fn check_if_data_valid_for_big_uint(data: Vec<u32>) -> arbitrary::Result<Vec<u32>> {
-    if data.is_empty() || data.last() == Some(&0) {
-        Err(arbitrary::Error::IncorrectFormat)
-    } else {
-        Ok(data)
-    }
-}
-
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary<'_> for FfcdhParameters {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-
-        let bits = field_order.bits().max(generator.bits());
-
-        Ok(Self {
-            key_length: (bits as u32).div_ceil(8),
-            field_order,
-            generator,
-        })
-    }
-}
-
-impl StaticName for FfcdhParameters {
-    const NAME: &'static str = "FfcdhParameters";
-}
-
 impl Encode for FfcdhParameters {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -374,23 +321,19 @@ impl Encode for FfcdhParameters {
 
         let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
 
-        if key_len < self.field_order.bits().div_ceil(8) || key_len < self.generator.bits().div_ceil(8) {
-            return Err(EncodeError::invalid_field("FfcdhParameters", "key_length", "too small"));
-        }
-
         let mut field_order = self.field_order.to_bytes_be();
-        pad_key_buffer(key_len, &mut field_order)?;
+        field_order.resize(key_len, 0);
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        pad_key_buffer(key_len, &mut generator)?;
+        generator.resize(key_len, 0);
         dst.write_slice(&generator);
 
         Ok(())
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "FfcdhParameters"
     }
 
     fn size(&self) -> usize {
@@ -458,28 +401,6 @@ impl FfcdhKey {
     const FIXED_PART_SIZE: usize = Self::MAGIC.len() + 4 /* key length */;
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary<'_> for FfcdhKey {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let public_key = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-
-        let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
-
-        Ok(Self {
-            key_length: (bits as u32).div_ceil(8),
-            field_order,
-            generator,
-            public_key,
-        })
-    }
-}
-
-impl StaticName for FfcdhKey {
-    const NAME: &'static str = "FfcdhKey";
-}
-
 impl Encode for FfcdhKey {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -490,30 +411,23 @@ impl Encode for FfcdhKey {
 
         let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
 
-        if key_len < self.field_order.bits().div_ceil(8)
-            || key_len < self.generator.bits().div_ceil(8)
-            || key_len < self.public_key.bits().div_ceil(8)
-        {
-            return Err(EncodeError::invalid_field("FfcdhKey", "key_length", "too small"));
-        }
-
         let mut field_order = self.field_order.to_bytes_be();
-        pad_key_buffer(key_len, &mut field_order)?;
+        field_order.resize(key_len, 0);
         dst.write_slice(&field_order);
 
         let mut generator = self.generator.to_bytes_be();
-        pad_key_buffer(key_len, &mut generator)?;
+        generator.resize(key_len, 0);
         dst.write_slice(&generator);
 
         let mut public_key = self.public_key.to_bytes_be();
-        pad_key_buffer(key_len, &mut public_key)?;
+        public_key.resize(key_len, 0);
         dst.write_slice(&public_key);
 
         Ok(())
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "FfcdhKey"
     }
 
     fn size(&self) -> usize {
@@ -554,7 +468,6 @@ impl DecodeOwned for FfcdhKey {
 /// It contains elliptic curves that are listed in the documentation:
 /// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gkdi/24876a37-9a92-4187-9052-222bb6f85d4a
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum EllipticCurve {
     P256,
     P384,
@@ -608,27 +521,6 @@ impl EcdhKey {
     const FIXED_PART_SIZE: usize = 4 /* encoded_curve len */ + 4 /* key_length */;
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary<'_> for EcdhKey {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let x = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let y = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-
-        let bits = x.bits().max(y.bits());
-
-        Ok(Self {
-            curve: u.arbitrary()?,
-            key_length: (bits as u32).div_ceil(8),
-            x,
-            y,
-        })
-    }
-}
-
-impl StaticName for EcdhKey {
-    const NAME: &'static str = "EcdhKey";
-}
-
 impl Encode for EcdhKey {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -639,23 +531,19 @@ impl Encode for EcdhKey {
 
         let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
 
-        if key_len < self.x.bits().div_ceil(8) || key_len < self.y.bits().div_ceil(8) {
-            return Err(EncodeError::invalid_field("EcdhKey", "key_length", "too small"));
-        }
-
         let mut x = self.x.to_bytes_be();
-        pad_key_buffer(key_len, &mut x)?;
+        x.resize(key_len, 0);
         dst.write_slice(&x);
 
         let mut y = self.y.to_bytes_be();
-        pad_key_buffer(key_len, &mut y)?;
+        y.resize(key_len, 0);
         dst.write_slice(&y);
 
         Ok(())
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "EcshKey"
     }
 
     fn size(&self) -> usize {
@@ -689,7 +577,6 @@ impl DecodeOwned for EcdhKey {
 /// This contains the key identifier info that can be used by MS-GKDI GetKey to retrieve the group key seed values.
 /// This structure is not defined publicly by Microsoft but it closely matches the [GroupKeyEnvelope] structure.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyIdentifier {
     /// The version of the structure.
     pub version: u32,
@@ -726,10 +613,6 @@ impl KeyIdentifier {
     }
 }
 
-impl StaticName for KeyIdentifier {
-    const NAME: &'static str = "KeyIdentifier";
-}
-
 impl Encode for KeyIdentifier {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -764,7 +647,7 @@ impl Encode for KeyIdentifier {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "KeyIndentifier"
     }
 
     fn size(&self) -> usize {
@@ -800,8 +683,8 @@ impl DecodeOwned for KeyIdentifier {
 
         let key_info_len = { cast_int!("KeyIdentifier", "key info len", src.read_u32()) as DecodeResult<_> }?;
 
-        let domain_len = { cast_int!("KeyIdentifier", "domain name len", src.read_u32()) as DecodeResult<_> }?;
-        if domain_len < 2 {
+        let domain_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
+        if domain_len <= 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier domain name",
                 expected: 2,
@@ -810,7 +693,7 @@ impl DecodeOwned for KeyIdentifier {
         }
 
         let forest_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
-        if forest_len < 2 {
+        if forest_len <= 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier forest name",
                 expected: 2,
@@ -839,7 +722,6 @@ impl DecodeOwned for KeyIdentifier {
 ///
 /// The following specifies the format and field descriptions for the Group Key Envelope structure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GroupKeyEnvelope {
     /// A 32-bit unsigned integer. Bit 31 (LSB) MUST be set to 1 when this structure is being used to
     /// transport a public key, otherwise set to 0. Bit 30 MUST be set to 1 when the key being transported
@@ -907,10 +789,6 @@ impl GroupKeyEnvelope {
     }
 }
 
-impl StaticName for GroupKeyEnvelope {
-    const NAME: &'static str = "GroupKeyEnvelope";
-}
-
 impl Encode for GroupKeyEnvelope {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
@@ -953,7 +831,7 @@ impl Encode for GroupKeyEnvelope {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "GroupKeyEnvelope"
     }
 
     fn size(&self) -> usize {

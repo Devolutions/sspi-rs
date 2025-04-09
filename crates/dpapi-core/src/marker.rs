@@ -3,9 +3,3 @@ pub trait NeedsContext {
     /// Required context.
     type Context<'ctx>;
 }
-
-/// Represents named PDU.
-pub trait StaticName {
-    /// Static name of the PDU.
-    const NAME: &'static str;
-}

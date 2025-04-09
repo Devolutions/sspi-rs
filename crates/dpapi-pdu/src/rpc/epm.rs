@@ -3,9 +3,8 @@ use alloc::{format, vec};
 
 use dpapi_core::{
     DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
-    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int,
-    cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
-    write_padding,
+    InvalidFieldErr, NeedsContext, ReadCursor, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int, cast_length,
+    compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq, write_padding,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -127,7 +126,6 @@ impl Encode for BaseFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TcpFloor {
     pub port: u16,
 }
@@ -152,15 +150,11 @@ impl NeedsContext for TcpFloor {
 
 impl DecodeWithContextOwned for TcpFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        if ctx != 0 {
-            return Err(DecodeError::invalid_field(
-                "TcpFloor",
-                "lhs len",
-                "lhs len is greater then 0",
-            ));
-        }
+        ensure_size!(in: src, size: ctx);
 
-        ensure_size!(in: src, size: 2 /* rhs len */);
+        let _lhs = src.read_slice(ctx);
+
+        ensure_size!(in: src, size: 2);
         let rhs_len = usize::from(src.read_u16());
 
         ensure_size!(in: src, size: rhs_len);
@@ -179,7 +173,6 @@ impl DecodeWithContextOwned for TcpFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct IpFloor {
     pub addr: u32,
 }
@@ -204,15 +197,10 @@ impl Encode for IpFloor {
 
 impl DecodeWithContextOwned for IpFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        if ctx != 0 {
-            return Err(DecodeError::invalid_field(
-                "IpFloor",
-                "lhs len",
-                "lhs len is greater then 0",
-            ));
-        }
+        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
-        ensure_size!(in: src, size: 2 /* rhs len */);
+        let _lhs = src.read_slice(ctx);
+
         let rhs_len = usize::from(src.read_u16());
 
         ensure_size!(in: src, size: rhs_len);
@@ -231,7 +219,6 @@ impl DecodeWithContextOwned for IpFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RpcConnectionOrientedFloor {
     pub version_minor: u16,
 }
@@ -266,17 +253,11 @@ impl Encode for RpcConnectionOrientedFloor {
 
 impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
     fn decode_with_context_owned(src: &mut ReadCursor<'_>, ctx: Self::Context<'_>) -> DecodeResult<Self> {
-        if ctx != 0 {
-            return Err(DecodeError::invalid_field(
-                "RpcConnectionOrientedFloor",
-                "lhs len",
-                "lhs len is greater then 0",
-            ));
-        }
+        ensure_size!(in: src, size: ctx + 2 /* rhs len */);
 
-        ensure_size!(in: src, size: 2 /* rhs len */);
+        let _lhs = src.read_slice(ctx);
+
         let rhs_len = usize::from(src.read_u16());
-
         if rhs_len != 2 {
             Err(EpmError::InvalidFloorValue(
                 "invalid RpcConnectionOrientedFloor rhs value length: expected exactly 2 bytes",
@@ -287,13 +268,12 @@ impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
         let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
-            version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
+            version_minor: u16::from_be_bytes(rhs.try_into().unwrap()),
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UuidFloor {
     pub uuid: Uuid,
     pub version: u16,
@@ -361,16 +341,11 @@ impl DecodeWithContextOwned for UuidFloor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Floor {
     Tcp(TcpFloor),
     Ip(IpFloor),
     RpcConnectionOriented(RpcConnectionOrientedFloor),
     Uuid(UuidFloor),
-}
-
-impl StaticName for Floor {
-    const NAME: &'static str = "Floor";
 }
 
 impl FixedPartSize for Floor {
@@ -388,7 +363,7 @@ impl Encode for Floor {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "Floor"
     }
 
     fn size(&self) -> usize {
@@ -405,11 +380,7 @@ impl DecodeOwned for Floor {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
-        let lhs_len = usize::from(src.read_u16().checked_sub(1).ok_or(DecodeError::invalid_field(
-            "Floor",
-            "lhs length",
-            "lhs length is less then 1",
-        ))?);
+        let lhs_len = usize::from(src.read_u16() - 1);
 
         let protocol_value = src.read_u8();
         let protocol = FloorProtocol::from_u8(protocol_value).ok_or(EpmError::InvalidFloorProtocol(protocol_value))?;
@@ -447,12 +418,7 @@ pub fn build_tcpip_tower(service: SyntaxId, data_rep: SyntaxId, port: u16, addr:
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EntryHandle(pub Option<(u32, Uuid)>);
-
-impl StaticName for EntryHandle {
-    const NAME: &'static str = "EntryHandle";
-}
 
 impl EntryHandle {
     const EMPTY_ENTRY_HANDLE: &[u8; 20] = &[0; 20];
@@ -477,7 +443,7 @@ impl Encode for EntryHandle {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "EntryHandle"
     }
 
     fn size(&self) -> usize {
@@ -503,7 +469,6 @@ impl DecodeOwned for EntryHandle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EptMap {
     pub obj: Option<Uuid>,
     pub tower: Tower,
@@ -517,12 +482,8 @@ impl EptMap {
     const TOWER_REFERENT_ID_2: &[u8] = &[0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
-impl StaticName for EptMap {
-    const NAME: &'static str = "EptMap";
-}
-
 impl FixedPartSize for EptMap {
-    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + Uuid::FIXED_PART_SIZE + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* floor length */;
+    const FIXED_PART_SIZE: usize = 8 /* obj with a referent id of 1 */ + 16 /* obj */ + 8 /* Tower referent id 2 */ + 8 /* encoded tower len */ + 4 /* encoded tower length */ + 2 /* tower amount */;
 }
 
 impl Encode for EptMap {
@@ -562,15 +523,12 @@ impl Encode for EptMap {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "EptMap"
     }
 
     fn size(&self) -> usize {
         let encoded_tower_length = size_seq(&self.tower);
-        let padding_len = compute_padding(
-            8,
-            encoded_tower_length + 2 /* tower amount */ + 4, /* encoded tower length */
-        );
+        let padding_len = compute_padding(8, encoded_tower_length + 2 /* tower amount */ + 4);
 
         Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
     }
@@ -594,40 +552,20 @@ impl DecodeOwned for EptMap {
         // Tower referent id 2
         src.read_u64();
 
-        let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
-        if tower_length < 2
-        /* floor length */
-        {
-            return Err(DecodeError::invalid_field(
-                "EptMap",
-                "tower length",
-                "tower length is too small",
-            ));
-        }
-        // encoded tower length
+        let tower_length = src.read_u64();
         src.read_u32();
 
-        let tower_start = src.pos();
-
         let floor_length = usize::from(src.read_u16());
-
         let tower = (0..floor_length)
             .map(|_| Floor::decode_owned(src))
             .collect::<DecodeResult<Vec<Floor>>>()?;
 
-        // invalid tower_length can lead to invalid padding and corrupted entry_handle and other fields.
-        if src.pos() - tower_start != tower_length {
-            return Err(DecodeError::invalid_field("EptMap", "tower length", "invalid value"));
-        }
-
-        let pad = compute_padding(8, {
-            cast_length!(
-                "RptMap",
-                "towers count",
-                tower_length + 4 /* encoded tower length */
-            ) as DecodeResult<_>
-        }?);
-        read_padding(pad, src)?;
+        read_padding(
+            compute_padding(8, {
+                cast_length!("RptMap", "towers count", tower_length + 4) as DecodeResult<_>
+            }?),
+            src,
+        )?;
 
         let entry_handle = EntryHandle::decode_owned(src)?;
         ensure_size!(in: src, size: 4);
@@ -643,15 +581,10 @@ impl DecodeOwned for EptMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EptMapResult {
     pub entry_handle: EntryHandle,
     pub towers: Vec<Tower>,
     pub status: u32,
-}
-
-impl StaticName for EptMapResult {
-    const NAME: &'static str = "EptMapResult";
 }
 
 impl FixedPartSize for EptMapResult {
@@ -707,7 +640,7 @@ impl Encode for EptMapResult {
     }
 
     fn name(&self) -> &'static str {
-        Self::NAME
+        "EptMapResult"
     }
 
     fn size(&self) -> usize {
@@ -734,12 +667,7 @@ impl DecodeOwned for EptMapResult {
         src.read_u64();
 
         let tower_count: usize = { cast_int!("EprMapResult", "tower count", src.read_u64()) as DecodeResult<_> }?;
-        ensure_size!(in: src, size: tower_count.checked_mul(8).ok_or(DecodeError::invalid_field(
-                "EptMapResult",
-                "tower count",
-                "tower count is too big",
-            ))?
-        );
+        ensure_size!(in: src, size: tower_count * 8);
         // Ignore referent ids
         for _ in 0..tower_count {
             src.read_u64();
@@ -749,42 +677,18 @@ impl DecodeOwned for EptMapResult {
             .map(|_| {
                 ensure_size!(in: src, size: 8 /* tower length */ + 4 + 2 /* floor length */);
 
-                let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
-                if tower_length < 2
-                /* floor length */
-                {
-                    return Err(DecodeError::invalid_field(
-                        "EptMap",
-                        "tower length",
-                        "tower length is too small",
-                    ));
-                }
+                let tower_length = src.read_u64();
 
-                // encoded tower length
                 src.read_u32();
 
-                let tower_start = src.pos();
                 let floor_length = src.read_u16();
                 let tower = (0..floor_length)
                     .map(|_| Floor::decode_owned(src))
                     .collect::<DecodeResult<Vec<Floor>>>()?;
 
-                // invalid tower_length can lead to invalid padding and corrupted fields.
-                if src.pos() - tower_start != tower_length {
-                    return Err(DecodeError::invalid_field("EptMap", "tower length", "invalid value"));
-                }
-
                 read_padding(
                     compute_padding(4, {
-                        cast_length!(
-                            "EptMapResult",
-                            "tower length",
-                            tower_length.checked_add(4).ok_or(DecodeError::invalid_field(
-                                "EptMapResult",
-                                "tower length",
-                                "tower length is too big",
-                            ))?
-                        ) as DecodeResult<_>
+                        cast_length!("EptMapResult", "tower length", tower_length + 4) as DecodeResult<_>
                     }?),
                     src,
                 )?;
