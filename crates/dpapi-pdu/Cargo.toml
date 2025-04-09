@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 std = []
+arbitrary = ["uuid/arbitrary", "num-bigint-dig/fuzz", "bitflags/arbitrary", "dep:arbitrary", "std"]
 
 [dependencies]
 dpapi-core = { workspace = true, features = ["alloc"] }
@@ -15,6 +16,7 @@ num-derive.workspace = true
 num-traits = { workspace = true, default-features = true }
 
 thiserror = { version = "2.0", default-features = false }
+arbitrary = {  version = "1", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 paste = "1.0"
