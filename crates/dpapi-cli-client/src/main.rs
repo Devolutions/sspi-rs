@@ -11,9 +11,11 @@ mod network_client;
 mod transport;
 
 use std::fs;
-use std::io::{stdin, stdout, Read, Result, Write};
+use std::io::{stdin, stdout, Error, ErrorKind, Read, Result, Write};
 
 use dpapi::CryptProtectSecretArgs;
+use dpapi_transport::ProxyOptions;
+use url::Url;
 
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 use crate::network_client::ReqwestNetworkClient;
@@ -31,6 +33,21 @@ async fn run(data: Dpapi) -> Result<()> {
         subcommand,
     } = data;
 
+    let proxy = proxy_address
+        .as_ref()
+        .map(|proxy| {
+            Result::Ok(ProxyOptions {
+                proxy: Url::parse(proxy).map_err(|err| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid proxy URL ({:?}): {:?}", proxy, err),
+                    )
+                })?,
+                get_session_token: &dpapi_ws::get_session_token,
+            })
+        })
+        .transpose()?;
+
     match subcommand {
         DpapiCmd::Encrypt(Encrypt { sid, secret }) => {
             let secret = if let Some(secret) = secret {
@@ -45,7 +62,7 @@ async fn run(data: Dpapi) -> Result<()> {
                     sid,
                     root_key_id: None,
                     server: &server,
-                    proxy: proxy_address,
+                    proxy,
                     username: &username,
                     password: password.into(),
                     client_computer_name: computer_name,
@@ -67,7 +84,7 @@ async fn run(data: Dpapi) -> Result<()> {
             let secret = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
                 &blob,
                 &server,
-                proxy_address,
+                proxy,
                 &username,
                 password.into(),
                 computer_name,

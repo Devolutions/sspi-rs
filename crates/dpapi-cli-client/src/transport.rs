@@ -1,8 +1,7 @@
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi_transport::{ConnectionOptions, LocalStream, Transport, WebAppAuth, DEFAULT_RPC_PORT};
-use dpapi_ws::prepare_ws_connection_url;
+use dpapi_transport::{ConnectOptions, GetSessionTokenFn, LocalStream, Transport, DEFAULT_RPC_PORT};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -68,20 +67,19 @@ pub struct NativeTransport;
 
 impl NativeTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
-    #[instrument(skip(web_app_auth), err)]
+    #[instrument(skip(get_session_token), err)]
     async fn ws_connect(
-        ws_request: Url,
-        web_app_auth: &WebAppAuth,
-        destination: &Url,
+        mut proxy: Url,
+        destination: Url,
+        get_session_token: GetSessionTokenFn<'_>,
     ) -> Result<TokioStream<ErasedReadWrite>, Error> {
-        let ws_request = prepare_ws_connection_url(ws_request, web_app_auth, destination).await?;
+        let session_token = get_session_token(proxy.clone(), destination).await?;
+        proxy.query_pairs_mut().append_pair("token", session_token.as_str());
 
-        let (ws, _) = tokio_tungstenite::connect_async(ws_request.as_str())
-            .await
-            .map_err(|err| {
-                error!(?err, "Failed to establish WS connection.");
-                Error::new(ErrorKind::Other, err)
-            })?;
+        let (ws, _) = tokio_tungstenite::connect_async(proxy.as_str()).await.map_err(|err| {
+            error!(?err, "Failed to establish WS connection.");
+            Error::new(ErrorKind::Other, err)
+        })?;
 
         {
             use futures_util::{future, SinkExt as _, StreamExt as _};
@@ -132,18 +130,18 @@ impl Transport for NativeTransport {
     type Stream = TokioStream<ErasedReadWrite>;
 
     #[instrument(skip(connection_options), err)]
-    async fn connect(connection_options: &ConnectionOptions) -> Result<Self::Stream, Error> {
+    async fn connect(connection_options: &ConnectOptions<'_>) -> Result<Self::Stream, Error> {
         match connection_options {
-            ConnectionOptions::Tcp(addr) => {
+            ConnectOptions::Tcp(addr) => {
                 let stream =
                     TokioStream::new(Box::new(TcpStream::connect(url_to_socket_addr(addr)?).await?) as ErasedReadWrite);
                 Ok(stream)
             }
-            ConnectionOptions::WsTunnel {
-                websocket_url,
-                web_app_auth,
+            ConnectOptions::WsTunnel {
+                proxy,
                 destination,
-            } => Self::ws_connect(websocket_url.clone(), web_app_auth, destination).await,
+                get_session_token,
+            } => Self::ws_connect(proxy.clone(), destination.clone(), get_session_token).await,
         }
     }
 }

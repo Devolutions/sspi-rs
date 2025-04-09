@@ -5,14 +5,13 @@ use dpapi_pdu::rpc::{
     ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
     VerificationTrailer, EPM,
 };
-use dpapi_transport::{ConnectionOptions, Transport};
+use dpapi_transport::{ConnectOptions, ProxyOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
-use url::Url;
 use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
@@ -175,9 +174,9 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs<'server> {
+struct GetKeyArgs<'server, 'proxy> {
     server: &'server str,
-    proxy: Option<Url>,
+    proxy: Option<ProxyOptions<'proxy>>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
@@ -188,7 +187,6 @@ struct GetKeyArgs<'server> {
     negotiate_config: NegotiateConfig,
 }
 
-#[instrument(level = "trace", err)]
 async fn get_key<T: Transport>(
     GetKeyArgs {
         server,
@@ -201,10 +199,10 @@ async fn get_key<T: Transport>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs<'_>,
+    }: GetKeyArgs<'_, '_>,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<GroupKeyEnvelope> {
-    let mut connection_options = ConnectionOptions::new(server, proxy)?;
+    let mut connection_options = ConnectOptions::new(server, proxy)?;
 
     let isd_key_port = {
         let mut rpc = RpcClient::<T>::connect(
@@ -310,11 +308,10 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
-#[instrument(err)]
 pub async fn n_crypt_unprotect_secret<T: Transport>(
     blob: &[u8],
     server: &str,
-    proxy: Option<String>,
+    proxy: Option<ProxyOptions<'_>>,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
@@ -325,7 +322,6 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     let username = Username::parse(username)
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
-    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
 
     let root_key = Box::pin(get_key::<T>(
         GetKeyArgs {
@@ -350,7 +346,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'server, 'username> {
+pub struct CryptProtectSecretArgs<'server, 'username, 'proxy> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -360,7 +356,7 @@ pub struct CryptProtectSecretArgs<'server, 'username> {
     /// Target server hostname.
     pub server: &'server str,
     /// Websocket proxy address.
-    pub proxy: Option<String>,
+    pub proxy: Option<ProxyOptions<'proxy>>,
     /// Username to encrypt the DPAPI blob.
     pub username: &'username str,
     /// User's password.
@@ -377,7 +373,6 @@ pub struct CryptProtectSecretArgs<'server, 'username> {
 ///
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
-#[instrument(ret)]
 pub async fn n_crypt_protect_secret<T: Transport>(
     CryptProtectSecretArgs {
         data,
@@ -388,11 +383,9 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         username,
         password,
         client_computer_name,
-    }: CryptProtectSecretArgs<'_, '_>,
+    }: CryptProtectSecretArgs<'_, '_, '_>,
     network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Vec<u8>> {
-    let proxy = proxy.map(|proxy| Url::parse(&proxy)).transpose()?;
-
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;

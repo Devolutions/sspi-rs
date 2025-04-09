@@ -1,6 +1,5 @@
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Result};
 
-use dpapi_transport::WebAppAuth;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -69,11 +68,10 @@ pub struct GatewayClient {
 }
 
 impl GatewayClient {
-    const WEB_APP_TOKEN_LIFETIME: u64 = 60 * 60 * 8;
     const SESSION_TOKEN_LIFETIME: u64 = 60 * 60;
 
     /// Creates a new [GatewayClient].
-    pub fn new(mut gateway_url: Url) -> Result<Self, Error> {
+    pub fn new(mut gateway_url: Url) -> Result<Self> {
         let http_scheme = match gateway_url.scheme() {
             "ws" => "http",
             "wss" => "https",
@@ -94,59 +92,20 @@ impl GatewayClient {
         })
     }
 
-    /// Requests a web token from a Devolutions Gateway.
-    #[instrument(level = "trace", skip(self), err)]
-    pub async fn request_web_app_token(&self, web_app_auth: &WebAppAuth) -> Result<String, Error> {
-        let url = self
-            .gateway_url
-            .clone()
-            .join("jet/webapp/app-token")
-            .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
-
-        let mut request_builder = self.client.post(url);
-
-        if let WebAppAuth::Custom { username, password } = web_app_auth {
-            request_builder = request_builder.basic_auth(username, Some(password));
-        }
-
-        let username = if let WebAppAuth::Custom { username, .. } = web_app_auth {
-            username.to_owned()
-        } else {
-            "DPAPI client".to_owned()
-        };
-
-        let token = request_builder
-            .json(&AppTokenSignRequest {
-                content_type: AppTokenContentType::WebApp,
-                subject: username,
-                lifetime: Some(Self::WEB_APP_TOKEN_LIFETIME),
-            })
-            .send()
-            .await
-            .map_err(|err| Error::new(ErrorKind::Other, err))?
-            .error_for_status()
-            .map_err(|err| Error::new(ErrorKind::Other, err))?
-            .text()
-            .await
-            .map_err(|err| Error::new(ErrorKind::Other, err))?;
-
-        Ok(token)
-    }
-
     /// Requests a session token from a Devolutions Gateway.
     #[instrument(level = "trace", skip(self), err)]
     pub async fn request_session_token(
         &self,
         destination: &str,
-        web_app_token: &str,
+        webapp_token: &str,
         session_id: Uuid,
-    ) -> Result<String, Error> {
+    ) -> Result<String> {
         let mut url = self
             .gateway_url
             .clone()
             .join("jet/webapp/session-token")
             .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
-        url.query_pairs_mut().append_pair("token", web_app_token);
+        url.query_pairs_mut().append_pair("token", webapp_token);
 
         let token = self
             .client

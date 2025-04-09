@@ -1,5 +1,10 @@
+use std::pin::Pin;
+
 use thiserror::Error;
 use url::Url;
+
+/// TODD
+pub type GetSessionTokenFn<'a> = &'a dyn Fn(Url, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
 
 /// Default port for RPC communication.
 pub const DEFAULT_RPC_PORT: u16 = 135;
@@ -22,49 +27,39 @@ pub enum Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Authentication data.
-#[derive(Debug, PartialEq)]
-pub enum WebAppAuth {
-    /// Password based authentication.
-    Custom {
-        /// Name of the user for proxy authentication.
-        username: String,
-        /// User's password.
-        password: String,
-    },
-
-    /// No authentication data is needed.
-    None,
-}
-
 /// Target server connection options.
-#[derive(Debug, PartialEq)]
-pub enum ConnectionOptions {
+pub enum ConnectOptions<'a> {
     /// Regular TCP connection. Contains target RPC server address.
     Tcp(Url),
 
     /// Tunneled connection via Devolutions Gateway using a WebSocket.
     WsTunnel {
         /// Devolutions Gateway address.
-        websocket_url: Url,
-
-        /// Authentication data.
-        web_app_auth: WebAppAuth,
-
+        proxy: Url,
         /// Target RPC server address.
         destination: Url,
+        /// Callback for obtaining proxy session token.
+        get_session_token: GetSessionTokenFn<'a>,
     },
 }
 
-impl ConnectionOptions {
-    /// Constructs a new [ConnectionOptions] object.
+/// Proxy connection options.
+pub struct ProxyOptions<'a> {
+    /// Devolutions Gateway address.
+    pub proxy: Url,
+    /// Callback for obtaining proxy session token.
+    pub get_session_token: GetSessionTokenFn<'a>,
+}
+
+impl<'a> ConnectOptions<'a> {
+    /// Constructs a new [ConnectOptions] object.
     ///
     /// Parameters:
     /// * `destination` - target RPC server URL.
     /// * `proxy` - optional Devilution Gateway URl.
     ///
     /// Returns an error if the provided URLs are not valid.
-    pub fn new(destination: &str, proxy: Option<Url>) -> Result<Self> {
+    pub fn new(destination: &str, proxy_options: Option<ProxyOptions<'a>>) -> Result<Self> {
         let mut destination = Url::parse(&if destination.contains("://") {
             destination.to_owned()
         } else {
@@ -80,7 +75,11 @@ impl ConnectionOptions {
                 .expect("URL isn't `cannot-be-a-base`, so it should not fail");
         }
 
-        if let Some(mut proxy) = proxy {
+        if let Some(ProxyOptions {
+            proxy,
+            get_session_token,
+        }) = proxy_options
+        {
             match (proxy.scheme(), destination.scheme()) {
                 (WS_SCHEME | WSS_SCHEME, TCP_SCHEME) => (),
                 _ => {
@@ -90,27 +89,10 @@ impl ConnectionOptions {
                 }
             }
 
-            let web_app_auth = match proxy.username() {
-                "" => WebAppAuth::None,
-                username => {
-                    let username = username.to_owned();
-                    let password = proxy.password().unwrap_or_default().to_owned();
-
-                    proxy
-                        .set_username("")
-                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-                    proxy
-                        .set_password(None)
-                        .expect("URL isn't `cannot-be-a-base`, so it should not fail");
-
-                    WebAppAuth::Custom { username, password }
-                }
-            };
-
-            Ok(ConnectionOptions::WsTunnel {
-                websocket_url: proxy,
-                web_app_auth,
+            Ok(ConnectOptions::WsTunnel {
+                proxy,
                 destination,
+                get_session_token,
             })
         } else {
             if destination.scheme() != TCP_SCHEME {
@@ -119,7 +101,7 @@ impl ConnectionOptions {
                 ));
             }
 
-            Ok(ConnectionOptions::Tcp(destination))
+            Ok(ConnectOptions::Tcp(destination))
         }
     }
 

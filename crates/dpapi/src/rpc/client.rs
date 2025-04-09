@@ -3,7 +3,7 @@ use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_transport::{ConnectionOptions, LocalStream, Transport};
+use dpapi_transport::{ConnectOptions, LocalStream, Transport};
 use sspi::AsyncNetworkClient;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
@@ -67,7 +67,7 @@ impl<T: Transport> RpcClient<T> {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub async fn connect(connection_options: &ConnectionOptions, auth: AuthProvider) -> Result<Self> {
+    pub async fn connect(connection_options: &ConnectOptions<'_>, auth: AuthProvider) -> Result<Self> {
         let stream = T::connect(connection_options).await?;
 
         Ok(Self {
