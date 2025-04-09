@@ -1,21 +1,52 @@
+#![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
+#![warn(clippy::large_futures)]
+
+#[macro_use]
+extern crate tracing;
+
 mod cli;
 mod logging;
+mod network_client;
+mod transport;
 
 use std::fs;
-use std::io::{stdin, stdout, Read, Result, Write};
+use std::io::{stdin, stdout, Error, ErrorKind, Read, Result, Write};
+
+use dpapi::CryptProtectSecretArgs;
+use dpapi_transport::ProxyOptions;
+use url::Url;
 
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
+use crate::network_client::ReqwestNetworkClient;
+use crate::transport::NativeTransport;
 
-fn run(data: Dpapi) -> Result<()> {
+async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
 
     let Dpapi {
         server,
+        proxy_address,
         username,
         password,
         computer_name,
         subcommand,
     } = data;
+
+    let proxy = proxy_address
+        .as_ref()
+        .map(|proxy| {
+            Result::Ok(ProxyOptions {
+                proxy: Url::parse(proxy).map_err(|err| {
+                    Error::new(
+                        ErrorKind::InvalidData,
+                        format!("invalid proxy URL ({:?}): {:?}", proxy, err),
+                    )
+                })?,
+                get_session_token: &dpapi_dg::get_session_token,
+            })
+        })
+        .transpose()?;
 
     match subcommand {
         DpapiCmd::Encrypt(Encrypt { sid, secret }) => {
@@ -25,15 +56,20 @@ fn run(data: Dpapi) -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let blob = dpapi::n_crypt_protect_secret(
-                secret.into(),
-                sid,
-                None,
-                &server,
-                &username,
-                password.into(),
-                computer_name,
-            )
+            let blob = Box::pin(dpapi::n_crypt_protect_secret::<NativeTransport>(
+                CryptProtectSecretArgs {
+                    data: secret.into(),
+                    sid,
+                    root_key_id: None,
+                    server: &server,
+                    proxy,
+                    username: &username,
+                    password: password.into(),
+                    client_computer_name: computer_name,
+                },
+                &mut ReqwestNetworkClient::new(),
+            ))
+            .await
             .unwrap();
 
             stdout().write_all(&blob)?;
@@ -45,8 +81,17 @@ fn run(data: Dpapi) -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let secret =
-                dpapi::n_crypt_unprotect_secret(&blob, &server, &username, password.into(), computer_name).unwrap();
+            let secret = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
+                &blob,
+                &server,
+                proxy,
+                &username,
+                password.into(),
+                computer_name,
+                &mut ReqwestNetworkClient::new(),
+            ))
+            .await
+            .unwrap();
 
             stdout().write_all(secret.as_ref())?;
         }
@@ -55,9 +100,10 @@ fn run(data: Dpapi) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     match Dpapi::from_env() {
-        Ok(flags) => run(flags),
+        Ok(flags) => run(flags).await,
         Err(err) => err.exit(),
     }
 }
