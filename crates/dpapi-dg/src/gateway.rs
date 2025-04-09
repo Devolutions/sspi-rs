@@ -72,19 +72,18 @@ impl GatewayClient {
 
     /// Creates a new [GatewayClient].
     pub fn new(mut gateway_url: Url) -> Result<Self> {
-        let http_scheme = match gateway_url.scheme() {
-            "ws" => "http",
-            "wss" => "https",
+        match gateway_url.scheme() {
+            "ws" => gateway_url.set_scheme("http"),
+            "wss" => gateway_url.set_scheme("https"),
+            "http" | "https" => Ok(()),
             scheme => {
                 return Err(Error::new(
                     ErrorKind::InvalidInput,
                     format!("invalid proxy URL scheme: {scheme}"),
                 ));
             }
-        };
-        gateway_url
-            .set_scheme(http_scheme)
-            .map_err(|()| Error::new(ErrorKind::InvalidInput, "failed to set HTTP scheme for proxy URL"))?;
+        }
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "failed to set HTTP scheme for proxy URL"))?;
 
         Ok(Self {
             client: Client::new(),
@@ -120,12 +119,12 @@ impl GatewayClient {
             })
             .send()
             .await
-            .map_err(|err| Error::new(ErrorKind::Other, err))?
+            .map_err(|err| Error::other(err))?
             .error_for_status()
-            .map_err(|err| Error::new(ErrorKind::Other, err))?
+            .map_err(|err| Error::other(err))?
             .text()
             .await
-            .map_err(|err| Error::new(ErrorKind::Other, err))?;
+            .map_err(|err| Error::other(err))?;
 
         Ok(token)
     }

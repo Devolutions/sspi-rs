@@ -13,7 +13,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 transport = { git = "https://github.com/Devolutions/devolutions-gateway.git", rev = "4fd9c22" }
 
 dpapi.workspace = true
-dpapi-ws.workspace = true
+dpapi-dg.workspace = true
 dpapi-transport.workspace = true
 
 tracing.workspace = true

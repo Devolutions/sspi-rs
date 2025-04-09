@@ -16,8 +16,7 @@ use uuid::Uuid;
 
 use crate::gateway::GatewayClient;
 
-/// Authenticates to the proxy, obtains the needed session token, and returns
-/// WS connection URL with the session token included in.
+/// Obtains the needed session token from Devolutions-Gateway using standartalone route.
 ///
 /// Paramers:
 /// * `gatway_url` - proxy (Devolutions Gateway) address.

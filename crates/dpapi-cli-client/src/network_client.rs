@@ -37,17 +37,17 @@ impl ReqwestNetworkClient {
 
         let mut stream = TcpStream::connect(addr)
             .await
-            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
+            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, e))?;
 
         stream
             .write(data)
             .await
-            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
+            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, e))?;
 
         let len = stream
             .read_u32()
             .await
-            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
+            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, e))?;
 
         let mut buf = vec![0; len as usize + 4];
         buf[0..4].copy_from_slice(&(len.to_be_bytes()));
@@ -55,7 +55,7 @@ impl ReqwestNetworkClient {
         stream
             .read_exact(&mut buf[4..])
             .await
-            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{:?}", e)))?;
+            .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, e))?;
 
         Ok(buf)
     }
