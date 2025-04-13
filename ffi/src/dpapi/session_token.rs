@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
 use std::str;
 
 use dpapi_transport::GetSessionTokenFn;
@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use super::GetSessionTokenFn as CGetSessiontokenFn;
 
+/// This function wraps a C-function into a Rust closure which we can pass into the Rust API.
 pub fn session_token_fn(get_session_token: CGetSessiontokenFn) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
         Box::pin(async move {

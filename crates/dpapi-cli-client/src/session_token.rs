@@ -22,7 +22,7 @@ struct TokenResponse {
     token: String,
 }
 
-/// Obtains the needed session token from the [tokengen server](https://github.com/Devolutions/devolutions-gateway/tree/master/tools/tokengen).
+/// Obtains the session token from the [tokengen server](https://github.com/Devolutions/devolutions-gateway/tree/master/tools/tokengen).
 ///
 /// Paramers:
 /// * `session_id` - connection session id.

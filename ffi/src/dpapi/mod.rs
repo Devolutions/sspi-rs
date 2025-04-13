@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 #[macro_use]
 mod macros;
 mod api;
@@ -12,7 +10,6 @@ use dpapi::CryptProtectSecretArgs;
 use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid, LpDword};
-use sspi::Secret;
 use tokio::runtime::Builder;
 use url::Url;
 use uuid::Uuid;
@@ -25,6 +22,15 @@ const NTE_INVALID_PARAMETER: u32 = 0x80090027;
 const NTE_INTERNAL_ERROR: u32 = 0x8009002d;
 const NTE_NO_MEMORY: u32 = 0x8009000e;
 
+/// Type that represents a function for obtaining the sesion token.
+///
+/// We need it because we don't know the destination address in advance.
+///
+/// Parameters:
+/// * `LpCUuid` is the session id.
+/// * `LpCStr` is the destination of the proxied connection.
+/// * `Lpbyte` is the session token buffer. It must be prealocated.
+/// * `LpDword` is the session token buffer length.
 type GetSessionTokenFn = unsafe extern "system" fn(LpCUuid, LpCStr, LpByte, LpDword) -> u32;
 
 /// Encrypts the secret using the DPAPI.
