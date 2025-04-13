@@ -4,7 +4,6 @@ use dpapi_pdu::rpc::{
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
 use dpapi_transport::{ConnectOptions, LocalStream, Transport};
-use sspi::AsyncNetworkClient;
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
@@ -67,7 +66,7 @@ impl<T: Transport> RpcClient<T> {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub async fn connect(connection_options: &ConnectOptions<'_>, auth: AuthProvider) -> Result<Self> {
+    pub async fn connect(connection_options: &ConnectOptions, auth: AuthProvider) -> Result<Self> {
         let stream = T::connect(connection_options).await?;
 
         Ok(Self {
@@ -350,22 +349,12 @@ impl<T: Transport> RpcClient<T> {
     ///
     /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
-    pub async fn bind_authenticate(
-        &mut self,
-        contexts: &[ContextElement],
-        network_client: &mut dyn AsyncNetworkClient,
-    ) -> Result<BindAck> {
+    pub async fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
         // We don't need its result in RPC authentication.
-        let _security_trailer = self
-            .auth
-            .initialize_security_context(Vec::new(), network_client)
-            .await?;
+        let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
 
-        let security_trailer = self
-            .auth
-            .initialize_security_context(Vec::new(), network_client)
-            .await?;
+        let security_trailer = self.auth.initialize_security_context(Vec::new())?;
         let bind = Self::create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
 
         self.sign_header = true;
@@ -383,10 +372,7 @@ impl<T: Transport> RpcClient<T> {
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
         loop {
-            let security_trailer = self
-                .auth
-                .initialize_security_context(in_token.unwrap_or_default(), network_client)
-                .await?;
+            let security_trailer = self.auth.initialize_security_context(in_token.unwrap_or_default())?;
 
             if self.auth.is_finished() {
                 break;

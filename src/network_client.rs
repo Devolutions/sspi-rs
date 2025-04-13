@@ -1,6 +1,4 @@
 use std::fmt::Debug;
-use std::future::Future;
-use std::pin::Pin;
 
 use crate::generator::NetworkRequest;
 use crate::Result;
@@ -33,13 +31,6 @@ pub trait NetworkClient: Send + Sync {
     /// `NetworkClient::is_protocol_supported` returned true prior to the call, so unsupported
     /// `protocol` values could be marked as `unreachable!`.
     fn send(&self, request: &NetworkRequest) -> Result<Vec<u8>>;
-}
-
-pub trait AsyncNetworkClient: Debug {
-    fn send<'a>(
-        &'a mut self,
-        network_request: &'a NetworkRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
 }
 
 #[cfg(feature = "network_client")]

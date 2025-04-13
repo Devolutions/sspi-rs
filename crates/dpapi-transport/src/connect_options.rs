@@ -5,7 +5,7 @@ use url::Url;
 use uuid::Uuid;
 
 /// TODO
-pub type GetSessionTokenFn<'a> = &'a dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
+pub type GetSessionTokenFn = dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
 
 /// Default port for RPC communication.
 pub const DEFAULT_RPC_PORT: u16 = 135;
@@ -29,7 +29,7 @@ pub enum Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Target server connection options.
-pub enum ConnectOptions<'a> {
+pub enum ConnectOptions {
     /// Regular TCP connection. Contains target RPC server address.
     Tcp(Url),
 
@@ -40,19 +40,19 @@ pub enum ConnectOptions<'a> {
         /// Target RPC server address.
         destination: Url,
         /// Callback for obtaining proxy session token.
-        get_session_token: GetSessionTokenFn<'a>,
+        get_session_token: Box<GetSessionTokenFn>,
     },
 }
 
 /// Proxy connection options.
-pub struct ProxyOptions<'a> {
+pub struct ProxyOptions {
     /// Devolutions Gateway address.
     pub proxy: Url,
     /// Callback for obtaining proxy session token.
-    pub get_session_token: GetSessionTokenFn<'a>,
+    pub get_session_token: Box<GetSessionTokenFn>,
 }
 
-impl<'a> ConnectOptions<'a> {
+impl ConnectOptions {
     /// Constructs a new [ConnectOptions] object.
     ///
     /// Parameters:
@@ -60,7 +60,7 @@ impl<'a> ConnectOptions<'a> {
     /// * `proxy` - optional Devilution Gateway URl.
     ///
     /// Returns an error if the provided URLs are not valid.
-    pub fn new(destination: &str, proxy_options: Option<ProxyOptions<'a>>) -> Result<Self> {
+    pub fn new(destination: &str, proxy_options: Option<ProxyOptions>) -> Result<Self> {
         let mut destination = Url::parse(&if destination.contains("://") {
             destination.to_owned()
         } else {

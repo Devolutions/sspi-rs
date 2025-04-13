@@ -23,7 +23,7 @@ struct TokenResponse {
 }
 
 /// Obtains the needed session token from Devolutions-Gateway using standartalone route.
-///
+/// TODO
 /// Paramers:
 /// * `destination` - target RPC server address.
 pub fn get_session_token(session_id: Uuid, destination: Url) -> Pin<Box<dyn Future<Output = Result<String>>>> {

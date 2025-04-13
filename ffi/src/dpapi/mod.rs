@@ -3,12 +3,18 @@
 #[macro_use]
 mod macros;
 mod api;
+mod session_token;
 
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid};
+use dpapi::CryptProtectSecretArgs;
+use dpapi_native_transport::NativeTransport;
+use dpapi_transport::ProxyOptions;
+use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid, LpDword};
 use sspi::Secret;
+use tokio::runtime::Builder;
+use url::Url;
 use uuid::Uuid;
 
 use self::api::{n_crypt_protect_secret, n_crypt_unprotect_secret};
@@ -18,6 +24,8 @@ const ERROR_SUCCESS: u32 = 0;
 const NTE_INVALID_PARAMETER: u32 = 0x80090027;
 const NTE_INTERNAL_ERROR: u32 = 0x8009002d;
 const NTE_NO_MEMORY: u32 = 0x8009000e;
+
+type GetSessionTokenFn = unsafe extern "system" fn(LpCUuid, LpCStr, LpByte, LpDword) -> u32;
 
 /// Encrypts the secret using the DPAPI.
 ///
@@ -56,6 +64,8 @@ pub unsafe extern "system" fn DpapiProtectSecret(
     username: LpCStr,
     password: LpCStr,
     computer_name: LpCStr,
+    proxy_url: LpCStr,
+    get_session_token_fn: Option<GetSessionTokenFn>,
     blob: *mut LpByte,
     blob_len: *mut Dword,
 ) -> u32 {
@@ -77,7 +87,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             NTE_INVALID_PARAMETER
         )
         .to_owned();
-        let root_key = if !root_key.is_null() {
+        let root_key_id = if !root_key.is_null() {
             // SAFETY: The `root_key` pointer is not NULL (checked above).
             let id = unsafe { *root_key };
             let root_key = Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4);
@@ -102,7 +112,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             NTE_INVALID_PARAMETER
         )
         .to_owned();
-        let computer_name = if !computer_name.is_null() {
+        let client_computer_name = if !computer_name.is_null() {
             Some(
                 try_execute!(
                     // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -115,18 +125,41 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             None
         };
 
-        // let blob_data = try_execute!(
-        //     n_crypt_protect_secret(
-        //         secret.into(),
-        //         sid,
-        //         root_key,
-        //         server,
-        //         username,
-        //         password.into(),
-        //         computer_name
-        //     ),
-        //     NTE_INTERNAL_ERROR
-        // );
+        let proxy = if let (false, Some(get_session_token_fn)) = (!proxy_url.is_null(), get_session_token_fn) {
+            info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
+
+            let proxy_url = try_execute!(
+                // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
+                NTE_INVALID_PARAMETER
+            );
+
+            Some(ProxyOptions {
+                proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
+                get_session_token: session_token::session_token_fn(get_session_token_fn),
+            })
+        } else {
+            info!("Proxy parameters are emty. Proceccing with direct connection.");
+
+            None
+        };
+
+        let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
+        let blob_data = try_execute!(
+            runtime.block_on(n_crypt_protect_secret::<NativeTransport>(
+                CryptProtectSecretArgs {
+                    data: secret.into(),
+                    sid,
+                    root_key_id,
+                    server,
+                    proxy,
+                    username,
+                    password: password.into(),
+                    client_computer_name,
+                }
+            )),
+            NTE_INTERNAL_ERROR
+        );
         let blob_data: Vec<u8> = todo!();
 
         if blob_data.is_empty() {
@@ -189,6 +222,8 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
     username: LpCStr,
     password: LpCStr,
     computer_name: LpCStr,
+    proxy_url: LpCStr,
+    get_session_token_fn: Option<GetSessionTokenFn>,
     secret: *mut LpByte,
     secret_len: *mut Dword,
 ) -> u32 {
@@ -230,10 +265,30 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             None
         };
 
-        // let secret_data = try_execute!(
-        //     n_crypt_unprotect_secret(blob, server, username, password.into(), computer_name),
-        //     NTE_INTERNAL_ERROR
-        // );
+        let proxy = if let (false, Some(get_session_token_fn)) = (!proxy_url.is_null(), get_session_token_fn) {
+            info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
+
+            let proxy_url = try_execute!(
+                // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
+                NTE_INVALID_PARAMETER
+            );
+
+            Some(ProxyOptions {
+                proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
+                get_session_token: session_token::session_token_fn(get_session_token_fn),
+            })
+        } else {
+            info!("Proxy parameters are emty. Proceccing with direct connection.");
+
+            None
+        };
+
+        let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
+        let secret_data = try_execute!(
+            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name)),
+            NTE_INTERNAL_ERROR
+        );
         let secret_data: Secret<Vec<u8>> = todo!();
 
         if secret_data.as_ref().is_empty() {

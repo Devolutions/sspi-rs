@@ -10,7 +10,7 @@ use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyE
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
-use sspi::{AsyncNetworkClient, AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -174,9 +174,9 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs<'server, 'proxy> {
+struct GetKeyArgs<'server> {
     server: &'server str,
-    proxy: Option<ProxyOptions<'proxy>>,
+    proxy: Option<ProxyOptions>,
     target_sd: Vec<u8>,
     root_key_id: Option<Uuid>,
     l0: i32,
@@ -199,8 +199,7 @@ async fn get_key<T: Transport>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs<'_, '_>,
-    network_client: &mut dyn AsyncNetworkClient,
+    }: GetKeyArgs<'_>,
 ) -> Result<GroupKeyEnvelope> {
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
@@ -252,7 +251,7 @@ async fn get_key<T: Transport>(
 
     let isd_key_contexts = get_isd_key_key_contexts();
     let context_id = isd_key_contexts[0].context_id;
-    let bind_ack = rpc.bind_authenticate(&isd_key_contexts, network_client).await?;
+    let bind_ack = rpc.bind_authenticate(&isd_key_contexts).await?;
 
     info!("RPC bind/bind_ack finished successfully.");
 
@@ -311,11 +310,10 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 pub async fn n_crypt_unprotect_secret<T: Transport>(
     blob: &[u8],
     server: &str,
-    proxy: Option<ProxyOptions<'_>>,
+    proxy: Option<ProxyOptions>,
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
-    network_client: &mut dyn AsyncNetworkClient,
 ) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
@@ -323,21 +321,18 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = Box::pin(get_key::<T>(
-        GetKeyArgs {
-            server,
-            proxy,
-            target_sd,
-            root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
-            l0: dpapi_blob.key_identifier.l0,
-            l1: dpapi_blob.key_identifier.l1,
-            l2: dpapi_blob.key_identifier.l2,
-            username,
-            password,
-            negotiate_config: try_get_negotiate_config(client_computer_name)?,
-        },
-        network_client,
-    ))
+    let root_key = Box::pin(get_key::<T>(GetKeyArgs {
+        server,
+        proxy,
+        target_sd,
+        root_key_id: Some(dpapi_blob.key_identifier.root_key_identifier),
+        l0: dpapi_blob.key_identifier.l0,
+        l1: dpapi_blob.key_identifier.l1,
+        l2: dpapi_blob.key_identifier.l2,
+        username,
+        password,
+        negotiate_config: try_get_negotiate_config(client_computer_name)?,
+    }))
     .await?;
 
     info!("Successfully requested root key.");
@@ -346,7 +341,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'server, 'username, 'proxy> {
+pub struct CryptProtectSecretArgs<'server, 'username> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -356,7 +351,7 @@ pub struct CryptProtectSecretArgs<'server, 'username, 'proxy> {
     /// Target server hostname.
     pub server: &'server str,
     /// Websocket proxy address.
-    pub proxy: Option<ProxyOptions<'proxy>>,
+    pub proxy: Option<ProxyOptions>,
     /// Username to encrypt the DPAPI blob.
     pub username: &'username str,
     /// User's password.
@@ -383,8 +378,7 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         username,
         password,
         client_computer_name,
-    }: CryptProtectSecretArgs<'_, '_, '_>,
-    network_client: &mut dyn AsyncNetworkClient,
+    }: CryptProtectSecretArgs<'_, '_>,
 ) -> Result<Vec<u8>> {
     let l0 = -1;
     let l1 = -1;
@@ -396,21 +390,18 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         .map_err(sspi::Error::from)
         .map_err(AuthError::from)?;
 
-    let root_key = Box::pin(get_key::<T>(
-        GetKeyArgs {
-            server,
-            proxy,
-            target_sd,
-            root_key_id,
-            l0,
-            l1,
-            l2,
-            username,
-            password,
-            negotiate_config: try_get_negotiate_config(client_computer_name)?,
-        },
-        network_client,
-    ))
+    let root_key = Box::pin(get_key::<T>(GetKeyArgs {
+        server,
+        proxy,
+        target_sd,
+        root_key_id,
+        l0,
+        l1,
+        l2,
+        username,
+        password,
+        negotiate_config: try_get_negotiate_config(client_computer_name)?,
+    }))
     .await?;
 
     info!("Successfully requested root key.");

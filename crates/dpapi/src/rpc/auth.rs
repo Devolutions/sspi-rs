@@ -2,9 +2,9 @@ use dpapi_pdu::rpc::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
 use sspi::{
-    AcquireCredentialsHandleResult, AsyncNetworkClient, BufferType, ClientRequestFlags, CredentialUse, Credentials,
-    CredentialsBuffers, DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags,
-    SecurityBufferRef, SecurityStatus, Sspi, SspiImpl,
+    AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
+    DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
+    SecurityStatus, Sspi, SspiImpl,
 };
 use thiserror::Error;
 
@@ -212,11 +212,7 @@ impl AuthProvider {
     ///
     /// The client should call this method until `self.is_finished()` is `true`.
     #[instrument(ret, fields(state = ?self.is_finished), skip(self))]
-    pub async fn initialize_security_context(
-        &mut self,
-        in_token: Vec<u8>,
-        network_client: &mut dyn AsyncNetworkClient,
-    ) -> AuthResult<SecurityTrailer> {
+    pub fn initialize_security_context(&mut self, in_token: Vec<u8>) -> AuthResult<SecurityTrailer> {
         let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
         let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
         let mut credentials_handle = self.credentials_handle.take();
@@ -243,8 +239,7 @@ impl AuthProvider {
         let result = self
             .security_context
             .initialize_security_context_impl(&mut builder)?
-            .resolve_with_async_client(network_client)
-            .await?;
+            .resolve_with_default_network_client()?;
         self.is_finished = result.status == SecurityStatus::Ok;
 
         self.credentials_handle = credentials_handle;

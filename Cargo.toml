@@ -22,6 +22,7 @@ members = [
   "crates/dpapi-core",
   "crates/dpapi-pdu",
   "crates/dpapi-transport",
+  "crates/dpapi-native-transport",
 ]
 exclude = [
   "tools/wasm-testcompile",
@@ -54,6 +55,7 @@ dpapi = { version = "0.1.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
 dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
+dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
 rsa = { version = "0.9.7", default-features = false }
 windows-sys = "0.59"

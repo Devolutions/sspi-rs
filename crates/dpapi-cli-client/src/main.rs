@@ -2,25 +2,19 @@
 #![warn(missing_docs)]
 #![warn(clippy::large_futures)]
 
-#[macro_use]
-extern crate tracing;
-
 mod cli;
 mod logging;
-mod network_client;
 mod session_token;
-mod transport;
 
 use std::fs;
 use std::io::{stdin, stdout, Error, ErrorKind, Read, Result, Write};
 
 use dpapi::CryptProtectSecretArgs;
+use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use url::Url;
 
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
-use crate::network_client::ReqwestNetworkClient;
-use crate::transport::NativeTransport;
 
 async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
@@ -44,7 +38,7 @@ async fn run(data: Dpapi) -> Result<()> {
                         format!("invalid proxy URL ({:?}): {:?}", proxy, err),
                     )
                 })?,
-                get_session_token: &session_token::get_session_token,
+                get_session_token: Box::new(session_token::get_session_token),
             })
         })
         .transpose()?;
@@ -68,7 +62,6 @@ async fn run(data: Dpapi) -> Result<()> {
                     password: password.into(),
                     client_computer_name: computer_name,
                 },
-                &mut ReqwestNetworkClient::new(),
             ))
             .await
             .unwrap();
@@ -89,7 +82,6 @@ async fn run(data: Dpapi) -> Result<()> {
                 &username,
                 password.into(),
                 computer_name,
-                &mut ReqwestNetworkClient::new(),
             ))
             .await
             .unwrap();

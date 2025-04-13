@@ -1,7 +1,10 @@
+#[macro_use]
+extern crate tracing;
+
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi_transport::{ConnectOptions, GetSessionTokenFn, LocalStream, Transport, DEFAULT_RPC_PORT};
+use dpapi_transport::{ConnectOptions, DEFAULT_RPC_PORT, LocalStream, Transport};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -68,17 +71,14 @@ pub struct NativeTransport;
 
 impl NativeTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.
-    #[instrument(skip(get_session_token), err)]
+    #[instrument(err)]
     async fn ws_connect(
         mut proxy: Url,
-        destination: Url,
-        get_session_token: GetSessionTokenFn<'_>,
+        session_id: Uuid,
+        session_token: &str,
     ) -> Result<TokioStream<ErasedReadWrite>, Error> {
-        let session_id = Uuid::new_v4();
-        let session_token = get_session_token(session_id, destination).await?;
-
         proxy.path_segments_mut().unwrap().extend([session_id.to_string()]);
-        proxy.query_pairs_mut().append_pair("token", session_token.as_str());
+        proxy.query_pairs_mut().append_pair("token", session_token);
 
         let (ws, _) = tokio_tungstenite::connect_async(proxy.as_str()).await.map_err(|err| {
             error!(?err, "Failed to establish WS connection.");
@@ -86,7 +86,7 @@ impl NativeTransport {
         })?;
 
         {
-            use futures_util::{future, SinkExt as _, StreamExt as _};
+            use futures_util::{SinkExt as _, StreamExt as _, future};
 
             let ws_compat = ws
                 .filter_map(|item| {
@@ -134,7 +134,7 @@ impl Transport for NativeTransport {
     type Stream = TokioStream<ErasedReadWrite>;
 
     #[instrument(skip(connection_options), err)]
-    async fn connect(connection_options: &ConnectOptions<'_>) -> Result<Self::Stream, Error> {
+    async fn connect(connection_options: &ConnectOptions) -> Result<Self::Stream, Error> {
         match connection_options {
             ConnectOptions::Tcp(addr) => {
                 let stream =
@@ -145,7 +145,12 @@ impl Transport for NativeTransport {
                 proxy,
                 destination,
                 get_session_token,
-            } => Self::ws_connect(proxy.clone(), destination.clone(), get_session_token).await,
+            } => {
+                let session_id = Uuid::new_v4();
+                let session_token = get_session_token(session_id, destination.clone()).await?;
+
+                Self::ws_connect(proxy.clone(), session_id, session_token.as_ref()).await
+            }
         }
     }
 }

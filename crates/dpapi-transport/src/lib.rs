@@ -16,7 +16,7 @@ pub trait Transport {
     type Stream: LocalStream;
 
     /// Connects to the target server.
-    fn connect(connect_options: &ConnectOptions<'_>) -> impl Future<Output = Result<Self::Stream>>;
+    fn connect(connect_options: &ConnectOptions) -> impl Future<Output = Result<Self::Stream>>;
 }
 
 /// Stream for reading and writing bytes.
