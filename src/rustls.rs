@@ -1,6 +1,7 @@
 #![cfg(feature = "__rustls-used")]
 
 /// Call this before using rustls.
+#[allow(clippy::result_unit_err)]
 pub fn install_default_crypto_provider_if_necessary() -> Result<(), ()> {
     #[cfg(feature = "__install-crypto-provider")]
     {
