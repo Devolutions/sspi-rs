@@ -95,6 +95,7 @@ use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
+pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;

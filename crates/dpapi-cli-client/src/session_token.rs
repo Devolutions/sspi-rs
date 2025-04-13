@@ -22,9 +22,10 @@ struct TokenResponse {
     token: String,
 }
 
-/// Obtains the needed session token from Devolutions-Gateway using standartalone route.
-/// TODO
+/// Obtains the needed session token from the [tokengen server](https://github.com/Devolutions/devolutions-gateway/tree/master/tools/tokengen).
+///
 /// Paramers:
+/// * `session_id` - connection session id.
 /// * `destination` - target RPC server address.
 pub fn get_session_token(session_id: Uuid, destination: Url) -> Pin<Box<dyn Future<Output = Result<String>>>> {
     let connection_url = Url::parse(&env::var("DG_CONNECTION_URL").unwrap()).unwrap();

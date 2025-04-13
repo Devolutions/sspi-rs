@@ -4,7 +4,13 @@ use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
-/// TODO
+/// Type that represents a function for obtaining the sesion token.
+///
+/// We need it because we don't know the destination address in advance.
+///
+/// Parameters:
+/// * `Uuid` is the session id.
+/// * `Url` is the destination of the proxied connection.
 pub type GetSessionTokenFn = dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
 
 /// Default port for RPC communication.
@@ -57,7 +63,7 @@ impl ConnectOptions {
     ///
     /// Parameters:
     /// * `destination` - target RPC server URL.
-    /// * `proxy` - optional Devilution Gateway URl.
+    /// * `proxy_options` - proxying options.
     ///
     /// Returns an error if the provided URLs are not valid.
     pub fn new(destination: &str, proxy_options: Option<ProxyOptions>) -> Result<Self> {

@@ -31,6 +31,9 @@ pub enum ClientError {
 
     #[error("bad EptMap response status: {0}")]
     BadEptMapStatus(u32),
+
+    #[error("failed to set rustls crypto provider")]
+    CryptoProvider,
 }
 
 fn get_epm_contexts() -> Vec<ContextElement> {
@@ -315,6 +318,8 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     password: Secret<String>,
     client_computer_name: Option<String>,
 ) -> Result<Secret<Vec<u8>>> {
+    sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
+
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
     let username = Username::parse(username)
@@ -380,6 +385,8 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         client_computer_name,
     }: CryptProtectSecretArgs<'_, '_>,
 ) -> Result<Vec<u8>> {
+    sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
+
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;
