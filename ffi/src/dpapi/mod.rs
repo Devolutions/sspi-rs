@@ -125,7 +125,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             None
         };
 
-        let proxy = if let (false, Some(get_session_token_fn)) = (!proxy_url.is_null(), get_session_token_fn) {
+        let proxy = if let (false, Some(get_session_token_fn)) = (proxy_url.is_null(), get_session_token_fn) {
             info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
 
             let proxy_url = try_execute!(
@@ -160,7 +160,6 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             )),
             NTE_INTERNAL_ERROR
         );
-        let blob_data: Vec<u8> = todo!();
 
         if blob_data.is_empty() {
             error!("Output DPAPI blob is empty");
@@ -265,7 +264,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             None
         };
 
-        let proxy = if let (false, Some(get_session_token_fn)) = (!proxy_url.is_null(), get_session_token_fn) {
+        let proxy = if let (false, Some(get_session_token_fn)) = (proxy_url.is_null(), get_session_token_fn) {
             info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
 
             let proxy_url = try_execute!(
@@ -289,7 +288,6 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name)),
             NTE_INTERNAL_ERROR
         );
-        let secret_data: Secret<Vec<u8>> = todo!();
 
         if secret_data.as_ref().is_empty() {
             error!("Decrypted secret is empty");
@@ -341,18 +339,18 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    //! This tests simulate `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
+    //! It's better to run them using Miri: https://github.com/rust-lang/miri.
+    //! cargo +nightly miri test
+    //!
+    //! Note: this tests aim to check only the FFI functions implementation.
+    //! Checking the correctness of DPAPI functions is not a goal of these tests.
+
     use std::ptr::{null, null_mut};
 
     use super::*;
 
-    /// This test simulates `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
-    /// It's better to run it using Miri: https://github.com/rust-lang/miri.
-    /// cargo +nightly miri test
-    ///
-    /// Note: this test aims to check only the implementation of FFI functions.
-    /// Checking the correctness of DPAPI functions is not a goal of this test.
     #[test]
-    #[ignore]
     fn test_dpapi_protect_secret() {
         let secret = b"secret-to-encrypt";
         let secret_len = secret.len() as u32;
@@ -373,6 +371,8 @@ mod tests {
                 username.as_ptr(),
                 password.as_ptr(),
                 null(),
+                null(),
+                None,
                 &mut blob,
                 &mut blob_len,
             )
@@ -393,6 +393,69 @@ mod tests {
                 username.as_ptr(),
                 password.as_ptr(),
                 null(),
+                null(),
+                None,
+                &mut decrypted_secret,
+                &mut secret_len,
+            )
+        };
+
+        assert_eq!(result, ERROR_SUCCESS);
+        assert!(!decrypted_secret.is_null());
+        assert!(secret_len > 0);
+
+        unsafe {
+            DpapiFree(blob);
+            DpapiFree(decrypted_secret);
+        }
+    }
+
+    #[test]
+    fn test_dpapi_protect_secret_proxied() {
+        let secret = b"secret-to-encrypt";
+        let secret_len = secret.len() as u32;
+        let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
+        let server = "win-956cqossjtf.tbt.com\0";
+        let username = "t2@tbt.com\0";
+        let password = "qqqQQQ111!!!\0";
+        let proxy_url = "ws://dg.tbt.com:7171/";
+        let mut blob: LpByte = null_mut();
+        let mut blob_len = 0;
+
+        let result = unsafe {
+            DpapiProtectSecret(
+                secret.as_ptr(),
+                secret_len,
+                sid.as_ptr(),
+                null(),
+                server.as_ptr(),
+                username.as_ptr(),
+                password.as_ptr(),
+                null(),
+                proxy_url.as_ptr(),
+                Some(api::get_session_token),
+                &mut blob,
+                &mut blob_len,
+            )
+        };
+
+        assert_eq!(result, ERROR_SUCCESS);
+        assert!(!blob.is_null());
+        assert!(blob_len > 0);
+
+        let mut decrypted_secret: LpByte = null_mut();
+        let mut secret_len = 0;
+
+        let result = unsafe {
+            DpapiUnprotectSecret(
+                blob,
+                blob_len,
+                server.as_ptr(),
+                username.as_ptr(),
+                password.as_ptr(),
+                null(),
+                proxy_url.as_ptr(),
+                Some(api::get_session_token),
                 &mut decrypted_secret,
                 &mut secret_len,
             )
