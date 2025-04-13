@@ -8,6 +8,7 @@ extern crate tracing;
 mod cli;
 mod logging;
 mod network_client;
+mod session_token;
 mod transport;
 
 use std::fs;
@@ -43,7 +44,7 @@ async fn run(data: Dpapi) -> Result<()> {
                         format!("invalid proxy URL ({:?}): {:?}", proxy, err),
                     )
                 })?,
-                get_session_token: &dpapi_dg::get_session_token,
+                get_session_token: &session_token::get_session_token,
             })
         })
         .transpose()?;

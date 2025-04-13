@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 url = "2.5"
 thiserror = "2.0"
+uuid.workspace = true

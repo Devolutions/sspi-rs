@@ -7,6 +7,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Bytes;
 use url::Url;
+use uuid::Uuid;
 
 pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin {}
 
@@ -73,7 +74,10 @@ impl NativeTransport {
         destination: Url,
         get_session_token: GetSessionTokenFn<'_>,
     ) -> Result<TokioStream<ErasedReadWrite>, Error> {
-        let session_token = get_session_token(proxy.clone(), destination).await?;
+        let session_id = Uuid::new_v4();
+        let session_token = get_session_token(session_id, destination).await?;
+
+        proxy.path_segments_mut().unwrap().extend([session_id.to_string()]);
         proxy.query_pairs_mut().append_pair("token", session_token.as_str());
 
         let (ws, _) = tokio_tungstenite::connect_async(proxy.as_str()).await.map_err(|err| {

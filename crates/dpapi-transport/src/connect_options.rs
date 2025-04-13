@@ -2,9 +2,10 @@ use std::pin::Pin;
 
 use thiserror::Error;
 use url::Url;
+use uuid::Uuid;
 
-/// TODD
-pub type GetSessionTokenFn<'a> = &'a dyn Fn(Url, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
+/// TODO
+pub type GetSessionTokenFn<'a> = &'a dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
 
 /// Default port for RPC communication.
 pub const DEFAULT_RPC_PORT: u16 = 135;

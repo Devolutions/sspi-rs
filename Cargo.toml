@@ -21,7 +21,6 @@ members = [
   "crates/dpapi-cli-client",
   "crates/dpapi-core",
   "crates/dpapi-pdu",
-  "crates/dpapi-dg",
   "crates/dpapi-transport",
 ]
 exclude = [
@@ -54,7 +53,6 @@ winscard = { version = "0.2", path = "crates/winscard" }
 dpapi = { version = "0.1.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
 dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
-dpapi-dg = { version = "0.1.0", path = "crates/dpapi-dg" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 
 rsa = { version = "0.9.7", default-features = false }
