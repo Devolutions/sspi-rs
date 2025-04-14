@@ -591,7 +591,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
- "rand 0.8.5",
+ "rand 0.9.0",
  "regex",
  "sha1 0.10.6",
  "sha1 0.11.0-pre.5",
@@ -2355,9 +2355,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.25"
+version = "0.23.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822ee9188ac4ec04a2f0531e55d035fb2de73f18b41a63c70c2712503b6fb13c"
+checksum = "df51b5869f3a441595eac5e8ff14d486ff285f7b8c0df8770e49c3b56351f0f0"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -2697,7 +2697,7 @@ dependencies = [
  "picky-krb",
  "portpicker",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.0",
  "reqwest",
  "rsa",
  "rustls",
@@ -3693,8 +3693,8 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "proptest",
- "rand 0.8.5",
- "rand_core 0.6.4",
+ "rand 0.9.0",
+ "rand_core 0.9.3",
  "rsa",
  "sha1 0.10.6",
  "time",
