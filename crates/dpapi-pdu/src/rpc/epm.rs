@@ -769,7 +769,7 @@ impl DecodeOwned for EptMapResult {
                     .map(|_| Floor::decode_owned(src))
                     .collect::<DecodeResult<Vec<Floor>>>()?;
 
-                // invalid tower_length can lead to invalid padding and corrupted fields.
+                // Invalid tower_length can lead to invalid padding and corrupted fields.
                 if src.pos() - tower_start != tower_length {
                     return Err(DecodeError::invalid_field("EptMap", "tower length", "invalid value"));
                 }

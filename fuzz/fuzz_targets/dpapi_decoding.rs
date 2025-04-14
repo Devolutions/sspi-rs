@@ -1,9 +1,9 @@
 #![no_main]
 
-extern crate libfuzzer_sys;
 extern crate dpapi_fuzzing;
+extern crate libfuzzer_sys;
 
-use dpapi_fuzzing::structure_decoding;
+use dpapi_fuzzing::oracles::structure_decoding;
 
 libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     structure_decoding(data);

@@ -9,9 +9,9 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-dpapi-fuzzing = { path = "../crates/dpapi-fuzzing" }
+dpapi-fuzzing.path = "../crates/dpapi-fuzzing"
 libfuzzer-sys = "0.4"
-sspi = { path = ".." }
+sspi.path = ".."
 
 # Prevent this from interfering with workspaces
 [workspace]

@@ -1,4 +1,4 @@
-use dpapi_core::{DecodeOwned, DecodeResult, EncodeResult, ReadCursor, StaticName, WriteBuf, encode_buf};
+use dpapi_core::{encode_buf, DecodeOwned, DecodeResult, EncodeResult, ReadCursor, StaticName, WriteBuf};
 use dpapi_pdu::gkdi::{EcdhKey, FfcdhKey, FfcdhParameters, GetKey, GroupKeyEnvelope, KdfParameters, KeyIdentifier};
 use dpapi_pdu::rpc::{
     AlterContext, AlterContextResponse, Bind, BindAck, BindNak, Command, ContextElement, ContextResult, EptMap,
