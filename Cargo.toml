@@ -18,7 +18,6 @@ members = [
   "crates/winscard",
   "crates/ffi-types",
   "crates/dpapi",
-  "crates/dpapi-cli-client",
   "crates/dpapi-core",
   "crates/dpapi-pdu",
   "crates/dpapi-transport",
@@ -26,6 +25,7 @@ members = [
 ]
 exclude = [
   "tools/wasm-testcompile",
+  "tools/dpapi-cli-client",
 ]
 
 [lints.rust]
