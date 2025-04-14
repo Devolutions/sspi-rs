@@ -82,7 +82,7 @@ impl NativeTransport {
 
         let (ws, _) = tokio_tungstenite::connect_async(proxy.as_str()).await.map_err(|err| {
             error!(?err, "Failed to establish WS connection.");
-            Error::new(ErrorKind::Other, err)
+            Error::other(err)
         })?;
 
         {

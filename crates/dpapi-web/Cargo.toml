@@ -1,0 +1,51 @@
+[package]
+name = "dpapi-web"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["panic_hook"]
+panic_hook = ["dep:console_error_panic_hook"]
+
+[dependencies]
+
+# DPAPI
+dpapi.workspace = true
+dpapi-transport.workspace = true
+
+# WASM
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+gloo-net = { version = "0.6", default-features = false, features = ["websocket", "http", "io-util"] }
+gloo-timers = { version = "0.3", default-features = false, features = ["futures"] }
+tracing-web = "0.1"
+
+# Async
+futures-util = { version = "0.3", features = ["io"] }
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["time"] }
+
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1", optional = true }
+
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+rustls-pki-types = { version = "1.11", features = ["web"] }
+
+# Utils
+anyhow = "1"
+url = "2.5"
+
+uuid = { workspace = true, default-features = false }
+
+# Enable WebAssembly support for a few crates
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
+getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
+uuid = { workspace = true, default-features = false, features = ["rng-getrandom", "js"] }
+# aws-lc-rs = { version = "1.13", default-features = false, features = ["bindgen"] }
