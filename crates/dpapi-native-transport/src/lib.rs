@@ -4,7 +4,7 @@ extern crate tracing;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi_transport::{ConnectOptions, DEFAULT_RPC_PORT, LocalStream, Transport};
+use dpapi_transport::{ConnectOptions, DEFAULT_RPC_PORT, Stream, Transport};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -28,7 +28,7 @@ impl<S> TokioStream<S> {
     }
 }
 
-impl<S> LocalStream for TokioStream<S>
+impl<S> Stream for TokioStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {

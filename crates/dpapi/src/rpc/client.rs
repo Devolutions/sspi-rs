@@ -3,7 +3,7 @@ use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
-use dpapi_transport::{ConnectOptions, LocalStream, Transport};
+use dpapi_transport::{ConnectOptions, Stream, Transport};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 

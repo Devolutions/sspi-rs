@@ -13,14 +13,14 @@ pub use connect_options::{
 /// Represents a transport for communicating with the target server.
 pub trait Transport {
     /// A type that represents communication stream.
-    type Stream: LocalStream;
+    type Stream: Stream;
 
     /// Connects to the target server.
     fn connect(connect_options: &ConnectOptions) -> impl Future<Output = Result<Self::Stream>>;
 }
 
 /// Stream for reading and writing bytes.
-pub trait LocalStream {
+pub trait Stream {
     /// Reads an exact number of bytes from the stream and returns buffer as `Vec`.
     fn read_vec(&mut self, length: usize) -> impl Future<Output = Result<Vec<u8>>>;
 
