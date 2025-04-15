@@ -537,7 +537,8 @@ pub unsafe fn copy_io_request_to_scard_io_request(
 
     let pci_info_len = io_request.pci_info.len();
     // SAFETY: it's safe to deref because we've checked for null value above.
-    let scard_pci_info_len = unsafe { (*scard_io_request).cb_pci_length }.try_into()?;
+    let cb_pci_length = unsafe { (*scard_io_request).cb_pci_length };
+    let scard_pci_info_len = usize::try_from(cb_pci_length)?;
 
     if pci_info_len > scard_pci_info_len {
         return Err(Error::new(

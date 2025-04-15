@@ -1,14 +1,13 @@
-use std::net::{TcpStream, ToSocketAddrs};
-
 use dpapi_core::{compute_padding, decode_owned, EncodeVec, FixedPartSize};
 use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
+use dpapi_transport::{ConnectOptions, Stream, Transport};
 use thiserror::Error;
 use uuid::{uuid, Uuid};
 
-use crate::rpc::{read_buf, read_vec, AuthProvider};
+use crate::rpc::AuthProvider;
 use crate::Result;
 
 pub const NDR64: SyntaxId = SyntaxId {
@@ -57,19 +56,21 @@ impl EncryptionOffsets {
 ///
 /// All RPC communication is done using this RPC client. It can connect to RPC server,
 /// authenticate, and send RPC requests.
-pub struct RpcClient {
-    stream: TcpStream,
+pub struct RpcClient<T: Transport> {
+    stream: T::Stream,
     sign_header: bool,
     auth: AuthProvider,
 }
 
-impl RpcClient {
+impl<T: Transport> RpcClient<T> {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub fn connect<A: ToSocketAddrs>(addr: A, auth: AuthProvider) -> Result<Self> {
+    pub async fn connect(connection_options: &ConnectOptions, auth: AuthProvider) -> Result<Self> {
+        let stream = T::connect(connection_options).await?;
+
         Ok(Self {
-            stream: TcpStream::connect(addr)?,
+            stream,
             sign_header: false,
             auth,
         })
@@ -275,7 +276,7 @@ impl RpcClient {
     }
 
     #[instrument(level = "trace", ret, skip(self))]
-    fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
+    async fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
         let mut pdu_encoded = pdu.encode_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
         // Set `frag_len` in the PDU header.
@@ -285,14 +286,16 @@ impl RpcClient {
             self.encrypt_pdu(&mut pdu_encoded, encrypt_offsets)?;
         }
 
-        super::write_buf(&pdu_encoded, &mut self.stream)?;
+        self.stream.write_all(&pdu_encoded).await?;
 
         // Read PDU header
-        let mut pdu_buf = read_vec(PduHeader::FIXED_PART_SIZE, &mut self.stream)?;
+        let mut pdu_buf = self.stream.read_vec(PduHeader::FIXED_PART_SIZE).await?;
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        read_buf(&mut self.stream, &mut pdu_buf[PduHeader::FIXED_PART_SIZE..])?;
+        self.stream
+            .read_exact(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..])
+            .await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;
@@ -306,7 +309,7 @@ impl RpcClient {
 
     /// Sends the authenticated RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn authenticated_request(
+    pub async fn authenticated_request(
         &mut self,
         context_id: u16,
         opnum: u16,
@@ -316,22 +319,22 @@ impl RpcClient {
         let (pdu, encrypt_offsets) =
             self.create_authenticated_request(context_id, opnum, stub_data, verification_trailer)?;
 
-        self.send_pdu(pdu, Some(encrypt_offsets))
+        self.send_pdu(pdu, Some(encrypt_offsets)).await
     }
 
     /// Sends the RPC request.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
+    pub async fn request(&mut self, context_id: u16, opnum: u16, stub_data: Vec<u8>) -> Result<Pdu> {
         let pdu = self.create_request(context_id, opnum, stub_data)?;
 
-        self.send_pdu(pdu, None)
+        self.send_pdu(pdu, None).await
     }
 
     /// Performs the RPC bind/bind_ack exchange.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
+    pub async fn bind(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         let bind = Self::create_bind_pdu(contexts.to_vec(), None)?;
-        let pdu_resp = self.send_pdu(bind, None)?;
+        let pdu_resp = self.send_pdu(bind, None).await?;
 
         let Pdu {
             header: _,
@@ -346,7 +349,7 @@ impl RpcClient {
     ///
     /// The bind/bind_ack exchange continues until authentication is finished.
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
+    pub async fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
         // We don't need its result in RPC authentication.
         let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
@@ -356,7 +359,7 @@ impl RpcClient {
 
         self.sign_header = true;
 
-        let pdu_resp = self.send_pdu(bind, None)?;
+        let pdu_resp = self.send_pdu(bind, None).await?;
 
         let Pdu {
             header: _,
@@ -376,7 +379,7 @@ impl RpcClient {
             }
 
             let alter_context = self.create_alter_context_pdu(final_contexts.clone(), security_trailer)?;
-            let alter_context_resp = self.send_pdu(alter_context, None)?;
+            let alter_context_resp = self.send_pdu(alter_context, None).await?;
 
             in_token = alter_context_resp
                 .security_trailer

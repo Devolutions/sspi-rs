@@ -1,14 +1,12 @@
 use dpapi_core::{DecodeError, EncodeError};
+use dpapi_transport::ConnectOptionsError;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("invalid {name} url: {url}")]
-    InvalidUrl {
-        name: &'static str,
-        url: String,
-        error: url::ParseError,
-    },
+    #[error("invalid URL `{url}`: {description}")]
+    InvalidUrl { url: Url, description: &'static str },
 
     #[error("{0}")]
     DecodeError(DecodeError),
@@ -45,6 +43,9 @@ pub enum Error {
 
     #[error("IO error")]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    ConnectionUrlParse(#[from] ConnectOptionsError),
 
     #[error("UUID error: {0}")]
     Uuid(#[from] uuid::Error),
