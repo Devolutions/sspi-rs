@@ -86,13 +86,17 @@ use std::{error, fmt, io, result, str, string};
 use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
+pub use generator::NetworkRequest;
 use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
+pub use network_client::NetworkProtocol;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
 use picky_krb::gss_api::GssApiMessageError;
 use picky_krb::messages::KrbError;
+#[cfg(feature = "__rustls-used")]
+pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::string_to_utf16;

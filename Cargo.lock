@@ -578,6 +578,7 @@ dependencies = [
  "digest 0.11.0-pre.10",
  "dpapi-core",
  "dpapi-pdu",
+ "dpapi-transport",
  "elliptic-curve",
  "hmac 0.12.1",
  "hmac 0.13.0-pre.5",
@@ -609,19 +610,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpapi-cli-client"
-version = "0.0.0"
-dependencies = [
- "dpapi",
- "tracing-subscriber",
- "xflags",
-]
-
-[[package]]
 name = "dpapi-core"
 version = "0.1.0"
 dependencies = [
  "ironrdp-core",
+ "uuid",
+]
+
+[[package]]
+name = "dpapi-native-transport"
+version = "0.1.0"
+dependencies = [
+ "dpapi-transport",
+ "futures-util",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "transport",
+ "url",
  "uuid",
 ]
 
@@ -636,6 +642,15 @@ dependencies = [
  "num-traits",
  "paste",
  "thiserror 2.0.12",
+ "uuid",
+]
+
+[[package]]
+name = "dpapi-transport"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.12",
+ "url",
  "uuid",
 ]
 
@@ -2768,6 +2783,8 @@ dependencies = [
  "bitflags 2.9.0",
  "cfg-if",
  "dpapi",
+ "dpapi-native-transport",
+ "dpapi-transport",
  "ffi-types",
  "libc",
  "num-traits",
@@ -2776,8 +2793,10 @@ dependencies = [
  "picky-asn1-x509",
  "sspi",
  "symbol-rename-macro",
+ "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "whoami",
  "windows-sys 0.59.0",
@@ -2970,7 +2989,19 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "socket2",
+ "tokio-macros",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e06d43f1345a3bcd39f6a56dbb7dcab2ba47e68e8ac134855e7e2bdbaf8cab8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -2981,6 +3012,22 @@ checksum = "8e727b36a1a0e8b74c376ac2211e40c2c8af09fb4013c60d910495810f008e9b"
 dependencies = [
  "rustls",
  "tokio",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite",
 ]
 
 [[package]]
@@ -3073,10 +3120,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "transport"
+version = "0.0.0"
+source = "git+https://github.com/Devolutions/devolutions-gateway.git?rev=4fd9c22#4fd9c222c55d97e7f7d2d541257298890b3e47b5"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "futures-util",
+ "parking_lot",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tungstenite"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4793cb5e56680ecbb1d843515b23b6de9a75eb04b66643e256a396d43be33c13"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.9.1",
+ "rustls",
+ "rustls-pki-types",
+ "sha1 0.10.6",
+ "thiserror 2.0.12",
+ "utf-8",
+]
 
 [[package]]
 name = "typenum"
@@ -3122,6 +3202,12 @@ dependencies = [
  "idna",
  "percent-encoding",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf16_iter"
@@ -3755,21 +3841,6 @@ dependencies = [
  "serde",
  "zeroize",
 ]
-
-[[package]]
-name = "xflags"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d9e15fbb3de55454b0106e314b28e671279009b363e6f1d8e39fdc3bf048944"
-dependencies = [
- "xflags-macros",
-]
-
-[[package]]
-name = "xflags-macros"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "672423d4fea7ffa2f6c25ba60031ea13dc6258070556f125cc4d790007d4a155"
 
 [[package]]
 name = "yoke"
