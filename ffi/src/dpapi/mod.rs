@@ -142,7 +142,11 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 
             Some(ProxyOptions {
                 proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
-                get_session_token: session_token::session_token_fn(get_session_token_fn),
+                // SAFETY:
+                // The C function pointer must be safe to call. It's a user's responsibility to uphold its correctness.
+                get_session_token: unsafe {
+                    session_token::session_token_fn(get_session_token_fn)
+                },
             })
         } else {
             info!("Proxy parameters are empty. Proceeding with direct connection.");
@@ -281,7 +285,11 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
             Some(ProxyOptions {
                 proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
-                get_session_token: session_token::session_token_fn(get_session_token_fn),
+                // SAFETY:
+                // The C function pointer must be safe to call. It's a user's responsibility to uphold its correctness.
+                get_session_token: unsafe {
+                    session_token::session_token_fn(get_session_token_fn)
+                },
             })
         } else {
             info!("Proxy parameters are empty. Proceeding  with direct connection.");

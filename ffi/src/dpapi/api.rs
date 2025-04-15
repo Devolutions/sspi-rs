@@ -24,13 +24,14 @@ mod inner {
     use url::Url;
     use uuid::Uuid;
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub async fn n_crypt_unprotect_secret<T: Transport>(
-        blob: &[u8],
-        server: &str,
+        _blob: &[u8],
+        _server: &str,
         proxy: Option<ProxyOptions>,
-        username: &str,
-        password: Secret<String>,
-        client_computer_name: Option<String>,
+        _username: &str,
+        _password: Secret<String>,
+        _client_computer_name: Option<String>,
     ) -> Result<Secret<Vec<u8>>> {
         if let Some(ProxyOptions {
             proxy,
@@ -49,6 +50,7 @@ mod inner {
         Ok(b"secret-to-encrypt".to_vec().into())
     }
 
+    #[allow(clippy::extra_unused_type_parameters)]
     pub async fn n_crypt_protect_secret<T: Transport>(args: CryptProtectSecretArgs<'_, '_>) -> Result<Vec<u8>> {
         if let Some(ProxyOptions {
             proxy,
@@ -73,15 +75,31 @@ mod inner {
         token_buf: LpByte,
         token_len: LpDword,
     ) -> u32 {
+        check_null!(session_id);
+        check_null!(destination);
+        check_null!(token_buf);
+        check_null!(token_len);
+
+        // SAFETY:
+        // The pointer is not null: checked above.
+        // The caller must ensure the correctness of the data behind the pointer.
         let session_id = unsafe { *session_id };
         let session_id = Uuid::from_fields(session_id.data1, session_id.data2, session_id.data3, &session_id.data4);
 
+        // SAFETY:
+        // The pointer is not null: checked above.
+        // The caller must ensure the correctness of the data behind the pointer.
         let destination = unsafe { CStr::from_ptr(destination as *const _) }.to_str().unwrap();
 
         println!("session id: {:?}. destination: {:?}.", session_id, destination);
 
         let session_token = b"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImN0eSI6IkFTU09DSUFUSU9OIn0.eyJkc3RfaHN0IjoidGNwOi8vMTkyLjE2OC4xLjEwMzoxMzUiLCJleHAiOjE3NDQ1MzQ5NTMsImpldF9haWQiOiIwY2I3M2Y3Yy0wZTA5LTRiNzAtYTVjMy1jMjBjY2IzMDJhYjAiLCJqZXRfYXAiOiJ1bmtub3duIiwiamV0X2NtIjoiZndkIiwiamV0X3JlYyI6Im5vbmUiLCJqdGkiOiJlYmNkNzhmMi0zMTlhLTRlM2UtOGZiOS02MjcyMTIzZTA1YWMiLCJuYmYiOjE3NDQ1MzEzNTN9.BEEaY2Mcm4ubdFBrugen7TEPW2PqxHj9Mi-DdP71C6vJ5YftpxGZns9KS4i_9ayPvpBRTyWW0YhLO1sUdGww6ePID0qP-IEYTY5rJ-pBRwX5eTtU4ci1hgxa2bcGOeWRJtX_Yg_rS49hgxYF1qMJL1CdoZbAx70656ygohQzEyeqOeto_ZpMxz2S_EMJyeXfJI-IgFrBnMvK-6iBLxc9xgc3TmGKdPefoAmlpV24OsyS9AT9U-gqlGpJ-DDAc7ZUvYyeaRG_JnEuBdvydtJyUDAvIvS73kPLAOHJfsOxXzu-izEOdaJQ8nIiSKcN_aKL_mSqSBN02zCiBuWbvAJP8EOlvqzuwRxB_zKpJNwS2fOQFhRd8L4dK034sajh3m485Zg-B5OwcmyPMAbmMpb2vyC9x5Gg9PcWN0ikHkILkNtPngsrt5r4rUTKo7h-KG4gMApfD38fmmIms01h_qh3btSDtf-ok-W8T6Sq0dJS6rhSmjhw5vJQVf_js3eRML1T5NbyGPmk6O9qKvaiGMNNgoVDawTDpCD2Sy9LTZTJajeX2vYkCI11neUkVeOxSCokOekhnVdqQVnWPfME10dtaTgDwBz-nmZg1tWAXcwouZFu2MZPLVH4xM7BqwoY8-Pmvuupr2ctOi8C9DfsKIPXmrbswdBSxKEd28HuZxDB2w8";
+        // SAFETY:
+        // The pointer is not null: checked above.
+        // The caller must ensure the correctness of the data behind the pointer.
         unsafe { from_raw_parts_mut(token_buf, session_token.len()) }.copy_from_slice(session_token);
+        // SAFETY:
+        // The pointer is not null: checked above.
         unsafe {
             *token_len = Dword::try_from(session_token.len()).unwrap();
         }

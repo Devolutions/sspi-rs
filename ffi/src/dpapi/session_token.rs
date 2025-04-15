@@ -10,7 +10,11 @@ use uuid::Uuid;
 use super::GetSessionTokenFn as CGetSessionTokenFn;
 
 /// This function wraps a C-function into a Rust closure which we can pass into the Rust API.
-pub fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSessionTokenFn> {
+///
+/// # Safety
+///
+/// The C function pointer must be safe to call provided parameters are valid.
+pub unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
         Box::pin(async move {
             let (data1, data2, data3, data4) = session_id.as_fields();
@@ -27,7 +31,10 @@ pub fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSession
             let mut token_len = 2048;
             let mut token_buf = vec![0; 2048];
 
-            // SAFETY: all function input parameters are valid because:
+            // SAFETY:
+            // As per safety preconditions, the C function pointer is safe to be called with valid parameters.
+            //
+            // Parameters are valid because:
             // * session_id is an object on stack.
             // * destination is created (and validated) using `CString`.
             // * token_buf is a non-empty Vec.
