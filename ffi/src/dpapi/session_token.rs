@@ -7,10 +7,10 @@ use ffi_types::Uuid as CUuid;
 use url::Url;
 use uuid::Uuid;
 
-use super::GetSessionTokenFn as CGetSessiontokenFn;
+use super::GetSessionTokenFn as CGetSessionTokenFn;
 
 /// This function wraps a C-function into a Rust closure which we can pass into the Rust API.
-pub fn session_token_fn(get_session_token: CGetSessiontokenFn) -> Box<GetSessionTokenFn> {
+pub fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
         Box::pin(async move {
             let (data1, data2, data3, data4) = session_id.as_fields();
@@ -31,7 +31,7 @@ pub fn session_token_fn(get_session_token: CGetSessiontokenFn) -> Box<GetSession
             // * session_id is an object on stack.
             // * destination is created (and validated) using `CString`.
             // * token_buf is a non-empty Vec.
-            // * token len is a local variale.
+            // * token len is a local variable.
             let status = unsafe {
                 get_session_token(
                     &session_id,
