@@ -22,14 +22,14 @@ const NTE_INVALID_PARAMETER: u32 = 0x80090027;
 const NTE_INTERNAL_ERROR: u32 = 0x8009002d;
 const NTE_NO_MEMORY: u32 = 0x8009000e;
 
-/// Type that represents a function for obtaining the sesion token.
+/// Type that represents a function for obtaining the session token.
 ///
 /// We need it because we don't know the destination address in advance.
 ///
 /// Parameters:
 /// * `LpCUuid` is the session id.
 /// * `LpCStr` is the destination of the proxied connection.
-/// * `Lpbyte` is the session token buffer. It must be prealocated.
+/// * `Lpbyte` is the session token buffer. It must be preallocated.
 /// * `LpDword` is the session token buffer length.
 type GetSessionTokenFn = unsafe extern "system" fn(LpCUuid, LpCStr, LpByte, LpDword) -> u32;
 
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         };
 
         let proxy = if let (false, Some(get_session_token_fn)) = (proxy_url.is_null(), get_session_token_fn) {
-            info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
+            info!("Proxy parameters are not empty. Proceeding with tunnelled connection.");
 
             let proxy_url = try_execute!(
                 // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -145,7 +145,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                 get_session_token: session_token::session_token_fn(get_session_token_fn),
             })
         } else {
-            info!("Proxy parameters are emty. Proceccing with direct connection.");
+            info!("Proxy parameters are empty. Proceeding with direct connection.");
 
             None
         };
@@ -271,7 +271,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         };
 
         let proxy = if let (false, Some(get_session_token_fn)) = (proxy_url.is_null(), get_session_token_fn) {
-            info!("Proxy parameters are not emty. Proceccing with tunnelled connection.");
+            info!("Proxy parameters are not empty. Proceeding  with tunnelled connection.");
 
             let proxy_url = try_execute!(
                 // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -284,7 +284,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
                 get_session_token: session_token::session_token_fn(get_session_token_fn),
             })
         } else {
-            info!("Proxy parameters are emty. Proceccing with direct connection.");
+            info!("Proxy parameters are empty. Proceeding  with direct connection.");
 
             None
         };
@@ -296,14 +296,14 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         );
 
         if secret_data.as_ref().is_empty() {
-            error!("Decrypted secret is empty");
+            error!("Decrypted secret is empty.");
             return NTE_INTERNAL_ERROR;
         }
 
         // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
         let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
         if secret_buf.is_null() {
-            error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
+            error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL.");
             return NTE_NO_MEMORY;
         }
 
