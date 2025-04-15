@@ -10,9 +10,9 @@ mod network_client;
 mod session_token;
 mod transport;
 
-use std::sync::Arc;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::Context;
 use dpapi::CryptProtectSecretArgs;

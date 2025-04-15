@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::io::Error;
+use std::sync::Arc;
 
 use dpapi_transport::GetSessionTokenFn;
 use url::Url;

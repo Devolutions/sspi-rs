@@ -210,34 +210,34 @@ async fn get_key<T: Transport>(
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
     // let isd_key_port = {
-        let mut rpc = RpcClient::<T>::connect(
-            &connection_options,
-            AuthProvider::new(
-                SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
-                Credentials::AuthIdentity(AuthIdentity {
-                    username: username.clone(),
-                    password: password.clone(),
-                }),
-                server,
-                network_client,
-            )?,
-        )
-        .await?;
+    let mut rpc = RpcClient::<T>::connect(
+        &connection_options,
+        AuthProvider::new(
+            SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
+            Credentials::AuthIdentity(AuthIdentity {
+                username: username.clone(),
+                password: password.clone(),
+            }),
+            server,
+            network_client,
+        )?,
+    )
+    .await?;
 
-        info!("RPC connection has been established.");
+    info!("RPC connection has been established.");
 
-        let epm_contexts = get_epm_contexts();
-        let context_id = epm_contexts[0].context_id;
-        let bind_ack = rpc.bind(&epm_contexts).await?;
+    let epm_contexts = get_epm_contexts();
+    let context_id = epm_contexts[0].context_id;
+    let bind_ack = rpc.bind(&epm_contexts).await?;
 
-        info!("RPC bind/bind_ack finished successfully.");
+    info!("RPC bind/bind_ack finished successfully.");
 
-        process_bind_result(&epm_contexts, bind_ack, context_id)?;
+    process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
-        let ept_map = get_ept_map_isd_key();
-        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
+    let ept_map = get_ept_map_isd_key();
+    let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
-        let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
+    let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
     // };
 
     info!(isd_key_port);
