@@ -39,7 +39,7 @@ pub enum GkdiError {
 
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
-    if data.len() < 4 /* key_lenght */ + 4 /* padding */ + 8 /* referent id */ + 8 /* pointer size */ + 4
+    if data.len() < 4 /* key_length */ + 4 /* padding */ + 8 /* referent id */ + 8 /* pointer size */ + 4
     /* status */
     {
         Err(GkdiError::BadResponse("response data length is too small"))?;

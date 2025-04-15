@@ -7,6 +7,10 @@ xflags::xflags! {
         /// For example, win-956cqossjtf.tbt.com.
         required --server server: String
 
+        /// Websocket proxy address.
+        /// For example, ws://devolutions-gateway.tbt.com:7171/jet/fwd/tcp
+        optional --proxy-address proxy_address: String
+
         /// The username to decrypt/encrypt the DPAPI blob.
         /// The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
         required --username username: String

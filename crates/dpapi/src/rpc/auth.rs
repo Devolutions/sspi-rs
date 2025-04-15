@@ -253,6 +253,7 @@ impl AuthProvider {
             .with_input(&mut input_token)
             .with_output(&mut output_token);
         let result = self.security_context.initialize_security_context_sync(&mut builder)?;
+
         self.is_finished = result.status == SecurityStatus::Ok;
 
         self.credentials_handle = credentials_handle;
