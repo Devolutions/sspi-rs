@@ -9,7 +9,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
 use rand::Rng;
-pub use ts_request::{NStatusCode, TsRequest};
+pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
 #[cfg(feature = "tsssp")]
@@ -1192,13 +1192,13 @@ impl CredSspContext {
         credentials: &CredentialsBuffers,
         cred_ssp_mode: CredSspMode,
     ) -> crate::Result<Vec<u8>> {
-        self.encrypt_message(&ts_request::write_ts_credentials(credentials, cred_ssp_mode)?)
+        self.encrypt_message(&write_ts_credentials(credentials, cred_ssp_mode)?)
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> crate::Result<CredentialsBuffers> {
         let ts_credentials_buffer = self.decrypt_message(auth_info)?;
 
-        ts_request::read_ts_credentials(ts_credentials_buffer.as_slice())
+        read_ts_credentials(ts_credentials_buffer.as_slice())
     }
 
     fn encrypt_message(&mut self, input: &[u8]) -> crate::Result<Vec<u8>> {
