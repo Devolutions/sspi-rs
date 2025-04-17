@@ -25,3 +25,11 @@ impl From<dpapi::Error> for DpapiError {
         }
     }
 }
+
+impl From<url::ParseError> for DpapiError {
+    fn from(err: url::ParseError) -> Self {
+        Self {
+            error: anyhow::Error::new(err),
+        }
+    }
+}

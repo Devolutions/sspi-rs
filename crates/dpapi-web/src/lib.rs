@@ -6,7 +6,8 @@
 extern crate tracing;
 
 mod error;
-// mod network_client;
+mod network_client;
+mod session_token;
 mod transport;
 
 use std::cell::RefCell;
@@ -14,10 +15,12 @@ use std::rc::Rc;
 
 use anyhow::Context;
 use dpapi::CryptProtectSecretArgs;
+use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::error::DpapiError;
-// use crate::network_client::WasmNetworkClient;
+use crate::network_client::WasmNetworkClient;
+use crate::session_token::session_token_fn;
 use crate::transport::WasmTransport;
 
 /// DPAPI command.
@@ -37,6 +40,12 @@ enum Command {
     },
 }
 
+#[derive(Clone)]
+struct ProxyOptions {
+    proxy: String,
+    get_session_token: js_sys::Function,
+}
+
 /// DPAPI config.
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -45,7 +54,7 @@ pub struct DpapiConfig(Rc<RefCell<DpapiConfigInner>>);
 #[derive(Default)]
 struct DpapiConfigInner {
     server: Option<String>,
-    proxy: Option<String>,
+    proxy: Option<ProxyOptions>,
     username: Option<String>,
     password: Option<String>,
     computer_name: Option<String>,
@@ -55,14 +64,14 @@ struct DpapiConfigInner {
 #[wasm_bindgen]
 impl DpapiConfig {
     /// Initilized the config.
-    pub fn new() -> DpapiConfig {
+    pub fn new() -> Self {
         Self(Rc::new(RefCell::new(DpapiConfigInner::default())))
     }
 
     /// Set the target RPC server address.
     ///
     /// **Required**.
-    pub fn server(&mut self, server: String) -> DpapiConfig {
+    pub fn server(&mut self, server: String) -> Self {
         self.0.borrow_mut().server = Some(server);
         self.clone()
     }
@@ -70,15 +79,18 @@ impl DpapiConfig {
     /// Set the proxy address.
     ///
     /// **Optional**.
-    pub fn proxy(&mut self, proxy_addr: Option<String>) -> DpapiConfig {
-        self.0.borrow_mut().proxy = proxy_addr;
+    pub fn proxy(&mut self, proxy: String, get_session_token: js_sys::Function) -> Self {
+        self.0.borrow_mut().proxy = Some(ProxyOptions {
+            proxy,
+            get_session_token,
+        });
         self.clone()
     }
 
     /// Set the AD user name.
     ///
     /// **Required**.
-    pub fn username(&mut self, username: String) -> DpapiConfig {
+    pub fn username(&mut self, username: String) -> Self {
         self.0.borrow_mut().username = Some(username);
         self.clone()
     }
@@ -86,7 +98,7 @@ impl DpapiConfig {
     /// Set the AD user password.
     ///
     /// **Required**.
-    pub fn password(&mut self, password: String) -> DpapiConfig {
+    pub fn password(&mut self, password: String) -> Self {
         self.0.borrow_mut().password = Some(password);
         self.clone()
     }
@@ -94,23 +106,23 @@ impl DpapiConfig {
     /// Set the client's computer name.
     ///
     /// **Optional**.
-    pub fn computer_name(&mut self, computer_name: String) -> DpapiConfig {
+    pub fn computer_name(&mut self, computer_name: String) -> Self {
         self.0.borrow_mut().computer_name = Some(computer_name);
         self.clone()
     }
 
     /// Set the encrypt command.
     ///
-    /// Either [encrypt] or [decrypt] must be called.
-    pub fn encrypt(&mut self, sid: String, secret: String) -> DpapiConfig {
+    /// Either [encrypt] or [decrypt] must be called at least once.
+    pub fn encrypt(&mut self, sid: String, secret: String) -> Self {
         self.0.borrow_mut().command = Some(Command::Encrypt { sid, secret });
         self.clone()
     }
 
     /// Set the decrypt command.
     ///
-    /// Either [encrypt] or [decrypt] must be called.
-    pub fn decrypt(&mut self, blob: Vec<u8>) -> DpapiConfig {
+    /// Either [encrypt] or [decrypt] must be called at least once.
+    pub fn decrypt(&mut self, blob: Vec<u8>) -> Self {
         self.0.borrow_mut().command = Some(Command::Decrypt { blob });
         self.clone()
     }
@@ -130,6 +142,23 @@ impl DpapiConfig {
             command = inner.command.clone().context("command missing")?;
         }
 
+        let mut network_client = WasmNetworkClient;
+
+        let proxy = if let Some(ProxyOptions {
+            proxy,
+            get_session_token,
+        }) = proxy
+        {
+            let proxy = Url::parse(&proxy)?;
+
+            Some(dpapi_transport::ProxyOptions {
+                proxy,
+                get_session_token: session_token_fn(get_session_token),
+            })
+        } else {
+            None
+        };
+
         match command {
             Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(
                 CryptProtectSecretArgs {
@@ -137,20 +166,22 @@ impl DpapiConfig {
                     sid,
                     root_key_id: None,
                     server: &server,
-                    proxy: None,
+                    proxy,
                     username: &username,
                     password: password.into(),
                     client_computer_name: computer_name,
+                    network_client: &mut network_client,
                 },
             ))
             .await?),
             Command::Decrypt { blob } => Ok(Box::pin(dpapi::n_crypt_unprotect_secret::<WasmTransport>(
                 &blob,
                 &server,
-                None,
+                proxy,
                 &username,
                 password.into(),
                 computer_name,
+                &mut network_client,
             ))
             .await?
             .as_ref()
