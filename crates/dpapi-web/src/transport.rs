@@ -1,7 +1,7 @@
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
 
-use dpapi_transport::{ConnectOptions, LocalStream, Transport};
+use dpapi_transport::{ConnectOptions, Stream, Transport};
 use futures_util::{AsyncRead, AsyncWrite};
 use gloo_net::websocket;
 use gloo_net::websocket::futures::WebSocket;
@@ -24,7 +24,7 @@ impl<S> FuturesStream<S> {
     }
 }
 
-impl<S> LocalStream for FuturesStream<S>
+impl<S> Stream for FuturesStream<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {

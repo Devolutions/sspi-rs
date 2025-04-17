@@ -1,10 +1,11 @@
 use dpapi_pdu::rpc::{AuthenticationLevel, SecurityProvider, SecurityTrailer};
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
+use sspi::network_client::AsyncNetworkClient;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
     DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityStatus, Sspi,
+    SecurityStatus, Sspi, SspiImpl,
 };
 use thiserror::Error;
 
@@ -27,17 +28,22 @@ pub type AuthResult<T> = Result<T, AuthError>;
 /// Basically, this is a convenient wrapper over [SspiContext].
 /// It allows to perform RPC authentication without going into details of SSPI configuration and
 /// authentication parameters.
-#[derive(Debug)]
-pub struct AuthProvider {
+pub struct AuthProvider<'a> {
     security_context: SspiContext,
     credentials_handle: Option<CredentialsBuffers>,
     is_finished: bool,
     target_name: String,
+    network_client: &'a mut dyn AsyncNetworkClient,
 }
 
-impl AuthProvider {
+impl<'a> AuthProvider<'a> {
     /// Creates a new [AuthProvider].
-    pub fn new(mut security_context: SspiContext, credentials: Credentials, target_host: &str) -> AuthResult<Self> {
+    pub fn new(
+        mut security_context: SspiContext,
+        credentials: Credentials,
+        target_host: &str,
+        network_client: &'a mut dyn AsyncNetworkClient,
+    ) -> AuthResult<Self> {
         let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
         let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
             .with_auth_data(&credentials)
@@ -49,6 +55,7 @@ impl AuthProvider {
             is_finished: false,
             credentials_handle,
             target_name: format!("host/{}", target_host),
+            network_client,
         })
     }
 
@@ -212,7 +219,7 @@ impl AuthProvider {
     ///
     /// The client should call this method until `self.is_finished()` is `true`.
     #[instrument(ret, fields(state = ?self.is_finished), skip(self))]
-    pub fn initialize_security_context(&mut self, in_token: Vec<u8>) -> AuthResult<SecurityTrailer> {
+    pub async fn initialize_security_context(&mut self, in_token: Vec<u8>) -> AuthResult<SecurityTrailer> {
         let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
         let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
         let mut credentials_handle = self.credentials_handle.take();
@@ -236,7 +243,11 @@ impl AuthProvider {
             .with_target_name(&self.target_name)
             .with_input(&mut input_token)
             .with_output(&mut output_token);
-        let result = self.security_context.initialize_security_context_sync(&mut builder)?;
+        let result = self
+            .security_context
+            .initialize_security_context_impl(&mut builder)?
+            .resolve_with_async_client(self.network_client)
+            .await?;
 
         self.is_finished = result.status == SecurityStatus::Ok;
 

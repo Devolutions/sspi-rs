@@ -9,6 +9,7 @@ use dpapi_transport::{ConnectOptions, ProxyOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
+use sspi::network_client::AsyncNetworkClient;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
@@ -177,7 +178,7 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs<'server> {
+struct GetKeyArgs<'server, 'a> {
     server: &'server str,
     proxy: Option<ProxyOptions>,
     target_sd: Vec<u8>,
@@ -188,6 +189,7 @@ struct GetKeyArgs<'server> {
     username: Username,
     password: Secret<String>,
     negotiate_config: NegotiateConfig,
+    network_client: &'a mut dyn AsyncNetworkClient,
 }
 
 async fn get_key<T: Transport>(
@@ -202,7 +204,8 @@ async fn get_key<T: Transport>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs<'_>,
+        network_client,
+    }: GetKeyArgs<'_, '_>,
 ) -> Result<GroupKeyEnvelope> {
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
@@ -216,6 +219,7 @@ async fn get_key<T: Transport>(
                     password: password.clone(),
                 }),
                 server,
+                network_client,
             )?,
         )
         .await?;
@@ -246,6 +250,7 @@ async fn get_key<T: Transport>(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
+            network_client,
         )?,
     )
     .await?;
@@ -317,6 +322,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     username: &str,
     password: Secret<String>,
     client_computer_name: Option<String>,
+    network_client: &'_ mut dyn AsyncNetworkClient,
 ) -> Result<Secret<Vec<u8>>> {
     // TODO
     // sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
@@ -338,6 +344,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
         username,
         password,
         negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        network_client,
     }))
     .await?;
 
@@ -347,7 +354,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'server, 'username> {
+pub struct CryptProtectSecretArgs<'server, 'username, 'a> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -364,6 +371,7 @@ pub struct CryptProtectSecretArgs<'server, 'username> {
     pub password: Secret<String>,
     /// Client's computer name.
     pub client_computer_name: Option<String>,
+    pub network_client: &'a mut dyn AsyncNetworkClient,
 }
 
 /// Encrypts data to a specified protection descriptor.
@@ -384,7 +392,8 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         username,
         password,
         client_computer_name,
-    }: CryptProtectSecretArgs<'_, '_>,
+        network_client,
+    }: CryptProtectSecretArgs<'_, '_, '_>,
 ) -> Result<Vec<u8>> {
     // TODO
     // sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
@@ -410,6 +419,7 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         username,
         password,
         negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        network_client,
     }))
     .await?;
 

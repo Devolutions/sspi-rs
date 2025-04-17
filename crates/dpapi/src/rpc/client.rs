@@ -56,17 +56,17 @@ impl EncryptionOffsets {
 ///
 /// All RPC communication is done using this RPC client. It can connect to RPC server,
 /// authenticate, and send RPC requests.
-pub struct RpcClient<T: Transport> {
+pub struct RpcClient<'a, T: Transport> {
     stream: T::Stream,
     sign_header: bool,
-    auth: AuthProvider,
+    auth: AuthProvider<'a>,
 }
 
-impl<T: Transport> RpcClient<T> {
+impl<'a, T: Transport> RpcClient<'a, T> {
     /// Connects to the RPC server.
     ///
     /// Returns a new RPC client that is ready to send/receive data.
-    pub async fn connect(connection_options: &ConnectOptions, auth: AuthProvider) -> Result<Self> {
+    pub async fn connect(connection_options: &ConnectOptions, auth: AuthProvider<'a>) -> Result<Self> {
         let stream = T::connect(connection_options).await?;
 
         Ok(Self {
@@ -352,9 +352,9 @@ impl<T: Transport> RpcClient<T> {
     pub async fn bind_authenticate(&mut self, contexts: &[ContextElement]) -> Result<BindAck> {
         // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
         // We don't need its result in RPC authentication.
-        let _security_trailer = self.auth.initialize_security_context(Vec::new())?;
+        let _security_trailer = self.auth.initialize_security_context(Vec::new()).await?;
 
-        let security_trailer = self.auth.initialize_security_context(Vec::new())?;
+        let security_trailer = self.auth.initialize_security_context(Vec::new()).await?;
         let bind = Self::create_bind_pdu(contexts.to_vec(), Some(security_trailer))?;
 
         self.sign_header = true;
@@ -372,7 +372,10 @@ impl<T: Transport> RpcClient<T> {
         let mut in_token = security_trailer.map(|security_trailer| security_trailer.auth_value);
 
         loop {
-            let security_trailer = self.auth.initialize_security_context(in_token.unwrap_or_default())?;
+            let security_trailer = self
+                .auth
+                .initialize_security_context(in_token.unwrap_or_default())
+                .await?;
 
             if self.auth.is_finished() {
                 break;

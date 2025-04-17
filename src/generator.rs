@@ -5,7 +5,7 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use url::Url;
 
-use crate::network_client::{NetworkClient, NetworkProtocol};
+use crate::network_client::{AsyncNetworkClient, NetworkClient, NetworkProtocol};
 use crate::{Error, InitializeSecurityContextResult};
 
 pub struct Interrupt<YieldTy, ResumeTy> {
@@ -219,6 +219,21 @@ where
                 }
                 GeneratorState::Completed(res) => {
                     return res;
+                }
+            }
+        }
+    }
+
+    pub async fn resolve_with_async_client(&mut self, network_client: &mut dyn AsyncNetworkClient) -> OutTy {
+        let mut state = self.start();
+
+        loop {
+            match state {
+                GeneratorState::Suspended(ref request) => {
+                    state = self.resume(network_client.send(request).await);
+                }
+                GeneratorState::Completed(client_state) => {
+                    return client_state;
                 }
             }
         }

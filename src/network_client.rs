@@ -1,4 +1,6 @@
 use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::generator::NetworkRequest;
 use crate::Result;
@@ -23,6 +25,18 @@ impl NetworkProtocol {
             _ => None,
         }
     }
+}
+
+pub trait AsyncNetworkClient {
+    /// Send request to the server and return the response.
+    ///
+    /// URL scheme is guaranteed to be the same as specified by `protocol` argument.
+    /// `sspi-rs` will call this method only if `NetworkClient::is_protocol_supported`
+    /// returned true prior to the call, so unsupported `protocol` values could be marked as `unreachable!`.
+    fn send<'a>(
+        &'a mut self,
+        network_request: &'a NetworkRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
 }
 
 pub trait NetworkClient: Send + Sync {
