@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 
 use bitflags::bitflags;
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor, WriteBuf,
-    WriteCursor, cast_length, encode_buf, encode_seq, ensure_size, size_seq,
+    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
+    StaticName, WriteBuf, WriteCursor, cast_length, encode_buf, encode_seq, ensure_size, size_seq,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -45,6 +45,7 @@ impl CommandType {
 
 bitflags! {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub struct CommandFlags: u16 {
         const None = 0;
         const SecVtCommandEnd = 0x4000;
@@ -53,6 +54,7 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Command {
     Bitmask1(CommandBitmask),
     Pcontext(CommandPContext),
@@ -60,6 +62,14 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn set_flags(&mut self, flags: CommandFlags) {
+        match self {
+            Command::Bitmask1(command) => command.flags = flags,
+            Command::Pcontext(command) => command.flags = flags,
+            Command::Header2(command) => command.flags = flags,
+        }
+    }
+
     pub fn flags(&self) -> CommandFlags {
         match self {
             Command::Bitmask1(command) => command.flags,
@@ -85,6 +95,10 @@ impl Command {
     }
 }
 
+impl StaticName for Command {
+    const NAME: &'static str = "Command";
+}
+
 impl FixedPartSize for Command {
     const FIXED_PART_SIZE: usize = 2 /* command_type + command_flags */ + 2 /* value length */;
 }
@@ -103,7 +117,7 @@ impl Encode for Command {
     }
 
     fn name(&self) -> &'static str {
-        "Command"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -143,6 +157,7 @@ impl DecodeOwned for Command {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandBitmask {
     pub bits: u32,
     pub flags: CommandFlags,
@@ -180,6 +195,7 @@ impl CommandBitmask {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandPContext {
     pub flags: CommandFlags,
     pub interface_id: SyntaxId,
@@ -196,6 +212,13 @@ impl CommandPContext {
 
         let interface_id = SyntaxId::decode_owned(&mut src)?;
         let transfer_syntax = SyntaxId::decode_owned(&mut src)?;
+
+        if !src.is_empty() {
+            Err(
+                DecodeError::invalid_field("CommandPContext", "value", "invalid value length")
+                    .with_source(CommandError::InvalidCommandBitmaskValueLength(value.len())),
+            )?;
+        }
 
         Ok(Self {
             flags,
@@ -224,6 +247,7 @@ impl CommandPContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CommandHeader2 {
     pub flags: CommandFlags,
     pub packet_type: PacketType,
@@ -242,7 +266,7 @@ impl CommandHeader2 {
         let mut src = ReadCursor::new(value);
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE - 2 /* value length is already read */);
 
-        Ok(Self {
+        let command_header2 = Self {
             flags,
             packet_type: {
                 let packet_type = src.read_u8();
@@ -259,7 +283,16 @@ impl CommandHeader2 {
             call_id: src.read_u32(),
             context_id: src.read_u16(),
             opnum: src.read_u16(),
-        })
+        };
+
+        if !src.is_empty() {
+            Err(
+                DecodeError::invalid_field("CommandHeader2", "value", "invalid value length")
+                    .with_source(CommandError::InvalidCommandBitmaskValueLength(value.len())),
+            )?;
+        }
+
+        Ok(command_header2)
     }
 
     fn encode_value(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
@@ -296,8 +329,43 @@ pub struct VerificationTrailer {
     pub commands: Vec<Command>,
 }
 
+// We provide the custom Arbitrary trait implementation to ensure that the last command has `SecVtCommandEnd` flag turned on.
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary<'_> for VerificationTrailer {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let mut commands = Vec::new();
+
+        for _ in 0..u.arbitrary_len::<Command>()? {
+            let command: Command = u.arbitrary()?;
+            let flags = command.flags();
+
+            commands.push(command);
+
+            if flags.contains(CommandFlags::SecVtCommandEnd) {
+                break;
+            }
+        }
+
+        if let Some(command) = commands.last_mut() {
+            let mut flags = command.flags();
+
+            if !flags.contains(CommandFlags::SecVtCommandEnd) {
+                flags.set(CommandFlags::SecVtCommandEnd, true);
+
+                command.set_flags(flags);
+            }
+        }
+
+        Ok(Self { commands })
+    }
+}
+
 impl VerificationTrailer {
     const SIGNATURE: &[u8] = &[138, 227, 19, 113, 2, 244, 54, 113];
+}
+
+impl StaticName for VerificationTrailer {
+    const NAME: &'static str = "VerificationTrailer";
 }
 
 impl FixedPartSize for VerificationTrailer {
@@ -316,7 +384,7 @@ impl Encode for VerificationTrailer {
     }
 
     fn name(&self) -> &'static str {
-        "VerificationTrailer"
+        Self::NAME
     }
 
     fn size(&self) -> usize {
@@ -342,7 +410,7 @@ impl DecodeOwned for VerificationTrailer {
         }
 
         let mut commands = Vec::new();
-        loop {
+        while !src.is_empty() {
             let command = Command::decode_owned(src)?;
             let flags = command.flags();
 
