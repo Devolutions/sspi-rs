@@ -23,5 +23,5 @@ pub use ironrdp_core::{
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, InvalidFieldErr, OtherErr, ReadCursor,
     UnsupportedValueErr, WriteBuf, WriteCursor, cast_int, cast_length, decode_owned, encode_buf, ensure_size,
 };
-pub use marker::NeedsContext;
+pub use marker::{NeedsContext, StaticName};
 pub use padding::{compute_padding, read_padding, write_padding};
