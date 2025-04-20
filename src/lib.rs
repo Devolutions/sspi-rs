@@ -1100,6 +1100,22 @@ where
         ))
     }
 
+    /// Returns information about the session key used for the security context.
+    ///
+    /// # Returns
+    ///
+    /// * `SessionKeys` on success
+    ///
+    /// # MSDN
+    ///
+    /// * [QueryContextAttributes function (`ulAttribute` parameter)](https://docs.microsoft.com/en-us/windows/win32/secauthn/querycontextattributes--general)
+    fn query_context_session_key(&self) -> Result<SessionKeys> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "query_context_session_key is not supported",
+        ))
+    }
+
     /// Changes the password for a Windows domain account.
     ///
     /// # Returns
@@ -1999,6 +2015,17 @@ bitflags! {
 #[derive(Debug, Clone)]
 pub struct ContextNames {
     pub username: Username,
+}
+
+/// Contains information about the session key used for the security context.
+/// `query_context_session_key` function returns this structure.
+///
+/// # MSDN
+///
+/// * [SecPkgContext_SessionKey structure](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sessionkey)
+#[derive(Debug, Clone)]
+pub struct SessionKeys {
+    pub session_key: Secret<Vec<u8>>,
 }
 
 /// The kind of an SSPI related error. Enables to specify an error based on its type.

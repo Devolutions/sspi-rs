@@ -210,10 +210,6 @@ impl Ntlm {
     pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
         self.version = version;
     }
-
-    pub fn session_key(&self) -> Option<[u8; SESSION_KEY_SIZE]> {
-        self.session_key
-    }
 }
 
 impl Default for Ntlm {
@@ -535,6 +531,20 @@ impl Sspi for Ntlm {
             crate::ErrorKind::UnsupportedFunction,
             "Certificate trust status is not supported",
         ))
+    }
+
+    #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
+    fn query_context_session_key(&self) -> crate::Result<crate::SessionKeys> {
+        if let Some(session_key) = self.session_key {
+            Ok(crate::SessionKeys {
+                session_key: session_key.to_vec().into(),
+            })
+        } else {
+            Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "the session key is not established",
+            ))
+        }
     }
 
     fn change_password(

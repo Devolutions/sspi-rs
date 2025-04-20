@@ -184,6 +184,10 @@ impl Sspi for SspiHandle {
         self.sspi_context.lock()?.query_context_connection_info()
     }
 
+    fn query_context_session_key(&self) -> Result<sspi::SessionKeys> {
+        self.sspi_context.lock()?.query_context_session_key()
+    }
+
     fn change_password<'a>(
         &'a mut self,
         change_password: sspi::builders::ChangePassword<'a>,

@@ -948,6 +948,18 @@ impl Sspi for SspiContext {
         }
     }
 
+    #[instrument(fields(security_package = self.package_name()), skip(self))]
+    fn query_context_session_key(&self) -> crate::Result<crate::SessionKeys> {
+        match self {
+            SspiContext::Ntlm(ntlm) => ntlm.query_context_session_key(),
+            SspiContext::Kerberos(kerberos) => kerberos.query_context_session_key(),
+            SspiContext::Negotiate(negotiate) => negotiate.query_context_session_key(),
+            SspiContext::Pku2u(pku2u) => pku2u.query_context_session_key(),
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.query_context_session_key(),
+        }
+    }
+
     fn change_password<'a>(
         &'a mut self,
         change_password: ChangePassword<'a>,
