@@ -4,7 +4,6 @@
 
 mod cli;
 mod logging;
-mod network_client;
 mod session_token;
 
 use std::fs;
@@ -15,7 +14,6 @@ use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use url::Url;
 
-use crate::network_client::ReqwestNetworkClient;
 use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 
 async fn run(data: Dpapi) -> Result<()> {
@@ -46,7 +44,7 @@ async fn run(data: Dpapi) -> Result<()> {
             })
         })
         .transpose()?;
-    let mut network_client = ReqwestNetworkClient::new();
+    let mut network_client = dpapi::network_client::SyncNetworkClient::new();
 
     match subcommand {
         DpapiCmd::Encrypt(Encrypt { sid, secret }) => {

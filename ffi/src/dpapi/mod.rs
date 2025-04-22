@@ -84,6 +84,8 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         check_null!(blob);
         check_null!(blob_len);
 
+        try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
+
         let secret =
             // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
             unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
@@ -153,6 +155,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 
             None
         };
+        let mut network_client = dpapi::network_client::SyncNetworkClient::new();
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let blob_data = try_execute!(
@@ -166,6 +169,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                     username,
                     password: password.into(),
                     client_computer_name,
+                    network_client: &mut network_client,
                 }
             )),
             NTE_INTERNAL_ERROR
@@ -243,6 +247,8 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         check_null!(password);
         check_null!(secret);
 
+        try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
+
         // SAFETY: The `blob` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
         let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
         let server = try_execute!(
@@ -296,10 +302,11 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
             None
         };
+        let mut network_client = dpapi::network_client::SyncNetworkClient::new();
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let secret_data = try_execute!(
-            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name)),
+            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name, &mut network_client)),
             NTE_INTERNAL_ERROR
         );
 

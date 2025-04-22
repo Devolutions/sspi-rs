@@ -28,7 +28,7 @@ ffi-types = { workspace = true, features = ["winscard"], optional = true }
 picky-asn1-der.workspace = true
 uuid.workspace = true
 winscard = { workspace = true, features = ["std"], optional = true }
-dpapi = { workspace = true, optional = true }
+dpapi = { workspace = true, optional = true, features = ["network_client"] }
 dpapi-transport = { workspace = true, optional = true }
 dpapi-native-transport = { workspace = true, optional = true }
 url = { version = "2.5", optional = true }

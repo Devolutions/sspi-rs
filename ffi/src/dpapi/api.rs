@@ -20,6 +20,7 @@ mod inner {
     use dpapi::{CryptProtectSecretArgs, Result};
     use dpapi_transport::{ProxyOptions, Transport};
     use ffi_types::{Dword, LpByte, LpCStr, LpCUuid, LpDword};
+    use sspi::network_client::AsyncNetworkClient;
     use sspi::Secret;
     use url::Url;
     use uuid::Uuid;
@@ -32,6 +33,7 @@ mod inner {
         _username: &str,
         _password: Secret<String>,
         _client_computer_name: Option<String>,
+        _network_client: &'_ mut dyn AsyncNetworkClient,
     ) -> Result<Secret<Vec<u8>>> {
         if let Some(ProxyOptions {
             proxy,
@@ -51,7 +53,7 @@ mod inner {
     }
 
     #[allow(clippy::extra_unused_type_parameters)]
-    pub async fn n_crypt_protect_secret<T: Transport>(args: CryptProtectSecretArgs<'_, '_>) -> Result<Vec<u8>> {
+    pub async fn n_crypt_protect_secret<T: Transport>(args: CryptProtectSecretArgs<'_, '_, '_>) -> Result<Vec<u8>> {
         if let Some(ProxyOptions {
             proxy,
             get_session_token,
