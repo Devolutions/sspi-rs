@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
-#![allow(clippy::new_without_default)] // Default trait can’t be used by wasm consumer anyway
+// Default trait can’t be used by wasm consumer anyway
+#![allow(clippy::new_without_default)]
 
 #[macro_use]
 extern crate tracing;
@@ -12,7 +13,6 @@ mod transport;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use anyhow::Context;
 use dpapi::CryptProtectSecretArgs;
@@ -44,7 +44,7 @@ enum Command {
 #[derive(Clone)]
 struct ProxyOptions {
     proxy: String,
-    get_session_token: Arc<js_sys::Function>,
+    get_session_token: js_sys::Function,
 }
 
 /// DPAPI config.
@@ -83,7 +83,7 @@ impl DpapiConfig {
     pub fn proxy(&mut self, proxy: String, get_session_token: js_sys::Function) -> Self {
         self.0.borrow_mut().proxy = Some(ProxyOptions {
             proxy,
-            get_session_token: Arc::new(get_session_token),
+            get_session_token,
         });
         self.clone()
     }

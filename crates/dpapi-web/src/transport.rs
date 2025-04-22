@@ -62,6 +62,9 @@ where
     }
 }
 
+/// WASM transport.
+///
+/// It uses the WEB API under the hood to open the WS connection.
 pub struct WasmTransport;
 
 impl WasmTransport {

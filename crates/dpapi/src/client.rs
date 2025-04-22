@@ -237,7 +237,7 @@ async fn get_key<T: Transport>(
         let ept_map = get_ept_map_isd_key();
         let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
-        let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
+        process_ept_map_result(&response.try_into_response()?)?
     };
 
     info!(isd_key_port);
@@ -324,9 +324,6 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     client_computer_name: Option<String>,
     network_client: &'_ mut dyn AsyncNetworkClient,
 ) -> Result<Secret<Vec<u8>>> {
-    // TODO
-    // sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
-
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
     let username = Username::parse(username)
@@ -395,9 +392,6 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         network_client,
     }: CryptProtectSecretArgs<'_, '_, '_>,
 ) -> Result<Vec<u8>> {
-    // TODO
-    // sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
-
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;

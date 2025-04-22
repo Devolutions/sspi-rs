@@ -21,6 +21,8 @@ use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
 
+    sspi::install_default_crypto_provider_if_necessary().map_err(|_| Error::other("failed to initialize default crypto provider"))?;
+
     let Dpapi {
         server,
         proxy_address,

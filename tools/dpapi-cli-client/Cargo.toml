@@ -10,6 +10,7 @@ tokio = { version = "1.43", features = ["rt-multi-thread"] }
 url = "2.5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
 
+sspi = { path = "../..", features = ["network_client"] }
 uuid = { version = "1.15", features = ["std"] }
 dpapi = { path = "../../crates/dpapi" }
 dpapi-transport = { path = "../../crates/dpapi-transport" }

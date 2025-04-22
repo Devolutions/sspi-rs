@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 
 use dpapi_core::{
-    DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize, NeedsContext, ReadCursor,
-    StaticName, WriteCursor, decode_uuid, encode_uuid, ensure_size,
+    decode_uuid, encode_uuid, ensure_size, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult,
+    FixedPartSize, NeedsContext, ReadCursor, StaticName, WriteCursor,
 };
 use uuid::Uuid;
 

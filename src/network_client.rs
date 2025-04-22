@@ -27,7 +27,11 @@ impl NetworkProtocol {
     }
 }
 
-pub trait AsyncNetworkClient {
+/// Represents an abstract asynchronous network client.
+///
+/// This trait is primarily used for implementing network clients for WASM target
+/// and in other cases where a synchronous network client is not an option.
+pub trait AsyncNetworkClient: Send + Sync {
     /// Send request to the server and return the response.
     ///
     /// URL scheme is guaranteed to be the same as specified by `protocol` argument.

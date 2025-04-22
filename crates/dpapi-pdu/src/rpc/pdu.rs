@@ -2,9 +2,9 @@ use alloc::format;
 use alloc::vec::Vec;
 
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FindLength, FixedPartSize,
-    InvalidFieldErr, NeedsContext, OtherErr, ReadCursor, StaticName, UnsupportedValueErr, WriteCursor, compute_padding,
-    ensure_size, read_padding, write_padding,
+    compute_padding, ensure_size, read_padding, write_padding, DecodeError, DecodeOwned, DecodeResult,
+    DecodeWithContextOwned, Encode, EncodeResult, FindLength, FixedPartSize, InvalidFieldErr, NeedsContext, OtherErr,
+    ReadCursor, StaticName, UnsupportedValueErr, WriteCursor,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -572,13 +572,6 @@ impl DecodeWithContextOwned for PduData {
             PacketType::Fault => PduData::Fault(Fault::decode_owned(&mut buf)?),
             packet_type => return Err(PduError::PduNotSupported(packet_type).into()),
         };
-
-        // if !buf.is_empty() {
-        //     return Err(DecodeError::other(
-        //         "invalid PDU data",
-        //         "PDU header or PDU data is invalid: too much data to decode",
-        //     ));
-        // }
 
         Ok(pdu_data)
     }
