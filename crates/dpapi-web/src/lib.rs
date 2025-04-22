@@ -64,7 +64,7 @@ struct DpapiConfigInner {
 
 #[wasm_bindgen]
 impl DpapiConfig {
-    /// Initilized the config.
+    /// Initializes the config.
     pub fn new() -> Self {
         Self(Rc::new(RefCell::new(DpapiConfigInner::default())))
     }
@@ -154,11 +154,6 @@ impl DpapiConfig {
             proxy: proxy_url,
             get_session_token: session_token_fn(get_session_token),
         });
-
-        // use uuid::uuid;
-
-        // (proxy.get_session_token)(uuid!("89ce7def-11dd-4a05-a220-2b0def60799e"), Url::parse("tcp://192.168.1.103:88").unwrap()).await;
-        // (proxy.get_session_token)(uuid!("89ce7def-11dd-4a05-a220-2b0def60799e"), Url::parse("tcp://192.168.1.103:88").unwrap()).await;
 
         match command {
             Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(
