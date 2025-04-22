@@ -573,12 +573,12 @@ impl DecodeWithContextOwned for PduData {
             packet_type => return Err(PduError::PduNotSupported(packet_type).into()),
         };
 
-        if !buf.is_empty() {
-            return Err(DecodeError::other(
-                "invalid PDU data",
-                "PDU header or PDU data is invalid: too much data to decode",
-            ));
-        }
+        // if !buf.is_empty() {
+        //     return Err(DecodeError::other(
+        //         "invalid PDU data",
+        //         "PDU header or PDU data is invalid: too much data to decode",
+        //     ));
+        // }
 
         Ok(pdu_data)
     }

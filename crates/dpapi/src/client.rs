@@ -209,7 +209,7 @@ async fn get_key<T: Transport>(
 ) -> Result<GroupKeyEnvelope> {
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
-    let isd_key_port = {
+    // let isd_key_port = {
         let mut rpc = RpcClient::<T>::connect(
             &connection_options,
             AuthProvider::new(
@@ -237,8 +237,8 @@ async fn get_key<T: Transport>(
         let ept_map = get_ept_map_isd_key();
         let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
-        process_ept_map_result(&response.try_into_response()?)?
-    };
+        let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
+    // };
 
     info!(isd_key_port);
 

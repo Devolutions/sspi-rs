@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::pin::Pin;
 
 use dpapi::sspi::network_client::AsyncNetworkClient;

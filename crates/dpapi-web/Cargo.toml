@@ -1,7 +1,12 @@
 [package]
 name = "dpapi-web"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+[lib]
+doctest = false
+test = false
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["panic_hook"]
@@ -47,5 +52,4 @@ uuid = { workspace = true, default-features = false }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
-uuid = { workspace = true, default-features = false, features = ["rng-getrandom", "js"] }
-# aws-lc-rs = { version = "1.13", default-features = false, features = ["bindgen"] }
+time = { workspace = true, features = ["wasm-bindgen"] }

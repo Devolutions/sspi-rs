@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::io::Error;
 
 use dpapi_transport::GetSessionTokenFn;
@@ -6,9 +7,9 @@ use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-pub fn session_token_fn(get_session_token: js_sys::Function) -> Box<GetSessionTokenFn> {
+pub fn session_token_fn(get_session_token: Arc<js_sys::Function>) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
-        let get_session_token = get_session_token.clone();
+        let get_session_token = Arc::clone(&get_session_token);
         Box::pin(async move {
             let session_id = JsValue::from_str(&session_id.to_string());
             let destination = JsValue::from_str(destination.as_str());

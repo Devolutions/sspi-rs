@@ -10,6 +10,7 @@ mod network_client;
 mod session_token;
 mod transport;
 
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -43,7 +44,7 @@ enum Command {
 #[derive(Clone)]
 struct ProxyOptions {
     proxy: String,
-    get_session_token: js_sys::Function,
+    get_session_token: Arc<js_sys::Function>,
 }
 
 /// DPAPI config.
@@ -78,11 +79,11 @@ impl DpapiConfig {
 
     /// Set the proxy address.
     ///
-    /// **Optional**.
+    /// **Required**.
     pub fn proxy(&mut self, proxy: String, get_session_token: js_sys::Function) -> Self {
         self.0.borrow_mut().proxy = Some(ProxyOptions {
             proxy,
-            get_session_token,
+            get_session_token: Arc::new(get_session_token),
         });
         self.clone()
     }
@@ -135,7 +136,7 @@ impl DpapiConfig {
             let inner = self.0.borrow_mut();
 
             server = inner.server.clone().context("server address missing")?;
-            proxy = inner.proxy.clone();
+            proxy = inner.proxy.clone().context("proxy missing")?;
             username = inner.username.clone().context("username missing")?;
             password = inner.password.clone().context("password missing")?;
             computer_name = inner.computer_name.clone();
@@ -144,20 +145,20 @@ impl DpapiConfig {
 
         let mut network_client = WasmNetworkClient;
 
-        let proxy = if let Some(ProxyOptions {
-            proxy,
+        let ProxyOptions {
+            proxy: proxy_url,
             get_session_token,
-        }) = proxy
-        {
-            let proxy = Url::parse(&proxy)?;
+        } = proxy;
+        let proxy_url = Url::parse(&proxy_url)?;
+        let proxy = Some(dpapi_transport::ProxyOptions {
+            proxy: proxy_url,
+            get_session_token: session_token_fn(get_session_token),
+        });
 
-            Some(dpapi_transport::ProxyOptions {
-                proxy,
-                get_session_token: session_token_fn(get_session_token),
-            })
-        } else {
-            None
-        };
+        // use uuid::uuid;
+
+        // (proxy.get_session_token)(uuid!("89ce7def-11dd-4a05-a220-2b0def60799e"), Url::parse("tcp://192.168.1.103:88").unwrap()).await;
+        // (proxy.get_session_token)(uuid!("89ce7def-11dd-4a05-a220-2b0def60799e"), Url::parse("tcp://192.168.1.103:88").unwrap()).await;
 
         match command {
             Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(
