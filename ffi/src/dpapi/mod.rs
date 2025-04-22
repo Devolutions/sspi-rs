@@ -439,7 +439,7 @@ mod tests {
         let server = "win-956cqossjtf.tbt.com\0";
         let username = "t2@tbt.com\0";
         let password = "qqqQQQ111!!!\0";
-        let proxy_url = "ws://dg.tbt.com:7171/";
+        let proxy_url = "ws://dg.tbt.com:7171/\0";
         let mut blob: LpByte = null_mut();
         let mut blob_len = 0;
 
