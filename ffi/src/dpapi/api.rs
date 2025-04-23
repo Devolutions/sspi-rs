@@ -17,7 +17,7 @@ mod inner {
     use std::ffi::CStr;
     use std::slice::from_raw_parts_mut;
 
-    use dpapi::{CryptProtectSecretArgs, Result};
+    use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs, Result};
     use dpapi_transport::{ProxyOptions, Transport};
     use ffi_types::{Dword, LpByte, LpCStr, LpCUuid, LpDword};
     use sspi::network_client::AsyncNetworkClient;
@@ -27,19 +27,12 @@ mod inner {
 
     #[allow(clippy::extra_unused_type_parameters)]
     pub async fn n_crypt_unprotect_secret<T: Transport>(
-        _blob: &[u8],
-        _server: &str,
-        proxy: Option<ProxyOptions>,
-        _username: &str,
-        _password: Secret<String>,
-        _client_computer_name: Option<String>,
-        _kerberos_config: Option<KerberosConfig>,
-        _network_client: &'_ mut dyn AsyncNetworkClient,
+        args: CryptUnprotectSecretArgs<'_, '_, '_, '_>,
     ) -> Result<Secret<Vec<u8>>> {
         if let Some(ProxyOptions {
             proxy,
             get_session_token,
-        }) = proxy
+        }) = args.proxy
         {
             println!("proxy: {proxy}");
             println!(

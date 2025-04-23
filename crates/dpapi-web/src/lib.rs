@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use anyhow::Context;
-use dpapi::CryptProtectSecretArgs;
+use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
 use sspi::KerberosConfig;
 use url::Url;
 use wasm_bindgen::prelude::*;
@@ -190,14 +190,16 @@ impl DpapiConfig {
             ))
             .await?),
             Command::Decrypt { blob } => Ok(Box::pin(dpapi::n_crypt_unprotect_secret::<WasmTransport>(
-                &blob,
-                &server,
-                proxy,
-                &username,
-                password.into(),
-                computer_name,
-                kerberos_config,
-                &mut network_client,
+                CryptUnprotectSecretArgs {
+                    blob: &blob,
+                    server: &server,
+                    proxy,
+                    username: &username,
+                    password: password.into(),
+                    client_computer_name: computer_name,
+                    network_client: &mut network_client,
+                    kerberos_config,
+                },
             ))
             .await?
             .as_ref()

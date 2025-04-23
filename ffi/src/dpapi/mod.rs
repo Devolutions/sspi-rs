@@ -7,7 +7,7 @@ mod session_token;
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use dpapi::CryptProtectSecretArgs;
+use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
 use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid, LpDword};
@@ -269,7 +269,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             NTE_INVALID_PARAMETER
         )
         .to_owned();
-        let computer_name = if !computer_name.is_null() {
+        let client_computer_name = if !computer_name.is_null() {
             Some(
                 try_execute!(
                     // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -308,7 +308,17 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let secret_data = try_execute!(
-            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name, None, &mut network_client)),
+            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(
+                CryptUnprotectSecretArgs {
+                    blob,
+                    server,
+                    proxy,
+                    username,
+                    password: password.into(),
+                    client_computer_name,
+                    kerberos_config: None,
+                    network_client: &mut network_client
+                })),
             NTE_INTERNAL_ERROR
         );
 

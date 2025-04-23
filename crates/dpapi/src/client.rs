@@ -295,8 +295,7 @@ fn try_get_negotiate_config(
 ) -> Result<NegotiateConfig> {
     let client_computer_name = if let Some(name) = kerberos_config
         .as_ref()
-        .map(|config| config.client_computer_name.as_ref())
-        .flatten()
+        .and_then(|config| config.client_computer_name.as_ref())
     {
         name.to_owned()
     } else if let Some(name) = client_computer_name {
@@ -319,6 +318,26 @@ fn try_get_negotiate_config(
     ))
 }
 
+/// Arguments for `n_crypt_unprotect_secret` function.
+pub struct CryptUnprotectSecretArgs<'server, 'blob, 'username, 'a> {
+    /// Secret to encrypt.
+    pub blob: &'blob [u8],
+    /// Target server hostname.
+    pub server: &'server str,
+    /// Websocket proxy address.
+    pub proxy: Option<ProxyOptions>,
+    /// Username to encrypt the DPAPI blob.
+    pub username: &'username str,
+    /// User's password.
+    pub password: Secret<String>,
+    /// Client's computer name.
+    pub client_computer_name: Option<String>,
+    /// Network client for communicating with the KDC.
+    pub network_client: &'a mut dyn AsyncNetworkClient,
+    /// Optional Kerberos config.
+    pub kerberos_config: Option<KerberosConfig>,
+}
+
 /// Decrypt the DPAPI blob.
 ///
 /// This function simulated the `NCryptUnprotectSecret` function. Decryption requires making RPC calls to the domain.
@@ -328,14 +347,16 @@ fn try_get_negotiate_config(
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
 pub async fn n_crypt_unprotect_secret<T: Transport>(
-    blob: &[u8],
-    server: &str,
-    proxy: Option<ProxyOptions>,
-    username: &str,
-    password: Secret<String>,
-    client_computer_name: Option<String>,
-    kerberos_config: Option<KerberosConfig>,
-    network_client: &'_ mut dyn AsyncNetworkClient,
+    CryptUnprotectSecretArgs {
+        blob,
+        server,
+        proxy,
+        username,
+        password,
+        client_computer_name,
+        kerberos_config,
+        network_client,
+    }: CryptUnprotectSecretArgs<'_, '_, '_, '_>,
 ) -> Result<Secret<Vec<u8>>> {
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
