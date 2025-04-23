@@ -162,7 +162,7 @@ where
         self.resolve_to_result().expect(msg)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NetworkRequest {
     pub protocol: NetworkProtocol,
     pub url: Url,

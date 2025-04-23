@@ -15,7 +15,6 @@ name = "dpapi"
 
 [features]
 tsssp = ["sspi/tsssp"]
-network_client = ["sspi/network_client"]
 
 [dependencies]
 bitflags.workspace = true

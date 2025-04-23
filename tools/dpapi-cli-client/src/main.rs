@@ -4,6 +4,7 @@
 
 mod cli;
 mod logging;
+mod network_client;
 mod session_token;
 
 use std::fs;
@@ -19,7 +20,8 @@ use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
 
-    sspi::install_default_crypto_provider_if_necessary().map_err(|_| Error::other("failed to initialize default crypto provider"))?;
+    sspi::install_default_crypto_provider_if_necessary()
+        .map_err(|_| Error::other("failed to initialize default crypto provider"))?;
 
     let Dpapi {
         server,
@@ -44,7 +46,7 @@ async fn run(data: Dpapi) -> Result<()> {
             })
         })
         .transpose()?;
-    let mut network_client = dpapi::network_client::SyncNetworkClient::new();
+    let mut network_client = network_client::SyncNetworkClient;
 
     match subcommand {
         DpapiCmd::Encrypt(Encrypt { sid, secret }) => {
@@ -65,6 +67,7 @@ async fn run(data: Dpapi) -> Result<()> {
                     password: password.into(),
                     client_computer_name: computer_name,
                     network_client: &mut network_client,
+                    kerberos_config: None,
                 },
             ))
             .await
@@ -86,6 +89,7 @@ async fn run(data: Dpapi) -> Result<()> {
                 &username,
                 password.into(),
                 computer_name,
+                None,
                 &mut network_client,
             ))
             .await

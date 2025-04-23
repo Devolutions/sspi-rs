@@ -1,6 +1,7 @@
 #[macro_use]
 mod macros;
 mod api;
+mod network_client;
 mod session_token;
 
 use std::ffi::CStr;
@@ -155,7 +156,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 
             None
         };
-        let mut network_client = dpapi::network_client::SyncNetworkClient::new();
+        let mut network_client = network_client::SyncNetworkClient;
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let blob_data = try_execute!(
@@ -170,6 +171,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                     password: password.into(),
                     client_computer_name,
                     network_client: &mut network_client,
+                    kerberos_config: None,
                 }
             )),
             NTE_INTERNAL_ERROR
@@ -302,11 +304,11 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
             None
         };
-        let mut network_client = dpapi::network_client::SyncNetworkClient::new();
+        let mut network_client = network_client::SyncNetworkClient;
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let secret_data = try_execute!(
-            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name, &mut network_client)),
+            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name, None, &mut network_client)),
             NTE_INTERNAL_ERROR
         );
 

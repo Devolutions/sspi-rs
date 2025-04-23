@@ -21,7 +21,7 @@ mod inner {
     use dpapi_transport::{ProxyOptions, Transport};
     use ffi_types::{Dword, LpByte, LpCStr, LpCUuid, LpDword};
     use sspi::network_client::AsyncNetworkClient;
-    use sspi::Secret;
+    use sspi::{KerberosConfig, Secret};
     use url::Url;
     use uuid::Uuid;
 
@@ -33,6 +33,7 @@ mod inner {
         _username: &str,
         _password: Secret<String>,
         _client_computer_name: Option<String>,
+        _kerberos_config: Option<KerberosConfig>,
         _network_client: &'_ mut dyn AsyncNetworkClient,
     ) -> Result<Secret<Vec<u8>>> {
         if let Some(ProxyOptions {

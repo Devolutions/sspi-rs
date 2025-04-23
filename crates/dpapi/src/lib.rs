@@ -9,8 +9,6 @@ mod client;
 pub mod crypto;
 pub mod error;
 pub mod gkdi;
-#[cfg(feature = "network_client")]
-pub mod network_client;
 pub mod rpc;
 pub(crate) mod sid;
 

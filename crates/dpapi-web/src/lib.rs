@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 use anyhow::Context;
 use dpapi::CryptProtectSecretArgs;
+use sspi::KerberosConfig;
 use url::Url;
 use wasm_bindgen::prelude::*;
 
@@ -60,6 +61,7 @@ struct DpapiConfigInner {
     password: Option<String>,
     computer_name: Option<String>,
     command: Option<Command>,
+    kdc_proxy_url: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -74,6 +76,14 @@ impl DpapiConfig {
     /// **Required**.
     pub fn server(&mut self, server: String) -> Self {
         self.0.borrow_mut().server = Some(server);
+        self.clone()
+    }
+
+    /// Set the KDC proxy URL.
+    ///
+    /// **Optional**.
+    pub fn kdc_proxy_url(&self, kdc_proxy_url: Option<String>) -> Self {
+        self.0.borrow_mut().kdc_proxy_url = kdc_proxy_url;
         self.clone()
     }
 
@@ -130,7 +140,7 @@ impl DpapiConfig {
 
     /// Run the DPAPI client.
     pub async fn run(&self) -> Result<Vec<u8>, DpapiError> {
-        let (server, proxy, username, password, computer_name, command);
+        let (server, proxy, username, password, computer_name, command, kdc_proxy_url);
 
         {
             let inner = self.0.borrow_mut();
@@ -141,6 +151,7 @@ impl DpapiConfig {
             password = inner.password.clone().context("password missing")?;
             computer_name = inner.computer_name.clone();
             command = inner.command.clone().context("command missing")?;
+            kdc_proxy_url = inner.kdc_proxy_url.clone();
         }
 
         let mut network_client = WasmNetworkClient;
@@ -154,6 +165,13 @@ impl DpapiConfig {
             proxy: proxy_url,
             get_session_token: session_token_fn(get_session_token),
         });
+        // if kdc_proxy_url does not exit, give url parser a empty string, it will fail anyway and map to a None
+        let kerberos_config = Url::parse(kdc_proxy_url.unwrap_or_default().as_str())
+            .ok()
+            .map(|url| KerberosConfig {
+                kdc_url: Some(url),
+                client_computer_name: computer_name.clone(),
+            });
 
         match command {
             Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(
@@ -167,6 +185,7 @@ impl DpapiConfig {
                     password: password.into(),
                     client_computer_name: computer_name,
                     network_client: &mut network_client,
+                    kerberos_config,
                 },
             ))
             .await?),
@@ -177,6 +196,7 @@ impl DpapiConfig {
                 &username,
                 password.into(),
                 computer_name,
+                kerberos_config,
                 &mut network_client,
             ))
             .await?

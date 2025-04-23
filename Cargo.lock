@@ -726,6 +726,7 @@ dependencies = [
  "js-sys",
  "reqwest",
  "rustls-pki-types",
+ "sspi",
  "time",
  "tracing",
  "tracing-subscriber",

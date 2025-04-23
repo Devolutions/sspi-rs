@@ -12,9 +12,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 sspi = { path = "../..", features = ["network_client"] }
 uuid = { version = "1.15", features = ["std"] }
-dpapi = { path = "../../crates/dpapi", features = ["network_client"] }
-dpapi-transport = { path = "../../crates/dpapi-transport" }
-dpapi-native-transport = { path = "../../crates/dpapi-native-transport" }
+dpapi.path = "../../crates/dpapi"
+dpapi-transport.path = "../../crates/dpapi-transport"
+dpapi-native-transport.path = "../../crates/dpapi-native-transport"
 serde = { version = "1", features = ["derive"] }
 
 tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
