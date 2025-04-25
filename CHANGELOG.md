@@ -19,14 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   
   This adds the option for using Kerberos and Negotiate session keys.
 
-### <!-- 7 -->Build
-
-- Bump the patch group across 1 directory with 2 updates (#411) ([3b02a72c51](https://github.com/Devolutions/sspi-rs/commit/3b02a72c5116445df9aa72cfc1d66072dfa71ef8)) 
-
-- Bump libc from 0.2.171 to 0.2.172 in the patch group across 1 directory (#418) ([b08593d9c7](https://github.com/Devolutions/sspi-rs/commit/b08593d9c7883e44359afcc1743e84d5573199c3)) 
-
-
-
 ## [[0.15.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.3...sspi-v0.15.4)] - 2025-03-24
 
 ### <!-- 7 -->Build
