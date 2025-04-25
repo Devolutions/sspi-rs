@@ -235,9 +235,12 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 
         Ok(key)
     } else {
-        error!("No encryption keys in the krb context. Maybe security context is not established and encrypt_message was called too early");
+        error!("No encryption keys in the krb context. Maybe security context is not established, but encryption key is requested");
 
-        Err(Error::new(ErrorKind::EncryptFailure, "No encryption key provided"))
+        Err(Error::new(
+            ErrorKind::OutOfSequence,
+            "encryption key has not been found: no security context keys have been established",
+        ))
     }
 }
 

@@ -65,7 +65,7 @@ use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
     CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
     PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    ServerResponseFlags, SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -569,6 +569,13 @@ impl Sspi for Kerberos {
             ErrorKind::UnsupportedFunction,
             "Certificate trust status is not supported".to_owned(),
         ))
+    }
+
+    #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
+    fn query_context_session_key(&self) -> Result<SessionKeys> {
+        Ok(SessionKeys {
+            session_key: get_encryption_key(&self.encryption_params)?.to_vec().into(),
+        })
     }
 
     fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword<'a>> {

@@ -333,6 +333,15 @@ impl Sspi for Pku2u {
         ))
     }
 
+    #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
+    fn query_context_session_key(&self) -> Result<crate::SessionKeys> {
+        let session_key = get_encryption_key(&self.encryption_params)?;
+
+        Ok(crate::SessionKeys {
+            session_key: session_key.to_vec().into(),
+        })
+    }
+
     fn change_password(&mut self, _: ChangePassword) -> Result<crate::generator::GeneratorChangePassword> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,

@@ -370,6 +370,15 @@ impl Sspi for Negotiate {
         }
     }
 
+    #[instrument(fields(protocol = self.protocol.protocol_name()), skip_all)]
+    fn query_context_session_key(&self) -> Result<crate::SessionKeys> {
+        match &self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_session_key(),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_session_key(),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_session_key(),
+        }
+    }
+
     fn change_password<'a>(
         &'a mut self,
         change_password: builders::ChangePassword<'a>,
