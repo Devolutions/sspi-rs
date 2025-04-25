@@ -5,7 +5,7 @@ use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
-/// Type that represents a function for obtaining the sesion token.
+/// Type that represents a function for obtaining the session token.
 ///
 /// We need it because we don't know the destination address in advance.
 ///

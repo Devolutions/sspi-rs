@@ -2,15 +2,14 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
-    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int,
-    cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
-    write_padding,
+    cast_int, cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
+    write_padding, DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
+    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
-use uuid::{Uuid, uuid};
+use uuid::{uuid, Uuid};
 
 use crate::rpc::SyntaxId;
 
@@ -572,7 +571,8 @@ impl Encode for EptMap {
             encoded_tower_length + 2 /* tower amount */ + 4, /* encoded tower length */
         );
 
-        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4 /* max_towers */
+        Self::FIXED_PART_SIZE + encoded_tower_length + padding_len + self.entry_handle.size() + 4
+        /* max_towers */
     }
 }
 

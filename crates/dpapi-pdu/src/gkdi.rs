@@ -6,9 +6,9 @@ use core::{fmt, mem};
 
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
+    cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size, read_padding, write_padding,
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, FixedPartSize, InvalidFieldErr,
-    OtherErr, ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid,
-    ensure_size, read_padding, write_padding,
+    OtherErr, ReadCursor, StaticName, WriteCursor,
 };
 use num_bigint_dig::BigUint;
 use thiserror::Error;

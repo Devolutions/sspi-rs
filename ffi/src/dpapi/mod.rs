@@ -1,12 +1,13 @@
 #[macro_use]
 mod macros;
 mod api;
+mod network_client;
 mod session_token;
 
 use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use dpapi::CryptProtectSecretArgs;
+use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
 use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid, LpDword};
@@ -84,6 +85,8 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         check_null!(blob);
         check_null!(blob_len);
 
+        try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
+
         let secret =
             // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
             unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
@@ -153,6 +156,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 
             None
         };
+        let mut network_client = network_client::SyncNetworkClient;
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let blob_data = try_execute!(
@@ -166,6 +170,8 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                     username,
                     password: password.into(),
                     client_computer_name,
+                    network_client: &mut network_client,
+                    kerberos_config: None,
                 }
             )),
             NTE_INTERNAL_ERROR
@@ -243,6 +249,8 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         check_null!(password);
         check_null!(secret);
 
+        try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
+
         // SAFETY: The `blob` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
         let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
         let server = try_execute!(
@@ -261,7 +269,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             NTE_INVALID_PARAMETER
         )
         .to_owned();
-        let computer_name = if !computer_name.is_null() {
+        let client_computer_name = if !computer_name.is_null() {
             Some(
                 try_execute!(
                     // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
@@ -296,10 +304,21 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
             None
         };
+        let mut network_client = network_client::SyncNetworkClient;
 
         let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
         let secret_data = try_execute!(
-            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(blob, server, proxy, username, password.into(), computer_name)),
+            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(
+                CryptUnprotectSecretArgs {
+                    blob,
+                    server,
+                    proxy,
+                    username,
+                    password: password.into(),
+                    client_computer_name,
+                    kerberos_config: None,
+                    network_client: &mut network_client
+                })),
             NTE_INTERNAL_ERROR
         );
 
@@ -432,7 +451,7 @@ mod tests {
         let server = "win-956cqossjtf.tbt.com\0";
         let username = "t2@tbt.com\0";
         let password = "qqqQQQ111!!!\0";
-        let proxy_url = "ws://dg.tbt.com:7171/";
+        let proxy_url = "ws://dg.tbt.com:7171/\0";
         let mut blob: LpByte = null_mut();
         let mut blob_len = 0;
 
