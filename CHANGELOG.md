@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.4...sspi-v0.15.5)] - 2025-04-25
+
+### <!-- 1 -->Features
+
+- Add `query_context_session_key` (#417) ([862657a57c](https://github.com/Devolutions/sspi-rs/commit/862657a57c781e348ef5ccafe540511b19148b44)) 
+
+  This addition is an implementation for the SSP API
+  `QueryContextAttributesEx(SECPKG_ATTR_SESSION_KEY)`. It is required for
+  protocols such as SMB, and adding it to the `Sspi` trait, enables access
+  to it across all the SSP packages implemented.
+  
+  This adds the option for using Kerberos and Negotiate session keys.
+
 ## [[0.15.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.3...sspi-v0.15.4)] - 2025-03-24
 
 ### <!-- 7 -->Build
