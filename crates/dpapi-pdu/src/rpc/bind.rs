@@ -2,9 +2,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use dpapi_core::{
-    DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr, ReadCursor,
-    StaticName, WriteCursor, cast_length, compute_padding, decode_uuid, encode_seq, encode_uuid, ensure_size,
-    read_padding, size_seq, write_padding,
+    cast_length, compute_padding, decode_uuid, encode_seq, encode_uuid, ensure_size, read_padding, size_seq,
+    write_padding, DecodeError, DecodeOwned, DecodeResult, Encode, EncodeResult, FixedPartSize, InvalidFieldErr,
+    ReadCursor, StaticName, WriteCursor,
 };
 use thiserror::Error;
 use uuid::Uuid;

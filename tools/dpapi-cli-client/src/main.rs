@@ -4,12 +4,13 @@
 
 mod cli;
 mod logging;
+mod network_client;
 mod session_token;
 
 use std::fs;
 use std::io::{stdin, stdout, Error, ErrorKind, Read, Result, Write};
 
-use dpapi::CryptProtectSecretArgs;
+use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
 use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use url::Url;
@@ -18,6 +19,9 @@ use crate::cli::{Decrypt, Dpapi, DpapiCmd, Encrypt};
 
 async fn run(data: Dpapi) -> Result<()> {
     logging::init_logging();
+
+    sspi::install_default_crypto_provider_if_necessary()
+        .map_err(|_| Error::other("failed to initialize default crypto provider"))?;
 
     let Dpapi {
         server,
@@ -42,6 +46,7 @@ async fn run(data: Dpapi) -> Result<()> {
             })
         })
         .transpose()?;
+    let mut network_client = network_client::SyncNetworkClient;
 
     match subcommand {
         DpapiCmd::Encrypt(Encrypt { sid, secret }) => {
@@ -61,6 +66,8 @@ async fn run(data: Dpapi) -> Result<()> {
                     username: &username,
                     password: password.into(),
                     client_computer_name: computer_name,
+                    network_client: &mut network_client,
+                    kerberos_config: None,
                 },
             ))
             .await
@@ -76,12 +83,16 @@ async fn run(data: Dpapi) -> Result<()> {
             };
 
             let secret = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
-                &blob,
-                &server,
-                proxy,
-                &username,
-                password.into(),
-                computer_name,
+                CryptUnprotectSecretArgs {
+                    blob: &blob,
+                    server: &server,
+                    proxy,
+                    username: &username,
+                    password: password.into(),
+                    client_computer_name: computer_name,
+                    network_client: &mut network_client,
+                    kerberos_config: None,
+                },
             ))
             .await
             .unwrap();

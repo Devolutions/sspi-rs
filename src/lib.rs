@@ -613,7 +613,7 @@ where
     /// # Parameters
     /// * `flags`: package-specific flags that indicate the quality of protection. A security package can use this parameter to enable the selection of cryptographic algorithms
     /// * `message`: On input, the structure references one or more `SecurityBufferRef` structures of type `BufferType::Data` that contain the message to be signed,
-    ///     and a `SecurityBufferRef` of type `BufferType::Token` that receives the signature.
+    ///   and a `SecurityBufferRef` of type `BufferType::Token` that receives the signature.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Returns
@@ -721,7 +721,7 @@ where
     ///
     /// # Parameters
     /// * `message`: On input, the structure references one or more `SecurityBufferRef` structures of type `BufferType::Data` that contain the message to be verified,
-    ///     and a `SecurityBufferRef` of type `BufferType::Token` that contains the signature.
+    ///   and a `SecurityBufferRef` of type `BufferType::Token` that contains the signature.
     /// * `sequence_number`: the sequence number that the transport application assigned to the message. If the transport application does not maintain sequence numbers, this parameter must be zero
     ///
     /// # Returns

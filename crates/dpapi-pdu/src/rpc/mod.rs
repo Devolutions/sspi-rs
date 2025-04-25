@@ -9,8 +9,8 @@ pub use bind::{
     ContextElement, ContextResult, ContextResultCode, SyntaxId, Version,
 };
 pub use epm::{
-    BaseFloor, EPM, EntryHandle, EpmError, EptMap, EptMapResult, Floor, FloorProtocol, IpFloor,
-    RpcConnectionOrientedFloor, TcpFloor, Tower, UuidFloor, build_tcpip_tower,
+    build_tcpip_tower, BaseFloor, EntryHandle, EpmError, EptMap, EptMapResult, Floor, FloorProtocol, IpFloor,
+    RpcConnectionOrientedFloor, TcpFloor, Tower, UuidFloor, EPM,
 };
 pub use pdu::{
     AuthenticationLevel, CharacterRepr, DataRepr, Fault, FaultFlags, FloatingPointRepr, IntRepr, PacketFlags,

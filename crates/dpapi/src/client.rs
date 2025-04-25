@@ -9,8 +9,10 @@ use dpapi_transport::{ConnectOptions, ProxyOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesMode, AesParameters};
 use sspi::credssp::SspiContext;
+use sspi::negotiate::ProtocolConfig;
+use sspi::network_client::AsyncNetworkClient;
 use sspi::ntlm::NtlmConfig;
-use sspi::{AuthIdentity, Credentials, Negotiate, NegotiateConfig, Secret, Username};
+use sspi::{AuthIdentity, Credentials, KerberosConfig, Negotiate, NegotiateConfig, Secret, Username};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -177,7 +179,7 @@ fn encrypt_blob(
     Ok(buf)
 }
 
-struct GetKeyArgs<'server> {
+struct GetKeyArgs<'server, 'a> {
     server: &'server str,
     proxy: Option<ProxyOptions>,
     target_sd: Vec<u8>,
@@ -188,6 +190,7 @@ struct GetKeyArgs<'server> {
     username: Username,
     password: Secret<String>,
     negotiate_config: NegotiateConfig,
+    network_client: &'a mut dyn AsyncNetworkClient,
 }
 
 async fn get_key<T: Transport>(
@@ -202,39 +205,41 @@ async fn get_key<T: Transport>(
         username,
         password,
         negotiate_config,
-    }: GetKeyArgs<'_>,
+        network_client,
+    }: GetKeyArgs<'_, '_>,
 ) -> Result<GroupKeyEnvelope> {
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
-    let isd_key_port = {
-        let mut rpc = RpcClient::<T>::connect(
-            &connection_options,
-            AuthProvider::new(
-                SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
-                Credentials::AuthIdentity(AuthIdentity {
-                    username: username.clone(),
-                    password: password.clone(),
-                }),
-                server,
-            )?,
-        )
-        .await?;
+    // let isd_key_port = {
+    let mut rpc = RpcClient::<T>::connect(
+        &connection_options,
+        AuthProvider::new(
+            SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
+            Credentials::AuthIdentity(AuthIdentity {
+                username: username.clone(),
+                password: password.clone(),
+            }),
+            server,
+            network_client,
+        )?,
+    )
+    .await?;
 
-        info!("RPC connection has been established.");
+    info!("RPC connection has been established.");
 
-        let epm_contexts = get_epm_contexts();
-        let context_id = epm_contexts[0].context_id;
-        let bind_ack = rpc.bind(&epm_contexts).await?;
+    let epm_contexts = get_epm_contexts();
+    let context_id = epm_contexts[0].context_id;
+    let bind_ack = rpc.bind(&epm_contexts).await?;
 
-        info!("RPC bind/bind_ack finished successfully.");
+    info!("RPC bind/bind_ack finished successfully.");
 
-        process_bind_result(&epm_contexts, bind_ack, context_id)?;
+    process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
-        let ept_map = get_ept_map_isd_key();
-        let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
+    let ept_map = get_ept_map_isd_key();
+    let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
-        process_ept_map_result(&response.try_into_response()?)?
-    };
+    let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
+    // };
 
     info!(isd_key_port);
 
@@ -246,6 +251,7 @@ async fn get_key<T: Transport>(
             SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
+            network_client,
         )?,
     )
     .await?;
@@ -283,23 +289,53 @@ async fn get_key<T: Transport>(
     process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
 
-fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<NegotiateConfig> {
-    let client_computer_name = if let Some(name) = client_computer_name {
+fn try_get_negotiate_config(
+    client_computer_name: Option<String>,
+    kerberos_config: Option<KerberosConfig>,
+) -> Result<NegotiateConfig> {
+    let client_computer_name = if let Some(name) = kerberos_config
+        .as_ref()
+        .and_then(|config| config.client_computer_name.as_ref())
+    {
+        name.to_owned()
+    } else if let Some(name) = client_computer_name {
         name
     } else {
         whoami::fallible::hostname()?
     };
 
-    // `NtlmConfig` is enough. If the KDC is available, the `Negotiate` module will use Kerberos.
-    // So, we don't need to do any additional configurations here.
-    let protocol_config = Box::new(NtlmConfig {
-        client_computer_name: Some(client_computer_name.clone()),
-    });
+    let protocol_config: Box<dyn ProtocolConfig> = if let Some(kerberos_config) = kerberos_config {
+        Box::new(kerberos_config)
+    } else {
+        Box::new(NtlmConfig {
+            client_computer_name: Some(client_computer_name.clone()),
+        })
+    };
 
     Ok(NegotiateConfig::from_protocol_config(
         protocol_config,
         client_computer_name,
     ))
+}
+
+/// Arguments for `n_crypt_unprotect_secret` function.
+pub struct CryptUnprotectSecretArgs<'server, 'blob, 'username, 'a> {
+    /// Secret to encrypt.
+    pub blob: &'blob [u8],
+    /// Target server hostname.
+    pub server: &'server str,
+    /// Websocket proxy address.
+    pub proxy: Option<ProxyOptions>,
+    /// Username to encrypt the DPAPI blob.
+    pub username: &'username str,
+    /// User's password.
+    pub password: Secret<String>,
+    /// Client's computer name.
+    pub client_computer_name: Option<String>,
+    /// Network client for communicating with the KDC.
+    pub network_client: &'a mut dyn AsyncNetworkClient,
+    /// Optional Kerberos config.
+    pub kerberos_config: Option<KerberosConfig>,
 }
 
 /// Decrypt the DPAPI blob.
@@ -311,15 +347,17 @@ fn try_get_negotiate_config(client_computer_name: Option<String>) -> Result<Nego
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
 pub async fn n_crypt_unprotect_secret<T: Transport>(
-    blob: &[u8],
-    server: &str,
-    proxy: Option<ProxyOptions>,
-    username: &str,
-    password: Secret<String>,
-    client_computer_name: Option<String>,
+    CryptUnprotectSecretArgs {
+        blob,
+        server,
+        proxy,
+        username,
+        password,
+        client_computer_name,
+        kerberos_config,
+        network_client,
+    }: CryptUnprotectSecretArgs<'_, '_, '_, '_>,
 ) -> Result<Secret<Vec<u8>>> {
-    sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
-
     let dpapi_blob = DpapiBlob::decode(blob)?;
     let target_sd = dpapi_blob.protection_descriptor.get_target_sd()?;
     let username = Username::parse(username)
@@ -336,7 +374,8 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
         l2: dpapi_blob.key_identifier.l2,
         username,
         password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        negotiate_config: try_get_negotiate_config(client_computer_name, kerberos_config)?,
+        network_client,
     }))
     .await?;
 
@@ -346,7 +385,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
 }
 
 /// Arguments for `n_crypt_protect_secret` function.
-pub struct CryptProtectSecretArgs<'server, 'username> {
+pub struct CryptProtectSecretArgs<'server, 'username, 'a> {
     /// Secret to encrypt.
     pub data: Secret<Vec<u8>>,
     /// User's SID.
@@ -363,6 +402,10 @@ pub struct CryptProtectSecretArgs<'server, 'username> {
     pub password: Secret<String>,
     /// Client's computer name.
     pub client_computer_name: Option<String>,
+    /// Network client for communicating with the KDC.
+    pub network_client: &'a mut dyn AsyncNetworkClient,
+    /// Optional Kerberos config.
+    pub kerberos_config: Option<KerberosConfig>,
 }
 
 /// Encrypts data to a specified protection descriptor.
@@ -383,10 +426,10 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         username,
         password,
         client_computer_name,
-    }: CryptProtectSecretArgs<'_, '_>,
+        network_client,
+        kerberos_config,
+    }: CryptProtectSecretArgs<'_, '_, '_>,
 ) -> Result<Vec<u8>> {
-    sspi::install_default_crypto_provider_if_necessary().map_err(|_| ClientError::CryptoProvider)?;
-
     let l0 = -1;
     let l1 = -1;
     let l2 = -1;
@@ -407,7 +450,8 @@ pub async fn n_crypt_protect_secret<T: Transport>(
         l2,
         username,
         password,
-        negotiate_config: try_get_negotiate_config(client_computer_name)?,
+        negotiate_config: try_get_negotiate_config(client_computer_name, kerberos_config)?,
+        network_client,
     }))
     .await?;
 

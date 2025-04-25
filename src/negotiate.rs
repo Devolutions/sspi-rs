@@ -250,7 +250,7 @@ impl Negotiate {
     }
 
     fn is_target_name_ip_address(address: &str) -> bool {
-        let stripped_address = address.split('/').last().unwrap_or(address);
+        let stripped_address = address.split('/').next_back().unwrap_or(address);
         stripped_address.parse::<IpAddr>().is_ok()
     }
 
