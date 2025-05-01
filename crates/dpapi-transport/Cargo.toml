@@ -8,6 +8,7 @@ homepage = "https://github.com/devolutions/sspi-rs"
 repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "Common types and traits for implementing DPAPI RPC transport"
+publish = false # not ready yet
 
 [dependencies]
 url = "2.5"
