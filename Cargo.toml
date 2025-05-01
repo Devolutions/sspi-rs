@@ -155,6 +155,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
 
+[[test]]
+name = "sspi"
+required-features = ["network_client"]
+
 [[example]]
 name = "kerberos"
 required-features = ["network_client"]
