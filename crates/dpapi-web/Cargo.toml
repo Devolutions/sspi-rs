@@ -8,6 +8,7 @@ license = "MIT/Apache-2.0"
 homepage = "https://github.com/devolutions/sspi-rs"
 repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
+publish = false
 
 [lib]
 doctest = false

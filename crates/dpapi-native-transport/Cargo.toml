@@ -2,6 +2,7 @@
 name = "dpapi-native-transport"
 version = "0.1.0"
 edition = "2021"
+publish = false # not ready yet
 
 [dependencies]
 transport = { git = "https://github.com/Devolutions/devolutions-gateway.git", rev = "4fd9c22" }

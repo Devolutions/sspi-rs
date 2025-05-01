@@ -2,6 +2,7 @@
 name = "dpapi-pdu"
 version = "0.1.0"
 edition = "2021"
+publish = false # not ready yet
 
 [features]
 std = []
