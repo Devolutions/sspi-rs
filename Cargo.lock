@@ -639,7 +639,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
- "rand 0.8.5",
+ "rand 0.9.1",
  "regex",
  "sha1 0.10.6",
  "sha1 0.11.0-pre.5",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "dpapi-fuzzing"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "arbitrary",
  "dpapi-core",
@@ -2914,7 +2914,7 @@ dependencies = [
  "picky-krb",
  "portpicker",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.1",
  "reqwest",
  "rsa",
  "rustls",
@@ -3986,8 +3986,8 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "proptest",
- "rand 0.8.5",
- "rand_core 0.6.4",
+ "rand 0.9.1",
+ "rand_core 0.9.3",
  "rsa",
  "sha1 0.10.6",
  "time",
