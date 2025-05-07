@@ -34,7 +34,7 @@ pub struct PasswordCreds {
 
 /// Represents user name in internal KDC database.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct UserName(PrincipalName);
+pub struct UserName(pub PrincipalName);
 
 impl Hash for UserName {
     fn hash<H>(&self, state: &mut H)
@@ -63,7 +63,7 @@ impl KdcMock {
         Self { realm, keys, users }
     }
 
-    fn gen_err<const ErrorCode: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
+    fn gen_err<const ERROR_CODE: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
         let current_date = OffsetDateTime::now_utc();
         let microseconds = current_date.microsecond().min(999_999);
 
@@ -74,7 +74,7 @@ impl KdcMock {
             cusec: Optional::from(None),
             stime: ExplicitContextTag4::from(KerberosTime::from(GeneralizedTime::from(current_date))),
             susec: ExplicitContextTag5::from(Microseconds::from(microseconds.to_be_bytes().to_vec())),
-            error_code: ExplicitContextTag6::from(ErrorCode),
+            error_code: ExplicitContextTag6::from(ERROR_CODE),
             crealm: Optional::from(None),
             cname: Optional::from(None),
             realm: ExplicitContextTag9::from(realm),
@@ -163,7 +163,7 @@ impl KdcMock {
         Ok(key)
     }
 
-    pub fn as_exchange(&mut self, as_req: AsReq) -> Result<AsRep, KrbError> {
+    pub fn as_exchange(&self, as_req: AsReq) -> Result<AsRep, KrbError> {
         let KdcReq {
             pvno: _,
             msg_type: _,
@@ -393,7 +393,7 @@ impl KdcMock {
         })
     }
 
-    pub fn tgs_exchange(&mut self, tgs_req: TgsReq) -> Result<TgsRep, KrbError> {
+    pub fn tgs_exchange(&self, tgs_req: TgsReq) -> Result<TgsRep, KrbError> {
         let KdcReq {
             pvno: _,
             msg_type: _,
@@ -411,7 +411,7 @@ impl KdcMock {
             nonce: _,
             etype: _,
             addresses: _,
-            enc_authorization_data,
+            enc_authorization_data: _,
             additional_tickets,
         } = req_body.0;
 
