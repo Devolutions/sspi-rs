@@ -2,7 +2,6 @@
 
 pub mod kdc;
 pub mod network_client;
-pub mod tests;
 
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
@@ -17,9 +16,12 @@ use url::Url;
 use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
 
+/// Does all preparations and calls the [initialize_security_context_impl] function
+/// on the provided Kerberos context.
 pub fn initialize_security_context(
     kerberos: &mut Kerberos,
     credentials_handle: &mut Option<CredentialsBuffers>,
+    flags: ClientRequestFlags,
     target_name: &str,
     in_token: Vec<u8>,
     network_client: &mut dyn NetworkClient,
@@ -30,13 +32,7 @@ pub fn initialize_security_context(
     let mut builder = kerberos
         .initialize_security_context()
         .with_credentials_handle(credentials_handle)
-        .with_context_requirements(
-            ClientRequestFlags::MUTUAL_AUTH
-                | ClientRequestFlags::INTEGRITY
-                | ClientRequestFlags::SEQUENCE_DETECT
-                | ClientRequestFlags::REPLAY_DETECT
-                | ClientRequestFlags::CONFIDENTIALITY,
-        )
+        .with_context_requirements(flags)
         .with_target_data_representation(DataRepresentation::Native)
         .with_target_name(target_name)
         .with_input(&mut input_token)
@@ -122,18 +118,26 @@ fn kerberos_kdc_auth() {
         domain: string_to_utf16("EXAMPLE"),
         password: string_to_utf16("qweQWE123!@#").into(),
     }));
+    let flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let target_name = "TERMSRV/DESKTOP-8F33RFH.example.com";
 
     initialize_security_context(
         &mut kerberos_client,
         &mut credentials_handle,
-        "TERMSRV/DESKTOP-8F33RFH.example.com",
+        flags,
+        target_name,
         Vec::new(),
         &mut network_client,
     );
     initialize_security_context(
         &mut kerberos_client,
         &mut credentials_handle,
-        "TERMSRV/DESKTOP-8F33RFH.example.com",
+        flags,
+        target_name,
         Vec::new(),
         &mut network_client,
     );

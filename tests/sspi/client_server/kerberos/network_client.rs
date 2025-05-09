@@ -4,6 +4,10 @@ use sspi::Result;
 
 use crate::client_server::kerberos::kdc::KdcMock;
 
+/// [NetworkClient] mock implementation.
+///
+/// Instead of sending Kerberos messages to the KDC service,
+/// it redirects them to the KDC mock implementation.
 pub struct NetworkClientMock {
     pub kdc: KdcMock,
 }
