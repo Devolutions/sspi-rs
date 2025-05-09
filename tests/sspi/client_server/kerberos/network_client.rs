@@ -1,4 +1,3 @@
-use picky_krb::messages::{AsReq, TgsReq};
 use sspi::generator::NetworkRequest;
 use sspi::network_client::NetworkClient;
 use sspi::Result;
@@ -13,20 +12,12 @@ impl NetworkClient for NetworkClientMock {
     fn send(&self, request: &NetworkRequest) -> Result<Vec<u8>> {
         let data = &request.data[4..];
 
-        let response = if let Ok(as_req) = picky_asn1_der::from_bytes::<AsReq>(data) {
-            println!("as exchange");
+        let response = if let Ok(as_req) = picky_asn1_der::from_bytes(data) {
             match self.kdc.as_exchange(as_req) {
-                Ok(as_rep) => {
-                    println!("as exchange success");
-                    picky_asn1_der::to_vec(&as_rep)?
-                }
-                Err(krb_err) => {
-                    println!("as exchange fail");
-                    picky_asn1_der::to_vec(&krb_err)?
-                }
+                Ok(as_rep) => picky_asn1_der::to_vec(&as_rep)?,
+                Err(krb_err) => picky_asn1_der::to_vec(&krb_err)?,
             }
-        } else if let Ok(tgs_req) = picky_asn1_der::from_bytes::<TgsReq>(data) {
-            println!("tgs exchange");
+        } else if let Ok(tgs_req) = picky_asn1_der::from_bytes(data) {
             match self.kdc.tgs_exchange(tgs_req) {
                 Ok(tgs_rep) => picky_asn1_der::to_vec(&tgs_rep)?,
                 Err(krb_err) => picky_asn1_der::to_vec(&krb_err)?,

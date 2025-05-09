@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 pub mod kdc;
 pub mod network_client;
 pub mod tests;
@@ -49,10 +51,14 @@ pub fn initialize_security_context(
 }
 
 #[test]
-fn regular_kerberos_auth() {
+fn kerberos_kdc_auth() {
     let tgt_service_key = vec![
         199, 133, 201, 239, 57, 139, 61, 128, 71, 236, 217, 130, 250, 148, 117, 193, 197, 86, 155, 11, 92, 124, 232,
-        146, 0, 14, 158, 220, 113, 63, 110, 230,
+        146, 3, 14, 158, 220, 113, 63, 110, 230,
+    ];
+    let application_service_key = vec![
+        168, 29, 77, 196, 211, 88, 148, 180, 123, 188, 196, 182, 173, 30, 249, 191, 89, 35, 44, 56, 20, 217, 132, 131,
+        89, 144, 33, 79, 16, 91, 126, 72,
     ];
     let keys = [
         (
@@ -74,6 +80,16 @@ fn regular_kerberos_auth() {
                 ])),
             }),
             tgt_service_key,
+        ),
+        (
+            UserName(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string("DESKTOP-8F33RFH.example.com".into()).unwrap()),
+                ])),
+            }),
+            application_service_key,
         ),
     ]
     .into_iter()
@@ -114,12 +130,11 @@ fn regular_kerberos_auth() {
         Vec::new(),
         &mut network_client,
     );
-    let token = initialize_security_context(
+    initialize_security_context(
         &mut kerberos_client,
         &mut credentials_handle,
         "TERMSRV/DESKTOP-8F33RFH.example.com",
         Vec::new(),
         &mut network_client,
     );
-    println!("{:?}", token);
 }

@@ -128,7 +128,7 @@ impl KdcMock {
             &pa_datas
                 .0
                 .iter()
-                .find(|pa_data| pa_data.padata_type.0 .0 == &[2]) // PA-ENC-TIMESTAMP
+                .find(|pa_data| pa_data.padata_type.0 .0 == [2]) // PA-ENC-TIMESTAMP
                 .ok_or_else(|| err_preauth!(required))?
                 .padata_data
                 .0
@@ -198,7 +198,7 @@ impl KdcMock {
             .expect("user's credentials is not found in KDC database");
 
         KdcMock::validate_timestamp(
-            &creds,
+            creds,
             sname.clone(),
             realm.clone(),
             &padata
@@ -233,9 +233,9 @@ impl KdcMock {
                 tr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0])),
                 contents: ExplicitContextTag1::from(OctetStringAsn1::from(vec![1])),
             }),
-            auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time.clone()))),
+            auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),
             starttime: Optional::from(None),
-            endtime: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time.clone()))),
+            endtime: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time))),
             renew_till: Optional::from(None),
             caddr: Optional::from(None),
             authorization_data: Optional::from(None),
@@ -285,13 +285,13 @@ impl KdcMock {
             padata: Optional::from(Some(ExplicitContextTag2::from(Asn1SequenceOf::from(vec![PaData {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![19])),
                 padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-                    picky_asn1_der::to_vec(&EtypeInfo2Entry {
+                    picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
                         etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
                         salt: Optional::from(Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
                             IA5String::from_string(creds.salt.clone()).unwrap(),
                         )))),
                         s2kparams: Optional::from(None),
-                    })
+                    }]))
                     .unwrap(),
                 )),
             }])))),
@@ -334,7 +334,7 @@ impl KdcMock {
             &pa_datas
                 .0
                 .iter()
-                .find(|pa_data| pa_data.padata_type.0 .0 == &[1]) // PA-TGS-REQ
+                .find(|pa_data| pa_data.padata_type.0 .0 == [1]) // PA-TGS-REQ
                 .ok_or_else(|| err_preauth!(required))?
                 .padata_data
                 .0
@@ -349,8 +349,11 @@ impl KdcMock {
             ticket,
             authenticator,
         } = ap_req.0;
-
-        let ticket_enc_data = ticket.0 .0.enc_part;
+        let TicketInner {
+            sname: ticket_sname,
+            enc_part: ticket_enc_data,
+            ..
+        } = ticket.0 .0;
 
         let cipher = CipherSuite::try_from(ticket_enc_data.etype.0 .0.as_slice())
             .map_err(|_| err_preauth!(failed))?
@@ -358,7 +361,7 @@ impl KdcMock {
 
         let service_key = self
             .keys
-            .get(&UserName(sname.clone()))
+            .get(&UserName(ticket_sname.0))
             .expect("service's key must present in KDC database");
         let ticket_enc_part: EncTicketPart = picky_asn1_der::from_bytes(
             &cipher
@@ -479,9 +482,9 @@ impl KdcMock {
                 tr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0])),
                 contents: ExplicitContextTag1::from(OctetStringAsn1::from(vec![1])),
             }),
-            auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time.clone()))),
+            auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),
             starttime: Optional::from(None),
-            endtime: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time.clone()))),
+            endtime: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time))),
             renew_till: Optional::from(None),
             caddr: Optional::from(None),
             authorization_data: Optional::from(None),
