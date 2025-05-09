@@ -173,12 +173,17 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
     }
 }
 
-// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function
+/// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function.
+///
+/// # Safety:
+///
+/// * The user must ensure that `p_auth_data` must be not null and point to the valid [CredSspCred] structure.
 #[cfg(feature = "tsssp")]
 unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use sspi::string_to_utf16;
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
+    // SAFETY: The `p_auth_data` pointer guarantees must be upheld by the user.
     let credssp_cred = unsafe { p_auth_data.cast::<CredSspCred>().as_ref() }.unwrap();
 
     if credssp_cred.submit_type == CredSspSubmitType::CredsspSubmitBufferBothOld {
@@ -205,6 +210,9 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             let mut out_buffer_size = 1024;
             let mut out_buffer = null_mut();
 
+            // SAFETY:
+            // * all non-null values are allocated by Rust inside the current function. Thus, they are valid.
+            // * all other (null and zero) values are allowed according to the function documentation.
             let result = unsafe {
                 CredUIPromptForWindowsCredentialsW(
                     &cred_ui_info,
@@ -226,6 +234,9 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
                 ));
             }
 
+            // SAFETY: `out_buffer` and `out_buffer_size` are initialized and valid because
+            // the `CredUIPromptForWindowsCredentialsW` function returned successful status code and
+            // we've checked for errors above.
             unsafe { unpack_sec_winnt_auth_identity_ex2_w_sized(out_buffer, out_buffer_size) }
         } else {
             // When we try to pass the plain password in the `ClearTextPassword` .rdp file property,
@@ -234,18 +245,26 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             //
             // Additional info:
             // * [ClearTextPassword](https://github.com/Devolutions/MsRdpEx/blob/a7978812cb31e363f4b536316bd59e1573e69384/README.md#extended-rdp-file-options)
+            // SAFETY: we've checked above that the `credssp_cred.p_spnego_cred` is not null.
+            // The data correctness behind `credssp_cred.p_spnego_cred` pointer must be guaranteed by the user.
             unsafe { auth_data_to_identity_buffers_w(credssp_cred.p_spnego_cred, &mut None) }
         }
     } else {
+        // SAFETY: The data correctness behind `credssp_cred.p_spnego_cred` pointer must be guaranteed by the user.
         unsafe { unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred) }
     }
 }
 
-// This function determines what format credentials have: ASCII or UNICODE,
-// and then calls an appropriate raw credentials handler function.
-// Why do we need such a function:
-// Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
-// So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
+/// This function determines what format credentials have: ASCII or UNICODE,
+/// and then calls an appropriate raw credentials handler function.
+/// Why do we need such a function:
+/// Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
+/// So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
+///
+/// # Safety:
+///
+/// * The user must ensure that `p_auth_data` must be not null and point to the valid credentials structure
+///   corresponding to the security package in use.
 pub unsafe fn auth_data_to_identity_buffers(
     _security_package_name: &str,
     p_auth_data: *const c_void,
@@ -257,6 +276,7 @@ pub unsafe fn auth_data_to_identity_buffers(
 
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
+        // SAFETY: The data correctness behind `p_auth_data` pointer must be guaranteed by the user.
         return unsafe { credssp_auth_data_to_identity_buffers(p_auth_data) };
     }
 
@@ -500,6 +520,13 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
     ))
 }
 
+/// This function calculated the size of the credentials represented by the `SEC_WINNT_AUTH_IDENTITY_EX2`
+/// structure.
+///
+/// # Safety:
+///
+/// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
+///   by the `SEC_WINNT_AUTH_IDENTITY_EX2` structure.
 #[cfg(target_os = "windows")]
 unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u32 {
     // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2
@@ -689,6 +716,12 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     Ok(creds)
 }
 
+/// Unpacks raw credentials.
+///
+/// Safety:
+///
+/// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
+///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
 #[cfg(feature = "tsssp")]
 #[instrument(level = "trace", ret)]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
@@ -699,11 +732,19 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
         ));
     }
 
+    // SAFETY: The `p_auth_data` is not null (checked above). All other requirements mu be upheld by the user.
     let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) };
 
+    // SAFETY: The `p_auth_data` is not null (checked above). All other requirements mu be upheld by the user.
     unsafe { unpack_sec_winnt_auth_identity_ex2_w_sized(p_auth_data, auth_data_len) }
 }
 
+/// Unpacks raw credentials when the `auth_data` length is known.
+///
+/// Safety:
+///
+/// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
+///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
 #[cfg(feature = "tsssp")]
 #[instrument(level = "trace", ret)]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
@@ -728,6 +769,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     let mut password_len = 0;
 
     // The first call is just to query the username, domain, and password lengths.
+    // SAFETY:
+    // * `p_auth_data` pointer is not null (checked above). All other requirements mu be upheld by the user.
+    // * all null values are allowed by the documentation.
+    // * `username/domain/password_len` are safe to use because they are local variables.
     unsafe {
         CredUnPackAuthenticationBufferW(
             CRED_PACK_PROTECTED_CREDENTIALS,
@@ -746,6 +791,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     let mut domain = vec![0_u8; domain_len as usize * 2];
     let mut password = Secret::new(vec![0_u8; password_len as usize * 2]);
 
+    // SAFETY:
+    // * `p_auth_data` pointer is not null (checked above). All other requirements mu be upheld by the user.
+    // * `username/domain/password` buffers are safe to use because they are buffers allocated by Rust.
+    // * `username/domain/password_len` are safe to use because they are local variables.
     let result = unsafe {
         CredUnPackAuthenticationBufferW(
             CRED_PACK_PROTECTED_CREDENTIALS,
@@ -775,6 +824,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
+    // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
+    // Thus, it is safe to pass it into the `CredIsMarshaledCredentialW` function.
     if !username.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
