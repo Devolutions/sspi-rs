@@ -527,30 +527,48 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the `SEC_WINNT_AUTH_IDENTITY_EX2` structure.
 #[cfg(target_os = "windows")]
-unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> u32 {
+unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Result<u32> {
     // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2
     // https://github.com/FreeRDP/FreeRDP/blob/master/winpr/libwinpr/sspi/sspi_winpr.c#L473
 
     // Username length is placed after the first 8 bytes.
     // SAFETY: According to the documentation, username length is placed after the first 8 bytes.
     let user_len_ptr = unsafe { (p_auth_data as *const u16).add(4) };
-    // SAFETY: `user_len_ptr` should not be null.
+    if user_len_ptr.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "invalid credentials: username length pointer is null",
+        ));
+    }
+    // SAFETY: `user_len_ptr` is not null: checked above.
     let user_buffer_len = unsafe { *user_len_ptr as u32 };
 
     // Domain length is placed after 16 bytes from the username length.
     // SAFETY: According to the documentation, domain length is placed after the first 8 bytes.
     let domain_len_ptr = unsafe { user_len_ptr.add(8) };
-    // SAFETY: `domain_len_ptr` should not be null.
+    if domain_len_ptr.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "invalid credentials: domain length pointer is null",
+        ));
+    }
+    // SAFETY: `domain_len_ptr` is not null: checked above.
     let domain_buffer_len = unsafe { *domain_len_ptr as u32 };
 
     // Packet credentials length is placed after 16 bytes from the domain length.
     // SAFETY: According to the documentation, packet credentials length is placed after the first 8 bytes.
     let creds_len_ptr = unsafe { domain_len_ptr.add(8) };
-    // SAFETY: `creds_len_ptr` should not be null.
+    if creds_len_ptr.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "invalid credentials: creds length pointer is null",
+        ));
+    }
+    // SAFETY: `creds_len_ptr` is not null: checked above.
     let creds_buffer_len = unsafe { *creds_len_ptr as u32 };
 
     // The resulting size is queal to header size + buffers size.
-    64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len
+    Ok(64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len)
 }
 
 #[cfg(target_os = "windows")]
@@ -565,7 +583,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     }
 
     // SAFETY: `p_auth_data` is not null. We've checked this above.
-    let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) };
+    let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) }?;
 
     let mut username_len = 0;
     let mut domain_len = 0;
@@ -735,7 +753,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     }
 
     // SAFETY: The `p_auth_data` is not null (checked above). All other requirements mu be upheld by the user.
-    let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) };
+    let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) }?;
 
     // SAFETY: The `p_auth_data` is not null (checked above). All other requirements mu be upheld by the user.
     unsafe { unpack_sec_winnt_auth_identity_ex2_w_sized(p_auth_data, auth_data_len) }
