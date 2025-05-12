@@ -49,7 +49,7 @@ picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.14"
 picky-krb = "0.9"
-tokio = "1.44"
+tokio = "1.45"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
 
