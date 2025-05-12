@@ -38,9 +38,17 @@ impl From<PackageInfo> for RawSecPkgInfoW {
 
         let raw_pkg_info;
         let pkg_info_w;
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe.
         unsafe {
             raw_pkg_info = libc::malloc(size);
+        }
+        // SAFETY:
+        // FIXME(safety): it is illegal to construct a reference to uninitialized data
+        // Useful references:
+        // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
+        // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
+        // NOTE: this is not the only place that needs to be fixed. An audit is required.
+        unsafe {
             pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
         }
 
@@ -53,6 +61,11 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_w_size);
+        }
+        // SAFETY:
+        // * pkg_name ptr is valid for read because it is Rust-allocated vector.
+        // * name_ptr is valid for write because we took into account its length during memory allocation.
+        unsafe {
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
         }
         pkg_info_w.name = name_ptr as *mut _;
@@ -61,6 +74,11 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
+        }
+        // SAFETY:
+        // * pkg_comment ptr is valid for read because it is Rust-allocated vector.
+        // * pkg_comment is valid for write because we took into account its length during memory allocation.
+        unsafe {
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
         }
         pkg_info_w.comment = comment_ptr as *mut _;
@@ -104,15 +122,17 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         let raw_pkg_info;
         let pkg_info_a;
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe.
         unsafe {
             raw_pkg_info = libc::malloc(size);
-
-            // FIXME(safety): it is illegal to construct a reference to uninitialized data
-            // Useful references:
-            // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
-            // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
-            // NOTE: this is not the only place that needs to be fixed. An audit is required.
+        }
+        // SAFETY:
+        // FIXME(safety): it is illegal to construct a reference to uninitialized data
+        // Useful references:
+        // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
+        // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
+        // NOTE: this is not the only place that needs to be fixed. An audit is required.
+        unsafe {
             pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
         }
 
@@ -125,6 +145,11 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             name_ptr = raw_pkg_info.add(pkg_info_a_size);
+        }
+        // SAFETY:
+        // * pkg_name ptr is valid for read because it is Rust-allocated vector.
+        // * name_ptr is valid for write because we took into account its length during memory allocation.
+        unsafe {
             copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
         }
         pkg_info_a.name = name_ptr as *mut _;
@@ -133,6 +158,11 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
         unsafe {
             comment_ptr = name_ptr.add(name_bytes_len);
+        }
+        // SAFETY:
+        // * pkg_comment ptr is valid for read because it is Rust-allocated vector.
+        // * pkg_comment is valid for write because we took into account its length during memory allocation.
+        unsafe {
             copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
         }
         pkg_info_a.comment = comment_ptr as *mut _;
@@ -186,10 +216,15 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoA;
 
-        // SAFETY: It should be safe to cast a pointer. Data is placed right after all SecPkgInfoA structs.
+        // SAFETY: It is safe to cast a pointer because we allocated enough memory to place package name and comment alongside SecPkgInfoA.
         let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar };
         for pkg_info in packages {
-            // SAFETY: `package_ptr` is a local pointer, so is's valid.
+            // FIXME(safety): it is illegal to construct a reference to uninitialized data
+            // Useful references:
+            // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
+            // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
+            // NOTE: this is not the only place that needs to be fixed. An audit is required.
+            // SAFETY: `package_ptr` is a local pointer and we've checked that it is not null above.
             let pkg_info_a = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
@@ -202,9 +237,11 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             name.push(0);
             // SAFETY: This function is safe to call because `name` is valid C string and
             // `data_ptr` is a local pointer to allocated memory.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len()); }
             pkg_info_a.name = data_ptr as *mut _;
             // SAFETY: Our allocated buffer is big enough to contain package name and comment.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(name.len()) };
 
             let mut comment = pkg_info.comment.as_bytes().to_vec();
@@ -213,12 +250,15 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
             // SAFETY: This function is safe to call because `name` is valid C string and
             // `data_ptr` is a local pointer to allocated memory.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len()); }
             pkg_info_a.comment = data_ptr as *mut _;
             // SAFETY: Our allocated buffer is big enough to contain package name and comment.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(comment.len()) };
 
             // SAFETY: Next structure (if any) is placed right after this structure.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             package_ptr = unsafe { package_ptr.add(1) };
         }
 
@@ -269,10 +309,15 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         }
 
         let mut package_ptr = raw_packages as *mut SecPkgInfoW;
-        // SAFETY: It should be safe to cast a pointer. Data is placed right after all SecPkgInfoW structs.
+        // SAFETY: It is safe to cast a pointer because we allocated enough memory to place package name and comment alongside SecPkgInfoA.
         let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar };
         for (i, pkg_info) in packages.iter().enumerate() {
-            // SAFETY: `package_ptr` is a local pointer, so it's valid.
+            // FIXME(safety): it is illegal to construct a reference to uninitialized data
+            // Useful references:
+            // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
+            // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
+            // NOTE: this is not the only place that needs to be fixed. An audit is required.
+            // SAFETY: `package_ptr` is a local pointer and we've checked that it is not null above.
             let pkg_info_w = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
@@ -282,19 +327,24 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
             // SAFETY: This function is safe to call because `names[i]` is valid C string and
             // `data_ptr` is a local pointer to allocated memory.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len()); }
             pkg_info_w.name = data_ptr as *mut _;
             // SAFETY: Our allocated buffer is big enough to contain package name and comment.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(names[i].len()) };
 
             // SAFETY: This function is safe to call because `name` is valid C string and
             // `data_ptr` is a local pointer to allocated memory.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len()); }
             pkg_info_w.comment = data_ptr as *mut _;
             // SAFETY: Our allocated buffer is big enough to contain package name and comment.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(comments[i].len()) };
 
             // SAFETY: Next structure (if any) is placed right after this structure.
+            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             package_ptr = unsafe { package_ptr.add(1) };
         }
 

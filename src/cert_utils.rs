@@ -56,17 +56,23 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: *mut c_void
     ))
 }
 
-unsafe fn open_user_cert_store() -> Result<*mut c_void> {
+fn open_user_cert_store() -> Result<*mut c_void> {
     // "My\0" encoded as a wide string.
     // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
     let my: [u16; 3] = [77, 121, 0];
-    let cert_store = CertOpenStore(
-        CERT_STORE_PROV_SYSTEM_W,
-        0,
-        0,
-        CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
-        my.as_ptr() as *const _,
-    );
+    // SAFETY:
+    // * constant parameters are taken from the `windows_sys` crate. Thus, they are valid;
+    // * `dwEncodingType` and `hCryptProv` are allowed to be zero by documentation;
+    // * `my` is as valid wide C string.
+    let cert_store = unsafe {
+        CertOpenStore(
+            CERT_STORE_PROV_SYSTEM_W,
+            0,
+            0,
+            CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
+            my.as_ptr() as *const _,
+        )
+    };
 
     if cert_store.is_null() {
         return Err(Error::new(
@@ -79,17 +85,21 @@ unsafe fn open_user_cert_store() -> Result<*mut c_void> {
 }
 
 #[instrument(level = "trace", ret)]
-pub unsafe fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
+pub fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
     let cert_store = open_user_cert_store()?;
-    let cert = find_raw_cert_by_thumbprint(thumbprint, cert_store)?;
+    // SAFETY: `open_user_cert_store` returns valid store handle.
+    let cert = unsafe { find_raw_cert_by_thumbprint(thumbprint, cert_store)? };
 
-    CertCloseStore(cert_store, 0);
+    // SAFETY: `open_user_cert_store` returns valid store handle that needs to be closed.
+    unsafe {
+        CertCloseStore(cert_store, 0);
+    }
 
     Ok(cert)
 }
 
 #[instrument(level = "trace", ret)]
-pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Vec<u8>, Certificate)> {
+pub fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Vec<u8>, Certificate)> {
     let raw_cert = extract_raw_certificate_by_thumbprint(thumbprint)?;
 
     Ok((raw_cert.to_vec(), picky_asn1_der::from_bytes(&raw_cert)?))

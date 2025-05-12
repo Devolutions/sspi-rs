@@ -61,22 +61,20 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
         to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
         to_buffers[i].buffer_type = buffer.buffer_type.into();
         if allocate || to_buffers[i].pv_buffer.is_null() {
-            // SAFETY: Memory allocation should be safe. Also, we check `pv_buffer` for the null below.
-            to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) as *mut c_char };
+            // SAFETY: Memory allocation is safe. Also, we check `pv_buffer` for the null below.
+            to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) } as *mut c_char;
 
             if to_buffers[i].pv_buffer.is_null() {
                 return Err(Error::new(
                     ErrorKind::InsufficientMemory,
-                    format!("cannot allocate {buffer_size} bytes"),
+                    format!("coudln't allocate {buffer_size} bytes"),
                 ));
             }
         }
 
         // SAFETY: `pv_buffer` is not null. We've checked for this above.
-        let to_buffer = unsafe { from_raw_parts_mut(to_buffers[i].pv_buffer, buffer_size) };
-
-        // SAFETY: We create a valid pointer, so it's safe to call the function.
-        to_buffer.copy_from_slice(unsafe { from_raw_parts(buffer.buffer.as_ptr() as *const c_char, buffer_size) });
+        // The user must ensure that the `pv_buffer` size is big enough to accommodate the data.
+        unsafe { (buffer.buffer.as_ptr() as *const c_char).copy_to(to_buffers[i].pv_buffer, buffer_size) }
     }
 
     Ok(())

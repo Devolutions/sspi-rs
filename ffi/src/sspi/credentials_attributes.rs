@@ -63,29 +63,52 @@ pub struct SecPkgCredentialsKdcProxySettingsW {
     pub client_tls_cred_length: u16,
 }
 
+/// Extracts [KdcProxySettings].
+///
+/// # Safety:
+///
+/// * The pointer must not be null.
+/// * The pointer value must be [SecPkgCredentialsKdcProxySettingsW].
+/// * The proxy server and client TLS credentials (if any) values must be placed right after the [SecPkgCredentialsKdcProxySettingsW] value.
 pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> Result<KdcProxySettings> {
     if p_buffer.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "p_buffer cannot be null"));
     }
 
-    let kdc_proxy_settings = p_buffer.cast::<SecPkgCredentialsKdcProxySettingsW>();
+    // SAFETY:
+    // * `p_buffer` is not null: checked above;
+    // * the user must all other properties of the pointer and the value behind this pointer.
+    let kdc_proxy_settings = unsafe {
+        p_buffer
+            .cast::<SecPkgCredentialsKdcProxySettingsW>()
+            .as_ref()
+            .expect("p_buffer must not be null")
+    };
+
+    let SecPkgCredentialsKdcProxySettingsW {
+        proxy_server_offset,
+        proxy_server_length,
+        client_tls_cred_offset,
+        client_tls_cred_length,
+        ..
+    } = kdc_proxy_settings;
 
     // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
     // so it's not null either.
     let proxy_server = String::from_utf16_lossy(unsafe {
         from_raw_parts(
-            p_buffer.add((*kdc_proxy_settings).proxy_server_offset as usize) as *const u16,
-            (*kdc_proxy_settings).proxy_server_length as usize / size_of::<SecWChar>(),
+            p_buffer.add(*proxy_server_offset as usize) as *const u16,
+            *proxy_server_length as usize / size_of::<SecWChar>(),
         )
     });
 
     // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
     // so it's not null either.
     let client_tls_cred = unsafe {
-        if (*kdc_proxy_settings).client_tls_cred_offset != 0 && (*kdc_proxy_settings).client_tls_cred_length != 0 {
+        if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
             Some(String::from_utf16_lossy(from_raw_parts(
-                p_buffer.add((*kdc_proxy_settings).client_tls_cred_offset as usize) as *const u16,
-                (*kdc_proxy_settings).client_tls_cred_length as usize,
+                p_buffer.add(*client_tls_cred_offset as usize) as *const u16,
+                *client_tls_cred_length as usize,
             )))
         } else {
             None

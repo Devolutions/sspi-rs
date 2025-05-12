@@ -308,21 +308,22 @@ pub unsafe fn auth_data_to_identity_buffers_a(
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExA>();
         // SAFETY: `auth_data` is not null. We've checked this above.
-        if unsafe { !(*auth_data).package_list.is_null() && (*auth_data).package_list_length > 0 } {
+        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+
+        if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
             *package_list = Some(
                 // SAFETY: This function is safe to call because `package_list` is not null. We've checked this above.
                 String::from_utf8_lossy(unsafe {
                     from_raw_parts(
-                        (*auth_data).package_list as *const _,
-                        (*auth_data).package_list_length as usize,
+                        auth_data.package_list as *const _,
+                        auth_data.package_list_length as usize,
                     )
                 })
                 .to_string(),
             );
         }
 
-        // SAFETY: `auth_data` is not null. We've checked this above.
-        if unsafe { (*auth_data).user.is_null() || (*auth_data).domain.is_null() || (*auth_data).password.is_null() } {
+        if auth_data.user.is_null() || auth_data.domain.is_null() || auth_data.password.is_null() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
                 "some members of p_auth_data are null",
@@ -332,17 +333,18 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // SAFETY: All `raw_str_into_bytes` functions are safe to call because we've checked `user`, `domain` and `password` and they are not null.
         unsafe {
             Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-                user: credentials_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
-                domain: credentials_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-                password: credentials_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize)
-                    .into(),
+                user: credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize),
+                domain: credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize),
+                password: credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize).into(),
             }))
         }
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
 
         // SAFETY: `auth_data` is not null. We've checked this above.
-        if unsafe { (*auth_data).user.is_null() || (*auth_data).domain.is_null() || (*auth_data).password.is_null() } {
+        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+
+        if auth_data.user.is_null() || auth_data.domain.is_null() || auth_data.password.is_null() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
                 "some members of p_auth_data are null",
@@ -352,10 +354,9 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // SAFETY: All `raw_str_into_bytes` functions are safe to call because we've checked `user`, `domain` and `password` and they are not null.
         unsafe {
             Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-                user: credentials_str_into_bytes((*auth_data).user, (*auth_data).user_length as usize),
-                domain: credentials_str_into_bytes((*auth_data).domain, (*auth_data).domain_length as usize),
-                password: credentials_str_into_bytes((*auth_data).password, (*auth_data).password_length as usize)
-                    .into(),
+                user: credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize),
+                domain: credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize),
+                password: credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize).into(),
             }))
         }
     }
@@ -409,8 +410,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
         if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            // SAFETY: This function is safe to call because arguments are validated.
-            return unsafe { handle_smart_card_creds(user, password) };
+            return handle_smart_card_creds(user, password);
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
@@ -448,8 +448,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
         if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            // SAFETY: This function is safe to call because arguments are validated.
-            return unsafe { handle_smart_card_creds(user, password) };
+            return handle_smart_card_creds(user, password);
         }
 
         // Try to collect credentials for the emulated smart card.
@@ -656,7 +655,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 
 #[cfg(all(feature = "scard", target_os = "windows"))]
 #[instrument(level = "trace", ret)]
-unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
+fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
     use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
@@ -688,8 +687,11 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
     let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
 
     // SAFETY: This function is safe to call because `cert_credential` is validated.
-    let (raw_certificate, certificate) =
-        unsafe { sspi::cert_utils::extract_certificate_by_thumbprint(&(*cert_credential).rgbHashOfCert)? };
+    let (raw_certificate, certificate) = sspi::cert_utils::extract_certificate_by_thumbprint(
+        // SAFETY: We've checked the returned status code from `CredUnmarshalCredentialW` function and credentials type above.
+        // The `cert_credential` is a valid pointer to the `CERT_CREDENTIAL_INFO` structure at this point.
+        unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
+    )?;
 
     let username = string_to_utf16(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
     // SAFETY: This function is safe to call because argument is type-checked.
@@ -718,7 +720,7 @@ unsafe fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8
 
 /// Unpacks raw credentials.
 ///
-/// Safety:
+/// # Safety:
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -741,7 +743,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
 /// Unpacks raw credentials when the `auth_data` length is known.
 ///
-/// Safety:
+/// # Safety:
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -833,9 +835,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         let new_len = password.as_ref().len() - 2;
         password.as_mut().truncate(new_len);
 
-        // SAFETY:
-        // `user` and `password` are Rust vectors which is safe to read.
-        return unsafe { handle_smart_card_creds(username, password) };
+        return handle_smart_card_creds(username, password);
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
@@ -949,28 +949,27 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
             return 0;
         }
 
-        let auth_data = auth_data as *mut SecWinntAuthIdentityW;
+        let mut auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
+        let auth_data = unsafe { auth_data.as_mut() }.expect("auth_data pointer should not be null");
 
-        // SAFETY: It's safe to deallocate memory, because we check for null below.
-        unsafe {
-            if !(*auth_data).user.is_null() {
-                libc::free((*auth_data).user as *mut _)
-            }
-        };
-        // SAFETY: It's safe to deallocate memory, because we check for null below.
-        unsafe {
-            if !(*auth_data).domain.is_null() {
-                libc::free((*auth_data).domain as *mut _)
-            }
-        };
-        // SAFETY: It's safe to deallocate memory, because we check for null below.
-        unsafe {
-            if !(*auth_data).password.is_null() {
-                libc::free((*auth_data).password as *mut _)
-            }
-        };
+        if !auth_data.user.is_null() {
+            // SAFETY: We use malloc to allocated buffers for the user.
+            // The user have to ensure that the auth identity was allocated by us.
+            unsafe { libc::free(auth_data.user as *mut _); }
+        }
+        if !auth_data.domain.is_null() {
+            // SAFETY: We use malloc to allocated buffers for the user.
+            // The user have to ensure that the auth identity was allocated by us.
+            unsafe { libc::free(auth_data.domain as *mut _); }
+        }
+        if !auth_data.password.is_null() {
+            // SAFETY: We use malloc to allocated buffers for the user.
+            // The user have to ensure that the auth identity was allocated by us.
+            unsafe { libc::free(auth_data.password as *mut _); }
+        }
 
         // SAFETY: `auth_data` is not null. We've checked this above.
+        // The user have to ensure that the auth identity was allocated by us.
         let _auth_data: Box<SecWinntAuthIdentityW> = unsafe { Box::from_raw(auth_data) };
 
         0

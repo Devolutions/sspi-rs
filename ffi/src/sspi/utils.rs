@@ -3,20 +3,23 @@ use sspi::{CredentialsBuffers, Result};
 use super::credentials_attributes::CredentialsAttributes;
 use super::sec_handle::CredentialsHandle;
 
+/// Transforms a passed pointer to the credentials handle into a triplet of [CredentialsBuffers],
+/// security package name, and [CredentialsAttributes].
+///
+/// # Safety:
+///
+/// The caller have to ensure that either the pointer is null or the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
 pub unsafe fn transform_credentials_handle<'a>(
     credentials_handle: *mut CredentialsHandle,
 ) -> Option<(CredentialsBuffers, &'a str, &'a CredentialsAttributes)> {
-    if credentials_handle.is_null() {
-        None
-    } else {
-        // SAFETY: `credentials_handle` is not null. We've checked this above.
-        let cred_handle = unsafe { credentials_handle.as_mut().unwrap() };
-        Some((
+    // SAFETY: `credentials_handle` is not null. We've checked this above.
+    unsafe { credentials_handle.as_mut() }.map(|cred_handle| {
+        (
             cred_handle.credentials.clone(),
             cred_handle.security_package_name.as_str(),
             &cred_handle.attributes,
-        ))
-    }
+        )
+    })
 }
 
 // When encoding a UTF-16 character using two code units, the 16-bit values are chosen from

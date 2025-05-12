@@ -71,19 +71,19 @@ pub unsafe extern "system" fn AcceptSecurityContext(
             }
         };
 
-        // SAFETY: It's safe to call the function, because `ph_context` can be null and function handle this case.
-        let sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
+        // SAFETY: It's safe to call the function, because:
+        // *`ph_context` can be null;
+        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // * other parameters are type checked.
+        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             Some(security_package_name),
             attributes,
         )});
 
         // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function.
-        let sspi_context = unsafe { sspi_context_ptr
-            .as_mut()
-            .expect("security context pointer cannot be null")
-        };
+        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_input` is not null. We've checked for this above. Additionally, we check `p_buffers` for null.
         // All other guarantees must be provided by user.
@@ -110,7 +110,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
         // SAFETY: `ph_new_context` and `pf_context_attr` are not null. We've checked this above.
         unsafe {
-            (*ph_new_context).dw_lower = sspi_context_ptr as c_ulonglong;
+            (*ph_new_context).dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
             (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
 
             *pf_context_attr = f_context_req;
@@ -147,23 +147,23 @@ pub unsafe extern "system" fn CompleteAuthToken(
         // SAFETY: `p_token` is not null. We've checked this above.
         unsafe { check_null!((*p_token).p_buffers); }
 
-        // SAFETY: It's safe to call the `p_ctxt_handle_to_sspi_context` function, because `ph_context` can be null
-        // and the function handle this case.
-        // It's safe to call the `as_mut` function, because we call it on a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function.
-        let sspi_context = unsafe {
-            try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            ))
-            .as_mut()
-            .expect("security context pointer cannot be null")
-        };
+        // SAFETY: It's safe to call the function, because:
+        // *`ph_context` can be null;
+        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // * other parameters are type checked.
+        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        )});
+
+        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
+        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: This function is safe to call because `p_buffers` is not null. We've checked this above.
         let raw_buffers = unsafe { from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize) };
-        // SAFETY: This function is safe to call because `raw_buffers` is type checked. ALl other guarantees must be provided by user.
+        // SAFETY: This function is safe to call because `raw_buffers` is type checked. All other guarantees must be provided by user.
         let mut buffers = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
 
         sspi_context.complete_auth_token(&mut buffers).map_or_else(
@@ -182,21 +182,29 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        // SAFETY: `ph_context` is not null. We've checked for it above.
-        // It's safe to call the `from_raw` function, because its argument is a local pointer.
+        // SAFETY: It's safe to call the function, because:
+        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // * other parameters are type checked.
+        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        )});
+
+        // SAFETY: It's safe to constructs a box from a raw pointer because:
+        // * the `sspi_context_ptr` is not null;
+        // * the value behind `sspi_context_ptr` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
         let _context: Box<SspiHandle> = unsafe {
-            Box::from_raw(try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            )))
+            Box::from_raw(sspi_context_ptr.as_mut())
         };
 
         // SAFETY: `ph_context` is not null. We've checked for it above.
-        unsafe {
-            if (*ph_context).dw_upper != 0 {
-                let _name: Box<String> = Box::from_raw((*ph_context).dw_upper as *mut String);
-            }
+        let dw_upper = unsafe { (*ph_context).dw_upper };
+        if dw_upper != 0 {
+            // SAFETY: It's safe to constructs a box from a raw pointer because:
+            // * the `dw_upper` is not equal to zero;
+            // * the value behind `dw_upper` pointer must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+            let _name: Box<String> = unsafe { Box::from_raw(dw_upper as *mut String) };
         }
 
         0
@@ -265,7 +273,9 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
     // NOTE: see https://github.com/Devolutions/sspi-rs/pull/141 for rationale behind libc usage.
-    // SAFETY: Memory deallocation should be safe.
+    // SAFETY: Memory deallocation is safe.
+    // The user must call this function to free buffers allocated by ourself. On our side, we always use `malloc`
+    // to allocate buffers in in FFI.
     unsafe {
         libc::free(pv_context_buffer);
     }
@@ -315,19 +325,19 @@ pub unsafe extern "system" fn EncryptMessage(
         // SAFETY: `p_message` is not null. We've checked this above.
         unsafe { check_null!((*p_message).p_buffers); }
 
-        // SAFETY: It's safe to call the `p_ctxt_handle_to_sspi_context` function, because `ph_context` can be null
-        // and the function handle this case.
-        // It's safe to call the `as_mut` function, because we call it on a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function.
-        let sspi_context = unsafe {
-            try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            ))
-            .as_mut()
-            .expect("security context pointer cannot be null")
-        };
+        // SAFETY: It's safe to call the function, because:
+        // *`ph_context` can be null;
+        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // * other parameters are type checked.
+        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        )});
+
+        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
+        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_message` is not null. We've checked this above.
         let len = unsafe { (*p_message).c_buffers as usize };
@@ -374,19 +384,19 @@ pub unsafe extern "system" fn DecryptMessage(
         // SAFETY: `p_message` is not null. We've checked this above.
         unsafe { check_null!((*p_message).p_buffers); }
 
-        // SAFETY: It's safe to call the `p_ctxt_handle_to_sspi_context` function, because `ph_context` can be null
-        // and the function handle this case.
-        // It's safe to call the `as_mut` function, because we call it on a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function.
-        let sspi_context = unsafe {
-            try_execute!(p_ctxt_handle_to_sspi_context(
-                &mut ph_context,
-                None,
-                &CredentialsAttributes::default()
-            ))
-            .as_mut()
-            .expect("security context pointer cannot be null")
-        };
+        // SAFETY: It's safe to call the function, because:
+        // *`ph_context` can be null;
+        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // * other parameters are type checked.
+        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
+            &mut ph_context,
+            None,
+            &CredentialsAttributes::default()
+        )});
+
+        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
+        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_message` is not null. We've checked this above.
         let len = unsafe { (*p_message).c_buffers as usize };
@@ -406,8 +416,9 @@ pub unsafe extern "system" fn DecryptMessage(
         try_execute!(unsafe { copy_decrypted_buffers((*p_message).p_buffers, message) });
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
+            let flags = try_execute!(decryption_flags.bits().try_into(), ErrorKind::InternalError);
             // SAFETY: `pf_qop` is not null. We've checked this above.
-            unsafe { *pf_qop = decryption_flags.bits().try_into().unwrap() };
+            unsafe { *pf_qop = flags };
         }
 
         try_execute!(result_status);
