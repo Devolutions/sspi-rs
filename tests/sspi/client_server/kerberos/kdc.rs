@@ -29,6 +29,7 @@ use picky_krb::messages::{
 };
 use rand::rngs::OsRng;
 use rand::Rng;
+use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
 /// Represents user credentials in the internal KDC database.
@@ -85,7 +86,7 @@ impl KdcMock {
         let microseconds = current_date.microsecond().min(999_999);
 
         KrbError::from(KrbErrorInner {
-            pvno: ExplicitContextTag0::from(IntegerAsn1(vec![5])),
+            pvno: ExplicitContextTag0::from(IntegerAsn1(vec![KERBEROS_VERSION])),
             msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![KRB_ERROR_MSG_TYPE])),
             ctime: Optional::from(None),
             cusec: Optional::from(None),
@@ -302,7 +303,7 @@ impl KdcMock {
             .unwrap();
 
         Ok(AsRep::from(KdcRep {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
             msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AS_REP_MSG_TYPE])),
             padata: Optional::from(Some(ExplicitContextTag2::from(Asn1SequenceOf::from(vec![PaData {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
@@ -320,7 +321,7 @@ impl KdcMock {
             crealm: ExplicitContextTag3::from(realm.clone()),
             cname: ExplicitContextTag4::from(username.0),
             ticket: ExplicitContextTag5::from(Ticket::from(TicketInner {
-                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
                 realm: ExplicitContextTag1::from(realm),
                 sname: ExplicitContextTag2::from(sname),
                 enc_part: ExplicitContextTag3::from(EncryptedData {
@@ -554,13 +555,13 @@ impl KdcMock {
             .unwrap();
 
         Ok(TgsRep::from(KdcRep {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
             msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGS_REP_MSG_TYPE])),
             padata: Optional::from(None),
             crealm: ExplicitContextTag3::from(realm.clone()),
             cname: ExplicitContextTag4::from(cname),
             ticket: ExplicitContextTag5::from(Ticket::from(TicketInner {
-                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
                 realm: ExplicitContextTag1::from(realm),
                 sname: ExplicitContextTag2::from(sname),
                 enc_part: ExplicitContextTag3::from(EncryptedData {
