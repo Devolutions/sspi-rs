@@ -78,7 +78,7 @@ impl KdcMock {
         Self { realm, keys, users }
     }
 
-    fn gen_err<const ERROR_CODE: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
+    fn make_err<const ERROR_CODE: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
         let current_date = OffsetDateTime::now_utc();
         let microseconds = current_date.microsecond().min(999_999);
 
@@ -134,10 +134,10 @@ impl KdcMock {
     ) -> Result<Vec<u8>, KrbError> {
         macro_rules! err_preauth {
             (failed) => {
-                Self::gen_err::<{ KDC_ERR_PREAUTH_FAILED }>(sname.clone(), realm.clone(), Some(creds.salt.clone()))
+                Self::make_err::<{ KDC_ERR_PREAUTH_FAILED }>(sname.clone(), realm.clone(), Some(creds.salt.clone()))
             };
             (required) => {
-                Self::gen_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), Some(creds.salt.clone()))
+                Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), Some(creds.salt.clone()))
             };
         }
 
@@ -224,7 +224,7 @@ impl KdcMock {
             &padata
                 .0
                 .ok_or_else(|| {
-                    Self::gen_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm, Some(creds.salt.clone()))
+                    Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm, Some(creds.salt.clone()))
                 })?
                 .0,
         )?;
@@ -343,10 +343,10 @@ impl KdcMock {
     ) -> Result<(Vec<u8>, PrincipalName, i32), KrbError> {
         macro_rules! err_preauth {
             (failed) => {
-                Self::gen_err::<{ KDC_ERR_PREAUTH_FAILED }>(sname.clone(), realm.clone(), None)
+                Self::make_err::<{ KDC_ERR_PREAUTH_FAILED }>(sname.clone(), realm.clone(), None)
             };
             (required) => {
-                Self::gen_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), None)
+                Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), None)
             };
         }
 
@@ -448,7 +448,7 @@ impl KdcMock {
             realm.clone(),
             &padata
                 .0
-                .ok_or_else(|| Self::gen_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), None))?
+                .ok_or_else(|| Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(sname.clone(), realm.clone(), None))?
                 .0,
         )?;
 
