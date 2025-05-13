@@ -32,6 +32,8 @@ use rand::Rng;
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
+const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+
 /// Represents user credentials in the internal KDC database.
 pub struct PasswordCreds {
     /// User's password.
@@ -176,7 +178,7 @@ impl KdcMock {
             .map_err(|_| err_preauth!(failed))
             .map_err(|_| err_preauth!(failed))?;
 
-        if client_timestamp > kdc_timestamp || kdc_timestamp - client_timestamp > Duration::minutes(3) {
+        if client_timestamp > kdc_timestamp || kdc_timestamp - client_timestamp > MAX_TIME_SKEW {
             return Err(err_preauth!(failed));
         }
 
