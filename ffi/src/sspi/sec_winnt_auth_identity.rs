@@ -920,7 +920,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
             return ErrorKind::InvalidParameter.to_u32().unwrap();
         }
 
-        // SAFETY: Memory allocation is safe
+        // SAFETY: Memory allocation is safe.
         let user = unsafe { libc::malloc(user_length * 2) as *mut SecWChar };
         if user.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();
@@ -928,7 +928,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         // SAFETY: This function is safe to call because `psz_user_name` and `user` are not null. We've checked this above.
         unsafe { copy_nonoverlapping(psz_user_name, user, user_length) };
 
-        // SAFETY: Memory allocation is safe
+        // SAFETY: Memory allocation is safe.
         let domain = unsafe { libc::malloc(domain_length * 2) as *mut SecWChar };
         if domain.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();
@@ -936,7 +936,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         // SAFETY: This function is safe to call because `psz_domain_name` and `domain` are not null. We've checked this above.
         unsafe { copy_nonoverlapping(psz_domain_name, domain, domain_length) };
 
-        // SAFETY: Memory allocation is safe
+        // SAFETY: Memory allocation is safe.
         let password = unsafe { libc::malloc(password_length * 2) as *mut SecWChar };
         if password.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();
