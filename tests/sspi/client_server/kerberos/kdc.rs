@@ -80,6 +80,8 @@ impl KdcMock {
 
     fn make_err<const ERROR_CODE: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
         let current_date = OffsetDateTime::now_utc();
+        // https://www.rfc-editor.org/rfc/rfc4120#section-5.2.4
+        // Microseconds    ::= INTEGER (0..999999)
         let microseconds = current_date.microsecond().min(999_999);
 
         KrbError::from(KrbErrorInner {

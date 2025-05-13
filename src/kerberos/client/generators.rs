@@ -55,6 +55,12 @@ use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
+/// [Microseconds](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.4).
+/// The maximum microseconds value.
+///
+/// ```not_rust
+/// Microseconds    ::= INTEGER (0..999999)
+/// ```
 pub const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
 const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
