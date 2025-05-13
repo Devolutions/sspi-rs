@@ -158,7 +158,7 @@ pub struct CredSspCred {
 ///
 /// # Safety:
 ///
-/// * The auth identity pointer should not be null.
+/// * The auth identity pointer must not be null.
 pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_void) -> (u32, u32) {
     // SAFETY: the safety contract [p_auth_data] must be upheld by the caller.
     let auth_version = unsafe { *p_auth_data.cast::<u32>() };
