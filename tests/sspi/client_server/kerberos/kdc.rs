@@ -28,7 +28,7 @@ use picky_krb::messages::{
     KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::{Rng, RngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
@@ -233,10 +233,13 @@ impl KdcMock {
                 })?
                 .0,
         )?;
-        let mut rng = OsRng;
-        let session_key = rng.gen::<[u8; 32]>();
 
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+        let mut rng = OsRng;
+        let mut session_key = vec![0; cipher.key_size()];
+        rng.fill_bytes(&mut session_key);
+
         let initial_key = cipher
             .generate_key_from_password(&creds.password, creds.salt.as_bytes())
             .unwrap();
@@ -490,10 +493,12 @@ impl KdcMock {
                 .to_vec()
         };
 
-        let mut rng = OsRng;
-        let session_key = rng.gen::<[u8; 32]>();
-
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+        let mut rng = OsRng;
+        let mut session_key = vec![0; cipher.key_size()];
+        rng.fill_bytes(&mut session_key);
+
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
 
