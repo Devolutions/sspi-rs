@@ -154,6 +154,11 @@ pub struct CredSspCred {
     pub p_spnego_cred: *const c_void,
 }
 
+/// Returns auth identity version and flags.
+///
+/// # Safety:
+///
+/// * The auth identity pointer should not be null.
 pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_void) -> (u32, u32) {
     // SAFETY: the safety contract [p_auth_data] must be upheld by the caller.
     let auth_version = unsafe { *p_auth_data.cast::<u32>() };
@@ -719,7 +724,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         certificate: _,
         csp_name,
         private_key_file_index,
-    } = unsafe { finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)? };
+    } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
         certificate: raw_certificate,
@@ -915,7 +920,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
             return ErrorKind::InvalidParameter.to_u32().unwrap();
         }
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe
         let user = unsafe { libc::malloc(user_length * 2) as *mut SecWChar };
         if user.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();
@@ -923,7 +928,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         // SAFETY: This function is safe to call because `psz_user_name` and `user` are not null. We've checked this above.
         unsafe { copy_nonoverlapping(psz_user_name, user, user_length) };
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe
         let domain = unsafe { libc::malloc(domain_length * 2) as *mut SecWChar };
         if domain.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();
@@ -931,7 +936,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         // SAFETY: This function is safe to call because `psz_domain_name` and `domain` are not null. We've checked this above.
         unsafe { copy_nonoverlapping(psz_domain_name, domain, domain_length) };
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe
         let password = unsafe { libc::malloc(password_length * 2) as *mut SecWChar };
         if password.is_null() {
             return ErrorKind::InternalError.to_u32().unwrap();

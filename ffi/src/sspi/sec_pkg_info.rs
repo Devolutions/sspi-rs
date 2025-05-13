@@ -207,7 +207,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             size += package.name.as_ref().len() + 1 /* null byte */ + package.comment.len() + 1 /* null byte */;
         }
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe
         let raw_packages = unsafe { libc::malloc(size) };
 
         if raw_packages.is_null() {
@@ -301,7 +301,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             comments.push(comment);
         }
 
-        // SAFETY: Memory allocation should be safe.
+        // SAFETY: Memory allocation is safe
         let raw_packages = unsafe { libc::malloc(size) };
 
         if raw_packages.is_null() {

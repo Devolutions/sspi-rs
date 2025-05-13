@@ -23,6 +23,33 @@ pub struct SecBufferDesc {
 
 pub type PSecBufferDesc = *mut SecBufferDesc;
 
+/// # Safety:
+///
+/// * The input pointer can be null.
+/// * If the input pointer is not null, then it must point to the valid [SecBufferDesc] structure. Moreover,
+///   the user have to ensure that the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
+pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Vec<SecurityBuffer> {
+    // SAFETY:
+    // The user must upheld the [SecBufferDesc] validity and make sure that the pointer is convertible to a reference.
+    if let Some(input) = unsafe { p_input.as_ref() } {
+        let p_buffers = input.p_buffers;
+        let c_buffers = input.c_buffers;
+
+        let sec_buffers = if p_buffers.is_null() {
+            &[]
+        } else {
+            // SAFETY: We checked above that the `p_buffers` is not null.
+            // The caller must ensure all other guarantees.
+            unsafe { from_raw_parts(p_buffers, c_buffers as usize) }
+        };
+
+        // SAFETY: This function is safe to call because the argument is type checked.
+        unsafe { p_sec_buffers_to_security_buffers(sec_buffers) }
+    } else {
+        Vec::new()
+    }
+}
+
 #[allow(clippy::useless_conversion)]
 pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<SecurityBuffer> {
     raw_buffers
@@ -32,12 +59,10 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
                 Vec::new()
             } else {
                 // SAFETY: `pv_buffer` is not null (checked above). All other guarantees must be provided by the user.
-                unsafe {
-                    from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize)
-                        .iter()
-                        .map(|v| *v as u8)
-                        .collect()
-                }
+                unsafe { from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize) }
+                    .iter()
+                    .map(|v| *v as u8)
+                    .collect()
             },
             buffer_type: SecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
         })

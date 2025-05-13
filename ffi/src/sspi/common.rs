@@ -29,7 +29,10 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
     let cred_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
     check_null!(cred_handle);
 
-    // SAFETY: `cred_handle` is not null. We've checked for this above. So it's safe to call the function.
+    // SAFETY: `cred_handle` is not null. We've checked for this above.
+    // We create and allocate credentials handles using `Box::into_raw`. Thus,
+    // it is safe to deallocate them using `Box::from_raw`.
+    // The user have to ensure that the credentials handle was created by us.
     let _cred_handle = unsafe { Box::from_raw(cred_handle) };
 
     0
@@ -109,10 +112,11 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         try_execute!(unsafe { copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false) });
 
         // SAFETY: `ph_new_context` and `pf_context_attr` are not null. We've checked this above.
-        unsafe {
-            (*ph_new_context).dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
-            (*ph_new_context).dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        let ph_new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context should not be null");
 
+        ph_new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
+        ph_new_context.dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        unsafe {
             *pf_context_attr = f_context_req;
         }
 

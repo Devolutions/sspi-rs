@@ -1,4 +1,5 @@
 use std::mem::size_of;
+use std::ptr::NonNull;
 use std::slice::from_raw_parts;
 
 use libc::c_void;
@@ -67,13 +68,10 @@ pub struct SecPkgCredentialsKdcProxySettingsW {
 ///
 /// # Safety:
 ///
-/// * The pointer must not be null.
 /// * The pointer value must be [SecPkgCredentialsKdcProxySettingsW].
 /// * The proxy server and client TLS credentials (if any) values must be placed right after the [SecPkgCredentialsKdcProxySettingsW] value.
-pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> Result<KdcProxySettings> {
-    if p_buffer.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "p_buffer cannot be null"));
-    }
+pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<KdcProxySettings> {
+    let p_buffer = p_buffer.as_ptr();
 
     // SAFETY:
     // * `p_buffer` is not null: checked above;
@@ -102,17 +100,23 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: *mut c_void) -> Result<KdcPro
         )
     });
 
-    // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
-    // so it's not null either.
-    let client_tls_cred = unsafe {
-        if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
-            Some(String::from_utf16_lossy(from_raw_parts(
-                p_buffer.add(*client_tls_cred_offset as usize) as *const u16,
-                *client_tls_cred_length as usize,
-            )))
-        } else {
-            None
+    let client_tls_cred = if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
+        // SAFETY: `p_buffer` is not null (checked above).
+        // The client have to ensure that the `client_tls_cred_offset` is valid.
+        let client_tls_cred_ptr = unsafe { p_buffer.add(*client_tls_cred_offset as usize) } as *const u16;
+        if client_tls_cred_ptr.is_null() {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "client_tls_cred_ptr cannot be null",
+            ));
         }
+
+        // SAFETY: `client_tls_cred_ptr` is not null (checked above).
+        // The client have to ensure that the `client_tls_cred_length` is valid.
+        let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, *client_tls_cred_length as usize) };
+        Some(String::from_utf16_lossy(client_tls_cred_data))
+    } else {
+        None
     };
 
     Ok(KdcProxySettings {

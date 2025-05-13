@@ -34,7 +34,10 @@ cfg_if::cfg_if! {
 use super::credentials_attributes::{
     extract_kdc_proxy_settings, CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
 };
-use super::sec_buffer::{copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc};
+use super::sec_buffer::{
+    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, sec_buffer_desc_to_security_buffers, PSecBuffer,
+    PSecBufferDesc,
+};
 use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
 use super::sspi_data_types::{
@@ -323,13 +326,11 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             }
         });
 
-        let context = *context;
         // SAFETY: `context` and `*context` are not null. We've checked this above.
-        unsafe {
-            (*context).dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
-            if (*context).dw_upper == 0 {
-                (*context).dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
-            }
+        let context = unsafe { (*context).as_mut() }.expect("context should not be null");
+        context.dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
+        if context.dw_upper == 0 {
+            context.dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
         }
     }
 
@@ -559,23 +560,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        let mut input_tokens = if let Some(p_input) = p_input.as_ref() {
-            let p_buffers = p_input.p_buffers;
-            let c_buffers = p_input.c_buffers;
-
-            let sec_buffers = if p_buffers.is_null() {
-                &[]
-            } else {
-                // SAFETY: We checked above that the `p_buffers` is not null.
-                // The caller must ensure all other guarantees.
-                unsafe { from_raw_parts(p_buffers, c_buffers as usize) }
-            };
-
-            // SAFETY: This function is safe to call because the argument is type checked.
-            unsafe { p_sec_buffers_to_security_buffers(sec_buffers) }
-        } else {
-            Vec::new()
-        };
+        let mut input_tokens = sec_buffer_desc_to_security_buffers(p_input);
 
         // SAFETY: `p_output` is not null. We've checked this above.
         let len = unsafe { (*p_output).c_buffers as usize };
@@ -691,23 +676,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        let mut input_tokens = if let Some(p_input) = p_input.as_ref() {
-            let p_buffers = p_input.p_buffers;
-            let c_buffers = p_input.c_buffers;
-
-            let sec_buffers = if p_buffers.is_null() {
-                &[]
-            } else {
-                // SAFETY: We checked above that the `p_buffers` is not null.
-                // The caller must ensure all other guarantees.
-                unsafe { from_raw_parts(p_buffers, c_buffers as usize) }
-            };
-
-            // SAFETY: This function is safe to call because the argument is type checked.
-            unsafe { p_sec_buffers_to_security_buffers(sec_buffers) }
-        } else {
-            Vec::new()
-        };
+        let mut input_tokens = sec_buffer_desc_to_security_buffers(p_input);
 
         // SAFETY: `p_output` and `p_buffers` are not null. We've checked this above.
         let raw_buffers = unsafe { from_raw_parts((*p_output).p_buffers, (*p_output).c_buffers as usize) };
@@ -898,18 +867,15 @@ unsafe fn query_context_attributes_common(
                 let connection_info = try_execute!(sspi_context.query_context_connection_info());
 
                 let sec_pkg_context_connection_info = p_buffer.cast::<SecPkgContextConnectionInfo>();
-
                 // SAFETY: `sec_pgk_context_connection_info` was cast from `p_buffer` which is not null.
-                // We've checked this above.
-                unsafe {
-                    (*sec_pkg_context_connection_info).dw_protocol = connection_info.protocol.to_u32().unwrap();
-                    (*sec_pkg_context_connection_info).ai_cipher = connection_info.cipher.to_u32().unwrap();
-                    (*sec_pkg_context_connection_info).dw_cipher_strength = connection_info.cipher_strength;
-                    (*sec_pkg_context_connection_info).ai_hash = connection_info.hash.to_u32().unwrap();
-                    (*sec_pkg_context_connection_info).dw_hash_strength = connection_info.hash_strength;
-                    (*sec_pkg_context_connection_info).ai_exch = connection_info.key_exchange.to_u32().unwrap();
-                    (*sec_pkg_context_connection_info).dw_exch_strength = connection_info.exchange_strength;
-                }
+                let sec_pkg_context_connection_info = unsafe { sec_pkg_context_connection_info.as_mut() }.expect("sec_pkg_context_connection_info should not be null");
+                sec_pkg_context_connection_info.dw_protocol = connection_info.protocol.to_u32().unwrap();
+                sec_pkg_context_connection_info.ai_cipher = connection_info.cipher.to_u32().unwrap();
+                sec_pkg_context_connection_info.dw_cipher_strength = connection_info.cipher_strength;
+                sec_pkg_context_connection_info.ai_hash = connection_info.hash.to_u32().unwrap();
+                sec_pkg_context_connection_info.dw_hash_strength = connection_info.hash_strength;
+                sec_pkg_context_connection_info.ai_exch = connection_info.key_exchange.to_u32().unwrap();
+                sec_pkg_context_connection_info.dw_exch_strength = connection_info.exchange_strength;
 
                 return 0;
             }
@@ -1135,7 +1101,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             credentials_handle.attributes.kdc_proxy_settings =
                 // SAFETY: This function is safe to call because `p_buffer` is not null. We've checked this above.
-                Some(try_execute!(unsafe { extract_kdc_proxy_settings(p_buffer) }));
+                Some(try_execute!(unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
@@ -1183,7 +1149,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             credentials_handle.attributes.kdc_proxy_settings =
                 // SAFETY: This function is safe to call because `p_buffer` is not null. We've checked this above.
-                Some(try_execute!(unsafe { extract_kdc_proxy_settings(p_buffer) }));
+                Some(try_execute!(unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
