@@ -88,7 +88,12 @@ fn open_user_cert_store() -> Result<*mut c_void> {
 pub fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
     let cert_store = open_user_cert_store()?;
     // SAFETY: `open_user_cert_store` returns valid store handle.
-    let cert = unsafe { find_raw_cert_by_thumbprint(thumbprint, cert_store)? };
+    let cert = unsafe { find_raw_cert_by_thumbprint(thumbprint, cert_store) }.inspect_err(|_err| {
+        // SAFETY: `open_user_cert_store` returns valid store handle that needs to be closed.
+        if unsafe { CertCloseStore(cert_store, 0) } == 0 {
+            warn!("could not close the certificate store");
+        }
+    })?;
 
     // SAFETY: `open_user_cert_store` returns valid store handle that needs to be closed.
     if unsafe { CertCloseStore(cert_store, 0) } == 0 {
