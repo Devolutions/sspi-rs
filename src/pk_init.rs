@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use time::OffsetDateTime;
 
-use crate::kerberos::client::generators::MAX_MICROSECONDS_IN_SECOND;
+use crate::kerberos::client::generators::MAX_MICROSECONDS;
 use crate::{Error, ErrorKind, Result};
 
 /// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
@@ -101,8 +101,8 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
 
     let current_date = OffsetDateTime::now_utc();
     let mut microseconds = current_date.microsecond();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
+    if microseconds > MAX_MICROSECONDS {
+        microseconds = MAX_MICROSECONDS;
     }
 
     // [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
