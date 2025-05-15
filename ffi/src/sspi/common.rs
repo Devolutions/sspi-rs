@@ -111,11 +111,12 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         // SAFETY: `p_output` is not null. We've checked this above.
         try_execute!(unsafe { copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false) });
 
-        // SAFETY: `ph_new_context` and `pf_context_attr` are not null. We've checked this above.
+        // SAFETY: `ph_new_context` is not null. We've checked this above.
         let ph_new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context should not be null");
 
         ph_new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
         ph_new_context.dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        // SAFETY: `pf_context_attr` is not null. We've checked this above.
         unsafe {
             *pf_context_attr = f_context_req;
         }

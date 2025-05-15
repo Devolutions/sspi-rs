@@ -972,7 +972,9 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
             return 0;
         }
 
-        let mut auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
+        let auth_data = auth_data.cast::<SecWinntAuthIdentityW>();
+        // SAFETY: The pointer is not null: checked above.
+        // The user have to ensure that the data behind this pointer is valid.
         let auth_data = unsafe { auth_data.as_mut() }.expect("auth_data pointer should not be null");
 
         if !auth_data.user.is_null() {
@@ -992,6 +994,8 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
         }
 
         // SAFETY: `auth_data` is not null. We've checked this above.
+        // We create and allocate `SecWinntAuthIdentityW` using `Box::into_raw`. Thus,
+        // it is safe to deallocate them using `Box::from_raw`.
         // The user have to ensure that the auth identity was allocated by us.
         let _auth_data: Box<SecWinntAuthIdentityW> = unsafe { Box::from_raw(auth_data) };
 

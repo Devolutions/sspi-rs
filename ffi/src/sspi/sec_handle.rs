@@ -560,7 +560,9 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        let mut input_tokens = sec_buffer_desc_to_security_buffers(p_input);
+        // SAFETY: The pointer is allowed to be null and the user have to ensure the validity of the the pointer
+        // and the data behind it.
+        let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
 
         // SAFETY: `p_output` is not null. We've checked this above.
         let len = unsafe { (*p_output).c_buffers as usize };
@@ -676,7 +678,9 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        let mut input_tokens = sec_buffer_desc_to_security_buffers(p_input);
+        // SAFETY: The pointer is allowed to be null and the user have to ensure the validity of the the pointer
+        // and the data behind it.
+        let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
 
         // SAFETY: `p_output` and `p_buffers` are not null. We've checked this above.
         let raw_buffers = unsafe { from_raw_parts((*p_output).p_buffers, (*p_output).c_buffers as usize) };
@@ -1220,7 +1224,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             // SAFETY: `p_output` and `p_buffers` are not null. We've checked this above.
             // The `p_sec_buffers_to_security_buffers` function is safe to call if user
             // provides guarantees about the buffers.
-            unsafe { p_sec_buffers_to_security_buffers(from_raw_parts((*p_output).p_buffers, len)) };
+            unsafe { p_sec_buffers_to_security_buffers(from_raw_parts(p_output.p_buffers, len)) };
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let change_password = ChangePasswordBuilder::new()
@@ -1260,7 +1264,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         // SAFETY: This function is safe to call because `p_output` and `p_buffers` are not null.
         // We've checked this above. And other arguments are type checked.
-        try_execute!(unsafe { copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false) });
+        try_execute!(unsafe { copy_to_c_sec_buffer(p_output.p_buffers, &output_tokens, false) });
 
         try_execute!(result_status);
 
