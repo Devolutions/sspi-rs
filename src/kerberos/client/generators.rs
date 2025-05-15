@@ -55,7 +55,13 @@ use crate::{ClientRequestFlags, Error, ErrorKind, Result};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
-pub const MAX_MICROSECONDS_IN_SECOND: u32 = 999_999;
+/// [Microseconds](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.4).
+/// The maximum microseconds value.
+///
+/// ```not_rust
+/// Microseconds    ::= INTEGER (0..999999)
+/// ```
+pub const MAX_MICROSECONDS: u32 = 999_999;
 const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
 // Renewable, Canonicalize, and Renewable-ok are on by default
@@ -156,7 +162,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
 
     let mut pa_datas = if *with_pre_auth {
         let current_date = OffsetDateTime::now_utc();
-        let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
+        let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
 
         let timestamp = PaEncTsEnc {
             patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
@@ -549,8 +555,8 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 
     let current_date = OffsetDateTime::now_utc();
     let mut microseconds = current_date.microsecond();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
+    if microseconds > MAX_MICROSECONDS {
+        microseconds = MAX_MICROSECONDS;
     }
 
     let authorization_data = Optional::from(channel_bindings.as_ref().map(|_| {
@@ -612,7 +618,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 #[instrument(level = "trace", skip_all, ret)]
 pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &EncryptionParams) -> Result<ApRep> {
     let current_date = OffsetDateTime::now_utc();
-    let microseconds = current_date.microsecond().min(MAX_MICROSECONDS_IN_SECOND);
+    let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
 
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
 
