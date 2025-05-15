@@ -32,7 +32,7 @@ use time::OffsetDateTime;
 use super::Pku2uConfig;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::client::generators::{
-    AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS_IN_SECOND,
+    AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS,
 };
 use crate::pk_init::DhParameters;
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
@@ -217,8 +217,8 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
 
     let current_date = OffsetDateTime::now_utc();
     let mut microseconds = current_date.microsecond();
-    if microseconds > MAX_MICROSECONDS_IN_SECOND {
-        microseconds = MAX_MICROSECONDS_IN_SECOND;
+    if microseconds > MAX_MICROSECONDS {
+        microseconds = MAX_MICROSECONDS;
     }
 
     let lsap_token = LsapTokenInfoIntegrity {
