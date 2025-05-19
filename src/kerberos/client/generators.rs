@@ -723,7 +723,7 @@ pub fn generate_ap_req(
     }))
 }
 
-// returns supported authentication types
+/// Returns supported authentication types.
 pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
