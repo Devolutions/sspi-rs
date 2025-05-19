@@ -48,7 +48,7 @@ tracing-subscriber = { version = "0.3", features = ["time"] }
 console_error_panic_hook = { version = "0.1", optional = true }
 
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
-rustls-pki-types = { version = "1.11", features = ["web"] }
+rustls-pki-types = { version = "1.12", features = ["web"] }
 
 # Utils
 anyhow = "1"
