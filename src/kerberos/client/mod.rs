@@ -51,7 +51,7 @@ pub async fn initialize_security_context<'a>(
 
     let status = match client.state {
         KerberosState::Negotiate => {
-            let (service_name, _service_principal_name) = parse_target_name(builder.target_name.ok_or_else(|| {
+            let (service_name, service_principal_name) = parse_target_name(builder.target_name.ok_or_else(|| {
                 Error::new(
                     ErrorKind::NoCredentials,
                     "Service target name (service principal name) is not provided",
@@ -68,11 +68,12 @@ pub async fn initialize_security_context<'a>(
 
                     (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
                 }
-                CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
+                CredentialsBuffers::SmartCard(_) => (service_principal_name.into(), service_name),
             };
             debug!(username, service_name);
 
-            let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
+            let encoded_neg_token_init =
+                picky_asn1_der::to_vec(&generate_neg_token_init(service_principal_name, service_name)?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer.write_all(&encoded_neg_token_init)?;
