@@ -6,19 +6,34 @@ pub fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
+/// # Safety
+///
+/// *Note*: the resulting [String] will contain a null-terminator char at the end.
+/// Behavior is undefined is any of the following conditions are violated:
+///
+/// * `s` must be a [valid] C string.
 pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
     let mut len = 0;
 
+    // SAFETY: The user must provide guarantees that `s` is a valid C string.
     while unsafe { *(s.add(len)) } != 0 {
         len += 1;
     }
 
+    // SAFETY: The user must provide guarantees that `s` is a valid C string.
     String::from_utf16_lossy(unsafe { from_raw_parts(s, len) })
 }
 
+/// # Safety
+///
+/// The returned length includes the null terminator char.
+/// Behavior is undefined is any of the following conditions are violated:
+///
+/// * `s` must be a [valid] C string.
 pub unsafe fn w_str_len(s: *const u16) -> usize {
     let mut len = 0;
 
+    // SAFETY: The user must provide guarantees that `s` is a valid C string.
     while unsafe { *(s.add(len)) } != 0 {
         len += 1;
     }
@@ -35,7 +50,8 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 ///
 /// # Safety
 ///
-/// * `raw_buffer` must be valid for reads for `len` many bytes, and it must be properly aligned.
+/// * the `raw_buffer` pointer can be null.
+/// * if `raw_buffer` is not null, then it must be valid for reads for `len` many bytes, and it must be properly aligned.
 /// * The total size `len` of the slice must be no larger than `isize::MAX`, and adding that size to `data`
 ///   must not "wrap around" the address space.
 pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {

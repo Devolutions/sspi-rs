@@ -56,17 +56,23 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: *mut c_void
     ))
 }
 
-unsafe fn open_user_cert_store() -> Result<*mut c_void> {
+fn open_user_cert_store() -> Result<*mut c_void> {
     // "My\0" encoded as a wide string.
     // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
     let my: [u16; 3] = [77, 121, 0];
-    let cert_store = CertOpenStore(
-        CERT_STORE_PROV_SYSTEM_W,
-        0,
-        0,
-        CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
-        my.as_ptr() as *const _,
-    );
+    // SAFETY:
+    // * constant parameters are taken from the `windows_sys` crate. Thus, they are valid;
+    // * `dwEncodingType` and `hCryptProv` are allowed to be zero by documentation;
+    // * `my` is as valid wide C string.
+    let cert_store = unsafe {
+        CertOpenStore(
+            CERT_STORE_PROV_SYSTEM_W,
+            0,
+            0,
+            CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
+            my.as_ptr() as *const _,
+        )
+    };
 
     if cert_store.is_null() {
         return Err(Error::new(
@@ -79,17 +85,29 @@ unsafe fn open_user_cert_store() -> Result<*mut c_void> {
 }
 
 #[instrument(level = "trace", ret)]
-pub unsafe fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
+pub fn extract_raw_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<Vec<u8>> {
     let cert_store = open_user_cert_store()?;
-    let cert = find_raw_cert_by_thumbprint(thumbprint, cert_store)?;
+    // SAFETY: `open_user_cert_store` returns valid store handle.
+    let cert = unsafe { find_raw_cert_by_thumbprint(thumbprint, cert_store) }.inspect_err(|_err| {
+        // SAFETY: `open_user_cert_store` returns valid store handle that needs to be closed.
+        if unsafe { CertCloseStore(cert_store, 0) } == 0 {
+            warn!("could not close the certificate store");
+        }
+    })?;
 
-    CertCloseStore(cert_store, 0);
+    // SAFETY: `open_user_cert_store` returns valid store handle that needs to be closed.
+    if unsafe { CertCloseStore(cert_store, 0) } == 0 {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "could not close the certificate store",
+        ));
+    }
 
     Ok(cert)
 }
 
 #[instrument(level = "trace", ret)]
-pub unsafe fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Vec<u8>, Certificate)> {
+pub fn extract_certificate_by_thumbprint(thumbprint: &[u8]) -> Result<(Vec<u8>, Certificate)> {
     let raw_cert = extract_raw_certificate_by_thumbprint(thumbprint)?;
 
     Ok((raw_cert.to_vec(), picky_asn1_der::from_bytes(&raw_cert)?))
@@ -194,15 +212,21 @@ pub struct SmartCardInfo {
 // The similar approach is implemented in the FreeRDP for the smart card information gathering:
 // https://github.com/FreeRDP/FreeRDP/blob/56324906a2d5b2538675e2f10b9f1ffe4a27de79/libfreerdp/core/smartcardlogon.c#L616
 #[instrument(level = "trace", ret)]
-pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardInfo> {
+pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardInfo> {
     let mut crypt_context_handle = HCRYPTPROV::default();
-    if CryptAcquireContextW(
-        &mut crypt_context_handle,
-        null(),
-        CSP_NAME_W.as_ptr() as *const _,
-        PROV_RSA_FULL,
-        CRYPT_SILENT,
-    ) == 0
+    // SAFETY:
+    // * `phProv` is constructed using Rust references. This it is valid.
+    // * `szContainer` can be null according to the documentation.
+    // * all other parameters are hardcoded constants that are valid.
+    if unsafe {
+        CryptAcquireContextW(
+            &mut crypt_context_handle,
+            null(),
+            CSP_NAME_W.as_ptr() as *const _,
+            PROV_RSA_FULL,
+            CRYPT_SILENT,
+        )
+    } == 0
     {
         return Err(Error::new(
             ErrorKind::InternalError,
@@ -214,26 +238,40 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
     let mut is_first = true;
     let mut index = 1;
     loop {
-        if CryptGetProvParam(
-            crypt_context_handle,
-            PP_ENUMCONTAINERS,
-            null_mut(),
-            &mut key_container_name_len,
-            if is_first { CRYPT_FIRST } else { CRYPT_NEXT },
-        ) == 0
+        // SAFETY:
+        // * `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
+        // * `pbData` can be null according to the documentation.
+        // * `key_container_name_len` is constructed using Rust references. This it is valid.
+        // * all other parameters are hardcoded constants that are valid.
+        if unsafe {
+            CryptGetProvParam(
+                crypt_context_handle,
+                PP_ENUMCONTAINERS,
+                null_mut(),
+                &mut key_container_name_len,
+                if is_first { CRYPT_FIRST } else { CRYPT_NEXT },
+            )
+        } == 0
         {
             break;
         }
 
         let mut key_container_name = vec![0; key_container_name_len as usize];
 
-        if CryptGetProvParam(
-            crypt_context_handle,
-            PP_ENUMCONTAINERS,
-            key_container_name.as_mut_ptr(),
-            &mut key_container_name_len,
-            if is_first { CRYPT_FIRST } else { CRYPT_NEXT },
-        ) == 0
+        // SAFETY:
+        // * `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
+        // * `key_container_name` is a Rust vector buffer of valid length. Its len was previously obtained using `CryptGetProvParam`.
+        // * `key_container_name_len` is constructed using Rust references. This it is valid.
+        // * all other parameters are hardcoded constants that are valid.
+        if unsafe {
+            CryptGetProvParam(
+                crypt_context_handle,
+                PP_ENUMCONTAINERS,
+                key_container_name.as_mut_ptr(),
+                &mut key_container_name_len,
+                if is_first { CRYPT_FIRST } else { CRYPT_NEXT },
+            )
+        } == 0
         {
             break;
         }
@@ -241,18 +279,25 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
         // remove null char
         key_container_name.pop();
 
-        let context = if let Ok(context) = acquire_key_container_context(&key_container_name) {
+        let context = if let Ok(context) = unsafe { acquire_key_container_context(&key_container_name) } {
             context
         } else {
             index += 1;
             continue;
         };
 
-        if let Ok(certificate) = get_key_container_certificate(context) {
+        if let Ok(certificate) = unsafe { get_key_container_certificate(context) } {
             if certificate.tbs_certificate.serial_number.0 == cert_serial_number {
-                let reader_name = get_reader_name(crypt_context_handle);
+                let reader_name = unsafe { get_reader_name(crypt_context_handle) };
 
-                CryptReleaseContext(crypt_context_handle, 0);
+                // SAFETY: the `crypt_context_handle` was obtained using successful `CryptAcquireContextW` function call.
+                // `dwFlags` parameter is reserved for future use and must be zero.
+                if unsafe { CryptReleaseContext(crypt_context_handle, 0) } == 0 {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        "could not release the crypto context",
+                    ));
+                }
 
                 let reader_name = match reader_name {
                     Ok(reader_name) => reader_name,
@@ -276,7 +321,14 @@ pub unsafe fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<Smar
         is_first = false;
     }
 
-    CryptReleaseContext(crypt_context_handle, 0);
+    // SAFETY: the `crypt_context_handle` was obtained using successful `CryptAcquireContextW` function call.
+    // `dwFlags` parameter is reserved for future use and must be zero.
+    if unsafe { CryptReleaseContext(crypt_context_handle, 0) } == 0 {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "could not release the crypto context",
+        ));
+    }
 
     Err(Error::new(ErrorKind::InternalError, "Cannot get smart card info"))
 }
