@@ -182,7 +182,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             return NTE_INTERNAL_ERROR;
         }
 
-        // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
+        // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let blob_buf = unsafe { libc::malloc(blob_data.len()) as *mut u8 };
         if blob_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             return NTE_INTERNAL_ERROR;
         }
 
-        // SAFETY: Memory allocation should be safe. Moreover, we check for the null value below.
+        // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
         if secret_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL.");

@@ -20,8 +20,7 @@ mod inner {
     use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs, Result};
     use dpapi_transport::{ProxyOptions, Transport};
     use ffi_types::{Dword, LpByte, LpCStr, LpCUuid, LpDword};
-    use sspi::network_client::AsyncNetworkClient;
-    use sspi::{KerberosConfig, Secret};
+    use sspi::Secret;
     use url::Url;
     use uuid::Uuid;
 
