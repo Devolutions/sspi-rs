@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use base64::Engine;
+use proptest::char::any;
 use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, HOST, USER_AGENT,
     WWW_AUTHENTICATE,
@@ -8,8 +9,8 @@ use reqwest::header::{
 use reqwest::StatusCode;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityStatus, Sspi, SspiImpl,
-    Username,
+    EncryptionFlags, InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityBufferRef,
+    SecurityStatus, Sspi, SspiImpl, Username,
 };
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -33,25 +34,47 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut input_token = String::new();
     let mut client = reqwest::blocking::Client::new(); // super IMPORTANT, KEEP-ALIVE the http connection!
-    loop {
+    let output_token = loop {
+        tracing::info!(?input_token, "step input token");
         let (output_token, status) = step(
             &mut kerberos,
             &mut acq_creds_handle_result.credentials_handle,
             &input_token,
             &hostname,
         );
+        tracing::info!(?output_token, ?status, "step result");
         if status == SecurityStatus::ContinueNeeded || status == SecurityStatus::Ok {
             let (token_from_server, status_code) =
                 process_authentication(&output_token, &mut client, &auth_method, &hostname)?;
-            if status_code == reqwest::StatusCode::OK {
-                println!("authenticated");
-                break Ok(());
+
+            if status == SecurityStatus::Ok {
+                tracing::info!(?token_from_server, "Authentication completed successfully");
+                break output_token;
             }
+
             input_token = token_from_server;
         } else {
             panic!("Having problem continue authentication");
         }
-    }
+    };
+
+    tracing::info!(?output_token, "Authentication completed successfully");
+
+    let mut request = std::fs::read("./soap.xml")?;
+
+    let mut token = vec![0u8; kerberos.query_context_sizes()?.security_trailer as usize];
+    let mut buffers = vec![
+        SecurityBufferRef::data_buf(&mut request),
+        SecurityBufferRef::token_buf(&mut token),
+    ];
+
+    let sec_status = kerberos.encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)?;
+
+    tracing::info!(?sec_status, "Encrypting message");
+
+    // send_http(&hostname, &mut client, None, Some());
+
+    Ok(())
 }
 
 pub(crate) fn get_cred_handle(
@@ -78,30 +101,37 @@ pub(crate) fn process_authentication(
     auth_method: &str,
     hostname: &str,
 ) -> Result<(String, StatusCode), Box<dyn std::error::Error + Send + Sync>> {
-    let server_result = send_http(token_neeeds_to_be_sent, client, hostname, auth_method)?;
-    if server_result.status() == StatusCode::OK {
-        return Ok((String::new(), StatusCode::OK));
-    }
+    let auth = format!("{} {}", auth_method, token_neeeds_to_be_sent);
+    let server_result = send_http(hostname, client, Some(auth), None)?;
+
     let www_authenticate = server_result
         .headers()
         .get(WWW_AUTHENTICATE)
         .ok_or("expecting www-authentication header from server but not found")?;
+
+    tracing::info!(?www_authenticate, "WWW-Authenticate header from server");
+
     let server_token = www_authenticate
         .to_str()
         .unwrap()
-        .replace(format!("{} ", auth_method).as_str(), "");
+        .split_once(" ")
+        .ok_or("expecting www-authentication header from server but not found")
+        .unwrap()
+        .1
+        .to_owned();
+    tracing::info!(?server_token, "Server token");
+
     Ok((server_token, server_result.status()))
 }
 
 pub(crate) fn send_http(
-    negotiate_token: &String,
-    client: &mut reqwest::blocking::Client,
     hostname: &str,
-    auth_method: &str,
+    client: &mut reqwest::blocking::Client,
+    authorization: Option<String>,
+    body: Option<String>,
 ) -> Result<reqwest::blocking::Response, Box<dyn Error + Send + Sync>> {
-    let resp = client
+    let builder = client
         .post(format!("http://{}:5985/wsman?PSVersion=7.3.8", hostname))
-        .header(AUTHORIZATION, format!("{} {}", auth_method, negotiate_token))
         .header(HOST, format!("{}:5985", hostname))
         .header(CONNECTION, "keep-alive")
         .header(CONTENT_LENGTH, "0")
@@ -111,8 +141,20 @@ pub(crate) fn send_http(
         )
         .header(ACCEPT, "*/*")
         .header(ACCEPT_ENCODING, "gzip, deflate")
-        .header(ACCEPT_LANGUAGE, "en-US,en;q=0.9")
-        .send()?;
+        .header(ACCEPT_LANGUAGE, "en-US,en;q=0.9");
+
+    let builder = if let Some(auth) = authorization {
+        builder.header(AUTHORIZATION, auth)
+    } else {
+        builder
+    };
+
+    let resp = if let Some(body) = body {
+        builder.header(CONTENT_LENGTH, body.len().to_string()).body(body)
+    } else {
+        builder
+    }
+    .send()?;
 
     Ok(resp)
 }
@@ -128,7 +170,7 @@ fn step_helper(
     let mut builder = kerberos
         .initialize_security_context()
         .with_credentials_handle(cred_handle)
-        .with_context_requirements(ClientRequestFlags::MUTUAL_AUTH)
+        .with_context_requirements(ClientRequestFlags::INTEGRITY | ClientRequestFlags::CONFIDENTIALITY)
         .with_target_data_representation(DataRepresentation::Native)
         .with_target_name(&target_name)
         .with_input(input_buffer)
@@ -164,8 +206,8 @@ pub fn step(
                 result.status,
             )
         }
-        Err(_) => {
-            panic!("error stepping");
+        Err(e) => {
+            panic!("Error in step: {}", e);
         }
     }
 }

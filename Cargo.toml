@@ -20,16 +20,14 @@ members = [
   "crates/dpapi",
   "crates/dpapi-cli-client",
 ]
-exclude = [
-  "tools/wasm-testcompile",
-]
+exclude = ["tools/wasm-testcompile"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [workspace.dependencies]
 uuid = { version = "1.16", default-features = false }
-tracing = { version = "0.1",  default-features = false }
+tracing = { version = "0.1", default-features = false }
 bitflags = "2.8"
 rand = "0.8"
 cfg-if = "1"
@@ -62,7 +60,12 @@ hmac = "0.12"
 default = ["aws-lc-rs"]
 
 # Enable reqwest for HTTP requests.
-network_client = ["dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "__rustls-used"]
+network_client = [
+  "dep:reqwest",
+  "dep:portpicker",
+  "dep:rustls-native-certs",
+  "__rustls-used",
+]
 # KDC discovery by querying DNS records.
 dns_resolver = ["dep:hickory-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
@@ -72,7 +75,11 @@ scard = ["dep:winscard"]
 # Use AWS LC as TLS cryptography provider.
 aws-lc-rs = ["rustls?/aws-lc-rs", "__install-crypto-provider"]
 # Use ring as TLS cryptography provider.
-ring = ["rustls?/ring", "reqwest?/rustls-tls-native-roots", "__install-crypto-provider"]
+ring = [
+  "rustls?/ring",
+  "reqwest?/rustls-tls-native-roots",
+  "__install-crypto-provider",
+]
 
 # Internal (PRIVATE!) features. Do not rely on these whatsoever. They may disappear at anytime.
 
@@ -94,7 +101,11 @@ picky-asn1-der.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 uuid = { workspace = true, features = ["v4"], default-features = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { workspace = true, optional = true, features = [
+  "time",
+  "rt",
+  "rt-multi-thread",
+] }
 winscard = { workspace = true, optional = true }
 rsa = { workspace = true, features = ["sha1"] }
 tracing = { workspace = true, default-features = true }
@@ -113,21 +124,34 @@ lazy_static = "1.5"
 serde_derive = "1"
 oid = "0.2"
 
-reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
+reqwest = { version = "0.12", optional = true, default-features = false, features = [
+  "blocking",
+  "rustls-tls-no-provider",
+] }
 hickory-resolver = { version = "0.24", optional = true }
 portpicker = { version = "0.1", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
+rustls = { version = "0.23", optional = true, default-features = false, features = [
+  "logging",
+  "std",
+  "tls12",
+] }
 rustls-native-certs = { version = "0.8", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 async-recursion = "1.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-windows = { version = "0.61", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
-windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_NetworkManagement_Dns",
+] }
+windows-sys = { workspace = true, features = [
+  "Win32_Security_Cryptography",
+  "Win32_Foundation",
+] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-uuid = { workspace = true, features = ["js"]}
+uuid = { workspace = true, features = ["js"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
@@ -142,6 +166,12 @@ picky = { workspace = true, features = ["x509"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
+reqwest = { version = "0.12", default-features = true }
+windows = { version = "0.61", features = [
+  "Win32_Security_Authentication",
+  "Win32_Security_Authentication_Identity",
+  "Win32_Security_Credentials",
+] }
 
 [[example]]
 name = "kerberos"
