@@ -3,6 +3,7 @@
 pub mod kdc;
 pub mod network_client;
 
+use std::collections::HashMap;
 use std::panic;
 
 use kdc::Validators;
@@ -29,6 +30,110 @@ use url::Url;
 
 use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
+
+/// Represents a Kerberos environment:
+/// * user and services keys;
+/// * user logon credentials;
+/// * realm and target application service name;
+///
+/// It is used for simplifying tests environment preparation.
+struct KrbEnvironment {
+    keys: HashMap<UserName, Vec<u8>>,
+    users: HashMap<UserName, PasswordCreds>,
+    credentials: CredentialsBuffers,
+    realm: String,
+    target_name: String,
+}
+
+/// Initializes a Kerberos environment. It includes:
+/// * User logon credentials (password-based).
+/// * Kerberos services keys.
+/// * Target machine name.
+fn init_krb_environment() -> KrbEnvironment {
+    let username = "pw13";
+    let user_password = "qweQWE123!@#";
+    let domain = "EXAMPLE";
+    let realm = "EXAMPLE.COM";
+    let mut salt = realm.to_string();
+    salt.push_str(username);
+    let krbtgt = "krbtgt";
+    let termsrv = "TERMSRV";
+    let target_machine_name = "DESKTOP-8F33RFH.example.com";
+    let mut target_name = termsrv.to_string();
+    target_name.push('/');
+    target_name.push_str(target_machine_name);
+
+    let tgt_service_key = vec![
+        199, 133, 201, 239, 57, 139, 61, 128, 71, 236, 217, 130, 250, 148, 117, 193, 197, 86, 155, 11, 92, 124, 232,
+        146, 3, 14, 158, 220, 113, 63, 110, 230,
+    ];
+    let application_service_key = vec![
+        168, 29, 77, 196, 211, 88, 148, 180, 123, 188, 196, 182, 173, 30, 249, 191, 89, 35, 44, 56, 20, 217, 132, 131,
+        89, 144, 33, 79, 16, 91, 126, 72,
+    ];
+    let keys = [
+        (
+            UserName(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(domain.into()).unwrap()),
+                ])),
+            }),
+            tgt_service_key.clone(),
+        ),
+        (
+            UserName(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(realm.to_string()).unwrap()),
+                ])),
+            }),
+            tgt_service_key,
+        ),
+        (
+            UserName(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string(termsrv.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(target_machine_name.into()).unwrap()),
+                ])),
+            }),
+            application_service_key,
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let users = [(
+        UserName(PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
+                IA5String::from_string(username.into()).unwrap(),
+            )])),
+        }),
+        PasswordCreds {
+            password: user_password.as_bytes().to_vec(),
+            salt,
+        },
+    )]
+    .into_iter()
+    .collect();
+
+    let credentials = CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+        user: string_to_utf16(username),
+        domain: string_to_utf16(domain),
+        password: string_to_utf16(user_password).into(),
+    });
+
+    KrbEnvironment {
+        keys,
+        users,
+        realm: realm.to_string(),
+        credentials,
+        target_name,
+    }
+}
 
 /// Does all preparations and calls the [initialize_security_context_impl] function
 /// on the provided Kerberos context.
@@ -62,76 +167,15 @@ pub fn initialize_security_context(
 
 #[test]
 fn kerberos_kdc_auth() {
-    let username = "pw13";
-    let user_password = "qweQWE123!@#";
-    let domain = "EXAMPLE";
-    let realm = "EXAMPLE.COM";
-    let mut salt = realm.to_string();
-    salt.push_str(username);
-    let krbtgt = "krbtgt";
-    let termsrv = "TERMSRV";
-    let target_machine_name = "DESKTOP-8F33RFH.example.com";
-    let mut target_name = termsrv.to_string();
-    target_name.push('/');
-    target_name.push_str(target_machine_name);
+    let KrbEnvironment {
+        realm,
+        credentials,
+        keys,
+        users,
+        target_name,
+    } = init_krb_environment();
 
-    let tgt_service_key = vec![
-        199, 133, 201, 239, 57, 139, 61, 128, 71, 236, 217, 130, 250, 148, 117, 193, 197, 86, 155, 11, 92, 124, 232,
-        146, 3, 14, 158, 220, 113, 63, 110, 230,
-    ];
-    let application_service_key = vec![
-        168, 29, 77, 196, 211, 88, 148, 180, 123, 188, 196, 182, 173, 30, 249, 191, 89, 35, 44, 56, 20, 217, 132, 131,
-        89, 144, 33, 79, 16, 91, 126, 72,
-    ];
-    let keys = [
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(domain.into()).unwrap()),
-                ])),
-            }),
-            tgt_service_key.clone(),
-        ),
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(realm.to_string()).unwrap()),
-                ])),
-            }),
-            tgt_service_key,
-        ),
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(termsrv.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(target_machine_name.into()).unwrap()),
-                ])),
-            }),
-            application_service_key,
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let users = [(
-        UserName(PrincipalName {
-            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
-            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
-                IA5String::from_string(username.into()).unwrap(),
-            )])),
-        }),
-        PasswordCreds {
-            password: user_password.as_bytes().to_vec(),
-            salt,
-        },
-    )]
-    .into_iter()
-    .collect();
-    let kdc = KdcMock::new(realm.to_string(), keys, users);
+    let kdc = KdcMock::new(realm, keys, users);
     let mut network_client = NetworkClientMock { kdc };
 
     let kerberos_config = KerberosConfig {
@@ -140,11 +184,7 @@ fn kerberos_kdc_auth() {
     };
     let mut kerberos_client = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
-    let mut credentials_handle = Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-        user: string_to_utf16(username),
-        domain: string_to_utf16(domain),
-        password: string_to_utf16(user_password).into(),
-    }));
+    let mut credentials_handle = Some(credentials);
     let flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::SEQUENCE_DETECT
@@ -171,77 +211,16 @@ fn kerberos_kdc_auth() {
 
 #[test]
 fn kerberos_kdc_u2u_auth() {
-    let username = "pw13";
-    let user_password = "qweQWE123!@#";
-    let domain = "EXAMPLE";
-    let realm = "EXAMPLE.COM";
-    let mut salt = realm.to_string();
-    salt.push_str(username);
-    let krbtgt = "krbtgt";
-    let termsrv = "TERMSRV";
-    let target_machine_name = "DESKTOP-8F33RFH.example.com";
-    let mut target_name = termsrv.to_string();
-    target_name.push('/');
-    target_name.push_str(target_machine_name);
+    let KrbEnvironment {
+        realm,
+        credentials,
+        keys,
+        users,
+        target_name,
+    } = init_krb_environment();
 
-    let tgt_service_key = vec![
-        199, 133, 201, 239, 57, 139, 61, 128, 71, 236, 217, 130, 250, 148, 117, 193, 197, 86, 155, 11, 92, 124, 232,
-        146, 3, 14, 158, 220, 113, 63, 110, 230,
-    ];
-    let application_service_key = vec![
-        168, 29, 77, 196, 211, 88, 148, 180, 123, 188, 196, 182, 173, 30, 249, 191, 89, 35, 44, 56, 20, 217, 132, 131,
-        89, 144, 33, 79, 16, 91, 126, 72,
-    ];
-    let keys = [
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(domain.into()).unwrap()),
-                ])),
-            }),
-            tgt_service_key.clone(),
-        ),
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(krbtgt.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(realm.to_string()).unwrap()),
-                ])),
-            }),
-            tgt_service_key,
-        ),
-        (
-            UserName(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(termsrv.into()).unwrap()),
-                    KerberosStringAsn1::from(IA5String::from_string(target_machine_name.into()).unwrap()),
-                ])),
-            }),
-            application_service_key,
-        ),
-    ]
-    .into_iter()
-    .collect();
-    let users = [(
-        UserName(PrincipalName {
-            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
-            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
-                IA5String::from_string(username.into()).unwrap(),
-            )])),
-        }),
-        PasswordCreds {
-            password: user_password.as_bytes().to_vec(),
-            salt,
-        },
-    )]
-    .into_iter()
-    .collect();
     let kdc = KdcMock::new_with_validators(
-        realm.to_string(),
+        realm,
         keys,
         users,
         Validators {
@@ -274,11 +253,7 @@ fn kerberos_kdc_u2u_auth() {
     };
     let mut kerberos_client = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
-    let mut credentials_handle = Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-        user: string_to_utf16(username),
-        domain: string_to_utf16(domain),
-        password: string_to_utf16(user_password).into(),
-    }));
+    let mut credentials_handle = Some(credentials);
     let flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::USE_SESSION_KEY // Kerberos U2U auth
