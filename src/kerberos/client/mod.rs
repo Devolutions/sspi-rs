@@ -42,6 +42,9 @@ use crate::{
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus,
 };
 
+/// Performs one authentication step.
+///
+/// The client should call this function until it returns `SecurityStatus::Ok`.
 pub async fn initialize_security_context<'a>(
     client: &'a mut Kerberos,
     yield_point: &mut YieldPointLocal,

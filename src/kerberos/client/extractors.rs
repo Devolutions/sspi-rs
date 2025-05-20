@@ -13,6 +13,14 @@ use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, K
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Error, ErrorKind, Result};
 
+/// Extracts password salt from the KRB error.
+///
+/// We need a salt to derive the correct encryption key from user's password. Usually, the salt is domain+username, but the custom salt
+/// value can be set in KDC database. So, we always extract the correct salt from the [KrbError] message. More info in [RFC 4120 PA-ETYPE-INFO2](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.7.5):
+///
+/// > The ETYPE-INFO2 pre-authentication type is sent by the KDC in a KRB-ERROR indicating a requirement for additional pre-authentication.
+/// > It is usually used to notify a client of which key to use for the encryption of an encrypted timestamp for the purposes of sending a
+/// > PA-ENC-TIMESTAMP pre-authentication value.
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     trace!(?error, "KRB_ERROR");
 
@@ -34,6 +42,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Extracts a session from the [AsRep].
 #[instrument(level = "trace", ret, skip(password))]
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
@@ -56,6 +65,7 @@ pub fn extract_session_key_from_as_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+/// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
@@ -79,6 +89,11 @@ pub fn extract_session_key_from_tgs_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+/// Extracts encryption type and salt from [AsRep].
+///
+/// More info in [RFC 4120 Receipt of KRB_AS_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5):
+///
+/// > If any padata fields are present, they may be used to derive the proper secret key to decrypt the message.
 #[instrument(level = "trace", ret)]
 pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, String)> {
     match as_rep
@@ -115,6 +130,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
     }
 }
 
+/// Extract a status code from the [KrbPriv] message.
 pub fn extract_status_code_from_krb_priv_response(
     krb_priv: &KrbPriv,
     auth_key: &[u8],
@@ -154,6 +170,7 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
+/// Extracts [ApRep] from the [NegTokenTarg1] .
 pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep> {
     let resp_token = &token
         .0
@@ -173,6 +190,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
     Ok(picky_asn1_der::from_reader(&mut data)?)
 }
 
+/// Extracts the sequence number from the [ApRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_seq_number_from_ap_rep(
     ap_rep: &ApRep,
@@ -205,6 +223,7 @@ pub fn extract_seq_number_from_ap_rep(
          .0)
 }
 
+/// Extracts a sub-session key from the [ApRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_sub_session_key_from_ap_rep(
     ap_rep: &ApRep,

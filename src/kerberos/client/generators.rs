@@ -83,8 +83,8 @@ pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
     0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
-// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
+/// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
 pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
     if username.contains('@') {
         NT_ENTERPRISE
@@ -143,11 +143,16 @@ fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
     }
 }
 
+/// Parameters for generating pa-datas for [AsReq] message.
 #[derive(Debug)]
 pub struct GenerateAsPaDataOptions<'a> {
     pub password: &'a str,
+    /// Salt for deriving the encryption key.
+    ///
+    /// The salt value should be extracted from the [KrbError] message.
     pub salt: Vec<u8>,
     pub enc_params: EncryptionParams,
+    /// Flag that indicates whether to generate pa-datas.
     pub with_pre_auth: bool,
 }
 
@@ -210,6 +215,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result
     Ok(pa_datas)
 }
 
+/// Parameters for generating [AsReq].
 #[derive(Debug)]
 pub struct GenerateAsReqOptions<'a> {
     pub realm: &'a str,
@@ -295,13 +301,18 @@ pub fn generate_as_req(pa_datas: Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq
     })
 }
 
+/// Parameters for generating [TgsReq].
 #[derive(Debug)]
 pub struct GenerateTgsReqOptions<'a> {
     pub realm: &'a str,
     pub service_principal: &'a str,
     pub session_key: &'a [u8],
+    /// [Ticket] extracted from the [AsRep] message.
     pub ticket: Ticket,
+    /// [Authenticator] to be included in [TgsReq] pa-data.
     pub authenticator: &'a mut Authenticator,
+    /// If the Kerberos U2U auth is negotiated, then this parameter must have one ticket: TGT ticket of the application service.
+    /// Otherwise, set it to `None`.
     pub additional_tickets: Option<Vec<Ticket>>,
     pub enc_params: &'a EncryptionParams,
     pub context_requirements: ClientRequestFlags,
@@ -526,22 +537,33 @@ pub struct AuthenticatorChecksumExtension {
     pub extension_value: Vec<u8>,
 }
 
+/// Encryption key.
 #[derive(Debug)]
 pub struct EncKey {
+    /// Encryption type.
     pub key_type: CipherSuite,
+    /// Encryption key value.
     pub key_value: Vec<u8>,
 }
 
+/// Input parameters for generating ApReq Authenticator.
 #[derive(Debug)]
 pub struct GenerateAuthenticatorOptions<'a> {
+    /// [KdcRep] from previous interaction with KDC.
     pub kdc_rep: &'a KdcRep,
+    /// Sequence number.
     pub seq_num: Option<u32>,
+    /// Sub-session encryption key.
     pub sub_key: Option<EncKey>,
+    /// Authenticator checksum options.
     pub checksum: Option<ChecksumOptions>,
+    /// Channel bindings.
     pub channel_bindings: Option<&'a ChannelBindings>,
+    /// Possible authenticator extensions.
     pub extensions: Vec<AuthenticatorChecksumExtension>,
 }
 
+/// Generated ApReq Authenticator.
 #[instrument(level = "trace", ret)]
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {

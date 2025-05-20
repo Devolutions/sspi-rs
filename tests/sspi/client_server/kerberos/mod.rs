@@ -297,6 +297,7 @@ fn kerberos_kdc_u2u_auth() {
         response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
             picky_asn1_der::to_vec(&ApplicationTag::<_, 0>(KrbMessage {
                 krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
+                // TGT rep
                 krb5_token_id: [0x04, 0x01],
                 krb_msg: tgt_rep,
             }))
