@@ -118,7 +118,7 @@ pub fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    context.flags = get_flags(context, credentials);
+    context.flags = get_flags(context, Some(credentials));
 
     let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
         OsRng.gen::<[u8; SESSION_KEY_SIZE]>()
@@ -177,6 +177,81 @@ pub fn write_authenticate(
     Ok(crate::SecurityStatus::Ok)
 }
 
+pub fn write_anonymous(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
+    check_state(context.state)?;
+
+    let negotiate_message = context
+        .negotiate_message
+        .as_ref()
+        .expect("negotiate message must be set on negotiate phase");
+    let challenge_message = context
+        .challenge_message
+        .as_ref()
+        .expect("challenge message must be set on challenge phase");
+
+    // calculate needed fields
+    // NTLMv2
+    let target_info = get_authenticate_target_info(
+        challenge_message.target_info.as_ref(),
+        context.channel_bindings.as_ref(),
+        context.send_single_host_data,
+    )?;
+
+    let client_challenge = generate_challenge()?;
+    let lm_challenge_response = [];
+    let nt_challenge_response = [];
+    context.flags = get_flags(context, None);
+
+    let session_key = [0u8; SESSION_KEY_SIZE];
+    let encrypted_random_session_key = [];
+
+    let message_fields = AuthenticateMessageFields::new(
+        &AuthIdentityBuffers::default(),
+        lm_challenge_response.as_ref(),
+        nt_challenge_response.as_ref(),
+        context.flags,
+        encrypted_random_session_key.as_ref(),
+        AUTH_MESSAGE_OFFSET as u32,
+    );
+
+    let mut buffer = Vec::with_capacity(message_fields.data_len());
+
+    write_header(context.flags, context.version.as_ref(), &message_fields, &mut buffer)?;
+    write_payload(&message_fields, &mut buffer)?;
+
+    let message = buffer.clone();
+
+    let mut buffer = io::Cursor::new(buffer);
+    let mic = write_mic(
+        negotiate_message.message.as_ref(),
+        challenge_message.message.as_ref(),
+        message.as_ref(),
+        &session_key,
+        AUTH_MESSAGE_OFFSET as u8,
+        &mut buffer,
+    )?;
+
+    transport.write_all(buffer.into_inner().as_slice())?;
+    transport.flush()?;
+
+    context.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
+    context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
+    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
+    context.session_key = None;
+
+    context.authenticate_message = Some(AuthenticateMessage::new(
+        message,
+        Some(mic),
+        target_info,
+        client_challenge,
+        None,
+    ));
+    context.state = NtlmState::Final;
+
+    Ok(crate::SecurityStatus::Ok)
+}
+
 fn check_state(state: NtlmState) -> crate::Result<()> {
     if state != NtlmState::Authenticate {
         Err(crate::Error::new(
@@ -188,12 +263,16 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
     }
 }
 
-fn get_flags(context: &Ntlm, identity: &AuthIdentityBuffers) -> NegotiateFlags {
+fn get_flags(context: &Ntlm, identity: Option<&AuthIdentityBuffers>) -> NegotiateFlags {
     // set KEY_EXCH flag if it was in the challenge message
     let mut flags = context.flags & NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
 
-    if !identity.domain.is_empty() {
+    if identity.is_some_and(|identity| !identity.domain.is_empty()) {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_DOMAIN_SUPPLIED;
+    }
+
+    if identity.is_none() {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS;
     }
 
     // will not set workstation because it is not used anywhere

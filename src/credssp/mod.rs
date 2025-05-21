@@ -169,7 +169,7 @@ pub enum ClientMode {
 pub struct CredSspClient {
     state: CredSspState,
     context: Option<CredSspContext>,
-    credentials: Credentials,
+    credentials: Option<Credentials>,
     public_key: Vec<u8>,
     cred_ssp_mode: CredSspMode,
     client_nonce: [u8; NONCE_SIZE],
@@ -182,7 +182,7 @@ pub struct CredSspClient {
 impl CredSspClient {
     pub fn new(
         public_key: Vec<u8>,
-        credentials: Credentials,
+        credentials: Option<Credentials>,
         cred_ssp_mode: CredSspMode,
         client_mode: ClientMode,
         service_principal_name: String,
@@ -203,7 +203,7 @@ impl CredSspClient {
 
     pub fn new_with_version(
         public_key: Vec<u8>,
-        credentials: Credentials,
+        credentials: Option<Credentials>,
         cred_ssp_mode: CredSspMode,
         ts_request_version: u32,
         client_mode: ClientMode,
@@ -265,8 +265,14 @@ impl CredSspClient {
                 .expect("Should not panic because the CredSSP context is set before")
                 .sspi_context;
             let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+
+            let builder = if let Some(credentials) = self.credentials.as_ref() {
+                builder.with_auth_data(credentials)
+            } else {
+                builder
+            };
+
             let AcquireCredentialsHandleResult { credentials_handle, .. } = builder
-                .with_auth_data(&self.credentials)
                 .with_credential_use(CredentialUse::Outbound)
                 .execute(sspi_context)?;
             self.credentials_handle = credentials_handle;

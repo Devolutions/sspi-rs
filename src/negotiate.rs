@@ -419,12 +419,12 @@ impl SspiImpl for Negotiate {
         &mut self,
         builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
-        if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
-            return Err(Error::new(
-                ErrorKind::NoCredentials,
-                "The client must specify the auth data",
-            ));
-        }
+        // if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
+        //     return Err(Error::new(
+        //         ErrorKind::NoCredentials,
+        //         "The client must specify the auth data",
+        //     ));
+        // }
 
         if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
             let account_name = identity.username.account_name();
@@ -459,10 +459,7 @@ impl SspiImpl for Negotiate {
                     if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
                         Some(identity)
                     } else {
-                        return Err(Error::new(
-                            ErrorKind::NoCredentials,
-                            "Auth identity is not provided for the Ntlm",
-                        ));
+                        None
                     }
                 } else {
                     None

@@ -17,8 +17,8 @@ use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
 use crate::generator::GeneratorInitSecurityContext;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
-    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
-    CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
+    auth_identity, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
+    BufferType, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
     SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
@@ -227,12 +227,12 @@ impl SspiImpl for Ntlm {
         &mut self,
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
-        if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
-            return Err(crate::Error::new(
-                crate::ErrorKind::NoCredentials,
-                "The client must specify the auth data",
-            ));
-        }
+        // if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
+        //     return Err(crate::Error::new(
+        //         crate::ErrorKind::NoCredentials,
+        //         "The client must specify the auth data",
+        //     ));
+        // }
 
         self.identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
 
@@ -336,16 +336,12 @@ impl Ntlm {
 
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
-                client::write_authenticate(
-                    self,
-                    builder
-                        .credentials_handle
-                        .as_ref()
-                        .expect("CredentialsHandle must be passed to the method")
-                        .as_ref()
-                        .expect("CredentialsHandle must be Some for the client's method"),
-                    &mut output_token.buffer,
-                )?
+                let auth_identity = builder.credentials_handle.as_ref().map(|h| h.as_ref()).flatten();
+                if let Some(auth_identity) = auth_identity {
+                    client::write_authenticate(self, auth_identity, &mut output_token.buffer)?
+                } else {
+                    client::write_anonymous(self, &mut output_token.buffer)?
+                }
             }
             _ => {
                 return Err(crate::Error::new(
