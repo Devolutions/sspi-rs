@@ -337,11 +337,11 @@ impl Ntlm {
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
                 let auth_identity = builder.credentials_handle.as_ref().map(|h| h.as_ref()).flatten();
-                if let Some(auth_identity) = auth_identity {
-                    client::write_authenticate(self, auth_identity, &mut output_token.buffer)?
-                } else {
-                    client::write_anonymous(self, &mut output_token.buffer)?
-                }
+                client::write_authenticate(
+                    self,
+                    auth_identity.unwrap_or(&AuthIdentityBuffers::default()),
+                    &mut output_token.buffer,
+                )?
             }
             _ => {
                 return Err(crate::Error::new(

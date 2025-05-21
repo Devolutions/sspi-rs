@@ -13,6 +13,12 @@ impl<T: Zeroize> Secret<T> {
     }
 }
 
+impl Secret<Vec<u8>> {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl<T: Zeroize> fmt::Debug for Secret<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Secret")?;

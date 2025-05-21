@@ -171,25 +171,19 @@ pub fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HAS
     }
 }
 
+// aka NTOWFv2
 pub fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
-    if !identity.is_empty() {
-        let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
-            convert_password_hash(identity.password.as_ref())?
-        } else {
-            compute_md4(identity.password.as_ref())
-        };
-
-        let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref());
-        let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
-        user_uppercase_with_domain.extend(&identity.domain);
-
-        Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
+    let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
+        convert_password_hash(identity.password.as_ref())?
     } else {
-        Err(crate::Error::new(
-            crate::ErrorKind::InvalidToken,
-            String::from("Got empty identity"),
-        ))
-    }
+        compute_md4(identity.password.as_ref())
+    };
+
+    let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref());
+    let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
+    user_uppercase_with_domain.extend(&identity.domain);
+
+    Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     // hash by the callback is not implemented because the callback never sets
 }
 
@@ -197,24 +191,37 @@ pub fn compute_lm_v2_response(
     client_challenge: &[u8],
     server_challenge: &[u8],
     ntlm_v2_hash: &[u8],
-) -> crate::Result<[u8; LM_CHALLENGE_RESPONSE_BUFFER_SIZE]> {
+    identity: &AuthIdentityBuffers,
+) -> crate::Result<Option<[u8; LM_CHALLENGE_RESPONSE_BUFFER_SIZE]>> {
+    // Anonymous user check
+    if identity.user.is_empty() && identity.password.is_empty() {
+        return Ok(None);
+    }
+
     let mut lm_challenge_data = [0x00; CHALLENGE_SIZE * 2];
-    lm_challenge_data[0..CHALLENGE_SIZE].clone_from_slice(server_challenge);
-    lm_challenge_data[CHALLENGE_SIZE..].clone_from_slice(client_challenge);
+    lm_challenge_data[0..CHALLENGE_SIZE].copy_from_slice(server_challenge);
+    lm_challenge_data[CHALLENGE_SIZE..].copy_from_slice(client_challenge);
 
     let mut lm_challenge_response = [0x00; LM_CHALLENGE_RESPONSE_BUFFER_SIZE];
-    lm_challenge_response[0..HASH_SIZE].clone_from_slice(compute_hmac_md5(ntlm_v2_hash, &lm_challenge_data)?.as_ref());
-    lm_challenge_response[HASH_SIZE..].clone_from_slice(client_challenge);
-    Ok(lm_challenge_response)
+    lm_challenge_response[0..HASH_SIZE].copy_from_slice(compute_hmac_md5(ntlm_v2_hash, &lm_challenge_data)?.as_ref());
+    lm_challenge_response[HASH_SIZE..].copy_from_slice(client_challenge);
+
+    Ok(Some(lm_challenge_response))
 }
 
 pub fn compute_ntlm_v2_response(
     client_challenge: &[u8],
     server_challenge: &[u8],
     target_info: &[u8],
-    ntlm_v2_hash: &[u8],
+    response_key_nt: &[u8],
     timestamp: u64,
+    identity: &AuthIdentityBuffers,
 ) -> crate::Result<(Vec<u8>, [u8; HASH_SIZE])> {
+    // // Anonymous user check
+    if identity.user.is_empty() && identity.password.is_empty() {
+        return Ok((Vec::new(), [0x00; HASH_SIZE]));
+    }
+
     let mut ntlm_v2_temp = Vec::with_capacity(NT_V2_RESPONSE_BASE_SIZE);
     ntlm_v2_temp.write_u8(1)?; // RespType 1 byte
     ntlm_v2_temp.write_u8(1)?; // HighRespType 1 byte
@@ -225,14 +232,12 @@ pub fn compute_ntlm_v2_response(
     ntlm_v2_temp.write_u32::<LittleEndian>(0)?; // Reserved3 4 bytes
     ntlm_v2_temp.extend(target_info); // TargetInfo
 
-    let mut nt_proof_input = server_challenge.to_vec();
-    nt_proof_input.extend(ntlm_v2_temp.as_slice());
-    let nt_proof = compute_hmac_md5(ntlm_v2_hash, nt_proof_input.as_ref())?;
+    let nt_proof_input = [server_challenge, ntlm_v2_temp.as_slice()].concat();
+    let nt_proof = compute_hmac_md5(response_key_nt, nt_proof_input.as_ref())?;
 
-    let mut nt_challenge_response = nt_proof.to_vec();
-    nt_challenge_response.append(ntlm_v2_temp.as_mut());
+    let nt_challenge_response = [nt_proof.as_slice(), ntlm_v2_temp.as_slice()].concat();
 
-    let key_exchange_key = compute_hmac_md5(ntlm_v2_hash, nt_proof.as_ref())?;
+    let key_exchange_key = compute_hmac_md5(response_key_nt, nt_proof.as_ref())?;
 
     Ok((nt_challenge_response, key_exchange_key))
 }
@@ -271,5 +276,24 @@ pub fn get_challenge_timestamp_from_response(target_info: &[u8]) -> crate::Resul
         Ok(*value)
     } else {
         now_file_time_timestamp()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_to_file_time() {}
+
+    #[test]
+    fn test_compute_ntlm_v2_hash_with_empty_identity() {
+        // Create an empty AuthIdentityBuffers
+        let empty_identity = AuthIdentityBuffers::default();
+
+        // Call compute_ntlm_v2_hash with empty identity
+        let result = compute_ntlm_v2_hash(&empty_identity);
+
+        println!("Result: {:?}", result);
     }
 }

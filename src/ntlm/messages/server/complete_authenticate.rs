@@ -32,7 +32,10 @@ pub fn complete_authenticate(context: &mut Ntlm) -> crate::Result<SecurityStatus
         authenticate_message.target_info.as_ref(),
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
+        // Don't merge this
+        &crate::AuthIdentityBuffers::default(),
     )?;
+
     let session_key = authenticate_message
         .encrypted_random_session_key
         .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {

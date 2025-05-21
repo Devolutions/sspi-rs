@@ -105,34 +105,52 @@ pub fn write_authenticate(
     )?;
 
     let client_challenge = generate_challenge()?;
-    let ntlm_v2_hash = compute_ntlm_v2_hash(credentials)?;
+
+    // AKA NTOWFv2, equivalent to
+    let response_key_nt = compute_ntlm_v2_hash(credentials)?;
+
+    // ComputeResponse
+    // ========================
     let lm_challenge_response = compute_lm_v2_response(
         client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
-        ntlm_v2_hash.as_ref(),
+        response_key_nt.as_ref(),
+        credentials,
     )?;
-    let (nt_challenge_response, key_exchange_key) = compute_ntlm_v2_response(
+
+    let (nt_challenge_response, session_base_key) = compute_ntlm_v2_response(
         client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
         target_info.as_ref(),
-        ntlm_v2_hash.as_ref(),
+        response_key_nt.as_ref(),
         challenge_message.timestamp,
+        credentials,
     )?;
+    // ========================
     context.flags = get_flags(context, Some(credentials));
 
-    let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+    let exported_session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
         OsRng.gen::<[u8; SESSION_KEY_SIZE]>()
     } else {
-        key_exchange_key
+        session_base_key
     };
 
-    let encrypted_session_key_vec = Rc4::new(&key_exchange_key).process(session_key.as_ref());
+    // KXKEY
+    // =========================
+    let encrypted_session_key_vec = Rc4::new(&session_base_key).process(exported_session_key.as_ref());
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
+    // =========================
+
+    let lm_challenge_response = if lm_challenge_response.is_some() {
+        lm_challenge_response.as_ref().unwrap()
+    } else {
+        &[][..]
+    };
 
     let message_fields = AuthenticateMessageFields::new(
         credentials,
-        lm_challenge_response.as_ref(),
+        lm_challenge_response,
         nt_challenge_response.as_ref(),
         context.flags,
         encrypted_session_key.as_ref(),
@@ -151,7 +169,7 @@ pub fn write_authenticate(
         negotiate_message.message.as_ref(),
         challenge_message.message.as_ref(),
         message.as_ref(),
-        session_key.as_ref(),
+        exported_session_key.as_ref(),
         AUTH_MESSAGE_OFFSET as u8,
         &mut buffer,
     )?;
@@ -159,11 +177,11 @@ pub fn write_authenticate(
     transport.write_all(buffer.into_inner().as_slice())?;
     transport.flush()?;
 
-    context.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
-    context.session_key = Some(session_key);
+    context.send_signing_key = generate_signing_key(exported_session_key.as_ref(), CLIENT_SIGN_MAGIC);
+    context.recv_signing_key = generate_signing_key(exported_session_key.as_ref(), SERVER_SIGN_MAGIC);
+    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(exported_session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(exported_session_key.as_ref(), SERVER_SEAL_MAGIC)));
+    context.session_key = Some(exported_session_key);
 
     context.authenticate_message = Some(AuthenticateMessage::new(
         message,

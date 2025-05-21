@@ -303,9 +303,31 @@ fn compute_lm_v2_repsonse_correct_computes_response() {
     expected.extend(client_challenge);
 
     assert_eq!(
-        compute_lm_v2_response(client_challenge, server_challenge, ntlm_v2_hash.as_ref()).unwrap(),
+        compute_lm_v2_response(
+            client_challenge,
+            server_challenge,
+            ntlm_v2_hash.as_ref(),
+            &TEST_CREDENTIALS
+        )
+        .unwrap()
+        .unwrap(),
         expected.as_slice()
     );
+}
+
+#[test]
+fn compute_lm_v2_repsonse_correct_computes_response_empty() {
+    let ntlm_v2_hash = [0x00; HASH_SIZE];
+    let client_challenge = CLIENT_CHALLENGE.as_ref();
+    let server_challenge = SERVER_CHALLENGE.as_ref();
+
+    let result = compute_lm_v2_response(
+        client_challenge,
+        server_challenge,
+        ntlm_v2_hash.as_ref(),
+        &TEST_CREDENTIALS,
+    );
+    println!("Result: {:?}", result);
 }
 
 #[test]
@@ -328,6 +350,7 @@ fn compute_ntlm_v2_repsonse_correct_computes_challenge_response() {
         target_info.as_ref(),
         ntlm_v2_hash.as_ref(),
         timestamp,
+        &TEST_CREDENTIALS,
     )
     .unwrap();
     assert_eq!(nt_challenge_response[..], expected[..]);
@@ -351,6 +374,7 @@ fn compute_ntlm_v2_repsonse_correct_computes_key_exchange_key() {
         target_info.as_ref(),
         ntlm_v2_hash.as_ref(),
         timestamp,
+        &TEST_CREDENTIALS,
     )
     .unwrap();
 
