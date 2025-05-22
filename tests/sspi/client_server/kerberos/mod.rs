@@ -175,7 +175,36 @@ fn kerberos_kdc_auth() {
         target_name,
     } = init_krb_environment();
 
-    let kdc = KdcMock::new(realm, keys, users);
+    let kdc = KdcMock::new(
+        realm,
+        keys,
+        users,
+        Validators {
+            as_req: Box::new(|_as_req| {
+                // Nothing to validate in AsReq.
+            }),
+            tgs_req: Box::new(|tgs_req| {
+                // Here, we should check that the Kerberos client does not negotiated Kerberos U2U auth and not enabled any unneeded flags.
+
+                let kdc_options = tgs_req.0.req_body.kdc_options.0 .0.as_bytes();
+                // enc-tkt-in-skey must be disabled.
+                assert_eq!(kdc_options[4], 0x00, "some unneeded KDC options are enabled");
+
+                let additional_tickets = tgs_req
+                    .0
+                    .req_body
+                    .0
+                    .additional_tickets
+                    .0
+                    .as_ref()
+                    .map(|additional_tickets| additional_tickets.0 .0.as_slice());
+                assert!(
+                    matches!(additional_tickets, None | Some(&[])),
+                    "TgsReq should not contain any additional tickets"
+                );
+            }),
+        },
+    );
     let mut network_client = NetworkClientMock { kdc };
 
     let kerberos_config = KerberosConfig {
@@ -219,7 +248,7 @@ fn kerberos_kdc_u2u_auth() {
         target_name,
     } = init_krb_environment();
 
-    let kdc = KdcMock::new_with_validators(
+    let kdc = KdcMock::new(
         realm,
         keys,
         users,

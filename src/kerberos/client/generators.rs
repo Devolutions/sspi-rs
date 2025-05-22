@@ -68,9 +68,9 @@ const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 // https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
 pub const DEFAULT_AS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x10];
 
-// Renewable, Canonicalize, Enc-tkt-in-skey are on by default
+// Renewable, Canonicalize.
 // https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
-const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x08];
+const DEFAULT_TGS_REQ_OPTIONS: [u8; 4] = [0x00, 0x81, 0x00, 0x00];
 
 const DEFAULT_PA_PAC_OPTIONS: [u8; 4] = [0x40, 0x00, 0x00, 0x00];
 
@@ -340,6 +340,9 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
     let mut tgs_req_options = KdcOptions::from_bits(u32::from_be_bytes(DEFAULT_TGS_REQ_OPTIONS)).unwrap();
     if context_requirements.contains(ClientRequestFlags::DELEGATE) {
         tgs_req_options |= KdcOptions::FORWARDABLE;
+    }
+    if context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
+        tgs_req_options |= KdcOptions::ENC_TKT_IN_SKEY;
     }
 
     let req_body = KdcReqBody {

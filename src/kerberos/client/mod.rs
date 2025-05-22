@@ -229,6 +229,13 @@ pub async fn initialize_security_context<'a>(
                 )
             })?;
 
+            let mut context_requirements = builder.context_requirements;
+
+            if client.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
+                warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
+                context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
+            }
+
             let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
                 realm: &as_rep.0.crealm.0.to_string(),
                 service_principal,
@@ -237,7 +244,7 @@ pub async fn initialize_security_context<'a>(
                 authenticator: &mut authenticator,
                 additional_tickets: tgt_ticket.map(|ticket| vec![ticket]),
                 enc_params: &client.encryption_params,
-                context_requirements: builder.context_requirements,
+                context_requirements,
             })?;
 
             let response = client.send(yield_point, &serialize_message(&tgs_req)?).await?;
@@ -306,13 +313,6 @@ pub async fn initialize_security_context<'a>(
             let authenticator = generate_authenticator(authenticator_options)?;
             let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
             info!(encoded_ap_req_authenticator = ?encoded_auth);
-
-            let mut context_requirements = builder.context_requirements;
-
-            if client.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
-                warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
-                context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
-            }
 
             let ap_req = generate_ap_req(
                 tgs_rep.0.ticket.0,

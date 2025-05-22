@@ -99,17 +99,7 @@ pub struct KdcMock {
 
 impl KdcMock {
     /// Creates a new [KdcMock].
-    pub fn new(realm: String, keys: HashMap<UserName, Vec<u8>>, users: HashMap<UserName, PasswordCreds>) -> Self {
-        Self {
-            realm,
-            keys,
-            users,
-            validators: Default::default(),
-        }
-    }
-
-    /// Creates a new [KdcMock] with custom Kerberos messages validators.
-    pub fn new_with_validators(
+    pub fn new(
         realm: String,
         keys: HashMap<UserName, Vec<u8>>,
         users: HashMap<UserName, PasswordCreds>,
