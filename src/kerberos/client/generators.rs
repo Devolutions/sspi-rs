@@ -754,7 +754,7 @@ pub fn get_mech_list() -> MechTypeList {
 }
 
 pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
+    let krb5_neg_token_init = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: TGT_REQ_TOKEN_ID,
         krb_msg: TgtReq {

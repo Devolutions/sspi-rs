@@ -13,7 +13,6 @@ use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1, ObjectIdentifierAsn1,
     OctetStringAsn1, Optional,
 };
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
@@ -311,8 +310,8 @@ fn kerberos_kdc_u2u_auth() {
         .expect("GssApiNegInit mech_token should present")
         .0
          .0;
-    let neg_token_init: ApplicationTag0<KrbMessage<TgtReq>> =
-        picky_asn1_der::from_bytes(&encoded_tgt_req).expect("neg_token_init contains invalid mech_token");
+    let neg_token_init = KrbMessage::<TgtReq>::decode_application_krb_message(&encoded_tgt_req)
+        .expect("neg_token_init contains invalid mech_token");
     let tgt_req = neg_token_init.0.krb_msg;
 
     // Generate TGT ticket.
@@ -324,7 +323,7 @@ fn kerberos_kdc_u2u_auth() {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(vec![10, 1, 1])))),
         supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(oids::ms_krb5())))),
         response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&ApplicationTag::<_, 0>(KrbMessage {
+            picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
                 krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
                 // TGT rep
                 krb5_token_id: [0x04, 0x01],
