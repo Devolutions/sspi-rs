@@ -1,4 +1,5 @@
 use std::ffi::CStr;
+use std::mem::size_of;
 use std::ptr::{self, NonNull, copy_nonoverlapping};
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
@@ -42,8 +43,8 @@ use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoI
 use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
 use super::sspi_data_types::{
     CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
-    SecPkgContextFlags, SecPkgContextSessionKey, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar,
-    SecurityStatus,
+    SecPkgContextFlags, SecPkgContextNamesA, SecPkgContextNamesW, SecPkgContextSessionKey, SecPkgContextSizes,
+    SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use super::utils::{hostname, transform_credentials_handle};
 use crate::utils::into_raw_ptr;
@@ -54,6 +55,8 @@ pub const SECPKG_NEGOTIATION_IN_PROGRESS: u32 = 2;
 
 // the sizes of the structures used in the per-message functions and authentication exchanges
 pub const SECPKG_ATTR_SIZES: u32 = 0;
+// the name associated with the context
+pub const SECPKG_ATTR_NAMES: u32 = 1;
 // information about the security package to be used with the negotiation process and the current state of the negotiation for the use of that package
 pub const SECPKG_ATTR_NEGOTIATION_INFO: u32 = 12;
 // the sizes of the various parts of a stream used in the per-message functions
@@ -1049,7 +1052,74 @@ unsafe fn query_context_attributes_common(
 
                 return 0;
             }
-            _ => {}
+            SECPKG_ATTR_NAMES => {
+                let sspi_names = try_execute!(sspi_context.query_context_names());
+
+                if is_wide {
+                    let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesW>();
+                    let wide_username: Vec<u16> = sspi_names.username.account_name().encode_utf16().chain(std::iter::once(0)).collect();
+                    let username_len = wide_username.len();
+
+                    // SAFETY: Memory allocation is safe.
+                    let buf = unsafe {
+                        libc::malloc(username_len * size_of::<u16>())
+                    }.cast::<u16>();
+
+                    // SAFETY:
+                    // - `wide_username.as_ptr()` pointer is valid for reads of `username_len` u16 values,
+                    //   because it is Rust-allocated vector of u16 values with size of `username_len`.
+                    // - `buf` is valid for writes of `username_len` u16 values.
+                    // - `wide_username` and memory behind `buf` are properly-aligned.
+                    // - `wide_username` and memory behind `buf` do not overlap,
+                    //   because they are allocated separately.
+                    unsafe {
+                        copy_nonoverlapping(wide_username.as_ptr(), buf, username_len);
+                    }
+
+                    // SAFETY: `sec_pkg_names` is non-null because it was cast from a non-null `p_buffer`.
+                    unsafe {
+                        (*sec_pkg_names).user_name = buf;
+                    }
+
+                    return 0;
+                } else {
+                    let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesA>();
+
+                    let username = sspi_names.username.account_name();
+
+                    // SAFETY: Memory allocation is safe.
+                    let buf = unsafe {
+                        // +1 for the null terminator.
+                        libc::malloc(username.len() + 1)
+                    }.cast::<u8>();
+
+                    // SAFETY:
+                    // - `username.as_ptr()` pointer is valid for reads of `username.len()` bytes,
+                    //   because it is Rust-allocated string with size of `username.len()`.
+                    // - `buf` is valid for writes of `username.len() + 1` bytes.
+                    // - `username` and memory behind `buf` are properly-aligned.
+                    // - `username` and memory behind `buf` do not overlap,
+                    //   because they are allocated separately.
+                    unsafe {
+                        copy_nonoverlapping(username.as_ptr(), buf, username.len());
+                    }
+
+                    // SAFETY: `buf` is valid for writes of `username.len() + 1` bytes.
+                    let null_terminator_ptr = unsafe { buf.add(username.len()) };
+                    // SAFETY: `buf` is valid for writes of `username.len() + 1` bytes.
+                    unsafe {
+                        *null_terminator_ptr = 0;
+                    }
+
+                    // SAFETY: `sec_pkg_names` is non-null because it was cast from a non-null `p_buffer`.
+                    unsafe {
+                        (*sec_pkg_names).user_name = buf.cast();
+                    }
+
+                    return 0;
+                }
+            }
+            _ => {},
         };
 
         let package_info = try_execute!(match ul_attribute.try_into().unwrap() {
@@ -2329,6 +2399,61 @@ mod tests {
 
         // Free the key buffer using FreeContextBuffer
         let status = unsafe { FreeContextBuffer(session_key.session_key.cast()) };
+        assert_eq!(status, 0);
+
+        let _ = unsafe { Box::from_raw(sec_handle.dw_upper as *mut String) };
+        let _ = unsafe { Box::from_raw(sec_handle.dw_lower as *mut SspiHandle) };
+    }
+
+    #[test]
+    fn query_context_names() {
+        use sspi::credssp::SspiContext;
+
+        use crate::sspi::sec_handle::{
+            QueryContextAttributesA, QueryContextAttributesW, SECPKG_ATTR_NAMES, SspiHandle,
+        };
+        use crate::sspi::sspi_data_types::{SecPkgContextNamesA, SecPkgContextNamesW};
+        use crate::utils::into_raw_ptr;
+
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+
+        // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
+        // We use Kerberos fake_client because we need established security context to query the names.
+        let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
+        let sspi_context_ptr = into_raw_ptr(sspi_context);
+        let mut sec_handle = SecHandle {
+            dw_lower: sspi_context_ptr as c_ulonglong,
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        };
+
+        let mut names_w = SecPkgContextNamesW { user_name: null_mut() };
+
+        let status =
+            unsafe { QueryContextAttributesW(&mut sec_handle, SECPKG_ATTR_NAMES, ptr::from_mut(&mut names_w).cast()) };
+        assert_eq!(status, 0);
+        assert!(!names_w.user_name.is_null());
+
+        let username_w = unsafe { U16CString::from_ptr_str(names_w.user_name) }
+            .to_string()
+            .expect("username should be valid UTF-16");
+        println!("Username (wide): {}", username_w);
+
+        let status = unsafe { FreeContextBuffer(names_w.user_name.cast()) };
+        assert_eq!(status, 0);
+
+        let mut names_a = SecPkgContextNamesA { user_name: null_mut() };
+
+        let status =
+            unsafe { QueryContextAttributesA(&mut sec_handle, SECPKG_ATTR_NAMES, ptr::from_mut(&mut names_a).cast()) };
+        assert_eq!(status, 0);
+        assert!(!names_a.user_name.is_null());
+
+        let username_a = unsafe { CStr::from_ptr(names_a.user_name) }
+            .to_str()
+            .expect("username should be valid UTF-8");
+        println!("Username (ANSI): {}", username_a);
+
+        let status = unsafe { FreeContextBuffer(names_a.user_name.cast()) };
         assert_eq!(status, 0);
 
         let _ = unsafe { Box::from_raw(sec_handle.dw_upper as *mut String) };

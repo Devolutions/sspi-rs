@@ -38,7 +38,7 @@ pub struct SecPkgContextSizes {
 
 /// [SecPkgContext_StreamSizes](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_streamsizes)
 ///
-/// ```not_rust
+/// ```c
 /// typedef struct _SecPkgContext_StreamSizes {
 ///   unsigned long cbHeader;
 ///   unsigned long cbTrailer;
@@ -58,9 +58,9 @@ pub struct SecPkgContextStreamSizes {
 
 pub type SecGetKeyFn = extern "system" fn(*mut c_void, *mut c_void, u32, *mut *mut c_void, *mut i32);
 
-/// [_SecPkgContext_Flags](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_flags)
+/// [SecPkgContext_Flags](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_flags)
 ///
-/// ```not_rust
+/// ```c
 /// typedef struct _SecPkgContext_Flags {
 ///   unsigned long Flags;
 /// } SecPkgContext_Flags, *PSecPkgContext_Flags;
@@ -74,9 +74,9 @@ pub struct SecPkgContextFlags {
 /// typedef unsigned int ALG_ID;
 pub type AlgId = u32;
 
-/// [_SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
+/// [SecPkgContext_ConnectionInfo](https://learn.microsoft.com/en-us/windows/win32/api/schannel/ns-schannel-secpkgcontext_connectioninfo)
 ///
-/// ```not_rust
+/// ```c
 /// typedef struct _SecPkgContext_ConnectionInfo {
 ///   DWORD  dwProtocol;
 ///   ALG_ID aiCipher;
@@ -98,7 +98,7 @@ pub struct SecPkgContextConnectionInfo {
     pub dw_exch_strength: u32,
 }
 
-/// [_SecPkgContext_SessionKey](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sessionkey)
+/// [SecPkgContext_SessionKey](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sessionkey)
 ///
 /// ```c
 /// typedef struct _SecPkgContext_SessionKey {
@@ -114,7 +114,7 @@ pub struct SecPkgContextSessionKey {
 
 /// [CERT_TRUST_STATUS](https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-cert_trust_status)
 ///
-/// ```not_rust
+/// ```c
 /// typedef struct _CERT_TRUST_STATUS {
 ///   DWORD dwErrorStatus;
 ///   DWORD dwInfoStatus;
@@ -133,4 +133,28 @@ impl From<SspiCertTrustStatus> for CertTrustStatus {
             dw_info_status: cert_trust_status.info_status.bits(),
         }
     }
+}
+
+/// [SecPkgContext_NamesA](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_namesa)
+///
+/// ```c
+/// typedef struct _SecPkgContext_NamesA {
+///   SEC_CHAR *sUserName;
+/// } SecPkgContext_NamesA, *PSecPkgContext_NamesA;
+/// ```
+#[repr(C)]
+pub struct SecPkgContextNamesA {
+    pub user_name: *mut SecChar,
+}
+
+/// [SecPkgContext_NamesW](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_namesw)
+///
+/// ```c
+/// typedef struct _SecPkgContext_NamesW {
+///   SEC_WCHAR *sUserName;
+/// } SecPkgContext_NamesW, *PSecPkgContext_NamesW;
+/// ```
+#[repr(C)]
+pub struct SecPkgContextNamesW {
+    pub user_name: *mut SecWChar,
 }
