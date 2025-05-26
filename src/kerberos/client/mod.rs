@@ -39,16 +39,16 @@ use crate::pku2u::generate_client_dh_parameters;
 use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
 use crate::{
     check_if_empty, pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus,
+    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
 
 /// Performs one authentication step.
 ///
-/// The client should call this function until it returns `SecurityStatus::Ok`.
+/// The user should call this function until it returns `SecurityStatus::Ok`.
 pub async fn initialize_security_context<'a>(
     client: &'a mut Kerberos,
     yield_point: &mut YieldPointLocal,
-    builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, Option<CredentialsBuffers>>,
+    builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<crate::InitializeSecurityContextResult> {
     trace!(?builder);
 
@@ -89,7 +89,7 @@ pub async fn initialize_security_context<'a>(
             let input = builder
                 .input
                 .as_ref()
-                .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+                .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
 
             if let Ok(sec_buffer) =
                 SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)

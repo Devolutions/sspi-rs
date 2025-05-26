@@ -13,7 +13,6 @@ use picky_asn1::wrapper::{
     ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
     Optional,
 };
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
@@ -621,7 +620,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
     };
 
     Ok(Authenticator::from(AuthenticatorInner {
-        authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
@@ -784,7 +783,7 @@ pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<App
 }
 
 pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<ExplicitContextTag1<NegTokenTarg>> {
-    let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
+    let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
