@@ -249,6 +249,13 @@ pub async fn initialize_security_context<'a>(
 
             let response = client.send(yield_point, &serialize_message(&tgs_req)?).await?;
 
+            if response.len() < 4 {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    "the KDC reply message is too small: expected at least 4 bytes",
+                ));
+            }
+
             // first 4 bytes are message len. skipping them
             let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
             let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
@@ -413,7 +420,7 @@ pub async fn initialize_security_context<'a>(
         _ => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
-                format!("Got wrong Kerberos state: {:?}", client.state),
+                format!("got wrong Kerberos state: {:?}", client.state),
             ))
         }
     };

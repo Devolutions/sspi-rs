@@ -247,7 +247,7 @@ impl<'a> AuthProvider<'a> {
             .with_context_requirements(
                 // Warning: do not change these flags if you don't know what you are doing.
                 // The absence or presence of some flags can break the RPC auth. For example,
-                // if you enable the `ClientRequestFlags::USER_TO_USER`, then it will fail.
+                // if you enable the `ClientRequestFlags::USE_SESSION_KEY`, then it will fail.
                 ClientRequestFlags::MUTUAL_AUTH
                     | ClientRequestFlags::INTEGRITY
                     | ClientRequestFlags::USE_DCE_STYLE

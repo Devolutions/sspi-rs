@@ -634,7 +634,7 @@ impl KdcMock {
                 realm,
                 session_key.to_vec(),
                 &service_key,
-                KerberosFlags::from(BitString::with_bytes([0, 0, 0, 0])),
+                KerberosFlags::from(BitString::with_bytes([0; 4])),
                 sname.clone(),
                 sname,
             )),

@@ -109,10 +109,17 @@ pub async fn change_password<'a>(
         let response = client.send(yield_point, &serialize_message(&krb_priv)?).await?;
         trace!(?response, "Change password raw response");
 
+        if response.len() < 4 {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "the KDC reply message is too small: expected at least 4 bytes",
+            ));
+        }
+
         let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
             Error::new(
                 ErrorKind::InvalidToken,
-                format!("Cannot deserialize krb_priv_response: {:?}", err),
+                format!("cannot deserialize krb_priv_response: {:?}", err),
             )
         })?;
 
@@ -131,7 +138,7 @@ pub async fn change_password<'a>(
     } else {
         return Err(Error::new(
             ErrorKind::NoAuthenticatingAuthority,
-            "No KDC server found!".to_owned(),
+            "no KDC server found".to_owned(),
         ));
     }
 
