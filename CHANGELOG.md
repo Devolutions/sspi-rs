@@ -8,12 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [[0.15.6](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.5...sspi-v0.15.6)] - 2025-05-27
 
-### <!-- 1 -->Features
-
-- WS tunneling support (#410) ([31e6ae9f79](https://github.com/Devolutions/sspi-rs/commit/31e6ae9f7930e7c6b226f6e6a58bb655150a6186)) 
-
-- Add web client;  (#419) ([bcb476d03e](https://github.com/Devolutions/sspi-rs/commit/bcb476d03e0c4ac5dc604c5448db74ce51295751)) 
-
 ### <!-- 4 -->Bug Fixes
 
 - Fix sspi test build (#422) ([74e74cfdb7](https://github.com/Devolutions/sspi-rs/commit/74e74cfdb7f6efc30d36f8b9f5dc03df983ee967)) 
