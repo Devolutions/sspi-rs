@@ -3,18 +3,53 @@ mod generators;
 
 use std::io::Write;
 
+use extractors::extract_client_mic_token;
+use generators::generate_mic_token;
 use picky::oids;
+use picky_krb::constants::key_usages::INITIATOR_SIGN;
 use picky_krb::data_types::AuthenticatorInner;
+use picky_krb::gss_api::MechTypeList;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use time::{Duration, OffsetDateTime};
 
-use self::extractors::{decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket, extract_tgt_req};
+use self::extractors::{
+    decode_initial_neg_init, decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket,
+};
 use self::generators::{generate_ap_rep, generate_final_neg_token_targ, generate_neg_token_targ};
+use super::utils::validate_mic_token;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::kerberos::flags::ApOptions;
+use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, Kerberos, KerberosState, Result, SecurityBuffer,
     SecurityStatus, ServerResponseFlags, SspiImpl,
 };
+
+/// Additional properties that are needed only for server-side Kerberos.
+#[derive(Debug, Clone)]
+pub(crate) struct ServerProperties {
+    /// Supported mech types sent by the client in the first incoming message.
+    /// We user them for checksum calculation during MIC token generation.
+    mech_types: MechTypeList,
+    /// Maximum allowed time difference between client and server clocks.
+    /// It is recommended to set this value not greater then a few minutes.
+    max_time_skew: Duration,
+    /// Key that is used for TGS tickets decryption.
+    /// It should be provided by the user during regular Kerberos auth. Or
+    /// it will be established during AS exchange in the case of Kerberos U2U auth.
+    ticket_decryption_key: Option<Vec<u8>>,
+}
+
+impl Default for ServerProperties {
+    fn default() -> Self {
+        Self {
+            mech_types: MechTypeList::from(Vec::new()),
+            max_time_skew: Duration::minutes(3),
+            ticket_decryption_key: None,
+        }
+    }
+}
 
 /// Performs one authentication step.
 ///
@@ -31,10 +66,21 @@ pub fn accept_security_context_impl(
 
     let status = match server.state {
         KerberosState::Negotiate => {
-            let tgt_req = extract_tgt_req(&input_token.buffer)?;
+            let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
             let tgt_rep = todo!();
 
             // TODO: negotiate krb oid and krb u2u.
+
+            server
+                .server
+                .as_mut()
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidHandle,
+                        "Kerberos server properties are not initialized",
+                    )
+                })?
+                .mech_types = mech_types;
 
             let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(tgt_rep)?)?;
 
@@ -50,7 +96,20 @@ pub fn accept_security_context_impl(
 
             // TODO: check ap_req service name.
 
-            let ticket_enc_part = decrypt_ap_req_ticket(todo!(), &ap_req)?;
+            let ticket_decryption_key = server
+                .server
+                .as_ref()
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidHandle,
+                        "Kerberos server properties are not initialized",
+                    )
+                })?
+                .ticket_decryption_key
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
+
+            let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
             server.encryption_params.session_key = Some(ticket_enc_part.key.0.key_value.0 .0.clone());
             let session_key = server
                 .encryption_params
@@ -82,8 +141,16 @@ pub fn accept_security_context_impl(
             let now = OffsetDateTime::now_utc();
             let client_time = OffsetDateTime::try_from(ctime.0 .0.clone())
                 .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {:?}", err)))?;
-            // TODO: make allowed time skew configurable
-            let max_time_skew = Duration::minutes(3);
+            let max_time_skew = server
+                .server
+                .as_ref()
+                .ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::InvalidHandle,
+                        "Kerberos server properties are not initialized",
+                    )
+                })?
+                .max_time_skew;
 
             if (now - client_time).abs() > max_time_skew {
                 return Err(Error::new(
@@ -131,7 +198,7 @@ pub fn accept_security_context_impl(
                 ));
             }
 
-            info!("ApReq Ticket and Authenticator are valid!");
+            debug!("ApReq Ticket and Authenticator are valid!");
 
             let ap_options_bytes = ap_req.0.ap_options.0 .0.as_bytes();
             let ap_options =
@@ -145,6 +212,17 @@ pub fn accept_security_context_impl(
             // the KRB_AP_REQ message will have MUTUAL-REQUIRED set in its ap-options field, and a KRB_AP_REP message
             // is required in response.
             if ap_options.contains(ApOptions::MUTUAL_REQUIRED) {
+                let key_size = server
+                    .encryption_params
+                    .encryption_type
+                    .as_ref()
+                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+                    .cipher()
+                    .key_size();
+                let mut sub_session_key = vec![0; key_size];
+                OsRng.fill_bytes(&mut sub_session_key);
+                server.encryption_params.sub_session_key = Some(sub_session_key);
+
                 // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
                 // A subkey MAY be included if the server desires to negotiate a different subkey.
                 // The KRB_AP_REP message is encrypted in the session key extracted from the ticket.
@@ -154,6 +232,27 @@ pub fn accept_security_context_impl(
                     cusec.0,
                     (server.seq_number + 1).to_be_bytes().to_vec(),
                     &server.encryption_params,
+                )?;
+
+                let mic = generate_mic_token(
+                    u64::from(server.seq_number + 1),
+                    picky_asn1_der::to_vec(
+                        &server
+                            .server
+                            .as_ref()
+                            .ok_or_else(|| {
+                                Error::new(
+                                    ErrorKind::InvalidHandle,
+                                    "Kerberos server properties are not initialized",
+                                )
+                            })?
+                            .mech_types,
+                    )?,
+                    server
+                        .encryption_params
+                        .sub_session_key
+                        .as_ref()
+                        .expect("sub-session key should present"),
                 )?;
 
                 let mech_id = if server.krb5_user_to_user {
@@ -172,7 +271,12 @@ pub fn accept_security_context_impl(
 
             SecurityStatus::ContinueNeeded
         }
-        KerberosState::ApExchange => SecurityStatus::Ok,
+        KerberosState::ApExchange => {
+            let client_mic = extract_client_mic_token(&input_token.buffer)?;
+            validate_mic_token(&client_mic, INITIATOR_SIGN, &server.encryption_params)?;
+
+            SecurityStatus::Ok
+        }
         _ => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,

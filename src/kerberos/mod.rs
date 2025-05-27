@@ -25,6 +25,7 @@ use rand::Rng;
 use url::Url;
 
 use self::config::KerberosConfig;
+use self::server::ServerProperties;
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
@@ -95,6 +96,7 @@ pub struct Kerberos {
     pub(crate) channel_bindings: Option<ChannelBindings>,
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
+    pub(crate) server: Option<Box<ServerProperties>>,
 }
 
 impl Kerberos {
@@ -112,6 +114,7 @@ impl Kerberos {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: None,
         })
     }
 
@@ -129,6 +132,7 @@ impl Kerberos {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: Some(Box::new(Default::default())),
         })
     }
 
@@ -638,6 +642,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: None,
         }
     }
 
@@ -663,6 +668,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: Some(Box::new(Default::default())),
         }
     }
 }

@@ -6,12 +6,13 @@ use picky_asn1::wrapper::{
 };
 use picky_asn1_der::Asn1RawDer;
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AP_REP_TOKEN_ID, TGT_REP_TOKEN_ID};
-use picky_krb::constants::key_usages::AP_REP_ENC;
+use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, AP_REP_ENC};
 use picky_krb::constants::types::AP_REP_MSG_TYPE;
+use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
 use picky_krb::data_types::{
     EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds,
 };
-use picky_krb::gss_api::{ApplicationTag0, KrbMessage, MechType, NegTokenTarg, NegTokenTarg1};
+use picky_krb::gss_api::{ApplicationTag0, KrbMessage, MechType, MicToken, NegTokenTarg, NegTokenTarg1};
 use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
@@ -82,4 +83,22 @@ pub fn generate_final_neg_token_targ(mech_id: ObjectIdentifier, ap_rep: ApRep, m
         )))),
         mech_list_mic: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(mic)))),
     }))
+}
+
+pub fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[u8]) -> Result<Vec<u8>> {
+    let mut mic_token = MicToken::with_initiator_flags().with_seq_number(seq_number);
+
+    payload.extend_from_slice(&mic_token.header());
+
+    mic_token.set_checksum(checksum_sha_aes(
+        session_key,
+        ACCEPTOR_SIGN,
+        &payload,
+        &AesSize::Aes256,
+    )?);
+
+    let mut mic_token_raw = Vec::new();
+    mic_token.encode(&mut mic_token_raw)?;
+
+    Ok(mic_token_raw)
 }

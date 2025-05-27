@@ -383,10 +383,6 @@ pub async fn initialize_security_context<'a>(
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
-
-                client.state = KerberosState::PubKeyAuth;
-
-                SecurityStatus::Ok
             } else {
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -412,10 +408,10 @@ pub async fn initialize_security_context<'a>(
 
                 client.next_seq_number();
                 client.prepare_final_neg_token(builder)?;
-                client.state = KerberosState::PubKeyAuth;
-
-                SecurityStatus::Ok
             }
+
+            client.state = KerberosState::PubKeyAuth;
+            SecurityStatus::Ok
         }
         _ => {
             return Err(Error::new(

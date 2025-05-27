@@ -73,6 +73,7 @@ fn secbuffer_readonly_with_checksum() {
         channel_bindings: None,
         dh_parameters: None,
         krb5_user_to_user: false,
+        server: Some(Box::new(Default::default())),
     };
 
     // RPC header
