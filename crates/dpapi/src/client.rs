@@ -210,7 +210,6 @@ async fn get_key<T: Transport>(
 ) -> Result<GroupKeyEnvelope> {
     let mut connection_options = ConnectOptions::new(server, proxy)?;
 
-    // let isd_key_port = {
     let mut rpc = RpcClient::<T>::connect(
         &connection_options,
         AuthProvider::new(
@@ -225,13 +224,13 @@ async fn get_key<T: Transport>(
     )
     .await?;
 
-    info!("RPC connection has been established.");
+    debug!("RPC connection has been established");
 
     let epm_contexts = get_epm_contexts();
     let context_id = epm_contexts[0].context_id;
     let bind_ack = rpc.bind(&epm_contexts).await?;
 
-    info!("RPC bind/bind_ack finished successfully.");
+    debug!("RPC bind/bind_ack finished successfully");
 
     process_bind_result(&epm_contexts, bind_ack, context_id)?;
 
@@ -239,9 +238,8 @@ async fn get_key<T: Transport>(
     let response = rpc.request(0, EptMap::OPNUM, ept_map.encode_vec()?).await?;
 
     let isd_key_port = process_ept_map_result(&response.try_into_response()?)?;
-    // };
 
-    info!(isd_key_port);
+    debug!(isd_key_port);
 
     connection_options.set_destination_port(isd_key_port);
 
@@ -256,13 +254,13 @@ async fn get_key<T: Transport>(
     )
     .await?;
 
-    info!("RPC connection has been established.");
+    debug!("RPC connection has been established");
 
     let isd_key_contexts = get_isd_key_key_contexts();
     let context_id = isd_key_contexts[0].context_id;
     let bind_ack = rpc.bind_authenticate(&isd_key_contexts).await?;
 
-    info!("RPC bind/bind_ack finished successfully.");
+    debug!("RPC bind/bind_ack finished successfully");
 
     process_bind_result(&isd_key_contexts, bind_ack, context_id)?;
 
@@ -284,7 +282,7 @@ async fn get_key<T: Transport>(
         .await?;
     let security_trailer = response_pdu.security_trailer.clone();
 
-    info!("RPC GetKey Request finished successfully!");
+    debug!("RPC GetKey Request finished successfully");
 
     process_get_key_result(&response_pdu.try_into_response()?, security_trailer)
 }
@@ -379,7 +377,7 @@ pub async fn n_crypt_unprotect_secret<T: Transport>(
     }))
     .await?;
 
-    info!("Successfully requested root key.");
+    debug!("Successfully requested root key");
 
     Ok(decrypt_blob(&dpapi_blob, &root_key)?.into())
 }
@@ -455,7 +453,7 @@ pub async fn n_crypt_protect_secret<T: Transport>(
     }))
     .await?;
 
-    info!("Successfully requested root key.");
+    debug!("Successfully requested root key");
 
     encrypt_blob(data.as_ref(), &root_key, descriptor)
 }

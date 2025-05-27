@@ -309,7 +309,7 @@ impl CredSspClient {
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
-                    info!("CredSSp finished NLA stage.");
+                    debug!("CredSSP finished NLA stage");
 
                     let peer_version =
                         self.context.as_ref().unwrap().peer_version.expect(
@@ -368,7 +368,7 @@ impl CredSspClient {
                         .unwrap()
                         .encrypt_ts_credentials(self.credentials_handle.as_ref().unwrap(), self.cred_ssp_mode)?,
                 );
-                info!("tscredentials has been written");
+                debug!("tscredentials has been written");
 
                 self.state = CredSspState::Final;
 

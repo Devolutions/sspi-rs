@@ -716,12 +716,12 @@ impl<'a> Kerberos {
 
         let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
 
-        info!("AS exchange finished successfully.");
+        debug!("AS exchange finished successfully.");
 
         self.realm = Some(as_rep.0.crealm.0.to_string());
 
         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-        info!(?encryption_type, "Negotiated encryption type");
+        debug!(?encryption_type, "Negotiated encryption type");
 
         self.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);
 
@@ -940,7 +940,7 @@ impl<'a> Kerberos {
 
                 let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
 
-                info!("AS exchange finished successfully.");
+                debug!("AS exchange finished successfully.");
 
                 self.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -997,7 +997,7 @@ impl<'a> Kerberos {
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
 
-                info!("TGS exchange finished successfully");
+                debug!("TGS exchange finished successfully");
 
                 let session_key_2 =
                     extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &self.encryption_params)?;
@@ -1030,7 +1030,7 @@ impl<'a> Kerberos {
                     warn!("Kerberos ApReq Authenticator checksum GSS_C_DELEG_FLAG is not supported. Turning it off...");
                     flags.remove(GssFlags::GSS_C_DELEG_FLAG);
                 }
-                info!(?flags, "ApReq Authenticator checksum flags");
+                debug!(?flags, "ApReq Authenticator checksum flags");
 
                 let mut checksum_value = ChecksumValues::default();
                 checksum_value.set_flags(flags);
@@ -1056,7 +1056,7 @@ impl<'a> Kerberos {
 
                 let authenticator = generate_authenticator(authenticator_options)?;
                 let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
-                info!(encoded_ap_req_authenticator = ?encoded_auth);
+                debug!(encoded_ap_req_authenticator = ?encoded_auth);
 
                 let mut context_requirements = builder.context_requirements;
 
