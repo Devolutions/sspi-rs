@@ -10,15 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 4 -->Bug Fixes
 
-- Fix sspi test build (#422) ([74e74cfdb7](https://github.com/Devolutions/sspi-rs/commit/74e74cfdb7f6efc30d36f8b9f5dc03df983ee967)) 
-
 - Lower info-level logs to debug-level (#436) ([665cb1e1dc](https://github.com/Devolutions/sspi-rs/commit/665cb1e1dc148683779e65f66d1408ddaa911bea)) 
-
-  Libraries should avoid issuing info-level logs.
-  We should stick to debug and trace levels.
-  
-  cc @TheBestTvarynka
-
 
 ## [[0.15.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.4...sspi-v0.15.5)] - 2025-04-25
 
