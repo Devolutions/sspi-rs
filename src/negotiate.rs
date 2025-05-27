@@ -137,7 +137,7 @@ impl Negotiate {
             if is_azure_ad_domain(domain) {
                 use super::pku2u::Pku2uConfig;
 
-                info!("Negotiate: try Pku2u");
+                debug!("Negotiate: try Pku2u");
 
                 self.protocol = NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(
                     Pku2uConfig::default_client_config(self.client_computer_name.clone())?,
@@ -145,7 +145,7 @@ impl Negotiate {
             }
 
             if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
-                info!("Negotiate: try Kerberos");
+                debug!("Negotiate: try Kerberos");
 
                 self.protocol =
                     NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
@@ -558,7 +558,7 @@ impl<'a> Negotiate {
                 let username = crate::utils::bytes_to_utf16_string(&identity.username);
                 let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
                     .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
-                info!("Negotiate: try Kerberos");
+                debug!("Negotiate: try Kerberos");
 
                 let config = crate::KerberosConfig {
                     kdc_url: Some(host),

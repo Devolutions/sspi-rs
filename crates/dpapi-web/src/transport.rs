@@ -122,7 +122,7 @@ impl Transport for WasmTransport {
                 get_session_token,
             } => {
                 let session_id = Uuid::new_v4();
-                info!("session token");
+                debug!("session token");
                 let session_token = get_session_token(session_id, destination.clone()).await?;
 
                 Self::ws_connect(proxy.clone(), session_id, session_token.as_ref()).await
