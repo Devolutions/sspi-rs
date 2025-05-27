@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.6](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.5...sspi-v0.15.6)] - 2025-05-27
+
+### <!-- 1 -->Features
+
+- WS tunneling support (#410) ([31e6ae9f79](https://github.com/Devolutions/sspi-rs/commit/31e6ae9f7930e7c6b226f6e6a58bb655150a6186)) 
+
+- Add web client;  (#419) ([bcb476d03e](https://github.com/Devolutions/sspi-rs/commit/bcb476d03e0c4ac5dc604c5448db74ce51295751)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Fix sspi test build (#422) ([74e74cfdb7](https://github.com/Devolutions/sspi-rs/commit/74e74cfdb7f6efc30d36f8b9f5dc03df983ee967)) 
+
+- Lower info-level logs to debug-level (#436) ([665cb1e1dc](https://github.com/Devolutions/sspi-rs/commit/665cb1e1dc148683779e65f66d1408ddaa911bea)) 
+
+  Libraries should avoid issuing info-level logs.
+  We should stick to debug and trace levels.
+  
+  cc @TheBestTvarynka
+
+### <!-- 7 -->Build
+
+- Bump tokio from 1.44.2 to 1.45.0 (#428) ([9e160ce0e5](https://github.com/Devolutions/sspi-rs/commit/9e160ce0e50ede83b7e63fc2b27b503b429d4207)) 
+
+- Bump bitflags from 2.9.0 to 2.9.1 in the patch group across 1 directory (#431) ([c0ec7f3a24](https://github.com/Devolutions/sspi-rs/commit/c0ec7f3a24ab7ec9a6701e7b2b4fd4147cacf387)) 
+
+- Bump tokio from 1.45.0 to 1.45.1 in the patch group across 1 directory (#434) ([45a0e18611](https://github.com/Devolutions/sspi-rs/commit/45a0e18611f3bc9b5fb8fee6433ea5b857bfbf3c)) 
+
+
+
 ## [[0.15.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.4...sspi-v0.15.5)] - 2025-04-25
 
 ### <!-- 1 -->Features
