@@ -6,6 +6,7 @@ use super::{
     ToAssign, WithContextRequirements, WithCredentialsHandle, WithOutput, WithTargetDataRepresentation,
     WithoutContextRequirements, WithoutCredentialsHandle, WithoutOutput, WithoutTargetDataRepresentation,
 };
+use crate::generator::GeneratorAcceptSecurityContext;
 use crate::{DataRepresentation, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiPackage};
 
 pub type EmptyAcceptSecurityContext<'a, C> = AcceptSecurityContext<
@@ -252,24 +253,8 @@ impl<'a, CredsHandle> FilledAcceptSecurityContext<'a, CredsHandle> {
     /// Executes the SSPI function that the builder represents.
     pub fn execute<AuthData>(
         self,
-        inner: SspiPackage<'_, CredsHandle, AuthData>,
-    ) -> crate::Result<AcceptSecurityContextResult> {
+        inner: SspiPackage<'a, CredsHandle, AuthData>,
+    ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
         inner.accept_security_context_impl(self)
-    }
-
-    pub(crate) fn transform(self) -> FilledAcceptSecurityContext<'a, CredsHandle> {
-        AcceptSecurityContext {
-            phantom_creds_use_set: PhantomData,
-            phantom_context_req_set: PhantomData,
-            phantom_data_repr_set: PhantomData,
-            phantom_output_set: PhantomData,
-
-            credentials_handle: self.credentials_handle,
-            context_requirements: self.context_requirements,
-            target_data_representation: self.target_data_representation,
-
-            output: self.output,
-            input: self.input,
-        }
     }
 }

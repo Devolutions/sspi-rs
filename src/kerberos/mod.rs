@@ -25,20 +25,23 @@ use url::Url;
 pub use self::client::initialize_security_context;
 use self::config::KerberosConfig;
 pub use self::encryption_params::EncryptionParams;
-pub use self::server::{accept_security_context_impl, ServerProperties};
+pub use self::server::{accept_security_context, ServerProperties};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
-use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
+use crate::generator::{
+    GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
+    YieldPointLocal,
+};
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
 use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
 use crate::pk_init::DhParameters;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
-    SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType,
+    ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -554,15 +557,14 @@ impl SspiImpl for Kerberos {
         })
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
-        return Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "server-side kerberos is not yet supported",
-        ));
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: crate::builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 
     fn initialize_security_context_impl<'a>(
@@ -583,6 +585,14 @@ impl<'a> Kerberos {
         change_password: ChangePassword<'a>,
     ) -> Result<()> {
         client::change_password(self, yield_point, change_password).await
+    }
+
+    pub(crate) async fn accept_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: crate::builders::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        server::accept_security_context(self, yield_point, builder).await
     }
 
     pub(crate) async fn initialize_security_context_impl(

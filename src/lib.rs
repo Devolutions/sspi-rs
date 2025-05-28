@@ -87,7 +87,7 @@ use bitflags::bitflags;
 #[cfg(feature = "tsssp")]
 use credssp::sspi_cred_ssp;
 pub use generator::NetworkRequest;
-use generator::{GeneratorChangePassword, GeneratorInitSecurityContext};
+use generator::{GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext};
 pub use network_client::NetworkProtocol;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
@@ -1267,10 +1267,10 @@ pub trait SspiImpl {
         builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'a>>;
 
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<AcceptSecurityContextResult>;
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>>;
 }
 
 pub trait SspiEx

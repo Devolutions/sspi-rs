@@ -17,7 +17,8 @@ use self::sspi_cred_ssp::SspiCredSsp;
 use crate::builders::{AcquireCredentialsHandle, ChangePassword, WithoutCredentialUse};
 use crate::crypto::compute_sha256;
 use crate::generator::{
-    Generator, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal,
+    Generator, GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
+    YieldPointLocal,
 };
 use crate::kerberos::config::KerberosConfig;
 use crate::kerberos::{self, Kerberos};
@@ -399,7 +400,7 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     context_config: Option<ClientMode>,
 }
 
-impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
+impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServer<C> {
     pub fn new(public_key: Vec<u8>, credentials: C, client_mode: ClientMode) -> crate::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -431,7 +432,20 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
 
     #[allow(clippy::result_large_err)]
     #[instrument(fields(state = ?self.state), skip_all)]
-    pub fn process(&mut self, mut ts_request: TsRequest) -> Result<ServerState, ServerError> {
+    pub fn process<'a>(
+        &'a mut self,
+        ts_request: TsRequest,
+    ) -> Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
+        Generator::<'a, NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>>::new(
+            move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
+        )
+    }
+
+    async fn process_impl(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        mut ts_request: TsRequest,
+    ) -> Result<ServerState, ServerError> {
         if self.context.is_none() {
             self.context = match self
                 .context_config
@@ -503,20 +517,21 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
             }
             CredSspState::NegoToken => {
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
-                let input_token = SecurityBuffer::new(input, BufferType::Token);
+                let mut input_token = vec![SecurityBuffer::new(input, BufferType::Token)];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
                 let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
+
+                let builder = sspi_context
+                    .accept_security_context()
+                    .with_credentials_handle(&mut credentials_handle)
+                    .with_context_requirements(ServerRequestFlags::empty())
+                    .with_target_data_representation(DataRepresentation::Native)
+                    .with_input(&mut input_token)
+                    .with_output(&mut output_token);
                 match try_cred_ssp_server!(
-                    sspi_context
-                        .accept_security_context()
-                        .with_credentials_handle(&mut credentials_handle)
-                        .with_context_requirements(ServerRequestFlags::empty())
-                        .with_target_data_representation(DataRepresentation::Native)
-                        .with_input(&mut [input_token])
-                        .with_output(&mut output_token)
-                        .execute(sspi_context),
+                    sspi_context.accept_security_context_impl(yield_point, builder).await,
                     ts_request
                 ) {
                     AcceptSecurityContextResult {
@@ -682,47 +697,13 @@ impl SspiImpl for SspiContext {
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
-    fn accept_security_context_impl(
-        &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> crate::Result<AcceptSecurityContextResult> {
-        match self {
-            SspiContext::Ntlm(ntlm) => {
-                let mut auth_identity = match builder.credentials_handle {
-                    Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
-                    Some(Some(_)) => {
-                        return Err(Error::new(
-                            ErrorKind::UnknownCredentials,
-                            "only password-based auth is supported in NTLM",
-                        ))
-                    }
-                    Some(None) => None,
-                    None => {
-                        return Err(Error::new(
-                            ErrorKind::NoCredentials,
-                            "credentials handle is not provided for the NTLM",
-                        ))
-                    }
-                };
-                builder.full_transform(Some(&mut auth_identity)).execute(ntlm)
-            }
-            SspiContext::Kerberos(kerberos) => builder.transform().execute(kerberos),
-            SspiContext::Negotiate(negotiate) => builder.transform().execute(negotiate),
-            SspiContext::Pku2u(pku2u) => {
-                let auth_identity =
-                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
-                        identity.clone()
-                    } else {
-                        return Err(Error::new(
-                            ErrorKind::NoCredentials,
-                            "auth identity is not provided for the Pku2u",
-                        ));
-                    };
-                builder.full_transform(Some(&mut Some(auth_identity))).execute(pku2u)
-            }
-            #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => builder.transform().execute(credssp),
-        }
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 
     fn initialize_security_context_impl<'a>(
@@ -764,9 +745,62 @@ impl<'a> SspiContext {
     }
 
     #[cfg(feature = "network_client")]
+    pub fn accept_security_context_sync(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<AcceptSecurityContextResult> {
+        Generator::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        })
+        .resolve_with_default_network_client()
+    }
+
+    #[cfg(feature = "network_client")]
     pub fn change_password_sync(&mut self, builder: ChangePassword) -> crate::Result<()> {
         Generator::new(move |mut yield_point| async move { self.change_password_impl(&mut yield_point, builder).await })
             .resolve_with_default_network_client()
+    }
+
+    pub(crate) async fn accept_security_context_impl(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<AcceptSecurityContextResult> {
+        match self {
+            SspiContext::Ntlm(ntlm) => {
+                let mut auth_identity = match builder.credentials_handle {
+                    Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
+                    Some(Some(_)) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "only password-based auth is supported in NTLM",
+                        ))
+                    }
+                    Some(None) => None,
+                    None => {
+                        return Err(Error::new(
+                            ErrorKind::NoCredentials,
+                            "credentials handle is not provided for the NTLM",
+                        ))
+                    }
+                };
+                let new_builder = builder.full_transform(Some(&mut auth_identity));
+                ntlm.accept_security_context_impl(yield_point, new_builder).await
+            }
+            SspiContext::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
+            SspiContext::Negotiate(negotiate) => negotiate.accept_security_context_impl(yield_point, builder).await,
+            SspiContext::Pku2u(pku2u) => {
+                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
+                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
+                } else {
+                    None
+                };
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                pku2u.accept_security_context_impl(yield_point, new_builder).await
+            }
+            #[cfg(feature = "tsssp")]
+            SspiContext::CredSsp(credssp) => credssp.accept_security_context_impl(yield_point, builder).await,
+        }
     }
 
     #[instrument(ret, fields(security_package = self.package_name()), skip_all)]

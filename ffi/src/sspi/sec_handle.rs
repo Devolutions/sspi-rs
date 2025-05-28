@@ -124,11 +124,12 @@ impl SspiImpl for SspiHandle {
         Ok(context.initialize_security_context_sync(builder).into())
     }
 
-    fn accept_security_context_impl(
-        &mut self,
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
         builder: sspi::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<sspi::AcceptSecurityContextResult> {
-        self.sspi_context.lock()?.accept_security_context_impl(builder)
+    ) -> Result<sspi::generator::GeneratorAcceptSecurityContext<'a>> {
+        let mut context = self.sspi_context.lock()?;
+        Ok(context.accept_security_context_sync(builder).into())
     }
 }
 

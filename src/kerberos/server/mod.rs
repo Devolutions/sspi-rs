@@ -19,6 +19,7 @@ use self::extractors::{
 use self::generators::{generate_ap_rep, generate_final_neg_token_targ, generate_neg_token_targ};
 use super::utils::validate_mic_token;
 use crate::builders::FilledAcceptSecurityContext;
+use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
@@ -46,8 +47,9 @@ pub struct ServerProperties {
 /// Performs one authentication step.
 ///
 /// The user should call this function until it returns `SecurityStatus::Ok`.
-pub fn accept_security_context_impl(
+pub async fn accept_security_context(
     server: &mut Kerberos,
+    yield_point: &mut YieldPointLocal,
     builder: FilledAcceptSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<AcceptSecurityContextResult> {
     let input = builder
