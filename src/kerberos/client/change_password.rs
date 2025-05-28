@@ -59,12 +59,12 @@ pub async fn change_password<'a>(
 
     let as_rep = client::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
 
-    info!("AS exchange finished successfully.");
+    debug!("AS exchange finished successfully.");
 
     client.realm = Some(as_rep.0.crealm.0.to_string());
 
     let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-    info!(?encryption_type, "Negotiated encryption type");
+    debug!(?encryption_type, "Negotiated encryption type");
 
     client.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);
 

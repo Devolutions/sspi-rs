@@ -190,7 +190,7 @@ pub async fn initialize_security_context<'a>(
 
             let as_rep = as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
 
-            info!("AS exchange finished successfully.");
+            debug!("AS exchange finished successfully.");
 
             client.realm = Some(as_rep.0.crealm.0.to_string());
 
@@ -261,7 +261,7 @@ pub async fn initialize_security_context<'a>(
             let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
             let tgs_rep = tgs_rep?;
 
-            info!("TGS exchange finished successfully");
+            debug!("TGS exchange finished successfully");
 
             let session_key_2 = extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &client.encryption_params)?;
 
@@ -293,7 +293,7 @@ pub async fn initialize_security_context<'a>(
                 warn!("Kerberos ApReq Authenticator checksum GSS_C_DELEG_FLAG is not supported. Turning it off...");
                 flags.remove(GssFlags::GSS_C_DELEG_FLAG);
             }
-            info!(?flags, "ApReq Authenticator checksum flags");
+            debug!(?flags, "ApReq Authenticator checksum flags");
 
             let mut checksum_value = ChecksumValues::default();
             checksum_value.set_flags(flags);
@@ -319,7 +319,7 @@ pub async fn initialize_security_context<'a>(
 
             let authenticator = generate_authenticator(authenticator_options)?;
             let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
-            info!(encoded_ap_req_authenticator = ?encoded_auth);
+            debug!(encoded_ap_req_authenticator = ?encoded_auth);
 
             let ap_req = generate_ap_req(
                 tgs_rep.0.ticket.0,
