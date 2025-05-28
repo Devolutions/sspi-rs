@@ -5,11 +5,11 @@ use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use picky_krb::pkinit::PaPkAsRep;
 
-use super::client::extractors::extract_session_key_from_as_rep;
-use super::{
-    generate_pa_datas_for_as_req as generate_password_based, EncryptionParams,
-    GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
+use crate::kerberos::client::extractors::extract_session_key_from_as_rep;
+use crate::kerberos::client::generators::{
+    generate_pa_datas_for_as_req as generate_password_based, GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
 };
+use crate::kerberos::encryption_params::EncryptionParams;
 use crate::pk_init::{
     extract_server_dh_public_key, generate_pa_datas_for_as_req as generate_private_key_based, DhParameters,
     GenerateAsPaDataOptions as SmartCardPaDataOptions, Wrapper,
