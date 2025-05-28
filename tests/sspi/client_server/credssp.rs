@@ -70,7 +70,11 @@ fn run_credssp() {
             ClientState::FinalMessage(ts_request) => ts_request,
         };
 
-        match server.process(ts_request).resolve_with_default_network_client().unwrap() {
+        match server
+            .process(ts_request)
+            .resolve_with_default_network_client()
+            .unwrap()
+        {
             ServerState::ReplyNeeded(server_ts_request) => ts_request = server_ts_request,
             ServerState::Finished(received_auth_identity) => {
                 assert_eq!(auth_identity, received_auth_identity);

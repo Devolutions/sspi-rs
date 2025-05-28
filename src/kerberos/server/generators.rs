@@ -7,10 +7,10 @@ use picky_asn1::wrapper::{
 use picky_asn1_der::Asn1RawDer;
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AP_REP_TOKEN_ID, TGT_REP_TOKEN_ID};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, AP_REP_ENC};
-use picky_krb::constants::types::AP_REP_MSG_TYPE;
+use picky_krb::constants::types::{AP_REP_MSG_TYPE, TGT_REP_MSG_TYPE};
 use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
 use picky_krb::data_types::{
-    EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds,
+    EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds, Ticket,
 };
 use picky_krb::gss_api::{ApplicationTag0, KrbMessage, MechType, MicToken, NegTokenTarg, NegTokenTarg1};
 use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
@@ -18,17 +18,22 @@ use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Result, KERBEROS_VERSION};
 
-pub fn generate_neg_token_targ(tgt_rep: TgtRep) -> Result<NegTokenTarg1> {
+pub fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
+    let response_token = tgt_rep
+        .map(|tgt_rep| {
+            Result::Ok(ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
+                    krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
+                    krb5_token_id: TGT_REP_TOKEN_ID,
+                    krb_msg: tgt_rep,
+                }))?,
+            )))
+        })
+        .transpose()?;
     Ok(NegTokenTarg1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
-        supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(oids::ms_krb5())))),
-        response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
-                krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-                krb5_token_id: TGT_REP_TOKEN_ID,
-                krb_msg: tgt_rep,
-            }))?,
-        )))),
+        supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(mech_type)))),
+        response_token: Optional::from(response_token),
         mech_list_mic: Optional::from(None),
     }))
 }
@@ -101,4 +106,12 @@ pub fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[
     mic_token.encode(&mut mic_token_raw)?;
 
     Ok(mic_token_raw)
+}
+
+pub fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
+    TgtRep {
+        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
+        ticket: ExplicitContextTag2::from(ticket),
+    }
 }

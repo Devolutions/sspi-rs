@@ -128,8 +128,7 @@ where
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut client_output)
             .with_output(&mut server_output);
-        let server_result = server.accept_security_context_impl(builder)?
-            .resolve_to_result()?;
+        let server_result = server.accept_security_context_impl(builder)?.resolve_to_result()?;
         server_status = server_result.status;
 
         if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {

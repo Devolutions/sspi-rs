@@ -1,3 +1,5 @@
+use oid::ObjectIdentifier;
+use picky::oids;
 use picky_asn1::wrapper::ExplicitContextTag1;
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, AP_REQ_TOKEN_ID};
 use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TICKET_REP};
@@ -11,7 +13,7 @@ use picky_krb::messages::{ApReq, TgtReq};
 use crate::{Error, ErrorKind, Result};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
-pub fn decode_initial_neg_init(data: &[u8]) -> Result<(TgtReq, MechTypeList)> {
+pub fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, MechTypeList)> {
     let token: ApplicationTag0<GssApiNegInit> = picky_asn1_der::from_bytes(data)?;
     let NegTokenInit {
         mech_types,
@@ -30,19 +32,28 @@ pub fn decode_initial_neg_init(data: &[u8]) -> Result<(TgtReq, MechTypeList)> {
         })?
         .0;
 
-    let encoded_tgt_req = mech_token
-        .0
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                "mech_token is missing in GssApiNegInit message",
-            )
-        })?
-        .0
-         .0;
-    let neg_token_init = KrbMessage::<TgtReq>::decode_application_krb_message(&encoded_tgt_req)?;
+    let tgt_req = if let Some(mech_token) = mech_token.0 {
+        let encoded_tgt_req = mech_token.0 .0;
+        let neg_token_init = KrbMessage::<TgtReq>::decode_application_krb_message(&encoded_tgt_req)?;
 
-    Ok((neg_token_init.0.krb_msg, mech_types))
+        let token_oid = &neg_token_init.0.krb5_oid.0;
+        let krb5_u2u = oids::krb5_user_to_user();
+        if *token_oid != krb5_u2u {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                format!(
+                    "invalid oid inside mech_token: expected krb5 u2u ({:?}) but got {:?}",
+                    krb5_u2u, token_oid
+                ),
+            ));
+        }
+
+        Some(neg_token_init.0.krb_msg)
+    } else {
+        None
+    };
+
+    Ok((tgt_req, mech_types))
 }
 
 /// Decodes incoming SPNEGO message and extracts [ApReq] Kerberos message.
@@ -133,4 +144,21 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
         })?
         .0
          .0)
+}
+
+pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
+    let ms_krb5 = oids::ms_krb5();
+    if let Some(_) = mech_list.0.iter().find(|mech_type| mech_type.0 == ms_krb5) {
+        return Ok(ms_krb5);
+    }
+
+    let krb5 = oids::krb5();
+    if let Some(_) = mech_list.0.iter().find(|mech_type| mech_type.0 == krb5) {
+        return Ok(krb5);
+    }
+
+    Err(Error::new(
+        ErrorKind::InvalidToken,
+        "invalid mech type list: Kerberos protocol is not present",
+    ))
 }

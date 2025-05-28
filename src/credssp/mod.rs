@@ -21,7 +21,7 @@ use crate::generator::{
     YieldPointLocal,
 };
 use crate::kerberos::config::KerberosConfig;
-use crate::kerberos::{self, Kerberos};
+use crate::kerberos::{self, Kerberos, ServerProperties};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
@@ -383,6 +383,15 @@ impl CredSspClient {
     }
 }
 
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum ServerMode {
+    Negotiate(NegotiateConfig),
+    Kerberos((KerberosConfig, ServerProperties)),
+    Pku2u(Pku2uConfig),
+    Ntlm(NtlmConfig),
+}
+
 /// Implements the CredSSP *server*. The client's credentials
 /// securely delegated to the server for authentication using TLS.
 ///
@@ -397,11 +406,11 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     public_key: Vec<u8>,
     credentials_handle: Option<CredentialsBuffers>,
     ts_request_version: u32,
-    context_config: Option<ClientMode>,
+    context_config: Option<ServerMode>,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServer<C> {
-    pub fn new(public_key: Vec<u8>, credentials: C, client_mode: ClientMode) -> crate::Result<Self> {
+    pub fn new(public_key: Vec<u8>, credentials: C, client_mode: ServerMode) -> crate::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
@@ -417,7 +426,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         public_key: Vec<u8>,
         credentials: C,
         ts_request_version: u32,
-        client_mode: ClientMode,
+        client_mode: ServerMode,
     ) -> crate::Result<Self> {
         Ok(Self {
             state: CredSspState::NegoToken,
@@ -452,14 +461,17 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .take()
                 .expect("CredSsp client mode should never be empty")
             {
-                ClientMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
+                ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
                     try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
                 ))),
-                ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config, todo!()), ts_request),
-                ))),
-                ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
-                ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
+                ServerMode::Kerberos((kerberos_config, server_properties)) => {
+                    Some(CredSspContext::new(SspiContext::Kerberos(try_cred_ssp_server!(
+                        Kerberos::new_server_from_config(kerberos_config, server_properties),
+                        ts_request
+                    ))))
+                }
+                ServerMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
+                ServerMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
                     Pku2u::new_server_from_config(pku2u),
                     ts_request
                 )))),

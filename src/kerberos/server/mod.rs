@@ -1,10 +1,12 @@
+mod as_exchange;
 mod extractors;
 mod generators;
 
 use std::io::Write;
 
-use extractors::extract_client_mic_token;
-use generators::generate_mic_token;
+use as_exchange::request_tgt;
+use extractors::{extract_client_mic_token, select_mech_type};
+use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
 use picky_krb::data_types::{AuthenticatorInner, PrincipalName};
@@ -24,7 +26,7 @@ use crate::kerberos::flags::ApOptions;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, Kerberos, KerberosState, Result, SecurityBuffer,
-    SecurityStatus, ServerResponseFlags, SspiImpl,
+    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Additional properties that are needed only for server-side Kerberos.
@@ -61,22 +63,44 @@ pub async fn accept_security_context(
     let status = match server.state {
         KerberosState::Negotiate => {
             let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
-            let tgt_rep = todo!();
+            let mech_type = select_mech_type(&mech_types)?;
 
-            // TODO: negotiate krb oid and krb u2u.
+            let server_props = server.server.as_mut().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidHandle,
+                    "Kerberos server properties are not initialized",
+                )
+            })?;
+            server_props.mech_types = mech_types;
 
-            server
-                .server
-                .as_mut()
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::InvalidHandle,
-                        "Kerberos server properties are not initialized",
-                    )
-                })?
-                .mech_types = mech_types;
+            let tgt_rep = if let Some(tgt_req) = tgt_req {
+                // If user sent us TgtReq than they want Kerberos User-to-User auth.
+                // At this point, we need to request TGT token in KDC and send it back to the user.
 
-            let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(tgt_rep)?)?;
+                if !builder
+                    .context_requirements
+                    .contains(ServerRequestFlags::USE_SESSION_KEY)
+                {
+                    warn!("KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set.");
+                }
+
+                server.krb5_user_to_user = true;
+
+                let credentials = builder
+                    .credentials_handle
+                    .as_ref()
+                    .unwrap()
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
+
+                Some(generate_tgt_rep(
+                    request_tgt(server, credentials, &tgt_req, yield_point).await?,
+                ))
+            } else {
+                None
+            };
+
+            let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, tgt_rep)?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer.write_all(&encoded_neg_token_targ)?;
