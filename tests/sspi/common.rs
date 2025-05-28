@@ -121,14 +121,15 @@ where
 
         server_output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
-        let server_result = server
+        let builder = server
             .accept_security_context()
             .with_credentials_handle(&mut server_creds_handle)
             .with_context_requirements(ServerRequestFlags::ALLOCATE_MEMORY)
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut client_output)
-            .with_output(&mut server_output)
-            .execute(server)?;
+            .with_output(&mut server_output);
+        let server_result = server.accept_security_context_impl(builder)?
+            .resolve_to_result()?;
         server_status = server_result.status;
 
         if client_status != SecurityStatus::ContinueNeeded && server_status != SecurityStatus::ContinueNeeded {

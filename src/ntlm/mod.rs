@@ -14,7 +14,7 @@ use messages::{client, server};
 pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
-use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext, YieldPointLocal};
+use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext};
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
@@ -247,8 +247,8 @@ impl SspiImpl for Ntlm {
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
-        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
-            self.accept_security_context_impl(&mut yield_point, builder).await
+        Ok(GeneratorAcceptSecurityContext::new(move |_yield_point| async move {
+            self.accept_security_context_impl(builder)
         }))
     }
 
@@ -262,9 +262,8 @@ impl SspiImpl for Ntlm {
 }
 
 impl Ntlm {
-    pub(crate) async fn accept_security_context_impl(
+    pub(crate) fn accept_security_context_impl(
         &mut self,
-        _yield_point: &mut YieldPointLocal,
         builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         let input = builder

@@ -541,7 +541,7 @@ impl<'a> Negotiate {
                     None
                 };
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
-                ntlm.accept_security_context_impl(yield_point, new_builder).await
+                ntlm.accept_security_context_impl(new_builder)
             }
         }
     }

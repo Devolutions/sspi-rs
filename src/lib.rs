@@ -466,14 +466,16 @@ where
     ///         .resolve_to_result()
     ///         .unwrap();
     ///
-    ///     let server_result = ntlm
+    ///     let builder = ntlm
     ///         .accept_security_context()
     ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
     ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
     ///         .with_target_data_representation(sspi::DataRepresentation::Native)
     ///         .with_input(&mut client_output_buffer)
-    ///         .with_output(&mut output_buffer)
-    ///         .execute(&mut ntlm)
+    ///         .with_output(&mut output_buffer);
+    ///     let server_result = ntlm.accept_security_context_impl(builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
     ///         .unwrap();
     ///
     ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
@@ -555,14 +557,16 @@ where
     ///         .resolve_to_result()
     ///         .unwrap();
     ///
-    ///     let server_result = ntlm
+    ///     let builder = ntlm
     ///         .accept_security_context()
     ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
     ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
     ///         .with_target_data_representation(sspi::DataRepresentation::Native)
     ///         .with_input(&mut client_output_buffer)
-    ///         .with_output(&mut server_output_buffer)
-    ///         .execute(&mut ntlm)
+    ///         .with_output(&mut server_output_buffer);
+    ///     let server_result = ntlm.accept_security_context_impl(builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
     ///         .unwrap();
     ///
     ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
@@ -671,14 +675,16 @@ where
     ///         .resolve_to_result()
     ///         .unwrap();
     ///
-    ///     let server_result = ntlm
+    ///     let builder = ntlm
     ///         .accept_security_context()
     ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
     ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
     ///         .with_target_data_representation(sspi::DataRepresentation::Native)
     ///         .with_input(&mut client_output_buffer)
-    ///         .with_output(&mut server_output_buffer)
-    ///         .execute(&mut ntlm)
+    ///         .with_output(&mut server_output_buffer);
+    ///     let server_result = ntlm.accept_security_context_impl(builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
     ///         .unwrap();
     ///
     ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
@@ -779,14 +785,16 @@ where
     ///         .resolve_to_result()
     ///         .unwrap();
     ///
-    ///     let server_result = server_ntlm
+    ///     let builder = server_ntlm
     ///         .accept_security_context()
     ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
     ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
     ///         .with_target_data_representation(sspi::DataRepresentation::Native)
     ///         .with_input(&mut client_output_buffer)
-    ///         .with_output(&mut server_output_buffer)
-    ///         .execute(&mut server_ntlm)
+    ///         .with_output(&mut server_output_buffer);
+    ///     let server_result = server_ntlm.accept_security_context_impl(builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
     ///         .unwrap();
     ///
     ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue
@@ -894,14 +902,16 @@ where
     ///         .resolve_to_result()
     ///         .unwrap();
     ///
-    ///     let server_result = server_ntlm
+    ///     let builder = server_ntlm
     ///         .accept_security_context()
     ///         .with_credentials_handle(&mut server_acq_cred_result.credentials_handle)
     ///         .with_context_requirements(sspi::ServerRequestFlags::ALLOCATE_MEMORY)
     ///         .with_target_data_representation(sspi::DataRepresentation::Native)
     ///         .with_input(&mut client_output_buffer)
-    ///         .with_output(&mut server_output_buffer)
-    ///         .execute(&mut server_ntlm)
+    ///         .with_output(&mut server_output_buffer);
+    ///     let server_result = server_ntlm.accept_security_context_impl(builder)
+    ///         .unwrap()
+    ///         .resolve_to_result()
     ///         .unwrap();
     ///
     ///     if server_result.status == sspi::SecurityStatus::CompleteAndContinue

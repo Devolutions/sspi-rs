@@ -785,7 +785,7 @@ impl<'a> SspiContext {
                     }
                 };
                 let new_builder = builder.full_transform(Some(&mut auth_identity));
-                ntlm.accept_security_context_impl(yield_point, new_builder).await
+                ntlm.accept_security_context_impl(new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
             SspiContext::Negotiate(negotiate) => negotiate.accept_security_context_impl(yield_point, builder).await,

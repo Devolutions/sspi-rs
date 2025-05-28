@@ -8,8 +8,7 @@ use std::net::{TcpListener, TcpStream};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sspi::{
-    AuthIdentity, BufferType, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer,
-    SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, Username,
+    AuthIdentity, BufferType, CredentialUse, DataRepresentation, EncryptionFlags, Ntlm, SecurityBuffer, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username
 };
 
 const IP: &str = "127.0.0.1:8080";
@@ -84,14 +83,15 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
     loop {
         read_message(&mut stream, &mut input_buffer[0].buffer)?;
 
-        let result = ntlm
+        let builder = ntlm
             .accept_security_context()
             .with_credentials_handle(&mut acq_cred_result.credentials_handle)
             .with_context_requirements(ServerRequestFlags::ALLOCATE_MEMORY)
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut input_buffer)
-            .with_output(&mut output_buffer)
-            .execute(ntlm)?;
+            .with_output(&mut output_buffer);
+        let result = ntlm.accept_security_context_impl(builder)?
+            .resolve_to_result()?;
 
         if [SecurityStatus::CompleteAndContinue, SecurityStatus::CompleteNeeded].contains(&result.status) {
             println!("Completing the token...");

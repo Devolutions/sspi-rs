@@ -78,15 +78,14 @@ fn run_ntlm(config: NtlmConfig) {
 
         input_token[0].buffer.clear();
 
-        server
+        let builder = server
             .accept_security_context()
             .with_credentials_handle(&mut server_credentials_handle)
             .with_context_requirements(ServerRequestFlags::empty())
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut output_token)
-            .with_output(&mut input_token)
-            .execute(&mut server)
-            .unwrap();
+            .with_output(&mut input_token);
+        server.accept_security_context_sync(builder).unwrap();
 
         output_token[0].buffer.clear();
 
