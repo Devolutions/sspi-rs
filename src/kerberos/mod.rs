@@ -4,68 +4,40 @@ mod encryption_params;
 pub mod flags;
 mod pa_datas;
 pub mod server;
+#[cfg(test)]
+mod tests;
 mod utils;
 
 use std::fmt::Debug;
 use std::io::Write;
 use std::sync::LazyLock;
 
+pub use client::initialize_security_context;
 pub use encryption_params::EncryptionParams;
-use picky::key::PrivateKey;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
-use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
-use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
-use picky_krb::data_types::{KerberosStringAsn1, KrbResult, ResultExt};
-use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
-use picky_krb::messages::{ApReq, AsRep, KdcProxyMessage, KdcReqBody, KrbPrivMessage, TgsRep};
+use picky_krb::data_types::KerberosStringAsn1;
+use picky_krb::gss_api::WrapToken;
+use picky_krb::messages::KdcProxyMessage;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rsa::{Pkcs1v15Sign, RsaPrivateKey};
-use sha1::{Digest, Sha1};
 use url::Url;
 
-use self::client::extractors::{
-    extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_session_key_from_tgs_rep,
-};
-use self::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, generate_krb_priv_request, generate_neg_ap_req,
-    generate_neg_token_init, generate_pa_datas_for_as_req, generate_tgs_req, get_client_principal_name_type,
-    get_client_principal_realm, ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions,
-};
 use self::config::KerberosConfig;
-use self::pa_datas::AsReqPaDataOptions;
-use self::server::extractors::extract_tgt_ticket_with_oid;
-use self::utils::{serialize_message, unwrap_hostname};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
-use crate::kerberos::client::extractors::{extract_salt_from_krb_error, extract_status_code_from_krb_priv_response};
-use crate::kerberos::client::generators::{
-    generate_ap_rep, generate_authenticator, generate_final_neg_token_targ, get_mech_list, GenerateTgsReqOptions,
-    GssFlags,
-};
-use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
-use crate::kerberos::server::extractors::{
-    extract_ap_rep_from_neg_token_targ, extract_seq_number_from_ap_rep, extract_sub_session_key_from_ap_rep,
-};
-use crate::kerberos::utils::{generate_initiator_raw, validate_mic_token};
+use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
+use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
-use crate::pk_init::{self, DhParameters};
-use crate::pku2u::generate_client_dh_parameters;
-use crate::utils::{
-    extract_encrypted_data, generate_random_symmetric_key, get_encryption_key, parse_target_name, save_decrypted_data,
-    utf16_bytes_to_utf8_string,
-};
+use crate::pk_init::DhParameters;
+use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data, utf16_bytes_to_utf8_string};
 use crate::{
-    check_if_empty, detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity,
-    BufferType, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, Credentials,
-    CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
+    detect_kdc_url, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
+    CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PackageCapabilities,
     PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -87,14 +59,11 @@ pub const MAX_SIGNATURE: usize = 16;
 /// **Note**: Actual security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
 // during the authentication process.
 pub const SECURITY_TRAILER: usize = 60;
-/// [Kerberos Change Password and Set Password Protocols](https://datatracker.ietf.org/doc/html/rfc3244#section-2)
-/// "The service accepts requests on UDP port 464 and TCP port 464 as well."
-const KPASSWD_PORT: u16 = 464;
 
 /// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
 ///
 /// The extra count (EC) must not be zero. The sender should set extra count (EC) to 1 block - 16 bytes.
-const EC: u16 = 16;
+pub(crate) const EC: u16 = 16;
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     capabilities: PackageCapabilities::empty(),
@@ -116,16 +85,16 @@ pub enum KerberosState {
 
 #[derive(Debug, Clone)]
 pub struct Kerberos {
-    state: KerberosState,
-    config: KerberosConfig,
-    auth_identity: Option<CredentialsBuffers>,
-    encryption_params: EncryptionParams,
-    seq_number: u32,
-    realm: Option<String>,
-    kdc_url: Option<Url>,
-    channel_bindings: Option<ChannelBindings>,
-    dh_parameters: Option<DhParameters>,
-    krb5_user_to_user: bool,
+    pub(crate) state: KerberosState,
+    pub(crate) config: KerberosConfig,
+    pub(crate) auth_identity: Option<CredentialsBuffers>,
+    pub(crate) encryption_params: EncryptionParams,
+    pub(crate) seq_number: u32,
+    pub(crate) realm: Option<String>,
+    pub(crate) kdc_url: Option<Url>,
+    pub(crate) channel_bindings: Option<ChannelBindings>,
+    pub(crate) dh_parameters: Option<DhParameters>,
+    pub(crate) krb5_user_to_user: bool,
 }
 
 impl Kerberos {
@@ -263,58 +232,6 @@ impl Kerberos {
         let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
         output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
         Ok(())
-    }
-
-    pub async fn as_exchange(
-        &mut self,
-        yield_point: &mut YieldPointLocal,
-        kdc_req_body: &KdcReqBody,
-        mut pa_data_options: AsReqPaDataOptions<'_>,
-    ) -> Result<AsRep> {
-        pa_data_options.with_pre_auth(false);
-        let pa_datas = pa_data_options.generate()?;
-        let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
-
-        let response = self.send(yield_point, &serialize_message(&as_req)?).await?;
-
-        // first 4 bytes are message len. skipping them
-        {
-            let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-            let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-
-            if as_rep.is_ok() {
-                error!(
-                    "KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected."
-                );
-
-                return Err(Error::new(
-                    ErrorKind::InvalidToken,
-                    "KDC server should not process AS_REQ without the pa-pac data",
-                ));
-            }
-
-            if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
-                debug!("salt extracted successfully from the KRB_ERROR");
-
-                pa_data_options.with_salt(correct_salt.as_bytes().to_vec());
-            }
-        }
-
-        pa_data_options.with_pre_auth(true);
-        let pa_datas = pa_data_options.generate()?;
-
-        let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
-
-        let response = self.send(yield_point, &serialize_message(&as_req)?).await?;
-
-        // first 4 bytes are message len. skipping them
-        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
-
-        as_rep.map_err(|err| {
-            error!(?err, "AS exchange error");
-            err.into()
-        })
     }
 }
 
@@ -580,7 +497,7 @@ impl Sspi for Kerberos {
 
     fn change_password<'a>(&'a mut self, change_password: ChangePassword<'a>) -> Result<GeneratorChangePassword<'a>> {
         Ok(GeneratorChangePassword::new(move |mut yield_point| async move {
-            self.change_password(&mut yield_point, change_password).await
+            client::change_password(self, &mut yield_point, change_password).await
         }))
     }
 
@@ -633,39 +550,15 @@ impl SspiImpl for Kerberos {
         })
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
     fn accept_security_context_impl(
         &mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
+        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
     ) -> Result<crate::AcceptSecurityContextResult> {
-        let input = builder
-            .input
-            .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-
-        let status = match &self.state {
-            KerberosState::ApExchange => {
-                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-
-                let _ap_req: ApReq = picky_asn1_der::from_bytes(&input_token.buffer)
-                    .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
-
-                self.state = KerberosState::Final;
-
-                SecurityStatus::Ok
-            }
-            state => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("Got wrong Kerberos state: {:?}", state),
-                ))
-            }
-        };
-
-        Ok(AcceptSecurityContextResult {
-            status,
-            flags: ServerResponseFlags::empty(),
-            expiry: None,
-        })
+        return Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "server-side kerberos is not yet supported",
+        ));
     }
 
     fn initialize_security_context_impl<'a>(
@@ -685,114 +578,7 @@ impl<'a> Kerberos {
         yield_point: &mut YieldPointLocal,
         change_password: ChangePassword<'a>,
     ) -> Result<()> {
-        let username = &change_password.account_name;
-        let domain = &change_password.domain_name;
-        let password = &change_password.old_password;
-
-        let salt = format!("{}{}", domain, username);
-
-        let cname_type = get_client_principal_name_type(username, domain);
-        let realm = &get_client_principal_realm(username, domain);
-        let hostname = unwrap_hostname(self.config.client_computer_name.as_deref())?;
-
-        let options = GenerateAsReqOptions {
-            realm,
-            username,
-            cname_type,
-            snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
-            // 4 = size of u32
-            nonce: &OsRng.gen::<u32>().to_ne_bytes(),
-            hostname: &hostname,
-            context_requirements: ClientRequestFlags::empty(),
-        };
-        let kdc_req_body = generate_as_req_kdc_body(&options)?;
-
-        let pa_data_options = AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
-            password: password.as_ref(),
-            salt: salt.as_bytes().to_vec(),
-            enc_params: self.encryption_params.clone(),
-            with_pre_auth: false,
-        });
-
-        let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
-
-        debug!("AS exchange finished successfully.");
-
-        self.realm = Some(as_rep.0.crealm.0.to_string());
-
-        let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-        debug!(?encryption_type, "Negotiated encryption type");
-
-        self.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);
-
-        let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password.as_ref(), &self.encryption_params)?;
-
-        let seq_num = self.next_seq_number();
-
-        let enc_type = self
-            .encryption_params
-            .encryption_type
-            .as_ref()
-            .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng);
-
-        let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-            kdc_rep: &as_rep.0,
-            seq_num: Some(seq_num),
-            sub_key: Some(EncKey {
-                key_type: enc_type.clone(),
-                key_value: authenticator_seb_key,
-            }),
-            checksum: None,
-            channel_bindings: self.channel_bindings.as_ref(),
-            extensions: Vec::new(),
-        })?;
-
-        let krb_priv = generate_krb_priv_request(
-            as_rep.0.ticket.0,
-            &session_key,
-            change_password.new_password.as_ref().as_bytes(),
-            &authenticator,
-            &self.encryption_params,
-            seq_num,
-            &hostname,
-        )?;
-
-        if let Some((_realm, mut kdc_url)) = self.get_kdc() {
-            kdc_url
-                .set_port(Some(KPASSWD_PORT))
-                .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC URL"))?;
-
-            let response = self.send(yield_point, &serialize_message(&krb_priv)?).await?;
-            trace!(?response, "Change password raw response");
-
-            let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("Cannot deserialize krb_priv_response: {:?}", err),
-                )
-            })?;
-
-            let result_status = extract_status_code_from_krb_priv_response(
-                &krb_priv_response.krb_priv,
-                &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
-                &self.encryption_params,
-            )?;
-
-            if result_status != 0 {
-                return Err(Error::new(
-                    ErrorKind::WrongCredentialHandle,
-                    format!("unsuccessful krb result code: {}. expected 0", result_status),
-                ));
-            }
-        } else {
-            return Err(Error::new(
-                ErrorKind::NoAuthenticatingAuthority,
-                "No KDC server found!".to_owned(),
-            ));
-        }
-
-        Ok(())
+        client::change_password(self, yield_point, change_password).await
     }
 
     pub(crate) async fn initialize_security_context_impl(
@@ -800,381 +586,7 @@ impl<'a> Kerberos {
         yield_point: &mut YieldPointLocal,
         builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        trace!(?builder);
-
-        let status = match self.state {
-            KerberosState::Negotiate => {
-                let (service_name, _service_principal_name) =
-                    parse_target_name(builder.target_name.ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::NoCredentials,
-                            "Service target name (service principal name) is not provided",
-                        )
-                    })?)?;
-
-                let (username, service_name) = match check_if_empty!(
-                    builder.credentials_handle.as_ref().unwrap().as_ref(),
-                    "AuthIdentity is not provided"
-                ) {
-                    CredentialsBuffers::AuthIdentity(auth_identity) => {
-                        let username = utf16_bytes_to_utf8_string(&auth_identity.user);
-                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-
-                        (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
-                    }
-                    CredentialsBuffers::SmartCard(_) => (_service_principal_name.into(), service_name),
-                };
-                debug!(username, service_name);
-
-                let encoded_neg_token_init =
-                    picky_asn1_der::to_vec(&generate_neg_token_init(&username, service_name)?)?;
-
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                output_token.buffer.write_all(&encoded_neg_token_init)?;
-
-                self.state = KerberosState::Preauthentication;
-
-                SecurityStatus::ContinueNeeded
-            }
-            KerberosState::Preauthentication => {
-                let input = builder
-                    .input
-                    .as_ref()
-                    .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-
-                if let Ok(sec_buffer) =
-                    SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
-                {
-                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
-                }
-
-                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-
-                let (tgt_ticket, mech_id) =
-                    if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_with_oid(&input_token.buffer)? {
-                        (Some(tbt_ticket), mech_oid.0)
-                    } else {
-                        (None, oids::krb5())
-                    };
-                self.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
-
-                let credentials = builder
-                    .credentials_handle
-                    .as_ref()
-                    .unwrap()
-                    .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
-
-                let (username, password, realm, cname_type) = match credentials {
-                    CredentialsBuffers::AuthIdentity(auth_identity) => {
-                        let username = utf16_bytes_to_utf8_string(&auth_identity.user);
-                        let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-                        let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref());
-
-                        let realm = get_client_principal_realm(&username, &domain);
-                        let cname_type = get_client_principal_name_type(&username, &domain);
-
-                        (username, password, realm, cname_type)
-                    }
-                    CredentialsBuffers::SmartCard(smart_card) => {
-                        let username = utf16_bytes_to_utf8_string(&smart_card.username);
-                        let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
-
-                        let realm = get_client_principal_realm(&username, "");
-                        let cname_type = get_client_principal_name_type(&username, "");
-
-                        (username, password, realm.to_uppercase(), cname_type)
-                    }
-                };
-                self.realm = Some(realm.clone());
-
-                let options = GenerateAsReqOptions {
-                    realm: &realm,
-                    username: &username,
-                    cname_type,
-                    snames: &[TGT_SERVICE_NAME, &realm],
-                    // 4 = size of u32
-                    nonce: &OsRng.gen::<[u8; 4]>(),
-                    hostname: &unwrap_hostname(self.config.client_computer_name.as_deref())?,
-                    context_requirements: builder.context_requirements,
-                };
-                let kdc_req_body = generate_as_req_kdc_body(&options)?;
-
-                let pa_data_options =
-                    match credentials {
-                        CredentialsBuffers::AuthIdentity(auth_identity) => {
-                            let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-                            let salt = format!("{}{}", domain, username);
-
-                            AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
-                                password: &password,
-                                salt: salt.as_bytes().to_vec(),
-                                enc_params: self.encryption_params.clone(),
-                                with_pre_auth: false,
-                            })
-                        }
-                        CredentialsBuffers::SmartCard(smart_card) => {
-                            let private_key_pem =
-                                utf16_bytes_to_utf8_string(smart_card.private_key_pem.as_ref().ok_or_else(|| {
-                                    Error::new(ErrorKind::InternalError, "scard private key is missing")
-                                })?);
-                            self.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
-
-                            AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
-                                p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
-                                kdc_req_body: &kdc_req_body,
-                                dh_parameters: self.dh_parameters.clone().unwrap(),
-                                sign_data: Box::new(move |data_to_sign| {
-                                    let mut sha1 = Sha1::new();
-                                    sha1.update(data_to_sign);
-                                    let hash = sha1.finalize().to_vec();
-                                    let private_key = PrivateKey::from_pem_str(&private_key_pem)?;
-                                    let rsa_private_key = RsaPrivateKey::try_from(&private_key)?;
-                                    Ok(rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), &hash)?)
-                                }),
-                                with_pre_auth: false,
-                                authenticator_nonce: OsRng.gen::<[u8; 4]>(),
-                            }))
-                        }
-                    };
-
-                let as_rep = self.as_exchange(yield_point, &kdc_req_body, pa_data_options).await?;
-
-                debug!("AS exchange finished successfully.");
-
-                self.realm = Some(as_rep.0.crealm.0.to_string());
-
-                let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-
-                let encryption_type = CipherSuite::try_from(encryption_type as usize)?;
-
-                self.encryption_params.encryption_type = Some(encryption_type);
-
-                let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-                    kdc_rep: &as_rep.0,
-                    seq_num: Some(OsRng.gen::<u32>()),
-                    sub_key: None,
-                    checksum: None,
-                    channel_bindings: self.channel_bindings.as_ref(),
-                    extensions: Vec::new(),
-                })?;
-
-                let mut session_key_extractor = match credentials {
-                    CredentialsBuffers::AuthIdentity(_) => AsRepSessionKeyExtractor::AuthIdentity {
-                        salt: &salt,
-                        password: &password,
-                        enc_params: &mut self.encryption_params,
-                    },
-                    CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
-                        dh_parameters: self.dh_parameters.as_mut().unwrap(),
-                        enc_params: &mut self.encryption_params,
-                    },
-                };
-                let session_key_1 = session_key_extractor.session_key(&as_rep)?;
-
-                let service_principal = builder.target_name.ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::NoCredentials,
-                        "Service target name (service principal name) is not provided",
-                    )
-                })?;
-
-                let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
-                    realm: &as_rep.0.crealm.0.to_string(),
-                    service_principal,
-                    session_key: &session_key_1,
-                    ticket: as_rep.0.ticket.0,
-                    authenticator: &mut authenticator,
-                    additional_tickets: tgt_ticket.map(|ticket| vec![ticket]),
-                    enc_params: &self.encryption_params,
-                    context_requirements: builder.context_requirements,
-                })?;
-
-                let response = self.send(yield_point, &serialize_message(&tgs_req)?).await?;
-
-                // first 4 bytes are message len. skipping them
-                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-                let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
-                let tgs_rep = tgs_rep?;
-
-                debug!("TGS exchange finished successfully");
-
-                let session_key_2 =
-                    extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &self.encryption_params)?;
-
-                self.encryption_params.session_key = Some(session_key_2);
-
-                let enc_type = self
-                    .encryption_params
-                    .encryption_type
-                    .as_ref()
-                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
-
-                // the original flag is
-                // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG
-                // we want to be able to turn of sign and seal, so we leave confidentiality and integrity flags out
-                let mut flags: GssFlags = builder.context_requirements.into();
-                if flags.contains(GssFlags::GSS_C_DELEG_FLAG) {
-                    // Below are reasons why we turn off the GSS_C_DELEG_FLAG flag.
-                    //
-                    // RFC4121: The Kerberos Version 5 GSS-API. Section 4.1.1:  Authenticator Checksum
-                    // https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1.1
-                    //
-                    // "The length of the checksum field MUST be at least 24 octets when GSS_C_DELEG_FLAG is not set,
-                    // and at least 28 octets plus Dlgth octets when GSS_C_DELEG_FLAG is set."
-                    // Out implementation _always_ uses the 24 octets checksum and do not support Kerberos credentials delegation.
-                    //
-                    // "When delegation is used, a ticket-granting ticket will be transferred in a KRB_CRED message."
-                    // We do not support KRB_CRED messages. So, the GSS_C_DELEG_FLAG flags should be turned off.
-                    warn!("Kerberos ApReq Authenticator checksum GSS_C_DELEG_FLAG is not supported. Turning it off...");
-                    flags.remove(GssFlags::GSS_C_DELEG_FLAG);
-                }
-                debug!(?flags, "ApReq Authenticator checksum flags");
-
-                let mut checksum_value = ChecksumValues::default();
-                checksum_value.set_flags(flags);
-
-                let authenticator_options = GenerateAuthenticatorOptions {
-                    kdc_rep: &tgs_rep.0,
-                    // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap token generated
-                    // by the `encrypt_message` method. So, we set the next sequence number but do not increment the counter,
-                    // which will be incremented on each `encrypt_message` method call.
-                    seq_num: Some(self.seq_number + 1),
-                    sub_key: Some(EncKey {
-                        key_type: enc_type.clone(),
-                        key_value: authenticator_sub_key,
-                    }),
-
-                    checksum: Some(ChecksumOptions {
-                        checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
-                        checksum_value,
-                    }),
-                    channel_bindings: self.channel_bindings.as_ref(),
-                    extensions: Vec::new(),
-                };
-
-                let authenticator = generate_authenticator(authenticator_options)?;
-                let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
-                debug!(encoded_ap_req_authenticator = ?encoded_auth);
-
-                let mut context_requirements = builder.context_requirements;
-
-                if self.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
-                    warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
-                    context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
-                }
-
-                let ap_req = generate_ap_req(
-                    tgs_rep.0.ticket.0,
-                    self.encryption_params
-                        .session_key
-                        .as_ref()
-                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?,
-                    &authenticator,
-                    &self.encryption_params,
-                    context_requirements.into(),
-                )?;
-
-                let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                    // Wrap in a NegToken.
-                    picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?
-                } else {
-                    // Do not wrap if the `USE_DCE_STYLE` flag is set.
-                    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
-                    picky_asn1_der::to_vec(&ap_req)?
-                };
-
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                output_token.buffer.write_all(&encoded_neg_ap_req)?;
-
-                self.state = KerberosState::ApExchange;
-
-                SecurityStatus::ContinueNeeded
-            }
-            KerberosState::ApExchange => {
-                let input = builder
-                    .input
-                    .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-                let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-
-                if builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                    // The `EC` field depends on the authentication type. For example, during RDP auth
-                    // it is equal to 0, but during RPC auth it is equal to EC.
-                    self.encryption_params.ec = EC;
-
-                    use picky_krb::messages::ApRep;
-
-                    let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
-
-                    let session_key = self
-                        .encryption_params
-                        .session_key
-                        .as_ref()
-                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
-                    let sub_session_key =
-                        extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
-                    let seq_number = extract_seq_number_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
-
-                    trace!(?sub_session_key, "DCE AP_REP sub-session key");
-
-                    self.encryption_params.sub_session_key = Some(sub_session_key);
-
-                    let ap_rep = generate_ap_rep(session_key, seq_number, &self.encryption_params)?;
-                    let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
-
-                    let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                    output_token.buffer.write_all(&ap_rep)?;
-
-                    self.state = KerberosState::PubKeyAuth;
-
-                    SecurityStatus::Ok
-                } else {
-                    let neg_token_targ = {
-                        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
-                        let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
-                        neg_token_targ
-                    };
-
-                    let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
-
-                    let session_key = self
-                        .encryption_params
-                        .session_key
-                        .as_ref()
-                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
-                    let sub_session_key =
-                        extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &self.encryption_params)?;
-
-                    self.encryption_params.sub_session_key = Some(sub_session_key);
-
-                    if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
-                        validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &self.encryption_params)?;
-                    }
-
-                    self.next_seq_number();
-                    self.prepare_final_neg_token(builder)?;
-                    self.state = KerberosState::PubKeyAuth;
-
-                    SecurityStatus::Ok
-                }
-            }
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("Got wrong Kerberos state: {:?}", self.state),
-                ))
-            }
-        };
-
-        trace!(output_buffers = ?builder.output);
-
-        Ok(InitializeSecurityContextResult {
-            status,
-            flags: ClientResponseFlags::empty(),
-            expiry: None,
-        })
+        client::initialize_security_context(self, yield_point, builder).await
     }
 }
 
@@ -1252,192 +664,5 @@ pub mod test_data {
             dh_parameters: None,
             krb5_user_to_user: false,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
-    use picky_krb::crypto::CipherSuite;
-
-    use super::{EncryptionParams, KerberosConfig, KerberosState};
-    use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi};
-
-    #[test]
-    fn stream_buffer_decryption() {
-        // https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
-
-        let mut kerberos_server = super::test_data::fake_server();
-        let mut kerberos_client = super::test_data::fake_client();
-
-        let plain_message = b"some plain message";
-
-        let mut token = [0; 1024];
-        let mut data = plain_message.to_vec();
-        let mut message = [
-            SecurityBufferRef::token_buf(token.as_mut_slice()),
-            SecurityBufferRef::data_buf(data.as_mut_slice()),
-        ];
-
-        kerberos_server
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-            .unwrap();
-
-        let mut buffer = message[0].data().to_vec();
-        buffer.extend_from_slice(message[1].data());
-
-        let mut message = [
-            SecurityBufferRef::stream_buf(&mut buffer),
-            SecurityBufferRef::data_buf(&mut []),
-        ];
-
-        kerberos_client.decrypt_message(&mut message, 0).unwrap();
-
-        assert_eq!(message[1].data(), plain_message);
-    }
-
-    #[test]
-    fn secbuffer_readonly_with_checksum() {
-        // All values in this test (session keys, sequence number, encrypted and decrypted data) were extracted
-        // from the original Windows Kerberos implementation calls.
-        // We keep this test to guarantee full compatibility with the original Kerberos.
-
-        let session_key = [
-            114, 67, 55, 26, 76, 210, 61, 0, 164, 44, 11, 133, 108, 220, 234, 145, 61, 144, 123, 45, 54, 175, 164, 168,
-            99, 18, 99, 240, 242, 157, 95, 134,
-        ];
-        let sub_session_key = [
-            91, 11, 188, 227, 10, 91, 180, 246, 64, 129, 251, 200, 118, 82, 109, 65, 241, 177, 109, 32, 124, 39, 127,
-            171, 222, 132, 199, 199, 126, 110, 3, 166,
-        ];
-
-        let mut kerberos_server = Kerberos {
-            state: KerberosState::Final,
-            config: KerberosConfig {
-                kdc_url: None,
-                client_computer_name: None,
-            },
-            auth_identity: None,
-            encryption_params: EncryptionParams {
-                encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key.to_vec()),
-                sub_session_key: Some(sub_session_key.to_vec()),
-                sspi_encrypt_key_usage: ACCEPTOR_SEAL,
-                sspi_decrypt_key_usage: INITIATOR_SEAL,
-                ec: 16,
-            },
-            seq_number: 681238048,
-            realm: None,
-            kdc_url: None,
-            channel_bindings: None,
-            dh_parameters: None,
-            krb5_user_to_user: false,
-        };
-
-        // RPC header
-        let header = [
-            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        // RPC security trailer header
-        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
-        // Encrypted data in RPC Request
-        let enc_data = [
-            41, 85, 192, 239, 104, 188, 180, 100, 229, 73, 83, 199, 77, 83, 79, 17, 163, 206, 241, 29, 90, 28, 89, 203,
-            83, 176, 160, 252, 197, 221, 76, 113, 185, 141, 16, 200, 149, 55, 32, 96, 29, 49, 57, 124, 181, 147, 110,
-            198, 125, 116, 150, 47, 35, 224, 117, 25, 10, 229, 201, 222, 153, 101, 131, 93, 204, 32, 9, 145, 186, 45,
-            224, 160, 131, 23, 236, 111, 88, 48, 54, 4, 118, 114, 129, 119, 130, 164, 178, 4, 110, 74, 37, 1, 215, 177,
-            16, 204, 238, 83, 255, 40, 240, 32, 209, 213, 90, 19, 126, 58, 34, 33, 72, 15, 206, 96, 67, 15, 169, 248,
-            176, 9, 173, 196, 159, 239, 250, 120, 206, 52, 53, 229, 230, 66, 64, 109, 100, 21, 77, 193, 3, 40, 183,
-            209, 177, 152, 165, 171, 108, 151, 112, 134, 53, 165, 128, 145, 147, 167, 5, 72, 35, 101, 42, 183, 67, 101,
-            48, 255, 84, 208, 112, 199, 154, 62, 185, 87, 204, 228, 45, 30, 184, 47, 129, 145, 245, 168, 118, 174, 48,
-            98, 174, 167, 208, 0, 113, 246, 219, 29, 192, 171, 97, 117, 115, 120, 115, 45, 44, 113, 62, 39,
-        ];
-        // Unencrypted data in RPC Request
-        let plaintext = [
-            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
-            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
-            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
-            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
-            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
-            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0,
-        ];
-        // RPC Request security trailer data. Basically, it's a GSS API Wrap token
-        let security_trailer_data = [
-            5, 4, 6, 255, 0, 16, 0, 28, 0, 0, 0, 0, 40, 154, 222, 33, 170, 177, 218, 93, 176, 5, 210, 44, 38, 242, 179,
-            168, 249, 202, 242, 199, 63, 162, 33, 40, 106, 186, 187, 28, 11, 229, 207, 219, 66, 86, 243, 16, 158, 100,
-            133, 159, 87, 153, 196, 14, 251, 169, 164, 12, 18, 85, 182, 56, 72, 30, 137, 238, 50, 122, 73, 95, 109,
-            194, 60, 120,
-        ];
-
-        let mut header_data = header.to_vec();
-        let mut encrypted_data = enc_data.to_vec();
-        let mut trailer_data = trailer.to_vec();
-        let mut token_data = security_trailer_data.to_vec();
-        let mut message = vec![
-            SecurityBufferRef::data_buf(&mut header_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::data_buf(&mut encrypted_data),
-            SecurityBufferRef::data_buf(&mut trailer_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::token_buf(&mut token_data),
-        ];
-
-        kerberos_server.decrypt_message(&mut message, 0).unwrap();
-
-        assert_eq!(header[..], message[0].data()[..]);
-        assert_eq!(plaintext[..], message[1].data()[..]);
-        assert_eq!(trailer[..], message[2].data()[..]);
-    }
-
-    #[test]
-    fn rpc_request_encryption() {
-        let mut kerberos_server = super::test_data::fake_server();
-        let mut kerberos_client = super::test_data::fake_client();
-
-        // RPC header
-        let header = [
-            5, 0, 0, 3, 16, 0, 0, 0, 60, 1, 76, 0, 1, 0, 0, 0, 208, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        // Unencrypted data in RPC Request
-        let plaintext = [
-            108, 0, 0, 0, 0, 0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 0, 1, 0, 4, 128, 84, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 20,
-            0, 0, 0, 2, 0, 64, 0, 2, 0, 0, 0, 0, 0, 36, 0, 3, 0, 0, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 223, 243,
-            137, 88, 86, 131, 83, 53, 105, 218, 109, 33, 80, 4, 0, 0, 0, 0, 20, 0, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
-            0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 138, 227, 19, 113, 2, 244, 54,
-            113, 2, 64, 40, 0, 96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0,
-            51, 5, 113, 113, 186, 190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0,
-        ];
-        // RPC security trailer header
-        let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
-
-        let mut header_data = header.to_vec();
-        let mut data = plaintext.to_vec();
-        let mut trailer_data = trailer.to_vec();
-        let mut token_data = vec![0; 76];
-        let mut message = vec![
-            SecurityBufferRef::data_buf(&mut header_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::data_buf(&mut data),
-            SecurityBufferRef::data_buf(&mut trailer_data)
-                .with_flags(SecurityBufferFlags::SECBUFFER_READONLY_WITH_CHECKSUM),
-            SecurityBufferRef::token_buf(&mut token_data),
-        ];
-
-        kerberos_client
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-            .unwrap();
-
-        assert_eq!(header[..], message[0].data()[..]);
-        assert_eq!(trailer[..], message[2].data()[..]);
-
-        kerberos_server.decrypt_message(&mut message, 0).unwrap();
-
-        assert_eq!(header[..], message[0].data()[..]);
-        assert_eq!(message[1].data(), plaintext);
-        assert_eq!(trailer[..], message[2].data()[..]);
     }
 }

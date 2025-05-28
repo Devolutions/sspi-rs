@@ -1,13 +1,26 @@
-use picky_asn1::wrapper::Asn1SequenceOf;
-use picky_krb::constants::key_usages::{AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
+use std::io::Read;
+
+use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
+use picky_asn1_der::application_tag::ApplicationTag;
+use picky_asn1_der::Asn1RawDer;
+use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::{EncKrbPrivPart, EtypeInfo2, PaData};
-use picky_krb::messages::{AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep};
+use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Ticket};
+use picky_krb::gss_api::NegTokenTarg1;
+use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Error, ErrorKind, Result};
 
+/// Extracts password salt from the KRB error.
+///
+/// We need a salt to derive the correct encryption key from user's password. Usually, the salt is domain+username, but the custom salt
+/// value can be set in KDC database. So, we always extract the correct salt from the [KrbError] message. More info in [RFC 4120 PA-ETYPE-INFO2](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.7.5):
+///
+/// > The ETYPE-INFO2 pre-authentication type is sent by the KDC in a KRB-ERROR indicating a requirement for additional pre-authentication.
+/// > It is usually used to notify a client of which key to use for the encryption of an encrypted timestamp for the purposes of sending a
+/// > PA-ENC-TIMESTAMP pre-authentication value.
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     trace!(?error, "KRB_ERROR");
 
@@ -29,6 +42,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Extracts a session from the [AsRep].
 #[instrument(level = "trace", ret, skip(password))]
 pub fn extract_session_key_from_as_rep(
     as_rep: &AsRep,
@@ -51,6 +65,7 @@ pub fn extract_session_key_from_as_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+/// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
@@ -74,6 +89,11 @@ pub fn extract_session_key_from_tgs_rep(
     Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
 }
 
+/// Extracts encryption type and salt from [AsRep].
+///
+/// More info in [RFC 4120 Receipt of KRB_AS_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5):
+///
+/// > If any padata fields are present, they may be used to derive the proper secret key to decrypt the message.
 #[instrument(level = "trace", ret)]
 pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, String)> {
     match as_rep
@@ -110,6 +130,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
     }
 }
 
+/// Extract a status code from the [KrbPriv] message.
 pub fn extract_status_code_from_krb_priv_response(
     krb_priv: &KrbPriv,
     auth_key: &[u8],
@@ -147,4 +168,124 @@ pub fn extract_status_code_from_krb_priv_response(
     }
 
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
+}
+
+/// Extracts [ApRep] from the [NegTokenTarg1] .
+pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep> {
+    let resp_token = &token
+        .0
+        .response_token
+        .0
+        .as_ref()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing response token in NegTokenTarg"))?
+        .0
+         .0;
+
+    let mut data = resp_token.as_slice();
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
+
+    let mut t = [0, 0];
+    data.read_exact(&mut t)?;
+
+    Ok(picky_asn1_der::from_reader(&mut data)?)
+}
+
+/// Extracts the sequence number from the [ApRep].
+#[instrument(level = "trace", ret)]
+pub fn extract_seq_number_from_ap_rep(
+    ap_rep: &ApRep,
+    session_key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Vec<u8>> {
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
+
+    let res = cipher
+        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .map_err(|err| {
+            Error::new(
+                ErrorKind::DecryptFailure,
+                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
+            )
+        })?;
+
+    let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
+
+    Ok(ap_rep_enc_part
+        .0
+        .seq_number
+        .0
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sequence number in ap_rep"))?
+        .0
+         .0)
+}
+
+/// Extracts a sub-session key from the [ApRep].
+#[instrument(level = "trace", ret)]
+pub fn extract_sub_session_key_from_ap_rep(
+    ap_rep: &ApRep,
+    session_key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Vec<u8>> {
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
+
+    let res = cipher
+        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .map_err(|err| {
+            Error::new(
+                ErrorKind::DecryptFailure,
+                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
+            )
+        })?;
+
+    let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
+
+    Ok(ap_rep_enc_part
+        .0
+        .subkey
+        .0
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sub-key in ap_req"))?
+        .0
+        .key_value
+        .0
+         .0)
+}
+
+/// Extracts TGT Ticket from encoded [NegTokenTarg1].
+///
+/// Returned OID means the selected authentication mechanism by the target server. More info:
+/// * [3.2.1. Syntax](https://datatracker.ietf.org/doc/html/rfc2478#section-3.2.1): `responseToken` field;
+///
+/// We use this oid to choose between the regular Kerberos 5 and Kerberos 5 User-to-User authentication.
+#[instrument(level = "trace", ret)]
+pub fn extract_tgt_ticket_with_oid(data: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
+    if data.is_empty() {
+        return Ok(None);
+    }
+
+    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
+
+    if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0 .0) {
+        let mut c = resp_token.as_slice();
+
+        let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)?;
+        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0 .0)?;
+
+        let mut t = [0, 0];
+
+        c.read_exact(&mut t)?;
+
+        let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c)?;
+
+        Ok(Some((tgt_rep.ticket.0, oid)))
+    } else {
+        Ok(None)
+    }
 }
