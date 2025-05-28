@@ -309,7 +309,7 @@ impl CredSspClient {
                 ts_request.nego_tokens = Some(output_token.remove(0).buffer);
 
                 if result.status == SecurityStatus::Ok {
-                    debug!("CredSSP finished NLA stage");
+                    debug!("CredSSp finished NLA stage.");
 
                     let peer_version =
                         self.context.as_ref().unwrap().peer_version.expect(

@@ -38,11 +38,11 @@ use self::generators::{
 };
 use crate::builders::ChangePassword;
 use crate::generator::GeneratorInitSecurityContext;
+use crate::kerberos::client::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, EncKey, GenerateAsReqOptions,
     GenerateAuthenticatorOptions,
 };
-use crate::kerberos::server::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
 use crate::pk_init::{
     extract_server_dh_public_key, generate_pa_datas_for_as_req, DhParameters, GenerateAsPaDataOptions,
