@@ -12,8 +12,6 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::LazyLock;
 
-pub use client::initialize_security_context;
-pub use encryption_params::EncryptionParams;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
@@ -24,8 +22,10 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use url::Url;
 
+pub use self::client::initialize_security_context;
 use self::config::KerberosConfig;
-use self::server::ServerProperties;
+pub use self::encryption_params::EncryptionParams;
+pub use self::server::{accept_security_context_impl, ServerProperties};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
@@ -118,7 +118,7 @@ impl Kerberos {
         })
     }
 
-    pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
+    pub fn new_server_from_config(config: KerberosConfig, server_properties: ServerProperties) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
 
         Ok(Self {
@@ -132,7 +132,7 @@ impl Kerberos {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
-            server: Some(Box::new(Default::default())),
+            server: Some(Box::new(server_properties)),
         })
     }
 
@@ -668,7 +668,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
-            server: Some(Box::new(Default::default())),
+            server: None,
         }
     }
 }

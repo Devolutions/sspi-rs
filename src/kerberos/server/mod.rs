@@ -7,7 +7,7 @@ use extractors::extract_client_mic_token;
 use generators::generate_mic_token;
 use picky::oids;
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
-use picky_krb::data_types::AuthenticatorInner;
+use picky_krb::data_types::{AuthenticatorInner, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -28,27 +28,19 @@ use crate::{
 
 /// Additional properties that are needed only for server-side Kerberos.
 #[derive(Debug, Clone)]
-pub(crate) struct ServerProperties {
+pub struct ServerProperties {
     /// Supported mech types sent by the client in the first incoming message.
     /// We user them for checksum calculation during MIC token generation.
-    mech_types: MechTypeList,
+    pub mech_types: MechTypeList,
     /// Maximum allowed time difference between client and server clocks.
     /// It is recommended to set this value not greater then a few minutes.
-    max_time_skew: Duration,
+    pub max_time_skew: Duration,
     /// Key that is used for TGS tickets decryption.
     /// It should be provided by the user during regular Kerberos auth. Or
     /// it will be established during AS exchange in the case of Kerberos U2U auth.
-    ticket_decryption_key: Option<Vec<u8>>,
-}
-
-impl Default for ServerProperties {
-    fn default() -> Self {
-        Self {
-            mech_types: MechTypeList::from(Vec::new()),
-            max_time_skew: Duration::minutes(3),
-            ticket_decryption_key: None,
-        }
-    }
+    pub ticket_decryption_key: Option<Vec<u8>>,
+    /// Name of the Kerberos service.
+    pub service_name: PrincipalName,
 }
 
 /// Performs one authentication step.
@@ -94,17 +86,25 @@ pub fn accept_security_context_impl(
         KerberosState::Preauthentication => {
             let ap_req = decode_neg_ap_req(&input_token.buffer)?;
 
-            // TODO: check ap_req service name.
+            let server_data = server.server.as_ref().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidHandle,
+                    "Kerberos server properties are not initialized",
+                )
+            })?;
 
-            let ticket_decryption_key = server
-                .server
-                .as_ref()
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::InvalidHandle,
-                        "Kerberos server properties are not initialized",
-                    )
-                })?
+            let ticket_service_name = &ap_req.0.ticket.0 .0.sname.0;
+            if *ticket_service_name != server_data.service_name {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    format!(
+                        "invalid ticket service name ({:?}): Kerberos server is configured for {:?}",
+                        ticket_service_name, server_data.service_name
+                    ),
+                ));
+            }
+
+            let ticket_decryption_key = server_data
                 .ticket_decryption_key
                 .as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;

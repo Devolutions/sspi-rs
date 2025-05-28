@@ -442,7 +442,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity>> CredSspServer<C> {
                     try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
                 ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config), ts_request),
+                    try_cred_ssp_server!(Kerberos::new_server_from_config(kerberos_config, todo!()), ts_request),
                 ))),
                 ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
