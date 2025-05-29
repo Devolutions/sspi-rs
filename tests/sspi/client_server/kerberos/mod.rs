@@ -7,24 +7,18 @@ use std::collections::HashMap;
 use std::panic;
 
 use kdc::Validators;
-use picky::oids;
 use picky_asn1::restricted_string::IA5String;
-use picky_asn1::wrapper::{
-    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1, ObjectIdentifierAsn1,
-    OctetStringAsn1, Optional,
-};
-use picky_asn1_der::Asn1RawDer;
+use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
-use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechType, NegTokenTarg, NegTokenTarg1};
-use picky_krb::messages::TgtReq;
-use rand::rngs::OsRng;
-use rand::Rng;
+use picky_krb::gss_api::MechTypeList;
+use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     string_to_utf16, AuthIdentityBuffers, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    Kerberos, KerberosConfig, SecurityBuffer, Sspi, SspiImpl,
+    Kerberos, KerberosConfig, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl,
 };
+use time::Duration;
 use url::Url;
 
 use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
@@ -143,7 +137,7 @@ pub fn initialize_security_context(
     target_name: &str,
     in_token: Vec<u8>,
     network_client: &mut dyn NetworkClient,
-) -> Vec<u8> {
+) -> (SecurityStatus, Vec<u8>) {
     let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
     let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
@@ -155,13 +149,59 @@ pub fn initialize_security_context(
         .with_target_name(target_name)
         .with_input(&mut input_token)
         .with_output(&mut output_token);
-    kerberos
+    let result = kerberos
         .initialize_security_context_impl(&mut builder)
         .expect("Kerberos initialize_security_context should not fail")
         .resolve_with_client(network_client)
         .expect("Kerberos initialize_security_context should not fail");
 
-    output_token.remove(0).buffer
+    (result.status, output_token.remove(0).buffer)
+}
+
+/// Does all preparations and calls the [accept_security_context] function
+/// on the provided Kerberos context.
+pub fn accept_security_context(
+    kerberos: &mut Kerberos,
+    credentials_handle: &mut Option<CredentialsBuffers>,
+    flags: ServerRequestFlags,
+    in_token: Vec<u8>,
+    network_client: &mut dyn NetworkClient,
+) -> (SecurityStatus, Vec<u8>) {
+    let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
+    let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
+
+    let builder = kerberos
+        .accept_security_context()
+        .with_credentials_handle(credentials_handle)
+        .with_context_requirements(flags)
+        .with_target_data_representation(DataRepresentation::Native)
+        .with_input(&mut input_token)
+        .with_output(&mut output_token);
+    let result = kerberos
+        .accept_security_context_impl(builder)
+        .expect("Kerberos accept_security_context should not fail")
+        .resolve_with_client(network_client)
+        .expect("Kerberos accept_security_context should not fail");
+
+    (result.status, output_token.remove(0).buffer)
+}
+
+fn init_logger() {
+    use std::io;
+
+    use tracing_subscriber::prelude::*;
+    use tracing_subscriber::EnvFilter;
+
+    let logging_filter: EnvFilter = EnvFilter::builder()
+        .with_default_directive("trace".parse().unwrap())
+        .from_env_lossy();
+
+    let stdout_layer = tracing_subscriber::fmt::layer().pretty().with_writer(io::stdout);
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(logging_filter)
+        .init();
 }
 
 #[test]
@@ -239,6 +279,8 @@ fn kerberos_kdc_auth() {
 
 #[test]
 fn kerberos_kdc_u2u_auth() {
+    init_logger();
+
     let KrbEnvironment {
         realm,
         credentials,
@@ -275,71 +317,72 @@ fn kerberos_kdc_u2u_auth() {
     );
     let mut network_client = NetworkClientMock { kdc };
 
-    let kerberos_config = KerberosConfig {
+    let client_config = KerberosConfig {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
         client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
     };
-    let mut kerberos_client = Kerberos::new_client_from_config(kerberos_config).unwrap();
+    let mut kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
-    let mut credentials_handle = Some(credentials);
-    let flags = ClientRequestFlags::MUTUAL_AUTH
+    let server_config = KerberosConfig {
+        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
+        client_computer_name: Some("DESKTOP-8F33RFH.example.com".into()),
+    };
+    let server_properties = ServerProperties {
+        mech_types: MechTypeList::from(Vec::new()),
+        max_time_skew: Duration::minutes(3),
+        ticket_decryption_key: None,
+        service_name: PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string("DESKTOP-8F33RFH.example.com".into()).unwrap()),
+            ])),
+        },
+    };
+    let mut kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+
+    let mut client_credentials_handle = Some(credentials.clone());
+    let mut server_credentials_handle = Some(credentials);
+
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::USE_SESSION_KEY // Kerberos U2U auth
         | ClientRequestFlags::SEQUENCE_DETECT
         | ClientRequestFlags::REPLAY_DETECT
         | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::USE_SESSION_KEY // Kerberos U2U auth
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
 
-    let token = initialize_security_context(
-        &mut kerberos_client,
-        &mut credentials_handle,
-        flags,
-        &target_name,
-        Vec::new(),
-        &mut network_client,
-    );
+    let mut client_in_token = Vec::new();
 
-    // Extract TGT request from token returned by the Kerberos client.
-    let token: ApplicationTag0<GssApiNegInit> =
-        picky_asn1_der::from_bytes(&token).expect("Kerberos client should return valid ASN1 data");
-    let encoded_tgt_req = token
-        .0
-        .neg_token_init
-        .0
-        .mech_token
-        .0
-        .expect("GssApiNegInit mech_token should present")
-        .0
-         .0;
-    let neg_token_init = KrbMessage::<TgtReq>::decode_application_krb_message(&encoded_tgt_req)
-        .expect("neg_token_init contains invalid mech_token");
-    let tgt_req = neg_token_init.0.krb_msg;
+    for _ in 0..3 {
+        let (client_status, token) = initialize_security_context(
+            &mut kerberos_client,
+            &mut client_credentials_handle,
+            client_flags,
+            &target_name,
+            client_in_token,
+            &mut network_client,
+        );
 
-    // Generate TGT ticket.
-    let tgt_rep = network_client
-        .kdc
-        .generate_tgt(tgt_req, OsRng.gen::<[u8; 32]>().as_slice());
-    let neg_token_targ1 = NegTokenTarg1::from(NegTokenTarg {
-        // accept-incomplete (1)
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(vec![10, 1, 1])))),
-        supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(oids::ms_krb5())))),
-        response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
-                krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-                // TGT rep
-                krb5_token_id: [0x04, 0x01],
-                krb_msg: tgt_rep,
-            }))
-            .expect("asn1 serialization should not fail"),
-        )))),
-        mech_list_mic: Optional::from(None),
-    });
+        let (_, token) = accept_security_context(
+            &mut kerberos_server,
+            &mut server_credentials_handle,
+            server_flags,
+            token,
+            &mut network_client,
+        );
+        client_in_token = token;
 
-    initialize_security_context(
-        &mut kerberos_client,
-        &mut credentials_handle,
-        flags,
-        &target_name,
-        picky_asn1_der::to_vec(&neg_token_targ1).expect("ASN1 serialization should not fail"),
-        &mut network_client,
-    );
+        if client_status == SecurityStatus::Ok {
+            println!("success!");
+            return;
+        }
+    }
+
+    panic!("Kerberos authentication should not exceed 3 steps");
 }

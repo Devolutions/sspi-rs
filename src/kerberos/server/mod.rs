@@ -227,8 +227,20 @@ pub async fn accept_security_context(
             debug!("ApReq Ticket and Authenticator are valid!");
 
             let ap_options_bytes = ap_req.0.ap_options.0 .0.as_bytes();
+            // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
+            // The `ap-options` field has 32 bits or 4 bytes long. But it is encoded as BitStringAsn1, so the first byte
+            // indicates the number of bits used. Thus, the overall number of expected bytes is 1 + 4 = 5.
+            if ap_options_bytes.len() != 1 + 4 {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    format!(
+                        "invalid ApReq ap-options: invalid data length: expected 5 bytes but got {}",
+                        ap_options_bytes.len()
+                    ),
+                ));
+            }
             let ap_options =
-                ApOptions::from_bits(u32::from_be_bytes(ap_options_bytes.try_into().map_err(|err| {
+                ApOptions::from_bits(u32::from_be_bytes(ap_options_bytes[1..].try_into().map_err(|err| {
                     Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {:?}", err))
                 })?))
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "invalid ApReq ap-options"))?;

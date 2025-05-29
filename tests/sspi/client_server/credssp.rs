@@ -1,6 +1,8 @@
 use std::mem;
 
-use sspi::credssp::{ClientMode, ClientState, CredSspClient, CredSspMode, CredSspServer, ServerState, TsRequest};
+use sspi::credssp::{
+    ClientMode, ClientState, CredSspClient, CredSspMode, CredSspServer, ServerMode, ServerState, TsRequest,
+};
 use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, Secret, Username};
 
@@ -52,7 +54,7 @@ fn run_credssp() {
     let mut server = CredSspServer::new(
         public_key.to_vec(),
         CredentialsProxyImpl::new(&auth_identity),
-        ClientMode::Ntlm(NtlmConfig {
+        ServerMode::Ntlm(NtlmConfig {
             client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
         }),
     )

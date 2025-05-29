@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
@@ -16,7 +15,7 @@ use picky_krb::constants::key_usages::{
 };
 use picky_krb::constants::types::{
     AS_REP_MSG_TYPE, KRB_ERROR_MSG_TYPE, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_ETYPE_INFO2_TYPE,
-    PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE, TGT_REP_MSG_TYPE,
+    PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
@@ -26,7 +25,7 @@ use picky_krb::data_types::{
 };
 use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody, KrbError,
-    KrbErrorInner, TgsRep, TgsReq, TgtRep, TgtReq,
+    KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
@@ -612,32 +611,5 @@ impl KdcMock {
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(tgs_rep_enc_data)),
             }),
         }))
-    }
-
-    /// Generates TgtRep based on the incoming [TgtReq].
-    ///
-    /// This method helps to simulate Kerberos U2U auth.
-    pub fn generate_tgt(&self, tgt_req: TgtReq, session_key: &[u8]) -> TgtRep {
-        let sname = tgt_req.server_name.0;
-        let realm = Realm::from(IA5String::from_string(self.realm.clone()).unwrap());
-
-        let service_key = self
-            .keys
-            .get(&UserName(sname.clone()))
-            .expect("service's key must present in KDC database")
-            .to_vec();
-
-        TgtRep {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
-            ticket: ExplicitContextTag2::from(Self::make_ticket(
-                realm,
-                session_key.to_vec(),
-                &service_key,
-                KerberosFlags::from(BitString::with_bytes([0; 4])),
-                sname.clone(),
-                sname,
-            )),
-        }
     }
 }
