@@ -36,6 +36,7 @@ struct KrbEnvironment {
     credentials: CredentialsBuffers,
     realm: String,
     target_name: String,
+    target_service_name: PrincipalName,
 }
 
 /// Initializes a Kerberos environment. It includes:
@@ -125,6 +126,13 @@ fn init_krb_environment() -> KrbEnvironment {
         realm: realm.to_string(),
         credentials,
         target_name,
+        target_service_name: PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string("DESKTOP-8F33RFH.example.com".into()).unwrap()),
+            ])),
+        },
     }
 }
 
@@ -206,13 +214,18 @@ fn init_logger() {
 
 #[test]
 fn kerberos_kdc_auth() {
+    init_logger();
+
     let KrbEnvironment {
         realm,
         credentials,
         keys,
         users,
         target_name,
+        target_service_name,
     } = init_krb_environment();
+
+    let ticket_decryption_key = keys.get(&UserName(target_service_name.clone())).unwrap().clone();
 
     let kdc = KdcMock::new(
         realm,
@@ -246,47 +259,76 @@ fn kerberos_kdc_auth() {
     );
     let mut network_client = NetworkClientMock { kdc };
 
-    let kerberos_config = KerberosConfig {
+    let client_config = KerberosConfig {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
         client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
     };
-    let mut kerberos_client = Kerberos::new_client_from_config(kerberos_config).unwrap();
+    let mut kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
-    let mut credentials_handle = Some(credentials);
-    let flags = ClientRequestFlags::MUTUAL_AUTH
+    let server_config = KerberosConfig {
+        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
+        client_computer_name: Some("DESKTOP-8F33RFH.example.com".into()),
+    };
+    let server_properties = ServerProperties {
+        mech_types: MechTypeList::from(Vec::new()),
+        max_time_skew: Duration::minutes(3),
+        ticket_decryption_key: Some(ticket_decryption_key),
+        service_name: target_service_name,
+    };
+    let mut kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+
+    let mut client_credentials_handle = Some(credentials.clone());
+    let mut server_credentials_handle = Some(credentials);
+
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::SEQUENCE_DETECT
         | ClientRequestFlags::REPLAY_DETECT
         | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
 
-    initialize_security_context(
-        &mut kerberos_client,
-        &mut credentials_handle,
-        flags,
-        &target_name,
-        Vec::new(),
-        &mut network_client,
-    );
-    initialize_security_context(
-        &mut kerberos_client,
-        &mut credentials_handle,
-        flags,
-        &target_name,
-        Vec::new(),
-        &mut network_client,
-    );
+    let mut client_in_token = Vec::new();
+
+    for _ in 0..3 {
+        let (client_status, token) = initialize_security_context(
+            &mut kerberos_client,
+            &mut client_credentials_handle,
+            client_flags,
+            &target_name,
+            client_in_token,
+            &mut network_client,
+        );
+
+        let (_, token) = accept_security_context(
+            &mut kerberos_server,
+            &mut server_credentials_handle,
+            server_flags,
+            token,
+            &mut network_client,
+        );
+        client_in_token = token;
+
+        if client_status == SecurityStatus::Ok {
+            return;
+        }
+    }
+
+    panic!("Kerberos authentication should not exceed 3 steps");
 }
 
 #[test]
 fn kerberos_kdc_u2u_auth() {
-    init_logger();
-
     let KrbEnvironment {
         realm,
         credentials,
         keys,
         users,
         target_name,
+        target_service_name,
     } = init_krb_environment();
 
     let kdc = KdcMock::new(
@@ -331,13 +373,7 @@ fn kerberos_kdc_u2u_auth() {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: None,
-        service_name: PrincipalName {
-            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
-                KerberosStringAsn1::from(IA5String::from_string("DESKTOP-8F33RFH.example.com".into()).unwrap()),
-            ])),
-        },
+        service_name: target_service_name,
     };
     let mut kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -379,7 +415,6 @@ fn kerberos_kdc_u2u_auth() {
         client_in_token = token;
 
         if client_status == SecurityStatus::Ok {
-            println!("success!");
             return;
         }
     }
