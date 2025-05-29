@@ -132,7 +132,7 @@ fn process_get_key_result(response: &Response, security_trailer: Option<Security
     unpack_response(data)
 }
 
-#[instrument(ret)]
+#[instrument(ret, level = "debug")]
 fn decrypt_blob(blob: &DpapiBlob, key: &GroupKeyEnvelope) -> Result<Vec<u8>> {
     let kek = get_kek(key, &blob.key_identifier)?;
 
@@ -147,7 +147,7 @@ fn decrypt_blob(blob: &DpapiBlob, key: &GroupKeyEnvelope) -> Result<Vec<u8>> {
     )?)
 }
 
-#[instrument(ret)]
+#[instrument(ret, level = "debug")]
 fn encrypt_blob(
     data: &[u8],
     key: &GroupKeyEnvelope,

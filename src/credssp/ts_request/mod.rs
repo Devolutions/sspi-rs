@@ -251,7 +251,7 @@ impl TsRequest {
     }
 }
 
-#[instrument(ret)]
+#[instrument(ret, level = "debug")]
 fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
@@ -300,7 +300,7 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
     Ok(picky_asn1_der::to_vec(&ts_creds)?)
 }
 
-#[instrument(ret)]
+#[instrument(ret, level = "debug")]
 fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: CredSspMode) -> io::Result<Vec<u8>> {
     let empty_identity = AuthIdentityBuffers::default();
     let identity = match cred_ssp_mode {
