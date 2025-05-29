@@ -12,6 +12,7 @@ use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTa
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
+use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
@@ -23,6 +24,7 @@ use url::Url;
 
 use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
+use crate::client_server::test_encryption;
 
 /// Represents a Kerberos environment:
 /// * user and services keys;
@@ -139,7 +141,7 @@ fn init_krb_environment() -> KrbEnvironment {
 /// Does all preparations and calls the [initialize_security_context_impl] function
 /// on the provided Kerberos context.
 pub fn initialize_security_context(
-    kerberos: &mut Kerberos,
+    client: &mut SspiContext,
     credentials_handle: &mut Option<CredentialsBuffers>,
     flags: ClientRequestFlags,
     target_name: &str,
@@ -149,7 +151,7 @@ pub fn initialize_security_context(
     let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
     let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
-    let mut builder = kerberos
+    let mut builder = client
         .initialize_security_context()
         .with_credentials_handle(credentials_handle)
         .with_context_requirements(flags)
@@ -157,7 +159,7 @@ pub fn initialize_security_context(
         .with_target_name(target_name)
         .with_input(&mut input_token)
         .with_output(&mut output_token);
-    let result = kerberos
+    let result = client
         .initialize_security_context_impl(&mut builder)
         .expect("Kerberos initialize_security_context should not fail")
         .resolve_with_client(network_client)
@@ -169,7 +171,7 @@ pub fn initialize_security_context(
 /// Does all preparations and calls the [accept_security_context] function
 /// on the provided Kerberos context.
 pub fn accept_security_context(
-    kerberos: &mut Kerberos,
+    server: &mut SspiContext,
     credentials_handle: &mut Option<CredentialsBuffers>,
     flags: ServerRequestFlags,
     in_token: Vec<u8>,
@@ -178,14 +180,14 @@ pub fn accept_security_context(
     let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
     let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
-    let builder = kerberos
+    let builder = server
         .accept_security_context()
         .with_credentials_handle(credentials_handle)
         .with_context_requirements(flags)
         .with_target_data_representation(DataRepresentation::Native)
         .with_input(&mut input_token)
         .with_output(&mut output_token);
-    let result = kerberos
+    let result = server
         .accept_security_context_impl(builder)
         .expect("Kerberos accept_security_context should not fail")
         .resolve_with_client(network_client)
@@ -194,28 +196,45 @@ pub fn accept_security_context(
     (result.status, output_token.remove(0).buffer)
 }
 
-fn init_logger() {
-    use std::io;
+fn run_kerberos(
+    client: &mut SspiContext,
+    client_credentials_handle: &mut Option<CredentialsBuffers>,
+    client_flags: ClientRequestFlags,
+    target_name: &str,
 
-    use tracing_subscriber::prelude::*;
-    use tracing_subscriber::EnvFilter;
+    server: &mut SspiContext,
+    server_credentials_handle: &mut Option<CredentialsBuffers>,
+    server_flags: ServerRequestFlags,
 
-    let logging_filter: EnvFilter = EnvFilter::builder()
-        .with_default_directive("trace".parse().unwrap())
-        .from_env_lossy();
+    network_client: &mut dyn NetworkClient,
+) {
+    let mut client_in_token = Vec::new();
 
-    let stdout_layer = tracing_subscriber::fmt::layer().pretty().with_writer(io::stdout);
+    for _ in 0..3 {
+        let (client_status, token) = initialize_security_context(
+            client,
+            client_credentials_handle,
+            client_flags,
+            &target_name,
+            client_in_token,
+            network_client,
+        );
 
-    tracing_subscriber::registry()
-        .with(stdout_layer)
-        .with(logging_filter)
-        .init();
+        let (_, token) =
+            accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
+        client_in_token = token;
+
+        if client_status == SecurityStatus::Ok {
+            test_encryption(client, server);
+            return;
+        }
+    }
+
+    panic!("Kerberos authentication should not exceed 3 steps");
 }
 
 #[test]
-fn kerberos_kdc_auth() {
-    init_logger();
-
+fn kerberos_auth() {
     let KrbEnvironment {
         realm,
         credentials,
@@ -263,7 +282,7 @@ fn kerberos_kdc_auth() {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
         client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
     };
-    let mut kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
+    let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
@@ -275,7 +294,7 @@ fn kerberos_kdc_auth() {
         ticket_decryption_key: Some(ticket_decryption_key),
         service_name: target_service_name,
     };
-    let mut kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+    let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
@@ -291,37 +310,20 @@ fn kerberos_kdc_auth() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    let mut client_in_token = Vec::new();
-
-    for _ in 0..3 {
-        let (client_status, token) = initialize_security_context(
-            &mut kerberos_client,
-            &mut client_credentials_handle,
-            client_flags,
-            &target_name,
-            client_in_token,
-            &mut network_client,
-        );
-
-        let (_, token) = accept_security_context(
-            &mut kerberos_server,
-            &mut server_credentials_handle,
-            server_flags,
-            token,
-            &mut network_client,
-        );
-        client_in_token = token;
-
-        if client_status == SecurityStatus::Ok {
-            return;
-        }
-    }
-
-    panic!("Kerberos authentication should not exceed 3 steps");
+    run_kerberos(
+        &mut SspiContext::Kerberos(kerberos_client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        &mut SspiContext::Kerberos(kerberos_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+    );
 }
 
 #[test]
-fn kerberos_kdc_u2u_auth() {
+fn kerberos_u2u_auth() {
     let KrbEnvironment {
         realm,
         credentials,
@@ -363,7 +365,7 @@ fn kerberos_kdc_u2u_auth() {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
         client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
     };
-    let mut kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
+    let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
@@ -375,7 +377,7 @@ fn kerberos_kdc_u2u_auth() {
         ticket_decryption_key: None,
         service_name: target_service_name,
     };
-    let mut kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+    let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
@@ -393,31 +395,14 @@ fn kerberos_kdc_u2u_auth() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    let mut client_in_token = Vec::new();
-
-    for _ in 0..3 {
-        let (client_status, token) = initialize_security_context(
-            &mut kerberos_client,
-            &mut client_credentials_handle,
-            client_flags,
-            &target_name,
-            client_in_token,
-            &mut network_client,
-        );
-
-        let (_, token) = accept_security_context(
-            &mut kerberos_server,
-            &mut server_credentials_handle,
-            server_flags,
-            token,
-            &mut network_client,
-        );
-        client_in_token = token;
-
-        if client_status == SecurityStatus::Ok {
-            return;
-        }
-    }
-
-    panic!("Kerberos authentication should not exceed 3 steps");
+    run_kerberos(
+        &mut SspiContext::Kerberos(kerberos_client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        &mut SspiContext::Kerberos(kerberos_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+    );
 }
