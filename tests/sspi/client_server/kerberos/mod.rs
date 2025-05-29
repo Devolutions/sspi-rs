@@ -24,7 +24,7 @@ use url::Url;
 
 use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
-use crate::client_server::test_encryption;
+use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 /// Represents a Kerberos environment:
 /// * user and services keys;
@@ -226,6 +226,8 @@ fn run_kerberos(
 
         if client_status == SecurityStatus::Ok {
             test_encryption(client, server);
+            test_stream_buffer_encryption(client, server);
+            test_rpc_request_encryption(client, server);
             return;
         }
     }
