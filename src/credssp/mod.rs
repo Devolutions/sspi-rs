@@ -634,7 +634,7 @@ impl SspiImpl for SspiContext {
     type CredentialsHandle = Option<CredentialsBuffers>;
     type AuthenticationData = Credentials;
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip_all)]
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -681,7 +681,7 @@ impl SspiImpl for SspiContext {
         })
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip_all)]
     fn accept_security_context_impl(
         &mut self,
         builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
@@ -736,7 +736,7 @@ impl SspiImpl for SspiContext {
 }
 
 impl<'a> SspiContext {
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip_all)]
     async fn change_password_impl(
         &mut self,
         yield_point: &mut YieldPointLocal,
@@ -769,7 +769,7 @@ impl<'a> SspiContext {
             .resolve_with_default_network_client()
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip_all)]
     async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
@@ -807,7 +807,7 @@ impl<'a> SspiContext {
 }
 
 impl Sspi for SspiContext {
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
@@ -819,7 +819,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
@@ -836,7 +836,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBufferRef],
@@ -852,7 +852,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_sizes(&mut self) -> crate::Result<ContextSizes> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_sizes(),
@@ -864,7 +864,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_names(),
@@ -876,7 +876,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_stream_sizes(&mut self) -> crate::Result<StreamSizes> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_stream_sizes(),
@@ -888,7 +888,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_package_info(&mut self) -> crate::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_package_info(),
@@ -900,7 +900,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_cert_trust_status(),
@@ -912,7 +912,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_remote_cert(&mut self) -> crate::Result<CertContext> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_remote_cert(),
@@ -924,7 +924,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_negotiation_package(&mut self) -> crate::Result<PackageInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_negotiation_package(),
@@ -936,7 +936,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn query_context_connection_info(&mut self) -> crate::Result<ConnectionInfo> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.query_context_connection_info(),

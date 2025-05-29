@@ -414,7 +414,7 @@ impl SspiImpl for Pku2u {
 }
 
 impl Pku2u {
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     pub(crate) fn initialize_security_context_impl(
         &mut self,
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,

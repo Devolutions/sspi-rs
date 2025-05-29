@@ -365,7 +365,7 @@ impl SspiImpl for SspiCredSsp {
 }
 
 impl SspiCredSsp {
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     #[async_recursion]
     pub(crate) async fn initialize_security_context_impl<'a>(
         &mut self,

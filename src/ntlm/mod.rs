@@ -286,7 +286,7 @@ impl SspiImpl for Ntlm {
         })
     }
 
-    #[instrument(ret, fields(state = ?self.state), skip_all)]
+    #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,

@@ -130,7 +130,7 @@ impl Negotiate {
     // 3) if the provided username is FQDN and we can resolve KDC then it'll use Kerberos
     // 4) if SSPI_KDC_URL_ENV is set then it'll also use Kerberos
     // 5) in any other cases, it'll use NTLM
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
@@ -266,7 +266,7 @@ impl Negotiate {
 }
 
 impl SspiEx for Negotiate {
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
         self.auth_identity = Some(identity.clone().try_into().unwrap());
 
@@ -293,7 +293,7 @@ impl SspiEx for Negotiate {
 }
 
 impl Sspi for Negotiate {
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),
@@ -302,7 +302,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn encrypt_message(
         &mut self,
         flags: crate::EncryptionFlags,
@@ -316,7 +316,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn decrypt_message<'data>(
         &mut self,
         message: &mut [SecurityBufferRef<'data>],
@@ -329,7 +329,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_sizes(),
@@ -338,7 +338,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_names(&mut self) -> Result<ContextNames> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names(),
@@ -347,12 +347,12 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_package_info(&mut self) -> Result<PackageInfo> {
         crate::query_security_package_info(SecurityPackageType::Negotiate)
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_negotiation_package(&mut self) -> Result<PackageInfo> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_package_info(),
@@ -361,7 +361,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_cert_trust_status(),
@@ -414,7 +414,7 @@ impl SspiImpl for Negotiate {
     type CredentialsHandle = Option<CredentialsBuffers>;
     type AuthenticationData = Credentials;
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
@@ -478,7 +478,7 @@ impl SspiImpl for Negotiate {
         })
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl(
         &mut self,
         builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
@@ -517,7 +517,7 @@ impl SspiImpl for Negotiate {
 }
 
 impl<'a> Negotiate {
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     pub(crate) async fn change_password(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
@@ -534,7 +534,7 @@ impl<'a> Negotiate {
         }
     }
 
-    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
