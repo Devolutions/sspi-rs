@@ -294,7 +294,8 @@ fn kerberos_auth() {
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: Some(ticket_decryption_key),
         service_name: target_service_name,
-        credentials: None,
+        user: None,
+        client: None,
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -379,7 +380,8 @@ fn kerberos_u2u_auth() {
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: None,
         service_name: target_service_name,
-        credentials: None,
+        user: None,
+        client: None,
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 

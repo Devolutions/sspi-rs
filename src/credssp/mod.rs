@@ -616,7 +616,15 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
                         self.state = CredSspState::AuthInfo;
                     }
-                    c => unreachable!("{:?}", c),
+                    result => {
+                        try_cred_ssp_server!(
+                            Err(Error::new(
+                                ErrorKind::InternalError,
+                                format!("SSPI returned unexpected status: {:?}", result.status)
+                            )),
+                            ts_request
+                        )
+                    }
                 };
                 self.credentials_handle = credentials_handle;
 

@@ -16,6 +16,9 @@ use crate::kerberos::{client, TGT_SERVICE_NAME};
 use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
 
+/// Requests the TGT ticket from KDC.
+///
+/// Basically, it performs the AS exchange, saves the session key, and returns the ticket.
 pub async fn request_tgt(
     server: &mut Kerberos,
     credentials: &CredentialsBuffers,

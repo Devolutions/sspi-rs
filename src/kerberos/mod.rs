@@ -463,12 +463,13 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        let auth_identity = self
-            .auth_identity
-            .as_ref()
-            .or_else(|| self.server.as_ref().and_then(|server| server.credentials.as_ref()));
+        if let Some(client) = self.server.as_ref().and_then(|server| server.client.as_ref()) {
+            return Ok(ContextNames {
+                username: client.clone(),
+            });
+        }
 
-        if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = auth_identity {
+        if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = &self.auth_identity {
             let identity =
                 AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
 
@@ -477,7 +478,7 @@ impl Sspi for Kerberos {
             });
         }
 
-        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = auth_identity {
+        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
@@ -548,7 +549,7 @@ impl SspiImpl for Kerberos {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
-                String::from("The client must specify the auth data"),
+                "the client must specify the auth data",
             ));
         }
 

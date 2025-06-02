@@ -3,8 +3,9 @@ use picky::oids;
 use picky_asn1::wrapper::ExplicitContextTag1;
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, AP_REQ_TOKEN_ID};
 use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TICKET_REP};
+use picky_krb::constants::types::NT_PRINCIPAL;
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::{Authenticator, EncTicketPart};
+use picky_krb::data_types::{Authenticator, EncTicketPart, PrincipalName};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
@@ -146,6 +147,9 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
          .0)
 }
 
+/// Selects the preferred Kerberos oid.
+///
+/// 1.2.840.48018.1.2.2 (MS KRB5 - Microsoft Kerberos 5) is preferred over 1.2.840.113554.1.2.2 (KRB5 - Kerberos 5).
 pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
     let ms_krb5 = oids::ms_krb5();
     if mech_list.0.iter().any(|mech_type| mech_type.0 == ms_krb5) {
@@ -161,4 +165,23 @@ pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
         ErrorKind::InvalidToken,
         "invalid mech type list: Kerberos protocol is not present",
     ))
+}
+
+/// Extract username from the [PrincipalName].
+pub fn extract_username(cname: &PrincipalName) -> Result<String> {
+    let name_type = &cname.name_type.0 .0;
+    if name_type == &[NT_PRINCIPAL] {
+        cname
+            .name_string
+            .0
+             .0
+            .first()
+            .map(|name| name.to_string())
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("unsupported principal name type: {:?}", name_type),
+        ))
+    }
 }

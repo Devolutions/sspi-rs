@@ -133,7 +133,8 @@ fn credssp_kerberos() {
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: None,
         service_name: target_service_name,
-        credentials: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
+        user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
+        client: None,
     };
 
     let mut client = CredSspClient::new(
