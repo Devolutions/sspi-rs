@@ -759,7 +759,7 @@ pub fn get_mech_list() -> MechTypeList {
 pub fn generate_neg_token_init(sname: Option<&[&str]>) -> Result<ApplicationTag0<GssApiNegInit>> {
     let mech_token = if let Some(sname) = sname {
         let sname = sname
-            .into_iter()
+            .iter()
             .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))
             .collect::<Result<Vec<_>>>()?;
 

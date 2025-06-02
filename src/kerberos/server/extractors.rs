@@ -148,12 +148,12 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
 
 pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
     let ms_krb5 = oids::ms_krb5();
-    if let Some(_) = mech_list.0.iter().find(|mech_type| mech_type.0 == ms_krb5) {
+    if mech_list.0.iter().any(|mech_type| mech_type.0 == ms_krb5) {
         return Ok(ms_krb5);
     }
 
     let krb5 = oids::krb5();
-    if let Some(_) = mech_list.0.iter().find(|mech_type| mech_type.0 == krb5) {
+    if mech_list.0.iter().any(|mech_type| mech_type.0 == krb5) {
         return Ok(krb5);
     }
 

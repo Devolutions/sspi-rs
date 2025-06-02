@@ -85,6 +85,7 @@ impl Default for Validators {
 /// the incoming Kerberos messages: encryption keys + key usage number usage
 /// and some mandatory fields like `pa-datas`.
 /// All other validations like checking user/service names should be done separately. See [Validators] structure for more details.
+#[derive(Default)]
 pub struct KdcMock {
     /// Domain's Kerberos realm.
     realm: String,
@@ -97,6 +98,14 @@ pub struct KdcMock {
 }
 
 impl KdcMock {
+    /// Returns empty [KdcMock].
+    ///
+    /// Methods of the returned [KdcMock] should never be called. It can only be used for mocking in tests
+    /// where KDC is not needed but there is a necessary to provide [NetworkClient] because of the API.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     /// Creates a new [KdcMock].
     pub fn new(
         realm: String,

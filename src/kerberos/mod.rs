@@ -77,7 +77,7 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("Kerberos Security Package"),
 });
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum KerberosState {
     Negotiate,
     Preauthentication,
@@ -350,10 +350,10 @@ impl Sspi for Kerberos {
                 let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
-            _ => {
+            state => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
-                    "Kerberos context is not established",
+                    format!("Kerberos context is not established: current state: {:?}", state),
                 ))
             }
         };
@@ -463,7 +463,12 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
-        if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = &self.auth_identity {
+        let auth_identity = self
+            .auth_identity
+            .as_ref()
+            .or_else(|| self.server.as_ref().and_then(|server| server.credentials.as_ref()));
+
+        if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = auth_identity {
             let identity =
                 AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
 
@@ -471,14 +476,16 @@ impl Sspi for Kerberos {
                 username: identity.username,
             });
         }
-        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
+
+        if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
         }
+
         Err(crate::Error::new(
             crate::ErrorKind::NoCredentials,
-            String::from("Requested Names, but no credentials were provided"),
+            String::from("requested names, but no credentials were provided"),
         ))
     }
 
@@ -491,7 +498,7 @@ impl Sspi for Kerberos {
     fn query_context_cert_trust_status(&mut self) -> Result<crate::CertTrustStatus> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "Certificate trust status is not supported".to_owned(),
+            "certificate trust status is not supported".to_owned(),
         ))
     }
 

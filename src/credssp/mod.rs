@@ -553,7 +553,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                         ts_request.nego_tokens = Some(output_token.remove(0).buffer);
                     }
                     AcceptSecurityContextResult {
-                        status: SecurityStatus::CompleteNeeded,
+                        status: SecurityStatus::CompleteNeeded | SecurityStatus::Ok,
                         ..
                     } => {
                         let ContextNames { username } = try_cred_ssp_server!(
@@ -616,7 +616,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
                         self.state = CredSspState::AuthInfo;
                     }
-                    _ => unreachable!(),
+                    c => unreachable!("{:?}", c),
                 };
                 self.credentials_handle = credentials_handle;
 

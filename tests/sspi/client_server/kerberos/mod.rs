@@ -16,8 +16,8 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
-    string_to_utf16, AuthIdentityBuffers, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
-    Kerberos, KerberosConfig, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl,
+    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
+    KerberosConfig, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use time::Duration;
 use url::Url;
@@ -32,20 +32,20 @@ use crate::client_server::{test_encryption, test_rpc_request_encryption, test_st
 /// * realm and target application service name;
 ///
 /// It is used for simplifying tests environment preparation.
-struct KrbEnvironment {
-    keys: HashMap<UserName, Vec<u8>>,
-    users: HashMap<UserName, PasswordCreds>,
-    credentials: CredentialsBuffers,
-    realm: String,
-    target_name: String,
-    target_service_name: PrincipalName,
+pub struct KrbEnvironment {
+    pub keys: HashMap<UserName, Vec<u8>>,
+    pub users: HashMap<UserName, PasswordCreds>,
+    pub credentials: Credentials,
+    pub realm: String,
+    pub target_name: String,
+    pub target_service_name: PrincipalName,
 }
 
 /// Initializes a Kerberos environment. It includes:
 /// * User logon credentials (password-based).
 /// * Kerberos services keys.
 /// * Target machine name.
-fn init_krb_environment() -> KrbEnvironment {
+pub fn init_krb_environment() -> KrbEnvironment {
     let username = "pw13";
     let user_password = "qweQWE123!@#";
     let domain = "EXAMPLE";
@@ -116,10 +116,9 @@ fn init_krb_environment() -> KrbEnvironment {
     .into_iter()
     .collect();
 
-    let credentials = CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-        user: string_to_utf16(username),
-        domain: string_to_utf16(domain),
-        password: string_to_utf16(user_password).into(),
+    let credentials = Credentials::AuthIdentity(AuthIdentity {
+        username: Username::new_down_level_logon_name(username, domain).unwrap(),
+        password: user_password.to_owned().into(),
     });
 
     KrbEnvironment {
@@ -295,9 +294,11 @@ fn kerberos_auth() {
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: Some(ticket_decryption_key),
         service_name: target_service_name,
+        credentials: None,
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 
@@ -378,9 +379,11 @@ fn kerberos_u2u_auth() {
         max_time_skew: Duration::minutes(3),
         ticket_decryption_key: None,
         service_name: target_service_name,
+        credentials: None,
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 

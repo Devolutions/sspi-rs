@@ -25,8 +25,8 @@ use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
-    AcceptSecurityContextResult, BufferType, Error, ErrorKind, Kerberos, KerberosState, Result, SecurityBuffer,
-    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
+    AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
+    SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Additional properties that are needed only for server-side Kerberos.
@@ -44,6 +44,8 @@ pub struct ServerProperties {
     pub ticket_decryption_key: Option<Vec<u8>>,
     /// Name of the Kerberos service.
     pub service_name: PrincipalName,
+    /// .
+    pub credentials: Option<CredentialsBuffers>,
 }
 
 /// Performs one authentication step.
@@ -88,10 +90,15 @@ pub async fn accept_security_context(
 
                 let credentials = builder
                     .credentials_handle
-                    .as_ref()
-                    .unwrap()
-                    .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "No credentials provided"))?;
+                    .map(|credentials_handle| (*credentials_handle).clone())
+                    .unwrap();
+                let credentials = credentials.or_else(|| server_props.credentials.clone());
+                let credentials = credentials.as_ref().ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::WrongCredentialHandle,
+                        "failed to request TGT ticket: no credentials provided",
+                    )
+                })?;
 
                 Some(generate_tgt_rep(
                     request_tgt(server, credentials, &tgt_req, yield_point).await?,
@@ -312,6 +319,8 @@ pub async fn accept_security_context(
         KerberosState::ApExchange => {
             let client_mic = extract_client_mic_token(&input_token.buffer)?;
             validate_mic_token(&client_mic, INITIATOR_SIGN, &server.encryption_params)?;
+
+            server.state = KerberosState::PubKeyAuth;
 
             SecurityStatus::Ok
         }
