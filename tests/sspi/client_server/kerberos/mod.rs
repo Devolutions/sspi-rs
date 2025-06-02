@@ -3,7 +3,7 @@
 pub mod kdc;
 pub mod network_client;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic;
 
 use kdc::Validators;
@@ -296,6 +296,7 @@ fn kerberos_auth() {
         service_name: target_service_name,
         user: None,
         client: None,
+        authenticators_cache: HashSet::new(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -382,6 +383,7 @@ fn kerberos_u2u_auth() {
         service_name: target_service_name,
         user: None,
         client: None,
+        authenticators_cache: HashSet::new(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 

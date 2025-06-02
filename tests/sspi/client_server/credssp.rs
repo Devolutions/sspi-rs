@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::mem;
 
 use picky_krb::gss_api::MechTypeList;
@@ -135,6 +136,7 @@ fn credssp_kerberos() {
         service_name: target_service_name,
         user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
         client: None,
+        authenticators_cache: HashSet::new(),
     };
 
     let mut client = CredSspClient::new(

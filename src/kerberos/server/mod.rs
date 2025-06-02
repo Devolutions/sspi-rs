@@ -1,10 +1,11 @@
 mod as_exchange;
+mod cache;
 mod extractors;
 mod generators;
 
 use std::io::Write;
 
-use as_exchange::request_tgt;
+use cache::AuthenticatorCacheRecord;
 use extractors::{extract_client_mic_token, extract_username, select_mech_type};
 use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
@@ -15,6 +16,8 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use time::{Duration, OffsetDateTime};
 
+use self::as_exchange::request_tgt;
+use self::cache::AuthenticatorsCache;
 use self::extractors::{
     decode_initial_neg_init, decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket,
 };
@@ -50,6 +53,15 @@ pub struct ServerProperties {
     ///
     /// This field should be set by the Kerberos implementation after successful log on.
     pub client: Option<Username>,
+    /// Authenticators cache.
+    ///
+    /// [Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3):
+    ///
+    /// > The server MUST utilize a replay cache to remember any authenticator presented within the allowable clock skew.
+    /// > The replay cache will store at least the server name, along with the client name, time,
+    /// > and microsecond fields from the recently-seen authenticators, and if a matching tuple is found,
+    /// > the error is returned.
+    pub authenticators_cache: AuthenticatorsCache,
 }
 
 /// Performs one authentication step.
@@ -187,8 +199,6 @@ pub async fn accept_security_context(
                 ));
             }
 
-            // TODO: authenticators cache.
-
             let ticket_start_time = OffsetDateTime::try_from(
                 ticket_enc_part
                     .starttime
@@ -226,14 +236,30 @@ pub async fn accept_security_context(
                 ));
             }
 
-            debug!("ApReq Ticket and Authenticator are valid!");
-
             let server_data = server.server.as_mut().ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidHandle,
                     "Kerberos server properties are not initialized",
                 )
             })?;
+
+            let cache_record = AuthenticatorCacheRecord {
+                cname: cname.0.clone(),
+                sname: ticket_service_name.clone(),
+                ctime: ctime.0.clone(),
+                microseconds: cusec.0.clone(),
+            };
+            if !server_data.authenticators_cache.contains(&cache_record) {
+                server_data.authenticators_cache.insert(cache_record);
+            } else {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    "ApReq Authenticator replay detected",
+                ));
+            }
+
+            debug!("ApReq Ticket and Authenticator are valid!");
+
             server_data.client = Some(Username::new_upn(
                 &extract_username(&cname.0)?,
                 &crealm.0 .0.to_string().to_ascii_lowercase(),
