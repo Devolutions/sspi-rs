@@ -106,9 +106,8 @@ pub async fn accept_security_context(
 
                 let credentials = builder
                     .credentials_handle
-                    .map(|credentials_handle| (*credentials_handle).clone())
-                    .unwrap();
-                let credentials = credentials.or_else(|| server_props.user.clone());
+                    .and_then(|credentials_handle| (*credentials_handle).clone())
+                    .or_else(|| server_props.user.clone());
                 let credentials = credentials.as_ref().ok_or_else(|| {
                     Error::new(
                         ErrorKind::WrongCredentialHandle,
@@ -199,18 +198,16 @@ pub async fn accept_security_context(
                 ));
             }
 
-            let ticket_start_time = OffsetDateTime::try_from(
-                ticket_enc_part
-                    .starttime
-                    .0
-                    .map(|start_time| start_time.0)
-                    // [5.3.  Tickets](https://www.rfc-editor.org/rfc/rfc4120#section-5.3)
-                    // If the starttime field is absent from the ticket, then the authtime field SHOULD be used in its place to determine
-                    // the life of the ticket.
-                    .unwrap_or_else(|| ticket_enc_part.auth_time.0)
-                    .0,
-            )
-            .map_err(|err| {
+            let ticket_start_time = ticket_enc_part
+                .starttime
+                .0
+                .map(|start_time| start_time.0)
+                // [5.3.  Tickets](https://www.rfc-editor.org/rfc/rfc4120#section-5.3)
+                // If the starttime field is absent from the ticket, then the authtime field SHOULD be used in its place to determine
+                // the life of the ticket.
+                .unwrap_or_else(|| ticket_enc_part.auth_time.0)
+                .0;
+            let ticket_start_time = OffsetDateTime::try_from(ticket_start_time).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
                     format!("ticket end time is not valid: {:?}", err),
@@ -279,9 +276,10 @@ pub async fn accept_security_context(
                 ));
             }
             let ap_options =
-                ApOptions::from_bits(u32::from_be_bytes(ap_options_bytes[1..].try_into().map_err(|err| {
+                u32::from_be_bytes(ap_options_bytes[1..].try_into().map_err(|err| {
                     Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {:?}", err))
-                })?))
+                })?);
+            let ap_options = ApOptions::from_bits(ap_options)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "invalid ApReq ap-options"))?;
 
             // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
@@ -311,20 +309,21 @@ pub async fn accept_security_context(
                     &server.encryption_params,
                 )?;
 
+                let mic_payload = picky_asn1_der::to_vec(
+                    &server
+                        .server
+                        .as_ref()
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidHandle,
+                                "Kerberos server properties are not initialized",
+                            )
+                        })?
+                        .mech_types,
+                )?;
                 let mic = generate_mic_token(
                     u64::from(server.seq_number + 1),
-                    picky_asn1_der::to_vec(
-                        &server
-                            .server
-                            .as_ref()
-                            .ok_or_else(|| {
-                                Error::new(
-                                    ErrorKind::InvalidHandle,
-                                    "Kerberos server properties are not initialized",
-                                )
-                            })?
-                            .mech_types,
-                    )?,
+                    mic_payload,
                     server
                         .encryption_params
                         .sub_session_key
@@ -356,7 +355,7 @@ pub async fn accept_security_context(
 
             SecurityStatus::Ok
         }
-        _ => {
+        KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

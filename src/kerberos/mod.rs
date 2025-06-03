@@ -350,10 +350,10 @@ impl Sspi for Kerberos {
                 let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
-            state => {
+            KerberosState::Negotiate | KerberosState::Preauthentication | KerberosState::ApExchange => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
-                    format!("Kerberos context is not established: current state: {:?}", state),
+                    format!("Kerberos context is not established: current state: {:?}", self.state),
                 ))
             }
         };

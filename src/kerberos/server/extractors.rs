@@ -135,7 +135,7 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
         ));
     }
 
-    Ok(mech_list_mic
+    let mic_token = mech_list_mic
         .0
         .ok_or_else(|| {
             Error::new(
@@ -144,7 +144,9 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
             )
         })?
         .0
-         .0)
+         .0;
+
+    Ok(mic_token)
 }
 
 /// Selects the preferred Kerberos oid.

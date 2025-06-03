@@ -12,6 +12,13 @@ pub struct AuthenticatorCacheRecord {
     pub microseconds: Microseconds,
 }
 
+// https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq
+// > When implementing both `Hash` and `Eq`, it is important that the following property holds:
+// ```
+// k1 == k2 -> hash(k1) == hash(k2)
+// ```
+// The `PrincipalName` implements the `PartialEq` trait but does not implement the `Hash` trait.
+// We implement `PartialEq` manually to make sure we follow required properties.
 impl PartialEq for AuthenticatorCacheRecord {
     fn eq(&self, other: &Self) -> bool {
         fn compare_principal_names(name_1: &PrincipalName, name_2: &PrincipalName) -> bool {
