@@ -9,10 +9,9 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, Secret, Username};
-use time::Duration;
 use url::Url;
 
-use super::kerberos::kdc::{KdcMock, Validators};
+use super::kerberos::kdc::{KdcMock, Validators, MAX_TIME_SKEW};
 use super::kerberos::network_client::NetworkClientMock;
 use super::kerberos::{init_krb_environment, KrbEnvironment};
 use crate::common::CredentialsProxyImpl;
@@ -131,7 +130,7 @@ fn credssp_kerberos() {
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
-        max_time_skew: Duration::minutes(3),
+        max_time_skew: MAX_TIME_SKEW,
         ticket_decryption_key: None,
         service_name: target_service_name,
         user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),

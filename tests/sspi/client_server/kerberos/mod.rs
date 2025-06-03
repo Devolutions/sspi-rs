@@ -6,7 +6,6 @@ pub mod network_client;
 use std::collections::{HashMap, HashSet};
 use std::panic;
 
-use kdc::Validators;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
@@ -19,10 +18,9 @@ use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
     KerberosConfig, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
-use time::Duration;
 use url::Url;
 
-use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName};
+use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName, Validators, MAX_TIME_SKEW};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
@@ -291,7 +289,7 @@ fn kerberos_auth() {
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
-        max_time_skew: Duration::minutes(3),
+        max_time_skew: MAX_TIME_SKEW,
         ticket_decryption_key: Some(ticket_decryption_key),
         service_name: target_service_name,
         user: None,
@@ -378,7 +376,7 @@ fn kerberos_u2u_auth() {
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
-        max_time_skew: Duration::minutes(3),
+        max_time_skew: MAX_TIME_SKEW,
         ticket_decryption_key: None,
         service_name: target_service_name,
         user: None,

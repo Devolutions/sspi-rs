@@ -32,7 +32,7 @@ use rand::{Rng, RngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
-const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const MAX_TIME_SKEW: Duration = Duration::minutes(3);
 
 /// Represents user credentials in the internal KDC database.
 pub struct PasswordCreds {
