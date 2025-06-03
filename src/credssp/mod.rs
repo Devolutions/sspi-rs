@@ -152,11 +152,10 @@ enum EndpointType {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum ClientMode {
     Negotiate(NegotiateConfig),
     Kerberos(KerberosConfig),
-    Pku2u(Pku2uConfig),
+    Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
 
@@ -255,7 +254,7 @@ impl CredSspClient {
                     Kerberos::new_client_from_config(kerberos_config)?,
                 ))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
-                    Pku2u::new_client_from_config(pku2u)?,
+                    Pku2u::new_client_from_config(*pku2u)?,
                 ))),
                 ClientMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
             };
@@ -384,11 +383,10 @@ impl CredSspClient {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum ServerMode {
     Negotiate(NegotiateConfig),
-    Kerberos((KerberosConfig, ServerProperties)),
-    Pku2u(Pku2uConfig),
+    Kerberos(Box<(KerberosConfig, ServerProperties)>),
+    Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
 
@@ -464,7 +462,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
                     try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
                 ))),
-                ServerMode::Kerberos((kerberos_config, server_properties)) => {
+                ServerMode::Kerberos(kerberos_mode) => {
+                    let (kerberos_config, server_properties) = *kerberos_mode;
                     Some(CredSspContext::new(SspiContext::Kerberos(try_cred_ssp_server!(
                         Kerberos::new_server_from_config(kerberos_config, server_properties),
                         ts_request
@@ -472,7 +471,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 }
                 ServerMode::Ntlm(ntlm) => Some(CredSspContext::new(SspiContext::Ntlm(Ntlm::with_config(ntlm)))),
                 ServerMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(try_cred_ssp_server!(
-                    Pku2u::new_server_from_config(pku2u),
+                    Pku2u::new_server_from_config(*pku2u),
                     ts_request
                 )))),
             };
