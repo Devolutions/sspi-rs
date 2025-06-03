@@ -224,11 +224,11 @@ impl CredSspClient {
     }
 
     #[instrument(fields(state = ?self.state), skip_all)]
-    pub fn process<'a>(
-        &'a mut self,
+    pub fn process(
+        &mut self,
         ts_request: TsRequest,
-    ) -> Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>> {
-        Generator::<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>>::new(
+    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>> {
+        Generator::<NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>>::new(
             move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
         )
     }
@@ -439,11 +439,11 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
     #[allow(clippy::result_large_err)]
     #[instrument(fields(state = ?self.state), skip_all)]
-    pub fn process<'a>(
-        &'a mut self,
+    pub fn process(
+        &mut self,
         ts_request: TsRequest,
-    ) -> Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
-        Generator::<'a, NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>>::new(
+    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
+        Generator::<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>>::new(
             move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
         )
     }
@@ -809,11 +809,11 @@ impl<'a> SspiContext {
             SspiContext::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
             SspiContext::Negotiate(negotiate) => negotiate.accept_security_context_impl(yield_point, builder).await,
             SspiContext::Pku2u(pku2u) => {
-                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
-                } else {
-                    None
-                };
+                let mut creds_handle = builder
+                    .credentials_handle
+                    .as_ref()
+                    .and_then(|creds| (*creds).clone())
+                    .and_then(|creds_handle| creds_handle.auth_identity());
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
                 pku2u.accept_security_context_impl(yield_point, new_builder).await
             }

@@ -151,7 +151,7 @@ fn credssp_kerberos() {
     let mut server = CredSspServer::new(
         PUBLIC_KEY.to_vec(),
         CredentialsProxyImpl::new(&auth_identity),
-        ServerMode::Kerberos((server_config, server_properties)),
+        ServerMode::Kerberos(Box::new((server_config, server_properties))),
     )
     .unwrap();
 
