@@ -55,21 +55,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 
 #[instrument(ret)]
 pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
-    if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{}", domain)) {
-        return vec![kdc_url];
-    }
-
-    if let Ok(kdc_url) = env::var("SSPI_KDC_URL") {
-        return vec![kdc_url];
-    }
-
-    let kdc_hosts = detect_kdc_hosts_from_system(domain);
-
-    if !kdc_hosts.is_empty() {
-        return kdc_hosts;
-    }
-
-    detect_kdc_hosts_from_dns(domain)
+    return vec![];
 }
 
 pub fn detect_kdc_host(domain: &str) -> Option<String> {
