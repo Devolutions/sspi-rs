@@ -158,12 +158,7 @@ pub async fn accept_security_context(
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
 
             let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
-            server.encryption_params.session_key = Some(ticket_enc_part.key.0.key_value.0 .0.clone());
-            let session_key = server
-                .encryption_params
-                .session_key
-                .as_ref()
-                .expect("session key should be set");
+            let session_key = ticket_enc_part.key.0.key_value.0 .0.clone();
 
             let AuthenticatorInner {
                 authenticator_vno: _,
@@ -175,7 +170,7 @@ pub async fn accept_security_context(
                 subkey: _,
                 seq_number: _,
                 authorization_data: _,
-            } = decrypt_ap_req_authenticator(session_key, &ap_req)?.0;
+            } = decrypt_ap_req_authenticator(&session_key, &ap_req)?.0;
 
             // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
             // The name and realm of the client from the ticket are compared against the same fields in the authenticator.
@@ -302,7 +297,7 @@ pub async fn accept_security_context(
                 // A subkey MAY be included if the server desires to negotiate a different subkey.
                 // The KRB_AP_REP message is encrypted in the session key extracted from the ticket.
                 let ap_rep = generate_ap_rep(
-                    session_key,
+                    &session_key,
                     ctime.0,
                     cusec.0,
                     (server.seq_number + 1).to_be_bytes().to_vec(),
@@ -343,6 +338,7 @@ pub async fn accept_security_context(
                 output_token.buffer.write_all(&encoded_neg_ap_rep)?;
             }
 
+            server.encryption_params.session_key = Some(session_key);
             server.state = KerberosState::ApExchange;
 
             SecurityStatus::ContinueNeeded
