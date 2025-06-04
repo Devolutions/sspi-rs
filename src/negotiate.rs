@@ -525,21 +525,21 @@ impl<'a> Negotiate {
     ) -> Result<AcceptSecurityContextResult> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
-                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
-                } else {
-                    None
-                };
+                let mut creds_handle = builder
+                    .credentials_handle
+                    .as_ref()
+                    .and_then(|creds| (*creds).clone())
+                    .and_then(|creds_handle| creds_handle.auth_identity());
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
                 pku2u.accept_security_context_impl(yield_point, new_builder).await
             }
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
             NegotiatedProtocol::Ntlm(ntlm) => {
-                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
-                } else {
-                    None
-                };
+                let mut creds_handle = builder
+                    .credentials_handle
+                    .as_ref()
+                    .and_then(|creds| (*creds).clone())
+                    .and_then(|creds_handle| creds_handle.auth_identity());
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
                 ntlm.accept_security_context_impl(new_builder)
             }
