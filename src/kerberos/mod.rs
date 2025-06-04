@@ -484,9 +484,9 @@ impl Sspi for Kerberos {
             return Ok(ContextNames { username });
         }
 
-        Err(crate::Error::new(
-            crate::ErrorKind::NoCredentials,
-            String::from("requested names, but no credentials were provided"),
+        Err(Error::new(
+            ErrorKind::NoCredentials,
+            "requested names, but no credentials were provided",
         ))
     }
 

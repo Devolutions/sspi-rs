@@ -20,7 +20,9 @@ use sspi::{
 };
 use url::Url;
 
-use crate::client_server::kerberos::kdc::{KdcMock, PasswordCreds, UserName, Validators, MAX_TIME_SKEW};
+use crate::client_server::kerberos::kdc::{
+    KdcMock, PasswordCreds, UserName, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW,
+};
 use crate::client_server::kerberos::network_client::NetworkClientMock;
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
@@ -365,17 +367,17 @@ fn kerberos_u2u_auth() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-8F33RFH.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
     let server_properties = ServerProperties {
-        mech_types: MechTypeList::from(Vec::new()),
+        mech_types: MechTypeList::default(),
         max_time_skew: MAX_TIME_SKEW,
         ticket_decryption_key: None,
         service_name: target_service_name,

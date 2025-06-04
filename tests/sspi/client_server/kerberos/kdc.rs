@@ -33,6 +33,8 @@ use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
 pub const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const KDC_URL: &str = "tcp://192.168.1.103:88";
+pub const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
 
 /// Represents user credentials in the internal KDC database.
 pub struct PasswordCreds {

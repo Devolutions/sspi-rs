@@ -11,7 +11,7 @@ use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, Secret, Username};
 use url::Url;
 
-use super::kerberos::kdc::{KdcMock, Validators, MAX_TIME_SKEW};
+use super::kerberos::kdc::{KdcMock, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW};
 use super::kerberos::network_client::NetworkClientMock;
 use super::kerberos::{init_krb_environment, KrbEnvironment};
 use crate::common::CredentialsProxyImpl;
@@ -120,13 +120,13 @@ fn credssp_kerberos() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-8F33RFH.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
