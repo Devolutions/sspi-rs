@@ -2862,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "sspi"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "async-dnssd",
  "async-recursion",
