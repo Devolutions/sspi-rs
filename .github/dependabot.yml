@@ -29,7 +29,6 @@ updates:
       windows:
         patterns:
           - "windows*"
-          - "winreg"
           - "winapi"
       patch:
         dependency-type: "production"
