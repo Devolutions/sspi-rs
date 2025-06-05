@@ -2,7 +2,9 @@ use std::fmt::Debug;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 
-use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
+use crate::generator::{
+    GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
+};
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::generators::get_client_principal_realm;
 use crate::ntlm::NtlmConfig;
@@ -483,31 +485,13 @@ impl SspiImpl for Negotiate {
     }
 
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn accept_security_context_impl(
-        &mut self,
-        builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<AcceptSecurityContextResult> {
-        match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => {
-                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
-                } else {
-                    None
-                };
-                let new_builder = builder.full_transform(Some(&mut creds_handle));
-                new_builder.execute(pku2u)
-            }
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(builder),
-            NegotiatedProtocol::Ntlm(ntlm) => {
-                let mut creds_handle = if let Some(creds_handle) = &builder.credentials_handle {
-                    creds_handle.as_ref().and_then(|c| c.clone().auth_identity())
-                } else {
-                    None
-                };
-                let new_builder = builder.full_transform(Some(&mut creds_handle));
-                new_builder.execute(ntlm)
-            }
-        }
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 
     fn initialize_security_context_impl<'a>(
@@ -538,7 +522,35 @@ impl<'a> Negotiate {
         }
     }
 
-    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
+    pub(crate) async fn accept_security_context_impl(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: builders::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut creds_handle = builder
+                    .credentials_handle
+                    .as_ref()
+                    .and_then(|creds| (*creds).clone())
+                    .and_then(|creds_handle| creds_handle.auth_identity());
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                pku2u.accept_security_context_impl(yield_point, new_builder).await
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut creds_handle = builder
+                    .credentials_handle
+                    .as_ref()
+                    .and_then(|creds| (*creds).clone())
+                    .and_then(|creds_handle| creds_handle.auth_identity());
+                let new_builder = builder.full_transform(Some(&mut creds_handle));
+                ntlm.accept_security_context_impl(new_builder)
+            }
+        }
+    }
+
+    #[instrument(ret, fields(protocol = self.protocol.protocol_name()), skip_all)]
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,

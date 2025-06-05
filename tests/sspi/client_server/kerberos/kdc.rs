@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
@@ -16,24 +15,24 @@ use picky_krb::constants::key_usages::{
 };
 use picky_krb::constants::types::{
     AS_REP_MSG_TYPE, KRB_ERROR_MSG_TYPE, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_ETYPE_INFO2_TYPE,
-    PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE, TGT_REP_MSG_TYPE,
+    PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
-    Authenticator, EncTicketPart, EncryptedData, EncryptionKey, EtypeInfo2Entry, KerberosFlags, KerberosStringAsn1,
-    KerberosTime, LastReq, LastReqInner, Microseconds, PaData, PaEncTsEnc, PrincipalName, Realm, Ticket, TicketInner,
-    TransitedEncoding,
+    Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, EncryptionKey, EtypeInfo2Entry, KerberosFlags, KerberosStringAsn1, KerberosTime, LastReq, LastReqInner, Microseconds, PaData, PaEncTsEnc, PrincipalName, Realm, Ticket, TicketInner, TransitedEncoding
 };
 use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody, KrbError,
-    KrbErrorInner, TgsRep, TgsReq, TgtRep, TgtReq,
+    KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
-const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const KDC_URL: &str = "tcp://192.168.1.103:88";
+pub const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
 
 /// Represents user credentials in the internal KDC database.
 pub struct PasswordCreds {
@@ -86,6 +85,7 @@ impl Default for Validators {
 /// the incoming Kerberos messages: encryption keys + key usage number usage
 /// and some mandatory fields like `pa-datas`.
 /// All other validations like checking user/service names should be done separately. See [Validators] structure for more details.
+#[derive(Default)]
 pub struct KdcMock {
     /// Domain's Kerberos realm.
     realm: String,
@@ -98,6 +98,14 @@ pub struct KdcMock {
 }
 
 impl KdcMock {
+    /// Returns empty [KdcMock].
+    ///
+    /// Methods of the returned [KdcMock] should never be called. It can only be used for mocking in tests
+    /// where KDC is not needed but there is a necessary to provide [NetworkClient] because of the API.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     /// Creates a new [KdcMock].
     pub fn new(
         realm: String,
@@ -228,7 +236,7 @@ impl KdcMock {
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
 
-        let ticket_enc_part = EncTicketPart {
+        let ticket_enc_part = EncTicketPart::from(EncTicketPartInner {
             flags: ExplicitContextTag0::from(kdc_options.clone()),
             key: ExplicitContextTag1::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
@@ -247,7 +255,7 @@ impl KdcMock {
             renew_till: Optional::from(None),
             caddr: Optional::from(None),
             authorization_data: Optional::from(None),
-        };
+        });
 
         let ticket_enc_data = CipherSuite::Aes256CtsHmacSha196
             .cipher()
@@ -455,7 +463,7 @@ impl KdcMock {
         )
         .expect("TGT Ticket enc part decoding should not fail");
 
-        let EncTicketPart { key, cname, .. } = ticket_enc_part;
+        let EncTicketPartInner { key, cname, .. } = ticket_enc_part.0;
         let session_key = key.0.key_value.0 .0;
 
         let authenticator_enc_data = authenticator.0;
@@ -544,7 +552,7 @@ impl KdcMock {
             let ticket_enc_part: EncTicketPart =
                 picky_asn1_der::from_bytes(&cipher.decrypt(key, TICKET_REP, &ticket_enc_data.0 .0).unwrap())
                     .expect("TGT Ticket enc part decoding should not fail");
-            ticket_enc_part.key.0.key_value.0 .0
+            ticket_enc_part.0.key.0.key_value.0 .0
         } else {
             self.keys
                 .get(&UserName(sname.clone()))
@@ -612,32 +620,5 @@ impl KdcMock {
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(tgs_rep_enc_data)),
             }),
         }))
-    }
-
-    /// Generates TgtRep based on the incoming [TgtReq].
-    ///
-    /// This method helps to simulate Kerberos U2U auth.
-    pub fn generate_tgt(&self, tgt_req: TgtReq, session_key: &[u8]) -> TgtRep {
-        let sname = tgt_req.server_name.0;
-        let realm = Realm::from(IA5String::from_string(self.realm.clone()).unwrap());
-
-        let service_key = self
-            .keys
-            .get(&UserName(sname.clone()))
-            .expect("service's key must present in KDC database")
-            .to_vec();
-
-        TgtRep {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
-            ticket: ExplicitContextTag2::from(Self::make_ticket(
-                realm,
-                session_key.to_vec(),
-                &service_key,
-                KerberosFlags::from(BitString::with_bytes([0; 4])),
-                sname.clone(),
-                sname,
-            )),
-        }
     }
 }

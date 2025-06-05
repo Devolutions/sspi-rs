@@ -14,7 +14,7 @@ use messages::{client, server};
 pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
-use crate::generator::GeneratorInitSecurityContext;
+use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext};
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
@@ -243,9 +243,28 @@ impl SspiImpl for Ntlm {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
-    fn accept_security_context_impl(
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |_yield_point| async move {
+            self.accept_security_context_impl(builder)
+        }))
+    }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
+    fn initialize_security_context_impl(
         &mut self,
-        builder: FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
+    ) -> crate::Result<GeneratorInitSecurityContext> {
+        Ok(self.initialize_security_context_impl(builder).into())
+    }
+}
+
+impl Ntlm {
+    pub(crate) fn accept_security_context_impl(
+        &mut self,
+        builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
         let input = builder
             .input
@@ -286,16 +305,6 @@ impl SspiImpl for Ntlm {
         })
     }
 
-    #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
-    fn initialize_security_context_impl(
-        &mut self,
-        builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> crate::Result<GeneratorInitSecurityContext> {
-        Ok(self.initialize_security_context_impl(builder).into())
-    }
-}
-
-impl Ntlm {
     pub(crate) fn initialize_security_context_impl(
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
