@@ -12,8 +12,6 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::LazyLock;
 
-pub use client::initialize_security_context;
-pub use encryption_params::EncryptionParams;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
@@ -24,20 +22,26 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use url::Url;
 
+pub use self::client::initialize_security_context;
 use self::config::KerberosConfig;
+pub use self::encryption_params::EncryptionParams;
+pub use self::server::{accept_security_context, ServerProperties};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
-use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest, YieldPointLocal};
+use crate::generator::{
+    GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
+    YieldPointLocal,
+};
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
 use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
 use crate::pk_init::DhParameters;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data, utf16_bytes_to_utf8_string};
 use crate::{
-    detect_kdc_url, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
-    SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType,
+    ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
+    PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -73,7 +77,7 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("Kerberos Security Package"),
 });
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum KerberosState {
     Negotiate,
     Preauthentication,
@@ -95,6 +99,7 @@ pub struct Kerberos {
     pub(crate) channel_bindings: Option<ChannelBindings>,
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
+    pub(crate) server: Option<Box<ServerProperties>>,
 }
 
 impl Kerberos {
@@ -112,10 +117,11 @@ impl Kerberos {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: None,
         })
     }
 
-    pub fn new_server_from_config(config: KerberosConfig) -> Result<Self> {
+    pub fn new_server_from_config(config: KerberosConfig, server_properties: ServerProperties) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
 
         Ok(Self {
@@ -129,6 +135,7 @@ impl Kerberos {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: Some(Box::new(server_properties)),
         })
     }
 
@@ -343,10 +350,10 @@ impl Sspi for Kerberos {
                 let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
             }
-            _ => {
+            KerberosState::Negotiate | KerberosState::Preauthentication | KerberosState::ApExchange => {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
-                    "Kerberos context is not established",
+                    format!("Kerberos context is not established: current state: {:?}", self.state),
                 ))
             }
         };
@@ -456,6 +463,12 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
+        if let Some(client) = self.server.as_ref().and_then(|server| server.client.as_ref()) {
+            return Ok(ContextNames {
+                username: client.clone(),
+            });
+        }
+
         if let Some(CredentialsBuffers::AuthIdentity(identity_buffers)) = &self.auth_identity {
             let identity =
                 AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
@@ -464,14 +477,16 @@ impl Sspi for Kerberos {
                 username: identity.username,
             });
         }
+
         if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
         }
-        Err(crate::Error::new(
-            crate::ErrorKind::NoCredentials,
-            String::from("Requested Names, but no credentials were provided"),
+
+        Err(Error::new(
+            ErrorKind::NoCredentials,
+            "requested names, but no credentials were provided",
         ))
     }
 
@@ -484,7 +499,7 @@ impl Sspi for Kerberos {
     fn query_context_cert_trust_status(&mut self) -> Result<crate::CertTrustStatus> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "Certificate trust status is not supported".to_owned(),
+            "certificate trust status is not supported".to_owned(),
         ))
     }
 
@@ -534,7 +549,7 @@ impl SspiImpl for Kerberos {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
-                String::from("The client must specify the auth data"),
+                "the client must specify the auth data",
             ));
         }
 
@@ -550,15 +565,14 @@ impl SspiImpl for Kerberos {
         })
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
-        return Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "server-side kerberos is not yet supported",
-        ));
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: crate::builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 
     fn initialize_security_context_impl<'a>(
@@ -579,6 +593,14 @@ impl<'a> Kerberos {
         change_password: ChangePassword<'a>,
     ) -> Result<()> {
         client::change_password(self, yield_point, change_password).await
+    }
+
+    pub(crate) async fn accept_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: crate::builders::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        server::accept_security_context(self, yield_point, builder).await
     }
 
     pub(crate) async fn initialize_security_context_impl(
@@ -638,6 +660,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: None,
         }
     }
 
@@ -663,6 +686,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
+            server: None,
         }
     }
 }

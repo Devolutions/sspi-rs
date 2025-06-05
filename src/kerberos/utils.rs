@@ -28,7 +28,7 @@ pub fn validate_mic_token(raw_token: &[u8], key_usage: i32, params: &EncryptionP
     let mut payload = picky_asn1_der::to_vec(&get_mech_list())?;
     payload.extend_from_slice(&token.header());
 
-    // the sub-session key is always preferred over the session key
+    // The sub-session key is always preferred over the session key.
     let key = if let Some(key) = params.sub_session_key.as_ref() {
         key
     } else if let Some(key) = params.session_key.as_ref() {

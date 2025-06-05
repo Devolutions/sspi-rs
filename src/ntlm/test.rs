@@ -466,15 +466,15 @@ fn accept_security_context_wrong_state_negotiate() {
     context.state = NtlmState::Negotiate;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-
-    assert!(context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
-        .with_output(&mut output)
-        .execute(&mut context)
-        .is_err());
+        .with_output(&mut output);
+
+    assert!(context.accept_security_context_impl(builder).is_err());
     assert_eq!(context.state, NtlmState::Negotiate);
 }
 
@@ -484,15 +484,15 @@ fn accept_security_context_wrong_state_challenge() {
     context.state = NtlmState::Challenge;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-
-    assert!(context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
-        .with_output(&mut output)
-        .execute(&mut context)
-        .is_err());
+        .with_output(&mut output);
+
+    assert!(context.accept_security_context_impl(builder).is_err());
     assert_eq!(context.state, NtlmState::Challenge);
 }
 
@@ -502,15 +502,15 @@ fn accept_security_context_wrong_state_completion() {
     context.state = NtlmState::Completion;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-
-    assert!(context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
-        .with_output(&mut output)
-        .execute(&mut context)
-        .is_err());
+        .with_output(&mut output);
+
+    assert!(context.accept_security_context_impl(builder).is_err());
     assert_eq!(context.state, NtlmState::Completion);
 }
 
@@ -520,15 +520,15 @@ fn accept_security_context_wrong_state_final() {
     context.state = NtlmState::Final;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-
-    assert!(context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
-        .with_output(&mut output)
-        .execute(&mut context)
-        .is_err());
+        .with_output(&mut output);
+
+    assert!(context.accept_security_context_impl(builder).is_err());
     assert_eq!(context.state, NtlmState::Final);
 }
 
@@ -537,24 +537,24 @@ fn accept_security_context_reads_negotiate_message() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Initial;
 
-    let input = SecurityBuffer::new(
+    let mut input = [SecurityBuffer::new(
         vec![
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x97, 0x82, 0x08, 0xe0, 0x00, 0x00,
             0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
         ],
         BufferType::Token,
-    );
+    )];
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
-
-    let result = context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .with_input(&mut [input])
-        .execute(&mut context)
-        .unwrap();
+        .with_input(&mut input);
+
+    let result = context.accept_security_context_impl(builder).unwrap();
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
     assert_ne!(context.state, NtlmState::Challenge);
 }
@@ -564,24 +564,24 @@ fn accept_security_context_writes_challenge_message() {
     let mut context = Ntlm::new();
     context.state = NtlmState::Initial;
 
-    let input = SecurityBuffer::new(
+    let mut input = [SecurityBuffer::new(
         vec![
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x97, 0x82, 0x08, 0xe0, 0x00, 0x00,
             0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00,
         ],
         BufferType::Token,
-    );
+    )];
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
-    let result = context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .with_input(&mut [input])
-        .execute(&mut context)
-        .unwrap();
+        .with_input(&mut input);
 
+    let result = context.accept_security_context_impl(builder).unwrap();
     assert_eq!(result.status, SecurityStatus::ContinueNeeded);
     let output = SecurityBuffer::find_buffer(&output, BufferType::Token).unwrap();
     assert_eq!(context.state, NtlmState::Authenticate);
@@ -600,7 +600,7 @@ fn accept_security_context_reads_authenticate() {
         0,
     ));
 
-    let input = SecurityBuffer::new(
+    let mut input = [SecurityBuffer::new(
         vec![
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, // signature
             0x03, 0x00, 0x00, 0x00, // message type
@@ -623,19 +623,18 @@ fn accept_security_context_reads_authenticate() {
             0x0f, // encrypted key
         ],
         BufferType::Token,
-    );
+    )];
     let mut output = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
-
-    let result = context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
         .with_output(&mut output)
-        .with_input(&mut [input])
-        .execute(&mut context)
-        .unwrap();
+        .with_input(&mut input);
 
+    let result = context.accept_security_context_impl(builder).unwrap();
     assert_eq!(result.status, SecurityStatus::CompleteNeeded);
     assert_eq!(context.state, NtlmState::Completion);
 }
@@ -647,15 +646,15 @@ fn accept_security_context_fails_on_empty_output_on_negotiate_state() {
     context.state = NtlmState::Initial;
 
     let mut output = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-
-    assert!(context
+    let mut credentials = Some(TEST_CREDENTIALS.clone());
+    let builder = context
         .accept_security_context()
-        .with_credentials_handle(&mut Some(TEST_CREDENTIALS.clone()))
+        .with_credentials_handle(&mut credentials)
         .with_context_requirements(ServerRequestFlags::empty())
         .with_target_data_representation(DataRepresentation::Native)
-        .with_output(&mut output)
-        .execute(&mut context)
-        .is_err());
+        .with_output(&mut output);
+
+    assert!(context.accept_security_context_impl(builder).is_err());
 }
 
 #[test]

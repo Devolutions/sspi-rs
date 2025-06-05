@@ -6,7 +6,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use url::Url;
 
 use crate::network_client::{AsyncNetworkClient, NetworkClient, NetworkProtocol};
-use crate::{Error, InitializeSecurityContextResult};
+use crate::{AcceptSecurityContextResult, Error, InitializeSecurityContextResult};
 
 pub struct Interrupt<YieldTy, ResumeTy> {
     value_to_yield: Option<YieldTy>,
@@ -181,8 +181,12 @@ where
             .finish()
     }
 }
+
 pub type GeneratorInitSecurityContext<'a> =
     Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<InitializeSecurityContextResult>>;
+
+pub type GeneratorAcceptSecurityContext<'a> =
+    Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<AcceptSecurityContextResult>>;
 
 pub type GeneratorChangePassword<'a> = Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<()>>;
 

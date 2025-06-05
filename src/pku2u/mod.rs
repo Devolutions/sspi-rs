@@ -36,8 +36,8 @@ use self::generators::{
     generate_neg, generate_neg_token_init, generate_neg_token_targ, generate_pku2u_nego_req,
     generate_server_dh_parameters, WELLKNOWN_REALM,
 };
-use crate::builders::ChangePassword;
-use crate::generator::GeneratorInitSecurityContext;
+use crate::builders::{ChangePassword, FilledAcceptSecurityContext};
+use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::kerberos::client::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::client::generators::{
     generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, EncKey, GenerateAsReqOptions,
@@ -394,15 +394,14 @@ impl SspiImpl for Pku2u {
         })
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        _builder: crate::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<AcceptSecurityContextResult> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "accept_security_context_impl is not implemented yet",
-        ))
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: crate::builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 
     fn initialize_security_context_impl(
@@ -414,6 +413,17 @@ impl SspiImpl for Pku2u {
 }
 
 impl Pku2u {
+    pub(crate) async fn accept_security_context_impl(
+        &mut self,
+        _yield_point: &mut YieldPointLocal,
+        _builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> crate::Result<AcceptSecurityContextResult> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "accept_security_context_impl is not implemented yet",
+        ))
+    }
+
     #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     pub(crate) fn initialize_security_context_impl(
         &mut self,
