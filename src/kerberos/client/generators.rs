@@ -13,7 +13,6 @@ use picky_asn1::wrapper::{
     ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
     Optional,
 };
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
@@ -621,7 +620,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
     };
 
     Ok(Authenticator::from(AuthenticatorInner {
-        authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
@@ -753,38 +752,50 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
-pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let krb5_neg_token_init = ApplicationTag0(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-        krb5_token_id: TGT_REQ_TOKEN_ID,
-        krb_msg: TgtReq {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
-            server_name: ExplicitContextTag2::from(PrincipalName {
-                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(service_name.into())?),
-                    KerberosStringAsn1::from(IA5String::from_string(username.into())?),
-                ])),
-            }),
-        },
-    });
+/// Generates the initial SPNEGO token.
+///
+/// The `sname` parameter is optional. If it is present, then the Kerberos U2U is in use, and `TgtReq` will be generated
+/// for the input `sname` and placed in the `mech_token` field.
+pub fn generate_neg_token_init(sname: Option<&[&str]>) -> Result<ApplicationTag0<GssApiNegInit>> {
+    let mech_token = if let Some(sname) = sname {
+        let sname = sname
+            .iter()
+            .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))
+            .collect::<Result<Vec<_>>>()?;
+
+        let krb5_neg_token_init = ApplicationTag0(KrbMessage {
+            krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
+            krb5_token_id: TGT_REQ_TOKEN_ID,
+            krb_msg: TgtReq {
+                pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+                msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
+                server_name: ExplicitContextTag2::from(PrincipalName {
+                    name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                    name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(sname)),
+                }),
+            },
+        });
+
+        Some(ExplicitContextTag2::from(OctetStringAsn1::from(
+            picky_asn1_der::to_vec(&krb5_neg_token_init)?,
+        )))
+    } else {
+        None
+    };
 
     Ok(ApplicationTag0(GssApiNegInit {
         oid: ObjectIdentifierAsn1::from(oids::spnego()),
         neg_token_init: ExplicitContextTag0::from(NegTokenInit {
             mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
             req_flags: Optional::from(None),
-            mech_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-                picky_asn1_der::to_vec(&krb5_neg_token_init)?,
-            )))),
+            mech_token: Optional::from(mech_token),
             mech_list_mic: Optional::from(None),
         }),
     }))
 }
 
 pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<ExplicitContextTag1<NegTokenTarg>> {
-    let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
+    let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,

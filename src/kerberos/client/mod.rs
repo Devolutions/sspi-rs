@@ -38,45 +38,43 @@ use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
 use crate::pku2u::generate_client_dh_parameters;
 use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
 use crate::{
-    check_if_empty, pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus,
+    pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
+    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
 
 /// Performs one authentication step.
 ///
-/// The client should call this function until it returns `SecurityStatus::Ok`.
+/// The user should call this function until it returns `SecurityStatus::Ok`.
 pub async fn initialize_security_context<'a>(
     client: &'a mut Kerberos,
     yield_point: &mut YieldPointLocal,
-    builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, Option<CredentialsBuffers>>,
+    builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<crate::InitializeSecurityContextResult> {
     trace!(?builder);
 
     let status = match client.state {
         KerberosState::Negotiate => {
-            let (service_name, service_principal_name) = parse_target_name(builder.target_name.ok_or_else(|| {
-                Error::new(
-                    ErrorKind::NoCredentials,
-                    "Service target name (service principal name) is not provided",
-                )
-            })?)?;
+            let sname = if builder
+                .context_requirements
+                .contains(ClientRequestFlags::USE_SESSION_KEY)
+            {
+                let (service_name, service_principal_name) =
+                    parse_target_name(builder.target_name.ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::NoCredentials,
+                            "Service target name (service principal name) is not provided",
+                        )
+                    })?)?;
 
-            let (username, service_name) = match check_if_empty!(
-                builder.credentials_handle.as_ref().unwrap().as_ref(),
-                "AuthIdentity is not provided"
-            ) {
-                CredentialsBuffers::AuthIdentity(auth_identity) => {
-                    let username = utf16_bytes_to_utf8_string(&auth_identity.user);
-                    let domain = utf16_bytes_to_utf8_string(&auth_identity.domain);
-
-                    (format!("{}.{}", username, domain.to_ascii_lowercase()), service_name)
-                }
-                CredentialsBuffers::SmartCard(_) => (service_principal_name.into(), service_name),
+                Some([service_name, service_principal_name])
+            } else {
+                None
             };
-            debug!(username, service_name);
+
+            debug!(?sname);
 
             let encoded_neg_token_init =
-                picky_asn1_der::to_vec(&generate_neg_token_init(service_principal_name, service_name)?)?;
+                picky_asn1_der::to_vec(&generate_neg_token_init(sname.as_ref().map(|sname| sname.as_slice()))?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer.write_all(&encoded_neg_token_init)?;
@@ -89,7 +87,7 @@ pub async fn initialize_security_context<'a>(
             let input = builder
                 .input
                 .as_ref()
-                .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+                .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
 
             if let Ok(sec_buffer) =
                 SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)
@@ -383,10 +381,6 @@ pub async fn initialize_security_context<'a>(
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
-
-                client.state = KerberosState::PubKeyAuth;
-
-                SecurityStatus::Ok
             } else {
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
@@ -412,10 +406,10 @@ pub async fn initialize_security_context<'a>(
 
                 client.next_seq_number();
                 client.prepare_final_neg_token(builder)?;
-                client.state = KerberosState::PubKeyAuth;
-
-                SecurityStatus::Ok
             }
+
+            client.state = KerberosState::PubKeyAuth;
+            SecurityStatus::Ok
         }
         _ => {
             return Err(Error::new(

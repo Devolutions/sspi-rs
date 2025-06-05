@@ -14,7 +14,9 @@ use self::tls_connection::{danger, TlsConnection};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
-use crate::generator::{GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal};
+use crate::generator::{
+    GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
+};
 use crate::{
     builders, negotiate, AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType,
     CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags,
@@ -352,19 +354,29 @@ impl SspiImpl for SspiCredSsp {
         }))
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _builder))]
-    fn accept_security_context_impl(
-        &mut self,
-        _builder: builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "AcceptSecurityContext is not supported in SspiCredSsp context",
-        ))
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
+    fn accept_security_context_impl<'a>(
+        &'a mut self,
+        builder: builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+    ) -> Result<GeneratorAcceptSecurityContext<'a>> {
+        Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
+            self.accept_security_context_impl(&mut yield_point, builder).await
+        }))
     }
 }
 
 impl SspiCredSsp {
+    pub(crate) async fn accept_security_context_impl(
+        &mut self,
+        _yield_point: &mut YieldPointLocal,
+        _builder: builders::FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<crate::AcceptSecurityContextResult> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "accept_security_context_impl is not supported in SspiCredSsp",
+        ))
+    }
+
     #[instrument(ret, fields(state = ?self.state), skip_all)]
     #[async_recursion]
     pub(crate) async fn initialize_security_context_impl<'a>(

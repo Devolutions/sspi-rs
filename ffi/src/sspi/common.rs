@@ -4,7 +4,7 @@ use libc::{c_ulonglong, c_void};
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
     BufferType, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind, SecurityBuffer,
-    SecurityBufferRef, SecurityBufferType, ServerRequestFlags, Sspi,
+    SecurityBufferRef, SecurityBufferType, ServerRequestFlags, Sspi, SspiImpl,
 };
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
@@ -100,13 +100,14 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
         let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
-        let result_status = sspi_context.accept_security_context()
-            .with_credentials_handle(&mut Some(auth_data))
+        let mut auth_data = Some(auth_data);
+        let builder = sspi_context.accept_security_context()
+            .with_credentials_handle(&mut auth_data)
             .with_context_requirements(ServerRequestFlags::from_bits(f_context_req.try_into().unwrap()).unwrap())
             .with_target_data_representation(DataRepresentation::from_u32(target_data_rep.try_into().unwrap()).unwrap())
             .with_input(&mut input_tokens)
-            .with_output(&mut output_tokens)
-            .execute(sspi_context);
+            .with_output(&mut output_tokens);
+        let result_status = try_execute!(sspi_context.accept_security_context_impl(builder)).resolve_with_default_network_client();
 
         // SAFETY: `p_output` is not null. We've checked this above.
         try_execute!(unsafe { copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false) });

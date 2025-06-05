@@ -3,28 +3,11 @@ use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
-    DataRepresentation, EncryptionFlags, InitializeSecurityContextResult, Ntlm, Secret, SecurityBuffer,
-    SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, Username,
+    DataRepresentation, InitializeSecurityContextResult, Ntlm, Secret, SecurityBuffer, SecurityStatus,
+    ServerRequestFlags, Sspi, Username,
 };
 
-fn test_ntlm_encryption(client: &mut SspiContext, server: &mut SspiContext) {
-    let plain_message = b"Devolutions/sspi-rs";
-
-    let mut token = [0; 1024];
-    let mut data = plain_message.to_vec();
-
-    let mut message = vec![
-        SecurityBufferRef::token_buf(token.as_mut_slice()),
-        SecurityBufferRef::data_buf(data.as_mut_slice()),
-    ];
-
-    client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-        .unwrap();
-    server.decrypt_message(&mut message, 0).unwrap();
-
-    assert_eq!(plain_message, message[1].data());
-}
+use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 fn run_ntlm(config: NtlmConfig) {
     let credentials = Credentials::AuthIdentity(AuthIdentity {
@@ -78,20 +61,21 @@ fn run_ntlm(config: NtlmConfig) {
 
         input_token[0].buffer.clear();
 
-        server
+        let builder = server
             .accept_security_context()
             .with_credentials_handle(&mut server_credentials_handle)
             .with_context_requirements(ServerRequestFlags::empty())
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut output_token)
-            .with_output(&mut input_token)
-            .execute(&mut server)
-            .unwrap();
+            .with_output(&mut input_token);
+        server.accept_security_context_sync(builder).unwrap();
 
         output_token[0].buffer.clear();
 
         if status == SecurityStatus::Ok {
-            test_ntlm_encryption(&mut client, &mut server);
+            test_encryption(&mut client, &mut server);
+            test_stream_buffer_encryption(&mut client, &mut server);
+            test_rpc_request_encryption(&mut client, &mut server);
             return;
         }
     }
