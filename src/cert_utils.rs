@@ -1,4 +1,5 @@
 #![cfg(all(feature = "scard", target_os = "windows"))]
+#![expect(clippy::missing_safety_doc)]
 
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
