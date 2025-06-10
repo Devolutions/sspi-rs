@@ -590,7 +590,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
     };
 
     Ok(Authenticator::from(AuthenticatorInner {
-        authenticator_bno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
