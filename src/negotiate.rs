@@ -317,9 +317,9 @@ impl Sspi for Negotiate {
     }
 
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn decrypt_message<'data>(
+    fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBufferRef<'data>],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<DecryptionFlags> {
         match &mut self.protocol {
