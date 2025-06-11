@@ -132,9 +132,11 @@ impl Negotiate {
     // 5) in any other cases, it'll use NTLM
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
+        let enabled_packages = Self::parse_package_list_config(&self.package_list);
+
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
-            if is_azure_ad_domain(domain) {
+            if enabled_packages.pku2u && is_azure_ad_domain(domain) {
                 use super::pku2u::Pku2uConfig;
 
                 debug!("Negotiate: try Pku2u");
@@ -144,14 +146,16 @@ impl Negotiate {
                 )?);
             }
 
-            if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
-                debug!("Negotiate: try Kerberos");
+            if enabled_packages.kerberos {
+                if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
+                    debug!("Negotiate: try Kerberos");
 
-                self.protocol =
-                    NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
-                        kdc_url: Some(host),
-                        client_computer_name: Some(self.client_computer_name.clone()),
-                    })?);
+                    self.protocol =
+                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
+                            kdc_url: Some(host),
+                            client_computer_name: Some(self.client_computer_name.clone()),
+                        })?);
+                }
             }
         }
 
