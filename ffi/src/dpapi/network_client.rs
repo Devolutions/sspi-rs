@@ -9,7 +9,7 @@ use sspi::{Error, ErrorKind, NetworkRequest, Result};
 pub struct SyncNetworkClient;
 
 impl AsyncNetworkClient for SyncNetworkClient {
-    fn send<'a>(&'a mut self, request: &'a NetworkRequest) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>> {
+    fn send<'a>(&'a mut self, request: &'a NetworkRequest) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'a>> {
         let request = request.clone();
         Box::pin(async move {
             tokio::task::spawn_blocking(move || ReqwestNetworkClient.send(&request))
