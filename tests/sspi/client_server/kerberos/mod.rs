@@ -13,7 +13,6 @@ use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
-use sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
@@ -233,50 +232,6 @@ fn run_kerberos(
     }
 
     panic!("Kerberos authentication should not exceed 3 steps");
-}
-
-#[test]
-fn as_exchange() {
-    let mut network_client = ReqwestNetworkClient;
-    let kerberos_config = KerberosConfig::new("tcp://192.168.1.103:88", "DESKTOP-IHPPQ95.tbt.com".into());
-
-    let mut kerberos_client = SspiContext::Kerberos(Kerberos::new_client_from_config(kerberos_config).unwrap());
-
-    let username = "tt";
-    let user_password = "qqqQQQ111!!!";
-    let domain = "TBT";
-    let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::new_down_level_logon_name(username, domain).unwrap(),
-        password: user_password.to_owned().into(),
-    });
-    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
-    let mut client_credentials_handle = Some(credentials.clone());
-    let client_flags = ClientRequestFlags::MUTUAL_AUTH
-        | ClientRequestFlags::INTEGRITY
-        | ClientRequestFlags::SEQUENCE_DETECT
-        | ClientRequestFlags::REPLAY_DETECT
-        | ClientRequestFlags::CONFIDENTIALITY;
-    let target_name = "TERMSRV/dgateway.tbt.com";
-
-    let result = initialize_security_context(
-        &mut kerberos_client,
-        &mut client_credentials_handle,
-        client_flags,
-        target_name,
-        Vec::new(),
-        &mut network_client,
-    );
-    println!("{:?}", result);
-
-    let result = initialize_security_context(
-        &mut kerberos_client,
-        &mut client_credentials_handle,
-        client_flags,
-        target_name,
-        Vec::new(),
-        &mut network_client,
-    );
-    println!("{:?}", result);
 }
 
 #[test]

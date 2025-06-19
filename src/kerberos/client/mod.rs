@@ -345,12 +345,9 @@ pub async fn initialize_security_context<'a>(
 
             client.state = KerberosState::ApExchange;
 
-            debug!("FINISHEDNEGOSTAGE");
-
             SecurityStatus::ContinueNeeded
         }
         KerberosState::ApExchange => {
-            debug!("APEXACHESTARD");
             let input = builder
                 .input
                 .as_ref()
@@ -385,13 +382,11 @@ pub async fn initialize_security_context<'a>(
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
             } else {
-                debug!("start parsing negotoken");
                 let neg_token_targ = {
                     let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
                     let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
                     neg_token_targ
                 };
-                debug!(?neg_token_targ, "negtokentarhj");
 
                 let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
 

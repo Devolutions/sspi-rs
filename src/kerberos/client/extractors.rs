@@ -182,11 +182,8 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
         .0
          .0;
 
-    trace!(?resp_token);
-
     let mut data = resp_token.as_slice();
-    let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
-    trace!(?oid, ?data);
+    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
     let mut t = [0, 0];
     data.read_exact(&mut t)?;

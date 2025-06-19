@@ -77,9 +77,7 @@ impl ServerProperties {
     ) -> Result<Self> {
         let service_names = sname
             .iter()
-            .map(|sname| {
-                Ok(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?))
-            })
+            .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?)))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
