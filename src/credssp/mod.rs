@@ -248,7 +248,7 @@ impl CredSspClient {
                 .expect("CredSsp client mode should never be empty")
             {
                 ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    Negotiate::new(negotiate_config)?,
+                    Negotiate::new_client(negotiate_config)?,
                 ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     Kerberos::new_client_from_config(kerberos_config)?,
@@ -460,7 +460,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .expect("CredSsp client mode should never be empty")
             {
                 ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
+                    try_cred_ssp_server!(Negotiate::new_server(neg_config), ts_request),
                 ))),
                 ServerMode::Kerberos(kerberos_mode) => {
                     let (kerberos_config, server_properties) = *kerberos_mode;

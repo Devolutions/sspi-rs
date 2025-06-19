@@ -112,7 +112,7 @@ use self::builders::{
     ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
-pub use self::kerberos::config::KerberosConfig;
+pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;

@@ -29,7 +29,7 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
 });
 
 pub trait ProtocolConfig: Debug + Send + Sync {
-    fn new_client(&self) -> Result<NegotiatedProtocol>;
+    fn new_instance(&self) -> Result<NegotiatedProtocol>;
     fn box_clone(&self) -> Box<dyn ProtocolConfig>;
 }
 
@@ -100,6 +100,7 @@ pub struct Negotiate {
     package_list: Option<String>,
     auth_identity: Option<CredentialsBuffers>,
     client_computer_name: String,
+    is_client: bool,
 }
 
 struct PackageListConfig {
@@ -109,10 +110,11 @@ struct PackageListConfig {
 }
 
 impl Negotiate {
-    pub fn new(config: NegotiateConfig) -> Result<Self> {
-        let mut protocol = config.protocol_config.new_client()?;
+    pub fn new_client(config: NegotiateConfig) -> Result<Self> {
+        let is_client = true;
+        let mut protocol = config.protocol_config.new_instance()?;
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name)?
+            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, is_client)?
         {
             protocol = filtered_protocol;
         }
@@ -122,6 +124,25 @@ impl Negotiate {
             package_list: config.package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
+            is_client,
+        })
+    }
+
+    pub fn new_server(config: NegotiateConfig) -> Result<Self> {
+        let is_client = false;
+        let mut protocol = config.protocol_config.new_instance()?;
+        if let Some(filtered_protocol) =
+            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, is_client)?
+        {
+            protocol = filtered_protocol;
+        }
+
+        Ok(Negotiate {
+            protocol,
+            package_list: config.package_list,
+            auth_identity: None,
+            client_computer_name: config.client_computer_name,
+            is_client,
         })
     }
 
@@ -157,9 +178,12 @@ impl Negotiate {
             }
         }
 
-        if let Some(filtered_protocol) =
-            Self::filter_protocol(&self.protocol, &self.package_list, &self.client_computer_name)?
-        {
+        if let Some(filtered_protocol) = Self::filter_protocol(
+            &self.protocol,
+            &self.package_list,
+            &self.client_computer_name,
+            self.is_client,
+        )? {
             self.protocol = filtered_protocol;
         }
 
@@ -196,6 +220,7 @@ impl Negotiate {
         negotiated_protocol: &NegotiatedProtocol,
         package_list: &Option<String>,
         client_computer_name: &str,
+        is_client: bool,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
         let PackageListConfig {
@@ -229,8 +254,21 @@ impl Negotiate {
                         kdc_url: None,
                     };
 
-                    let kerberos_client = Kerberos::new_client_from_config(config)?;
-                    filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
+                    if is_client {
+                        let kerberos_client = Kerberos::new_client_from_config(config)?;
+                        filtered_protocol = Some(NegotiatedProtocol::Kerberos(kerberos_client));
+                    } else {
+                        // Aborting because we need an additional data (ServerProperties object) to create the server-side Kerberos instance.
+                        error!(
+                            ?package_list,
+                            "NTLM protocol has been negotiated but it is disabled in package_list."
+                        );
+
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            "NTLM protocol has been negotiated but it is disabled in package_list",
+                        ));
+                    }
                 }
             }
         }

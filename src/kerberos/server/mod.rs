@@ -4,6 +4,7 @@ mod extractors;
 mod generators;
 
 use std::io::Write;
+use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
 use extractors::{extract_client_mic_token, extract_username, select_mech_type};
@@ -17,7 +18,7 @@ use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalNam
 use picky_krb::gss_api::MechTypeList;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use self::as_exchange::request_tgt;
 use self::cache::AuthenticatorsCache;
