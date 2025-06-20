@@ -14,8 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The default behavior of serializing a KrbMessage<T> was accidentally changed.
 
-
-
 ## [[0.15.11](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.10...sspi-v0.15.11)] - 2025-06-11
 
 ### <!-- 4 -->Bug Fixes
