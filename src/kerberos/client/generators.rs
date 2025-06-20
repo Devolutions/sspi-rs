@@ -13,7 +13,6 @@ use picky_asn1::wrapper::{
     ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
     Optional,
 };
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{
@@ -723,7 +722,7 @@ pub fn get_mech_list() -> MechTypeList {
 }
 
 pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let krb5_neg_token_init: ApplicationTag<_, 0> = ApplicationTag::from(KrbMessage {
+    let krb5_neg_token_init = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
         krb5_token_id: TGT_REQ_TOKEN_ID,
         krb_msg: TgtReq {
@@ -753,7 +752,7 @@ pub fn generate_neg_token_init(username: &str, service_name: &str) -> Result<App
 }
 
 pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<ExplicitContextTag1<NegTokenTarg>> {
-    let krb_blob: ApplicationTag<_, 0> = ApplicationTag(KrbMessage {
+    let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
