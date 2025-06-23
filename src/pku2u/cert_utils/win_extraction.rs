@@ -151,7 +151,7 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
 unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<PrivateKey> {
     let mut private_key_handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
     let mut spec = CERT_KEY_SPEC::default();
-    let mut free = Foundation::BOOL::default();
+    let mut free = windows_sys::core::BOOL::default();
 
     let status = CryptAcquireCertificatePrivateKey(
         cert,
