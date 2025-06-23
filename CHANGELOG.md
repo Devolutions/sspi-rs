@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.13](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.12...sspi-v0.15.13)] - 2025-06-23
+
+### <!-- 7 -->Build
+
+- Bump windows-sys from 0.59.0 to 0.60.2 in the windows group across 1 directory (#455) ([5744c8b4b3](https://github.com/Devolutions/sspi-rs/commit/5744c8b4b3aa5a47a2a25e9375434333de769002)) 
+
+
+
 ## [[0.15.12](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.11...sspi-v0.15.12)] - 2025-06-20
 
 ### <!-- 4 -->Bug Fixes
