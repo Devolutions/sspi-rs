@@ -61,7 +61,7 @@ macro_rules! try_cred_ssp_server {
                 $ts_request.error_code = Some(construct_error(&error));
 
                 return Err(Box::new(ServerError {
-                    ts_request: $ts_request,
+                    ts_request: Some($ts_request),
                     error,
                 }));
             }
@@ -100,7 +100,7 @@ pub enum ServerState {
 /// Contains `TsRequest` with non-empty `error_code`, and the error which caused the server to fail.
 #[derive(Debug, Clone)]
 pub struct ServerError {
-    pub ts_request: TsRequest,
+    pub ts_request: Option<TsRequest>,
     pub error: crate::Error,
 }
 
@@ -629,7 +629,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
             CredSspState::Final => Err(Box::new(ServerError {
-                ts_request,
+                ts_request: Some(ts_request),
                 error: Error::new(
                     ErrorKind::UnsupportedFunction,
                     "CredSSP server's 'process' method must not be fired after the 'Finished' state",

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::time::Duration as StdDuration;
 
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -32,7 +33,7 @@ use rand::{Rng, RngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
-pub const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const MAX_TIME_SKEW: StdDuration = StdDuration::from_secs(3);
 pub const KDC_URL: &str = "tcp://192.168.1.103:88";
 pub const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
 

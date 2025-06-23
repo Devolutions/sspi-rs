@@ -172,7 +172,7 @@ where
         let state = self.start();
         match state {
             GeneratorState::Suspended(_) => Err(Box::new(ServerError {
-                ts_request: Default::default(),
+                ts_request: None,
                 error: Error::new(crate::ErrorKind::UnsupportedFunction, "cannot finish generator"),
             })),
             GeneratorState::Completed(res) => res,
