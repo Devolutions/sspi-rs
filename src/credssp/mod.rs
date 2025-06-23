@@ -60,10 +60,10 @@ macro_rules! try_cred_ssp_server {
                 let error = crate::Error::from(e);
                 $ts_request.error_code = Some(construct_error(&error));
 
-                return Err(ServerError {
+                return Err(Box::new(ServerError {
                     ts_request: $ts_request,
                     error,
-                });
+                }));
             }
         }
     };
@@ -437,13 +437,12 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         })
     }
 
-    #[allow(clippy::result_large_err)]
     #[instrument(fields(state = ?self.state), skip_all)]
     pub fn process(
         &mut self,
         ts_request: TsRequest,
-    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
-        Generator::<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>>::new(
+    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, Box<ServerError>>> {
+        Generator::<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, Box<ServerError>>>::new(
             move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
         )
     }
@@ -452,7 +451,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         &mut self,
         yield_point: &mut YieldPointLocal,
         mut ts_request: TsRequest,
-    ) -> Result<ServerState, ServerError> {
+    ) -> Result<ServerState, Box<ServerError>> {
         if self.context.is_none() {
             self.context = match self
                 .context_config
@@ -629,13 +628,13 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
-            CredSspState::Final => Err(ServerError {
+            CredSspState::Final => Err(Box::new(ServerError {
                 ts_request,
                 error: Error::new(
                     ErrorKind::UnsupportedFunction,
                     "CredSSP server's 'process' method must not be fired after the 'Finished' state",
                 ),
-            }),
+            })),
         }
     }
 }
