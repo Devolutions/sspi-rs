@@ -33,12 +33,12 @@ pub struct KerberosConfig {
 impl ProtocolConfig for KerberosConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
-            Clone::clone(self),
+            self.clone(),
         )?))
     }
 
     fn box_clone(&self) -> Box<dyn ProtocolConfig> {
-        Box::new(Clone::clone(self))
+        Box::new(self.clone())
     }
 }
 
@@ -90,12 +90,12 @@ pub struct KerberosServerConfig {
 impl ProtocolConfig for KerberosServerConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Kerberos(Kerberos::new_server_from_config(
-            Clone::clone(&self.kerberos_config),
+            self.kerberos_config.clone(),
             self.server_properties.clone(),
         )?))
     }
 
     fn box_clone(&self) -> Box<dyn ProtocolConfig> {
-        Box::new(Clone::clone(self))
+        Box::new(self.clone())
     }
 }
