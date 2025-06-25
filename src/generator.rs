@@ -164,17 +164,17 @@ where
     }
 }
 
-impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, Box<ServerError>>>
+impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, ServerError>>
 where
     OutTy: Send + 'a,
 {
-    pub fn resolve_to_result(&mut self) -> Result<OutTy, Box<ServerError>> {
+    pub fn resolve_to_result(&mut self) -> Result<OutTy, ServerError> {
         let state = self.start();
         match state {
-            GeneratorState::Suspended(_) => Err(Box::new(ServerError {
+            GeneratorState::Suspended(_) => Err(ServerError {
                 ts_request: None,
                 error: Error::new(crate::ErrorKind::UnsupportedFunction, "cannot finish generator"),
-            })),
+            }),
             GeneratorState::Completed(res) => res,
         }
     }
