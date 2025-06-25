@@ -230,23 +230,23 @@ pub struct CredentialsHandle {
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
     let client_computer_name = attributes.hostname()?;
 
-    if let Some(kdc_url) = attributes.kdc_url() {
+    let negotiate_config = if let Some(kdc_url) = attributes.kdc_url() {
         let kerberos_config = KerberosConfig::new(&kdc_url, client_computer_name.clone());
-        let negotiate_config = NegotiateConfig::new(
+
+        NegotiateConfig::new(
             Box::new(kerberos_config),
             attributes.package_list.clone(),
             client_computer_name,
-        );
-
-        Negotiate::new(negotiate_config)
+        )
     } else {
-        let negotiate_config = NegotiateConfig {
+        NegotiateConfig {
             protocol_config: Box::new(NtlmConfig::new(client_computer_name.clone())),
             package_list: attributes.package_list.clone(),
             client_computer_name,
-        };
-        Negotiate::new(negotiate_config)
-    }
+        }
+    };
+
+    Negotiate::new_client(negotiate_config)
 }
 
 /// Transforms [&mut PCtxtHandle] to [*mut SspiHandle].
@@ -1244,7 +1244,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
                     package_list: None,
                     client_computer_name: try_execute!(hostname()),
                 };
-                SspiContext::Negotiate(try_execute!(Negotiate::new(negotiate_config)))
+                SspiContext::Negotiate(try_execute!(Negotiate::new_client(negotiate_config)))
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
