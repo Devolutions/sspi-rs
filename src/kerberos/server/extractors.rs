@@ -14,6 +14,7 @@ use picky_krb::messages::{ApReq, TgtReq};
 use crate::{Error, ErrorKind, Result};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
+#[instrument(ret, level = "trace")]
 pub fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, MechTypeList)> {
     let token: ApplicationTag0<GssApiNegInit> = picky_asn1_der::from_bytes(data)?;
     let NegTokenInit {

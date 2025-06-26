@@ -36,7 +36,7 @@ impl Pku2uConfig {
 }
 
 impl ProtocolConfig for Pku2uConfig {
-    fn new_client(&self) -> Result<NegotiatedProtocol> {
+    fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Clone::clone(
             self,
         ))?))
