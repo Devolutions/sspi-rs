@@ -61,7 +61,7 @@ macro_rules! try_cred_ssp_server {
                 $ts_request.error_code = Some(construct_error(&error));
 
                 return Err(ServerError {
-                    ts_request: $ts_request,
+                    ts_request: Some(Box::new($ts_request)),
                     error,
                 });
             }
@@ -100,7 +100,7 @@ pub enum ServerState {
 /// Contains `TsRequest` with non-empty `error_code`, and the error which caused the server to fail.
 #[derive(Debug, Clone)]
 pub struct ServerError {
-    pub ts_request: TsRequest,
+    pub ts_request: Option<Box<TsRequest>>,
     pub error: crate::Error,
 }
 
@@ -248,7 +248,7 @@ impl CredSspClient {
                 .expect("CredSsp client mode should never be empty")
             {
                 ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    Negotiate::new(negotiate_config)?,
+                    Negotiate::new_client(negotiate_config)?,
                 ))),
                 ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
                     Kerberos::new_client_from_config(kerberos_config)?,
@@ -437,7 +437,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         })
     }
 
-    #[allow(clippy::result_large_err)]
     #[instrument(fields(state = ?self.state), skip_all)]
     pub fn process(
         &mut self,
@@ -460,7 +459,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .expect("CredSsp client mode should never be empty")
             {
                 ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    try_cred_ssp_server!(Negotiate::new(neg_config), ts_request),
+                    try_cred_ssp_server!(Negotiate::new_server(neg_config), ts_request),
                 ))),
                 ServerMode::Kerberos(kerberos_mode) => {
                     let (kerberos_config, server_properties) = *kerberos_mode;
@@ -630,7 +629,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 Ok(ServerState::ReplyNeeded(ts_request))
             }
             CredSspState::Final => Err(ServerError {
-                ts_request,
+                ts_request: Some(Box::new(ts_request)),
                 error: Error::new(
                     ErrorKind::UnsupportedFunction,
                     "CredSSP server's 'process' method must not be fired after the 'Finished' state",

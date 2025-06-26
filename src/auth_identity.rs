@@ -170,6 +170,14 @@ impl AuthIdentityBuffers {
     pub fn is_empty(&self) -> bool {
         self.user.is_empty()
     }
+
+    pub fn from_utf8(user: &str, domain: &str, password: &str) -> Self {
+        Self {
+            user: utils::string_to_utf16(user),
+            domain: utils::string_to_utf16(domain),
+            password: utils::string_to_utf16(password).into(),
+        }
+    }
 }
 
 impl fmt::Debug for AuthIdentityBuffers {

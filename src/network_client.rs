@@ -40,7 +40,7 @@ pub trait AsyncNetworkClient: Send + Sync {
     fn send<'a>(
         &'a mut self,
         network_request: &'a NetworkRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'a>>;
 }
 
 pub trait NetworkClient: Send + Sync {

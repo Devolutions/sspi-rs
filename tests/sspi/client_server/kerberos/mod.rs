@@ -214,7 +214,7 @@ fn run_kerberos(
             client,
             client_credentials_handle,
             client_flags,
-            &target_name,
+            target_name,
             client_in_token,
             network_client,
         );

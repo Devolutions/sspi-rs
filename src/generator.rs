@@ -5,6 +5,7 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use url::Url;
 
+use crate::credssp::ServerError;
 use crate::network_client::{AsyncNetworkClient, NetworkClient, NetworkProtocol};
 use crate::{AcceptSecurityContextResult, Error, InitializeSecurityContextResult};
 
@@ -139,11 +140,11 @@ fn execute_one_step<OutTy>(task: &mut PinnedFuture<OutTy>) -> Option<OutTy> {
 }
 
 /// Utility types and methods
-impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, crate::Error>>
+impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, Error>>
 where
     OutTy: Send + 'a,
 {
-    pub fn resolve_to_result(&mut self) -> Result<OutTy, crate::Error> {
+    pub fn resolve_to_result(&mut self) -> Result<OutTy, Error> {
         let state = self.start();
         match state {
             GeneratorState::Suspended(_) => Err(Error::new(
@@ -162,6 +163,23 @@ where
         self.resolve_to_result().expect(msg)
     }
 }
+
+impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, ServerError>>
+where
+    OutTy: Send + 'a,
+{
+    pub fn resolve_to_result(&mut self) -> Result<OutTy, ServerError> {
+        let state = self.start();
+        match state {
+            GeneratorState::Suspended(_) => Err(ServerError {
+                ts_request: None,
+                error: Error::new(crate::ErrorKind::UnsupportedFunction, "cannot finish generator"),
+            }),
+            GeneratorState::Completed(res) => res,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NetworkRequest {
     pub protocol: NetworkProtocol,
