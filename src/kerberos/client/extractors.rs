@@ -171,7 +171,7 @@ pub fn extract_status_code_from_krb_priv_response(
 }
 
 /// Extracts [ApRep] from the [NegTokenTarg1] .
-#[instrument(ret)]
+#[instrument(ret, level = "trace")]
 pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep> {
     let resp_token = &token
         .0

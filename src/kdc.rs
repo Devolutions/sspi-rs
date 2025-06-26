@@ -53,7 +53,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     Vec::new()
 }
 
-#[instrument(ret)]
+#[instrument(ret, level = "trace")]
 pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
     if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{}", domain)) {
         return vec![kdc_url];
