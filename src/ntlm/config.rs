@@ -18,7 +18,7 @@ impl NtlmConfig {
 }
 
 impl ProtocolConfig for NtlmConfig {
-    fn new_client(&self) -> Result<NegotiatedProtocol> {
+    fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Ntlm(Ntlm::with_config(Clone::clone(self))))
     }
 

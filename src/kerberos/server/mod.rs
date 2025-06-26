@@ -4,17 +4,21 @@ mod extractors;
 mod generators;
 
 use std::io::Write;
+use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
 use extractors::{extract_client_mic_token, extract_username, select_mech_type};
 use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
+use picky_asn1::restricted_string::IA5String;
+use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
-use picky_krb::data_types::{AuthenticatorInner, PrincipalName};
+use picky_krb::constants::types::NT_SRV_INST;
+use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use self::as_exchange::request_tgt;
 use self::cache::AuthenticatorsCache;
@@ -62,6 +66,34 @@ pub struct ServerProperties {
     /// > and microsecond fields from the recently-seen authenticators, and if a matching tuple is found,
     /// > the error is returned.
     pub authenticators_cache: AuthenticatorsCache,
+}
+
+impl ServerProperties {
+    /// Creates a new instance of [ServerProperties].
+    pub fn new(
+        sname: &[&str],
+        user: Option<CredentialsBuffers>,
+        max_time_skew: Duration,
+        ticket_decryption_key: Option<Vec<u8>>,
+    ) -> Result<Self> {
+        let service_names = sname
+            .iter()
+            .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string((*sname).to_owned())?)))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
+            mech_types: MechTypeList::from(Vec::new()),
+            max_time_skew,
+            ticket_decryption_key,
+            service_name: PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(service_names)),
+            },
+            user,
+            client: None,
+            authenticators_cache: AuthenticatorsCache::new(),
+        })
+    }
 }
 
 /// Performs one authentication step.
@@ -158,7 +190,7 @@ pub async fn accept_security_context(
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
 
             let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
-            let session_key = ticket_enc_part.key.0.key_value.0 .0.clone();
+            let session_key = ticket_enc_part.0.key.0.key_value.0 .0.clone();
 
             let AuthenticatorInner {
                 authenticator_vno: _,
@@ -174,7 +206,7 @@ pub async fn accept_security_context(
 
             // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
             // The name and realm of the client from the ticket are compared against the same fields in the authenticator.
-            if ticket_enc_part.crealm.0 != crealm.0 || ticket_enc_part.cname != cname.0 {
+            if ticket_enc_part.0.crealm.0 != crealm.0 || ticket_enc_part.0.cname != cname.0 {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
                     "the name and realm of the client in ticket and authenticator do not match",
@@ -194,13 +226,14 @@ pub async fn accept_security_context(
             }
 
             let ticket_start_time = ticket_enc_part
+                .0
                 .starttime
                 .0
                 .map(|start_time| start_time.0)
                 // [5.3.  Tickets](https://www.rfc-editor.org/rfc/rfc4120#section-5.3)
                 // If the starttime field is absent from the ticket, then the authtime field SHOULD be used in its place to determine
                 // the life of the ticket.
-                .unwrap_or_else(|| ticket_enc_part.auth_time.0)
+                .unwrap_or_else(|| ticket_enc_part.0.auth_time.0)
                 .0;
             let ticket_start_time = OffsetDateTime::try_from(ticket_start_time).map_err(|err| {
                 Error::new(
@@ -215,7 +248,7 @@ pub async fn accept_security_context(
                 ));
             }
 
-            let ticket_end_time = OffsetDateTime::try_from(ticket_enc_part.endtime.0 .0).map_err(|err| {
+            let ticket_end_time = OffsetDateTime::try_from(ticket_enc_part.0.endtime.0 .0).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
                     format!("ticket end time is not valid: {:?}", err),

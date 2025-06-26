@@ -214,7 +214,7 @@ async fn get_key<T: Transport>(
     let mut rpc = RpcClient::<T>::connect(
         &connection_options,
         AuthProvider::new(
-            SspiContext::Negotiate(Negotiate::new(negotiate_config.clone()).map_err(AuthError::from)?),
+            SspiContext::Negotiate(Negotiate::new_client(negotiate_config.clone()).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity {
                 username: username.clone(),
                 password: password.clone(),
@@ -248,7 +248,7 @@ async fn get_key<T: Transport>(
     let mut rpc = RpcClient::<T>::connect(
         &connection_options,
         AuthProvider::new(
-            SspiContext::Negotiate(Negotiate::new(negotiate_config).map_err(AuthError::from)?),
+            SspiContext::Negotiate(Negotiate::new_client(negotiate_config).map_err(AuthError::from)?),
             Credentials::AuthIdentity(AuthIdentity { username, password }),
             server,
             network_client,

@@ -4,9 +4,11 @@ use std::str::FromStr;
 use url::Url;
 
 use crate::kdc::detect_kdc_url;
+use crate::kerberos::ServerProperties;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::{Kerberos, Result};
 
+/// Kerberos client configuration.
 #[derive(Clone, Debug)]
 pub struct KerberosConfig {
     /// KDC URL
@@ -29,14 +31,14 @@ pub struct KerberosConfig {
 }
 
 impl ProtocolConfig for KerberosConfig {
-    fn new_client(&self) -> Result<NegotiatedProtocol> {
+    fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
-            Clone::clone(self),
+            self.clone(),
         )?))
     }
 
     fn box_clone(&self) -> Box<dyn ProtocolConfig> {
-        Box::new(Clone::clone(self))
+        Box::new(self.clone())
     }
 }
 
@@ -73,5 +75,27 @@ impl KerberosConfig {
             kdc_url,
             client_computer_name: None,
         }
+    }
+}
+
+/// Kerberos server configuration.
+#[derive(Clone, Debug)]
+pub struct KerberosServerConfig {
+    /// General Kerberos configuration.
+    pub kerberos_config: KerberosConfig,
+    /// Kerberos server specific parameters.
+    pub server_properties: ServerProperties,
+}
+
+impl ProtocolConfig for KerberosServerConfig {
+    fn new_instance(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Kerberos(Kerberos::new_server_from_config(
+            self.kerberos_config.clone(),
+            self.server_properties.clone(),
+        )?))
+    }
+
+    fn box_clone(&self) -> Box<dyn ProtocolConfig> {
+        Box::new(self.clone())
     }
 }

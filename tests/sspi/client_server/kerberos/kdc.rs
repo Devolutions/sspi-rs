@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::time::Duration as StdDuration;
 
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -19,9 +20,9 @@ use picky_krb::constants::types::{
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
-    Authenticator, EncTicketPart, EncryptedData, EncryptionKey, EtypeInfo2Entry, KerberosFlags, KerberosStringAsn1,
-    KerberosTime, LastReq, LastReqInner, Microseconds, PaData, PaEncTsEnc, PrincipalName, Realm, Ticket, TicketInner,
-    TransitedEncoding,
+    Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, EncryptionKey, EtypeInfo2Entry, KerberosFlags,
+    KerberosStringAsn1, KerberosTime, LastReq, LastReqInner, Microseconds, PaData, PaEncTsEnc, PrincipalName, Realm,
+    Ticket, TicketInner, TransitedEncoding,
 };
 use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody, KrbError,
@@ -32,7 +33,7 @@ use rand::{Rng, RngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
-pub const MAX_TIME_SKEW: Duration = Duration::minutes(3);
+pub const MAX_TIME_SKEW: StdDuration = StdDuration::from_secs(3);
 pub const KDC_URL: &str = "tcp://192.168.1.103:88";
 pub const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
 
@@ -238,7 +239,7 @@ impl KdcMock {
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
 
-        let ticket_enc_part = EncTicketPart {
+        let ticket_enc_part = EncTicketPart::from(EncTicketPartInner {
             flags: ExplicitContextTag0::from(kdc_options.clone()),
             key: ExplicitContextTag1::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
@@ -257,7 +258,7 @@ impl KdcMock {
             renew_till: Optional::from(None),
             caddr: Optional::from(None),
             authorization_data: Optional::from(None),
-        };
+        });
 
         let ticket_enc_data = CipherSuite::Aes256CtsHmacSha196
             .cipher()
@@ -465,7 +466,7 @@ impl KdcMock {
         )
         .expect("TGT Ticket enc part decoding should not fail");
 
-        let EncTicketPart { key, cname, .. } = ticket_enc_part;
+        let EncTicketPartInner { key, cname, .. } = ticket_enc_part.0;
         let session_key = key.0.key_value.0 .0;
 
         let authenticator_enc_data = authenticator.0;
@@ -554,7 +555,7 @@ impl KdcMock {
             let ticket_enc_part: EncTicketPart =
                 picky_asn1_der::from_bytes(&cipher.decrypt(key, TICKET_REP, &ticket_enc_data.0 .0).unwrap())
                     .expect("TGT Ticket enc part decoding should not fail");
-            ticket_enc_part.key.0.key_value.0 .0
+            ticket_enc_part.0.key.0.key_value.0 .0
         } else {
             self.keys
                 .get(&UserName(sname.clone()))
