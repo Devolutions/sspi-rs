@@ -48,7 +48,6 @@ picky = { version = "7.0.0-rc.12", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.14"
-picky-krb = "0.10"
 tokio = "1.45"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
@@ -111,7 +110,7 @@ winscard = { workspace = true, optional = true }
 rsa = { workspace = true, features = ["sha1"] }
 tracing = { workspace = true, default-features = true }
 serde.workspace = true
-picky-krb.workspace = true
+picky-krb = "0.11"
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 num-bigint-dig.workspace = true
