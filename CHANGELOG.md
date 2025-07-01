@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.14](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.13...sspi-v0.15.14)] - 2025-07-01
+
+### <!-- 7 -->Build
+
+- Update picky-krb to 0.11 (#460) ([5157bee02b](https://github.com/Devolutions/sspi-rs/commit/5157bee02b0383571c726801bda15f0dd9dc7934)) 
+
+
+
 ## [[0.15.13](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.12...sspi-v0.15.13)] - 2025-06-23
 
 ### <!-- 7 -->Build
