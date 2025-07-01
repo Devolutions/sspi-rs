@@ -279,9 +279,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.18.1"
+version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db76d6187cd04dff33004d8e6c9cc4e05cd330500379d2394209271b4aeee"
+checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "byteorder"
@@ -1943,9 +1943,9 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 
 [[package]]
 name = "picky"
-version = "7.0.0-rc.14"
+version = "7.0.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "162c4c060a9813dcae344eba16ea9281d1ca022ad733f13142d27b5b495eebc3"
+checksum = "83be360ca0cc8659abfbda932098e606fe52fa129508b92f0ce2998c00679170"
 dependencies = [
  "base64",
  "digest 0.10.7",
@@ -1997,9 +1997,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1-x509"
-version = "0.14.3"
+version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "511c46b93e7f08571a375882879d3a468dfe8793d73249907b2e3332950cb33e"
+checksum = "49f974c1b3348705c23887c4f3b90947b9f23566db8b032e48af59c91f888f6f"
 dependencies = [
  "base64",
  "num-bigint-dig",
@@ -2397,9 +2397,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"
-version = "0.12.20"
+version = "0.12.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eabf4c97d9130e2bf606614eb937e86edac8292eaa6f422f995d7e8de1eb1813"
+checksum = "4c8cea6b35bcceb099f30173754403d2eba0a5dc18cea3630fccd88251909288"
 dependencies = [
  "base64",
  "bytes",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "sspi"
-version = "0.15.13"
+version = "0.15.14"
 dependencies = [
  "async-dnssd",
  "async-recursion",
