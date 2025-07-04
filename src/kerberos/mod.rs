@@ -277,6 +277,19 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
         let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+        if self.server.is_some() {
+            // [Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.2):
+            //
+            // The meanings of bits in this field (the least significant bit is bit 0) are as follows:
+            //   Bit    Name             Description
+            //  --------------------------------------------------------------
+            //   0   SentByAcceptor   When set, this flag indicates the sender
+            //                        is the context acceptor.  When not set,
+            //                        it indicates the sender is the context
+            //                        initiator.
+            // When the Kerberos is used as the Kerberos server we have to set the `SentByAcceptor` flag.
+            wrap_token.flags |= 0x01;
+        }
         wrap_token.ec = self.encryption_params.ec;
 
         let mut payload = data_to_encrypt.fold(Vec::new(), |mut acc, buffer| {
@@ -379,6 +392,33 @@ impl Sspi for Kerberos {
         let key_usage = self.encryption_params.sspi_decrypt_key_usage;
 
         let wrap_token = WrapToken::decode(encrypted.as_slice())?;
+        // [Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.2):
+        //
+        // The meanings of bits in this field (the least significant bit is bit 0) are as follows:
+        //   Bit    Name             Description
+        //  --------------------------------------------------------------
+        //   0   SentByAcceptor   When set, this flag indicates the sender
+        //                        is the context acceptor.  When not set,
+        //                        it indicates the sender is the context
+        //                        initiator.
+        let is_server = u8::from(self.server.is_some());
+        // If the Kerberos acts as the Kerberos application server, then the `SentByAcceptor` flag
+        // of the incoming WRAP token must be disabled (because it is sent by initiator).
+        if wrap_token.flags & 0x01 == is_server {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "invalid WRAP token SentByAcceptor flag",
+            ));
+        }
+        //        1   Sealed           When set in Wrap tokens, this flag
+        //                             indicates confidentiality is provided
+        //                             for.  It SHALL NOT be set in MIC tokens.
+        if wrap_token.flags & 0b10 != 0b10 {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "the Sealed flag has to be set in WRAP token",
+            ));
+        }
 
         let mut checksum = wrap_token.checksum;
         // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
@@ -623,10 +663,18 @@ impl SspiEx for Kerberos {
 
 #[cfg(any(feature = "__test-data", test))]
 pub mod test_data {
+    use std::time::Duration;
+
+    use picky_asn1::restricted_string::IA5String;
+    use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
+    use picky_krb::constants::types::NT_SRV_INST;
     use picky_krb::crypto::CipherSuite;
+    use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
+    use picky_krb::gss_api::MechTypeList;
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
+    use crate::kerberos::ServerProperties;
     use crate::Kerberos;
 
     const SESSION_KEY: &[u8] = &[
@@ -664,6 +712,24 @@ pub mod test_data {
         }
     }
 
+    pub fn fake_server_properties() -> ServerProperties {
+        ServerProperties {
+            mech_types: MechTypeList::from(Vec::new()),
+            max_time_skew: Duration::from_secs(3 * 60),
+            ticket_decryption_key: None,
+            service_name: PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    KerberosStringAsn1::from(IA5String::from_string("TERMSRV".to_owned()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string("VM1.example.com".to_owned()).unwrap()),
+                ])),
+            },
+            user: None,
+            client: None,
+            authenticators_cache: Default::default(),
+        }
+    }
+
     pub fn fake_server() -> Kerberos {
         Kerberos {
             state: KerberosState::Final,
@@ -686,7 +752,7 @@ pub mod test_data {
             channel_bindings: None,
             dh_parameters: None,
             krb5_user_to_user: false,
-            server: None,
+            server: Some(Box::new(fake_server_properties())),
         }
     }
 }
