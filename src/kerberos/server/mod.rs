@@ -36,6 +36,9 @@ use crate::{
     SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
 };
 
+/// Indicated that the MIC token `SentByAcceptor` flag must not be enabled in the incoming MIC token.
+const SENT_BY_INITIATOR: u8 = 0;
+
 /// Additional properties that are needed only for server-side Kerberos.
 #[derive(Debug, Clone)]
 pub struct ServerProperties {
@@ -350,7 +353,7 @@ pub async fn accept_security_context(
                         .mech_types,
                 )?;
                 let mic = generate_mic_token(
-                    u64::from(server.seq_number + 1),
+                    u64::from(server.next_seq_number()),
                     mic_payload,
                     server
                         .encryption_params
@@ -377,8 +380,20 @@ pub async fn accept_security_context(
             SecurityStatus::ContinueNeeded
         }
         KerberosState::ApExchange => {
+            let server_props = server.server.as_mut().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::InvalidHandle,
+                    "Kerberos server properties are not initialized",
+                )
+            })?;
+
             let client_mic = extract_client_mic_token(&input_token.buffer)?;
-            validate_mic_token(&client_mic, INITIATOR_SIGN, &server.encryption_params)?;
+            validate_mic_token::<SENT_BY_INITIATOR>(
+                &client_mic,
+                INITIATOR_SIGN,
+                &server.encryption_params,
+                &server_props.mech_types,
+            )?;
 
             server.state = KerberosState::PubKeyAuth;
 

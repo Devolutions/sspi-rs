@@ -91,7 +91,7 @@ pub fn generate_final_neg_token_targ(mech_id: ObjectIdentifier, ap_rep: ApRep, m
 }
 
 pub fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[u8]) -> Result<Vec<u8>> {
-    let mut mic_token = MicToken::with_initiator_flags().with_seq_number(seq_number);
+    let mut mic_token = MicToken::with_acceptor_flags().with_seq_number(seq_number);
 
     payload.extend_from_slice(&mic_token.header());
 

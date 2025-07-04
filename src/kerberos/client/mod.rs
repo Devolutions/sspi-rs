@@ -27,7 +27,7 @@ use self::extractors::{
 use self::generators::{
     generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_neg_ap_req,
     generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
-    ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
+    get_mech_list, ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags,
 };
 use crate::channel_bindings::ChannelBindings;
@@ -41,6 +41,9 @@ use crate::{
     pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
+
+/// Indicated that the MIC token `SentByAcceptor` flag must be enabled in the incoming MIC token.
+const SENT_BY_ACCEPTOR: u8 = 1;
 
 /// Performs one authentication step.
 ///
@@ -401,7 +404,12 @@ pub async fn initialize_security_context<'a>(
                 client.encryption_params.sub_session_key = Some(sub_session_key);
 
                 if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
-                    validate_mic_token(&token.0 .0, ACCEPTOR_SIGN, &client.encryption_params)?;
+                    validate_mic_token::<SENT_BY_ACCEPTOR>(
+                        &token.0 .0,
+                        ACCEPTOR_SIGN,
+                        &client.encryption_params,
+                        &get_mech_list(),
+                    )?;
                 }
 
                 client.next_seq_number();
