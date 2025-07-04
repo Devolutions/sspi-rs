@@ -2,10 +2,9 @@ use std::io::Write;
 
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
 use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
-use picky_krb::gss_api::MicToken;
+use picky_krb::gss_api::{MechTypeList, MicToken};
 use serde::Serialize;
 
-use crate::kerberos::client::generators::get_mech_list;
 use crate::kerberos::encryption_params::EncryptionParams;
 use crate::{Error, ErrorKind, Result};
 
@@ -22,10 +21,42 @@ pub fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn validate_mic_token(raw_token: &[u8], key_usage: i32, params: &EncryptionParams) -> Result<()> {
+pub fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
+    raw_token: &[u8],
+    key_usage: i32,
+    params: &EncryptionParams,
+    mech_types: &MechTypeList,
+) -> Result<()> {
     let token = MicToken::decode(raw_token)?;
+    let token_flags = token.flags;
 
-    let mut payload = picky_asn1_der::to_vec(&get_mech_list())?;
+    // [Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.2):
+    //
+    // The meanings of bits in this field (the least significant bit is bit
+    // 0) are as follows:
+    //        Bit    Name             Description
+    //       --------------------------------------------------------------
+    //        0   SentByAcceptor   When set, this flag indicates the sender
+    //                             is the context acceptor.  When not set,
+    //                             it indicates the sender is the context
+    //                             initiator.
+    if token_flags & 0b01 != IS_SENT_BY_ACCEPTOR {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "invalid MIC token SentByAcceptor flag",
+        ));
+    }
+    //        1   Sealed           When set in Wrap tokens, this flag
+    //                             indicates confidentiality is provided
+    //                             for.  It SHALL NOT be set in MIC tokens.
+    if token_flags & 0b10 == 0b10 {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "the Sealed flag has not to be set in the MIC token",
+        ));
+    }
+
+    let mut payload = picky_asn1_der::to_vec(mech_types)?;
     payload.extend_from_slice(&token.header());
 
     // The sub-session key is always preferred over the session key.
