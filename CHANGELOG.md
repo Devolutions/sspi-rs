@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.15.15](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.14...sspi-v0.15.15)] - 2025-07-07
+
+### <!-- 1 -->Features
+
+- Server-side Kebreros implementation (#440) ([943a297edd](https://github.com/Devolutions/sspi-rs/commit/943a297eddad91bf6dfa02bdb53b422453df0ed9)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Server-side Kerberos fixes (#457) ([27ce28dad5](https://github.com/Devolutions/sspi-rs/commit/27ce28dad5aa490d094b4ea1db5a315ea1478264)) 
+
+- Kerberos server MIC token generation and validation (#464) ([12fbd706a8](https://github.com/Devolutions/sspi-rs/commit/12fbd706a8e807b4e4ea9b6bb39f4bace60afd9a)) 
+
+- Kerberos server WRAP token generation and validation (#463) ([4bbe4071c8](https://github.com/Devolutions/sspi-rs/commit/4bbe4071c80172ee2c85552ef1060a65394a45c0)) 
+
+
+
 ## [[0.15.14](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.13...sspi-v0.15.14)] - 2025-07-01
 
 ### <!-- 7 -->Build
