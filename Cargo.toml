@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.15.15"
+version = "0.16.0"
 edition = "2021"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
