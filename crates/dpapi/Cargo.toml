@@ -1,6 +1,6 @@
 [package]
 name = "dpapi"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 readme = "README.md"
 license = "MIT/Apache-2.0"
@@ -37,7 +37,7 @@ whoami.workspace = true
 dpapi-core = { workspace = true, features = ["alloc"] }
 dpapi-pdu.workspace = true
 dpapi-transport.workspace = true
-sspi = { path = "../..", version = "0.15" }
+sspi = { path = "../..", version = "0.16" } # public
 
 kbkdf = "0.0.1"
 sha1-pre = { version = "0.11.0-pre.2", package = "sha1" }
