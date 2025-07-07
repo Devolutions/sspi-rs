@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "sspi"
-version = "0.15.15"
+version = "0.16.0"
 dependencies = [
  "async-dnssd",
  "async-recursion",
