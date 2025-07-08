@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "dpapi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "aes-kw",
@@ -1295,9 +1295,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc2fdfdbff08affe55bb779f33b053aa1fe5dd5b54c257343c17edfa55711bdb"
+checksum = "7f66d5bd4c6f02bf0542fad85d626775bab9258cf795a4256dcaf3161114d1df"
 dependencies = [
  "base64",
  "bytes",
@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "sspi"
-version = "0.15.14"
+version = "0.16.0"
 dependencies = [
  "async-dnssd",
  "async-recursion",

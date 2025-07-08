@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.15.14"
+version = "0.16.0"
 edition = "2021"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -55,7 +55,7 @@ tokio = "1.45"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
 
-dpapi = { version = "0.1.0", path = "crates/dpapi" }
+dpapi = { version = "0.2.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
 dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
