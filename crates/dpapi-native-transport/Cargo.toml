@@ -7,7 +7,7 @@ publish = false # not ready yet
 [dependencies]
 transport = { git = "https://github.com/Devolutions/devolutions-gateway.git", rev = "4fd9c22" }
 tokio.workspace = true
-tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.27", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 url = "2.5"
 uuid = { workspace = true, features = ["v4"] }
 tracing.workspace = true
