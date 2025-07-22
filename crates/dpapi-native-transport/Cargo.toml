@@ -13,3 +13,6 @@ uuid = { workspace = true, features = ["v4"] }
 tracing.workspace = true
 dpapi-transport.workspace = true
 futures-util = "0.3"
+
+[lints]
+workspace = true

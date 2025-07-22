@@ -30,7 +30,7 @@ exclude = [
   "tools/dpapi-cli-client",
 ]
 
-[lints.rust]
+[workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 [workspace.dependencies]
@@ -156,6 +156,9 @@ picky = { workspace = true, features = ["x509"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
+
+[lints]
+workspace = true
 
 [[example]]
 name = "kerberos"

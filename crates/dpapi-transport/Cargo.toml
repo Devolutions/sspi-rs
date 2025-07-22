@@ -14,3 +14,6 @@ publish = false # not ready yet
 url = "2.5"
 thiserror = "2.0"
 uuid.workspace = true
+
+[lints]
+workspace = true

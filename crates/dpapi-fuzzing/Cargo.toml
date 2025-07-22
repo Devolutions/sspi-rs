@@ -9,3 +9,6 @@ dpapi-pdu = { workspace = true, features = ["arbitrary"] }
 dpapi-core = { workspace = true, features = [] }
 arbitrary = { version = "1", features = ["derive"] }
 pretty_assertions = "1.4"
+
+[lints]
+workspace = true

@@ -11,3 +11,6 @@ alloc = []
 [dependencies]
 uuid.workspace = true
 ironrdp-core = { version = "0.1", features = ["alloc"] }
+
+[lints]
+workspace = true

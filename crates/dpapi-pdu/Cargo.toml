@@ -21,3 +21,6 @@ arbitrary = {  version = "1", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 paste = "1.0"
+
+[lints]
+workspace = true
