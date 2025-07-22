@@ -1,5 +1,3 @@
-lints.workspace = true
-
 [package]
 name = "sspi"
 version = "0.15.7"
@@ -156,6 +154,9 @@ picky = { workspace = true, features = ["x509"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true
+
+[lints]
+workspace = true
 
 [[example]]
 name = "kerberos"
