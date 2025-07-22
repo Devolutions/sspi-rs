@@ -8,3 +8,6 @@ publish = false
 [features]
 default = []
 winscard = []
+
+[lints]
+workspace = true

@@ -60,3 +60,6 @@ regex = "1.11"
 
 [dev-dependencies]
 paste = "1.0"
+
+[lints]
+workspace = true

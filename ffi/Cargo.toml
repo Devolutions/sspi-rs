@@ -54,3 +54,6 @@ sspi = { path = "..", default-features = false, features = ["dns_resolver"] }
 
 [dev-dependencies]
 sspi = { path = "..", features = ["__test-data"] }
+
+[lints]
+workspace = true

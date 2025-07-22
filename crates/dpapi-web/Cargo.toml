@@ -61,3 +61,6 @@ uuid = { workspace = true, default-features = false }
 getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
 time = { workspace = true, features = ["wasm-bindgen"] }
+
+[lints]
+workspace = true
