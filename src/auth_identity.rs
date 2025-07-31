@@ -110,32 +110,30 @@ impl Username {
     }
 
     /// Returns the internal representation, as-is
-    pub fn inner(&self) -> &str {
+    pub(crate) fn inner(&self) -> &str {
         &self.value
     }
 
     /// Returns the [`UserNameFormat`] for this username
-    pub fn format(&self) -> UserNameFormat {
+    pub(crate) fn format(&self) -> UserNameFormat {
         self.format
     }
 
-    /// May return an UPN suffix or NetBIOS domain name depending on the internal format
-    pub fn domain_name(&self) -> Option<&str> {
-        self.sep_idx.map(|idx| match self.format {
-            UserNameFormat::UserPrincipalName => &self.value[idx + 1..],
-            UserNameFormat::DownLevelLogonName => &self.value[..idx],
-        })
+    /// May return None or NetBIOS domain name depending on the internal format
+    pub(crate) fn domain_name(&self) -> Option<&str> {
+        match self.format() {
+            UserNameFormat::DownLevelLogonName => self.sep_idx.map(|idx| &self.value[..idx]),
+            UserNameFormat::UserPrincipalName => None,
+        }
     }
 
     /// Returns the account name
-    pub fn account_name(&self) -> &str {
-        if let Some(idx) = self.sep_idx {
-            match self.format {
-                UserNameFormat::UserPrincipalName => &self.value[..idx],
-                UserNameFormat::DownLevelLogonName => &self.value[idx + 1..],
+    pub(crate) fn account_name(&self) -> &str {
+        match self.format() {
+            UserNameFormat::DownLevelLogonName => {
+                self.sep_idx.map(|idx| &self.value[idx + 1..]).unwrap_or(self.inner())
             }
-        } else {
-            &self.value
+            UserNameFormat::UserPrincipalName => self.inner(),
         }
     }
 }
@@ -438,9 +436,11 @@ mod tests {
             assert_eq!(initial_username.inner(), value);
 
             if let Some(domain_name) = initial_username.domain_name() {
-                let upn = Username::new_upn(initial_username.account_name(), domain_name).expect("UPN");
-                assert_eq!(upn.account_name(), initial_username.account_name());
-                assert_eq!(upn.domain_name(), initial_username.domain_name());
+                let account_name = initial_username.account_name();
+                let upn = Username::new_upn(account_name, domain_name).expect("UPN");
+
+                assert_eq!(upn.account_name(), format!("{account_name}@{domain_name}"));
+                assert_eq!(upn.domain_name(), None);
             }
 
             // A down-level user name can’t contain a @ in the account name
@@ -463,8 +463,8 @@ mod tests {
         proptest!(|(account_name in "[a-zA-Z0-9@.]{1,3}", domain_name in "[a-z0-9.]{1,3}")| {
             let username = Username::new_upn(&account_name, &domain_name).expect("UPN");
 
-            assert_eq!(username.account_name(), account_name);
-            assert_eq!(username.domain_name(), Some(domain_name.as_str()));
+            assert_eq!(username.account_name(), format!("{account_name}@{domain_name}"));
+            assert_eq!(username.domain_name(), None);
             assert_eq!(username.format(), UserNameFormat::UserPrincipalName);
 
             check_round_trip_property(&username);

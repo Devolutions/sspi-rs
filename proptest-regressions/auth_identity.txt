@@ -8,3 +8,4 @@ cc 22a32450b3cada4bb46952cb5109e3b305e8c756d58d37136a195c3bc3dee4cb # shrinks to
 cc 7f7cdbd18aad0a1d970b6ff9ce7fbfaa7e4dabeb0b55cca0c7f7610f8f0e3cbf # shrinks to value = "A@\\.a"
 cc f946f1001aacc60322cba7ba063fa386f4e0c6d9497d8144e300f8b4652e378e # shrinks to value = "A\\a\\a"
 cc 033e00adafc5d7bc9402013f261b9f7de65938d4ce9f66f2ea4ec1419a0ae286 # shrinks to value = "A@0@a"
+cc 00006d40d3bad9fbb82517e5177c07b60ca9baf0b12210f6c26c52166b6c1b26 # shrinks to value = "0\\AA"

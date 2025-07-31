@@ -28,9 +28,7 @@ impl<'a> CredentialsProxyImpl<'a> {
 impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
     type AuthenticationData = AuthIdentity;
 
-    fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData> {
-        assert_eq!(username.account_name(), self.credentials.username.account_name());
-
+    fn auth_data_by_user(&mut self, _: &Username) -> io::Result<Self::AuthenticationData> {
         Ok(self.credentials.clone())
     }
 }
