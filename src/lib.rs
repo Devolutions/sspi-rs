@@ -103,7 +103,7 @@ pub use utils::string_to_utf16;
 
 pub use self::auth_identity::{
     AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers,
-    UserNameFormat, Username,
+    SmartCardType, UserNameFormat, Username,
 };
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
