@@ -6,9 +6,9 @@ use std::slice::from_raw_parts;
 use libc::{c_char, c_void};
 #[cfg(windows)]
 use sspi::Secret;
-#[cfg(all(feature = "scard", target_os = "windows"))]
-use sspi::SmartCardIdentityBuffers;
 use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
+#[cfg(feature = "scard")]
+use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 #[cfg(all(feature = "scard", target_os = "windows"))]
@@ -412,7 +412,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         let user =
             unsafe { credentials_str_into_bytes(auth_data.user as *const _, auth_data.user_length as usize * 2) };
         // SAFETY: This function is safe to call because `password` can be null and the caller is responsible for the data validity.
-        let password = unsafe {
+        let password: sspi::Secret<Vec<u8>> = unsafe {
             credentials_str_into_bytes(auth_data.password as *const _, auth_data.password_length as usize * 2)
         }
         .into();
@@ -425,7 +425,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         }
 
         // Try to collect credentials for the emulated smart card.
-        #[cfg(all(feature = "scard", target_os = "windows"))]
+        #[cfg(feature = "scard")]
         if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
@@ -441,47 +441,88 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 }
 
-#[cfg(all(feature = "scard", target_os = "windows"))]
+/// Tries to collect credentials for smartcard logon.
+///
+/// Provided username and password *must be UTF-16 encoded*. The username must be in FQDN format (name@domain).
+/// This function can collect either emulated or system-provided smart card credentials:
+/// * If the user wants to use system-provided scard, then
+#[cfg(feature = "scard")]
 fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
-    if username.contains(&b'@') {
-        info!("Trying to collect smart card creds...");
-        use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+    use std::env;
 
-        use crate::sspi::utils::raw_wide_str_trim_nulls;
-        use crate::utils::str_encode_utf16;
+    use crate::sspi::utils::raw_wide_str_trim_nulls;
+    use crate::utils::str_encode_utf16;
 
-        match SmartCardInfo::try_from_env() {
-            Ok(smart_card_info) => {
-                let mut username = username.to_vec();
-                let mut pin = password.to_vec();
+    const PKCS11_MODULE_PATH_ENVL: &str = "SSPI_PKCS11_MODULE_PATH";
+    const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
+    const SCARD_SYSTEM_PROVIDED: &str = "system";
+    const SCARD_EMULATED: &str = "emulated";
 
-                raw_wide_str_trim_nulls(&mut username);
-                raw_wide_str_trim_nulls(&mut pin);
-
-                info!("Smart card credentials have been collected. Process with scard-based logon.");
-
-                return Ok(SmartCardIdentityBuffers {
-                    username,
-                    certificate: smart_card_info.auth_cert_der.clone(),
-                    card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
-                    reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
-                    container_name: str_encode_utf16(smart_card_info.container_name.as_ref()),
-                    csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
-                    pin: pin.into(),
-                    private_key_file_index: None,
-                    private_key_pem: Some(str_encode_utf16(smart_card_info.auth_pk_pem.as_ref())),
-                });
-            }
-            Err(err) => {
-                warn!(?err);
-            }
-        }
+    if !username.contains(&b'@') {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "failed to collect smart card credentials: username is not in FQDN format. Process with password-based logon",
+        ));
     }
 
-    Err(Error::new(
-        ErrorKind::NoCredentials,
-        "Failed to collect smart card credentials. Process with password-based logon.",
-    ))
+    let scard_type = env::var(SCARD_TYPE_ENV).map_err(|err| {
+        let message = match err {
+            env::VarError::NotPresent => format!("failed to collect smart card credentials: {} env variable is not present. Process with password-based logon", SCARD_TYPE_ENV),
+            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", SCARD_TYPE_ENV),
+        };
+
+        Error::new(ErrorKind::NoCredentials, message)
+    })?;
+
+    info!("Trying to collect {} smart card credentials...", scard_type);
+
+    match scard_type.as_str() {
+        SCARD_EMULATED => {
+            use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+
+            let smart_card_info = SmartCardInfo::try_from_env()?;
+
+            let mut username = username.to_vec();
+            let mut pin = password.to_vec();
+
+            raw_wide_str_trim_nulls(&mut username);
+            raw_wide_str_trim_nulls(&mut pin);
+
+            info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
+
+            Ok(SmartCardIdentityBuffers {
+                username,
+                certificate: smart_card_info.auth_cert_der.clone(),
+                card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
+                reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
+                container_name: Some(str_encode_utf16(smart_card_info.container_name.as_ref())),
+                csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
+                pin: pin.into(),
+                private_key_pem: Some(str_encode_utf16(smart_card_info.auth_pk_pem.as_ref())),
+                scard_type: SmartCardType::Emulated,
+            })
+        },
+        SCARD_SYSTEM_PROVIDED => {
+            let mut username = username.to_vec();
+            let mut pin = password.to_vec();
+
+            raw_wide_str_trim_nulls(&mut username);
+            raw_wide_str_trim_nulls(&mut pin);
+
+            Ok(SmartCardIdentityBuffers {
+                username,
+                certificate: todo!(),
+                card_name: todo!(),
+                reader_name: todo!(),
+                container_name: todo!(),
+                csp_name: todo!(),
+                pin: pin.into(),
+                private_key_pem: None,
+                scard_type: SmartCardType::SystemProvided,
+            })
+        }
+        scard_type => Err(Error::new(ErrorKind::NoCredentials, format!("failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon", scard_type))),
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
