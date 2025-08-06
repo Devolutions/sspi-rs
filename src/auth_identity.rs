@@ -239,6 +239,19 @@ mod scard_credentials {
     use crate::secret::SecretPrivateKey;
     use crate::{utils, Error, ErrorKind, Secret};
 
+    /// Smart card type.
+    #[derive(Clone, Eq, PartialEq, Debug)]
+    pub enum SmartCardType {
+        /// Emulated smart card.
+        ///
+        /// No real device is used. All smart card functionality is emulated using the [winscard] crate.
+        Emulated,
+        /// System-provided smart card.
+        ///
+        /// Real smart card device in use.
+        SystemProvided,
+    }
+
     /// Represents raw data needed for smart card authentication
     #[derive(Clone, Eq, PartialEq, Debug)]
     pub struct SmartCardIdentityBuffers {
@@ -251,16 +264,15 @@ mod scard_credentials {
         /// UTF-16 encoded smart card reader name
         pub reader_name: Vec<u8>,
         /// UTF-16 encoded smart card key container name
-        pub container_name: Vec<u8>,
+        pub container_name: Option<Vec<u8>>,
         /// UTF-16 encoded smart card CSP name
         pub csp_name: Vec<u8>,
         /// UTF-16 encoded smart card PIN code
         pub pin: Secret<Vec<u8>>,
-        /// Private key file index
-        /// This value is used for the APDU message generation
-        pub private_key_file_index: Option<u8>,
         /// UTF-16 string with PEM-encoded RSA 2048-bit private key
         pub private_key_pem: Option<Vec<u8>>,
+        /// Smart card type.
+        pub scard_type: SmartCardType,
     }
 
     /// Represents data needed for smart card authentication
@@ -275,16 +287,15 @@ mod scard_credentials {
         /// Smart card name
         pub card_name: Option<String>,
         /// Smart card key container name
-        pub container_name: String,
+        pub container_name: Option<String>,
         /// Smart card CSP name
         pub csp_name: String,
         /// ASCII encoded mart card PIN code
         pub pin: Secret<Vec<u8>>,
-        /// Private key file index
-        /// This value is used for the APDU message generation
-        pub private_key_file_index: Option<u8>,
         /// RSA 2048-bit private key
         pub private_key: Option<SecretPrivateKey>,
+        /// Smart card type.
+        pub scard_type: SmartCardType,
     }
 
     impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
@@ -301,16 +312,17 @@ mod scard_credentials {
             } else {
                 None
             };
+
             Ok(Self {
                 certificate: picky_asn1_der::to_vec(&value.certificate)?,
                 reader_name: utils::string_to_utf16(value.reader_name),
                 pin: utils::string_to_utf16(String::from_utf8_lossy(value.pin.as_ref())).into(),
                 username: utils::string_to_utf16(value.username),
                 card_name: value.card_name.map(utils::string_to_utf16),
-                container_name: utils::string_to_utf16(value.container_name),
+                container_name: value.container_name.map(utils::string_to_utf16),
                 csp_name: utils::string_to_utf16(value.csp_name),
-                private_key_file_index: value.private_key_file_index,
                 private_key_pem: private_key,
+                scard_type: value.scard_type,
             })
         }
     }
@@ -331,22 +343,23 @@ mod scard_credentials {
             } else {
                 None
             };
+
             Ok(Self {
                 certificate: picky_asn1_der::from_bytes(&value.certificate)?,
                 reader_name: utils::bytes_to_utf16_string(&value.reader_name),
                 pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
                 username: utils::bytes_to_utf16_string(&value.username),
-                card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
-                container_name: utils::bytes_to_utf16_string(&value.container_name),
+                card_name: value.card_name.as_deref().map(utils::bytes_to_utf16_string),
+                container_name: value.container_name.as_deref().map(utils::bytes_to_utf16_string),
                 csp_name: utils::bytes_to_utf16_string(&value.csp_name),
-                private_key_file_index: value.private_key_file_index,
                 private_key,
+                scard_type: value.scard_type,
             })
         }
     }
 }
 
-pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
+pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
 #[derive(Clone, Eq, PartialEq, Debug)]
