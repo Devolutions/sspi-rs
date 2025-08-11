@@ -9,7 +9,7 @@ use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
 use cryptoki::session::UserType;
 use cryptoki::types::AuthPin;
 use picky_asn1::wrapper::Utf8StringAsn1;
-use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
+use picky_asn1_x509::{oids, Certificate, ExtendedKeyUsage, ExtensionView, GeneralName};
 use sspi::{utf16_bytes_to_utf8_string, Error, ErrorKind, Result};
 use winscard::MICROSOFT_DEFAULT_CSP;
 
@@ -128,8 +128,6 @@ fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
     let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
     let certificate_username = extract_user_name_from_certificate(&certificate)?;
 
-    // TODO: validate ebhanced key usage.
-
     if certificate_username != username {
         return Err(Error::new(
             ErrorKind::NoCredentials,
@@ -139,10 +137,51 @@ fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
         ));
     }
 
+    let extended_key_usage = extract_extended_key_usage_from_certificate(&certificate)?;
+
+    if !extended_key_usage.contains(oids::kp_client_auth()) {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "smart card certificate does not have Client Authentication (1.3.6.1.5.5.7.3.2) key usage",
+        ));
+    }
+
+    if !extended_key_usage.contains(oids::smart_card_logon()) {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "smart card certificate does not have Smart Card Logon (1.3.6.1.4.1.311.20.2.2) key usage",
+        ));
+    }
+
     Ok(())
 }
 
-/// Tries to extract the user principal name from the smart card certificate by searching in the Subject Alternative Name.
+/// Extracts Extended Key Usage from the smart card certificate.
+fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Result<ExtendedKeyUsage> {
+    let extended_key_usage_ext = &certificate
+        .tbs_certificate
+        .extensions
+        .0
+         .0
+        .iter()
+        .find(|extension| extension.extn_id().0 == oids::extended_key_usage())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::IncompleteCredentials,
+                "Extended Key Usage extension is not present",
+            )
+        })?
+        .extn_value();
+
+    let ExtensionView::ExtendedKeyUsage(extended_key_usage) = extended_key_usage_ext else {
+        // safe: checked above
+        unreachable!("ExtensionView must be SubjectAltName")
+    };
+
+    Ok((*extended_key_usage).clone())
+}
+
+/// Extracts the user principal name from the smart card certificate by searching in the Subject Alternative Name.
 #[instrument(level = "trace", ret)]
 pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
     let subject_alt_name_ext = &certificate

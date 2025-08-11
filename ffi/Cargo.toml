@@ -25,10 +25,12 @@ cfg-if.workspace = true
 num-traits = { workspace = true, default-features = true }
 whoami.workspace = true
 ffi-types = { workspace = true, features = ["winscard"], optional = true }
+
 picky = { workspace = true, features = ["x509"], optional = true }
 picky-asn1-der.workspace = true
 picky-asn1 = { workspace = true, optional = true }
 picky-asn1-x509 = { workspace = true, optional = true }
+
 uuid.workspace = true
 winscard = { workspace = true, features = ["std"], optional = true }
 dpapi = { workspace = true, optional = true }
