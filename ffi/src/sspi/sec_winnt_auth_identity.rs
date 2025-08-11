@@ -749,7 +749,6 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         reader_name,
         certificate: _,
         csp_name,
-        private_key_file_index,
     } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
@@ -758,10 +757,10 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         pin: password,
         username,
         card_name: None,
-        container_name: string_to_utf16(key_container_name),
+        container_name: Some(string_to_utf16(key_container_name)),
         csp_name: string_to_utf16(csp_name),
-        private_key_file_index: Some(private_key_file_index),
         private_key_pem: None,
+        scard_type: SmartCardType::SystemProvided,
     });
 
     Ok(creds)

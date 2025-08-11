@@ -12,6 +12,8 @@ pub use card::SystemScard;
 pub use context::SystemScardContext;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
+#[cfg(target_os = "windows")]
+use ffi_types::winscard::LpCScardIoRequest;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
@@ -94,9 +96,10 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
             // SAFETY: This function is safe to call because we've checked the `winscard_module`
             // handle above and the `$req_name` is correct and hardcoded in the code.
             unsafe {
-                // Not great to silent, but mostly fine in this context.
-                #[expect(clippy::missing_transmute_annotations)]
-                transmute::<windows_sys::Win32::Foundation::FARPROC, _>(GetProcAddress(winscard_module, s!($req_name)))
+                let send_pci: LpCScardIoRequest = transmute::<windows_sys::Win32::Foundation::FARPROC, _>(
+                    GetProcAddress(winscard_module, s!($req_name)),
+                );
+                &*send_pci
             }
         }};
     }

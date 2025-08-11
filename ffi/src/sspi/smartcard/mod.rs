@@ -192,19 +192,7 @@ mod tests {
     use picky::x509::Cert;
     use picky_asn1_x509::Certificate;
 
-    use super::{extract_user_name_from_certificate, *};
-
-    #[test]
-    fn system_scard_creds() {
-        let creds = smart_card_info(
-            &[
-                116, 0, 50, 0, 64, 0, 116, 0, 98, 0, 116, 0, 46, 0, 99, 0, 111, 0, 109, 0,
-            ],
-            "/usr/local/lib/libykcs11.2.7.2.dylib".as_ref(),
-        )
-        .unwrap();
-        println!("{:?}", creds);
-    }
+    use super::extract_user_name_from_certificate;
 
     #[test]
     fn username_extraction() {

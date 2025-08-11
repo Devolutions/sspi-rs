@@ -115,5 +115,9 @@ pub extern "system" fn GetSCardApiFunctionTable() -> PSCardApiFunctionTable {
         SCardListReadersWithDeviceInstanceIdA,
         SCardListReadersWithDeviceInstanceIdW,
         SCardAudit,
+
+        g_rgSCardT0Pci: &Rust_g_rgSCardT0Pci,
+        g_rgSCardT1Pci: &Rust_g_rgSCardT1Pci,
+        g_rgSCardRawPci: &Rust_g_rgSCardRawPci,
     })
 }

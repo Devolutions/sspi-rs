@@ -5,8 +5,6 @@ use std::ptr::null_mut;
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 #[cfg(target_os = "windows")]
-use ffi_types::winscard::ScardIoRequest;
-#[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use num_traits::ToPrimitive;
 use winscard::winscard::{

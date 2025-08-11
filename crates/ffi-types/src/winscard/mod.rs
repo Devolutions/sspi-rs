@@ -97,6 +97,7 @@ pub type LpScardAtrMask = *mut ScardAtrMask;
 ///   DWORD cbPciLength;
 /// } SCARD_IO_REQUEST;
 /// ```
+#[derive(Debug)]
 #[repr(C)]
 pub struct ScardIoRequest {
     pub dw_protocol: u32,

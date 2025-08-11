@@ -5,6 +5,7 @@ use super::{
     LpScardContext, LpScardHandle, LpScardIoRequest, LpScardReaderStateA, LpScardReaderStateW, ScardContext,
     ScardHandle, ScardStatus,
 };
+use crate::winscard::ScardIoRequest;
 use crate::{
     Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpVoid, LpWStr,
 };
@@ -200,6 +201,10 @@ pub struct SCardApiFunctionTable {
     pub SCardListReadersWithDeviceInstanceIdA: SCardListReadersWithDeviceInstanceIdAFn,
     pub SCardListReadersWithDeviceInstanceIdW: SCardListReadersWithDeviceInstanceIdWFn,
     pub SCardAudit: SCardAuditFn,
+
+    pub g_rgSCardT0Pci: &'static ScardIoRequest,
+    pub g_rgSCardT1Pci: &'static ScardIoRequest,
+    pub g_rgSCardRawPci: &'static ScardIoRequest,
 }
 
 pub type PSCardApiFunctionTable = *mut SCardApiFunctionTable;
