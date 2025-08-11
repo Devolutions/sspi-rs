@@ -5,8 +5,7 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
-use picky_asn1::wrapper::Utf8StringAsn1;
-use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
+use picky_asn1_x509::Certificate;
 use sha1::{Digest, Sha1};
 use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
@@ -204,7 +203,6 @@ pub struct SmartCardInfo {
     pub reader_name: String,
     pub csp_name: String,
     pub certificate: Certificate,
-    pub private_key_file_index: u8,
 }
 
 // This function gathers the smart card information like reader name, key container name,
@@ -237,7 +235,6 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
 
     let mut key_container_name_len = 0;
     let mut is_first = true;
-    let mut index = 1;
     loop {
         // SAFETY:
         // * `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
@@ -283,7 +280,6 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
         let context = if let Ok(context) = unsafe { acquire_key_container_context(&key_container_name) } {
             context
         } else {
-            index += 1;
             continue;
         };
 
@@ -313,12 +309,10 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
                     reader_name,
                     certificate,
                     csp_name: CSP_NAME.to_owned(),
-                    private_key_file_index: index,
                 });
             }
         }
 
-        index += 1;
         is_first = false;
     }
 

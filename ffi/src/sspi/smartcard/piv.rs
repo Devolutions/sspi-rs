@@ -234,7 +234,7 @@ pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Res
 
 #[cfg(test)]
 mod tests {
-    use crate::sspi::smartcard::piv::{chuid_to_container_name, try_get_piv_container_name};
+    use crate::sspi::smartcard::piv::chuid_to_container_name;
 
     #[test]
     fn container_name_formatting() {
@@ -248,13 +248,5 @@ mod tests {
         let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG).unwrap();
 
         assert_eq!(container_name, "1d8ac658-e065-92a0-85af-090b075fc105");
-    }
-
-    #[test]
-    fn ctname_ext() {
-        let container_name =
-            try_get_piv_container_name("Yubico YubiKey FIDO+CCID", b"X.509 Certificate for PIV Authentication")
-                .unwrap();
-        println!("{container_name}");
     }
 }
