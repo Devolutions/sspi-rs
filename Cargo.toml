@@ -82,7 +82,7 @@ dns_resolver = ["dep:hickory-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
 tsssp = ["dep:rustls", "__rustls-used"]
 # Turns on Kerberos smart card login (available only on Windows and users WinSCard API).
-scard = ["dep:winscard"]
+scard = ["dep:winscard", "dep:cryptoki"]
 # Use AWS LC as TLS cryptography provider.
 aws-lc-rs = ["rustls?/aws-lc-rs", "__install-crypto-provider"]
 # Use ring as TLS cryptography provider.
@@ -134,6 +134,7 @@ rustls = { version = "0.23", optional = true, default-features = false, features
 rustls-native-certs = { version = "0.8", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 async-recursion = "1.1"
+cryptoki = { version = "0.10", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.5"

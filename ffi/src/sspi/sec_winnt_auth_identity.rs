@@ -453,10 +453,10 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
     use crate::sspi::utils::raw_wide_str_trim_nulls;
     use crate::utils::str_encode_utf16;
 
-    const PKCS11_MODULE_PATH_ENVL: &str = "SSPI_PKCS11_MODULE_PATH";
     const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
-    const SCARD_SYSTEM_PROVIDED: &str = "system";
     const SCARD_EMULATED: &str = "emulated";
+    const SCARD_SYSTEM_PROVIDED: &str = "system";
+    const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
 
     if !username.contains(&b'@') {
         return Err(Error::new(
@@ -503,19 +503,34 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
             })
         },
         SCARD_SYSTEM_PROVIDED => {
+            use crate::sspi::smartcard::{SystemSmartCardInfo, smart_card_info};
+
+            let pkcs11_module = env::var(PKCS11_MODULE_PATH_ENV).map_err(|err| {
+                let message = match err {
+                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {} env variable is not present. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
+                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
+                };
+
+                Error::new(ErrorKind::NoCredentials, message)
+            })?;
+
             let mut username = username.to_vec();
             let mut pin = password.to_vec();
 
             raw_wide_str_trim_nulls(&mut username);
             raw_wide_str_trim_nulls(&mut pin);
 
+            let SystemSmartCardInfo {
+                reader_name, csp_name, certificate, container_name, card_name,
+            } = smart_card_info(&username, pkcs11_module.as_ref())?;
+
             Ok(SmartCardIdentityBuffers {
                 username,
-                certificate: todo!(),
-                card_name: todo!(),
-                reader_name: todo!(),
-                container_name: todo!(),
-                csp_name: todo!(),
+                certificate,
+                card_name,
+                reader_name,
+                container_name,
+                csp_name,
                 pin: pin.into(),
                 private_key_pem: None,
                 scard_type: SmartCardType::SystemProvided,
@@ -725,7 +740,9 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
     )?;
 
-    let username = string_to_utf16(sspi::cert_utils::extract_user_name_from_certificate(&certificate)?);
+    let username = string_to_utf16(crate::sspi::smartcard::extract_user_name_from_certificate(
+        &certificate,
+    )?);
     // SAFETY: This function is safe to call because argument is type-checked.
     let SmartCardInfo {
         key_container_name,
