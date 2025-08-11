@@ -64,7 +64,7 @@ dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transp
 rsa = { version = "0.9.7", default-features = false }
 windows-sys = "0.60"
 base64 = "0.22"
-whoami = "1.5"
+whoami = "1.6"
 tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
