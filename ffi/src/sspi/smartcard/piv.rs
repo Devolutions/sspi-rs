@@ -69,7 +69,7 @@ const APDU_PIV_GET_CHUID: &[u8] = &[
     0x00 // Le
 ];
 
-/// Constructs the key container name based on the CHUID and ceritificate PIV tag.
+/// Constructs the key container name based on the CHUID and certificate PIV tag.
 ///
 /// Provided CHUID must be raw CHUID from smart card. This function will parse it and extract needed GUID from it.
 /// Provided certificate tag must be valid PIV certificate tag.
@@ -94,7 +94,7 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
 
     // Precalculated minimal CHUID length based on the table above.
     //
-    // The precalculated value includes only needed CHUID fiels: FASC-N, GUID, and Error Detection Code.
+    // The precalculated value includes only needed CHUID fields: FASC-N, GUID, and Error Detection Code.
     const MINIMAL_CHUID_LEN: usize =
         1 /* CHUID tag */  + 1 /* CHUID data len */ +
         1 /* FASC-N tag */ + 1 /* FASC-N data length */ + 25 /* FASC-N data */ +
@@ -221,7 +221,7 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
 
 /// Tries to construct smart card key container based on reader name and certificate label.
 ///
-/// This funcntion works **ONLY** for PIV compatible smart cards. Otherwise, it will fail.
+/// This function works **ONLY** for PIV compatible smart cards. Otherwise, it will fail.
 pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Result<String> {
     for (label, tag) in CERTIFICATE_LABELS {
         if *label == certificate_label {

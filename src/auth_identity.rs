@@ -151,14 +151,27 @@ pub struct AuthIdentity {
     pub password: Secret<String>,
 }
 
+/// Auth identity buffers for password-based logon.
 #[derive(Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
+    /// Username.
+    ///
+    /// Must be UTF16 encoded.
     pub user: Vec<u8>,
+    /// Domain.
+    ///
+    /// Must be UTF16 encoded.
     pub domain: Vec<u8>,
+    /// Password.
+    ///
+    /// Must be UTF16 encoded.
     pub password: Secret<Vec<u8>>,
 }
 
 impl AuthIdentityBuffers {
+    /// Creates a new [AuthIdentityBuffers] object based on provided credentials.
+    ///
+    /// Provided credentials must be UTF-16 encoded.
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
         Self {
             user,
@@ -171,6 +184,9 @@ impl AuthIdentityBuffers {
         self.user.is_empty()
     }
 
+    /// Creates a new [AuthIdentityBuffers] object based on UTF-8 credentials.
+    ///
+    /// It converts the provided credentials to UTF16 byte vectors automatically.
     pub fn from_utf8(user: &str, domain: &str, password: &str) -> Self {
         Self {
             user: utils::string_to_utf16(user),

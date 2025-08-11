@@ -6,7 +6,7 @@ use std::slice::from_raw_parts;
 use libc::{c_char, c_void};
 #[cfg(windows)]
 use sspi::Secret;
-use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
+use sspi::{string_to_utf16, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(feature = "scard")]
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
@@ -329,13 +329,29 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         }
 
         // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
-        unsafe {
-            Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-                user: credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize),
-                domain: credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize),
-                password: credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize).into(),
-            }))
+        let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
+        let user = string_to_utf16(String::from_utf8(username_data)?);
+
+        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
+        let domain = string_to_utf16(String::from_utf8(domain_data)?);
+
+        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        let password_data =
+            unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
+        let password = string_to_utf16(String::from_utf8(password_data)?);
+
+        // Try to collect credentials for the emulated/system-provided smart card.
+        #[cfg(feature = "scard")]
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, &password) {
+            return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
+
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+            user,
+            domain,
+            password: password.into(),
+        }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
 
@@ -343,13 +359,29 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
         // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
-        unsafe {
-            Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-                user: credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize),
-                domain: credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize),
-                password: credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize).into(),
-            }))
+        let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
+        let user = string_to_utf16(String::from_utf8(username_data)?);
+
+        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
+        let domain = string_to_utf16(String::from_utf8(domain_data)?);
+
+        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        let password_data =
+            unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
+        let password = string_to_utf16(String::from_utf8(password_data)?);
+
+        // Try to collect credentials for the emulated/system-provided smart card.
+        #[cfg(feature = "scard")]
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, &password) {
+            return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
+
+        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+            user,
+            domain,
+            password: password.into(),
+        }))
     }
 }
 
@@ -395,6 +427,12 @@ pub unsafe fn auth_data_to_identity_buffers_w(
             return handle_smart_card_creds(user, password);
         }
 
+        // Try to collect credentials for the emulated/system-provided smart card.
+        #[cfg(feature = "scard")]
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
+            return Ok(CredentialsBuffers::SmartCard(scard_creds));
+        }
+
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
             // SAFETY: This function is safe to call because `domain` can be null and the caller is responsible for the data validity.
@@ -424,7 +462,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
             return handle_smart_card_creds(user, password);
         }
 
-        // Try to collect credentials for the emulated smart card.
+        // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
         if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
@@ -441,11 +479,13 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 }
 
-/// Tries to collect credentials for smartcard logon.
+/// Collects credentials for smart card logon.
 ///
-/// Provided username and password *must be UTF-16 encoded*. The username must be in FQDN format (name@domain).
+/// Provided username and password **must be UTF-16 encoded**. The username must be in FQDN format (name@domain).
 /// This function can collect either emulated or system-provided smart card credentials:
-/// * If the user wants to use system-provided scard, then
+/// * If the user wants to use system-provided scard, then the SSPI_PKCS11_MODULE_PATH=<path> and SSPI_SCARD_TYPE=system
+///   environment variables must be set.
+/// * If the user wants to use emulated scard, then the SSPI_SCARD_TYPE=emulated and [winscard]-related environment variables must be set.
 #[cfg(feature = "scard")]
 fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
     use std::env;
