@@ -37,7 +37,10 @@ use iso7816_tlv::TlvError;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
-pub use scard::{SmartCard, ATR, CHUNK_SIZE, PIV_AID, SUPPORTED_CONNECTION_PROTOCOL};
+pub use scard::{
+    SmartCard, ATR, CARD_AUTH_CERT_TAG, CHUNK_SIZE, DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, PIV_AID,
+    PIV_CERT_TAG, SUPPORTED_CONNECTION_PROTOCOL,
+};
 pub use scard_context::{
     Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP,
     MICROSOFT_SCARD_DRIVER_LOCATION,
