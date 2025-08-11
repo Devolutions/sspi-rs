@@ -1,11 +1,8 @@
-use std::ffi::CStr;
-use std::ptr::null_mut;
-
 use sspi::{Error, ErrorKind, Result};
 use winscard::tlv_tags;
-use winscard::winscard::{Protocol, ShareMode};
+use winscard::winscard::{Protocol, ScardConnectData, ScardScope, ShareMode, TransmitOutData, WinScardContext};
 
-use crate::winscard::pcsc_lite::initialize_pcsc_lite_api;
+use crate::winscard::system_scard::SystemScardContext;
 
 /// Possible PIV certificates labels and their corresponding PIV tags.
 ///
@@ -171,77 +168,18 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
 /// from CHUID, and then construct key container name.
 #[instrument(level = "trace", ret)]
 fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
-    let pcsc = initialize_pcsc_lite_api().unwrap();
+    let context = SystemScardContext::establish(ScardScope::User, false)?;
+    let ScardConnectData {
+        protocol: _,
+        handle: mut card,
+    } = context.connect(reader, ShareMode::Shared, Some(Protocol::T0 | Protocol::T1))?;
 
-    let mut context = 0;
-    let result = unsafe { (pcsc.SCardEstablishContext)(0, null_mut(), null_mut(), &mut context) };
-    if result != 0 {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "failed to extract container name: failed to establish smart card context",
-        ));
-    }
+    let TransmitOutData {
+        output_apdu: output,
+        receive_pci: _,
+    } = card.transmit(APDU_PIV_SELECT_AID)?;
 
-    let mut reader = reader.as_bytes().to_vec();
-    reader.push(0);
-    let reader = CStr::from_bytes_until_nul(&reader).unwrap();
-
-    let mut card = 0;
-    let mut active_protocol = 0;
-    let result = unsafe {
-        (pcsc.SCardConnect)(
-            context,
-            reader.as_ptr() as *const _,
-            ShareMode::Shared.into(),
-            (Protocol::T0 | Protocol::T1).bits(),
-            &mut card,
-            &mut active_protocol,
-        )
-    };
-
-    if result != 0 {
-        unsafe { (pcsc.SCardReleaseContext)(context) };
-
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "failed to extract container name: failed to connect to smart card",
-        ));
-    }
-
-    let send_pci = if active_protocol == Protocol::T0.bits() {
-        pcsc.g_rgSCardT0Pci
-    } else if active_protocol == Protocol::T1.bits() {
-        pcsc.g_rgSCardT1Pci
-    } else if active_protocol == Protocol::Raw.bits() {
-        pcsc.g_rgSCardRawPci
-    } else {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            format!(
-                "failed to extract container name: smart card selected invalid ({}) connection protocol",
-                active_protocol
-            ),
-        ));
-    };
-
-    let mut receive_buffer = [0; 258];
-    let mut receive_buffer_len = 258;
-    let result = unsafe {
-        (pcsc.SCardTransmit)(
-            card,
-            send_pci,
-            APDU_PIV_SELECT_AID.as_ptr(),
-            APDU_PIV_SELECT_AID.len() as _,
-            null_mut(),
-            receive_buffer.as_mut_ptr(),
-            &mut receive_buffer_len,
-        )
-    };
-
-    if result != 0 {
-        unsafe { (pcsc.SCardDisconnect)(card, 0) };
-        unsafe { (pcsc.SCardReleaseContext)(context) };
-
+    if output.len() < 2 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -249,42 +187,27 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     }
 
     // Check status word.
-    let output_len = usize::try_from(receive_buffer_len)?;
-    let output = &receive_buffer[0..output_len];
-    if &output[output_len - 2..] != <[u8; 2]>::from(winscard::Status::OK) {
+    if output[output.len() - 2..] != <[u8; 2]>::from(winscard::Status::OK) {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
         ));
     }
 
-    receive_buffer_len = 258;
-    let result = unsafe {
-        (pcsc.SCardTransmit)(
-            card,
-            send_pci,
-            APDU_PIV_GET_CHUID.as_ptr(),
-            APDU_PIV_GET_CHUID.len() as _,
-            null_mut(),
-            receive_buffer.as_mut_ptr(),
-            &mut receive_buffer_len,
-        )
-    };
+    let TransmitOutData {
+        output_apdu: output,
+        receive_pci: _,
+    } = card.transmit(APDU_PIV_GET_CHUID)?;
 
-    if result != 0 {
-        unsafe { (pcsc.SCardDisconnect)(card, 0) };
-        unsafe { (pcsc.SCardReleaseContext)(context) };
-
+    if output.len() < 2 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
-            "failed to extract container name: failed to retrieve smart card CHUID",
+            "failed to extract container name: failed to select PIV card application",
         ));
     }
 
     // Check status word.
-    let output_len = usize::try_from(receive_buffer_len)?;
-    let output = &receive_buffer[0..output_len];
-    if &output[output_len - 2 /* status word */..] != <[u8; 2]>::from(winscard::Status::OK) {
+    if output[output.len() - 2 /* status word */..] != <[u8; 2]>::from(winscard::Status::OK) {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -292,9 +215,6 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     }
 
     let chuid = &output[0..output.len() - 2 /* status word */];
-
-    unsafe { (pcsc.SCardDisconnect)(card, 0) };
-    unsafe { (pcsc.SCardReleaseContext)(context) };
 
     chuid_to_container_name(chuid, tag)
 }

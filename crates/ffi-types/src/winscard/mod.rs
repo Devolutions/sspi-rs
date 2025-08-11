@@ -104,6 +104,7 @@ pub struct ScardIoRequest {
 }
 
 pub type LpScardIoRequest = *mut ScardIoRequest;
+pub type LpCScardIoRequest = *const ScardIoRequest;
 
 /// [OPENCARD_SEARCH_CRITERIAA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencard_search_criteriaa)
 ///

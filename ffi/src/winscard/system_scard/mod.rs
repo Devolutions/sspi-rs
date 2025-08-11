@@ -3,8 +3,8 @@
 #[macro_use]
 mod macros;
 
-mod card;
-mod context;
+pub mod card;
+pub mod context;
 
 use std::borrow::Cow;
 
@@ -89,6 +89,18 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         }};
     }
 
+    macro_rules! load_io_request {
+        ($req_name:literal) => {{
+            // SAFETY: This function is safe to call because we've checked the `winscard_module`
+            // handle above and the `$req_name` is correct and hardcoded in the code.
+            unsafe {
+                // Not great to silent, but mostly fine in this context.
+                #[expect(clippy::missing_transmute_annotations)]
+                transmute::<windows_sys::Win32::Foundation::FARPROC, _>(GetProcAddress(winscard_module, s!($req_name)))
+            }
+        }};
+    }
+
     Ok(SCardApiFunctionTable {
         dw_version: 0,
         dw_flags: 0,
@@ -165,5 +177,9 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         SCardListReadersWithDeviceInstanceIdA: load_fn!("SCardListReadersWithDeviceInstanceIdA"),
         SCardListReadersWithDeviceInstanceIdW: load_fn!("SCardListReadersWithDeviceInstanceIdW"),
         SCardAudit: load_fn!("SCardAudit"),
+
+        g_rgSCardT0Pci: load_io_request!("g_rgSCardT0Pci"),
+        g_rgSCardT1Pci: load_io_request!("g_rgSCardT1Pci"),
+        g_rgSCardRawPci: load_io_request!("g_rgSCardRawPci"),
     })
 }
