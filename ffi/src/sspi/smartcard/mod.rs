@@ -1,0 +1,220 @@
+mod piv;
+
+use std::borrow::Cow;
+use std::env;
+use std::path::Path;
+
+use cryptoki::context::{CInitializeArgs, Pkcs11};
+use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
+use cryptoki::session::UserType;
+use cryptoki::types::AuthPin;
+use picky_asn1::wrapper::Utf8StringAsn1;
+use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
+use sspi::{utf16_bytes_to_utf8_string, Error, ErrorKind, Result};
+use winscard::MICROSOFT_DEFAULT_CSP;
+
+use crate::sspi::smartcard::piv::try_get_piv_container_name;
+use crate::utils::str_encode_utf16;
+
+/// Environment variable that soecifies custom CSP name.
+const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
+
+/// System smart card information.
+///
+/// Contains smart card certificate, reader name, container name, and other fields.
+#[derive(Debug)]
+pub struct SystemSmartCardInfo {
+    /// UTF-16 encoded reader name.
+    ///
+    /// Reader name is selected slot description.
+    pub reader_name: Vec<u8>,
+    /// UTF-16 encoded smart card CSP name.
+    pub csp_name: Vec<u8>,
+    /// Certificate.
+    pub certificate: Vec<u8>,
+    /// UTF-16 encoded smart card key container name.
+    pub container_name: Option<Vec<u8>>,
+    /// UTF-16 encoded smart card name.
+    pub card_name: Option<Vec<u8>>,
+}
+
+/// Tries to collect system-provided smart card information.
+///
+/// The username must be in FQDN (user@domain) format.
+#[instrument(level = "trace", ret)]
+pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
+    let pkcs11 = Pkcs11::new(pkcs11_module)?;
+    pkcs11.initialize(CInitializeArgs::OsThreads)?;
+
+    let username = utf16_bytes_to_utf8_string(username);
+
+    for slot in pkcs11.get_slots_with_token()? {
+        let session = pkcs11.open_ro_session(slot)?;
+
+        let pin = AuthPin::new("123456".into());
+        session.login(UserType::User, Some(&pin))?;
+
+        let slot_info = pkcs11.get_slot_info(slot)?;
+        let reader_name = slot_info.slot_description();
+
+        // The first suitable user certificate on smart card.
+        let mut certificate = None;
+        let mut container_name = None;
+
+        let query = [
+            Attribute::Class(ObjectClass::CERTIFICATE),
+            Attribute::CertificateType(CertificateType::X_509),
+        ];
+        'certificates: for certificate_handle in session.find_objects(&query)? {
+            for encoded_certificate in session.get_attributes(certificate_handle, &[AttributeType::Value])? {
+                if let Attribute::Value(encoded_certificate) = encoded_certificate {
+                    if validate_certificate(&encoded_certificate, &username).is_ok() {
+                        certificate = Some(encoded_certificate);
+
+                        // We found a suitable certificate for smart card logon on the device.
+                        // Next, we will check if the inserted device is PIV scard. If yes, then we will try
+                        // to extract the container name using raw APDU commands.
+                        for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
+                            if let Attribute::Label(label) = label {
+                                container_name = try_get_piv_container_name(reader_name, &label)
+                                    .as_deref()
+                                    .map(str_encode_utf16)
+                                    .ok();
+                            }
+                        }
+
+                        break 'certificates;
+                    }
+                }
+            }
+        }
+
+        let Some(certificate) = certificate else {
+            continue;
+        };
+
+        let reader_name = str_encode_utf16(reader_name);
+
+        let csp_name = if let Ok(csp) = env::var(CSP_NAME_VAR) {
+            Cow::Owned(csp)
+        } else {
+            Cow::Borrowed(MICROSOFT_DEFAULT_CSP)
+        };
+        let csp_name = str_encode_utf16(csp_name.as_ref());
+
+        let token_info = pkcs11.get_token_info(slot)?;
+        let card_name = Some(str_encode_utf16(token_info.label()));
+
+        return Ok(SystemSmartCardInfo {
+            reader_name,
+            csp_name,
+            certificate,
+            container_name,
+            card_name,
+        });
+    }
+
+    Err(Error::new(
+        ErrorKind::NoCredentials,
+        "smart card does not contain suitable credentials",
+    ))
+}
+
+/// Validates smart card cetificate.
+///
+/// Certificate requirements:
+/// * Subject Alternative name must present and be equal to provided username.
+fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
+    let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
+    let certificate_username = extract_user_name_from_certificate(&certificate)?;
+
+    // TODO: validate ebhanced key usage.
+
+    if certificate_username != username {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            format!(
+                "logon username {username} and smart card certificate username {certificate_username} do not match"
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Tries to extract the user principal name from the smart card certificate by searching in the Subject Alternative Name.
+#[instrument(level = "trace", ret)]
+pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
+    let subject_alt_name_ext = &certificate
+        .tbs_certificate
+        .extensions
+        .0
+         .0
+        .iter()
+        .find(|extension| extension.extn_id().0 == oids::subject_alternative_name())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::IncompleteCredentials,
+                "Subject alternative name certificate extension is not present",
+            )
+        })?
+        .extn_value();
+
+    let alternate_name = match subject_alt_name_ext {
+        ExtensionView::SubjectAltName(alternate_name) => alternate_name,
+        // safe: checked above
+        _ => unreachable!("ExtensionView must be SubjectAltName"),
+    };
+
+    let other_name = match alternate_name.0.first().expect("there is always at least one element") {
+        GeneralName::OtherName(other_name) => other_name,
+        _ => {
+            return Err(Error::new(
+                ErrorKind::IncompleteCredentials,
+                "subject alternate name has unsupported value type",
+            ))
+        }
+    };
+
+    if other_name.type_id.0 != oids::user_principal_name() {
+        return Err(Error::new(
+            ErrorKind::IncompleteCredentials,
+            "Subject alternate name must be UPN",
+        ));
+    }
+
+    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0 .0)?;
+    Ok(data.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use picky::x509::Cert;
+    use picky_asn1_x509::Certificate;
+
+    use super::{extract_user_name_from_certificate, *};
+
+    #[test]
+    fn system_scard_creds() {
+        let creds = smart_card_info(
+            &[
+                116, 0, 50, 0, 64, 0, 116, 0, 98, 0, 116, 0, 46, 0, 99, 0, 111, 0, 109, 0,
+            ],
+            "/usr/local/lib/libykcs11.2.7.2.dylib".as_ref(),
+        )
+        .unwrap();
+        println!("{:?}", creds);
+    }
+
+    #[test]
+    fn username_extraction() {
+        let certificate: Certificate = Cert::from_pem_str(include_str!("../../../../test_assets/pw11.cer"))
+            .unwrap()
+            .into();
+
+        assert_eq!(
+            "pw11@example.com",
+            extract_user_name_from_certificate(&certificate).unwrap()
+        );
+    }
+}
