@@ -180,7 +180,7 @@ fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Res
 
     let ExtensionView::ExtendedKeyUsage(extended_key_usage) = extended_key_usage_ext else {
         // safe: checked above
-        unreachable!("ExtensionView must be ExtendedKeyUsage")
+        unreachable!("ExtensionView must be ExtendedKeyUsage");
     };
 
     Ok((*extended_key_usage).clone())
@@ -204,20 +204,17 @@ pub fn extract_upn_from_certificate(certificate: &Certificate) -> Result<String>
         })?
         .extn_value();
 
-    let alternate_name = match subject_alt_name_ext {
-        ExtensionView::SubjectAltName(alternate_name) => alternate_name,
+    let ExtensionView::SubjectAltName(alternate_name) = subject_alt_name_ext else {
         // safe: checked above
-        _ => unreachable!("ExtensionView must be SubjectAltName"),
+        unreachable!("ExtensionView must be SubjectAltName");
     };
 
-    let other_name = match alternate_name.0.first().expect("there is always at least one element") {
-        GeneralName::OtherName(other_name) => other_name,
-        _ => {
-            return Err(Error::new(
-                ErrorKind::IncompleteCredentials,
-                "Subject Alternate Name has unsupported value type",
-            ))
-        }
+    let GeneralName::OtherName(other_name) = alternate_name.0.first().expect("there is always at least one element")
+    else {
+        return Err(Error::new(
+            ErrorKind::IncompleteCredentials,
+            "Subject Alternate Name has unsupported value type",
+        ));
     };
 
     if other_name.type_id.0 != oids::user_principal_name() {
