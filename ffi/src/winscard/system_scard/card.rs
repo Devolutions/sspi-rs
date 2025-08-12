@@ -262,20 +262,19 @@ impl WinScard for SystemScard {
         let mut output_apdu_len = OUT_APDU_BUF_LEN.try_into()?;
         let mut output_apdu = [0; OUT_APDU_BUF_LEN];
 
-        let send_pci = if self.active_protocol == Protocol::T0 {
-            self.api.g_rgSCardT0Pci
-        } else if self.active_protocol == Protocol::T1 {
-            self.api.g_rgSCardT1Pci
-        } else if self.active_protocol == Protocol::Raw {
-            self.api.g_rgSCardRawPci
-        } else {
-            return Err(Error::new(
-                ErrorKind::InvalidValue,
-                format!(
-                    "failed to extract container name: smart card selected invalid ({:?}) connection protocol",
-                    self.active_protocol
-                ),
-            ));
+        let send_pci = match self.active_protocol {
+            Protocol::T0 => self.api.g_rgSCardT0Pci,
+            Protocol::T1 => self.api.g_rgSCardT1Pci,
+            Protocol::Raw => self.api.g_rgSCardRawPci,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidValue,
+                    format!(
+                        "failed to extract container name: smart card selected invalid ({:?}) connection protocol",
+                        self.active_protocol
+                    ),
+                ))
+            }
         };
 
         try_execute!(
