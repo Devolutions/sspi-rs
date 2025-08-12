@@ -8,7 +8,7 @@ use crate::winscard::system_scard::SystemScardContext;
 ///
 /// Certificate labels are used to determine the certificate PIV tag.
 /// All values are taken from the NIST SP 800-73pt1-5 specification:
-/// 4.3 Object Identifiers Table 3. Object identifiers of the PIV data objects for interoperable use.
+/// 4.3 Object Identifiers. Table 3. Object identifiers of the PIV data objects for interoperable use.
 const CERTIFICATE_LABELS: &[(&[u8], &[u8])] = &[
     // X.509 Certificate for PIV Authentication 2.16.840.1.101.3.7.2.1.1 '5FC105' M
     (b"X.509 Certificate for PIV Authentication", winscard::PIV_CERT_TAG),
@@ -34,6 +34,8 @@ const CERTIFICATE_LABELS: &[(&[u8], &[u8])] = &[
 /// The SELECT card command sets the currently selected application. More info:
 /// * NIST.SP.800-73-4, Part 2, Section 3.1.1.
 /// * NIST.SP.800-73-4, Part 2, Section 2.2.
+/// 
+/// This APDU command select the PIV Card Application.
 #[rustfmt::skip]
 const APDU_PIV_SELECT_AID: &[u8] = &[
     0x00, // CLA
@@ -48,11 +50,14 @@ const APDU_PIV_SELECT_AID: &[u8] = &[
     0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00,
     0x00, // Le
 ];
+
 /// GET DATA Card Command.
 ///
 /// The GET DATA card command retrieves the data content of the single data object whose tag is given in the data field. More info:
 /// * NIST.SP.800-73-4, Part 2, Section 3.1.2.
 /// * NIST.SP.800-73-4, Part 2, Section 4.3.
+/// 
+/// The current APDU requests the CHUID value from the smart card.
 #[rustfmt::skip]
 const APDU_PIV_GET_CHUID: &[u8] = &[
     0x00, // CLA: '00' or '0C' for secure messaging.
@@ -78,7 +83,7 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
     if tag.len() != 3 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
-            "invalid PIV certificate tag: not enough bytes: tag should be exactly 3 bytes long",
+            "invalid PIV certificate tag: tag should be exactly 3 bytes long",
         ));
     }
 
@@ -164,8 +169,8 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
 /// Returns key container name based on the smart card reader name and certificate PIV tag.
 ///
 /// Provided certificate tag must be valid PIV certificate tag.
-/// This function tries to get CHUID (Card Holder Unique Identifier) from the smart card using WinSCard API, extract GUID
-/// from CHUID, and then construct key container name.
+/// This function attempts to retrieve the CHUID (Card Holder Unique Identifier) from the smart card using the WinSCard API,
+/// extract the GUID from the CHUID, and then construct the key container name.
 #[instrument(level = "trace", ret)]
 fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     let context = SystemScardContext::establish(ScardScope::User, false)?;

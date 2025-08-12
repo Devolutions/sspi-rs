@@ -16,7 +16,9 @@ use winscard::MICROSOFT_DEFAULT_CSP;
 use crate::sspi::smartcard::piv::try_get_piv_container_name;
 use crate::utils::str_encode_utf16;
 
-/// Environment variable that soecifies custom CSP name.
+/// Environment variable that specifies a custom CSP name.
+///
+/// If not set, the default CSP name will be used: [MICROSOFT_DEFAULT_CSP].
 const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
 
 /// System smart card information.
@@ -26,7 +28,7 @@ const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
 pub struct SystemSmartCardInfo {
     /// UTF-16 encoded reader name.
     ///
-    /// Reader name is selected slot description.
+    /// Reader name is the selected slot description.
     pub reader_name: Vec<u8>,
     /// UTF-16 encoded smart card CSP name.
     pub csp_name: Vec<u8>,
@@ -38,20 +40,22 @@ pub struct SystemSmartCardInfo {
     pub card_name: Option<Vec<u8>>,
 }
 
-/// Tries to collect system-provided smart card information.
+/// Collects system-provided smart card information.
 ///
-/// The username must be in FQDN (user@domain) format.
+/// The username must be in FQDN (user@domain) format and UTF-16 encoded.
+/// The PIN code must be UTF-16 encoded.
 #[instrument(level = "trace", ret)]
-pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
+pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
     let pkcs11 = Pkcs11::new(pkcs11_module)?;
     pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
     let username = utf16_bytes_to_utf8_string(username);
+    let pin = utf16_bytes_to_utf8_string(pin);
+    let pin = AuthPin::new(pin);
 
     for slot in pkcs11.get_slots_with_token()? {
         let session = pkcs11.open_ro_session(slot)?;
 
-        let pin = AuthPin::new("123456".into());
         session.login(UserType::User, Some(&pin))?;
 
         let slot_info = pkcs11.get_slot_info(slot)?;
@@ -72,7 +76,7 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
                         certificate = Some(encoded_certificate);
 
                         // We found a suitable certificate for smart card logon on the device.
-                        // Next, we will check if the inserted device is PIV scard. If yes, then we will try
+                        // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
                         // to extract the container name using raw APDU commands.
                         for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
                             if let Attribute::Label(label) = label {
@@ -120,19 +124,20 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
     ))
 }
 
-/// Validates smart card cetificate.
+/// Validates smart card certificate.
 ///
 /// Certificate requirements:
 /// * Subject Alternative name must present and be equal to provided username.
+/// * Extended Key Usage extension must present and contain Client Authentication (1.3.6.1.5.5.7.3.2) and Smart Card Logon (1.3.6.1.4.1.311.20.2.2) OIDs.
 fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
     let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
-    let certificate_username = extract_user_name_from_certificate(&certificate)?;
+    let certificate_username = extract_upn_from_certificate(&certificate)?;
 
     if certificate_username != username {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             format!(
-                "logon username {username} and smart card certificate username {certificate_username} do not match"
+                "logon username ({username}) and smart card certificate username ({certificate_username}) do not match"
             ),
         ));
     }
@@ -175,7 +180,7 @@ fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Res
 
     let ExtensionView::ExtendedKeyUsage(extended_key_usage) = extended_key_usage_ext else {
         // safe: checked above
-        unreachable!("ExtensionView must be SubjectAltName")
+        unreachable!("ExtensionView must be ExtendedKeyUsage")
     };
 
     Ok((*extended_key_usage).clone())
@@ -183,7 +188,7 @@ fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Res
 
 /// Extracts the user principal name from the smart card certificate by searching in the Subject Alternative Name.
 #[instrument(level = "trace", ret)]
-pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
+pub fn extract_upn_from_certificate(certificate: &Certificate) -> Result<String> {
     let subject_alt_name_ext = &certificate
         .tbs_certificate
         .extensions
@@ -194,7 +199,7 @@ pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<S
         .ok_or_else(|| {
             Error::new(
                 ErrorKind::IncompleteCredentials,
-                "Subject alternative name certificate extension is not present",
+                "Subject Alternative Name certificate extension is not present",
             )
         })?
         .extn_value();
@@ -210,7 +215,7 @@ pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<S
         _ => {
             return Err(Error::new(
                 ErrorKind::IncompleteCredentials,
-                "subject alternate name has unsupported value type",
+                "Subject Alternate Name has unsupported value type",
             ))
         }
     };
@@ -218,7 +223,7 @@ pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<S
     if other_name.type_id.0 != oids::user_principal_name() {
         return Err(Error::new(
             ErrorKind::IncompleteCredentials,
-            "Subject alternate name must be UPN",
+            "Subject Alternate Name must be UPN",
         ));
     }
 
@@ -231,7 +236,7 @@ mod tests {
     use picky::x509::Cert;
     use picky_asn1_x509::Certificate;
 
-    use super::extract_user_name_from_certificate;
+    use super::extract_upn_from_certificate;
 
     #[test]
     fn username_extraction() {
@@ -239,9 +244,6 @@ mod tests {
             .unwrap()
             .into();
 
-        assert_eq!(
-            "pw11@example.com",
-            extract_user_name_from_certificate(&certificate).unwrap()
-        );
+        assert_eq!("pw11@example.com", extract_upn_from_certificate(&certificate).unwrap());
     }
 }

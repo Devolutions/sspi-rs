@@ -562,7 +562,7 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
 
             let SystemSmartCardInfo {
                 reader_name, csp_name, certificate, container_name, card_name,
-            } = smart_card_info(&username, pkcs11_module.as_ref())?;
+            } = smart_card_info(&username, &pin, pkcs11_module.as_ref())?;
 
             Ok(SmartCardIdentityBuffers {
                 username,
@@ -780,9 +780,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
     )?;
 
-    let username = string_to_utf16(crate::sspi::smartcard::extract_user_name_from_certificate(
-        &certificate,
-    )?);
+    let username = string_to_utf16(crate::sspi::smartcard::extract_upn_from_certificate(&certificate)?);
     // SAFETY: This function is safe to call because argument is type-checked.
     let SmartCardInfo {
         key_container_name,
