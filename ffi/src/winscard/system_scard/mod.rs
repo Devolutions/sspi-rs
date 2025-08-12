@@ -81,26 +81,40 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
 
     macro_rules! load_fn {
         ($func_name:literal) => {{
-            // SAFETY: This function is safe to call because we've checked the `winscard_module`
-            // handle above and the `$func_name` is correct and hardcoded in the code.
+            // SAFETY:
+            // - We've checked the `winscard_module` handle above.
+            // - `$func_name` is correct and hardcoded in the code.
+            let fn_handle = unsafe { GetProcAddress(winscard_module, s!($func_name)) };
+            // SAFETY:
+            // - FARPROC is a C-function pointer. It has the same layout as other C function pointers.
+            //   Thus, we can safely transmute it to another C function pointer.
+            // - FARPROC will never be `None` in this context, because all function names are hardcoded in the code and are valid.
             unsafe {
                 // Not great to silent, but mostly fine in this context.
                 #[expect(clippy::missing_transmute_annotations)]
-                transmute::<windows_sys::Win32::Foundation::FARPROC, _>(GetProcAddress(winscard_module, s!($func_name)))
+                transmute::<windows_sys::Win32::Foundation::FARPROC, _>(fn_handle)
             }
         }};
     }
 
     macro_rules! load_io_request {
         ($req_name:literal) => {{
-            // SAFETY: This function is safe to call because we've checked the `winscard_module`
-            // handle above and the `$req_name` is correct and hardcoded in the code.
-            unsafe {
-                let send_pci: LpCScardIoRequest = transmute::<windows_sys::Win32::Foundation::FARPROC, _>(
-                    GetProcAddress(winscard_module, s!($req_name)),
-                );
-                &*send_pci
-            }
+            // SAFETY:
+            // - We've checked the `winscard_module` handle above.
+            // - `$req_name` is correct and hardcoded in the code.
+            let req_handle = unsafe { GetProcAddress(winscard_module, s!($req_name)) };
+            // SAFETY:
+            // - FARPROC is a C-function pointer. But it can also mean variable pointer. [GetProcAddress](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getprocaddress):
+            //   > If the function succeeds, the return value is the address of the exported function or variable.
+            //   Thus, we can safely transmute it to another C structure pointer.
+            // - FARPROC will never be `None` in this context, because all names are hardcoded in the code and are valid.
+            let send_pci = unsafe {
+                transmute::<windows_sys::Win32::Foundation::FARPROC, LpCScardIoRequest>(req_handle)
+            };
+            // SAFETY:
+            // - `send_pci` is not NULL and valid, because its initial handle is valid, because library variable names are valid and hardcoded in the code.
+            // - We never call the `FreeLibrary` function, so the pointer will remain valid for the `'static` lifetime.
+            unsafe { &*send_pci }
         }};
     }
 

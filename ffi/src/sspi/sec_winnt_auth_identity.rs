@@ -328,15 +328,21 @@ pub unsafe fn auth_data_to_identity_buffers_a(
             );
         }
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
         let user = string_to_utf16(String::from_utf8(username_data)?);
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
         let domain = string_to_utf16(String::from_utf8(domain_data)?);
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let password_data =
             unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
         let password = string_to_utf16(String::from_utf8(password_data)?);
@@ -358,15 +364,21 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // SAFETY: `auth_data` is not null. We've checked this above.
         let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
         let user = string_to_utf16(String::from_utf8(username_data)?);
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
         let domain = string_to_utf16(String::from_utf8(domain_data)?);
 
-        // SAFETY: This function is safe to call because credentials pointers can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let password_data =
             unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
         let password = string_to_utf16(String::from_utf8(password_data)?);
@@ -402,7 +414,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
         if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
-            // SAFETY: This function is safe to call because `package_list` is not null. We've checked this above.
+            // SAFETY: `package_list` is not null due to a prior check.
             *package_list = Some(String::from_utf16_lossy(unsafe {
                 from_raw_parts(
                     auth_data.package_list,
@@ -411,10 +423,14 @@ pub unsafe fn auth_data_to_identity_buffers_w(
             }));
         }
 
-        // SAFETY: This function is safe to call because `user` can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let user =
             unsafe { credentials_str_into_bytes(auth_data.user as *const _, auth_data.user_length as usize * 2) };
-        // SAFETY: This function is safe to call because `password` can be null and the caller is responsible for the data validity.
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
         let password = unsafe {
             credentials_str_into_bytes(auth_data.password as *const _, auth_data.password_length as usize * 2)
         }
@@ -435,7 +451,9 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
-            // SAFETY: This function is safe to call because `domain` can be null and the caller is responsible for the data validity.
+            // SAFETY:
+            // - Credentials pointers can be NULL.
+            // - If credentials are not NULL, then the caller is responsible for the data validity.
             domain: unsafe {
                 credentials_str_into_bytes(auth_data.domain as *const _, auth_data.domain_length as usize * 2)
             },
