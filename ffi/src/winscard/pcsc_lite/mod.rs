@@ -167,19 +167,15 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
 
     macro_rules! load_io_request {
         ($req_name:literal) => {{
-            let fn_name = CString::new($req_name).expect("CString creation should not fail");
+            let req_name = CString::new($req_name).expect("CString creation should not fail");
 
             // SAFETY: The `handle` is initialized and checked above.
             // The function name should be correct because it's hardcoded in the code.
-            let io_request_ptr = unsafe { dlsym(handle, fn_name.as_ptr()) };
+            let io_request_ptr = unsafe { dlsym(handle, req_name.as_ptr()) };
             debug!(?io_request_ptr, $req_name);
 
             // SAFETY: FFI. We have to trust that we defined the signatures correctly.
-            unsafe {
-                // Not great to silent, but mostly fine in this context.
-                #[expect(clippy::missing_transmute_annotations)]
-                std::mem::transmute::<*mut libc::c_void, _>(io_request_ptr)
-            }
+            unsafe { std::mem::transmute::<*mut libc::c_void, *const ScardIoRequest>(io_request_ptr) }
         }};
     }
 
