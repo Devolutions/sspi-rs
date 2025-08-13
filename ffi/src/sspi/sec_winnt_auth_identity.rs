@@ -431,7 +431,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        let password = unsafe {
+        let password: sspi::Secret<Vec<u8>> = unsafe {
             credentials_str_into_bytes(auth_data.password as *const _, auth_data.password_length as usize * 2)
         }
         .into();
