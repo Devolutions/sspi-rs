@@ -6,7 +6,7 @@ use std::path::Path;
 
 use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::mechanism::Mechanism;
-use cryptoki::object::{Attribute, ObjectClass};
+use cryptoki::object::{Attribute, KeyType, ObjectClass};
 use cryptoki::session::UserType;
 use cryptoki::types::AuthPin;
 use picky::key::PrivateKey;
@@ -155,18 +155,21 @@ impl SmartCard {
                 let pin = AuthPin::new(pin);
                 session.login(UserType::User, Some(&pin))?;
 
-                let objects = session.find_objects(&[Attribute::Class(ObjectClass::PRIVATE_KEY)])?;
-                if let Some(private_key) = objects.into_iter().next() {
-                    let checksum = session.sign(&Mechanism::RsaPkcs, private_key, data.as_ref())?;
-                    // let checksum = session.sign(&Mechanism::Sha1RsaPkcs, object, data.as_ref());
+                let objects = session.find_objects(&[
+                    Attribute::Class(ObjectClass::PRIVATE_KEY),
+                    Attribute::KeyType(KeyType::RSA),
+                ])?;
 
-                    Ok(checksum)
-                } else {
-                    Err(Error::new(
-                        ErrorKind::NoCredentials,
-                        "the selected PKCS11 slot does not have private key",
-                    ))
+                for private_key in objects {
+                    if let Ok(signature) = session.sign(&Mechanism::RsaPkcs, private_key, data.as_ref()) {
+                        return Ok(signature);
+                    }
                 }
+
+                Err(Error::new(
+                    ErrorKind::NoCredentials,
+                    format!("the selected PKCS11 slot ({reader_name}) does not have a suitable private key for data signing"),
+                ))
             }
         }
     }
