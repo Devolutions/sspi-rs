@@ -55,6 +55,8 @@ pub async fn initialize_security_context<'a>(
 ) -> Result<crate::InitializeSecurityContextResult> {
     trace!(?builder);
 
+    builder.context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
+
     let status = match client.state {
         KerberosState::Negotiate => {
             let sname = if builder
@@ -107,6 +109,8 @@ pub async fn initialize_security_context<'a>(
                     (None, oids::krb5())
                 };
             client.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
+            debug!("KRBU2U: {}", client.krb5_user_to_user);
+            // client.krb5_user_to_user = true;
 
             let credentials = builder
                 .credentials_handle
