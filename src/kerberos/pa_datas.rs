@@ -25,7 +25,7 @@ pub enum AsReqPaDataOptions<'a> {
 }
 
 impl AsReqPaDataOptions<'_> {
-    pub fn generate(&self) -> Result<Vec<PaData>> {
+    pub fn generate(&mut self) -> Result<Vec<PaData>> {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
             AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),

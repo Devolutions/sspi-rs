@@ -544,20 +544,22 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
         SCARD_EMULATED => {
             use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
-            let smart_card_info = SmartCardInfo::try_from_env()?;
+            let SmartCardInfo { container_name, pin: scard_pin, auth_cert_der, auth_pk_pem, auth_pk: _, reader } = SmartCardInfo::try_from_env()?;
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
             Ok(SmartCardIdentityBuffers {
                 username,
-                certificate: smart_card_info.auth_cert_der.clone(),
+                certificate: auth_cert_der.clone(),
                 card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
-                reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
-                container_name: Some(str_encode_utf16(smart_card_info.container_name.as_ref())),
+                reader_name: str_encode_utf16(reader.name.as_ref()),
+                container_name: Some(str_encode_utf16(container_name.as_ref())),
                 csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
                 pin: pin.into(),
-                private_key_pem: Some(str_encode_utf16(smart_card_info.auth_pk_pem.as_ref())),
-                scard_type: SmartCardType::Emulated,
+                private_key_pem: Some(str_encode_utf16(auth_pk_pem.as_ref())),
+                scard_type: SmartCardType::Emulated {
+                    scard_pin: scard_pin.into(),
+                },
             })
         },
         SCARD_SYSTEM_PROVIDED => {
@@ -587,7 +589,9 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
                 csp_name,
                 pin: pin.into(),
                 private_key_pem: None,
-                scard_type: SmartCardType::SystemProvided,
+                scard_type: SmartCardType::SystemProvided {
+                    pkcs11_module_path: pkcs11_module.into(),
+                },
             })
         }
         scard_type => Err(Error::new(ErrorKind::NoCredentials, format!("failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon", scard_type))),
