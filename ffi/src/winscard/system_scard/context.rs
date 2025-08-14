@@ -106,7 +106,9 @@ fn init_scard_cache(
 
     let mut cache = BTreeMap::new();
 
-    // Freshness values are not supported, so we set all values to zero.
+    // Freshness values may vary at different points in time.
+    // We do not need to change them in runtime, so we hardcode them here.
+    // Those values do not mean anything special. They are just extracted from the real TPM smart card.
     const PIN_FRESHNESS: [u8; 2] = [0x00, 0x00];
     const CONTAINER_FRESHNESS: [u8; 2] = [0x00, 0x00];
     const FILE_FRESHNESS: [u8; 2] = [0x00, 0x00];
@@ -170,6 +172,34 @@ fn init_scard_cache(
         // actual data len: size_of<CONTAINER_MAP_RECORD>()
         // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
         value.extend_from_slice(&86_u32.to_le_bytes());
+        // CONTAINER_MAP_RECORD:
+        let mut wsz_guid = container_name
+            .encode_utf16()
+            .chain(core::iter::once(0))
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+        // `wszGuid` has type `WCHAR [MAX_CONTAINER_NAME_LEN]`,
+        // so we need to resize the data if it contains less then `size_of() * MAX_CONTAINER_NAME_LEN` bytes.
+        let container_name_bytes_len = size_of::<WChar>() * MAX_CONTAINER_NAME_LEN;
+        debug_assert_eq!(container_name_bytes_len, 80);
+
+        wsz_guid.resize(container_name_bytes_len, 0);
+        debug!(?wsz_guid);
+
+        value.extend_from_slice(&wsz_guid); // wszGuid
+        value.extend_from_slice(&[3, 0]); // bFlags
+        value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
+        value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+
+        value
+    });
+    cache.insert("Cached_CardmodFile\\Cached_CMAPFile".into(), {
+        use std::mem::size_of;
+
+        use ffi_types::WChar;
+
+        let mut value = Vec::new();
+
         // CONTAINER_MAP_RECORD:
         let mut wsz_guid = container_name
             .encode_utf16()
@@ -283,6 +313,55 @@ fn init_scard_cache(
 
         value
     });
+    cache.insert("Cached_CardProperty_Key Sizes_2".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&20_u32.to_le_bytes());
+        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+        value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+        value.extend_from_slice(&[
+            1, 0, 0, 0, // dwVersion = 1
+            0, 4, 0, 0, // dwMinimumBitlen = 1024
+            0, 4, 0, 0, // dwDefaultBitlen = 1048
+            0, 8, 0, 0, // dwMaximumBitlen = 2048
+            0, 4, 0, 0, // dwIncrementalBitlen = 1024
+        ]);
+
+        value
+    });
+    cache.insert("Cached_CardProperty_Key Sizes_1".into(), {
+        let mut value = CACHE_ITEM_HEADER.to_vec();
+        // unkown flags
+        value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        // actual data len
+        value.extend_from_slice(&20_u32.to_le_bytes());
+        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/secsmart/card-key-sizes
+        value.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+        value.extend_from_slice(&[
+            1, 0, 0, 0, // dwVersion = 1
+            0, 4, 0, 0, // dwMinimumBitlen = 1024
+            0, 4, 0, 0, // dwDefaultBitlen = 1048
+            0, 8, 0, 0, // dwMaximumBitlen = 2048
+            0, 4, 0, 0, // dwIncrementalBitlen = 1024
+        ]);
+
+        value
+    });
+
+    cache.insert(
+        "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
+        PIN_FRESHNESS.to_vec(),
+    );
+    cache.insert(
+        "Cached_CardmodFile\\Cached_File_Freshness".into(),
+        FILE_FRESHNESS.to_vec(),
+    );
+    cache.insert(
+        "Cached_CardmodFile\\Cached_Container_Freshness".into(),
+        CONTAINER_FRESHNESS.to_vec(),
+    );
 
     Ok(cache)
 }
