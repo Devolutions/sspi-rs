@@ -1,3 +1,4 @@
+use std::ptr;
 use std::slice::from_raw_parts_mut;
 
 use ffi_types::{LpByte, LpDword, LpWStr};
@@ -94,10 +95,17 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
                 return Err(Error::new(ErrorKind::InvalidParameter, "p_buf cannot be null"));
             }
 
+            let p_buf: *mut LpByte = p_buf.cast();
             // SAFETY: We've checked for null above.
             unsafe {
-                // We allocated a new memory for the requested data, so we need to save the buffer and buffer length.
-                *(p_buf as *mut *mut u8) = data.as_mut_ptr();
+                // The user is responsible for deallocating the buffer using the `SCardFreeMemory` function.
+                //
+                // The `p_buf` pointer is passed down to us from the outside world via FFI. Sometimes, this pointer
+                // can be misaligned. For example, if we deref the 0x170e56de4 pointer, then the Rust will panic with
+                // the 'misaligned pointer dereference: address must be a multiple of 0x8 but is...' error.
+                // We got this panic for the first time when connecting FreeRDP + libsspi.dylib on macOS (arm64).
+                // So, we set the value using the `write_unaligned` function because it allows the pointer to be unaligned.
+                ptr::write_unaligned(p_buf, data.as_mut_ptr());
                 *pcb_buf = data.len().try_into()?;
             }
         }
