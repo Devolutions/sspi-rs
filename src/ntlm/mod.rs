@@ -210,6 +210,20 @@ impl Ntlm {
     pub fn set_version(&mut self, version: [u8; NTLM_VERSION_SIZE]) {
         self.version = version;
     }
+
+    /// Sets the channel bindings for the session to the appropriately formatted structure
+    /// containing the token, passed as the argument, calculated according to the RFC 5929
+    /// procedure for the `tls-server-end-point` channel binding type. The MD5 hash of this
+    /// structure will be transmitted to the server as an AVPair in the AUTHENTICATE message.
+    pub fn set_channel_bindings(&mut self, token: &[u8]) {
+        self.channel_bindings = Some(ChannelBindings {
+            initiator_addr_type: 0,
+            initiator: vec![],
+            acceptor_addr_type: 0,
+            acceptor: vec![],
+            application_data: token.to_vec(),
+        });
+    }
 }
 
 impl Default for Ntlm {
