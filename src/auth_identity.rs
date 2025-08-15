@@ -266,7 +266,7 @@ mod scard_credentials {
         Emulated {
             /// Emulated smart card PIN code.
             ///
-            /// This is smart card PIN code, not the PIN coude the user provided PIN code.
+            /// This is smart card PIN code, not the PIN code provided by the user.
             scard_pin: Secret<Vec<u8>>,
         },
         /// System-provided smart card.

@@ -111,8 +111,6 @@ pub async fn initialize_security_context<'a>(
                     (None, oids::krb5())
                 };
             client.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
-            debug!("KRBU2U: {}", client.krb5_user_to_user);
-            // client.krb5_user_to_user = true;
 
             let credentials = builder
                 .credentials_handle
