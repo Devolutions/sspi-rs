@@ -915,6 +915,8 @@ unsafe fn read_cache(
     data: LpByte,
     data_len: LpDword,
 ) -> WinScardResult<()> {
+    debug!(?lookup_name);
+
     check_handle!(context, "scard context handle");
     check_null!(card_identifier, "scard card identifier");
     check_null!(data_len, "data buffer length");
