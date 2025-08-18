@@ -12,7 +12,7 @@ use cryptoki::types::AuthPin;
 use picky::key::PrivateKey;
 use winscard::SmartCard as PivSmartCard;
 
-use crate::{Error, ErrorKind, Result, Secret, SmartCardIdentity};
+use crate::{Error, ErrorKind, Result, Secret, SmartCardIdentity, SmartCardType};
 
 /// Smart cad API to use.
 pub enum SmartCardApi {
@@ -67,7 +67,7 @@ impl SmartCard {
         } = credentials;
 
         match scard_type {
-            crate::SmartCardType::Emulated { scard_pin } => {
+            SmartCardType::Emulated { scard_pin } => {
                 let Some(private_key) = private_key else {
                     return Err(Error::new(
                         ErrorKind::IncompleteCredentials,
@@ -83,9 +83,10 @@ impl SmartCard {
                     picky_asn1_der::to_vec(certificate)?,
                 )
             }
-            crate::SmartCardType::SystemProvided { pkcs11_module_path } => {
+            SmartCardType::SystemProvided { pkcs11_module_path } => {
                 Self::new_system_provided(pkcs11_module_path, user_pin.as_ref(), reader_name)
             }
+            SmartCardType::WindowsNative => todo!(),
         }
     }
 

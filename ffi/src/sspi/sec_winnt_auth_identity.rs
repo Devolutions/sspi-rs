@@ -816,7 +816,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         container_name: Some(string_to_utf16(key_container_name)),
         csp_name: string_to_utf16(csp_name),
         private_key_pem: None,
-        scard_type: SmartCardType::SystemProvided,
+        scard_type: SmartCardType::WindowsNative,
     });
 
     Ok(creds)
