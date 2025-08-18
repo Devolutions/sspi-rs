@@ -224,7 +224,7 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     chuid_to_container_name(chuid, tag)
 }
 
-/// Tries to construct smart card key container based on reader name and certificate label.
+/// Tries to construct smart card key container based on a reader name and a certificate label.
 ///
 /// This function works **ONLY** for PIV compatible smart cards. Otherwise, it will fail.
 pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Result<String> {

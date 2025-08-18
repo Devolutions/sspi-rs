@@ -74,20 +74,21 @@ impl SystemScardContext {
             ));
         }
 
+        #[cfg(not(target_os = "windows"))]
+        let cache = if _with_cache {
+            let auth_cert = winscard::env::auth_cert_from_env()?;
+            let auth_cert_der = auth_cert.to_der()?;
+
+            init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
+        } else {
+            Default::default()
+        };
+
         Ok(Self {
             h_context,
             api,
             #[cfg(not(target_os = "windows"))]
-            cache: {
-                if _with_cache {
-                    let auth_cert = winscard::env::auth_cert_from_env()?;
-                    let auth_cert_der = auth_cert.to_der()?;
-
-                    init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
-                } else {
-                    Default::default()
-                }
-            },
+            cache,
         })
     }
 }
@@ -348,11 +349,11 @@ impl WinScardContext for SystemScardContext {
             )?;
         }
 
-        let protocol = Protocol::from_bits(
-            #[allow(clippy::useless_conversion)]
-            active_protocol.try_into()?,
-        )
-        .unwrap_or_default();
+        // `DWORD` is aliased to `c_ulong` for Linux targets. In turn, `c_ulong` is aliased to `u64` on some targets.
+        // Thus, depending on the compilation target, *sometimes* we need to convert `u64` to `u32`.
+        #[allow(clippy::useless_conversion)]
+        let active_protocol = active_protocol.try_into()?;
+        let protocol = Protocol::from_bits(active_protocol).unwrap_or_default();
         let handle = Box::new(SystemScard::new(scard, protocol, self.h_context)?);
 
         Ok(ScardConnectData { handle, protocol })
