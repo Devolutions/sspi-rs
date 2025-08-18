@@ -74,20 +74,21 @@ impl SystemScardContext {
             ));
         }
 
+        #[cfg(not(target_os = "windows"))]
+        let cache = if _with_cache {
+            let auth_cert = winscard::env::auth_cert_from_env()?;
+            let auth_cert_der = auth_cert.to_der()?;
+
+            init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
+        } else {
+            Default::default()
+        };
+
         Ok(Self {
             h_context,
             api,
             #[cfg(not(target_os = "windows"))]
-            cache: {
-                if _with_cache {
-                    let auth_cert = winscard::env::auth_cert_from_env()?;
-                    let auth_cert_der = auth_cert.to_der()?;
-
-                    init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
-                } else {
-                    Default::default()
-                }
-            },
+            cache,
         })
     }
 }
