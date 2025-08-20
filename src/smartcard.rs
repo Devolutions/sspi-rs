@@ -97,9 +97,12 @@ impl SmartCard {
                 Self::new_system_provided(pkcs11_module_path, user_pin.as_ref(), reader_name)
             }
             #[cfg(target_os = "windows")]
-            SmartCardType::WindowsNative => {
-                Self::new_windows_native(user_pin.as_ref(), _container_name.as_ref().ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?)
-            },
+            SmartCardType::WindowsNative => Self::new_windows_native(
+                user_pin.as_ref(),
+                _container_name
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?,
+            ),
         }
     }
 
@@ -185,7 +188,7 @@ impl SmartCard {
                     Attribute::KeyType(KeyType::RSA),
                 ])?;
 
-                let data_to_sign = &encode_digest(digest)?;
+                let data_to_sign = encode_digest(digest)?;
 
                 for private_key in objects {
                     if let Ok(signature) = session.sign(&Mechanism::RsaPkcs, private_key, &data_to_sign) {
@@ -199,9 +202,7 @@ impl SmartCard {
                 ))
             }
             #[cfg(target_os = "windows")]
-            SmartCardApi::Windows { container_name } => {
-                sign_data_win_api(container_name, self.pin.as_ref(), &digest)
-            }
+            SmartCardApi::Windows { container_name } => sign_data_win_api(container_name, self.pin.as_ref(), &digest),
         }
     }
 }
@@ -232,19 +233,18 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
     use std::ptr::null_mut;
 
-    use windows_sys::Win32::Security::Cryptography::*;
     use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Security::Cryptography::*;
 
     let mut provider: NCRYPT_PROV_HANDLE = 0;
     // SAFETY: FFI call with no outstanding preconditions.
-    let status = unsafe { NCryptOpenStorageProvider(
-        &mut provider,
-        MS_SMART_CARD_KEY_STORAGE_PROVIDER,
-        0,
-    ) };
+    let status = unsafe { NCryptOpenStorageProvider(&mut provider, MS_SMART_CARD_KEY_STORAGE_PROVIDER, 0) };
 
     if status != ERROR_SUCCESS.try_into().unwrap() {
-        return Err(Error::new(ErrorKind::InternalError, format!("failed to open smart card CNG key storage provider: {status:x}")));
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            format!("failed to open smart card CNG key storage provider: {status:x}"),
+        ));
     }
 
     let container_name = container_name
@@ -256,19 +256,16 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // SAFETY:
     // - `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
     // - `container_name` is a valid UTF-16 string and null-terminated.
-    let status =unsafe { NCryptOpenKey(
-        provider,
-        &mut key,
-        container_name.as_ptr(),
-        0,
-        NCRYPT_SILENT_FLAG,
-    ) };
+    let status = unsafe { NCryptOpenKey(provider, &mut key, container_name.as_ptr(), 0, NCRYPT_SILENT_FLAG) };
 
     if status != ERROR_SUCCESS.try_into().unwrap() {
         // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
         unsafe { NCryptFreeObject(provider) };
 
-        return Err(Error::new(ErrorKind::InternalError, format!("failed to open smart card key: {status:x}")));
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            format!("failed to open smart card key: {status:x}"),
+        ));
     }
 
     let mut pin = std::str::from_utf8(pin)?
@@ -278,15 +275,17 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // SAFETY:
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `pin` is a valid UTF-16 string and null-terminated.
-    let status = unsafe { NCryptSetProperty(
-        key,
-        NCRYPT_PIN_PROPERTY,
-        pin.as_mut_ptr() as *mut u8,
-        // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty
-        // > The size, in **bytes**, of the pbInput buffer.
-        (pin.len() * 2).try_into()?,
-        0,
-    ) };
+    let status = unsafe {
+        NCryptSetProperty(
+            key,
+            NCRYPT_PIN_PROPERTY,
+            pin.as_mut_ptr() as *mut u8,
+            // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty
+            // > The size, in **bytes**, of the pbInput buffer.
+            (pin.len() * 2).try_into()?,
+            0,
+        )
+    };
 
     if status != ERROR_SUCCESS.try_into().unwrap() {
         warn!("Failed to set smart card PIN code: {status:x} - this may cause issues with signing data.");
@@ -302,16 +301,18 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
     // - `pbSignature` is allowed to be NULL.
     //   > If this parameter is NULL, this function will calculate the size required for the signature and return the size in the location pointed to by the pcbResult parameter.
-    let status = unsafe { NCryptSignHash(
-        key,
-        &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
-        data_to_sign.as_ptr(),
-        data_to_sign.len().try_into()?,
-        null_mut(),
-        0,
-        &mut signature_len,
-        NCRYPT_PAD_PKCS1_FLAG,
-    ) };
+    let status = unsafe {
+        NCryptSignHash(
+            key,
+            &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
+            data_to_sign.as_ptr(),
+            data_to_sign.len().try_into()?,
+            null_mut(),
+            0,
+            &mut signature_len,
+            NCRYPT_PAD_PKCS1_FLAG,
+        )
+    };
 
     if status != ERROR_SUCCESS.try_into().unwrap() {
         // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
@@ -319,7 +320,10 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
         unsafe { NCryptFreeObject(provider) };
 
-        return Err(Error::new(ErrorKind::InternalError, format!("failed to get signature length: {status:x}")));
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            format!("failed to get signature length: {status:x}"),
+        ));
     }
 
     let mut signature = vec![0_u8; usize::try_from(signature_len)?];
@@ -327,16 +331,18 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `padding_info`, `signature`, and `signature_len` are local variables.
     // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
-    let status = unsafe { NCryptSignHash(
-        key,
-        &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
-        data_to_sign.as_ptr(),
-        data_to_sign.len().try_into()?,
-        signature.as_mut_ptr(),
-        signature_len,
-        &mut signature_len,
-        NCRYPT_PAD_PKCS1_FLAG,
-    ) };
+    let status = unsafe {
+        NCryptSignHash(
+            key,
+            &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
+            data_to_sign.as_ptr(),
+            data_to_sign.len().try_into()?,
+            signature.as_mut_ptr(),
+            signature_len,
+            &mut signature_len,
+            NCRYPT_PAD_PKCS1_FLAG,
+        )
+    };
 
     if status != ERROR_SUCCESS.try_into().unwrap() {
         // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
@@ -344,7 +350,10 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
         unsafe { NCryptFreeObject(provider) };
 
-        return Err(Error::new(ErrorKind::InternalError, format!("failed to sign data: {status:x}")));
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            format!("failed to sign data: {status:x}"),
+        ));
     }
 
     // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
@@ -359,7 +368,14 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
 mod tests {
     #[test]
     fn test_smart_card() {
-        let signature = super::sign_data_win_api("te-RDPScardEx-7b62cc37-4bda-45a9--42412", b"123456", &[62, 251, 72, 0, 35, 124, 188, 174, 226, 75, 135, 154, 150, 19, 66, 225, 152, 77, 176, 221]).unwrap();
+        let signature = super::sign_data_win_api(
+            "te-RDPScardEx-7b62cc37-4bda-45a9--42412",
+            b"123456",
+            &[
+                62, 251, 72, 0, 35, 124, 188, 174, 226, 75, 135, 154, 150, 19, 66, 225, 152, 77, 176, 221,
+            ],
+        )
+        .unwrap();
         dbg!(signature);
     }
 }
