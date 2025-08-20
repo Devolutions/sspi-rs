@@ -401,6 +401,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
+    debug!("===> auth_data_to_identity_buffers_w");
     if p_auth_data.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "p_auth_data cannot be null"));
     }
@@ -436,11 +437,16 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         }
         .into();
 
+        let mut user_tmp = user.clone();
+        user_tmp.extend_from_slice(&[0, 0]);
         // Only marshaled smart card creds starts with '@' char.
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
-        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
+        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user_tmp.as_ptr() as *const _) } != 0 {
+            debug!(?user, "===> handle_smart_card_creds 1.");
             return handle_smart_card_creds(user, password);
+        } else {
+            debug!(?user, "Credentials are not marshalled 1:");
         }
 
         // Try to collect credentials for the emulated/system-provided smart card.
@@ -477,7 +483,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
         if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
+            debug!(?user, "===> handle_smart_card_creds 2.");
             return handle_smart_card_creds(user, password);
+        } else {
+            debug!(?user, "Credentials are not marshalled 2:");
         }
 
         // Try to collect credentials for the emulated/system-provided smart card.
@@ -922,12 +931,6 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         ));
     }
 
-    // Try to collect credentials for the emulated smart card.
-    #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
-        return Ok(CredentialsBuffers::SmartCard(scard_creds));
-    }
-
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
     // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
@@ -940,6 +943,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         password.as_mut().truncate(new_len);
 
         return handle_smart_card_creds(username, password);
+    }
+
+    // Try to collect credentials for the emulated smart card.
+    #[cfg(feature = "scard")]
+    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
+        return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
