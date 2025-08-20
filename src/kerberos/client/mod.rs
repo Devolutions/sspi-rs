@@ -179,19 +179,11 @@ pub async fn initialize_security_context<'a>(
                         kdc_req_body: &kdc_req_body,
                         dh_parameters: client.dh_parameters.clone().unwrap(),
                         sign_data: Box::new(move |data_to_sign| {
-                            use picky_asn1::wrapper::OctetStringAsn1;
-                            use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
-
                             let mut sha1 = Sha1::new();
                             sha1.update(data_to_sign);
-                            let hash = sha1.finalize().to_vec();
+                            let digest = sha1.finalize().to_vec();
 
-                            let digest_info = DigestInfo {
-                                oid: AlgorithmIdentifier::new_sha1(),
-                                digest: OctetStringAsn1::from(hash),
-                            };
-
-                            smart_card.sign(&picky_asn1_der::to_vec(&digest_info)?)
+                            smart_card.sign(digest)
                         }),
                         with_pre_auth: false,
                         authenticator_nonce: OsRng.gen::<[u8; 4]>(),

@@ -19,11 +19,11 @@ pub enum SmartCardApi {
     /// Represents emulated smart cards API.
     ///
     /// No real device or driver is needed.
-    Emulated(Box<PivSmartCard<'static>>),
+    PivEmulated(Box<PivSmartCard<'static>>),
     /// Represents system-provided smart card API.
     ///
     /// PKCS11 API will be used for data signing.
-    SystemProvided {
+    Pkcs11 {
         /// PKCS11 module.
         pkcs11_module: Pkcs11,
         /// Reader name.
@@ -31,13 +31,23 @@ pub enum SmartCardApi {
         /// Reader name is needed to determine which PKCS11 slot to use.
         reader_name: String,
     },
+    /// Represents Windows native smart card API.
+    ///
+    /// The native Windows API will be used for data signing.
+    #[cfg(target_os = "windows")]
+    Windows {
+        /// key container name.
+        container_name: String,
+    },
 }
 
 impl fmt::Debug for SmartCardApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Emulated { .. } => f.write_str("SmartCardApi::Emulated"),
-            Self::SystemProvided { .. } => f.write_str("SmartCardApi::SystemProvided"),
+            Self::PivEmulated { .. } => f.write_str("SmartCardApi::PivEmulated"),
+            Self::Pkcs11 { .. } => f.write_str("SmartCardApi::Pkcs11"),
+            #[cfg(target_os = "windows")]
+            Self::Windows { .. } => f.write_str("SmartCardApi::Windows"),
         }
     }
 }
@@ -59,7 +69,7 @@ impl SmartCard {
             certificate,
             reader_name,
             card_name: _,
-            container_name: _,
+            container_name: _container_name,
             csp_name: _,
             pin: user_pin,
             private_key,
@@ -86,7 +96,10 @@ impl SmartCard {
             SmartCardType::SystemProvided { pkcs11_module_path } => {
                 Self::new_system_provided(pkcs11_module_path, user_pin.as_ref(), reader_name)
             }
-            SmartCardType::WindowsNative => todo!(),
+            #[cfg(target_os = "windows")]
+            SmartCardType::WindowsNative => {
+                Self::new_windows_native(user_pin.as_ref(), _container_name.as_ref().ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?)
+            },
         }
     }
 
@@ -105,7 +118,18 @@ impl SmartCard {
         let scard = PivSmartCard::new(reader_name, scard_pin.to_vec(), auth_cert_der, private_key.clone())?;
 
         Ok(Self {
-            smart_card_type: SmartCardApi::Emulated(Box::new(scard)),
+            smart_card_type: SmartCardApi::PivEmulated(Box::new(scard)),
+            pin: user_pin.to_vec().into(),
+        })
+    }
+
+    /// Creates a new [SmartCard] instance with the system provided smart card inside (Windows API).
+    #[cfg(target_os = "windows")]
+    fn new_windows_native(user_pin: &[u8], container_name: &str) -> Result<Self> {
+        Ok(Self {
+            smart_card_type: SmartCardApi::Windows {
+                container_name: container_name.to_owned(),
+            },
             pin: user_pin.to_vec().into(),
         })
     }
@@ -116,7 +140,7 @@ impl SmartCard {
         pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
         Ok(Self {
-            smart_card_type: SmartCardApi::SystemProvided {
+            smart_card_type: SmartCardApi::Pkcs11 {
                 pkcs11_module: pkcs11,
                 reader_name: reader_name.to_owned(),
             },
@@ -125,13 +149,13 @@ impl SmartCard {
     }
 
     /// Signs the provided byte slice using smart card.
-    pub fn sign(&mut self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+    pub fn sign(&mut self, digest: Vec<u8>) -> Result<Vec<u8>> {
         match &mut self.smart_card_type {
-            SmartCardApi::Emulated(ref mut scard) => {
+            SmartCardApi::PivEmulated(ref mut scard) => {
                 scard.verify_pin(self.pin.as_ref())?;
-                Ok(scard.sign_hashed(data)?)
+                Ok(scard.sign_hashed(&encode_digest(digest)?)?)
             }
-            SmartCardApi::SystemProvided {
+            SmartCardApi::Pkcs11 {
                 pkcs11_module,
                 reader_name,
             } => {
@@ -161,8 +185,10 @@ impl SmartCard {
                     Attribute::KeyType(KeyType::RSA),
                 ])?;
 
+                let data_to_sign = &encode_digest(digest)?;
+
                 for private_key in objects {
-                    if let Ok(signature) = session.sign(&Mechanism::RsaPkcs, private_key, data.as_ref()) {
+                    if let Ok(signature) = session.sign(&Mechanism::RsaPkcs, private_key, &data_to_sign) {
                         return Ok(signature);
                     }
                 }
@@ -172,6 +198,168 @@ impl SmartCard {
                     format!("the selected PKCS11 slot ({reader_name}) does not have a suitable private key for data signing"),
                 ))
             }
+            #[cfg(target_os = "windows")]
+            SmartCardApi::Windows { container_name } => {
+                sign_data_win_api(container_name, self.pin.as_ref(), &digest)
+            }
         }
+    }
+}
+
+/// Constructs the [DigestInfo] structure and encodes it into byte vector.
+///
+/// During the RDP authorization, we need to sign the data digest using smart card. We must
+/// use PKCS1 padding scheme. It means, that the [DigestInfo] structure must be constructed
+/// with the digest inside. Smart card will sign encoded [DigestInfo] structure.
+///
+/// `sspi-rs` uses SHA1 during scard logon. Thus, input `digest` must be SHA1 hash of the data we want to sign.
+fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
+    use picky_asn1::wrapper::OctetStringAsn1;
+    use picky_asn1_x509::{AlgorithmIdentifier, DigestInfo};
+
+    let digest_info = DigestInfo {
+        oid: AlgorithmIdentifier::new_sha1(),
+        digest: OctetStringAsn1::from(digest),
+    };
+
+    Ok(picky_asn1_der::to_vec(&digest_info)?)
+}
+
+/// Signs data using the Windows native API for smart cards.
+///
+/// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
+#[cfg(target_os = "windows")]
+fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
+    use std::ptr::null_mut;
+
+    use windows_sys::Win32::Security::Cryptography::*;
+    use windows_sys::Win32::Foundation::*;
+
+    let mut provider: NCRYPT_PROV_HANDLE = 0;
+    // SAFETY: FFI call with no outstanding preconditions.
+    let status = unsafe { NCryptOpenStorageProvider(
+        &mut provider,
+        MS_SMART_CARD_KEY_STORAGE_PROVIDER,
+        0,
+    ) };
+
+    if status != ERROR_SUCCESS.try_into().unwrap() {
+        return Err(Error::new(ErrorKind::InternalError, format!("failed to open smart card CNG key storage provider: {status:x}")));
+    }
+
+    let container_name = container_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+
+    let mut key: NCRYPT_KEY_HANDLE = 0;
+    // SAFETY:
+    // - `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
+    // - `container_name` is a valid UTF-16 string and null-terminated.
+    let status =unsafe { NCryptOpenKey(
+        provider,
+        &mut key,
+        container_name.as_ptr(),
+        0,
+        NCRYPT_SILENT_FLAG,
+    ) };
+
+    if status != ERROR_SUCCESS.try_into().unwrap() {
+        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
+        unsafe { NCryptFreeObject(provider) };
+
+        return Err(Error::new(ErrorKind::InternalError, format!("failed to open smart card key: {status:x}")));
+    }
+
+    let mut pin = std::str::from_utf8(pin)?
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // SAFETY:
+    // - `key` is a valid handle obtained from `NCryptOpenKey`.
+    // - `pin` is a valid UTF-16 string and null-terminated.
+    let status = unsafe { NCryptSetProperty(
+        key,
+        NCRYPT_PIN_PROPERTY,
+        pin.as_mut_ptr() as *mut u8,
+        // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty
+        // > The size, in **bytes**, of the pbInput buffer.
+        (pin.len() * 2).try_into()?,
+        0,
+    ) };
+
+    if status != ERROR_SUCCESS.try_into().unwrap() {
+        warn!("Failed to set smart card PIN code: {status:x} - this may cause issues with signing data.");
+    }
+
+    let mut signature_len = 0;
+    let padding_info = BCRYPT_PKCS1_PADDING_INFO {
+        pszAlgId: BCRYPT_SHA1_ALGORITHM,
+    };
+    // SAFETY:
+    // - `key` is a valid handle obtained from `NCryptOpenKey`.
+    // - `padding_info`, and `signature_len` are local variables.
+    // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
+    // - `pbSignature` is allowed to be NULL.
+    //   > If this parameter is NULL, this function will calculate the size required for the signature and return the size in the location pointed to by the pcbResult parameter.
+    let status = unsafe { NCryptSignHash(
+        key,
+        &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
+        data_to_sign.as_ptr(),
+        data_to_sign.len().try_into()?,
+        null_mut(),
+        0,
+        &mut signature_len,
+        NCRYPT_PAD_PKCS1_FLAG,
+    ) };
+
+    if status != ERROR_SUCCESS.try_into().unwrap() {
+        // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
+        unsafe { NCryptFreeObject(key) };
+        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
+        unsafe { NCryptFreeObject(provider) };
+
+        return Err(Error::new(ErrorKind::InternalError, format!("failed to get signature length: {status:x}")));
+    }
+
+    let mut signature = vec![0_u8; usize::try_from(signature_len)?];
+    // SAFETY:
+    // - `key` is a valid handle obtained from `NCryptOpenKey`.
+    // - `padding_info`, `signature`, and `signature_len` are local variables.
+    // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
+    let status = unsafe { NCryptSignHash(
+        key,
+        &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
+        data_to_sign.as_ptr(),
+        data_to_sign.len().try_into()?,
+        signature.as_mut_ptr(),
+        signature_len,
+        &mut signature_len,
+        NCRYPT_PAD_PKCS1_FLAG,
+    ) };
+
+    if status != ERROR_SUCCESS.try_into().unwrap() {
+        // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
+        unsafe { NCryptFreeObject(key) };
+        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
+        unsafe { NCryptFreeObject(provider) };
+
+        return Err(Error::new(ErrorKind::InternalError, format!("failed to sign data: {status:x}")));
+    }
+
+    // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
+    unsafe { NCryptFreeObject(key) };
+    // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
+    unsafe { NCryptFreeObject(provider) };
+
+    Ok(signature)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_smart_card() {
+        let signature = super::sign_data_win_api("te-RDPScardEx-7b62cc37-4bda-45a9--42412", b"123456", &[62, 251, 72, 0, 35, 124, 188, 174, 226, 75, 135, 154, 150, 19, 66, 225, 152, 77, 176, 221]).unwrap();
+        dbg!(signature);
     }
 }
