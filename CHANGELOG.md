@@ -14,20 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Setting and sending the CBs is described in Sec. 3.1.5.2.1 of the NTLM spec, admittedly in a slightly confusing way, which may seem to suggest that the bindings are somehow part of the CHALLENGE message, but they are not: knowledge of CBs is strictly local to the client, therefore the client should send them in AUTHENTICATE.
 
-### <!-- 7 -->Build
-
-- Bump tokio from 1.46.1 to 1.47.0 (#473) ([83208eae19](https://github.com/Devolutions/sspi-rs/commit/83208eae19d9a3c43ad2814a6db15b203f23291f)) 
-
-- Bump tokio from 1.47.0 to 1.47.1 in the patch group across 1 directory (#477) ([a24b7572a6](https://github.com/Devolutions/sspi-rs/commit/a24b7572a63558df1f1737b057b39e3ade9c79b4)) 
-
-- Bump the patch group across 1 directory with 2 updates (#478) ([78345a1fd8](https://github.com/Devolutions/sspi-rs/commit/78345a1fd875eac1b128cbcca1cefce81b339b26)) 
-
-- Bump the patch group across 1 directory with 5 updates (#480) ([a757c112f9](https://github.com/Devolutions/sspi-rs/commit/a757c112f97d2ea872c493ac537cc12e5d41e21a)) 
-
-- Bump uuid from 1.17.0 to 1.18.0 (#481) ([b40e0497ee](https://github.com/Devolutions/sspi-rs/commit/b40e0497ee974796a20e9b2dbeae9c4f2e9801f2)) 
-
-
-
 ## [[0.16.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.15.14...sspi-v0.16.0)] - 2025-07-07
 
 ### <!-- 1 -->Features
