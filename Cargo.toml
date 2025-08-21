@@ -45,11 +45,11 @@ sha2 = "0.10"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { path = "../picky-rs/picky", default-features = false }
-picky-asn1 = { path = "../picky-rs/picky-asn1" }
-picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
-picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
-picky-krb = { path = "../picky-rs/picky-krb" }
+picky = { version = "7.0.0-rc.15", default-features = false }
+picky-asn1 = "0.10"
+picky-asn1-der = "0.5"
+picky-asn1-x509 = "0.14"
+picky-krb = "0.11"
 
 tokio = "1.47"
 ffi-types = { path = "crates/ffi-types" }
