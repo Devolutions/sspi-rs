@@ -71,25 +71,31 @@ pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Res
         ];
         'certificates: for certificate_handle in session.find_objects(&query)? {
             for encoded_certificate in session.get_attributes(certificate_handle, &[AttributeType::Value])? {
-                if let Attribute::Value(encoded_certificate) = encoded_certificate {
-                    if validate_certificate(&encoded_certificate, &username).is_ok() {
-                        certificate = Some(encoded_certificate);
+                let Attribute::Value(encoded_certificate) = encoded_certificate else {
+                    continue;
+                };
 
-                        // We found a suitable certificate for smart card logon on the device.
-                        // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
-                        // to extract the container name using raw APDU commands.
-                        for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
-                            if let Attribute::Label(label) = label {
-                                container_name = try_get_piv_container_name(reader_name, &label)
-                                    .as_deref()
-                                    .map(str_encode_utf16)
-                                    .ok();
-                            }
-                        }
-
-                        break 'certificates;
-                    }
+                if validate_certificate(&encoded_certificate, &username).is_err() {
+                    continue;
                 }
+
+                certificate = Some(encoded_certificate);
+
+                // We found a suitable certificate for smart card logon on the device.
+                // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
+                // to extract the container name using raw APDU commands.
+                for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
+                    let Attribute::Label(label) = label else {
+                        continue;
+                    };
+
+                    container_name = try_get_piv_container_name(reader_name, &label)
+                        .as_deref()
+                        .map(str_encode_utf16)
+                        .ok();
+                }
+
+                break 'certificates;
             }
         }
 
