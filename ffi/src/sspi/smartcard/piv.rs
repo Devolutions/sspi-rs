@@ -4,7 +4,12 @@ use winscard::winscard::{Protocol, ScardConnectData, ScardScope, ShareMode, Tran
 
 use crate::winscard::system_scard::SystemScardContext;
 
-/// Possible PIV certificates labels and their corresponding PIV tags.
+/// Status code at the end of the output buffer of the `SCardTransmitFunction`.
+///
+/// The status value corresponds to the [winscard::Status::Ok].
+const WINSCARD_STATUS_OK: [u8; 2] = [0x90, 0x00];
+
+/// Possible PIV certificate labels and their corresponding PIV tags.
 ///
 /// Certificate labels are used to determine the certificate PIV tag.
 /// All values are taken from the NIST SP 800-73pt1-5 specification:
@@ -79,14 +84,7 @@ const APDU_PIV_GET_CHUID: &[u8] = &[
 /// Provided CHUID must be raw CHUID from smart card. This function will parse it and extract needed GUID from it.
 /// Provided certificate tag must be valid PIV certificate tag.
 #[instrument(level = "trace", ret)]
-fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
-    if tag.len() != 3 {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "invalid PIV certificate tag: tag should be exactly 3 bytes long",
-        ));
-    }
-
+fn chuid_to_container_name(chuid: &[u8], tag: &[u8; 3]) -> Result<String> {
     // The CHUID has defined structure in the NIST SP 800-73pt1-5 specification. Appendix A. PIV Data Model: Table 10. Card Holder Unique Identifier (CHUID).
     // Data Element (TLV)          | Tag  | Type     | Max. Bytes
     // ----------------------------+------+----------+-----------
@@ -106,6 +104,11 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
         1 /* GUID tag */   + 1 /* GUID data length */   + 16 /* GUID data */ +
         1 /* Error Detection Code tag */ + 1 /* Error Detection Code length */;
 
+    const BYTES_BEFORE_FASN_N: usize = 1 /* CHUID tag */  + 1 /* CHUID data len */;
+    const BYTES_BEFORE_GUID: usize = BYTES_BEFORE_FASN_N + 1 /* FASC-N tag */ + 1 /* FASC-N data length */ + 25 /* FASC-N data */;
+    // How many bytes we have to skip before GUID value.
+    const BYTES_TO_SKIP: usize = BYTES_BEFORE_GUID + 1 /* GUID tag */ + 1 /* GUID data length */;
+
     let chuid_len = chuid.len();
 
     if chuid_len < MINIMAL_CHUID_LEN {
@@ -118,13 +121,11 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
     }
 
     // Check FASC-N tag.
-    const BYTES_BEFORE_FASN_N: usize = 1 /* CHUID tag */  + 1 /* CHUID data len */;
     if chuid[BYTES_BEFORE_FASN_N] != tlv_tags::FASC_N {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad FASN-N tag"));
     }
 
     // Check GUID tag.
-    const BYTES_BEFORE_GUID: usize = BYTES_BEFORE_FASN_N + 1 /* FASC-N tag */ + 1 /* FASC-N data length */ + 25 /* FASC-N data */;
     if chuid[BYTES_BEFORE_GUID] != tlv_tags::GUID {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad GUID tag"));
     }
@@ -136,9 +137,6 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
             "invalid CHUID: bad error detection code",
         ));
     }
-
-    // How may bytes we have to skip before GUID value.
-    const BYTES_TO_SKIP: usize = BYTES_BEFORE_GUID + 1 /* GUID tag */ + 1 /* GUID data length */;
 
     let guid = &chuid[BYTES_TO_SKIP..BYTES_TO_SKIP + 16 /* GUID length */];
 
@@ -172,7 +170,7 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8]) -> Result<String> {
 /// This function attempts to retrieve the CHUID (Card Holder Unique Identifier) from the smart card using the WinSCard API,
 /// extract the GUID from the CHUID, and then construct the key container name.
 #[instrument(level = "trace", ret)]
-fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
+fn extract_piv_container_name(reader: &str, tag: &[u8; 3]) -> Result<String> {
     let context = SystemScardContext::establish(ScardScope::User, false)?;
     let ScardConnectData {
         protocol: _,
@@ -192,7 +190,7 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     }
 
     // Check status word.
-    if output[output.len() - 2..] != <[u8; 2]>::from(winscard::Status::OK) {
+    if output[output.len() - 2..] != WINSCARD_STATUS_OK {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -212,7 +210,7 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
     }
 
     // Check status word.
-    if output[output.len() - 2 /* status word */..] != <[u8; 2]>::from(winscard::Status::OK) {
+    if output[output.len() - 2 /* status word */..] != WINSCARD_STATUS_OK {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -230,7 +228,7 @@ fn extract_piv_container_name(reader: &str, tag: &[u8]) -> Result<String> {
 pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Result<String> {
     for (label, tag) in CERTIFICATE_LABELS {
         if *label == certificate_label {
-            return extract_piv_container_name(reader, tag);
+            return extract_piv_container_name(reader, (*tag).try_into().expect("valid PIV certificate tag"));
         }
     }
 
@@ -250,8 +248,52 @@ mod tests {
             8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
         ];
 
-        let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG).unwrap();
+        let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG.try_into().unwrap()).unwrap();
 
         assert_eq!(container_name, "1d8ac658-e065-92a0-85af-090b075fc105");
+    }
+
+    #[test]
+    fn invalid_chuid() {
+        let cert_tag = winscard::PIV_CERT_TAG.try_into().unwrap();
+
+        // Too short.
+        let invalid_chuid = &[
+            83, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
+            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+        ];
+        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+
+        // Invalid CHUID tag.
+        let invalid_chuid = &[
+            81, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
+            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
+        ];
+        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+
+        // Invalid FASC-N tag.
+        let invalid_chuid = &[
+            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
+            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
+        ];
+        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+
+        // Invalid GUID tag.
+        let invalid_chuid = &[
+            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
+            200, 66, 16, 195, 235, 51, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
+        ];
+        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+
+        // Invalid error detection code.
+        let invalid_chuid = &[
+            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
+            200, 66, 16, 195, 235, 51, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 250, 1,
+        ];
+        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
     }
 }
