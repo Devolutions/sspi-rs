@@ -14,7 +14,7 @@ const WINSCARD_STATUS_OK: [u8; 2] = [0x90, 0x00];
 /// Certificate labels are used to determine the certificate PIV tag.
 /// All values are taken from the NIST SP 800-73pt1-5 specification:
 /// 4.3 Object Identifiers. Table 3. Object identifiers of the PIV data objects for interoperable use.
-const CERTIFICATE_LABELS: &[(&[u8], &[u8])] = &[
+const CERTIFICATE_LABELS: &[(&[u8], [u8; 3])] = &[
     // X.509 Certificate for PIV Authentication 2.16.840.1.101.3.7.2.1.1 '5FC105' M
     (b"X.509 Certificate for PIV Authentication", winscard::PIV_CERT_TAG),
     // X.509 Certificate for Digital Signature 2.16.840.1.101.3.7.2.1.0 '5FC10A' C
@@ -228,7 +228,7 @@ fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
 pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Result<String> {
     for (label, tag) in CERTIFICATE_LABELS {
         if *label == certificate_label {
-            return extract_piv_container_name(reader, (*tag).try_into().expect("valid PIV certificate tag"));
+            return extract_piv_container_name(reader, *tag);
         }
     }
 
