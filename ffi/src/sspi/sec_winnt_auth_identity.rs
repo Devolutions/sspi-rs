@@ -534,17 +534,17 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
 
     info!("Trying to collect {} smart card credentials...", scard_type);
 
+    let mut username = username.to_vec();
+    let mut pin = password.to_vec();
+
+    raw_wide_str_trim_nulls(&mut username);
+    raw_wide_str_trim_nulls(&mut pin);
+
     match scard_type.as_str() {
         SCARD_EMULATED => {
             use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
             let smart_card_info = SmartCardInfo::try_from_env()?;
-
-            let mut username = username.to_vec();
-            let mut pin = password.to_vec();
-
-            raw_wide_str_trim_nulls(&mut username);
-            raw_wide_str_trim_nulls(&mut pin);
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
@@ -572,15 +572,11 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
                 Error::new(ErrorKind::NoCredentials, message)
             })?;
 
-            let mut username = username.to_vec();
-            let mut pin = password.to_vec();
-
-            raw_wide_str_trim_nulls(&mut username);
-            raw_wide_str_trim_nulls(&mut pin);
-
             let SystemSmartCardInfo {
                 reader_name, csp_name, certificate, container_name, card_name,
             } = smart_card_info(&username, &pin, pkcs11_module.as_ref())?;
+
+            info!("System-provided smart card credentials have been collected. Process with scard-based logon.");
 
             Ok(SmartCardIdentityBuffers {
                 username,

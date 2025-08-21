@@ -233,14 +233,52 @@ mod tests {
     use picky::x509::Cert;
     use picky_asn1_x509::Certificate;
 
-    use super::extract_upn_from_certificate;
+    use super::{extract_upn_from_certificate, validate_certificate};
 
     #[test]
-    fn username_extraction() {
+    fn upn_extraction() {
         let certificate: Certificate = Cert::from_pem_str(include_str!("../../../../test_assets/pw11.cer"))
             .unwrap()
             .into();
 
         assert_eq!("pw11@example.com", extract_upn_from_certificate(&certificate).unwrap());
+    }
+
+    #[test]
+    fn valid_scard_certificate() {
+        let certificate = Cert::from_pem_str(include_str!("../../../../test_assets/pw11.cer"))
+            .unwrap()
+            .to_der()
+            .unwrap();
+
+        validate_certificate(&certificate, "pw11@example.com").expect("certificate is valid");
+    }
+
+    #[test]
+    fn invalid_scard_certificate() {
+        let cert_without_upn = Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_upn.cer"))
+            .unwrap()
+            .to_der()
+            .unwrap();
+        let cert_without_ext_key_usage =
+            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_ext_key_usage.cer"))
+                .unwrap()
+                .to_der()
+                .unwrap();
+        let cert_without_scard_logon =
+            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_scard_logon.cer"))
+                .unwrap()
+                .to_der()
+                .unwrap();
+        let cert_without_client_auth =
+            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_client_auth.cer"))
+                .unwrap()
+                .to_der()
+                .unwrap();
+
+        assert!(validate_certificate(&cert_without_upn, "pw11@example.com").is_err());
+        assert!(validate_certificate(&cert_without_ext_key_usage, "pw11@example.com").is_err());
+        assert!(validate_certificate(&cert_without_scard_logon, "pw11@example.com").is_err());
+        assert!(validate_certificate(&cert_without_client_auth, "pw11@example.com").is_err());
     }
 }
