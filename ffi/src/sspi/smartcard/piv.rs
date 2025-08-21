@@ -84,7 +84,7 @@ const APDU_PIV_GET_CHUID: &[u8] = &[
 /// Provided CHUID must be raw CHUID from smart card. This function will parse it and extract needed GUID from it.
 /// Provided certificate tag must be valid PIV certificate tag.
 #[instrument(level = "trace", ret)]
-fn chuid_to_container_name(chuid: &[u8], tag: &[u8; 3]) -> Result<String> {
+fn chuid_to_container_name(chuid: &[u8], tag: [u8; 3]) -> Result<String> {
     // The CHUID has defined structure in the NIST SP 800-73pt1-5 specification. Appendix A. PIV Data Model: Table 10. Card Holder Unique Identifier (CHUID).
     // Data Element (TLV)          | Tag  | Type     | Max. Bytes
     // ----------------------------+------+----------+-----------
@@ -170,7 +170,7 @@ fn chuid_to_container_name(chuid: &[u8], tag: &[u8; 3]) -> Result<String> {
 /// This function attempts to retrieve the CHUID (Card Holder Unique Identifier) from the smart card using the WinSCard API,
 /// extract the GUID from the CHUID, and then construct the key container name.
 #[instrument(level = "trace", ret)]
-fn extract_piv_container_name(reader: &str, tag: &[u8; 3]) -> Result<String> {
+fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
     let context = SystemScardContext::establish(ScardScope::User, false)?;
     let ScardConnectData {
         protocol: _,
@@ -232,7 +232,7 @@ pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Res
         }
     }
 
-    Err(Error::new(ErrorKind::NoCredentials, "certificate label not recignized"))
+    Err(Error::new(ErrorKind::NoCredentials, "certificate label not recognized"))
 }
 
 #[cfg(test)]
