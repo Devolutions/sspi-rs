@@ -101,6 +101,8 @@ pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Res
                 .as_deref()
                 .map(str_encode_utf16)
                 .ok();
+
+            break;
         }
 
         let reader_name = str_encode_utf16(reader_name);
