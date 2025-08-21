@@ -63,7 +63,6 @@ pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Res
 
         // The first suitable user certificate on smart card.
         let mut certificate = None;
-        let mut container_name = None;
 
         let query = [
             Attribute::Class(ObjectClass::CERTIFICATE),
@@ -79,29 +78,30 @@ pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Res
                     continue;
                 }
 
-                certificate = Some(encoded_certificate);
-
-                // We found a suitable certificate for smart card logon on the device.
-                // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
-                // to extract the container name using raw APDU commands.
-                for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
-                    let Attribute::Label(label) = label else {
-                        continue;
-                    };
-
-                    container_name = try_get_piv_container_name(reader_name, &label)
-                        .as_deref()
-                        .map(str_encode_utf16)
-                        .ok();
-                }
+                certificate = Some((encoded_certificate, certificate_handle));
 
                 break 'certificates;
             }
         }
 
-        let Some(certificate) = certificate else {
+        let Some((certificate, certificate_handle)) = certificate else {
             continue;
         };
+
+        let mut container_name = None;
+        // We found a suitable certificate for smart card logon on the device.
+        // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
+        // to extract the container name using raw APDU commands.
+        for label in session.get_attributes(certificate_handle, &[AttributeType::Label])? {
+            let Attribute::Label(label) = label else {
+                continue;
+            };
+
+            container_name = try_get_piv_container_name(reader_name, &label)
+                .as_deref()
+                .map(str_encode_utf16)
+                .ok();
+        }
 
         let reader_name = str_encode_utf16(reader_name);
 
