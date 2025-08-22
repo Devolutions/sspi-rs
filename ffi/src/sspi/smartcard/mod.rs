@@ -189,8 +189,10 @@ fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Res
         .extn_value();
 
     let ExtensionView::ExtendedKeyUsage(extended_key_usage) = extended_key_usage_ext else {
-        // safe: checked above
-        unreachable!("ExtensionView must be ExtendedKeyUsage");
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "ExtensionView must be ExtendedKeyUsage",
+        ));
     };
 
     Ok((*extended_key_usage).clone())
@@ -215,8 +217,10 @@ pub fn extract_upn_from_certificate(certificate: &Certificate) -> Result<String>
         .extn_value();
 
     let ExtensionView::SubjectAltName(alternate_name) = subject_alt_name_ext else {
-        // safe: checked above
-        unreachable!("ExtensionView must be SubjectAltName");
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "ExtensionView must be SubjectAltName",
+        ));
     };
 
     let GeneralName::OtherName(other_name) = alternate_name.0.first().expect("there is always at least one element")
