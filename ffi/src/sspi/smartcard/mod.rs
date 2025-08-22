@@ -143,7 +143,7 @@ fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
     let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
     let certificate_username = extract_upn_from_certificate(&certificate)?;
 
-    if certificate_username != username {
+    if !certificate_username.eq_ignore_ascii_case(username) {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             format!(
@@ -260,8 +260,14 @@ mod tests {
             .unwrap()
             .to_der()
             .unwrap();
+        // The following certificate has "pW11@ExAmPlE.cOm" UPN.
+        let cert_uppercase_upn = Cert::from_pem_str(include_str!("../../../../test_assets/pw11_upper_case_upn.cer"))
+            .unwrap()
+            .to_der()
+            .unwrap();
 
         validate_certificate(&certificate, "pw11@example.com").expect("certificate is valid");
+        validate_certificate(&cert_uppercase_upn, "pw11@example.com").expect("certificate is valid");
     }
 
     #[test]
