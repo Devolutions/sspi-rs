@@ -24,6 +24,7 @@ use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
 /// Default name of the system provided smart card.
+///
 /// pcsc-lite and PC/SC framework don't have method for querying scard name, so we use predefined value. It doesn't affect the auth process.
 #[cfg(not(target_os = "windows"))]
 const DEFAULT_CARD_NAME: &str = "Sspi-rs system provided scard";
@@ -51,7 +52,7 @@ impl fmt::Debug for SystemScardContext {
 
 impl SystemScardContext {
     #[instrument(ret)]
-    pub fn establish(scope: ScardScope) -> WinScardResult<Self> {
+    pub fn establish(scope: ScardScope, _with_cache: bool) -> WinScardResult<Self> {
         let mut h_context = 0;
 
         #[cfg(target_os = "windows")]
@@ -73,16 +74,21 @@ impl SystemScardContext {
             ));
         }
 
+        #[cfg(not(target_os = "windows"))]
+        let cache = if _with_cache {
+            let auth_cert = winscard::env::auth_cert_from_env()?;
+            let auth_cert_der = auth_cert.to_der()?;
+
+            init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
+        } else {
+            Default::default()
+        };
+
         Ok(Self {
             h_context,
             api,
             #[cfg(not(target_os = "windows"))]
-            cache: {
-                let auth_cert = winscard::env::auth_cert_from_env()?;
-                let auth_cert_der = auth_cert.to_der()?;
-
-                init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
-            },
+            cache,
         })
     }
 }
@@ -343,16 +349,14 @@ impl WinScardContext for SystemScardContext {
             )?;
         }
 
-        let handle = Box::new(SystemScard::new(scard, self.h_context)?);
+        // `DWORD` is aliased to `c_ulong` for Linux targets. In turn, `c_ulong` is aliased to `u64` on some targets.
+        // Thus, depending on the compilation target, *sometimes* we need to convert `u64` to `u32`.
+        #[allow(clippy::useless_conversion)]
+        let active_protocol = active_protocol.try_into()?;
+        let protocol = Protocol::from_bits(active_protocol).unwrap_or_default();
+        let handle = Box::new(SystemScard::new(scard, protocol, self.h_context)?);
 
-        Ok(ScardConnectData {
-            handle,
-            protocol: Protocol::from_bits(
-                #[allow(clippy::useless_conversion)]
-                active_protocol.try_into()?,
-            )
-            .unwrap_or_default(),
-        })
+        Ok(ScardConnectData { handle, protocol })
     }
 
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {

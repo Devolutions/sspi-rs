@@ -1,4 +1,4 @@
-/// BER-TLV with the tag `53` containing in the value field of the
+/// BER-TLV with the tag `0x53` containing in the value field of the
 /// requested data object.
 pub const DATA: u8 = 0x53;
 /// [FASC-N](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=36).

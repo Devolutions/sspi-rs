@@ -630,7 +630,7 @@ pub trait WinScard {
     /// [SCardTransmit](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
     ///
     /// The SCardTransmit function sends a service request to the smart card and expects to receive data back from the card.
-    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData>;
+    fn transmit(&mut self, input_apdu: &[u8]) -> WinScardResult<TransmitOutData>;
 
     /// [SCardBeginTransaction](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardbegintransaction)
     ///

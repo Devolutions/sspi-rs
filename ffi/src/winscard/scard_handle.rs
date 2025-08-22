@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::once;
 use std::mem::size_of;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::slice::from_raw_parts_mut;
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
@@ -497,30 +497,6 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
             "invalid smart card context handle",
         ))
     }
-}
-
-/// Converts the C `SCARD_IO_REQUEST` ([LpScardIoRequest]) to Rust [IoRequest].
-pub unsafe fn scard_io_request_to_io_request(pio_send_pci: LpScardIoRequest) -> WinScardResult<IoRequest> {
-    if pio_send_pci.is_null() {
-        return Err(Error::new(ErrorKind::InvalidParameter, "pio_send_pci cannot be null"));
-    }
-
-    // SAFETY: it's safe to deref because we've checked for null value above.
-    let (cb_pci_length, dw_protocol) = unsafe { ((*pio_send_pci).cb_pci_length, (*pio_send_pci).dw_protocol) };
-    // https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
-    //
-    // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
-    let pci_buf_len: usize = cb_pci_length.try_into()?;
-    let buffer_len = pci_buf_len - size_of::<ScardIoRequest>();
-    // SAFETY: it should be safe to cast a pointer. According to the documentation, the `pci_buffer` data
-    // is placed right after the `ScardIoRequest` structure.
-    let buffer = unsafe { (pio_send_pci as *const u8).add(size_of::<ScardIoRequest>()) };
-
-    Ok(IoRequest {
-        protocol: Protocol::from_bits(dw_protocol).unwrap_or(Protocol::empty()),
-        // SAFETY: According to the documentation, it's safe to create a slice of the pci data.
-        pci_info: unsafe { from_raw_parts(buffer, buffer_len) }.to_vec(),
-    })
 }
 
 /// Copies data from the Rust [IoRequest] to the C `SCARD_IO_REQUEST` ([LpScardIoRequest]).

@@ -1,9 +1,11 @@
 use std::ffi::c_void;
 
 use super::{
-    LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardAtrMask, LpScardContext,
-    LpScardHandle, LpScardIoRequest, LpScardReaderStateA, LpScardReaderStateW, ScardContext, ScardHandle, ScardStatus,
+    LpCScardIoRequest, LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardAtrMask,
+    LpScardContext, LpScardHandle, LpScardIoRequest, LpScardReaderStateA, LpScardReaderStateW, ScardContext,
+    ScardHandle, ScardStatus,
 };
+use crate::winscard::ScardIoRequest;
 use crate::{
     Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpVoid, LpWStr,
 };
@@ -99,7 +101,7 @@ pub type SCardStatusWFn =
     unsafe extern "system" fn(ScardHandle, LpWStr, LpDword, LpDword, LpDword, LpByte, LpDword) -> ScardStatus;
 pub type SCardTransmitFn = unsafe extern "system" fn(
     ScardHandle,
-    LpScardIoRequest,
+    LpCScardIoRequest,
     LpCByte,
     u32,
     LpScardIoRequest,
@@ -199,6 +201,10 @@ pub struct SCardApiFunctionTable {
     pub SCardListReadersWithDeviceInstanceIdA: SCardListReadersWithDeviceInstanceIdAFn,
     pub SCardListReadersWithDeviceInstanceIdW: SCardListReadersWithDeviceInstanceIdWFn,
     pub SCardAudit: SCardAuditFn,
+
+    pub g_rgSCardT0Pci: &'static ScardIoRequest,
+    pub g_rgSCardT1Pci: &'static ScardIoRequest,
+    pub g_rgSCardRawPci: &'static ScardIoRequest,
 }
 
 pub type PSCardApiFunctionTable = *mut SCardApiFunctionTable;

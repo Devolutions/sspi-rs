@@ -46,7 +46,7 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 /// Credentials are often represented as strings. For example, username, domain, password.
 /// It is OK for Windows SSPI to accept `null` or empty credential strings. The `AcquireCredentialsHandle`
 /// function will return successful status code is we pass the `null` username value. Thus, this function
-/// will return an empty [Vec] in such a case. It is done on purpose to follow the Windows SSPI behaviour.
+/// will return an empty [Vec] in such a case. It is done on purpose to follow the Windows SSPI behavior.
 ///
 /// # Safety
 ///

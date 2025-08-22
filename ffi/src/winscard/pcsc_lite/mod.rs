@@ -151,17 +151,41 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         ($func_name:literal) => {{
             let fn_name = CString::new($func_name).expect("CString creation should not fail");
 
-            // SAFETY: The `handle` is initialized and checked above.
-            // The function name should be correct because it's hardcoded in the code.
+            // SAFETY:
+            // - We've checked the `handle` above.
+            // - `fn_name` is correct and hardcoded in the code.
             let fn_ptr = unsafe { dlsym(handle, fn_name.as_ptr()) };
             debug!(?fn_ptr, $func_name);
 
-            // SAFETY: FFI. We have to trust that we defined the signatures correctly.
+            // SAFETY:
+            // - `*mut c_void` and target transmute type are both C pointers. They have the same layout.
+            //   Thus, we can safely transmute the C pointer to the C function pointer.
+            // - The target transmute type is our defined PCSC-lite C function which is correct.
+            //   We are responsible for the function signature correctness.
             unsafe {
                 // Not great to silent, but mostly fine in this context.
                 #[expect(clippy::missing_transmute_annotations)]
                 std::mem::transmute::<*mut libc::c_void, _>(fn_ptr)
             }
+        }};
+    }
+
+    macro_rules! load_io_request {
+        ($req_name:literal) => {{
+            let req_name = CString::new($req_name).expect("CString creation should not fail");
+
+            // SAFETY:
+            // - We've checked the `handle` above.
+            // - `req_name` is correct and hardcoded in the code.
+            let io_request_ptr = unsafe { dlsym(handle, req_name.as_ptr()) };
+            debug!(?io_request_ptr, $req_name);
+
+            // SAFETY:
+            // - `*mut c_void` and `*const ScardIoRequest` are both C pointers. They have the same layout.
+            //   Thus, we can safely transmute one C pointer to another C pointer.
+            // - The `*const ScardIoRequest` type is our defined PCSC-lite C structure and it is correct.
+            //   We are responsible for the structure correctness.
+            unsafe { std::mem::transmute::<*mut libc::c_void, *const ScardIoRequest>(io_request_ptr) }
         }};
     }
 
@@ -184,5 +208,9 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         SCardListReaderGroups: load_fn!("SCardListReaderGroups"),
         SCardCancel: load_fn!("SCardCancel"),
         SCardIsValidContext: load_fn!("SCardIsValidContext"),
+
+        g_rgSCardT0Pci: load_io_request!("g_rgSCardT0Pci"),
+        g_rgSCardT1Pci: load_io_request!("g_rgSCardT1Pci"),
+        g_rgSCardRawPci: load_io_request!("g_rgSCardRawPci"),
     })
 }
