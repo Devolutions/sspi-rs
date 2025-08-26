@@ -55,10 +55,6 @@ pub async fn initialize_security_context<'a>(
 ) -> Result<crate::InitializeSecurityContextResult> {
     trace!(?builder);
 
-    builder
-        .context_requirements
-        .set(ClientRequestFlags::USE_SESSION_KEY, true);
-
     let status = match client.state {
         KerberosState::Negotiate => {
             let sname = if builder

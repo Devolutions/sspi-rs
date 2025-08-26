@@ -363,19 +363,3 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
 
     Ok(signature)
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_smart_card() {
-        let signature = super::sign_data_win_api(
-            "te-RDPScardEx-7b62cc37-4bda-45a9--42412",
-            b"123456",
-            &[
-                62, 251, 72, 0, 35, 124, 188, 174, 226, 75, 135, 154, 150, 19, 66, 225, 152, 77, 176, 221,
-            ],
-        )
-        .unwrap();
-        dbg!(signature);
-    }
-}

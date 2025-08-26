@@ -401,7 +401,6 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     p_auth_data: *const c_void,
     package_list: &mut Option<String>,
 ) -> Result<CredentialsBuffers> {
-    debug!("===> auth_data_to_identity_buffers_w");
     if p_auth_data.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "p_auth_data cannot be null"));
     }
@@ -437,16 +436,12 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         }
         .into();
 
-        let mut user_tmp = user.clone();
-        user_tmp.extend_from_slice(&[0, 0]);
-        // Only marshaled smart card creds starts with '@' char.
+        let mut username = user.clone();
+        username.extend_from_slice(&[0, 0]);
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
-        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user_tmp.as_ptr() as *const _) } != 0 {
-            debug!(?user, "===> handle_smart_card_creds 1.");
+        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
             return handle_smart_card_creds(user, password);
-        } else {
-            debug!(?user, "Credentials are not marshalled 1:");
         }
 
         // Try to collect credentials for the emulated/system-provided smart card.
@@ -479,14 +474,12 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         }
         .into();
 
-        // Only marshaled smart card creds starts with '@' char.
+        let mut username = user.clone();
+        username.extend_from_slice(&[0, 0]);
         #[cfg(all(feature = "scard", target_os = "windows"))]
         // SAFETY: This function is safe to call because argument is validated.
-        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            debug!(?user, "===> handle_smart_card_creds 2.");
+        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
             return handle_smart_card_creds(user, password);
-        } else {
-            debug!(?user, "Credentials are not marshalled 2:");
         }
 
         // Try to collect credentials for the emulated/system-provided smart card.
