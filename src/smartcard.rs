@@ -230,64 +230,60 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 /// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
 #[cfg(target_os = "windows")]
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
-    use std::ptr::null_mut;
+    use windows::core::PCWSTR;
+    use windows::Win32::Security::Cryptography::{
+        NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_PKCS1_PADDING_INFO,
+        BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER, NCRYPT_FLAGS, NCRYPT_KEY_HANDLE,
+        NCRYPT_PAD_PKCS1_FLAG, NCRYPT_PIN_PROPERTY, NCRYPT_PROV_HANDLE, NCRYPT_SILENT_FLAG,
+    };
 
-    use windows_sys::Win32::Foundation::*;
-    use windows_sys::Win32::Security::Cryptography::*;
+    use crate::utils::string_to_utf16;
 
-    let mut provider: NCRYPT_PROV_HANDLE = 0;
+    let mut provider = NCRYPT_PROV_HANDLE::default();
     // SAFETY: FFI call with no outstanding preconditions.
-    let status = unsafe { NCryptOpenStorageProvider(&mut provider, MS_SMART_CARD_KEY_STORAGE_PROVIDER, 0) };
-
-    if status != ERROR_SUCCESS.try_into().unwrap() {
-        return Err(Error::new(
+    unsafe { NCryptOpenStorageProvider(&mut provider, MS_SMART_CARD_KEY_STORAGE_PROVIDER, 0) }.map_err(|err| {
+        Error::new(
             ErrorKind::InternalError,
-            format!("failed to open smart card CNG key storage provider: {status:x}"),
-        ));
-    }
+            format!(
+                "failed to open smart card CNG key storage provider: {} ({:x})",
+                err.message(),
+                err.code().0
+            ),
+        )
+    })?;
 
     let container_name = container_name
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
+    let container_name = PCWSTR::from_raw(container_name.as_ptr());
 
-    let mut key: NCRYPT_KEY_HANDLE = 0;
+    let mut key = NCRYPT_KEY_HANDLE::default();
     // SAFETY:
     // - `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
     // - `container_name` is a valid UTF-16 string and null-terminated.
-    let status = unsafe { NCryptOpenKey(provider, &mut key, container_name.as_ptr(), 0, NCRYPT_SILENT_FLAG) };
+    unsafe { NCryptOpenKey(provider, &mut key, container_name, CERT_KEY_SPEC(0), NCRYPT_SILENT_FLAG) }.map_err(
+        |err| {
+            Error::new(
+                ErrorKind::InternalError,
+                format!("failed to open smart card key: {} ({:x})", err.message(), err.code().0),
+            )
+        },
+    )?;
 
-    if status != ERROR_SUCCESS.try_into().unwrap() {
-        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
-        unsafe { NCryptFreeObject(provider) };
-
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!("failed to open smart card key: {status:x}"),
-        ));
-    }
-
-    let mut pin = std::str::from_utf8(pin)?
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    // NCRYPT_PIN_PROPERTY: https://learn.microsoft.com/en-us/windows/win32/seccng/key-storage-property-identifiers
+    // > A pointer to a null-terminated Unicode string that contains the PIN.
+    let mut pin = string_to_utf16(std::str::from_utf8(pin)?);
+    pin.extend_from_slice(&[0, 0]);
     // SAFETY:
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `pin` is a valid UTF-16 string and null-terminated.
-    let status = unsafe {
-        NCryptSetProperty(
-            key,
-            NCRYPT_PIN_PROPERTY,
-            pin.as_mut_ptr() as *mut u8,
-            // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptsetproperty
-            // > The size, in **bytes**, of the pbInput buffer.
-            (pin.len() * 2).try_into()?,
-            0,
-        )
-    };
-
-    if status != ERROR_SUCCESS.try_into().unwrap() {
-        warn!("Failed to set smart card PIN code: {status:x} - this may cause issues with signing data.");
+    if let Err(err) = unsafe { NCryptSetProperty(key.into(), NCRYPT_PIN_PROPERTY, pin.as_ref(), NCRYPT_FLAGS(0)) } {
+        warn!(
+            "Failed to set smart card PIN code: {} ({:x}) - this may cause issues with signing data.",
+            err.message(),
+            err.code().0
+        );
     }
 
     let mut signature_len = 0;
@@ -300,65 +296,44 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
     // - `pbSignature` is allowed to be NULL.
     //   > If this parameter is NULL, this function will calculate the size required for the signature and return the size in the location pointed to by the pcbResult parameter.
-    let status = unsafe {
+    unsafe {
         NCryptSignHash(
             key,
-            &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
-            data_to_sign.as_ptr(),
-            data_to_sign.len().try_into()?,
-            null_mut(),
-            0,
+            Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
+            data_to_sign,
+            None,
             &mut signature_len,
             NCRYPT_PAD_PKCS1_FLAG,
         )
-    };
-
-    if status != ERROR_SUCCESS.try_into().unwrap() {
-        // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
-        unsafe { NCryptFreeObject(key) };
-        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
-        unsafe { NCryptFreeObject(provider) };
-
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!("failed to get signature length: {status:x}"),
-        ));
     }
+    .map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("failed to get signature length: {} ({:x})", err.message(), err.code().0),
+        )
+    })?;
 
     let mut signature = vec![0_u8; usize::try_from(signature_len)?];
     // SAFETY:
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `padding_info`, `signature`, and `signature_len` are local variables.
     // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
-    let status = unsafe {
+    unsafe {
         NCryptSignHash(
             key,
-            &padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _,
-            data_to_sign.as_ptr(),
-            data_to_sign.len().try_into()?,
-            signature.as_mut_ptr(),
-            signature_len,
+            Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
+            data_to_sign,
+            Some(&mut signature),
             &mut signature_len,
             NCRYPT_PAD_PKCS1_FLAG,
         )
-    };
-
-    if status != ERROR_SUCCESS.try_into().unwrap() {
-        // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
-        unsafe { NCryptFreeObject(key) };
-        // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
-        unsafe { NCryptFreeObject(provider) };
-
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!("failed to sign data: {status:x}"),
-        ));
     }
-
-    // SAFETY: `key` is a valid handle obtained from `NCryptOpenKey`.
-    unsafe { NCryptFreeObject(key) };
-    // SAFETY: `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
-    unsafe { NCryptFreeObject(provider) };
+    .map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("failed to sign data: {} ({:x})", err.message(), err.code().0),
+        )
+    })?;
 
     Ok(signature)
 }

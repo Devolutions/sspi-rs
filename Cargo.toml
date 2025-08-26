@@ -138,7 +138,7 @@ cryptoki = { version = "0.10", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.5"
-windows = { version = "0.61", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns"] }
+windows = { version = "0.61", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }
 windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
