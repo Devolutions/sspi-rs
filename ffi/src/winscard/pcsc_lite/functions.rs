@@ -190,4 +190,8 @@ pub struct PcscLiteApiFunctionTable {
     pub SCardListReaderGroups: SCardListReaderGroupsFn,
     pub SCardCancel: SCardCancelFn,
     pub SCardIsValidContext: SCardIsValidContextFn,
+
+    pub g_rgSCardT0Pci: *const ScardIoRequest,
+    pub g_rgSCardT1Pci: *const ScardIoRequest,
+    pub g_rgSCardRawPci: *const ScardIoRequest,
 }

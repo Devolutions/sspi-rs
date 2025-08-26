@@ -14,9 +14,7 @@ use sha1::Sha1;
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{build_chuid, CHUID_LENGTH};
 use crate::piv_cert::build_auth_cert;
-use crate::winscard::{
-    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard,
-};
+use crate::winscard::{AttributeId, ControlCode, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard};
 use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
@@ -509,7 +507,7 @@ impl WinScard for SmartCard<'_> {
         Ok(0)
     }
 
-    fn transmit(&mut self, _send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+    fn transmit(&mut self, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
         let Response { status, data } = self.handle_command(input_apdu)?;
 
         let mut output_apdu = data.unwrap_or_default();

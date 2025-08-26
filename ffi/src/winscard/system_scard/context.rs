@@ -343,16 +343,14 @@ impl WinScardContext for SystemScardContext {
             )?;
         }
 
-        let handle = Box::new(SystemScard::new(scard, self.h_context)?);
+        // `DWORD` is aliased to `c_ulong` for Linux targets. In turn, `c_ulong` is aliased to `u64` on some targets.
+        // Thus, depending on the compilation target, *sometimes* we need to convert `u64` to `u32`.
+        #[allow(clippy::useless_conversion)]
+        let active_protocol = active_protocol.try_into()?;
+        let protocol = Protocol::from_bits(active_protocol).unwrap_or_default();
+        let handle = Box::new(SystemScard::new(scard, protocol, self.h_context)?);
 
-        Ok(ScardConnectData {
-            handle,
-            protocol: Protocol::from_bits(
-                #[allow(clippy::useless_conversion)]
-                active_protocol.try_into()?,
-            )
-            .unwrap_or_default(),
-        })
+        Ok(ScardConnectData { handle, protocol })
     }
 
     fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {

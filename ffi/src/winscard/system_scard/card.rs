@@ -1,25 +1,20 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::mem::size_of;
 use std::ptr::null_mut;
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
 #[cfg(target_os = "windows")]
-use ffi_types::winscard::ScardIoRequest;
-#[cfg(target_os = "windows")]
 use ffi_types::winscard::{ScardContext, ScardHandle};
 use num_traits::ToPrimitive;
 use winscard::winscard::{
-    AttributeId, ControlCode, IoRequest, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
+    AttributeId, ControlCode, Protocol, ReaderAction, ShareMode, Status, TransmitOutData, WinScard,
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::parse_multi_string_owned;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
-#[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::ScardIoRequest;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
 
@@ -40,6 +35,8 @@ enum HandleState {
 pub struct SystemScard {
     h_card: HandleState,
     h_card_context: ScardContext,
+    active_protocol: Protocol,
+
     #[cfg(target_os = "windows")]
     api: SCardApiFunctionTable,
     #[cfg(not(target_os = "windows"))]
@@ -51,7 +48,7 @@ impl SystemScard {
     ///
     /// _Note._ `h_card` and `h_card_context` parameters (handles) must be initialized using
     /// the corresponding methods.
-    pub fn new(h_card: ScardHandle, h_card_context: ScardContext) -> WinScardResult<Self> {
+    pub fn new(h_card: ScardHandle, active_protocol: Protocol, h_card_context: ScardContext) -> WinScardResult<Self> {
         if h_card == 0 {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -69,6 +66,8 @@ impl SystemScard {
         Ok(Self {
             h_card: HandleState::Connected(h_card),
             h_card_context,
+            active_protocol,
+
             #[cfg(target_os = "windows")]
             api: super::init_scard_api_table()?,
             #[cfg(not(target_os = "windows"))]
@@ -252,7 +251,7 @@ impl WinScard for SystemScard {
         Ok(receive_len.try_into()?)
     }
 
-    fn transmit(&mut self, send_pci: IoRequest, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
+    fn transmit(&mut self, input_apdu: &[u8]) -> WinScardResult<TransmitOutData> {
         // The SCardTransmit function doesn't support SCARD_AUTOALLOCATE attribute. So, we need to allocate
         // the buffer for the output APDU by ourselves.
         // The `msclmd.dll` has `I_ClmdCmdExtendedTransmit` and `I_ClmdCmdShortTransmit` functions.
@@ -260,29 +259,23 @@ impl WinScard for SystemScard {
         // We decided to always use the larger one.
         const OUT_APDU_BUF_LEN: usize = 65538;
 
-        // * https://learn.microsoft.com/en-us/windows/win32/secauthn/scard-io-request
-        // * https://pcsclite.apdu.fr/api/structSCARD__IO__REQUEST.html#details
-        //
-        // The SCARD_IO_REQUEST structure begins a protocol control information structure.
-        // Any protocol-specific information then immediately follows this structure.
-        //
-        // Length, in bytes, of the SCARD_IO_REQUEST structure plus any following PCI-specific information.
-        let length = size_of::<ScardIoRequest>() + send_pci.pci_info.len();
-
-        let mut scard_io_request = vec![0_u8; length];
-        scard_io_request[size_of::<ScardIoRequest>()..].copy_from_slice(&send_pci.pci_info);
-
-        let poi_send_pci = scard_io_request.as_mut_ptr() as *mut ScardIoRequest;
-
         let mut output_apdu_len = OUT_APDU_BUF_LEN.try_into()?;
         let mut output_apdu = [0; OUT_APDU_BUF_LEN];
 
-        // SAFETY: The `poi_send_pci` pointer is created from the local allocated memory and should
-        // be valid in the current context.
-        unsafe {
-            (*poi_send_pci).dw_protocol = send_pci.protocol.bits();
-            (*poi_send_pci).cb_pci_length = length.try_into()?;
-        }
+        let send_pci = match self.active_protocol {
+            Protocol::T0 => self.api.g_rgSCardT0Pci,
+            Protocol::T1 => self.api.g_rgSCardT1Pci,
+            Protocol::Raw => self.api.g_rgSCardRawPci,
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidValue,
+                    format!(
+                        "failed to extract container name: smart card selected invalid ({:?}) connection protocol",
+                        self.active_protocol
+                    ),
+                ))
+            }
+        };
 
         try_execute!(
             // SAFETY: This function is safe to call because `self.h_card` is checked
@@ -290,7 +283,7 @@ impl WinScard for SystemScard {
             unsafe {
                 (self.api.SCardTransmit)(
                     self.h_card()?,
-                    poi_send_pci,
+                    send_pci,
                     input_apdu.as_ptr(),
                     input_apdu.len().try_into()?,
                     // https://pcsclite.apdu.fr/api/group__API.html#ga9a2d77242a271310269065e64633ab99
