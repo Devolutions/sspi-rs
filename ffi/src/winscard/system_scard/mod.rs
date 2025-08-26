@@ -3,8 +3,8 @@
 #[macro_use]
 mod macros;
 
-mod card;
-mod context;
+pub mod card;
+pub mod context;
 
 use std::borrow::Cow;
 

@@ -5,8 +5,7 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
-use picky_asn1::wrapper::Utf8StringAsn1;
-use picky_asn1_x509::{oids, Certificate, ExtensionView, GeneralName};
+use picky_asn1_x509::Certificate;
 use sha1::{Digest, Sha1};
 use windows_sys::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
@@ -204,7 +203,6 @@ pub struct SmartCardInfo {
     pub reader_name: String,
     pub csp_name: String,
     pub certificate: Certificate,
-    pub private_key_file_index: u8,
 }
 
 // This function gathers the smart card information like reader name, key container name,
@@ -237,7 +235,6 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
 
     let mut key_container_name_len = 0;
     let mut is_first = true;
-    let mut index = 1;
     loop {
         // SAFETY:
         // * `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
@@ -283,7 +280,6 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
         let context = if let Ok(context) = unsafe { acquire_key_container_context(&key_container_name) } {
             context
         } else {
-            index += 1;
             continue;
         };
 
@@ -313,12 +309,10 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
                     reader_name,
                     certificate,
                     csp_name: CSP_NAME.to_owned(),
-                    private_key_file_index: index,
                 });
             }
         }
 
-        index += 1;
         is_first = false;
     }
 
@@ -332,69 +326,4 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
     }
 
     Err(Error::new(ErrorKind::InternalError, "Cannot get smart card info"))
-}
-
-// This function tries to extract the user principal name from the smart card certificate by searching in the Subject Alternative Name.
-#[instrument(level = "trace", ret)]
-pub fn extract_user_name_from_certificate(certificate: &Certificate) -> Result<String> {
-    let subject_alt_name_ext = &certificate
-        .tbs_certificate
-        .extensions
-        .0
-         .0
-        .iter()
-        .find(|extension| extension.extn_id().0 == oids::subject_alternative_name())
-        .ok_or_else(|| {
-            Error::new(
-                ErrorKind::IncompleteCredentials,
-                "Subject alternative name certificate extension is not present",
-            )
-        })?
-        .extn_value();
-
-    let alternate_name = match subject_alt_name_ext {
-        ExtensionView::SubjectAltName(alternate_name) => alternate_name,
-        // safe: checked above
-        _ => unreachable!("ExtensionView must be SubjectAltName"),
-    };
-
-    let other_name = match alternate_name.0.first().expect("there is always at least one element") {
-        GeneralName::OtherName(other_name) => other_name,
-        _ => {
-            return Err(Error::new(
-                ErrorKind::IncompleteCredentials,
-                "subject alternate name has unsupported value type",
-            ))
-        }
-    };
-
-    if other_name.type_id.0 != oids::user_principal_name() {
-        return Err(Error::new(
-            ErrorKind::IncompleteCredentials,
-            "Subject alternate name must be UPN",
-        ));
-    }
-
-    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0 .0)?;
-    Ok(data.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use picky::x509::Cert;
-    use picky_asn1_x509::Certificate;
-
-    use super::extract_user_name_from_certificate;
-
-    #[test]
-    fn username_extraction() {
-        let certificate: Certificate = Cert::from_pem_str(include_str!("../test_assets/pw11.cer"))
-            .unwrap()
-            .into();
-
-        assert_eq!(
-            "pw11@example.com",
-            extract_user_name_from_certificate(&certificate).unwrap()
-        );
-    }
 }

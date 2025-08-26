@@ -266,9 +266,12 @@ fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate
             reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
                 credentials.reader_name.clone(),
             )))),
-            container_name: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
-                credentials.container_name.clone(),
-            )))),
+            container_name: Optional::from(
+                credentials
+                    .container_name
+                    .clone()
+                    .map(|name| ExplicitContextTag3::from(OctetStringAsn1::from(name))),
+            ),
             csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(
                 credentials.csp_name.clone(),
             )))),

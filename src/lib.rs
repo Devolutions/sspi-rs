@@ -99,11 +99,11 @@ use picky_krb::messages::KrbError;
 pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
-pub use utils::string_to_utf16;
+pub use utils::{string_to_utf16, utf16_bytes_to_utf8_string};
 
 pub use self::auth_identity::{
     AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers,
-    UserNameFormat, Username,
+    SmartCardType, UserNameFormat, Username,
 };
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
@@ -2360,6 +2360,16 @@ impl From<winscard::Error> for Error {
     fn from(value: winscard::Error) -> Self {
         Self::new(
             ErrorKind::InternalError,
+            format!("Error while using a smart card: {}", value),
+        )
+    }
+}
+
+#[cfg(feature = "scard")]
+impl From<cryptoki::error::Error> for Error {
+    fn from(value: cryptoki::error::Error) -> Self {
+        Self::new(
+            ErrorKind::NoCredentials,
             format!("Error while using a smart card: {}", value),
         )
     }
