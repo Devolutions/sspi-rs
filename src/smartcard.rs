@@ -76,78 +76,77 @@ impl SmartCard {
             scard_type,
         } = credentials;
 
+        let user_pin = user_pin.as_ref().to_vec();
+
         match scard_type {
             SmartCardType::Emulated { scard_pin } => {
-                let Some(private_key) = private_key else {
-                    return Err(Error::new(
+                let private_key = private_key
+                    .as_ref()
+                    .ok_or(Error::new(
                         ErrorKind::IncompleteCredentials,
                         "emulated smart card private key is missing",
-                    ));
-                };
+                    ))?
+                    .as_ref()
+                    .clone();
 
                 Self::new_emulated(
-                    Cow::Borrowed(reader_name.as_str()),
-                    scard_pin.as_ref(),
-                    user_pin.as_ref(),
-                    private_key.as_ref(),
+                    Cow::Owned(reader_name.clone()),
+                    scard_pin.as_ref().to_vec(),
+                    user_pin,
+                    private_key,
                     picky_asn1_der::to_vec(certificate)?,
                 )
             }
             SmartCardType::SystemProvided { pkcs11_module_path } => {
-                Self::new_system_provided(pkcs11_module_path, user_pin.as_ref(), reader_name)
+                Self::new_system_provided(pkcs11_module_path, user_pin, reader_name.clone())
             }
             #[cfg(target_os = "windows")]
             SmartCardType::WindowsNative => Self::new_windows_native(
-                user_pin.as_ref(),
+                user_pin,
                 _container_name
                     .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?,
+                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?
+                    .to_owned(),
             ),
         }
     }
 
     /// Creates a new [SmartCard] instance with the emulated smart card inside.
     fn new_emulated(
-        reader_name: Cow<'_, str>,
-        scard_pin: &[u8],
-        user_pin: &[u8],
-        private_key: &PrivateKey,
+        reader_name: Cow<'static, str>,
+        scard_pin: Vec<u8>,
+        user_pin: Vec<u8>,
+        private_key: PrivateKey,
         auth_cert_der: Vec<u8>,
     ) -> Result<Self> {
-        let reader_name = match reader_name {
-            Cow::Borrowed(name) => Cow::Owned(name.to_owned()),
-            Cow::Owned(name) => Cow::Owned(name),
-        };
-        let scard = PivSmartCard::new(reader_name, scard_pin.to_vec(), auth_cert_der, private_key.clone())?;
+        let scard = PivSmartCard::new(reader_name, scard_pin, auth_cert_der, private_key)?;
 
         Ok(Self {
             smart_card_type: SmartCardApi::PivEmulated(Box::new(scard)),
-            pin: user_pin.to_vec().into(),
+            pin: user_pin.into(),
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside (Windows API).
     #[cfg(target_os = "windows")]
-    fn new_windows_native(user_pin: &[u8], container_name: &str) -> Result<Self> {
+    fn new_windows_native(user_pin: Vec<u8>, container_name: String) -> Result<Self> {
         Ok(Self {
-            smart_card_type: SmartCardApi::Windows {
-                container_name: container_name.to_owned(),
-            },
-            pin: user_pin.to_vec().into(),
+            smart_card_type: SmartCardApi::Windows { container_name },
+            pin: user_pin.into(),
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside.
-    fn new_system_provided(pkcs11_module_path: &Path, user_pin: &[u8], reader_name: &str) -> Result<Self> {
+    fn new_system_provided(pkcs11_module_path: &Path, user_pin: Vec<u8>, reader_name: String) -> Result<Self> {
         let pkcs11 = Pkcs11::new(pkcs11_module_path)?;
         pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
         Ok(Self {
             smart_card_type: SmartCardApi::Pkcs11 {
                 pkcs11_module: pkcs11,
-                reader_name: reader_name.to_owned(),
+                reader_name,
             },
-            pin: user_pin.to_vec().into(),
+            pin: user_pin.into(),
         })
     }
 
