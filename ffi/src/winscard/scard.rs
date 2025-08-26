@@ -2,8 +2,8 @@ use std::ffi::CStr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use ffi_types::winscard::{
-    LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle, LpScardIoRequest,
-    ScardContext, ScardHandle, ScardStatus,
+    LpCScardIoRequest, LpOpenCardNameA, LpOpenCardNameExA, LpOpenCardNameExW, LpOpenCardNameW, LpScardHandle,
+    LpScardIoRequest, ScardContext, ScardHandle, ScardStatus,
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use num_traits::FromPrimitive;
@@ -16,8 +16,7 @@ use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save
 use crate::utils::{c_w_str_to_string, into_raw_ptr};
 use crate::winscard::scard_handle::{
     copy_io_request_to_scard_io_request, raw_scard_context_handle_to_scard_context_handle,
-    raw_scard_handle_to_scard_handle, scard_context_to_winscard_context, scard_handle_to_winscard,
-    scard_io_request_to_io_request, WinScardHandle,
+    raw_scard_handle_to_scard_handle, scard_context_to_winscard_context, scard_handle_to_winscard, WinScardHandle,
 };
 
 unsafe fn connect(
@@ -352,7 +351,7 @@ pub unsafe extern "system" fn SCardStatusW(
 #[no_mangle]
 pub unsafe extern "system" fn SCardTransmit(
     handle: ScardHandle,
-    pio_send_pci: LpScardIoRequest,
+    pio_send_pci: LpCScardIoRequest,
     pb_send_buffer: LpCByte,
     cb_send_length: u32,
     pio_recv_pci: LpScardIoRequest,
@@ -367,8 +366,6 @@ pub unsafe extern "system" fn SCardTransmit(
     // SAFETY: The `handle` is not null. All other guarantees should be provided by the user.
     let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
 
-    // SAFETY: The `pio_send_pci` parameter cannot be null (checked above).
-    let io_request = try_execute!(unsafe { scard_io_request_to_io_request(pio_send_pci) });
     // SAFETY: The `pb_send_buffer` parameter cannot be null (checked above).
     let input_apdu = unsafe {
         from_raw_parts(
@@ -377,7 +374,7 @@ pub unsafe extern "system" fn SCardTransmit(
         )
     };
 
-    let out_data = try_execute!(scard.transmit(io_request, input_apdu));
+    let out_data = try_execute!(scard.transmit(input_apdu));
 
     let out_apdu_len = out_data.output_apdu.len();
     if out_apdu_len

@@ -97,6 +97,7 @@ pub type LpScardAtrMask = *mut ScardAtrMask;
 ///   DWORD cbPciLength;
 /// } SCARD_IO_REQUEST;
 /// ```
+#[derive(Debug)]
 #[repr(C)]
 pub struct ScardIoRequest {
     pub dw_protocol: u32,
@@ -104,6 +105,7 @@ pub struct ScardIoRequest {
 }
 
 pub type LpScardIoRequest = *mut ScardIoRequest;
+pub type LpCScardIoRequest = *const ScardIoRequest;
 
 /// [OPENCARD_SEARCH_CRITERIAA](https://learn.microsoft.com/en-us/windows/win32/api/winscard/ns-winscard-opencard_search_criteriaa)
 ///
