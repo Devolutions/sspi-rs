@@ -76,7 +76,7 @@ impl SmartCard {
             scard_type,
         } = credentials;
 
-        let user_pin = user_pin.as_ref().to_vec();
+        let user_pin = user_pin.as_ref().to_vec().into();
 
         match scard_type {
             SmartCardType::Emulated { scard_pin } => {
@@ -115,7 +115,7 @@ impl SmartCard {
     fn new_emulated(
         reader_name: Cow<'static, str>,
         scard_pin: Vec<u8>,
-        user_pin: Vec<u8>,
+        user_pin: Secret<Vec<u8>>,
         private_key: PrivateKey,
         auth_cert_der: Vec<u8>,
     ) -> Result<Self> {
@@ -123,21 +123,21 @@ impl SmartCard {
 
         Ok(Self {
             smart_card_type: SmartCardApi::PivEmulated(Box::new(scard)),
-            pin: user_pin.into(),
+            pin: user_pin,
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside (Windows API).
     #[cfg(target_os = "windows")]
-    fn new_windows_native(user_pin: Vec<u8>, container_name: String) -> Result<Self> {
+    fn new_windows_native(user_pin: Secret<Vec<u8>>, container_name: String) -> Result<Self> {
         Ok(Self {
             smart_card_type: SmartCardApi::Windows { container_name },
-            pin: user_pin.into(),
+            pin: user_pin,
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside.
-    fn new_system_provided(pkcs11_module_path: &Path, user_pin: Vec<u8>, reader_name: String) -> Result<Self> {
+    fn new_system_provided(pkcs11_module_path: &Path, user_pin: Secret<Vec<u8>>, reader_name: String) -> Result<Self> {
         let pkcs11 = Pkcs11::new(pkcs11_module_path)?;
         pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
@@ -146,7 +146,7 @@ impl SmartCard {
                 pkcs11_module: pkcs11,
                 reader_name,
             },
-            pin: user_pin.into(),
+            pin: user_pin,
         })
     }
 
@@ -233,15 +233,16 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     use windows::core::PCWSTR;
     use windows::Win32::Security::Cryptography::{
         NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_PKCS1_PADDING_INFO,
-        BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER, NCRYPT_FLAGS, NCRYPT_KEY_HANDLE,
-        NCRYPT_PAD_PKCS1_FLAG, NCRYPT_PIN_PROPERTY, NCRYPT_PROV_HANDLE, NCRYPT_SILENT_FLAG,
+        BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER, NCRYPT_FLAGS, NCRYPT_PAD_PKCS1_FLAG,
+        NCRYPT_PIN_PROPERTY, NCRYPT_SILENT_FLAG,
     };
+    use windows_core::Owned;
 
-    use crate::utils::string_to_utf16;
+    use crate::utils::{str_to_w_buff, string_to_utf16};
 
-    let mut provider = NCRYPT_PROV_HANDLE::default();
+    let mut provider = Owned::default();
     // SAFETY: FFI call with no outstanding preconditions.
-    unsafe { NCryptOpenStorageProvider(&mut provider, MS_SMART_CARD_KEY_STORAGE_PROVIDER, 0) }.map_err(|err| {
+    unsafe { NCryptOpenStorageProvider(&mut *provider, MS_SMART_CARD_KEY_STORAGE_PROVIDER, 0) }.map_err(|err| {
         Error::new(
             ErrorKind::InternalError,
             format!(
@@ -252,24 +253,28 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         )
     })?;
 
-    let container_name = container_name
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
+    let container_name = str_to_w_buff(container_name);
     let container_name = PCWSTR::from_raw(container_name.as_ptr());
 
-    let mut key = NCRYPT_KEY_HANDLE::default();
+    let mut key = Owned::default();
     // SAFETY:
     // - `provider` is a valid handle obtained from `NCryptOpenStorageProvider`.
     // - `container_name` is a valid UTF-16 string and null-terminated.
-    unsafe { NCryptOpenKey(provider, &mut key, container_name, CERT_KEY_SPEC(0), NCRYPT_SILENT_FLAG) }.map_err(
-        |err| {
-            Error::new(
-                ErrorKind::InternalError,
-                format!("failed to open smart card key: {} ({:x})", err.message(), err.code().0),
-            )
-        },
-    )?;
+    unsafe {
+        NCryptOpenKey(
+            *provider,
+            &mut *key,
+            container_name,
+            CERT_KEY_SPEC(0),
+            NCRYPT_SILENT_FLAG,
+        )
+    }
+    .map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("failed to open smart card key: {} ({:x})", err.message(), err.code().0),
+        )
+    })?;
 
     // NCRYPT_PIN_PROPERTY: https://learn.microsoft.com/en-us/windows/win32/seccng/key-storage-property-identifiers
     // > A pointer to a null-terminated Unicode string that contains the PIN.
@@ -278,7 +283,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // SAFETY:
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `pin` is a valid UTF-16 string and null-terminated.
-    if let Err(err) = unsafe { NCryptSetProperty(key.into(), NCRYPT_PIN_PROPERTY, pin.as_ref(), NCRYPT_FLAGS(0)) } {
+    if let Err(err) = unsafe { NCryptSetProperty((*key).into(), NCRYPT_PIN_PROPERTY, pin.as_ref(), NCRYPT_FLAGS(0)) } {
         warn!(
             "Failed to set smart card PIN code: {} ({:x}) - this may cause issues with signing data.",
             err.message(),
@@ -298,7 +303,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     //   > If this parameter is NULL, this function will calculate the size required for the signature and return the size in the location pointed to by the pcbResult parameter.
     unsafe {
         NCryptSignHash(
-            key,
+            *key,
             Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
             data_to_sign,
             None,
@@ -320,7 +325,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     // - `padding_info` has the `BCRYPT_PKCS1_PADDING_INFO` type which corresponds to the `NCRYPT_PAD_PKCS1_FLAG` flag.
     unsafe {
         NCryptSignHash(
-            key,
+            *key,
             Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
             data_to_sign,
             Some(&mut signature),

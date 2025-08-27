@@ -140,6 +140,7 @@ cryptoki = { version = "0.10", optional = true }
 windows-registry = "0.5"
 windows = { version = "0.61", features = [ "Win32_Foundation", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }
 windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+windows-core = "0.61"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"]}
