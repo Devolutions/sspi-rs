@@ -76,7 +76,7 @@ impl SmartCard {
             scard_type,
         } = credentials;
 
-        let user_pin = user_pin.as_ref().to_vec().into();
+        let user_pin = user_pin.clone();
 
         match scard_type {
             SmartCardType::Emulated { scard_pin } => {

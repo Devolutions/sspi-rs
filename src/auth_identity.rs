@@ -276,7 +276,7 @@ mod scard_credentials {
             /// Path to the PKCS11 module.
             pkcs11_module_path: PathBuf,
         },
-        /// System-provided smart card but Windows native API will be used for accessing smart card.
+        /// System-provided smart card, but the Windows native API will be used for accessing smart card.
         ///
         /// Available only on Windows.
         #[cfg(target_os = "windows")]
