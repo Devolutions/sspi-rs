@@ -34,7 +34,6 @@ use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::{serialize_message, unwrap_hostname, validate_mic_token};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
 use crate::pku2u::generate_client_dh_parameters;
-use crate::smartcard::SmartCard;
 use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
 use crate::{
     pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
@@ -163,6 +162,8 @@ pub async fn initialize_security_context<'a>(
                     })
                 }
                 CredentialsBuffers::SmartCard(scard_identity_buffer) => {
+                    use crate::smartcard::SmartCard;
+
                     let scard_identity = SmartCardIdentity::try_from(scard_identity_buffer)?;
 
                     let mut smart_card = SmartCard::from_credentials(&scard_identity)?;
