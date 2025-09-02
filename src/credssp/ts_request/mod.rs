@@ -4,15 +4,12 @@ mod test;
 use core::fmt;
 use std::io::{self, Read};
 
-use picky_asn1::wrapper::{
-    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4,
-    IntegerAsn1, OctetStringAsn1, Optional,
-};
-use picky_krb::constants::cred_ssp::{AT_KEYEXCHANGE, TS_PASSWORD_CREDS};
-use picky_krb::credssp::{TsCredentials, TsCspDataDetail, TsPasswordCreds, TsSmartCardCreds};
+use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
+use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
+use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
 
 use super::CredSspMode;
-use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, SmartCardIdentityBuffers};
+use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
 
 pub const TS_REQUEST_VERSION: u32 = 6;
 
@@ -252,7 +249,12 @@ impl TsRequest {
 }
 
 #[instrument(ret, level = "debug")]
-fn write_smart_card_credentials(credentials: &SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
+#[cfg(feature = "scard")]
+fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -> crate::Result<Vec<u8>> {
+    use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
+    use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
+    use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
+
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
@@ -289,6 +291,7 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
         CredentialsBuffers::AuthIdentity(creds) => {
             (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
         }
+        #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(creds) => (
             picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
             write_smart_card_credentials(creds)?,

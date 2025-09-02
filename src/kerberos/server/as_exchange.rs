@@ -56,6 +56,7 @@ pub async fn request_tgt(
 
             (username, password, realm, cname_type)
         }
+        #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(_) => {
             return Err(Error::new(
                 ErrorKind::UnsupportedPreAuth,
@@ -89,6 +90,7 @@ pub async fn request_tgt(
                 with_pre_auth: false,
             })
         }
+        #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(_) => {
             return Err(Error::new(
                 ErrorKind::UnsupportedPreAuth,

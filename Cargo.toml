@@ -81,7 +81,7 @@ network_client = ["dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "_
 dns_resolver = ["dep:hickory-resolver", "dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
 tsssp = ["dep:rustls", "__rustls-used"]
-# Turns on Kerberos smart card login (available only on Windows and users WinSCard API).
+# Turns on Kerberos smart card logon.
 scard = ["dep:winscard", "dep:cryptoki"]
 # Use AWS LC as TLS cryptography provider.
 aws-lc-rs = ["rustls?/aws-lc-rs", "__install-crypto-provider"]

@@ -16,7 +16,6 @@ use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::TgsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
-use sha1::{Digest, Sha1};
 
 use self::extractors::{
     extract_ap_rep_from_neg_token_targ, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
@@ -33,12 +32,10 @@ use crate::generator::YieldPointLocal;
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::{serialize_message, unwrap_hostname, validate_mic_token};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::pku2u::generate_client_dh_parameters;
 use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
 use crate::{
-    pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
-    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus,
-    SmartCardIdentity, SspiImpl,
+    BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
+    InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
 
 /// Indicated that the MIC token `SentByAcceptor` flag must be enabled in the incoming MIC token.
@@ -125,6 +122,7 @@ pub async fn initialize_security_context<'a>(
 
                     (username, password, realm, cname_type)
                 }
+                #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(smart_card) => {
                     let username = utf16_bytes_to_utf8_string(&smart_card.username);
                     let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
@@ -161,8 +159,13 @@ pub async fn initialize_security_context<'a>(
                         with_pre_auth: false,
                     })
                 }
+                #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(scard_identity_buffer) => {
+                    use sha1::{Digest, Sha1};
+
+                    use crate::pku2u::generate_client_dh_parameters;
                     use crate::smartcard::SmartCard;
+                    use crate::{pk_init, SmartCardIdentity};
 
                     let scard_identity = SmartCardIdentity::try_from(scard_identity_buffer)?;
 
@@ -215,6 +218,7 @@ pub async fn initialize_security_context<'a>(
                     password: &password,
                     enc_params: &mut client.encryption_params,
                 },
+                #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                     dh_parameters: client.dh_parameters.as_mut().unwrap(),
                     enc_params: &mut client.encryption_params,

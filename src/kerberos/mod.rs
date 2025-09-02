@@ -35,8 +35,9 @@ use crate::generator::{
 use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
 use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
+#[cfg(feature = "scard")]
 use crate::pk_init::DhParameters;
-use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data, utf16_bytes_to_utf8_string};
+use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data};
 use crate::{
     detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType,
     ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
@@ -97,6 +98,7 @@ pub struct Kerberos {
     pub(crate) realm: Option<String>,
     pub(crate) kdc_url: Option<Url>,
     pub(crate) channel_bindings: Option<ChannelBindings>,
+    #[cfg(feature = "scard")]
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
@@ -115,6 +117,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
@@ -133,6 +136,7 @@ impl Kerberos {
             realm: None,
             kdc_url,
             channel_bindings: None,
+            #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
@@ -518,7 +522,10 @@ impl Sspi for Kerberos {
             });
         }
 
+        #[cfg(feature = "scard")]
         if let Some(CredentialsBuffers::SmartCard(ref identity_buffers)) = self.auth_identity {
+            use crate::utils::utf16_bytes_to_utf8_string;
+
             let username = utf16_bytes_to_utf8_string(&identity_buffers.username);
             let username = crate::Username::parse(&username).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
             return Ok(ContextNames { username });
