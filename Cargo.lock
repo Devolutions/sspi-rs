@@ -2952,6 +2952,7 @@ dependencies = [
  "uuid",
  "whoami",
  "windows",
+ "windows-core",
  "windows-registry",
  "windows-sys 0.60.2",
  "winscard",

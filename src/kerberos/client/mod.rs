@@ -7,7 +7,6 @@ use std::io::Write;
 
 pub use as_exchange::as_exchange;
 pub use change_password::change_password;
-use picky::key::PrivateKey;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
@@ -17,8 +16,6 @@ use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::TgsRep;
 use rand::rngs::OsRng;
 use rand::Rng;
-use rsa::{Pkcs1v15Sign, RsaPrivateKey};
-use sha1::{Digest, Sha1};
 
 use self::extractors::{
     extract_ap_rep_from_neg_token_targ, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
@@ -35,10 +32,9 @@ use crate::generator::YieldPointLocal;
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::{serialize_message, unwrap_hostname, validate_mic_token};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::pku2u::generate_client_dh_parameters;
 use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
 use crate::{
-    pk_init, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
+    BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
 
@@ -126,6 +122,7 @@ pub async fn initialize_security_context<'a>(
 
                     (username, password, realm, cname_type)
                 }
+                #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(smart_card) => {
                     let username = utf16_bytes_to_utf8_string(&smart_card.username);
                     let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref());
@@ -162,26 +159,31 @@ pub async fn initialize_security_context<'a>(
                         with_pre_auth: false,
                     })
                 }
-                CredentialsBuffers::SmartCard(smart_card) => {
-                    let private_key_pem = utf16_bytes_to_utf8_string(
-                        smart_card
-                            .private_key_pem
-                            .as_ref()
-                            .ok_or_else(|| Error::new(ErrorKind::InternalError, "scard private key is missing"))?,
-                    );
+                #[cfg(feature = "scard")]
+                CredentialsBuffers::SmartCard(scard_identity_buffer) => {
+                    use sha1::{Digest, Sha1};
+
+                    use crate::pku2u::generate_client_dh_parameters;
+                    use crate::smartcard::SmartCard;
+                    use crate::{pk_init, SmartCardIdentity};
+
+                    let scard_identity = SmartCardIdentity::try_from(scard_identity_buffer)?;
+
+                    let mut smart_card = SmartCard::from_credentials(&scard_identity)?;
+                    let p2p_cert = scard_identity.certificate;
+
                     client.dh_parameters = Some(generate_client_dh_parameters(&mut OsRng)?);
 
                     AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
-                        p2p_cert: picky_asn1_der::from_bytes(&smart_card.certificate)?,
+                        p2p_cert,
                         kdc_req_body: &kdc_req_body,
                         dh_parameters: client.dh_parameters.clone().unwrap(),
                         sign_data: Box::new(move |data_to_sign| {
                             let mut sha1 = Sha1::new();
                             sha1.update(data_to_sign);
-                            let hash = sha1.finalize().to_vec();
-                            let private_key = PrivateKey::from_pem_str(&private_key_pem)?;
-                            let rsa_private_key = RsaPrivateKey::try_from(&private_key)?;
-                            Ok(rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), &hash)?)
+                            let digest = sha1.finalize().to_vec();
+
+                            smart_card.sign(digest)
                         }),
                         with_pre_auth: false,
                         authenticator_nonce: OsRng.gen::<[u8; 4]>(),
@@ -216,6 +218,7 @@ pub async fn initialize_security_context<'a>(
                     password: &password,
                     enc_params: &mut client.encryption_params,
                 },
+                #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                     dh_parameters: client.dh_parameters.as_mut().unwrap(),
                     enc_params: &mut client.encryption_params,

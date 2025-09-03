@@ -2,12 +2,12 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use sspi::{enumerate_security_packages, PackageInfo, KERBEROS_VERSION};
+use sspi::{enumerate_security_packages, str_to_w_buff, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
 use super::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
-use crate::utils::{c_w_str_to_string, str_to_w_buff};
+use crate::utils::c_w_str_to_string;
 
 #[derive(Debug)]
 #[repr(C)]

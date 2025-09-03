@@ -408,93 +408,77 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // SAFETY: This function is safe to call because `p_auth_data` is not null. We've checked this above.
     let (auth_version, _) = unsafe { get_auth_data_identity_version_and_flags(p_auth_data) };
 
-    if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
-        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
-        // SAFETY: `auth_data` is not null. We've checked this above.
-        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+    let (user, user_len, domain, domain_len, password, password_len) =
+        if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
+            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
+            // SAFETY: `auth_data` is not null. We've checked this above.
+            let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
-        if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
-            // SAFETY: `package_list` is not null due to a prior check.
-            *package_list = Some(String::from_utf16_lossy(unsafe {
-                from_raw_parts(
-                    auth_data.package_list,
-                    usize::try_from(auth_data.package_list_length).unwrap(),
-                )
-            }));
-        }
+            if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
+                // SAFETY: `package_list` is not null due to a prior check.
+                *package_list = Some(String::from_utf16_lossy(unsafe {
+                    from_raw_parts(
+                        auth_data.package_list,
+                        usize::try_from(auth_data.package_list_length).unwrap(),
+                    )
+                }));
+            }
 
+            (
+                auth_data.user,
+                auth_data.user_length,
+                auth_data.domain,
+                auth_data.domain_length,
+                auth_data.password,
+                auth_data.password_length,
+            )
+        } else {
+            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
+            // SAFETY: `auth_data` is not null. We've checked this above.
+            let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+
+            (
+                auth_data.user,
+                auth_data.user_length,
+                auth_data.domain,
+                auth_data.domain_length,
+                auth_data.password,
+                auth_data.password_length,
+            )
+        };
+
+    // SAFETY:
+    // - Credentials pointers can be NULL.
+    // - If credentials are not NULL, then the caller is responsible for the data validity.
+    let user = unsafe { credentials_str_into_bytes(user as *const _, user_len as usize * 2) };
+    let password: sspi::Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        let user =
-            unsafe { credentials_str_into_bytes(auth_data.user as *const _, auth_data.user_length as usize * 2) };
-        // SAFETY:
-        // - Credentials pointers can be NULL.
-        // - If credentials are not NULL, then the caller is responsible for the data validity.
-        let password: sspi::Secret<Vec<u8>> = unsafe {
-            credentials_str_into_bytes(auth_data.password as *const _, auth_data.password_length as usize * 2)
-        }
-        .into();
+        unsafe { credentials_str_into_bytes(password as *const _, password_len as usize * 2) }.into();
 
-        // Only marshaled smart card creds starts with '@' char.
-        #[cfg(all(feature = "scard", target_os = "windows"))]
-        // SAFETY: This function is safe to call because argument is validated.
-        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            return handle_smart_card_creds(user, password);
-        }
-
-        // Try to collect credentials for the emulated/system-provided smart card.
-        #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
-            return Ok(CredentialsBuffers::SmartCard(scard_creds));
-        }
-
-        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user,
-            // SAFETY:
-            // - Credentials pointers can be NULL.
-            // - If credentials are not NULL, then the caller is responsible for the data validity.
-            domain: unsafe {
-                credentials_str_into_bytes(auth_data.domain as *const _, auth_data.domain_length as usize * 2)
-            },
-            password,
-        }))
-    } else {
-        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-        // SAFETY: `auth_data` is not null. We've checked this above.
-        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
-
-        // SAFETY: This function is safe to call because `user` can be null and the caller is responsible for the data validity.
-        let user =
-            unsafe { credentials_str_into_bytes(auth_data.user as *const _, auth_data.user_length as usize * 2) };
-        // SAFETY: This function is safe to call because `password` can be null and the caller is responsible for the data validity.
-        let password: sspi::Secret<Vec<u8>> = unsafe {
-            credentials_str_into_bytes(auth_data.password as *const _, auth_data.password_length as usize * 2)
-        }
-        .into();
-
-        // Only marshaled smart card creds starts with '@' char.
-        #[cfg(all(feature = "scard", target_os = "windows"))]
-        // SAFETY: This function is safe to call because argument is validated.
-        if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(user.as_ptr() as *const _) } != 0 {
-            return handle_smart_card_creds(user, password);
-        }
-
-        // Try to collect credentials for the emulated/system-provided smart card.
-        #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
-            return Ok(CredentialsBuffers::SmartCard(scard_creds));
-        }
-
-        Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user,
-            // SAFETY: This function is safe to call because `domain` can be null and the caller is responsible for the data validity.
-            domain: unsafe {
-                credentials_str_into_bytes(auth_data.domain as *const _, auth_data.domain_length as usize * 2)
-            },
-            password,
-        }))
+    let mut username = user.clone();
+    username.extend_from_slice(&[0, 0]);
+    #[cfg(all(feature = "scard", target_os = "windows"))]
+    // SAFETY: This function is safe to call because argument is validated.
+    if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
+        return handle_smart_card_creds(user, password);
     }
+
+    // Try to collect credentials for the emulated/system-provided smart card.
+    #[cfg(feature = "scard")]
+    if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
+        return Ok(CredentialsBuffers::SmartCard(scard_creds));
+    }
+
+    Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+        user,
+        // SAFETY:
+        // - Credentials pointers can be NULL.
+        // - If credentials are not NULL, then the caller is responsible for the data validity.
+        domain: unsafe { credentials_str_into_bytes(domain as *const _, domain_len as usize * 2) },
+        password,
+    }))
 }
 
 /// Collects credentials for smart card logon.
@@ -544,20 +528,22 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
         SCARD_EMULATED => {
             use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
 
-            let smart_card_info = SmartCardInfo::try_from_env()?;
+            let SmartCardInfo { container_name, pin: scard_pin, auth_cert_der, auth_pk_pem, auth_pk: _, reader } = SmartCardInfo::try_from_env()?;
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
             Ok(SmartCardIdentityBuffers {
                 username,
-                certificate: smart_card_info.auth_cert_der.clone(),
+                certificate: auth_cert_der.clone(),
                 card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
-                reader_name: str_encode_utf16(smart_card_info.reader.name.as_ref()),
-                container_name: Some(str_encode_utf16(smart_card_info.container_name.as_ref())),
+                reader_name: str_encode_utf16(reader.name.as_ref()),
+                container_name: Some(str_encode_utf16(container_name.as_ref())),
                 csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
                 pin: pin.into(),
-                private_key_pem: Some(str_encode_utf16(smart_card_info.auth_pk_pem.as_ref())),
-                scard_type: SmartCardType::Emulated,
+                private_key_pem: Some(str_encode_utf16(auth_pk_pem.as_ref())),
+                scard_type: SmartCardType::Emulated {
+                    scard_pin: scard_pin.into(),
+                },
             })
         },
         SCARD_SYSTEM_PROVIDED => {
@@ -587,7 +573,9 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
                 csp_name,
                 pin: pin.into(),
                 private_key_pem: None,
-                scard_type: SmartCardType::SystemProvided,
+                scard_type: SmartCardType::SystemProvided {
+                    pkcs11_module_path: pkcs11_module.into(),
+                },
             })
         }
         scard_type => Err(Error::new(ErrorKind::NoCredentials, format!("failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon", scard_type))),
@@ -812,7 +800,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         container_name: Some(string_to_utf16(key_container_name)),
         csp_name: string_to_utf16(csp_name),
         private_key_pem: None,
-        scard_type: SmartCardType::SystemProvided,
+        scard_type: SmartCardType::WindowsNative,
     });
 
     Ok(creds)
@@ -918,12 +906,6 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         ));
     }
 
-    // Try to collect credentials for the emulated smart card.
-    #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
-        return Ok(CredentialsBuffers::SmartCard(scard_creds));
-    }
-
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
     // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
@@ -936,6 +918,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         password.as_mut().truncate(new_len);
 
         return handle_smart_card_creds(username, password);
+    }
+
+    // Try to collect credentials for the emulated smart card.
+    #[cfg(feature = "scard")]
+    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
+        return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
