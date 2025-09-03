@@ -96,7 +96,7 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
             }
 
             let p_buf: *mut LpByte = p_buf.cast();
-            // SAFETY: We've checked for null above.
+            // SAFETY: `p_buf` s guaranteed not null due to the prior check.
             unsafe {
                 // The user is responsible for deallocating the buffer using the `SCardFreeMemory` function.
                 //
@@ -106,6 +106,9 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
                 // We got this panic for the first time when connecting via FreeRDP + libsspi.dylib on macOS (arm64).
                 // So, we set the value using the `write_unaligned` function because it allows the pointer to be unaligned.
                 ptr::write_unaligned(p_buf, data.as_mut_ptr());
+            }
+            // SAFETY: `pcb_buf` s guaranteed not null due to the prior check.
+            unsafe {
                 *pcb_buf = data.len().try_into()?;
             }
         }
