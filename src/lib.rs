@@ -99,12 +99,13 @@ use picky_krb::messages::KrbError;
 pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
-pub use utils::{string_to_utf16, utf16_bytes_to_utf8_string};
+pub use utils::{str_to_w_buff, string_to_utf16, utf16_bytes_to_utf8_string};
 
 pub use self::auth_identity::{
-    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, SmartCardIdentity, SmartCardIdentityBuffers,
-    SmartCardType, UserNameFormat, Username,
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, UserNameFormat, Username,
 };
+#[cfg(feature = "scard")]
+pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
 pub use self::builders::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, InitializeSecurityContextResult,
 };

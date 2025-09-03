@@ -676,6 +676,7 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 let auth_identity = match builder.auth_data {
                     Some(Credentials::AuthIdentity(identity)) => Some(identity),
+                    #[allow(unreachable_patterns)]
                     Some(_) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
@@ -788,6 +789,7 @@ impl<'a> SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 let mut auth_identity = match builder.credentials_handle {
                     Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
+                    #[allow(unreachable_patterns)]
                     Some(Some(_)) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,

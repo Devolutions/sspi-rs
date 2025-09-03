@@ -547,7 +547,7 @@ impl Pku2u {
                     context_requirements: builder.context_requirements,
                 })?;
                 let private_key = self.config.private_key.clone();
-                let pa_datas = generate_pa_datas_for_as_req(&GenerateAsPaDataOptions {
+                let pa_datas = generate_pa_datas_for_as_req(&mut GenerateAsPaDataOptions {
                     p2p_cert: self.config.p2p_certificate.clone(),
                     kdc_req_body: &kdc_req_body,
                     dh_parameters: self.dh_parameters.clone(),

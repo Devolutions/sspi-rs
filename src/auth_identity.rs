@@ -248,7 +248,10 @@ impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
     }
 }
 
+#[cfg(feature = "scard")]
 mod scard_credentials {
+    use std::path::PathBuf;
+
     use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
 
@@ -261,11 +264,24 @@ mod scard_credentials {
         /// Emulated smart card.
         ///
         /// No real device is used. All smart card functionality is emulated using the [winscard] crate.
-        Emulated,
+        Emulated {
+            /// Emulated smart card PIN code.
+            ///
+            /// This is smart card PIN code, not the PIN code provided by the user.
+            scard_pin: Secret<Vec<u8>>,
+        },
         /// System-provided smart card.
         ///
         /// Real smart card device in use.
-        SystemProvided,
+        SystemProvided {
+            /// Path to the PKCS11 module.
+            pkcs11_module_path: PathBuf,
+        },
+        /// System-provided smart card, but the Windows native API will be used for accessing smart card.
+        ///
+        /// Available only on Windows.
+        #[cfg(target_os = "windows")]
+        WindowsNative,
     }
 
     /// Represents raw data needed for smart card authentication
@@ -343,13 +359,13 @@ mod scard_credentials {
         }
     }
 
-    impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
+    impl TryFrom<&SmartCardIdentityBuffers> for SmartCardIdentity {
         type Error = Error;
 
-        fn try_from(value: SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
-            let private_key = if let Some(key) = value.private_key_pem {
+        fn try_from(value: &SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
+            let private_key = if let Some(key) = &value.private_key_pem {
                 Some(SecretPrivateKey::new(
-                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(&key)).map_err(|e| {
+                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)).map_err(|e| {
                         Error::new(
                             ErrorKind::InternalError,
                             format!("Unable to create a PrivateKey from a PEM string: {}", e),
@@ -369,12 +385,13 @@ mod scard_credentials {
                 container_name: value.container_name.as_deref().map(utils::bytes_to_utf16_string),
                 csp_name: utils::bytes_to_utf16_string(&value.csp_name),
                 private_key,
-                scard_type: value.scard_type,
+                scard_type: value.scard_type.clone(),
             })
         }
     }
 }
 
+#[cfg(feature = "scard")]
 pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
@@ -382,6 +399,7 @@ pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers, S
 pub enum CredentialsBuffers {
     /// Raw auth identity buffers for the password based authentication
     AuthIdentity(AuthIdentityBuffers),
+    #[cfg(feature = "scard")]
     /// Raw smart card identity buffers for the smart card based authentication
     SmartCard(SmartCardIdentityBuffers),
 }
@@ -416,6 +434,7 @@ pub enum Credentials {
     /// Auth identity for the password based authentication
     AuthIdentity(AuthIdentity),
     /// Smart card identity for the smart card based authentication
+    #[cfg(feature = "scard")]
     SmartCard(Box<SmartCardIdentity>),
 }
 
@@ -429,6 +448,7 @@ impl Credentials {
     }
 }
 
+#[cfg(feature = "scard")]
 impl From<SmartCardIdentity> for Credentials {
     fn from(value: SmartCardIdentity) -> Self {
         Self::SmartCard(Box::new(value))
@@ -447,6 +467,7 @@ impl TryFrom<Credentials> for CredentialsBuffers {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(match value {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
+            #[cfg(feature = "scard")]
             Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
         })
     }
