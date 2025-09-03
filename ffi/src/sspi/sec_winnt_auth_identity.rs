@@ -487,7 +487,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 /// Provided username, domain, and password (PIN code) **must be UTF-16 encoded**.
 /// * If the username is in FQDN (username@domain) format, then domain parameter is ignored.
 /// * If the provided credentials are Down-Level Logon Name, then they will be converted to FQDN.
-/// 
+///
 /// This function can collect either emulated or system-provided smart card credentials:
 /// * If the user wants to use system-provided scard, then the SSPI_PKCS11_MODULE_PATH=<path> and SSPI_SCARD_TYPE=system
 ///   environment variables must be set.
@@ -925,12 +925,6 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         return handle_smart_card_creds(username, password);
     }
 
-    // Try to collect credentials for the emulated smart card.
-    #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(&username, password.as_ref()) {
-        return Ok(CredentialsBuffers::SmartCard(scard_creds));
-    }
-
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
 
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
@@ -951,6 +945,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         // So, domain data is a wide C string and we need to delete the NULL terminator.
         domain.truncate(domain.len() - 2);
         auth_identity_buffers.domain = domain;
+    }
+
+    // Try to collect credentials for the emulated smart card.
+    #[cfg(feature = "scard")]
+    if let Ok(scard_creds) = collect_smart_card_creds(
+        &auth_identity_buffers.user,
+        &auth_identity_buffers.domain,
+        password.as_ref(),
+    ) {
+        return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
