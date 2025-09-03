@@ -349,7 +349,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, &password) {
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, &password) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -385,7 +385,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, &password) {
+        if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, &password) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -451,6 +451,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
     let user = unsafe { credentials_str_into_bytes(user as *const _, user_len as usize * 2) };
+    // SAFETY:
+    // - Credentials pointers can be NULL.
+    // - If credentials are not NULL, then the caller is responsible for the data validity.
+    let domain = unsafe { credentials_str_into_bytes(domain as *const _, domain_len as usize * 2) };
     let password: sspi::Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
@@ -467,29 +471,29 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
     // Try to collect credentials for the emulated/system-provided smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(&user, password.as_ref()) {
+    if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, password.as_ref()) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
     Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
         user,
-        // SAFETY:
-        // - Credentials pointers can be NULL.
-        // - If credentials are not NULL, then the caller is responsible for the data validity.
-        domain: unsafe { credentials_str_into_bytes(domain as *const _, domain_len as usize * 2) },
+        domain,
         password,
     }))
 }
 
 /// Collects credentials for smart card logon.
 ///
-/// Provided username and password **must be UTF-16 encoded**. The username must be in FQDN format (name@domain).
+/// Provided username, domain, and password (PIN code) **must be UTF-16 encoded**.
+/// * If the username is in FQDN (username@domain) format, then domain parameter is ignored.
+/// * If the provided credentials are Down-Level Logon Name, then they will be converted to FQDN.
+/// 
 /// This function can collect either emulated or system-provided smart card credentials:
 /// * If the user wants to use system-provided scard, then the SSPI_PKCS11_MODULE_PATH=<path> and SSPI_SCARD_TYPE=system
 ///   environment variables must be set.
 /// * If the user wants to use emulated scard, then the SSPI_SCARD_TYPE=emulated and [winscard]-related environment variables must be set.
 #[cfg(feature = "scard")]
-fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
+fn collect_smart_card_creds(username: &[u8], domain: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
     use std::env;
 
     use crate::sspi::utils::raw_wide_str_trim_nulls;
@@ -500,11 +504,18 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
     const SCARD_SYSTEM_PROVIDED: &str = "system";
     const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
 
+    let mut username = username.to_vec();
+    let mut pin = password.to_vec();
+
+    raw_wide_str_trim_nulls(&mut username);
+    raw_wide_str_trim_nulls(&mut pin);
+
     if !username.contains(&b'@') {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "failed to collect smart card credentials: username is not in FQDN format. Process with password-based logon",
-        ));
+        username.extend_from_slice(&[b'@', 0]);
+
+        let mut domain = domain.to_vec();
+        raw_wide_str_trim_nulls(&mut domain);
+        username.extend_from_slice(&domain);
     }
 
     let scard_type = env::var(SCARD_TYPE_ENV).map_err(|err| {
@@ -517,12 +528,6 @@ fn collect_smart_card_creds(username: &[u8], password: &[u8]) -> Result<SmartCar
     })?;
 
     info!("Trying to collect {} smart card credentials...", scard_type);
-
-    let mut username = username.to_vec();
-    let mut pin = password.to_vec();
-
-    raw_wide_str_trim_nulls(&mut username);
-    raw_wide_str_trim_nulls(&mut pin);
 
     match scard_type.as_str() {
         SCARD_EMULATED => {
