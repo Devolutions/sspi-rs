@@ -14,6 +14,10 @@ pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
         .collect::<Vec<u8>>()
 }
 
+pub fn str_to_w_buff(data: &str) -> Vec<u16> {
+    data.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
 pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
     let mut value_u16 = vec![0x00; value.len() / 2];
     value

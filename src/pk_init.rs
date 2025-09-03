@@ -60,7 +60,7 @@ pub struct Wrapper<T> {
     pub content: ExplicitContextTag0<T>,
 }
 
-pub type SignDataFn = Box<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send>;
+pub type SignDataFn = Box<dyn FnMut(&[u8]) -> Result<Vec<u8>> + Send>;
 
 pub struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,
@@ -72,7 +72,7 @@ pub struct GenerateAsPaDataOptions<'a> {
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
+pub fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         p2p_cert,
         kdc_req_body,
@@ -82,7 +82,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
         authenticator_nonce,
     } = options;
 
-    if !with_pre_auth {
+    if !*with_pre_auth {
         return Ok(vec![
             PaData {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x00, 0x96])),
@@ -203,7 +203,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
 pub fn generate_signer_info(
     p2p_cert: &Certificate,
     digest: Vec<u8>,
-    sign_data: &dyn Fn(&[u8]) -> Result<Vec<u8>>,
+    sign_data: &mut dyn FnMut(&[u8]) -> Result<Vec<u8>>,
 ) -> Result<SignerInfo> {
     let signed_attributes = Asn1SetOf::from(vec![
         Attribute {

@@ -272,7 +272,7 @@ impl<'a> ScardContext<'a> {
             let public_key = smart_card_info
                 .auth_pk
                 .to_public_key()
-                .expect("rsa private key to public key");
+                .expect("RSA private key to public key");
             let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
             let (modulus, public_exponent) = match &public_key.subject_public_key {
                 PublicKey::Rsa(rsa) => (
