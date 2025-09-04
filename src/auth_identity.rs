@@ -404,11 +404,11 @@ pub enum CredentialsBuffers {
     SmartCard(SmartCardIdentityBuffers),
 }
 
-#[allow(unreachable_patterns)]
 impl CredentialsBuffers {
     pub fn auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -416,6 +416,7 @@ impl CredentialsBuffers {
     pub fn as_auth_identity(&self) -> Option<&AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -423,6 +424,7 @@ impl CredentialsBuffers {
     pub fn as_mut_auth_identity(&mut self) -> Option<&mut AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -439,10 +441,10 @@ pub enum Credentials {
 }
 
 impl Credentials {
-    #[allow(unreachable_patterns)]
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
