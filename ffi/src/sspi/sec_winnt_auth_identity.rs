@@ -349,7 +349,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, &password) {
+        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -385,7 +385,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, &password) {
+        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -471,7 +471,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
     // Try to collect credentials for the emulated/system-provided smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(&user, &domain, password.as_ref()) {
+    if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.as_ref().to_vec()) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
@@ -486,14 +486,18 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 ///
 /// Provided username, domain, and password (PIN code) **must be UTF-16 encoded**.
 /// * If the username is in FQDN (username@domain) format, then domain parameter is ignored.
-/// * If the provided credentials are Down-Level Logon Name, then they will be converted to FQDN.
+/// * If the provided credentials are separate username and domain name parameters, then they will be converted to FQDN.
 ///
 /// This function can collect either emulated or system-provided smart card credentials:
 /// * If the user wants to use system-provided scard, then the SSPI_PKCS11_MODULE_PATH=<path> and SSPI_SCARD_TYPE=system
 ///   environment variables must be set.
 /// * If the user wants to use emulated scard, then the SSPI_SCARD_TYPE=emulated and [winscard]-related environment variables must be set.
 #[cfg(feature = "scard")]
-fn collect_smart_card_creds(username: &[u8], domain: &[u8], password: &[u8]) -> Result<SmartCardIdentityBuffers> {
+fn collect_smart_card_creds(
+    mut username: Vec<u8>,
+    mut domain: Vec<u8>,
+    mut pin: Vec<u8>,
+) -> Result<SmartCardIdentityBuffers> {
     use std::env;
 
     use crate::sspi::utils::raw_wide_str_trim_nulls;
@@ -504,16 +508,12 @@ fn collect_smart_card_creds(username: &[u8], domain: &[u8], password: &[u8]) -> 
     const SCARD_SYSTEM_PROVIDED: &str = "system";
     const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
 
-    let mut username = username.to_vec();
-    let mut pin = password.to_vec();
-
     raw_wide_str_trim_nulls(&mut username);
     raw_wide_str_trim_nulls(&mut pin);
 
     if !username.contains(&b'@') {
         username.extend_from_slice(&[b'@', 0]);
 
-        let mut domain = domain.to_vec();
         raw_wide_str_trim_nulls(&mut domain);
         username.extend_from_slice(&domain);
     }
@@ -950,9 +950,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
     if let Ok(scard_creds) = collect_smart_card_creds(
-        &auth_identity_buffers.user,
-        &auth_identity_buffers.domain,
-        password.as_ref(),
+        auth_identity_buffers.user.clone(),
+        auth_identity_buffers.domain.clone(),
+        password.as_ref().to_vec(),
     ) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
