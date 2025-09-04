@@ -680,7 +680,7 @@ impl SspiImpl for SspiContext {
                     Some(Credentials::SmartCard(_identity)) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
-                            "only password-based auth is supported in NTLM",
+                            "smart card auth is not supported in NTLM",
                         ))
                     }
                     None => None,
@@ -793,7 +793,7 @@ impl<'a> SspiContext {
                     Some(Some(CredentialsBuffers::SmartCard(_identity))) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
-                            "only password-based auth is supported in NTLM",
+                            "smart card auth is not supported in NTLM",
                         ))
                     }
                     Some(None) => None,
