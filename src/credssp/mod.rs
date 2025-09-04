@@ -676,11 +676,11 @@ impl SspiImpl for SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 let auth_identity = match builder.auth_data {
                     Some(Credentials::AuthIdentity(identity)) => Some(identity),
-                    #[allow(unreachable_patterns)]
-                    Some(_) => {
+                    #[cfg(feature = "scard")]
+                    Some(Credentials::SmartCard(_identity)) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
-                            "only password-based auth is supported in NTLM",
+                            "smart card auth is not supported in NTLM",
                         ))
                     }
                     None => None,
@@ -793,11 +793,11 @@ impl<'a> SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 let mut auth_identity = match builder.credentials_handle {
                     Some(Some(CredentialsBuffers::AuthIdentity(identity))) => Some(identity.clone()),
-                    #[allow(unreachable_patterns)]
-                    Some(Some(_)) => {
+                    #[cfg(feature = "scard")]
+                    Some(Some(CredentialsBuffers::SmartCard(_identity))) => {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
-                            "only password-based auth is supported in NTLM",
+                            "smart card auth is not supported in NTLM",
                         ))
                     }
                     Some(None) => None,
