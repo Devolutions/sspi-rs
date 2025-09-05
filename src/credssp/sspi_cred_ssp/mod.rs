@@ -345,10 +345,14 @@ impl SspiImpl for SspiCredSsp {
         })
     }
 
-    fn initialize_security_context_impl<'a>(
-        &'a mut self,
-        builder: &'a mut builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext<'a>> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g,
+    {
         Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))

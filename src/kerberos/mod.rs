@@ -615,10 +615,14 @@ impl SspiImpl for Kerberos {
         }))
     }
 
-    fn initialize_security_context_impl<'a>(
-        &'a mut self,
-        builder: &'a mut crate::builders::FilledInitializeSecurityContext<Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext<'a>> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'b,
+        'b: 'g,
+    {
         Ok(GeneratorInitSecurityContext::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))

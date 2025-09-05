@@ -1272,10 +1272,13 @@ pub trait SspiImpl {
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>>;
 
-    fn initialize_security_context_impl<'a>(
-        &'a mut self,
-        builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext<'a>>;
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g;
 
     fn accept_security_context_impl<'a>(
         &'a mut self,

@@ -404,10 +404,14 @@ impl SspiImpl for Pku2u {
         }))
     }
 
-    fn initialize_security_context_impl(
-        &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> Result<GeneratorInitSecurityContext> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g,
+    {
         Ok(self.initialize_security_context_impl(builder).into())
     }
 }

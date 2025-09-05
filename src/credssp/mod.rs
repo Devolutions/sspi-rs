@@ -724,10 +724,14 @@ impl SspiImpl for SspiContext {
         }))
     }
 
-    fn initialize_security_context_impl<'a>(
-        &'a mut self,
-        builder: &'a mut FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> crate::Result<GeneratorInitSecurityContext<'a>> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> crate::Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g,
+    {
         Ok(Generator::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
         }))
