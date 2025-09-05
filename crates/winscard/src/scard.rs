@@ -21,18 +21,18 @@ use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResu
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
 /// The max amount of data one APDU response can transmit.
 pub const CHUNK_SIZE: usize = 256;
-// NIST.SP.800-73-4, part 1, section 4.3, Table 3
-const CARD_AUTH_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x01];
+/// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+pub const CARD_AUTH_CERT_TAG: [u8; 3] = [0x5F, 0xC1, 0x01];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CHUID_TAG: &[u8] = &[0x5F, 0xC1, 0x02];
-// NIST.SP.800-73-4, part 1, section 4.3, Table 3
-const PIV_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x05];
+/// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+pub const PIV_CERT_TAG: [u8; 3] = [0x5F, 0xC1, 0x05];
 // NIST.SP.800-73-4, part 1, section 4.3, Table 3
 const CARD_CAPABILITY_CONTAINER_TAG: &[u8] = &[0x5F, 0xC1, 0x07];
-// NIST.SP.800-73-4, part 1, section 4.3, Table 3
-const DIGITAL_SIGNATURE_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0A];
-// NIST.SP.800-73-4, part 1, section 4.3, Table 3
-const KEY_MANAGEMENT_CERT_TAG: &[u8] = &[0x5F, 0xC1, 0x0B];
+/// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+pub const DIGITAL_SIGNATURE_CERT_TAG: [u8; 3] = [0x5F, 0xC1, 0x0A];
+/// NIST.SP.800-73-4, part 1, section 4.3, Table 3
+pub const KEY_MANAGEMENT_CERT_TAG: [u8; 3] = [0x5F, 0xC1, 0x0B];
 // NIST.SP.800-73-4 part 2, section 2.4.3
 const PIN_LENGTH_RANGE_LOW_BOUND: usize = 6;
 // NIST.SP.800-73-4 part 2, section 2.4.3
@@ -311,7 +311,12 @@ impl SmartCard<'_> {
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
                 CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
-                PIV_CERT_TAG | CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG => {
+                [a, b, c]
+                    if matches!(
+                        [*a, *b, *c],
+                        PIV_CERT_TAG | CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG
+                    ) =>
+                {
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
                     self.pending_response = Some(self.auth_cert.clone());
                     self.get_response()

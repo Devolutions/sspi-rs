@@ -611,6 +611,7 @@ impl<'a> Negotiate {
             self.auth_identity = Some(CredentialsBuffers::AuthIdentity(auth_identity.into()));
         }
 
+        #[cfg(feature = "scard")]
         if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
             if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
                 let username = crate::utils::bytes_to_utf16_string(&identity.username);

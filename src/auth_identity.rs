@@ -151,14 +151,27 @@ pub struct AuthIdentity {
     pub password: Secret<String>,
 }
 
+/// Auth identity buffers for password-based logon.
 #[derive(Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
+    /// Username.
+    ///
+    /// Must be UTF-16 encoded.
     pub user: Vec<u8>,
+    /// Domain.
+    ///
+    /// Must be UTF-16 encoded.
     pub domain: Vec<u8>,
+    /// Password.
+    ///
+    /// Must be UTF-16 encoded.
     pub password: Secret<Vec<u8>>,
 }
 
 impl AuthIdentityBuffers {
+    /// Creates a new [AuthIdentityBuffers] object based on provided credentials.
+    ///
+    /// Provided credentials must be UTF-16 encoded.
     pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
         Self {
             user,
@@ -171,6 +184,9 @@ impl AuthIdentityBuffers {
         self.user.is_empty()
     }
 
+    /// Creates a new [AuthIdentityBuffers] object based on UTF-8 credentials.
+    ///
+    /// It converts the provided credentials to UTF-16 byte vectors automatically.
     pub fn from_utf8(user: &str, domain: &str, password: &str) -> Self {
         Self {
             user: utils::string_to_utf16(user),
@@ -232,12 +248,41 @@ impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
     }
 }
 
+#[cfg(feature = "scard")]
 mod scard_credentials {
+    use std::path::PathBuf;
+
     use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
 
     use crate::secret::SecretPrivateKey;
     use crate::{utils, Error, ErrorKind, Secret};
+
+    /// Smart card type.
+    #[derive(Clone, Eq, PartialEq, Debug)]
+    pub enum SmartCardType {
+        /// Emulated smart card.
+        ///
+        /// No real device is used. All smart card functionality is emulated using the [winscard] crate.
+        Emulated {
+            /// Emulated smart card PIN code.
+            ///
+            /// This is smart card PIN code, not the PIN code provided by the user.
+            scard_pin: Secret<Vec<u8>>,
+        },
+        /// System-provided smart card.
+        ///
+        /// Real smart card device in use.
+        SystemProvided {
+            /// Path to the PKCS11 module.
+            pkcs11_module_path: PathBuf,
+        },
+        /// System-provided smart card, but the Windows native API will be used for accessing smart card.
+        ///
+        /// Available only on Windows.
+        #[cfg(target_os = "windows")]
+        WindowsNative,
+    }
 
     /// Represents raw data needed for smart card authentication
     #[derive(Clone, Eq, PartialEq, Debug)]
@@ -251,16 +296,15 @@ mod scard_credentials {
         /// UTF-16 encoded smart card reader name
         pub reader_name: Vec<u8>,
         /// UTF-16 encoded smart card key container name
-        pub container_name: Vec<u8>,
+        pub container_name: Option<Vec<u8>>,
         /// UTF-16 encoded smart card CSP name
         pub csp_name: Vec<u8>,
         /// UTF-16 encoded smart card PIN code
         pub pin: Secret<Vec<u8>>,
-        /// Private key file index
-        /// This value is used for the APDU message generation
-        pub private_key_file_index: Option<u8>,
         /// UTF-16 string with PEM-encoded RSA 2048-bit private key
         pub private_key_pem: Option<Vec<u8>>,
+        /// Smart card type.
+        pub scard_type: SmartCardType,
     }
 
     /// Represents data needed for smart card authentication
@@ -275,16 +319,15 @@ mod scard_credentials {
         /// Smart card name
         pub card_name: Option<String>,
         /// Smart card key container name
-        pub container_name: String,
+        pub container_name: Option<String>,
         /// Smart card CSP name
         pub csp_name: String,
         /// ASCII encoded mart card PIN code
         pub pin: Secret<Vec<u8>>,
-        /// Private key file index
-        /// This value is used for the APDU message generation
-        pub private_key_file_index: Option<u8>,
         /// RSA 2048-bit private key
         pub private_key: Option<SecretPrivateKey>,
+        /// Smart card type.
+        pub scard_type: SmartCardType,
     }
 
     impl TryFrom<SmartCardIdentity> for SmartCardIdentityBuffers {
@@ -301,27 +344,28 @@ mod scard_credentials {
             } else {
                 None
             };
+
             Ok(Self {
                 certificate: picky_asn1_der::to_vec(&value.certificate)?,
                 reader_name: utils::string_to_utf16(value.reader_name),
                 pin: utils::string_to_utf16(String::from_utf8_lossy(value.pin.as_ref())).into(),
                 username: utils::string_to_utf16(value.username),
                 card_name: value.card_name.map(utils::string_to_utf16),
-                container_name: utils::string_to_utf16(value.container_name),
+                container_name: value.container_name.map(utils::string_to_utf16),
                 csp_name: utils::string_to_utf16(value.csp_name),
-                private_key_file_index: value.private_key_file_index,
                 private_key_pem: private_key,
+                scard_type: value.scard_type,
             })
         }
     }
 
-    impl TryFrom<SmartCardIdentityBuffers> for SmartCardIdentity {
+    impl TryFrom<&SmartCardIdentityBuffers> for SmartCardIdentity {
         type Error = Error;
 
-        fn try_from(value: SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
-            let private_key = if let Some(key) = value.private_key_pem {
+        fn try_from(value: &SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
+            let private_key = if let Some(key) = &value.private_key_pem {
                 Some(SecretPrivateKey::new(
-                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(&key)).map_err(|e| {
+                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)).map_err(|e| {
                         Error::new(
                             ErrorKind::InternalError,
                             format!("Unable to create a PrivateKey from a PEM string: {}", e),
@@ -331,37 +375,40 @@ mod scard_credentials {
             } else {
                 None
             };
+
             Ok(Self {
                 certificate: picky_asn1_der::from_bytes(&value.certificate)?,
                 reader_name: utils::bytes_to_utf16_string(&value.reader_name),
                 pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
                 username: utils::bytes_to_utf16_string(&value.username),
-                card_name: value.card_name.map(|name| utils::bytes_to_utf16_string(&name)),
-                container_name: utils::bytes_to_utf16_string(&value.container_name),
+                card_name: value.card_name.as_deref().map(utils::bytes_to_utf16_string),
+                container_name: value.container_name.as_deref().map(utils::bytes_to_utf16_string),
                 csp_name: utils::bytes_to_utf16_string(&value.csp_name),
-                private_key_file_index: value.private_key_file_index,
                 private_key,
+                scard_type: value.scard_type.clone(),
             })
         }
     }
 }
 
-pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers};
+#[cfg(feature = "scard")]
+pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum CredentialsBuffers {
     /// Raw auth identity buffers for the password based authentication
     AuthIdentity(AuthIdentityBuffers),
+    #[cfg(feature = "scard")]
     /// Raw smart card identity buffers for the smart card based authentication
     SmartCard(SmartCardIdentityBuffers),
 }
 
-#[allow(unreachable_patterns)]
 impl CredentialsBuffers {
     pub fn auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -369,6 +416,7 @@ impl CredentialsBuffers {
     pub fn as_auth_identity(&self) -> Option<&AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -376,6 +424,7 @@ impl CredentialsBuffers {
     pub fn as_mut_auth_identity(&mut self) -> Option<&mut AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -387,19 +436,21 @@ pub enum Credentials {
     /// Auth identity for the password based authentication
     AuthIdentity(AuthIdentity),
     /// Smart card identity for the smart card based authentication
+    #[cfg(feature = "scard")]
     SmartCard(Box<SmartCardIdentity>),
 }
 
 impl Credentials {
-    #[allow(unreachable_patterns)]
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
             _ => None,
         }
     }
 }
 
+#[cfg(feature = "scard")]
 impl From<SmartCardIdentity> for Credentials {
     fn from(value: SmartCardIdentity) -> Self {
         Self::SmartCard(Box::new(value))
@@ -418,6 +469,7 @@ impl TryFrom<Credentials> for CredentialsBuffers {
     fn try_from(value: Credentials) -> Result<Self, Self::Error> {
         Ok(match value {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
+            #[cfg(feature = "scard")]
             Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
         })
     }
