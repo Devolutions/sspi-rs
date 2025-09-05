@@ -116,10 +116,14 @@ impl SspiImpl for SspiHandle {
         context.acquire_credentials_handle_impl(builder)
     }
 
-    fn initialize_security_context_impl<'a>(
-        &'a mut self,
-        builder: &'a mut sspi::builders::FilledInitializeSecurityContext<'a, Self::CredentialsHandle>,
-    ) -> Result<sspi::generator::GeneratorInitSecurityContext<'a>> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut sspi::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> Result<sspi::generator::GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g,
+    {
         let mut context = self.sspi_context.lock()?;
         Ok(context.initialize_security_context_sync(builder).into())
     }

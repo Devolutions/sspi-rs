@@ -267,10 +267,14 @@ impl SspiImpl for Ntlm {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn initialize_security_context_impl(
-        &mut self,
-        builder: &mut FilledInitializeSecurityContext<'_, Self::CredentialsHandle>,
-    ) -> crate::Result<GeneratorInitSecurityContext> {
+    fn initialize_security_context_impl<'ctx, 'b, 'g>(
+        &'ctx mut self,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+    ) -> crate::Result<GeneratorInitSecurityContext<'g>>
+    where
+        'ctx: 'g,
+        'b: 'g,
+    {
         Ok(self.initialize_security_context_impl(builder).into())
     }
 }
