@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-09-05
+
+### <!-- 0 -->Security
+
+- [**breaking**] Fix lifetimes in initialize_security_context_impl (#495) ([370951c1b0](https://github.com/Devolutions/sspi-rs/commit/370951c1b017bfef4276185b374345e8b6b1e532)) 
+
+  Replace &'a mut Struct<'a> anti-pattern with separate lifetimes for
+  better flexibility. The previous signature forced all lifetimes to be
+  the same, preventing generators from outliving their initialization
+  parameters.
+
+
+
 ## [[0.16.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.0...sspi-v0.16.1)] - 2025-08-19
 
 ### <!-- 1 -->Features
