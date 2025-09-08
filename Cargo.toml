@@ -37,7 +37,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 uuid = { version = "1.18", default-features = false }
 tracing = { version = "0.1",  default-features = false }
 bitflags = "2.9"
-rand = "0.8"
+rand = "0.9"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
 sha1 = { version = "0.10", default-features = false }
