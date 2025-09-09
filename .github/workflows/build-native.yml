@@ -142,6 +142,7 @@ jobs:
           $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.dylib';
             'linux'='.so';'android'='.so'}[$DotNetOs]
           $RustTarget = "$RustArch-$RustPlatform"
+          $TargetFolder = @{'debug'='debug';'release'='ffi-production'}[$BuildType]
 
           if (($DotNetOs -eq 'android') -and ($DotNetArch -eq 'arm')) {
             $RustTarget = "armv7-linux-androideabi"
@@ -170,7 +171,7 @@ jobs:
           $CargoArgs = @('build', '-vvv', '-p', 'sspi-ffi', '--target', $RustTarget)
 
           if (-Not ($BuildType -Eq 'debug')) {
-            $CargoArgs += @('--release')
+            $CargoArgs += @('--profile', 'ffi-production')
           }
 
           if ($DotNetOs -Eq 'win') {
@@ -198,7 +199,7 @@ jobs:
           $OutputLibraryName = "${LibPrefix}sspi$LibSuffix"
           $RenamedLibraryName = "${LibPrefix}DevolutionsSspi$LibSuffix"
 
-          $OutputLibrary = Join-Path "target" $RustTarget $BuildType $OutputLibraryName
+          $OutputLibrary = Join-Path "target" $RustTarget $TargetFolder $OutputLibraryName
           $OutputPath = Join-Path "dependencies" "runtimes" $DotNetRid "native"
 
           New-Item -ItemType Directory -Path $OutputPath | Out-Null

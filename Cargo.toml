@@ -163,3 +163,49 @@ workspace = true
 [[example]]
 name = "kerberos"
 required-features = ["network_client"]
+
+[profile.ffi-production]
+inherits = "release"
+strip = "symbols"
+lto = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+
+# Optimize for speed the cryptographic libraries.
+[profile.ffi-production.package.num-bigint-dig]
+opt-level = 3
+[profile.ffi-production.package.p256]
+opt-level = 3
+[profile.ffi-production.package.p384]
+opt-level = 3
+[profile.ffi-production.package.p521]
+opt-level = 3
+[profile.ffi-production.package.rsa]
+opt-level = 3
+[profile.ffi-production.package.sha1]
+opt-level = 3
+[profile.ffi-production.package.sha2]
+opt-level = 3
+[profile.ffi-production.package.sha3]
+opt-level = 3
+[profile.ffi-production.package.aes-gcm]
+opt-level = 3
+[profile.ffi-production.package.aes]
+opt-level = 3
+[profile.ffi-production.package.aes-kw]
+opt-level = 3
+[profile.ffi-production.package.argon2]
+opt-level = 3
+[profile.ffi-production.package.ctr]
+opt-level = 3
+[profile.ffi-production.package.cbc]
+opt-level = 3
+[profile.ffi-production.package.bcrypt-pbkdf]
+opt-level = 3
+[profile.ffi-production.package.des]
+opt-level = 3
+[profile.ffi-production.package.pbkdf2]
+opt-level = 3
+[profile.ffi-production.package.hmac]
+opt-level = 3
