@@ -68,6 +68,12 @@ pub enum Error {
 
     #[error(transparent)]
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
+
+    #[error(transparent)]
+    RandError(#[from] rand::rand_core::OsError),
+
+    #[error("modulus is not odd")]
+    ModulusIsNotOdd,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -1,8 +1,8 @@
+use crypto_bigint::rand_core::TryRngCore;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::Ticket;
 use picky_krb::messages::TgtReq;
 use rand::rngs::OsRng;
-use rand::Rng;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
@@ -72,7 +72,7 @@ pub async fn request_tgt(
         cname_type,
         snames: &[TGT_SERVICE_NAME, &realm],
         // 4 = size of u32
-        nonce: &OsRng.gen::<[u8; 4]>(),
+        nonce: &OsRng.try_next_u32()?.to_be_bytes(),
         hostname: &unwrap_hostname(server.config.client_computer_name.as_deref())?,
         context_requirements: ClientRequestFlags::empty(),
     };

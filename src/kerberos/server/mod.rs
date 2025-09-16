@@ -17,7 +17,7 @@ use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::TryRngCore;
 use time::OffsetDateTime;
 
 use self::as_exchange::request_tgt;
@@ -326,7 +326,7 @@ pub async fn accept_security_context(
                     .cipher()
                     .key_size();
                 let mut sub_session_key = vec![0; key_size];
-                OsRng.fill_bytes(&mut sub_session_key);
+                OsRng.try_fill_bytes(&mut sub_session_key)?;
                 server.encryption_params.sub_session_key = Some(sub_session_key);
 
                 // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)

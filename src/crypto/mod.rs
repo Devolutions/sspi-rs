@@ -2,8 +2,9 @@ mod rc4;
 
 use std::io;
 
-use md4::{Digest, Md4};
-use md5::Md5;
+use hmac::KeyInit;
+use md4::Md4;
+use md5::{Digest as _, Md5};
 pub use rc4::Rc4;
 use sha2::Sha256;
 
@@ -14,6 +15,8 @@ pub const HASH_SIZE: usize = 16;
 const SHA256_SIZE: usize = 32;
 
 pub fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
+    use md4::Digest as _;
+
     let mut context = Md4::new();
     let mut result = [0x00; HASH_SIZE];
     context.update(data);

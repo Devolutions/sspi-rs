@@ -6,12 +6,12 @@ publish = false # not ready yet
 
 [features]
 std = []
-arbitrary = ["uuid/arbitrary", "num-bigint-dig/fuzz", "bitflags/arbitrary", "dep:arbitrary", "std"]
+arbitrary = ["uuid/arbitrary", "bitflags/arbitrary", "dep:arbitrary", "std"]
 
 [dependencies]
 dpapi-core = { workspace = true, features = ["alloc"] }
 uuid.workspace = true
-num-bigint-dig = { workspace = true, default-features = false }
+crypto-bigint.workspace = true
 bitflags.workspace = true
 num-derive.workspace = true
 num-traits = { workspace = true, default-features = true }
