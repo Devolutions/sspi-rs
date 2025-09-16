@@ -26,7 +26,7 @@ use picky_krb::gss_api::{
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 use time::OffsetDateTime;
 
 use super::Pku2uConfig;
@@ -146,13 +146,15 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
 }
 
 pub fn generate_server_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
+    let mut server_nonce = [0; RANDOM_ARRAY_SIZE];
+    rng.try_fill_bytes(&mut server_nonce)?;
     Ok(DhParameters {
         base: Vec::new(),
         modulus: Vec::new(),
         q: Vec::new(),
         private_key: Vec::new(),
         other_public_key: None,
-        server_nonce: Some(rng.gen::<[u8; RANDOM_ARRAY_SIZE]>()),
+        server_nonce: Some(server_nonce),
         client_nonce: None,
     })
 }
@@ -160,7 +162,10 @@ pub fn generate_server_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
 pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
     let (p, g, q) = get_default_parameters();
 
-    let private_key = generate_private_key(&q, rng);
+    let private_key = generate_private_key(&q, rng)?;
+
+    let mut client_nonce = [0; RANDOM_ARRAY_SIZE];
+    rng.try_fill_bytes(&mut client_nonce)?;
 
     Ok(DhParameters {
         base: g,
@@ -168,7 +173,7 @@ pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
         q,
         private_key,
         other_public_key: None,
-        client_nonce: Some(rng.gen::<[u8; RANDOM_ARRAY_SIZE]>()),
+        client_nonce: Some(client_nonce),
         server_nonce: None,
     })
 }

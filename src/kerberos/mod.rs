@@ -12,6 +12,7 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::LazyLock;
 
+use crypto_bigint::rand_core::TryRngCore;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
@@ -19,7 +20,6 @@ use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::KdcProxyMessage;
 use rand::rngs::OsRng;
-use rand::Rng;
 use url::Url;
 
 pub use self::client::initialize_security_context;
@@ -113,7 +113,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng.gen::<u32>(),
+            seq_number: OsRng.try_next_u32()?,
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -132,7 +132,7 @@ impl Kerberos {
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng.gen::<u32>(),
+            seq_number: OsRng.try_next_u32()?,
             realm: None,
             kdc_url,
             channel_bindings: None,

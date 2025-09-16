@@ -4,7 +4,7 @@ use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use num_bigint_dig::BigUint;
+use crypto_bigint::BoxedUint;
 use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
 use windows_sys::Win32::Foundation;
@@ -95,10 +95,13 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     debug!("RSA private key components are decoded successfully");
 
     let rsa_private_key = PrivateKey::from_rsa_components(
-        &BigUint::from_bytes_be(&modulus),
-        &BigUint::from_bytes_be(&public_exp),
-        &BigUint::from_bytes_be(&private_exp),
-        &[BigUint::from_bytes_be(&prime1), BigUint::from_bytes_be(&prime2)],
+        &BoxedUint::from_be_slice_vartime(&modulus),
+        &BoxedUint::from_be_slice_vartime(&public_exp),
+        &BoxedUint::from_be_slice_vartime(&private_exp),
+        &[
+            BoxedUint::from_be_slice_vartime(&prime1),
+            BoxedUint::from_be_slice_vartime(&prime2),
+        ],
     )
     .map_err(|err| {
         Error::new(

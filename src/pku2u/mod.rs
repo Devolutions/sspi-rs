@@ -28,7 +28,7 @@ use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 use uuid::Uuid;
 pub use validate::validate_signed_data;
 
@@ -129,6 +129,8 @@ pub struct Pku2u {
 impl Pku2u {
     pub fn new_server_from_config(config: Pku2uConfig) -> Result<Self> {
         let mut rng = OsRng;
+        let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
+        rng.try_fill_bytes(&mut negoex_random)?;
 
         Ok(Self {
             mode: Pku2uMode::Server,
@@ -146,12 +148,14 @@ impl Pku2u {
             dh_parameters: generate_server_dh_parameters(&mut rng)?,
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+            negoex_random,
         })
     }
 
     pub fn new_client_from_config(config: Pku2uConfig) -> Result<Self> {
         let mut rng = OsRng;
+        let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
+        rng.try_fill_bytes(&mut negoex_random)?;
 
         Ok(Self {
             mode: Pku2uMode::Client,
@@ -169,7 +173,7 @@ impl Pku2u {
             dh_parameters: generate_client_dh_parameters(&mut rng)?,
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+            negoex_random,
         })
     }
 
@@ -680,7 +684,7 @@ impl Pku2u {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng)?;
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
@@ -845,13 +849,13 @@ impl SspiEx for Pku2u {
 
 #[cfg(test)]
 mod tests {
+    use crypto_bigint::rand_core::TryRngCore;
     use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::negoex::RANDOM_ARRAY_SIZE;
     use rand::rngs::OsRng;
-    use rand::Rng;
     use uuid::Uuid;
 
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
@@ -947,6 +951,9 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         )
         .unwrap();
 
+        let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
+        rng.try_fill_bytes(&mut negoex_random).unwrap();
+
         let mut pku2u_server = Pku2u {
             mode: Pku2uMode::Server,
             config: Pku2uConfig {
@@ -970,8 +977,11 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+            negoex_random,
         };
+
+        let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
+        rng.try_fill_bytes(&mut negoex_random).unwrap();
 
         let mut pku2u_client = Pku2u {
             mode: Pku2uMode::Client,
@@ -996,7 +1006,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             dh_parameters: generate_client_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
-            negoex_random: rng.gen::<[u8; RANDOM_ARRAY_SIZE]>(),
+            negoex_random,
         };
 
         let plain_message = b"some plain message";

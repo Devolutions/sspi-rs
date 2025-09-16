@@ -26,11 +26,11 @@ picky-asn1.workspace = true
 picky-asn1-der.workspace = true
 picky-krb.workspace = true
 picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
-num-bigint-dig.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 rand.workspace = true
 hmac.workspace = true
+digest = "0.11.0-rc.1"
 tracing = { workspace = true, default-features = true }
 whoami.workspace = true
 
@@ -40,19 +40,14 @@ dpapi-transport.workspace = true
 sspi = { path = "../..", version = "0.16" } # public
 
 kbkdf = "0.0.1"
-sha1-pre = { version = "0.11.0-pre.2", package = "sha1" }
-sha2-pre = { version = "0.11.0-pre.2", package = "sha2" }
-hmac-pre = { version = "0.13.0-pre.4", package = "hmac" }
-digest-pre = { version = "0.11.0-pre.9", package = "digest", default-features = false }
-
-elliptic-curve = { version = "0.13", features = ["sec1", "std"] }
-p521 = { version = "0.13", features = ["ecdh"] }
-p256 = { version = "0.13", features = ["ecdh"] }
-p384 = { version = "0.13", features = ["ecdh"] }
-concat-kdf = { version = "0.1", features = ["std"] }
+elliptic-curve = { version = "0.14.0-rc.14", features = ["sec1", "std"] }
+p521 = { version = "0.14.0-pre.11", features = ["ecdh"] }
+p256 = { version = "0.14.0-pre.11", features = ["ecdh"] }
+p384 = { version = "0.14.0-pre.11", features = ["ecdh"] }
+concat-kdf = { git = "https://github.com/RustCrypto/KDFs.git", rev = "f2f5c03" } # TODO: We need the new version, but it's not released yet.
 typenum = "1.18"
-aes-kw = { version = "0.2", features = ["std"] }
-aes-gcm = { version = "0.10", features = ["std"] }
+aes-kw = "0.3.0-rc.1"
+aes-gcm = "0.11.0-rc.1"
 url = "2.5"
 
 thiserror = "2.0"

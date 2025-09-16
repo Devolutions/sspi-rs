@@ -1,7 +1,7 @@
 use picky_krb::crypto::CipherSuite;
 use picky_krb::messages::KrbPrivMessage;
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 
 use crate::builders::ChangePassword;
 use crate::generator::YieldPointLocal;
@@ -38,13 +38,15 @@ pub async fn change_password<'a>(
     let realm = &get_client_principal_realm(username, domain);
     let hostname = unwrap_hostname(client.config.client_computer_name.as_deref())?;
 
+    let nonce = &OsRng.try_next_u32()?.to_ne_bytes();
+
     let options = GenerateAsReqOptions {
         realm,
         username,
         cname_type,
         snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
         // 4 = size of u32
-        nonce: &OsRng.gen::<u32>().to_ne_bytes(),
+        nonce,
         hostname: &hostname,
         context_requirements: ClientRequestFlags::empty(),
     };
@@ -77,7 +79,7 @@ pub async fn change_password<'a>(
         .encryption_type
         .as_ref()
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-    let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng);
+    let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut OsRng)?;
 
     let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
         kdc_rep: &as_rep.0,

@@ -40,16 +40,16 @@ bitflags = "2.9"
 rand = "0.9"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
-sha1 = { version = "0.10", default-features = false }
-sha2 = "0.10"
+sha1 = { version = "0.11.0-rc.2", default-features = false }
+sha2 = "0.11.0-rc.2"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { version = "7.0.0-rc.15", default-features = false }
-picky-asn1 = "0.10"
-picky-asn1-der = "0.5"
-picky-asn1-x509 = "0.14"
-picky-krb = "0.11"
+picky = { path = "../picky-rs/picky", default-features = false }
+picky-asn1 = { path = "../picky-rs/picky-asn1" }
+picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
+picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
+picky-krb = { path = "../picky-rs/picky-krb" }
 
 tokio = "1.47"
 ffi-types = { path = "crates/ffi-types" }
@@ -61,7 +61,7 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
-rsa = { version = "0.9.7", default-features = false }
+rsa = { version = "0.10.0-rc.8", default-features = false }
 windows-sys = "0.60"
 base64 = "0.22"
 whoami = "1.6"
@@ -69,8 +69,8 @@ tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
-num-bigint-dig = { version = "0.8", default-features = false }
-hmac = "0.12"
+crypto-bigint = { version = "0.7.0-rc.6", default-features = false }
+hmac = "0.13.0-rc.1"
 
 [features]
 default = ["aws-lc-rs"]
@@ -116,11 +116,11 @@ serde.workspace = true
 picky-krb.workspace = true
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
-num-bigint-dig.workspace = true
+crypto-bigint.workspace = true
 hmac.workspace = true
 url = "2.5"
 
-md-5 = "0.10"
+md-5 = "0.11.0-rc.2"
 md4 = "0.10"
 crypto-mac = "0.11"
 lazy_static = "1.5"
@@ -176,6 +176,8 @@ panic = "abort"
 
 # Optimize for speed the cryptographic libraries.
 [profile.ffi-production.package.num-bigint-dig]
+opt-level = 3
+[profile.ffi-production.package.crypto-bigint]
 opt-level = 3
 [profile.ffi-production.package.p256]
 opt-level = 3
