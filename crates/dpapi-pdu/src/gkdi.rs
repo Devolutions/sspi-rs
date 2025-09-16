@@ -331,19 +331,10 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
 }
 
 #[cfg(feature = "arbitrary")]
-fn check_if_data_valid_for_big_uint(data: Vec<u8>) -> arbitrary::Result<Vec<u8>> {
-    if data.is_empty() || data.last() == Some(&0) {
-        Err(arbitrary::Error::IncorrectFormat)
-    } else {
-        Ok(data)
-    }
-}
-
-#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhParameters {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let field_order = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let generator = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = field_order.bits().max(generator.bits());
 
@@ -463,9 +454,9 @@ impl FfcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let public_key = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let field_order = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let generator = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let public_key = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
 
@@ -613,8 +604,8 @@ impl EcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for EcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let x = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let y = BoxedUint::from_be_slice_vartime(&check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let x = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let y = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = x.bits().max(y.bits());
 
