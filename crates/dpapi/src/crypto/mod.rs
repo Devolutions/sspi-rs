@@ -105,10 +105,7 @@ pub fn cek_decrypt(
     })?;
     let kek = KekAes256::new(&key);
 
-    let blocks_len = key.len() / IV_LEN;
-    let blocks_len = blocks_len - 1;
-    let expected_len = blocks_len * IV_LEN;
-    let mut out_buf = vec![0; expected_len];
+    let mut out_buf = vec![0; key.len()];
 
     kek.unwrap_key(wrapped_key, &mut out_buf)?;
 
