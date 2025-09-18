@@ -15,7 +15,7 @@ use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::TgsRep;
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 
 use self::extractors::{
     extract_ap_rep_from_neg_token_targ, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
@@ -141,7 +141,7 @@ pub async fn initialize_security_context<'a>(
                 cname_type,
                 snames: &[TGT_SERVICE_NAME, &realm],
                 // 4 = size of u32
-                nonce: &OsRng.gen::<[u8; 4]>(),
+                nonce: &OsRng.try_next_u32()?.to_be_bytes(),
                 hostname: &unwrap_hostname(client.config.client_computer_name.as_deref())?,
                 context_requirements: builder.context_requirements,
             };
@@ -186,7 +186,7 @@ pub async fn initialize_security_context<'a>(
                             smart_card.sign(digest)
                         }),
                         with_pre_auth: false,
-                        authenticator_nonce: OsRng.gen::<[u8; 4]>(),
+                        authenticator_nonce: OsRng.try_next_u32()?.to_be_bytes(),
                     }))
                 }
             };
@@ -205,7 +205,7 @@ pub async fn initialize_security_context<'a>(
 
             let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                 kdc_rep: &as_rep.0,
-                seq_num: Some(OsRng.gen::<u32>()),
+                seq_num: Some(OsRng.try_next_u32()?),
                 sub_key: None,
                 checksum: None,
                 channel_bindings: client.channel_bindings.as_ref(),
@@ -276,7 +276,7 @@ pub async fn initialize_security_context<'a>(
                 .encryption_type
                 .as_ref()
                 .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-            let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng);
+            let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng)?;
 
             // the original flag is
             // GSS_C_MUTUAL_FLAG | GSS_C_REPLAY_FLAG | GSS_C_SEQUENCE_FLAG | GSS_C_CONF_FLAG | GSS_C_INTEG_FLAG

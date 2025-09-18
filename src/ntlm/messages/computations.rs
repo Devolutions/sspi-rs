@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 use time::OffsetDateTime;
 
 use crate::channel_bindings::ChannelBindings;
@@ -115,8 +115,10 @@ pub fn get_authenticate_target_info(
     Ok(authenticate_target_info)
 }
 
-pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], rand::Error> {
-    Ok(OsRng.gen::<[u8; CHALLENGE_SIZE]>())
+pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], <OsRng as TryRngCore>::Error> {
+    let mut challenge = [0; CHALLENGE_SIZE];
+    OsRng.try_fill_bytes(challenge.as_mut())?;
+    Ok(challenge)
 }
 
 pub fn now_file_time_timestamp() -> crate::Result<u64> {

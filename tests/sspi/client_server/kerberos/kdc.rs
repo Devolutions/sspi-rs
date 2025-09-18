@@ -29,7 +29,7 @@ use picky_krb::messages::{
     KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::OsRng;
-use rand::{Rng, RngCore};
+use rand::TryRngCore;
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 
@@ -336,7 +336,7 @@ impl KdcMock {
 
         let mut rng = OsRng;
         let mut session_key = vec![0; cipher.key_size()];
-        rng.fill_bytes(&mut session_key);
+        rng.try_fill_bytes(&mut session_key).unwrap();
 
         let initial_key = cipher
             .generate_key_from_password(&creds.password, creds.salt.as_bytes())
@@ -345,6 +345,8 @@ impl KdcMock {
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
         let realm = Realm::from(IA5String::from_string(self.realm.clone()).unwrap());
+
+        let nonce = rng.try_next_u32().unwrap();
 
         let as_rep_enc_part = EncAsRepPart::from(EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
@@ -357,7 +359,7 @@ impl KdcMock {
                     auth_time - Duration::hours(1),
                 ))),
             }])),
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(rng.gen::<u32>().to_be_bytes().to_vec())),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce.to_be_bytes().to_vec())),
             key_expiration: Optional::from(None),
             flags: ExplicitContextTag4::from(kdc_options.0.clone()),
             auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),
@@ -567,7 +569,8 @@ impl KdcMock {
 
         let mut rng = OsRng;
         let mut session_key = vec![0; cipher.key_size()];
-        rng.fill_bytes(&mut session_key);
+        rng.try_fill_bytes(&mut session_key).unwrap();
+        let nonce = rng.try_next_u32().unwrap();
 
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
@@ -583,7 +586,7 @@ impl KdcMock {
                     auth_time - Duration::hours(1),
                 ))),
             }])),
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(rng.gen::<u32>().to_be_bytes().to_vec())),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce.to_be_bytes().to_vec())),
             key_expiration: Optional::from(None),
             flags: ExplicitContextTag4::from(kdc_options.0.clone()),
             auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),

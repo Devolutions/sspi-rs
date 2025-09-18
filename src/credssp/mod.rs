@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
@@ -187,13 +187,15 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        let mut client_nonce = [0; NONCE_SIZE];
+        OsRng.try_fill_bytes(&mut client_nonce)?;
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
             credentials,
             public_key,
             cred_ssp_mode,
-            client_nonce: OsRng.gen::<[u8; NONCE_SIZE]>(),
+            client_nonce,
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
             client_mode: Some(client_mode),
@@ -209,13 +211,15 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        let mut client_nonce = [0; NONCE_SIZE];
+        OsRng.try_fill_bytes(&mut client_nonce)?;
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
             credentials,
             public_key,
             cred_ssp_mode,
-            client_nonce: OsRng.gen::<[u8; NONCE_SIZE]>(),
+            client_nonce,
             credentials_handle: None,
             ts_request_version,
             client_mode: Some(client_mode),

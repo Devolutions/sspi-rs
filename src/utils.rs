@@ -1,7 +1,9 @@
 use byteorder::{LittleEndian, ReadBytesExt};
+use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
+use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
 use rand::rngs::OsRng;
-use rand::Rng;
+use rand::TryRngCore;
 
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
@@ -42,15 +44,12 @@ pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
     )
 }
 
-pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Vec<u8> {
+pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Result<Vec<u8>> {
     let key_size = cipher.cipher().key_size();
-    let mut key = Vec::with_capacity(key_size);
+    let mut key = vec![0; key_size];
+    rnd.try_fill_bytes(&mut key)?;
 
-    for _ in 0..key_size {
-        key.push(rnd.gen());
-    }
-
-    key
+    Ok(key)
 }
 
 pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
@@ -349,6 +348,23 @@ pub fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
     let service_principal_name = &target_name[(divider + 1)..];
 
     Ok((service_name, service_principal_name))
+}
+
+pub fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
+    let p = BoxedMontyParams::new_vartime(p);
+    pow_mod_params(public_key, private_key, &p)
+}
+
+// Copied from `rsa` crate: https://github.com/RustCrypto/RSA/blob/eb1cca7b7ea42445dc874c1c1ce38873e4adade7/src/algorithms/rsa.rs#L232-L241
+fn pow_mod_params(base: &BoxedUint, exp: &BoxedUint, n_params: &BoxedMontyParams) -> BoxedUint {
+    let base = reduce_vartime(base, n_params);
+    base.pow(exp).retrieve()
+}
+
+fn reduce_vartime(n: &BoxedUint, p: &BoxedMontyParams) -> BoxedMontyForm {
+    let modulus = p.modulus().as_nz_ref().clone();
+    let n_reduced = n.rem_vartime(&modulus).resize_unchecked(p.bits_precision());
+    BoxedMontyForm::new(n_reduced, p.clone())
 }
 
 #[cfg(test)]

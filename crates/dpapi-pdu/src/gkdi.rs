@@ -4,13 +4,13 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::{fmt, mem};
 
+use crypto_bigint::BoxedUint;
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
 use dpapi_core::{
     cast_int, cast_length, compute_padding, decode_uuid, encode_uuid, ensure_size, read_padding, write_padding,
     DecodeError, DecodeOwned, DecodeResult, Encode, EncodeError, EncodeResult, FixedPartSize, InvalidFieldErr,
     OtherErr, ReadCursor, StaticName, WriteCursor,
 };
-use num_bigint_dig::BigUint;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -301,11 +301,11 @@ pub struct FfcdhParameters {
     /// This is the large prime field order, and is a domain parameter for the FFC DH algorithm ([SP800-56A] section 5.7.1).
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value of the Key length field.
-    pub field_order: BigUint,
+    pub field_order: BoxedUint,
     /// The generator of the subgroup, a domain parameter for the FFC DH algorithm ([SP800-56A] section 5.7.1).
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value of the Key length field.
-    pub generator: BigUint,
+    pub generator: BoxedUint,
 }
 
 impl FfcdhParameters {
@@ -331,19 +331,10 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
 }
 
 #[cfg(feature = "arbitrary")]
-fn check_if_data_valid_for_big_uint(data: Vec<u32>) -> arbitrary::Result<Vec<u32>> {
-    if data.is_empty() || data.last() == Some(&0) {
-        Err(arbitrary::Error::IncorrectFormat)
-    } else {
-        Ok(data)
-    }
-}
-
-#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhParameters {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let field_order = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let generator = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = field_order.bits().max(generator.bits());
 
@@ -372,17 +363,19 @@ impl Encode for FfcdhParameters {
         dst.write_slice(Self::MAGIC);
         dst.write_u32(self.key_length);
 
-        let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
-
-        if key_len < self.field_order.bits().div_ceil(8) || key_len < self.generator.bits().div_ceil(8) {
+        if self.key_length < self.field_order.bits().div_ceil(8u32)
+            || self.key_length < self.generator.bits().div_ceil(8u32)
+        {
             return Err(EncodeError::invalid_field("FfcdhParameters", "key_length", "too small"));
         }
 
-        let mut field_order = self.field_order.to_bytes_be();
+        let key_len: usize = cast_int!("FfcdhParameters", "key len", self.key_length)?;
+
+        let mut field_order = self.field_order.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut field_order)?;
         dst.write_slice(&field_order);
 
-        let mut generator = self.generator.to_bytes_be();
+        let mut generator = self.generator.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut generator)?;
         dst.write_slice(&generator);
 
@@ -418,8 +411,8 @@ impl DecodeOwned for FfcdhParameters {
         let key_len = { cast_int!("FfcdhParameters", "key len", key_length) as DecodeResult<_> }?;
         ensure_size!(in: src, size: key_len * 2);
 
-        let field_order = BigUint::from_bytes_be(src.read_slice(key_len));
-        let generator = BigUint::from_bytes_be(src.read_slice(key_len));
+        let field_order = BoxedUint::from_be_slice_vartime(src.read_slice(key_len));
+        let generator = BoxedUint::from_be_slice_vartime(src.read_slice(key_len));
 
         Ok(Self {
             key_length,
@@ -440,15 +433,15 @@ pub struct FfcdhKey {
     /// This is the large prime field order, and is a domain parameter for the FFC DH algorithm ([SP800-56A](https://csrc.nist.gov/pubs/sp/800/56/a/r1/final) section 5.7.1).
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value in the Key length field.
-    pub field_order: BigUint,
+    pub field_order: BoxedUint,
     /// The generator of the subgroup, a domain parameter for the FFC DH algorithm ([SP800-56A](https://csrc.nist.gov/pubs/sp/800/56/a/r1/final) section 5.7.1).
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value in the Key length field.
-    pub generator: BigUint,
+    pub generator: BoxedUint,
     /// The public key for the FFC DH algorithm ([SP800-56A](https://csrc.nist.gov/pubs/sp/800/56/a/r1/final) section 5.7.1).
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value of the Key length field.
-    pub public_key: BigUint,
+    pub public_key: BoxedUint,
 }
 
 impl FfcdhKey {
@@ -461,9 +454,9 @@ impl FfcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for FfcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let field_order = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let generator = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let public_key = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let field_order = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let generator = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let public_key = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
 
@@ -488,24 +481,24 @@ impl Encode for FfcdhKey {
 
         dst.write_u32(self.key_length);
 
-        let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
-
-        if key_len < self.field_order.bits().div_ceil(8)
-            || key_len < self.generator.bits().div_ceil(8)
-            || key_len < self.public_key.bits().div_ceil(8)
+        if self.key_length < self.field_order.bits().div_ceil(8)
+            || self.key_length < self.generator.bits().div_ceil(8)
+            || self.key_length < self.public_key.bits().div_ceil(8)
         {
             return Err(EncodeError::invalid_field("FfcdhKey", "key_length", "too small"));
         }
 
-        let mut field_order = self.field_order.to_bytes_be();
+        let key_len: usize = cast_int!("FfcdhKey", "key len", self.key_length)?;
+
+        let mut field_order = self.field_order.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut field_order)?;
         dst.write_slice(&field_order);
 
-        let mut generator = self.generator.to_bytes_be();
+        let mut generator = self.generator.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut generator)?;
         dst.write_slice(&generator);
 
-        let mut public_key = self.public_key.to_bytes_be();
+        let mut public_key = self.public_key.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut public_key)?;
         dst.write_slice(&public_key);
 
@@ -542,9 +535,9 @@ impl DecodeOwned for FfcdhKey {
 
         Ok(Self {
             key_length,
-            field_order: BigUint::from_bytes_be(src.read_slice(key_len)),
-            generator: BigUint::from_bytes_be(src.read_slice(key_len)),
-            public_key: BigUint::from_bytes_be(src.read_slice(key_len)),
+            field_order: BoxedUint::from_be_slice_vartime(src.read_slice(key_len)),
+            generator: BoxedUint::from_be_slice_vartime(src.read_slice(key_len)),
+            public_key: BoxedUint::from_be_slice_vartime(src.read_slice(key_len)),
         })
     }
 }
@@ -597,11 +590,11 @@ pub struct EcdhKey {
     /// The x coordinate of the point P that represents the ECDH [RFC5114](https://www.rfc-editor.org/info/rfc5114) public key.
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value in the Key length field.
-    pub x: BigUint,
+    pub x: BoxedUint,
     /// The y coordinate of the point P that represents the ECDH public key.
     /// It MUST be encoded in big-endian format. The length of this field, in bytes,
     /// MUST be equal to the value in the Key length field.
-    pub y: BigUint,
+    pub y: BoxedUint,
 }
 
 impl EcdhKey {
@@ -611,8 +604,8 @@ impl EcdhKey {
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for EcdhKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let x = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
-        let y = BigUint::new(check_if_data_valid_for_big_uint(u.arbitrary()?)?);
+        let x = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
+        let y = BoxedUint::from_be_slice_vartime(u.arbitrary()?);
 
         let bits = x.bits().max(y.bits());
 
@@ -637,17 +630,17 @@ impl Encode for EcdhKey {
 
         dst.write_u32(self.key_length);
 
-        let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
-
-        if key_len < self.x.bits().div_ceil(8) || key_len < self.y.bits().div_ceil(8) {
+        if self.key_length < self.x.bits().div_ceil(8) || self.key_length < self.y.bits().div_ceil(8) {
             return Err(EncodeError::invalid_field("EcdhKey", "key_length", "too small"));
         }
 
-        let mut x = self.x.to_bytes_be();
+        let key_len: usize = cast_int!("EcdhKey", "key len", self.key_length)?;
+
+        let mut x = self.x.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut x)?;
         dst.write_slice(&x);
 
-        let mut y = self.y.to_bytes_be();
+        let mut y = self.y.to_be_bytes_trimmed_vartime().into_vec();
         pad_key_buffer(key_len, &mut y)?;
         dst.write_slice(&y);
 
@@ -678,8 +671,8 @@ impl DecodeOwned for EcdhKey {
         Ok(Self {
             curve,
             key_length,
-            x: BigUint::from_bytes_be(src.read_slice(key_len)),
-            y: BigUint::from_bytes_be(src.read_slice(key_len)),
+            x: BoxedUint::from_be_slice_vartime(src.read_slice(key_len)),
+            y: BoxedUint::from_be_slice_vartime(src.read_slice(key_len)),
         })
     }
 }
