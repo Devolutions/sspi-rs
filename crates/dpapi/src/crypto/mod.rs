@@ -2,7 +2,7 @@ mod kout;
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{aes, Aes256Gcm, Key, KeySizeUser, Nonce};
-use aes_kw::{AesKw, IV_LEN};
+use aes_kw::AesKw;
 use digest::array::Array;
 use dpapi_core::str::{encode_utf16_le, str_utf16_len};
 use dpapi_core::{decode_owned, EncodeVec, WriteCursor};
@@ -11,8 +11,8 @@ use elliptic_curve::bigint::{BoxedUint, Odd};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
-use rand::rand_core::OsRng;
-use rand::TryRngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use sspi::modpow;
 use thiserror::Error;
 use uuid::Uuid;
@@ -72,6 +72,9 @@ pub enum CryptoError {
 
     #[error(transparent)]
     RandError(#[from] rand::rand_core::OsError),
+
+    #[error(transparent)]
+    StdRngCreateFailed(#[from] getrandom::Error),
 
     #[error("invalid iv length(expected {expected}, but got {actual})")]
     InvalidIvLength { actual: usize, expected: usize },
@@ -139,10 +142,10 @@ pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> CryptoResul
         });
     }
 
-    let mut rng = OsRng;
+    let mut rng = StdRng::try_from_os_rng()?;
     let cek = Aes256Gcm::generate_key()?;
     let mut iv = [0u8; 12];
-    rng.try_fill_bytes(&mut iv)?;
+    rng.fill_bytes(&mut iv);
 
     Ok((cek.to_vec(), iv.to_vec()))
 }

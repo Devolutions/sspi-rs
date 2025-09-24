@@ -5,8 +5,8 @@ use std::io::{self, Read, Write};
 use std::sync::LazyLock;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::prelude::StdRng;
+use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
 use crate::channel_bindings::ChannelBindings;
@@ -115,9 +115,10 @@ pub fn get_authenticate_target_info(
     Ok(authenticate_target_info)
 }
 
-pub fn generate_challenge() -> Result<[u8; CHALLENGE_SIZE], <OsRng as TryRngCore>::Error> {
+pub fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
     let mut challenge = [0; CHALLENGE_SIZE];
-    OsRng.try_fill_bytes(challenge.as_mut())?;
+    let mut rand = StdRng::try_from_os_rng()?;
+    rand.fill_bytes(challenge.as_mut());
     Ok(challenge)
 }
 

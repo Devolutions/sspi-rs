@@ -7,8 +7,8 @@ use std::io;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 
@@ -187,8 +187,9 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        let mut rng = StdRng::try_from_os_rng()?;
         let mut client_nonce = [0; NONCE_SIZE];
-        OsRng.try_fill_bytes(&mut client_nonce)?;
+        rng.fill_bytes(&mut client_nonce);
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,
@@ -211,8 +212,9 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        let mut rng = StdRng::try_from_os_rng()?;
         let mut client_nonce = [0; NONCE_SIZE];
-        OsRng.try_fill_bytes(&mut client_nonce)?;
+        rng.fill_bytes(&mut client_nonce);
         Ok(Self {
             state: CredSspState::NegoToken,
             context: None,

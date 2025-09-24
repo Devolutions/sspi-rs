@@ -29,6 +29,7 @@ picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 sha1.workspace = true
 sha2.workspace = true
 rand.workspace = true
+getrandom.workspace = true
 hmac.workspace = true
 digest = "0.11.0-rc.1"
 tracing = { workspace = true, default-features = true }

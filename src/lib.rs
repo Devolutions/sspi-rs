@@ -2314,8 +2314,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<rand::rand_core::OsError> for Error {
-    fn from(err: rand::rand_core::OsError) -> Self {
+impl From<getrandom::Error> for Error {
+    fn from(err: getrandom::Error) -> Self {
         Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
     }
 }

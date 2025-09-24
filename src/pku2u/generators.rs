@@ -25,8 +25,8 @@ use picky_krb::gss_api::{
 };
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::rngs::StdRng;
+use rand::RngCore;
 use time::OffsetDateTime;
 
 use super::Pku2uConfig;
@@ -145,9 +145,9 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     )
 }
 
-pub fn generate_server_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
+pub fn generate_server_dh_parameters(rng: &mut StdRng) -> Result<DhParameters> {
     let mut server_nonce = [0; RANDOM_ARRAY_SIZE];
-    rng.try_fill_bytes(&mut server_nonce)?;
+    rng.fill_bytes(&mut server_nonce);
     Ok(DhParameters {
         base: Vec::new(),
         modulus: Vec::new(),
@@ -159,15 +159,15 @@ pub fn generate_server_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
     })
 }
 
-pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
+pub fn generate_client_dh_parameters(rng: &mut StdRng) -> DhParameters {
     let (p, g, q) = get_default_parameters();
 
-    let private_key = generate_private_key(&q, rng)?;
+    let private_key = generate_private_key(&q, rng).expect("infallible");
 
     let mut client_nonce = [0; RANDOM_ARRAY_SIZE];
-    rng.try_fill_bytes(&mut client_nonce)?;
+    rng.fill_bytes(&mut client_nonce);
 
-    Ok(DhParameters {
+    DhParameters {
         base: g,
         modulus: p,
         q,
@@ -175,7 +175,7 @@ pub fn generate_client_dh_parameters(rng: &mut OsRng) -> Result<DhParameters> {
         other_public_key: None,
         client_nonce: Some(client_nonce),
         server_nonce: None,
-    })
+    }
 }
 
 pub fn generate_neg<T: Debug + PartialEq + Clone>(
