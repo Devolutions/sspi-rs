@@ -70,7 +70,7 @@ pub enum Error {
     CharSet(#[from] picky_asn1::restricted_string::CharSetError),
 
     #[error(transparent)]
-    RandError(#[from] rand::rand_core::OsError),
+    RandError(#[from] getrandom::Error),
 
     #[error("modulus is not odd")]
     ModulusIsNotOdd,

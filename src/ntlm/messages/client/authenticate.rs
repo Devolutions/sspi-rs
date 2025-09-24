@@ -1,8 +1,8 @@
 use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::prelude::StdRng;
+use rand::{RngCore, SeedableRng};
 
 use crate::crypto::Rc4;
 use crate::ntlm::messages::computations::*;
@@ -122,7 +122,8 @@ pub fn write_authenticate(
 
     let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
         let mut session_key = [0; SESSION_KEY_SIZE];
-        OsRng.try_fill_bytes(session_key.as_mut())?;
+        let mut rand = StdRng::try_from_os_rng()?;
+        rand.fill_bytes(session_key.as_mut());
         session_key
     } else {
         key_exchange_key

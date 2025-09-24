@@ -27,8 +27,8 @@ use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::prelude::StdRng;
+use rand::{RngCore, SeedableRng};
 use uuid::Uuid;
 pub use validate::validate_signed_data;
 
@@ -128,9 +128,9 @@ pub struct Pku2u {
 
 impl Pku2u {
     pub fn new_server_from_config(config: Pku2uConfig) -> Result<Self> {
-        let mut rng = OsRng;
+        let mut rng = rand::rngs::StdRng::try_from_os_rng()?;
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
-        rng.try_fill_bytes(&mut negoex_random)?;
+        rng.fill_bytes(&mut negoex_random);
 
         Ok(Self {
             mode: Pku2uMode::Server,
@@ -153,9 +153,9 @@ impl Pku2u {
     }
 
     pub fn new_client_from_config(config: Pku2uConfig) -> Result<Self> {
-        let mut rng = OsRng;
+        let mut rand = StdRng::try_from_os_rng()?;
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
-        rng.try_fill_bytes(&mut negoex_random)?;
+        rand.fill_bytes(&mut negoex_random);
 
         Ok(Self {
             mode: Pku2uMode::Client,
@@ -170,7 +170,7 @@ impl Pku2u {
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
             // generate dh parameters at the start in order to not waste time during authorization
-            dh_parameters: generate_client_dh_parameters(&mut rng)?,
+            dh_parameters: generate_client_dh_parameters(&mut rand),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
             negoex_random,
@@ -684,7 +684,8 @@ impl Pku2u {
                     .encryption_type
                     .as_ref()
                     .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut OsRng)?;
+                let mut rand = StdRng::try_from_os_rng()?;
+                let authenticator_sub_key = generate_random_symmetric_key(enc_type, &mut rand);
 
                 let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
                     kdc_rep: &as_rep.0,
@@ -855,7 +856,8 @@ mod tests {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::negoex::RANDOM_ARRAY_SIZE;
-    use rand::rngs::OsRng;
+    use rand::rngs::StdRng;
+    use rand::{RngCore, SeedableRng};
     use uuid::Uuid;
 
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
@@ -874,7 +876,7 @@ mod tests {
             119, 121, 155, 58, 142, 204, 74,
         ];
 
-        let mut rng = OsRng;
+        let mut rng = StdRng::try_from_os_rng().unwrap();
 
         let p2p_certificate: Certificate = picky_asn1_der::from_bytes(&[
             48, 130, 3, 213, 48, 130, 2, 189, 160, 3, 2, 1, 2, 2, 16, 32, 99, 134, 91, 60, 164, 166, 93, 186, 47, 71,
@@ -952,7 +954,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         .unwrap();
 
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
-        rng.try_fill_bytes(&mut negoex_random).unwrap();
+        rng.fill_bytes(&mut negoex_random);
 
         let mut pku2u_server = Pku2u {
             mode: Pku2uMode::Server,
@@ -1003,7 +1005,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
-            dh_parameters: generate_client_dh_parameters(&mut rng).unwrap(),
+            dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
             negoex_random,

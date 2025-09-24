@@ -2,8 +2,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
-use rand::rngs::OsRng;
-use rand::TryRngCore;
+use rand::rngs::StdRng;
+use rand::RngCore;
 
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
@@ -44,12 +44,12 @@ pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
     )
 }
 
-pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut OsRng) -> Result<Vec<u8>> {
+pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {
     let key_size = cipher.cipher().key_size();
     let mut key = vec![0; key_size];
-    rnd.try_fill_bytes(&mut key)?;
+    rnd.fill_bytes(&mut key);
 
-    Ok(key)
+    key
 }
 
 pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {

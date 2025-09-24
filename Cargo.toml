@@ -38,6 +38,7 @@ uuid = { version = "1.18", default-features = false }
 tracing = { version = "0.1",  default-features = false }
 bitflags = "2.9"
 rand = "0.9"
+getrandom = "0.3"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
 sha1 = { version = "0.11.0-rc.2", default-features = false }
@@ -97,6 +98,7 @@ __install-crypto-provider = []
 [dependencies]
 bitflags.workspace = true
 rand.workspace = true
+getrandom.workspace = true
 cfg-if.workspace = true
 time = { workspace = true, features = ["std"] }
 picky.workspace = true

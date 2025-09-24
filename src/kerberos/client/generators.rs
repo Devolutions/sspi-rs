@@ -3,7 +3,6 @@ use std::path::Path;
 use std::str::FromStr;
 
 use bitflags;
-use crypto_bigint::rand_core::TryRngCore;
 use md5::{Digest, Md5};
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
@@ -41,7 +40,8 @@ use picky_krb::messages::{
     ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
     KrbPrivMessage, TgsReq, TgtReq,
 };
-use rand::rngs::OsRng;
+use rand::prelude::StdRng;
+use rand::{RngCore, SeedableRng};
 use time::{Duration, OffsetDateTime};
 
 use crate::channel_bindings::ChannelBindings;
@@ -344,8 +344,9 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
         tgs_req_options |= KdcOptions::ENC_TKT_IN_SKEY;
     }
 
+    let mut rng = StdRng::try_from_os_rng()?;
     let mut nonce = [0; NONCE_LEN];
-    OsRng.try_fill_bytes(&mut nonce)?;
+    rng.fill_bytes(&mut nonce);
 
     let req_body = KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
