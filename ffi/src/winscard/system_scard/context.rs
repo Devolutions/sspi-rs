@@ -97,7 +97,7 @@ impl SystemScardContext {
                 info!("Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module...");
 
                 let pkcs11_module_path = winscard::env!(PKCS11_MODULE_PATH_ENV)?;
-                Self::get_container_name_and_certificate(Path::new(&pkcs11_module_path))?
+                try_extract_container_name_and_certificate(Path::new(&pkcs11_module_path))?
             };
 
             scard_context.cache = init_scard_cache(&container_name, auth_cert, &auth_cert_der)?;
@@ -105,113 +105,113 @@ impl SystemScardContext {
 
         Ok(scard_context)
     }
+}
 
-    #[cfg(not(target_os = "windows"))]
-    #[instrument(ret)]
-    pub fn get_container_name_and_certificate(
-        pkcs11_module: &std::path::Path,
-    ) -> Result<(String, picky::x509::Cert, Vec<u8>), Error> {
-        use cryptoki::context::{CInitializeArgs, Pkcs11};
-        use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
-        use picky::x509::Cert;
+#[cfg(not(target_os = "windows"))]
+#[instrument(err)]
+pub fn try_extract_container_name_and_certificate(
+    pkcs11_module: &std::path::Path,
+) -> Result<(String, picky::x509::Cert, Vec<u8>), Error> {
+    use cryptoki::context::{CInitializeArgs, Pkcs11};
+    use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
+    use picky::x509::Cert;
 
-        use crate::winscard::piv::try_get_piv_container_name;
+    use crate::winscard::piv::try_get_piv_container_name;
 
-        macro_rules! try_execute {
-            ($x:expr, $msg:literal) => {{
-                match $x {
-                    Ok(val) => val,
-                    Err(err) => {
-                        error!(?err, $msg);
-                        return Err(Error::new(ErrorKind::InternalError, format!("{}: {}", $msg, err)));
-                    }
-                }
-            }};
-        }
-
-        let pkcs11 = try_execute!(Pkcs11::new(pkcs11_module), "failed to open PKCS11 module");
-        try_execute!(
-            pkcs11.initialize(CInitializeArgs::OsThreads),
-            "failed to initialize PKCS11 module"
-        );
-
-        for slot in try_execute!(pkcs11.get_slots_with_token(), "failed to list slots") {
-            let session = try_execute!(pkcs11.open_ro_session(slot), "failed to open a read only session");
-
-            let slot_info = try_execute!(pkcs11.get_slot_info(slot), "failed to get slot info");
-            let reader_name = slot_info.slot_description();
-
-            // The first suitable user certificate on smart card.
-            let mut certificate = None;
-
-            let query = [
-                Attribute::Class(ObjectClass::CERTIFICATE),
-                Attribute::CertificateType(CertificateType::X_509),
-            ];
-            'certificates: for certificate_handle in
-                try_execute!(session.find_objects(&query), "failed to query smart card certificates")
-            {
-                for encoded_certificate in try_execute!(
-                    session.get_attributes(certificate_handle, &[AttributeType::Value]),
-                    "failed to retrieve the smart card certificate value"
-                ) {
-                    let Attribute::Value(encoded_certificate) = encoded_certificate else {
-                        continue;
-                    };
-
-                    if validate_certificate(&encoded_certificate).is_err() {
-                        continue;
-                    }
-
-                    certificate = Some((encoded_certificate, certificate_handle));
-
-                    break 'certificates;
+    macro_rules! try_execute {
+        ($x:expr, $msg:literal) => {{
+            match $x {
+                Ok(val) => val,
+                Err(err) => {
+                    error!(?err, $msg);
+                    return Err(Error::new(ErrorKind::InternalError, format!("{}: {}", $msg, err)));
                 }
             }
+        }};
+    }
 
-            let Some((certificate_der, certificate_handle)) = certificate else {
-                continue;
-            };
+    let pkcs11 = try_execute!(Pkcs11::new(pkcs11_module), "failed to open PKCS11 module");
+    try_execute!(
+        pkcs11.initialize(CInitializeArgs::OsThreads),
+        "failed to initialize PKCS11 module"
+    );
 
-            let mut container_name = None;
-            // We found a suitable certificate for smart card logon on the device.
-            // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
-            // to extract the container name using raw APDU commands.
-            for label in try_execute!(
-                session.get_attributes(certificate_handle, &[AttributeType::Label]),
-                "failed to query certificate label"
+    for slot in try_execute!(pkcs11.get_slots_with_token(), "failed to list slots") {
+        let session = try_execute!(pkcs11.open_ro_session(slot), "failed to open a read only session");
+
+        let slot_info = try_execute!(pkcs11.get_slot_info(slot), "failed to get slot info");
+        let reader_name = slot_info.slot_description();
+
+        // The first suitable user certificate on smart card.
+        let mut certificate = None;
+
+        let query = [
+            Attribute::Class(ObjectClass::CERTIFICATE),
+            Attribute::CertificateType(CertificateType::X_509),
+        ];
+        'certificates: for certificate_handle in
+            try_execute!(session.find_objects(&query), "failed to query smart card certificates")
+        {
+            for encoded_certificate in try_execute!(
+                session.get_attributes(certificate_handle, &[AttributeType::Value]),
+                "failed to retrieve the smart card certificate value"
             ) {
-                let Attribute::Label(label) = label else {
+                let Attribute::Value(encoded_certificate) = encoded_certificate else {
                     continue;
                 };
 
-                container_name = Some(try_execute!(
-                    try_get_piv_container_name(reader_name, &label),
-                    "failed to construct a container name"
-                ));
-
-                if container_name.is_some() {
-                    break;
+                if validate_certificate(&encoded_certificate).is_err() {
+                    continue;
                 }
-            }
 
-            let Some(container_name) = container_name else {
+                certificate = Some((encoded_certificate, certificate_handle));
+
+                break 'certificates;
+            }
+        }
+
+        let Some((certificate_der, certificate_handle)) = certificate else {
+            continue;
+        };
+
+        let mut container_name = None;
+        // We found a suitable certificate for smart card logon on the device.
+        // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
+        // to extract the container name using raw APDU commands.
+        for label in try_execute!(
+            session.get_attributes(certificate_handle, &[AttributeType::Label]),
+            "failed to query certificate label"
+        ) {
+            let Attribute::Label(label) = label else {
                 continue;
             };
 
-            let certificate = try_execute!(
-                Cert::from_der(&certificate_der),
-                "failed to parse smart card certificate"
-            );
+            container_name = Some(try_execute!(
+                try_get_piv_container_name(reader_name, &label),
+                "failed to construct a container name"
+            ));
 
-            return Ok((container_name, certificate, certificate_der));
+            if container_name.is_some() {
+                break;
+            }
         }
 
-        Err(Error::new(
-            ErrorKind::InternalError,
-            "smart card does not contain suitable credentials",
-        ))
+        let Some(container_name) = container_name else {
+            continue;
+        };
+
+        let certificate = try_execute!(
+            Cert::from_der(&certificate_der),
+            "failed to parse smart card certificate"
+        );
+
+        return Ok((container_name, certificate, certificate_der));
     }
+
+    Err(Error::new(
+        ErrorKind::InternalError,
+        "smart card does not contain suitable credentials",
+    ))
 }
 
 /// Validates smart card certificate.
