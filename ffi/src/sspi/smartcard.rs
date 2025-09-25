@@ -1,5 +1,3 @@
-mod piv;
-
 use std::borrow::Cow;
 use std::env;
 use std::path::Path;
@@ -13,8 +11,8 @@ use picky_asn1_x509::{oids, Certificate, ExtendedKeyUsage, ExtensionView, Genera
 use sspi::{utf16_bytes_to_utf8_string, Error, ErrorKind, Result};
 use winscard::MICROSOFT_DEFAULT_CSP;
 
-use crate::sspi::smartcard::piv::try_get_piv_container_name;
 use crate::utils::str_encode_utf16;
+use crate::winscard::piv::try_get_piv_container_name;
 
 /// Environment variable that specifies a custom CSP name.
 ///
@@ -172,7 +170,7 @@ fn validate_certificate(certificate: &[u8], username: &str) -> Result<()> {
 }
 
 /// Extracts Extended Key Usage from the smart card certificate.
-fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Result<ExtendedKeyUsage> {
+pub fn extract_extended_key_usage_from_certificate(certificate: &Certificate) -> Result<ExtendedKeyUsage> {
     let extended_key_usage_ext = &certificate
         .tbs_certificate
         .extensions
@@ -251,7 +249,7 @@ mod tests {
 
     #[test]
     fn upn_extraction() {
-        let certificate: Certificate = Cert::from_pem_str(include_str!("../../../../test_assets/pw11.cer"))
+        let certificate: Certificate = Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer"))
             .unwrap()
             .into();
 
@@ -260,12 +258,12 @@ mod tests {
 
     #[test]
     fn valid_scard_certificate() {
-        let certificate = Cert::from_pem_str(include_str!("../../../../test_assets/pw11.cer"))
+        let certificate = Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer"))
             .unwrap()
             .to_der()
             .unwrap();
         // The following certificate has "pW11@ExAmPlE.cOm" UPN.
-        let cert_uppercase_upn = Cert::from_pem_str(include_str!("../../../../test_assets/pw11_upper_case_upn.cer"))
+        let cert_uppercase_upn = Cert::from_pem_str(include_str!("../../../test_assets/pw11_upper_case_upn.cer"))
             .unwrap()
             .to_der()
             .unwrap();
@@ -276,22 +274,22 @@ mod tests {
 
     #[test]
     fn invalid_scard_certificate() {
-        let cert_without_upn = Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_upn.cer"))
+        let cert_without_upn = Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_upn.cer"))
             .unwrap()
             .to_der()
             .unwrap();
         let cert_without_ext_key_usage =
-            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_ext_key_usage.cer"))
+            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_ext_key_usage.cer"))
                 .unwrap()
                 .to_der()
                 .unwrap();
         let cert_without_scard_logon =
-            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_scard_logon.cer"))
+            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_scard_logon.cer"))
                 .unwrap()
                 .to_der()
                 .unwrap();
         let cert_without_client_auth =
-            Cert::from_pem_str(include_str!("../../../../test_assets/pw11_without_client_auth.cer"))
+            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_client_auth.cer"))
                 .unwrap()
                 .to_der()
                 .unwrap();

@@ -9,6 +9,6 @@ pub mod sec_pkg_info;
 pub mod sec_winnt_auth_identity;
 pub mod security_tables;
 #[cfg(feature = "scard")]
-mod smartcard;
+pub mod smartcard;
 pub mod sspi_data_types;
 pub mod utils;

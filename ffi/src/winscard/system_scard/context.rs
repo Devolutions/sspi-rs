@@ -76,10 +76,31 @@ impl SystemScardContext {
 
         #[cfg(not(target_os = "windows"))]
         let cache = if _with_cache {
-            let auth_cert = winscard::env::auth_cert_from_env()?;
-            let auth_cert_der = auth_cert.to_der()?;
+            match (winscard::env::auth_cert_from_env(), winscard::env::container_name()) {
+                (Ok(auth_cert), Ok(container_name)) => {
+                    let auth_cert_der = auth_cert.to_der()?;
 
-            init_scard_cache(&winscard::env::container_name()?, auth_cert, &auth_cert_der)?
+                    init_scard_cache(&container_name, auth_cert, &auth_cert_der)?
+                }
+                _ => {
+                    use std::path::Path;
+
+                    use crate::sspi::sec_winnt_auth_identity::PKCS11_MODULE_PATH_ENV;
+
+                    info!("Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module...");
+
+                    let mut scard_context = Self {
+                        h_context,
+                        api,
+                        cache: Default::default(),
+                    };
+
+                    let pkcs11_module_path = winscard::env!(PKCS11_MODULE_PATH_ENV)?;
+                    scard_context.initialize_cache_using_pkcs_module(Path::new(&pkcs11_module_path))?;
+
+                    return Ok(scard_context);
+                }
+            }
         } else {
             Default::default()
         };
@@ -91,6 +112,148 @@ impl SystemScardContext {
             cache,
         })
     }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn initialize_cache_using_pkcs_module(&mut self, pkcs11_module: &std::path::Path) -> Result<(), Error> {
+        use cryptoki::context::{CInitializeArgs, Pkcs11};
+        use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
+        use picky::x509::Cert;
+
+        use crate::winscard::piv::try_get_piv_container_name;
+
+        macro_rules! try_execute {
+            ($x:expr, $msg:literal) => {{
+                match $x {
+                    Ok(val) => val,
+                    Err(err) => {
+                        error!(?err, $msg);
+                        return Err(Error::new(ErrorKind::InternalError, format!("{}: {}", $msg, err)));
+                    }
+                }
+            }};
+        }
+
+        let pkcs11 = try_execute!(Pkcs11::new(pkcs11_module), "failed to open PKCS11 module");
+        try_execute!(
+            pkcs11.initialize(CInitializeArgs::OsThreads),
+            "failed to initialize PKCS11 module"
+        );
+
+        for slot in try_execute!(pkcs11.get_slots_with_token(), "failed to list slots") {
+            let session = try_execute!(pkcs11.open_ro_session(slot), "failed to open a read only session");
+
+            let slot_info = try_execute!(pkcs11.get_slot_info(slot), "failed to get slot info");
+            let reader_name = slot_info.slot_description();
+
+            // The first suitable user certificate on smart card.
+            let mut certificate = None;
+
+            let query = [
+                Attribute::Class(ObjectClass::CERTIFICATE),
+                Attribute::CertificateType(CertificateType::X_509),
+            ];
+            'certificates: for certificate_handle in
+                try_execute!(session.find_objects(&query), "failed to query smart card certificates")
+            {
+                for encoded_certificate in try_execute!(
+                    session.get_attributes(certificate_handle, &[AttributeType::Value]),
+                    "failed to retrieve the smart card certificate value"
+                ) {
+                    let Attribute::Value(encoded_certificate) = encoded_certificate else {
+                        continue;
+                    };
+
+                    if validate_certificate(&encoded_certificate).is_err() {
+                        continue;
+                    }
+
+                    certificate = Some((encoded_certificate, certificate_handle));
+
+                    break 'certificates;
+                }
+            }
+
+            let Some((certificate_der, certificate_handle)) = certificate else {
+                continue;
+            };
+
+            let mut container_name = None;
+            // We found a suitable certificate for smart card logon on the device.
+            // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
+            // to extract the container name using raw APDU commands.
+            for label in try_execute!(
+                session.get_attributes(certificate_handle, &[AttributeType::Label]),
+                "failed to query certificate label"
+            ) {
+                let Attribute::Label(label) = label else {
+                    continue;
+                };
+
+                container_name = Some(try_execute!(
+                    try_get_piv_container_name(reader_name, &label),
+                    "failed to construct a container name"
+                ));
+
+                if container_name.is_some() {
+                    break;
+                }
+            }
+
+            let Some(container_name) = container_name else {
+                continue;
+            };
+
+            let certificate = try_execute!(
+                Cert::from_der(&certificate_der),
+                "failed to parse smart card certificate"
+            );
+
+            self.cache = init_scard_cache(&container_name, certificate, &certificate_der)?;
+
+            return Ok(());
+        }
+
+        Err(Error::new(
+            ErrorKind::InternalError,
+            "smart card does not contain suitable credentials",
+        ))
+    }
+}
+
+/// Validates smart card certificate.
+///
+/// Certificate requirements:
+/// * Extended Key Usage extension must present and contain Client Authentication (1.3.6.1.5.5.7.3.2) and Smart Card Logon (1.3.6.1.4.1.311.20.2.2) OIDs.
+#[cfg(not(target_os = "windows"))]
+fn validate_certificate(certificate: &[u8]) -> Result<(), Error> {
+    use picky_asn1_x509::{oids, Certificate};
+
+    use crate::sspi::smartcard::extract_extended_key_usage_from_certificate;
+
+    let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
+
+    let extended_key_usage = extract_extended_key_usage_from_certificate(&certificate).map_err(|err| {
+        Error::new(
+            ErrorKind::InternalError,
+            format!("failed to extract smart card certificate extended key usage: {err}"),
+        )
+    })?;
+
+    if !extended_key_usage.contains(oids::kp_client_auth()) {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "smart card certificate does not have Client Authentication (1.3.6.1.5.5.7.3.2) key usage",
+        ));
+    }
+
+    if !extended_key_usage.contains(oids::smart_card_logon()) {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "smart card certificate does not have Smart Card Logon (1.3.6.1.4.1.311.20.2.2) key usage",
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]

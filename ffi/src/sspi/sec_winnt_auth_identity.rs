@@ -22,6 +22,9 @@ use crate::utils::{credentials_str_into_bytes, into_raw_ptr, w_str_len};
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
 
+/// Environment variable name for specifying PKCS11 module path.
+pub const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
+
 #[repr(C)]
 pub struct SecWinntAuthIdentityW {
     pub user: *const u16,
@@ -506,7 +509,6 @@ fn collect_smart_card_creds(
     const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
     const SCARD_EMULATED: &str = "emulated";
     const SCARD_SYSTEM_PROVIDED: &str = "system";
-    const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
 
     raw_wide_str_trim_nulls(&mut username);
     raw_wide_str_trim_nulls(&mut pin);

@@ -237,7 +237,7 @@ pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Res
 
 #[cfg(test)]
 mod tests {
-    use crate::sspi::smartcard::piv::chuid_to_container_name;
+    use super::chuid_to_container_name;
 
     #[test]
     fn container_name_formatting() {
