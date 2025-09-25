@@ -10,6 +10,7 @@ use crate::utils::into_raw_ptr;
 mod macros;
 mod buf_alloc;
 pub mod pcsc_lite;
+pub mod piv;
 pub mod scard;
 pub mod scard_context;
 mod scard_handle;
