@@ -74,48 +74,43 @@ impl SystemScardContext {
             ));
         }
 
-        #[cfg(not(target_os = "windows"))]
-        let cache = if _with_cache {
-            match (winscard::env::auth_cert_from_env(), winscard::env::container_name()) {
-                (Ok(auth_cert), Ok(container_name)) => {
-                    let auth_cert_der = auth_cert.to_der()?;
-
-                    init_scard_cache(&container_name, auth_cert, &auth_cert_der)?
-                }
-                _ => {
-                    use std::path::Path;
-
-                    use crate::sspi::sec_winnt_auth_identity::PKCS11_MODULE_PATH_ENV;
-
-                    info!("Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module...");
-
-                    let mut scard_context = Self {
-                        h_context,
-                        api,
-                        cache: Default::default(),
-                    };
-
-                    let pkcs11_module_path = winscard::env!(PKCS11_MODULE_PATH_ENV)?;
-                    scard_context.initialize_cache_using_pkcs_module(Path::new(&pkcs11_module_path))?;
-
-                    return Ok(scard_context);
-                }
-            }
-        } else {
-            Default::default()
-        };
-
-        Ok(Self {
+        let mut scard_context = Self {
             h_context,
             api,
             #[cfg(not(target_os = "windows"))]
-            cache,
-        })
+            cache: Default::default(),
+        };
+
+        #[cfg(not(target_os = "windows"))]
+        if _with_cache {
+            let (container_name, auth_cert, auth_cert_der) = if let (Ok(auth_cert), Ok(container_name)) =
+                (winscard::env::auth_cert_from_env(), winscard::env::container_name())
+            {
+                let auth_cert_der = auth_cert.to_der()?;
+
+                (container_name, auth_cert, auth_cert_der)
+            } else {
+                use std::path::Path;
+
+                use crate::sspi::sec_winnt_auth_identity::PKCS11_MODULE_PATH_ENV;
+
+                info!("Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module...");
+
+                let pkcs11_module_path = winscard::env!(PKCS11_MODULE_PATH_ENV)?;
+                Self::get_container_name_and_certificate(Path::new(&pkcs11_module_path))?
+            };
+
+            scard_context.cache = init_scard_cache(&container_name, auth_cert, &auth_cert_der)?;
+        }
+
+        Ok(scard_context)
     }
 
     #[cfg(not(target_os = "windows"))]
     #[instrument(ret)]
-    pub fn initialize_cache_using_pkcs_module(&mut self, pkcs11_module: &std::path::Path) -> Result<(), Error> {
+    pub fn get_container_name_and_certificate(
+        pkcs11_module: &std::path::Path,
+    ) -> Result<(String, picky::x509::Cert, Vec<u8>), Error> {
         use cryptoki::context::{CInitializeArgs, Pkcs11};
         use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
         use picky::x509::Cert;
@@ -209,9 +204,7 @@ impl SystemScardContext {
                 "failed to parse smart card certificate"
             );
 
-            self.cache = init_scard_cache(&container_name, certificate, &certificate_der)?;
-
-            return Ok(());
+            return Ok(((container_name, certificate, certificate_der)));
         }
 
         Err(Error::new(
