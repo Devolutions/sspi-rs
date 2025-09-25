@@ -1,3 +1,6 @@
+/// Read the environment variable value in runtime.
+/// 
+/// Returns an [Error] otherwise.
 #[macro_export]
 #[cfg(feature = "std")]
 macro_rules! env {

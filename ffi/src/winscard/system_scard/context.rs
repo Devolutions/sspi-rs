@@ -204,7 +204,7 @@ impl SystemScardContext {
                 "failed to parse smart card certificate"
             );
 
-            return Ok(((container_name, certificate, certificate_der)));
+            return Ok((container_name, certificate, certificate_der));
         }
 
         Err(Error::new(
