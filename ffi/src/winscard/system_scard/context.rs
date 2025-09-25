@@ -114,6 +114,7 @@ impl SystemScardContext {
     }
 
     #[cfg(not(target_os = "windows"))]
+    #[instrument(ret)]
     pub fn initialize_cache_using_pkcs_module(&mut self, pkcs11_module: &std::path::Path) -> Result<(), Error> {
         use cryptoki::context::{CInitializeArgs, Pkcs11};
         use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};

@@ -567,7 +567,7 @@ fn collect_smart_card_creds(
 
             let SystemSmartCardInfo {
                 reader_name, csp_name, certificate, container_name, card_name,
-            } = smart_card_info(&username, &pin, pkcs11_module.as_ref())?;
+            } = smart_card_info(&username, pkcs11_module.as_ref())?;
 
             info!("System-provided smart card credentials have been collected. Process with scard-based logon.");
 

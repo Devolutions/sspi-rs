@@ -4,8 +4,6 @@ use std::path::Path;
 
 use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
-use cryptoki::session::UserType;
-use cryptoki::types::AuthPin;
 use picky_asn1::wrapper::Utf8StringAsn1;
 use picky_asn1_x509::{oids, Certificate, ExtendedKeyUsage, ExtensionView, GeneralName};
 use sspi::{utf16_bytes_to_utf8_string, Error, ErrorKind, Result};
@@ -43,18 +41,14 @@ pub struct SystemSmartCardInfo {
 /// The username must be in FQDN (user@domain) format and UTF-16 encoded.
 /// The PIN code must be UTF-16 encoded.
 #[instrument(level = "trace", ret)]
-pub fn smart_card_info(username: &[u8], pin: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
+pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
     let pkcs11 = Pkcs11::new(pkcs11_module)?;
     pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
     let username = utf16_bytes_to_utf8_string(username);
-    let pin = utf16_bytes_to_utf8_string(pin);
-    let pin = AuthPin::new(pin);
 
     for slot in pkcs11.get_slots_with_token()? {
         let session = pkcs11.open_ro_session(slot)?;
-
-        session.login(UserType::User, Some(&pin))?;
 
         let slot_info = pkcs11.get_slot_info(slot)?;
         let reader_name = slot_info.slot_description();
