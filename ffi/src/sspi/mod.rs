@@ -1,6 +1,7 @@
 #[macro_use]
 mod macros;
 
+pub mod cert_utils;
 pub mod common;
 pub mod credentials_attributes;
 pub mod sec_buffer;

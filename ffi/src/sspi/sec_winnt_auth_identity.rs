@@ -754,9 +754,10 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::cert_utils::{finalize_smart_card_info, SmartCardInfo};
     use sspi::string_to_utf16;
     use windows_sys::Win32::Security::Credentials::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
+
+    use crate::sspi::cert_utils::{extract_certificate_by_thumbprint, finalize_smart_card_info, SmartCardInfo};
 
     let mut cred_type = 0;
     let mut credential = null_mut();
@@ -783,7 +784,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     let cert_credential = credential.cast::<CERT_CREDENTIAL_INFO>();
 
     // SAFETY: This function is safe to call because `cert_credential` is validated.
-    let (raw_certificate, certificate) = sspi::cert_utils::extract_certificate_by_thumbprint(
+    let (raw_certificate, certificate) = extract_certificate_by_thumbprint(
         // SAFETY: We've checked the returned status code from `CredUnmarshalCredentialW` function and credentials type above.
         // The `cert_credential` is a valid pointer to the `CERT_CREDENTIAL_INFO` structure at this point.
         unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
