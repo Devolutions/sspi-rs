@@ -357,10 +357,11 @@ impl SmartCard<'_> {
         //      CLA  - 0x00 | 0x10 (command chaining)
         //      INS  - 0x87
         //      P1   - 0x07 - RSA
-        //      P2   - 0x9A - PIV Authentication Key
+        //      P2   - 0x9A - PIV Authentication Key or PIV Digital Signature Key
         //      Data - Dynamic Authentication Template with Challenge inside
         //
-        // There are many possible P1 and P2 values in this command, but our smart card only supports the RSA algorithm and data signing using the PIV Authentication Key
+        // There are many possible P1 and P2 values in this command, but our smart card only supports the RSA algorithm
+        // and data signing using the PIV Authentication Key or PIV Digital Signature Key.
 
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
@@ -368,10 +369,11 @@ impl SmartCard<'_> {
         const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
         const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9C;
 
+        // We accept two types of key references: PIV Authentication Key and Digital Signature Key.
         if cmd.p1 != RSA_ALGORITHM || (cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY && cmd.p2 != PIV_AUTHENTICATION_KEY) {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a", cmd.p1, cmd.p2)
+                format!("provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a or 0x9c", cmd.p1, cmd.p2)
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
