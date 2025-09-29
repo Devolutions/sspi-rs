@@ -74,6 +74,8 @@ impl SystemScardContext {
             ));
         }
 
+        // We mutate `scard_context` below on non-Windows systems to initialize the scard cache.
+        #[allow(unused_mut)]
         let mut scard_context = Self {
             h_context,
             api,
