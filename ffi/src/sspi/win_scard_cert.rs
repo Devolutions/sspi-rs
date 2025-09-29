@@ -1,4 +1,10 @@
 #![cfg(all(feature = "scard", target_os = "windows"))]
+//! A collection of functions for working with certificates on Windows.
+//! The main purpose of them is to provide an easy way of collecting needed
+//! smart card certificate information during scard-based logon.
+//!
+//! This module is available only on Windows and only when the `scard` feature
+//! is on.
 
 use std::slice::from_raw_parts;
 

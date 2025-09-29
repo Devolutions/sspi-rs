@@ -1,7 +1,6 @@
 #[macro_use]
 mod macros;
 
-pub mod cert_utils;
 pub mod common;
 pub mod credentials_attributes;
 pub mod sec_buffer;
@@ -13,3 +12,4 @@ pub mod security_tables;
 pub mod smartcard;
 pub mod sspi_data_types;
 pub mod utils;
+pub mod win_scard_cert;
