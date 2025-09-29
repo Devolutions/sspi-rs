@@ -4,6 +4,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
+use crypto_bigint::BoxedUint;
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
@@ -422,18 +423,16 @@ impl SmartCard<'_> {
     }
 
     fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        use rsa::BigUint;
-
         let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
         // According to the specification, the PIV smart card accepts already padded digest.
         // So, it's safe to use the `rsa_decrypt_and_check` function here.
         let signature = rsa::hazmat::rsa_decrypt_and_check(
             &rsa_private_key,
             None::<&mut crate::dummy_rng::Dummy>,
-            &BigUint::from_bytes_be(data.as_ref()),
+            &BoxedUint::from_be_slice_vartime(data.as_ref()),
         )?;
 
-        let mut signature = signature.to_bytes_be();
+        let mut signature = signature.to_be_bytes_trimmed_vartime().into_vec();
 
         while signature.len() < rsa_private_key.size() {
             signature.insert(0, 0);
@@ -579,14 +578,16 @@ impl WinScard for SmartCard<'_> {
 mod tests {
     extern crate std;
 
+    use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
+    use crypto_bigint::{Odd, Resize};
     use picky::hash::HashAlgorithm;
     use picky::signature::SignatureAlgorithm;
     use proptest::prelude::*;
     use proptest::{collection, option, prop_compose};
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::Rng;
     use rsa::traits::PublicKeyParts;
-    use rsa::BigUint;
+    use rsa::BoxedUint;
 
     use super::*;
     use crate::ber_tlv::ber_tlv_length_encoding;
@@ -805,10 +806,11 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         // Verify that the GET RESPONSE handler correctly sends the data
         let mut scard = new_scard();
         scard.state = SCardState::PivAppSelected;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // get a random Vec<u8> of length 513
-        let data: Vec<u8> = (0..513).map(|_| rng.sample(Uniform::new(0, 255))).collect();
+        let uniform = Uniform::new(0, 255).unwrap();
+        let data: Vec<u8> = (0..513).map(|_| rng.sample(uniform)).collect();
         // we will have to make 3 calls to get this data
         scard.pending_response = Some(data.clone());
 
@@ -925,9 +927,12 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
             .expect("Error while signing the data");
         // extract the padded hash by decrypting the signature using the public key
         // we need to extract the padded hash to calculate the signature ourselves
-        let padded_hash = BigUint::from_bytes_be(&signed_data)
-            .modpow(rsa_pk.e(), rsa_pk.n())
-            .to_bytes_be();
+        let padded_hash = modpow(
+            &BoxedUint::from_be_slice_vartime(&signed_data),
+            rsa_pk.e(),
+            Odd::new(rsa_pk.n().clone().get()).into_option().unwrap(),
+        );
+        let padded_hash = padded_hash.to_be_bytes_trimmed_vartime().into_vec();
 
         // the hash is bigger than 127, so we have to use BER-TLV encoding
         let encoded_hash_length = ber_tlv_length_encoding(padded_hash.len());
@@ -987,5 +992,22 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
                 signed_hash
             )
             .is_ok());
+    }
+
+    pub fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
+        let p = BoxedMontyParams::new_vartime(p);
+        pow_mod_params(&public_key, &private_key, &p)
+    }
+
+    // Copied from `rsa` crate: https://github.com/RustCrypto/RSA/blob/eb1cca7b7ea42445dc874c1c1ce38873e4adade7/src/algorithms/rsa.rs#L232-L241
+    fn pow_mod_params(base: &BoxedUint, exp: &BoxedUint, n_params: &BoxedMontyParams) -> BoxedUint {
+        let base = reduce_vartime(base, n_params);
+        base.pow(exp).retrieve()
+    }
+
+    fn reduce_vartime(n: &BoxedUint, p: &BoxedMontyParams) -> BoxedMontyForm {
+        let modulus = p.modulus().as_nz_ref().clone();
+        let n_reduced = n.rem_vartime(&modulus).resize_unchecked(p.bits_precision());
+        BoxedMontyForm::new(n_reduced, p.clone())
     }
 }

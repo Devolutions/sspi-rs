@@ -115,7 +115,7 @@ pub fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -
 
     let kdc_req_body_sha1_hash = sha1.finalize().to_vec();
 
-    let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base);
+    let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base)?;
 
     let auth_pack = AuthPack {
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
