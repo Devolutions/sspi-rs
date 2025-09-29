@@ -1,3 +1,11 @@
+#![cfg(feature = "scard")]
+//! A collection of functions for working with certificates on Linux and macOS.
+//! The main purpose of them is to provide an easy way of collecting needed
+//! smart card certificate information during scard-based logon.
+//!
+//! This module is available only on when the `scard` feature
+//! is on.
+
 use std::borrow::Cow;
 use std::env;
 use std::path::Path;
