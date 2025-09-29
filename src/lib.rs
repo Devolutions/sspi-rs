@@ -67,7 +67,6 @@ pub mod pku2u;
 
 mod auth_identity;
 mod ber;
-pub mod cert_utils;
 mod crypto;
 mod dns;
 mod kdc;

@@ -24,6 +24,7 @@ dpapi = ["dep:dpapi", "dep:dpapi-transport", "dep:dpapi-native-transport", "dep:
 cfg-if.workspace = true
 num-traits = { workspace = true, default-features = true }
 whoami.workspace = true
+sha1.workspace = true
 ffi-types = { workspace = true, features = ["winscard"], optional = true }
 
 picky = { workspace = true, features = ["x509"], optional = true }
@@ -48,7 +49,8 @@ cryptoki = { version = "0.10", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 symbol-rename-macro = { path = "./symbol-rename-macro" }
-windows-sys = { workspace = true, features = ["Win32_Security_Cryptography", "Win32_Security_Authentication_Identity", "Win32_Security_Credentials", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_Security", "Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_Security_Credentials", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_Security"] }
+windows = { version = "0.61", features = ["Win32_Security_Cryptography"] }
 
 [target.'cfg(not(windows))'.dependencies]
 bitflags = { workspace = true, optional = true }

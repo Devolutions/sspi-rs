@@ -224,7 +224,7 @@ pub fn try_extract_container_name_and_certificate(
 fn validate_certificate(certificate: &[u8]) -> Result<(), Error> {
     use picky_asn1_x509::{oids, Certificate};
 
-    use crate::sspi::smartcard::extract_extended_key_usage_from_certificate;
+    use crate::sspi::scard_cert::extract_extended_key_usage_from_certificate;
 
     let certificate: Certificate = picky_asn1_der::from_bytes(certificate)?;
 
