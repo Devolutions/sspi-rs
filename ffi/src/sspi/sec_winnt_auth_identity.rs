@@ -554,7 +554,7 @@ fn collect_smart_card_creds(
             })
         },
         SCARD_SYSTEM_PROVIDED => {
-            use crate::sspi::smartcard::{SystemSmartCardInfo, smart_card_info};
+            use crate::sspi::scard_cert::{SystemSmartCardInfo, smart_card_info};
 
             let pkcs11_module = env::var(PKCS11_MODULE_PATH_ENV).map_err(|err| {
                 let message = match err {
@@ -790,7 +790,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
     )?;
 
-    let username = string_to_utf16(crate::sspi::smartcard::extract_upn_from_certificate(&certificate)?);
+    let username = string_to_utf16(crate::sspi::scard_cert::extract_upn_from_certificate(&certificate)?);
     // SAFETY: This function is safe to call because argument is type-checked.
     let SmartCardInfo {
         key_container_name,
