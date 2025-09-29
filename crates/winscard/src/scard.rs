@@ -365,12 +365,13 @@ impl SmartCard<'_> {
         // NIST.SP.800-73-4, Part 1, Table 5
         const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
+        const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
         const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9C;
 
-        if cmd.p1 != RSA_ALGORITHM || cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY {
+        if cmd.p1 != RSA_ALGORITHM || (cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY && cmd.p2 != PIV_AUTHENTICATION_KEY) {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("Provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9A", cmd.p1, cmd.p2)
+                format!("provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a", cmd.p1, cmd.p2)
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
