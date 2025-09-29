@@ -230,13 +230,12 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 /// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
 #[cfg(target_os = "windows")]
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
-    use windows::core::PCWSTR;
+    use windows::core::{Owned, PCWSTR};
     use windows::Win32::Security::Cryptography::{
         NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_PKCS1_PADDING_INFO,
         BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER, NCRYPT_FLAGS, NCRYPT_PAD_PKCS1_FLAG,
         NCRYPT_PIN_PROPERTY, NCRYPT_SILENT_FLAG,
     };
-    use windows_core::Owned;
 
     use crate::utils::{str_to_w_buff, string_to_utf16};
 

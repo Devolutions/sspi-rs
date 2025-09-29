@@ -11,6 +11,7 @@ use std::slice::from_raw_parts;
 use picky_asn1_x509::Certificate;
 use sha1::{Digest, Sha1};
 use sspi::{Error, ErrorKind, Result};
+use windows::core::PWSTR;
 use windows::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
     CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, AT_KEYEXCHANGE,
@@ -18,7 +19,6 @@ use windows::Win32::Security::Cryptography::{
     CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_FIRST, CRYPT_NEXT, CRYPT_SILENT, HCERTSTORE, KP_CERTIFICATE,
     PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
 };
-use windows_core::PWSTR;
 
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
