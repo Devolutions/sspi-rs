@@ -67,6 +67,22 @@ jobs:
             crate-name: sspi
           - manifest: ffi/Cargo.toml
             crate-name: sspi-ffi
+          - manifest: ffi/Cargo.toml
+            crate-name: sspi-ffi
+          - manifest: crates/dpapi/Cargo.toml
+            crate-name: dpapi
+          - manifest: crates/winscard/Cargo.toml
+            crate-name: winscard
+          - manifest: crates/dpapi-pdu/Cargo.toml
+            crate-name: dpapi-pdu
+          - manifest: crates/ffi-types/Cargo.toml
+            crate-name: ffi-types
+          - manifest: crates/dpapi-core/Cargo.toml
+            crate-name: dpapi-core
+          - manifest: crates/dpapi-transport/Cargo.toml
+            crate-name: dpapi-transport
+          - manifest: crates/dpapi-native-transport/Cargo.toml
+            crate-name: dpapi-native-transport
 
           - os: win
             runner: windows-2022
@@ -87,6 +103,10 @@ jobs:
 
           - os: win
             manifest: ffi/Cargo.toml
+            additional-args: --features tsssp
+
+          - os: win
+            manifest: crates/dpapi/Cargo.toml
             additional-args: --features tsssp
 
     steps:
