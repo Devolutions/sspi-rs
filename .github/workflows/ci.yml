@@ -67,8 +67,6 @@ jobs:
             crate-name: sspi
           - manifest: ffi/Cargo.toml
             crate-name: sspi-ffi
-          - manifest: ffi/Cargo.toml
-            crate-name: sspi-ffi
           - manifest: crates/dpapi/Cargo.toml
             crate-name: dpapi
           - manifest: crates/winscard/Cargo.toml
