@@ -61,8 +61,27 @@ jobs:
       fail-fast: true
       matrix:
         os: [ win, osx, linux ]
-        manifest: [ Cargo.toml, ffi/Cargo.toml ]
+        manifest:
+          - Cargo.toml
+          - ffi/Cargo.toml
+          - crates/dpapi/Cargo.toml
+          - crates/winscard/Cargo.toml
+          - crates/dpapi-pdu/Cargo.toml
+          - crates/ffi-types/Cargo.toml
+          - crates/dpapi-core/Cargo.toml
+          - crates/dpapi-transport/Cargo.toml
+          - crates/dpapi-native-transport/Cargo.toml
+
         include:
+          # Map runner per OS
+          - os: win
+            runner: windows-2022
+          - os: osx
+            runner: macos-14
+          - os: linux
+            runner: ubuntu-latest
+
+          # Map crate name per manifest
           - manifest: Cargo.toml
             crate-name: sspi
           - manifest: ffi/Cargo.toml
@@ -82,13 +101,7 @@ jobs:
           - manifest: crates/dpapi-native-transport/Cargo.toml
             crate-name: dpapi-native-transport
 
-          - os: win
-            runner: windows-2022
-          - os: osx
-            runner: macos-14
-          - os: linux
-            runner: ubuntu-latest
-
+          # Per-OS feature overrides for specific manifests
           - os: win
             manifest: Cargo.toml
             additional-args: --features network_client,dns_resolver,scard,tsssp
