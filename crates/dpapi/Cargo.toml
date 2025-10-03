@@ -31,7 +31,7 @@ sha2.workspace = true
 rand.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
-digest = "0.11.0-rc.1"
+digest = "0.11.0-rc.3"
 tracing = { workspace = true, default-features = true }
 whoami.workspace = true
 
@@ -41,7 +41,7 @@ dpapi-transport.workspace = true
 sspi = { path = "../..", version = "0.16" } # public
 
 kbkdf = "0.0.1"
-elliptic-curve = { version = "0.14.0-rc.14", features = ["sec1", "std"] }
+elliptic-curve = { version = "0.14.0-rc.15", features = ["sec1", "std"] }
 p521 = { version = "0.14.0-pre.11", features = ["ecdh"] }
 p256 = { version = "0.14.0-pre.11", features = ["ecdh"] }
 p384 = { version = "0.14.0-pre.11", features = ["ecdh"] }
