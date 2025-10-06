@@ -129,7 +129,7 @@ pub fn cek_encrypt(algorithm: &KeyEncryptionAlgorithmIdentifier, kek: &[u8], key
     })?;
     let kek = KekAes256::new(&kek);
     let mut out_buf = vec![0; aes_kw::IV_LEN + key.len()];
-    kek.wrap_key(&key, &mut out_buf)?;
+    kek.wrap_key(key, &mut out_buf)?;
     Ok(out_buf)
 }
 
@@ -460,7 +460,7 @@ pub fn compute_kek(
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
 
-                let secret_key = SecretKey::from_slice(&private_key).map_err(CryptoError::from)?;
+                let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let shared_secret: p256::ecdh::SharedSecret =
                     p256::ecdh::diffie_hellman(secret_key.to_nonzero_scalar(), public_key.as_affine());
 
@@ -560,7 +560,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
 
         let (x, y) = match ecdh_pub_key_info.curve {
             EllipticCurve::P256 => {
-                let secret_key = p256::SecretKey::from_slice(&private_key).map_err(CryptoError::from)?;
+                let secret_key = p256::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
@@ -570,7 +570,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
                 )
             }
             EllipticCurve::P384 => {
-                let secret_key = p384::SecretKey::from_slice(&private_key).map_err(CryptoError::from)?;
+                let secret_key = p384::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
@@ -580,7 +580,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
                 )
             }
             EllipticCurve::P521 => {
-                let secret_key = p521::SecretKey::from_slice(&private_key).map_err(CryptoError::from)?;
+                let secret_key = p521::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
