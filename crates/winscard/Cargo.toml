@@ -28,12 +28,13 @@ time = { workspace = true, features = [
 uuid = { workspace = true, features = ["v4"] }
 flate2 = { version = "1.1", features = ["zlib", "rust_backend"], default-features = false }
 rsa = { workspace = true, features = ["hazmat", "sha1"] }
-rand_core = "0.6"
+rand_core = "0.9"
 sha1.workspace = true
 base64 = { workspace = true , optional = true }
 picky-asn1-der = { workspace = true, optional = true }
 num-derive.workspace = true
 num-traits.workspace = true
+crypto-bigint.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

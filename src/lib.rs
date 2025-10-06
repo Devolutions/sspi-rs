@@ -98,7 +98,7 @@ use picky_krb::messages::KrbError;
 pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
 use utils::map_keb_error_code_to_sspi_error;
-pub use utils::{str_to_w_buff, string_to_utf16, utf16_bytes_to_utf8_string};
+pub use utils::{modpow, str_to_w_buff, string_to_utf16, utf16_bytes_to_utf8_string};
 
 pub use self::auth_identity::{
     AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, UserNameFormat, Username,
@@ -2265,6 +2265,16 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
                 ErrorKind::InvalidParameter,
                 format!("unknown algorithm identifier: {:?}", identifier),
             ),
+            KerberosCryptoError::RandError(rand) => {
+                Self::new(ErrorKind::InvalidParameter, format!("random error: {:?}", rand))
+            }
+            KerberosCryptoError::TooSmallBuffer(inout) => {
+                Self::new(ErrorKind::InvalidParameter, format!("too small buffer: {:?}", inout))
+            }
+            KerberosCryptoError::ArrayTryFromSliceError(array) => Self::new(
+                ErrorKind::InvalidParameter,
+                format!("array try from slice error: {:?}", array),
+            ),
         }
     }
 }
@@ -2304,8 +2314,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<rand::Error> for Error {
-    fn from(err: rand::Error) -> Self {
+impl From<getrandom::Error> for Error {
+    fn from(err: getrandom::Error) -> Self {
         Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
     }
 }

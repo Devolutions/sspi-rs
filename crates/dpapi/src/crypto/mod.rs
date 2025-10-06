@@ -1,20 +1,23 @@
 mod kout;
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Key};
-use aes_kw::KekAes256;
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{aes, Aes256Gcm, Key, KeySizeUser, Nonce};
+use aes_kw::AesKw;
+use digest::array::Array;
 use dpapi_core::str::{encode_utf16_le, str_utf16_len};
 use dpapi_core::{decode_owned, EncodeVec, WriteCursor};
 use dpapi_pdu::gkdi::{EcdhKey, EllipticCurve, FfcdhKey, GroupKeyEnvelope, HashAlg};
-use num_bigint_dig::BigUint;
+use elliptic_curve::bigint::{BoxedUint, Odd};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{oids, AesParameters, AlgorithmIdentifierParameters};
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
+use sspi::modpow;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
@@ -66,6 +69,15 @@ pub enum CryptoError {
 
     #[error("key derivation error: {0}")]
     Kbkdf(#[from] kbkdf::Error),
+
+    #[error(transparent)]
+    RandError(#[from] rand::rand_core::OsError),
+
+    #[error(transparent)]
+    StdRngCreateFailed(#[from] getrandom::Error),
+
+    #[error("invalid iv length(expected {expected}, but got {actual})")]
+    InvalidIvLength { actual: usize, expected: usize },
 }
 
 pub type CryptoResult<T> = std::result::Result<T, CryptoError>;
@@ -74,6 +86,8 @@ pub type CryptoResult<T> = std::result::Result<T, CryptoError>;
 pub const KDS_SERVICE_LABEL: &[u8] = &[
     75, 0, 68, 0, 83, 0, 32, 0, 115, 0, 101, 0, 114, 0, 118, 0, 105, 0, 99, 0, 101, 0, 0, 0,
 ];
+
+type KekAes256 = AesKw<aes::Aes256>;
 
 pub fn cek_decrypt(
     algorithm: &KeyEncryptionAlgorithmIdentifier,
@@ -88,9 +102,17 @@ pub fn cek_decrypt(
         });
     }
 
-    let kek = KekAes256::new(kek.into());
+    let key = Key::<Aes256Gcm>::try_from(kek).map_err(|_| CryptoError::InvalidKeyLength {
+        expected: Aes256Gcm::key_size(),
+        actual: kek.len(),
+    })?;
+    let kek = KekAes256::new(&key);
 
-    Ok(kek.unwrap_vec(wrapped_key)?)
+    let mut out_buf = vec![0; key.len()];
+
+    kek.unwrap_key(wrapped_key, &mut out_buf)?;
+
+    Ok(out_buf)
 }
 
 pub fn cek_encrypt(algorithm: &KeyEncryptionAlgorithmIdentifier, kek: &[u8], key: &[u8]) -> CryptoResult<Vec<u8>> {
@@ -101,10 +123,14 @@ pub fn cek_encrypt(algorithm: &KeyEncryptionAlgorithmIdentifier, kek: &[u8], key
             actual: algorithm.oid().into(),
         });
     }
-
-    let kek = KekAes256::new(kek.into());
-
-    Ok(kek.wrap_vec(key)?)
+    let kek = Key::<Aes256Gcm>::try_from(kek).map_err(|_| CryptoError::InvalidKeyLength {
+        expected: Aes256Gcm::key_size(),
+        actual: kek.len(),
+    })?;
+    let kek = KekAes256::new(&kek);
+    let mut out_buf = vec![0; aes_kw::IV_LEN + key.len()];
+    kek.wrap_key(key, &mut out_buf)?;
+    Ok(out_buf)
 }
 
 pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> CryptoResult<(Vec<u8>, Vec<u8>)> {
@@ -116,9 +142,10 @@ pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> CryptoResul
         });
     }
 
-    let mut rng = OsRng;
-    let cek = Aes256Gcm::generate_key(&mut rng);
-    let iv = rng.gen::<[u8; 12]>();
+    let mut rng = StdRng::try_from_os_rng()?;
+    let cek = Aes256Gcm::generate_key()?;
+    let mut iv = [0u8; 12];
+    rng.fill_bytes(&mut iv);
 
     Ok((cek.to_vec(), iv.to_vec()))
 }
@@ -157,9 +184,17 @@ pub fn content_decrypt(
     }
 
     let iv = extract_iv(algorithm.parameters())?;
+    let iv = Nonce::try_from(iv).map_err(|_| CryptoError::InvalidIvLength {
+        actual: iv.len(),
+        expected: 12,
+    })?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(cek));
-    Ok(cipher.decrypt(iv.into(), data)?)
+    let key = Key::<Aes256Gcm>::try_from(cek).map_err(|_| CryptoError::InvalidKeyLength {
+        expected: Aes256Gcm::key_size(),
+        actual: cek.len(),
+    })?;
+    let cipher = Aes256Gcm::new(&key);
+    Ok(cipher.decrypt(&iv, data)?)
 }
 
 pub fn content_encrypt(
@@ -176,13 +211,21 @@ pub fn content_encrypt(
     }
 
     let iv = extract_iv(algorithm.parameters())?;
+    let nonce = Nonce::try_from(iv).map_err(|_| CryptoError::InvalidIvLength {
+        actual: iv.len(),
+        expected: 12,
+    })?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(cek));
-    Ok(cipher.encrypt(iv.into(), plaintext)?)
+    let key = Key::<Aes256Gcm>::try_from(cek).map_err(|_| CryptoError::InvalidKeyLength {
+        expected: Aes256Gcm::key_size(),
+        actual: cek.len(),
+    })?;
+    let cipher = Aes256Gcm::new(&key);
+    Ok(cipher.encrypt(&nonce, plaintext)?)
 }
 
 pub fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], length: usize) -> CryptoResult<Vec<u8>> {
-    use hmac_pre::Hmac;
+    use hmac::Hmac;
     use kbkdf::{Counter, Kbkdf, Params};
     use kout::*;
 
@@ -200,16 +243,16 @@ pub fn kdf(algorithm: HashAlg, secret: &[u8], label: &[u8], context: &[u8], leng
 
     match algorithm {
         HashAlg::Sha1 => {
-            derive_key!(Hmac<sha1_pre::Sha1>, { 32 => Kout32, 64 => Kout64, });
+            derive_key!(Hmac<sha1::Sha1>, { 32 => Kout32, 64 => Kout64, });
         }
         HashAlg::Sha256 => {
-            derive_key!(Hmac<sha2_pre::Sha256>, { 32 => Kout32, 64 => Kout64, });
+            derive_key!(Hmac<sha2::Sha256>, { 32 => Kout32, 64 => Kout64, });
         }
         HashAlg::Sha384 => {
-            derive_key!(Hmac<sha2_pre::Sha384>, { 32 => Kout32, 64 => Kout64, });
+            derive_key!(Hmac<sha2::Sha384>, { 32 => Kout32, 64 => Kout64, });
         }
         HashAlg::Sha512 => {
-            derive_key!(Hmac<sha2_pre::Sha512>, { 32 => Kout32, 64 => Kout64, });
+            derive_key!(Hmac<sha2::Sha512>, { 32 => Kout32, 64 => Kout64, });
         }
     }
 
@@ -227,12 +270,21 @@ fn kdf_concat(
     other_info.extend_from_slice(party_uinfo);
     other_info.extend_from_slice(party_vinfo);
 
-    Ok(match algorithm {
-        HashAlg::Sha1 => concat_kdf::derive_key::<sha1::Sha1>(shared_secret, &other_info, 20)?,
-        HashAlg::Sha256 => concat_kdf::derive_key::<sha2::Sha256>(shared_secret, &other_info, 32)?,
-        HashAlg::Sha384 => concat_kdf::derive_key::<sha2::Sha384>(shared_secret, &other_info, 48)?,
-        HashAlg::Sha512 => concat_kdf::derive_key::<sha2::Sha512>(shared_secret, &other_info, 64)?,
-    })
+    let mut key = match algorithm {
+        HashAlg::Sha1 => vec![0; 20],
+        HashAlg::Sha256 => vec![0; 32],
+        HashAlg::Sha384 => vec![0; 48],
+        HashAlg::Sha512 => vec![0; 64],
+    };
+
+    match algorithm {
+        HashAlg::Sha1 => concat_kdf::derive_key_into::<sha1::Sha1>(shared_secret, &other_info, &mut key)?,
+        HashAlg::Sha256 => concat_kdf::derive_key_into::<sha2::Sha256>(shared_secret, &other_info, &mut key)?,
+        HashAlg::Sha384 => concat_kdf::derive_key_into::<sha2::Sha384>(shared_secret, &other_info, &mut key)?,
+        HashAlg::Sha512 => concat_kdf::derive_key_into::<sha2::Sha512>(shared_secret, &other_info, &mut key)?,
+    }
+
+    Ok(key)
 }
 
 fn compute_kdf_context(key_guid: Uuid, l0: i32, l1: i32, l2: i32) -> Vec<u8> {
@@ -375,10 +427,16 @@ pub fn compute_kek(
 ) -> Result<Vec<u8>> {
     let (shared_secret, secret_hash_algorithm) = if secret_algorithm == "DH" {
         let dh_pub_key: FfcdhKey = decode_owned(public_key)?;
-        let shared_secret = dh_pub_key
-            .public_key
-            .modpow(&BigUint::from_bytes_be(private_key), &dh_pub_key.field_order);
-        let mut shared_secret = shared_secret.to_bytes_be();
+        let modulus = Odd::new(dh_pub_key.field_order)
+            .into_option()
+            .ok_or(Error::ModulusIsNotOdd)?;
+
+        let shared_secret = modpow(
+            &dh_pub_key.public_key,
+            &BoxedUint::from_be_slice_vartime(private_key),
+            modulus,
+        );
+        let mut shared_secret = shared_secret.to_be_bytes_trimmed_vartime().into_vec();
 
         while shared_secret.len() < usize::try_from(dh_pub_key.key_length)? {
             shared_secret.insert(0, 0);
@@ -386,7 +444,6 @@ pub fn compute_kek(
 
         (shared_secret, HashAlg::Sha256)
     } else if secret_algorithm.starts_with("ECDH_P") {
-        use elliptic_curve::scalar::ScalarPrimitive;
         use elliptic_curve::sec1::FromEncodedPoint;
         use elliptic_curve::{PublicKey, SecretKey};
 
@@ -394,45 +451,46 @@ pub fn compute_kek(
 
         match ecdh_pub_key_info.curve {
             EllipticCurve::P256 => {
+                let x = Array::try_from(ecdh_pub_key_info.x.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
+                let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let public_key: p256::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p256::EncodedPoint::from_affine_coordinates(
-                        ecdh_pub_key_info.x.to_bytes_be().as_slice().into(),
-                        ecdh_pub_key_info.y.to_bytes_be().as_slice().into(),
-                        false,
-                    ),
+                    &p256::EncodedPoint::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
-                let secret_key = SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+
+                let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let shared_secret: p256::ecdh::SharedSecret =
                     p256::ecdh::diffie_hellman(secret_key.to_nonzero_scalar(), public_key.as_affine());
 
                 (shared_secret.raw_secret_bytes().as_slice().to_vec(), HashAlg::Sha256)
             }
             EllipticCurve::P384 => {
+                let x = Array::try_from(ecdh_pub_key_info.x.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
+                let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let public_key: p384::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p384::EncodedPoint::from_affine_coordinates(
-                        ecdh_pub_key_info.x.to_bytes_be().as_slice().into(),
-                        ecdh_pub_key_info.y.to_bytes_be().as_slice().into(),
-                        false,
-                    ),
+                    &p384::EncodedPoint::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
-                let secret_key = SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+                let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let shared_secret: p384::ecdh::SharedSecret =
                     p384::ecdh::diffie_hellman(secret_key.to_nonzero_scalar(), public_key.as_affine());
 
                 (shared_secret.raw_secret_bytes().as_slice().to_vec(), HashAlg::Sha384)
             }
             EllipticCurve::P521 => {
+                let x = Array::try_from(ecdh_pub_key_info.x.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
+                let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
+                    .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let public_key: p521::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p521::EncodedPoint::from_affine_coordinates(
-                        ecdh_pub_key_info.x.to_bytes_be().as_slice().into(),
-                        ecdh_pub_key_info.y.to_bytes_be().as_slice().into(),
-                        false,
-                    ),
+                    &p521::EncodedPoint::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
-                let secret_key = SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+                let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let shared_secret: p521::ecdh::SharedSecret =
                     p384::ecdh::diffie_hellman(secret_key.to_nonzero_scalar(), public_key.as_affine());
 
@@ -483,7 +541,10 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             public_key: _,
         } = decode_owned(peer_public_key)?;
 
-        let my_pub_key = generator.modpow(&BigUint::from_bytes_be(private_key), &field_order);
+        let modulus = Odd::new(field_order.clone())
+            .into_option()
+            .ok_or(Error::ModulusIsNotOdd)?;
+        let my_pub_key = modpow(&generator, &BoxedUint::from_be_slice_vartime(private_key), modulus);
 
         Ok(FfcdhKey {
             key_length,
@@ -493,43 +554,39 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
         }
         .encode_vec()?)
     } else if secret_algorithm.starts_with("ECDH_P") {
-        use elliptic_curve::scalar::ScalarPrimitive;
         use elliptic_curve::sec1::ToEncodedPoint;
 
         let ecdh_pub_key_info: EcdhKey = decode_owned(peer_public_key)?;
 
         let (x, y) = match ecdh_pub_key_info.curve {
             EllipticCurve::P256 => {
-                let secret_key =
-                    p256::SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+                let secret_key = p256::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
                 (
-                    BigUint::from_bytes_be(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
-                    BigUint::from_bytes_be(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
+                    BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
+                    BoxedUint::from_be_slice_vartime(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
                 )
             }
             EllipticCurve::P384 => {
-                let secret_key =
-                    p384::SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+                let secret_key = p384::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
                 (
-                    BigUint::from_bytes_be(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
-                    BigUint::from_bytes_be(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
+                    BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
+                    BoxedUint::from_be_slice_vartime(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
                 )
             }
             EllipticCurve::P521 => {
-                let secret_key =
-                    p521::SecretKey::new(ScalarPrimitive::from_slice(private_key).map_err(CryptoError::from)?);
+                let secret_key = p521::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
                 let point = public_key.to_encoded_point(false);
 
                 (
-                    BigUint::from_bytes_be(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
-                    BigUint::from_bytes_be(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
+                    BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
+                    BoxedUint::from_be_slice_vartime(point.y().ok_or(CryptoError::MissingPointCoordinate("y"))?),
                 )
             }
         };

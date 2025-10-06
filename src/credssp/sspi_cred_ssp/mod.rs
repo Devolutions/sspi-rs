@@ -5,8 +5,8 @@ use std::sync::{Arc, LazyLock};
 
 use async_recursion::async_recursion;
 use picky_asn1_x509::Certificate;
-use rand::rngs::OsRng;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use rustls::client::ClientConfig;
 use rustls::{ClientConnection, Connection};
 
@@ -64,12 +64,16 @@ impl SspiCredSsp {
             )
         })?;
 
+        let mut nonce = [0; NONCE_SIZE];
+        let mut rand = StdRng::try_from_os_rng()?;
+        rand.fill_bytes(&mut nonce);
+
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
             auth_identity: None,
             tls_connection: None,
-            nonce: Some(OsRng.gen::<[u8; NONCE_SIZE]>()),
+            nonce: Some(nonce),
         })
     }
 

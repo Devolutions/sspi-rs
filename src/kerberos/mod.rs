@@ -18,8 +18,8 @@ use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutCheck
 use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::KdcProxyMessage;
-use rand::rngs::OsRng;
-use rand::Rng;
+use rand::prelude::StdRng;
+use rand::{RngCore, SeedableRng};
 use url::Url;
 
 pub use self::client::initialize_security_context;
@@ -107,13 +107,14 @@ pub struct Kerberos {
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
+        let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
-            seq_number: OsRng.gen::<u32>(),
+            seq_number: rand.next_u32(),
             realm: None,
             kdc_url,
             channel_bindings: None,
@@ -126,13 +127,14 @@ impl Kerberos {
 
     pub fn new_server_from_config(config: KerberosConfig, server_properties: ServerProperties) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
+        let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
             state: KerberosState::Negotiate,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
-            seq_number: OsRng.gen::<u32>(),
+            seq_number: rand.next_u32(),
             realm: None,
             kdc_url,
             channel_bindings: None,

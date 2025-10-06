@@ -3,8 +3,8 @@ use dpapi_core::{compute_padding, decode_owned, read_padding, DecodeOwned, ReadC
 use dpapi_pdu::gkdi::{GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
 use dpapi_pdu::rpc::SyntaxId;
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
-use rand::rngs::OsRng;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 use thiserror::Error;
 use uuid::uuid;
 
@@ -76,20 +76,22 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
     let kdf_parameters: KdfParameters = decode_owned(group_key.kdf_parameters.as_slice())?;
     let hash_alg = kdf_parameters.hash_alg;
 
-    let mut rand = OsRng;
+    let mut rand = StdRng::try_from_os_rng()?;
 
     let (kek, key_info) = if group_key.is_public_key() {
         // the L2 key is the peer's public key
 
         let mut private_key = vec![0; group_key.private_key_length.div_ceil(8).try_into()?];
-        rand.fill(private_key.as_mut_slice());
+        rand.fill_bytes(private_key.as_mut_slice());
 
         let kek = compute_kek(hash_alg, &group_key.secret_algorithm, &private_key, &group_key.l2_key)?;
         let key_info = compute_public_key(&group_key.secret_algorithm, &private_key, &group_key.l2_key)?;
 
         (kek, key_info)
     } else {
-        let key_info = rand.gen::<[u8; AES256_KEY_SIZE]>();
+        let mut key_info = [0u8; AES256_KEY_SIZE];
+        rand.fill_bytes(key_info.as_mut_slice());
+
         let kek = kdf(
             hash_alg,
             &group_key.l2_key,
