@@ -8,47 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-10-06
 
-### <!-- 0 -->Security
-
-- [**breaking**] Fix lifetimes in initialize_security_context_impl (#495) ([370951c1b0](https://github.com/Devolutions/sspi-rs/commit/370951c1b017bfef4276185b374345e8b6b1e532)) 
-
-  Replace &'a mut Struct<'a> anti-pattern with separate lifetimes for
-  better flexibility. The previous signature forced all lifetimes to be
-  the same, preventing generators from outliving their initialization
-  parameters.
-
 ### <!-- 1 -->Features
 
-- Implement system-provided smart card credentials handling (#483) ([786aae5ea1](https://github.com/Devolutions/sspi-rs/commit/786aae5ea14b76a4bcf262ed10a0ec9ca153ae1f)) 
-
-- Implement data sigining using scard (#491) ([6728fb525c](https://github.com/Devolutions/sspi-rs/commit/6728fb525cedc96b395eed5dc4a8ea357b036b36)) 
+- Data sigining using scard (#491) ([6728fb525c](https://github.com/Devolutions/sspi-rs/commit/6728fb525cedc96b395eed5dc4a8ea357b036b36)) 
 
 ### <!-- 4 -->Bug Fixes
 
 - [**breaking**] Move `cert_utils` from `sspi` crate to `ffi` (#507) ([c9337c8f64](https://github.com/Devolutions/sspi-rs/commit/c9337c8f64a6236396242275847989a35db735ac)) 
 
+- [**breaking**] Fix lifetimes in initialize_security_context_impl (#495) ([370951c1b0](https://github.com/Devolutions/sspi-rs/commit/370951c1b017bfef4276185b374345e8b6b1e532)) 
+
 ### <!-- 7 -->Build
 
-- Bump the windows group across 1 directory with 2 updates (#497) ([943fa29112](https://github.com/Devolutions/sspi-rs/commit/943fa29112a5d181a42d068002d8943f0ae2d6c1)) 
-
-- Optimize binary size for FFI builds ([d9d13bd356](https://github.com/Devolutions/sspi-rs/commit/d9d13bd3566fa35ecfb04c592b61371a10ae0d65)) 
-
-  Aim for good balance between size and performance.
-  
-  - Baseline: 19M
-  - After: 8.9M
-
-- Bump the windows group across 1 directory with 2 updates (#500) ([b7cf6b5257](https://github.com/Devolutions/sspi-rs/commit/b7cf6b52574853c92f12a4843f8ff23314c07ca3)) 
-
-- Bump the patch group across 1 directory with 11 updates (#505) ([29ad5d907d](https://github.com/Devolutions/sspi-rs/commit/29ad5d907d50198255df3ab176ee40b080ecd314)) 
-
-- Bump windows-registry from 0.5.3 to 0.6.0 (#502) ([e5221a475e](https://github.com/Devolutions/sspi-rs/commit/e5221a475efa0614cecfed2e52737fe5377c7a68)) 
-
-- Bump the patch group across 1 directory with 2 updates (#511) ([c63bd08824](https://github.com/Devolutions/sspi-rs/commit/c63bd0882497d9f690d0cf332c94252da4076fdd)) 
+- Bump the windows crates
 
 - Bump the crypto dependencies (#489) ([1ecba764ec](https://github.com/Devolutions/sspi-rs/commit/1ecba764ec3b04e147ae76d018414afa8bec5f88)) 
-
-
 
 ## [[0.16.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.0...sspi-v0.16.1)] - 2025-08-19
 

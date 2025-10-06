@@ -56,7 +56,7 @@ tokio = "1.47"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.2", path = "crates/winscard" }
 
-dpapi = { version = "0.2.0", path = "crates/dpapi" }
+dpapi = { version = "0.3.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
 dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
