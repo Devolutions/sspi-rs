@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-10-06
+
+### <!-- 1 -->Features
+
+- Data sigining using scard (#491) ([6728fb525c](https://github.com/Devolutions/sspi-rs/commit/6728fb525cedc96b395eed5dc4a8ea357b036b36)) 
+
+### <!-- 4 -->Bug Fixes
+
+- [**breaking**] Move `cert_utils` from `sspi` crate to `ffi` (#507) ([c9337c8f64](https://github.com/Devolutions/sspi-rs/commit/c9337c8f64a6236396242275847989a35db735ac)) 
+
+- [**breaking**] Fix lifetimes in initialize_security_context_impl (#495) ([370951c1b0](https://github.com/Devolutions/sspi-rs/commit/370951c1b017bfef4276185b374345e8b6b1e532)) 
+
+### <!-- 7 -->Build
+
+- Bump the windows crates
+
+- Bump the crypto dependencies (#489) ([1ecba764ec](https://github.com/Devolutions/sspi-rs/commit/1ecba764ec3b04e147ae76d018414afa8bec5f88)) 
+
 ## [[0.16.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.0...sspi-v0.16.1)] - 2025-08-19
 
 ### <!-- 1 -->Features

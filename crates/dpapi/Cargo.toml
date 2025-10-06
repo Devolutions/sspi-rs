@@ -1,6 +1,6 @@
 [package]
 name = "dpapi"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 readme = "README.md"
 license = "MIT/Apache-2.0"
@@ -38,7 +38,7 @@ whoami.workspace = true
 dpapi-core = { workspace = true, features = ["alloc"] }
 dpapi-pdu.workspace = true
 dpapi-transport.workspace = true
-sspi = { path = "../..", version = "0.16" } # public
+sspi = { path = "../..", version = "0.17" } # public
 
 kbkdf = "0.0.1"
 elliptic-curve = { version = "0.14.0-rc.15", features = ["sec1", "std"] }
