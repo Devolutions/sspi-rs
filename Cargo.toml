@@ -70,7 +70,7 @@ tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
-crypto-bigint = { version = "0.7.0-rc.8", default-features = false }
+crypto-bigint = { version = "0.7.0-rc.8", default-features = false, features = ["alloc"] }
 hmac = "0.13.0-rc.2"
 
 [features]
