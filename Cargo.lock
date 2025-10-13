@@ -1581,9 +1581,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.176"
+version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58f929b4d672ea937a23a1ab494143d968337a5f47e56d0815df1e0890ddf174"
+checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
 name = "libloading"
@@ -2007,9 +2007,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1-x509"
-version = "0.15.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "331bb7ea2acf5aea126a2182b34c287effc35d0d3542b473eec0a050844bc153"
+checksum = "1aabb518a46486587cd22928d3444925eb7559579db3aa9ef153315f53d09602"
 dependencies = [
  "base64",
  "num-bigint-dig",
@@ -2023,15 +2023,20 @@ dependencies = [
 
 [[package]]
 name = "picky-krb"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99aa3fd040dfd626faed16a278fec442e1f257db27a4e390cdd3aca4662b5d2b"
+checksum = "14b13eb1a97b2293277b475f07d0c36c33579e2e71f852557015addcd95f8892"
 dependencies = [
  "aes",
+ "block-buffer 0.11.0-rc.5",
+ "block-padding",
  "byteorder",
  "cbc",
+ "cipher",
  "crypto-bigint",
+ "crypto-common 0.2.0-rc.4",
  "des",
+ "digest 0.11.0-rc.3",
  "hmac",
  "inout",
  "oid",
@@ -2042,7 +2047,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "sha1 0.11.0-rc.2",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "uuid",
 ]
 
