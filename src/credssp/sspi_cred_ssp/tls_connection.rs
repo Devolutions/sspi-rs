@@ -10,7 +10,7 @@ use crate::{
 };
 
 // type + version + length
-pub const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVersion */ + 2 /* length: uint16 */;
+pub(super) const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* ProtocolVersion */ + 2 /* length: uint16 */;
 
 // The Secure Sockets Layer (SSL) Protocol Version 3.0
 // https://datatracker.ietf.org/doc/html/rfc6101#page-14
@@ -29,12 +29,12 @@ const TLS_APPLICATION_DATA_CONTENT_TYPE: u8 = 0x17;
 // Also, the CredSSP Protocol does not require the client to have a commonly trusted certification authority root with the CredSSP server.
 //
 // This configuration just accepts any certificate
-pub mod danger {
+pub(super) mod danger {
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
 
     #[derive(Debug)]
-    pub struct NoCertificateVerification;
+    pub(crate) struct NoCertificateVerification;
 
     impl ServerCertVerifier for NoCertificateVerification {
         fn verify_server_cert(
@@ -115,7 +115,7 @@ struct TlsTrafficParts<'data> {
 /// * SECBUFFER_EXTRA. It contains the rest of the unprocessed TLS traffic. Usually, the start of this buffer
 ///   points to the start of the next TLS packet in the input buffer.
 #[derive(Debug)]
-pub struct DecryptionResultBuffers<'data> {
+pub(super) struct DecryptionResultBuffers<'data> {
     /// TLS packet header with the sequence number.
     pub header: &'data mut [u8],
     /// Decrypted data.
@@ -130,7 +130,7 @@ pub struct DecryptionResultBuffers<'data> {
 /// and needs more bytes to perform the decryption. Such a situation is not an actual error but,
 /// on the other hand, there is no data to return. So, this is why the [DecryptionResult::IncompleteMessage] exists.
 #[derive(Debug)]
-pub enum DecryptionResult<'data> {
+pub(super) enum DecryptionResult<'data> {
     /// Indicated successful TLS packet decryption.
     Success(DecryptionResultBuffers<'data>),
     /// Indicated that the input buffer is too small to perform the decryption and
@@ -139,7 +139,7 @@ pub enum DecryptionResult<'data> {
 }
 
 #[derive(Debug)]
-pub enum TlsConnection {
+pub(super) enum TlsConnection {
     Rustls(Connection),
     // Schannel
 }
@@ -153,7 +153,7 @@ enum FindTlsPacketResult<'data> {
 }
 
 impl TlsConnection {
-    pub fn encrypt_tls(&mut self, plain_data: &[u8]) -> Result<Vec<u8>> {
+    pub(super) fn encrypt_tls(&mut self, plain_data: &[u8]) -> Result<Vec<u8>> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let mut writer = tls_connection.writer();
@@ -268,7 +268,7 @@ impl TlsConnection {
     /// Decrypt a part of the incoming TLS traffic.
     ///
     /// If the input buffer contains more than one TLS message,then only the first one will be decrypted.
-    pub fn decrypt_tls<'a>(&mut self, payload: &'a mut [u8]) -> Result<DecryptionResult<'a>> {
+    pub(super) fn decrypt_tls<'a>(&mut self, payload: &'a mut [u8]) -> Result<DecryptionResult<'a>> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let mut tls_packet = match TlsConnection::find_tls_data_to_decrypt(tls_connection, payload)? {
@@ -318,7 +318,7 @@ impl TlsConnection {
         }
     }
 
-    pub fn peer_certificates(&self) -> Result<Vec<&[u8]>> {
+    pub(super) fn peer_certificates(&self) -> Result<Vec<&[u8]>> {
         match self {
             TlsConnection::Rustls(tls_connection) => tls_connection
                 .peer_certificates()
@@ -327,7 +327,7 @@ impl TlsConnection {
         }
     }
 
-    pub fn process_tls_packets(&mut self, mut input_token: &[u8]) -> Result<(usize, Vec<u8>)> {
+    pub(super) fn process_tls_packets(&mut self, mut input_token: &[u8]) -> Result<(usize, Vec<u8>)> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 if !input_token.is_empty() {
@@ -346,7 +346,7 @@ impl TlsConnection {
         }
     }
 
-    pub fn stream_sizes(&self) -> Result<StreamSizes> {
+    pub(super) fn stream_sizes(&self) -> Result<StreamSizes> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let connection_cipher = tls_connection
@@ -374,7 +374,7 @@ impl TlsConnection {
         }
     }
 
-    pub fn connection_info(&self) -> Result<ConnectionInfo> {
+    pub(super) fn connection_info(&self) -> Result<ConnectionInfo> {
         match self {
             TlsConnection::Rustls(tls_connection) => {
                 let protocol_version = tls_connection.protocol_version().ok_or_else(|| {
@@ -449,7 +449,7 @@ impl TlsConnection {
         }
     }
 
-    pub fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
+    pub(super) fn raw_peer_public_key(&self) -> Result<Vec<u8>> {
         let certificates = self.peer_certificates()?;
         let peer_certificate = certificates
             .first()

@@ -14,7 +14,7 @@ use super::GetSessionTokenFn as CGetSessionTokenFn;
 /// # Safety
 ///
 /// The C function pointer must be safe to call provided parameters are valid.
-pub unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSessionTokenFn> {
+pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
         Box::pin(async move {
             let (data1, data2, data3, data4) = session_id.as_fields();

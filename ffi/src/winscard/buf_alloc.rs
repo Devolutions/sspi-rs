@@ -6,7 +6,7 @@ use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::scard_handle::{OutBuffer, RequestedBufferType};
 
-pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
+pub(super) const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 
 /// This function decides how to treat the provided buffer by the user and how to return the requested data.
 ///
@@ -16,7 +16,7 @@ pub const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 /// * write data length of the requested data in the provided length pointer.
 /// * allocate data by ourselves and write data pointer in the provided buffer.
 #[instrument(level = "debug", ret)]
-pub unsafe fn build_buf_request_type<'data>(
+pub(super) unsafe fn build_buf_request_type<'data>(
     p_buf: LpByte,
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
@@ -46,7 +46,7 @@ pub unsafe fn build_buf_request_type<'data>(
 /// This function behaves as the [build_buf_request_type] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is multiplied by two.
 #[instrument(level = "debug", ret)]
-pub unsafe fn build_buf_request_type_wide<'data>(
+pub(super) unsafe fn build_buf_request_type_wide<'data>(
     p_buf: LpWStr,
     pcb_buf: LpDword,
 ) -> WinScardResult<RequestedBufferType<'data>> {
@@ -74,7 +74,7 @@ pub unsafe fn build_buf_request_type_wide<'data>(
 }
 
 /// Saves the resulting data after the [RequestedBufferType] processing.
-pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
+pub(super) unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
     if pcb_buf.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
@@ -120,7 +120,7 @@ pub unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) 
 /// This function behaves as the [save_out_buf] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is divided by two.
 #[instrument(level = "debug", ret)]
-pub unsafe fn save_out_buf_wide(out_buf: OutBuffer, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
+pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
     if pcb_buf.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }

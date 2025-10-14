@@ -33,7 +33,7 @@ pub enum Error {
     UrlParse(#[from] url::ParseError),
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
+pub(crate) type Result<T> = core::result::Result<T, Error>;
 
 /// Target server connection options.
 pub enum ConnectOptions {

@@ -39,7 +39,7 @@ use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// [The PKU2U Realm Name](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-09#section-3)
 /// The PKU2U realm name is defined as a reserved Kerberos realm name, and it has the value of "WELLKNOWN:PKU2U".
-pub const WELLKNOWN_REALM: &str = "WELLKNOWN:PKU2U";
+pub(super) const WELLKNOWN_REALM: &str = "WELLKNOWN:PKU2U";
 
 /// [The GSS-API Binding for PKU2U](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-04#section-6)
 /// The type for the checksum extension.
@@ -62,12 +62,12 @@ const MACHINE_ID: [u8; 32] = [
 ];
 
 // returns supported authentication types
-pub fn get_mech_list() -> MechTypeList {
+pub(super) fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::negoex()), MechType::from(oids::ntlm_ssp())])
 }
 
 #[instrument(level = "debug", ret)]
-pub fn generate_pku2u_nego_req(service_names: &[&str], config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
+pub(super) fn generate_pku2u_nego_req(service_names: &[&str], config: &Pku2uConfig) -> Result<Pku2uNegoReq> {
     let mut snames = Vec::with_capacity(service_names.len());
     for sname in service_names {
         snames.push(KerberosStringAsn1::from(IA5String::from_str(sname)?));
@@ -90,7 +90,7 @@ pub fn generate_pku2u_nego_req(service_names: &[&str], config: &Pku2uConfig) -> 
 }
 
 #[instrument(level = "trace", ret)]
-pub fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<ApplicationTag0<GssApiNegInit>> {
+pub(super) fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<ApplicationTag0<GssApiNegInit>> {
     Ok(ApplicationTag0(GssApiNegInit {
         oid: ObjectIdentifierAsn1::from(oids::spnego()),
         neg_token_init: ExplicitContextTag0::from(NegTokenInit {
@@ -103,7 +103,7 @@ pub fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<ApplicationTag0<Gs
 }
 
 #[instrument(level = "trace", ret)]
-pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+pub(super) fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<NegTokenTarg>> {
     Ok(ExplicitContextTag1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
         supported_mech: Optional::from(None),
@@ -113,7 +113,7 @@ pub fn generate_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<Neg
 }
 
 /// returns (p, g, q)
-pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+pub(super) fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     (
         vec![
             255, 255, 255, 255, 255, 255, 255, 255, 201, 15, 218, 162, 33, 104, 194, 52, 196, 198, 98, 139, 128, 220,
@@ -145,7 +145,7 @@ pub fn get_default_parameters() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     )
 }
 
-pub fn generate_server_dh_parameters(rng: &mut StdRng) -> Result<DhParameters> {
+pub(super) fn generate_server_dh_parameters(rng: &mut StdRng) -> Result<DhParameters> {
     let mut server_nonce = [0; RANDOM_ARRAY_SIZE];
     rng.fill_bytes(&mut server_nonce);
     Ok(DhParameters {
@@ -178,7 +178,7 @@ pub fn generate_client_dh_parameters(rng: &mut StdRng) -> DhParameters {
     }
 }
 
-pub fn generate_neg<T: Debug + PartialEq + Clone>(
+pub(super) fn generate_neg<T: Debug + PartialEq + Clone>(
     krb_msg: T,
     krb5_token_id: [u8; 2],
 ) -> ApplicationTag<KrbMessage<T>, 0> {
@@ -310,7 +310,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<A
     }))
 }
 
-pub fn generate_as_req_username_from_certificate(certificate: &Certificate) -> Result<String> {
+pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificate) -> Result<String> {
     let mut username = "AzureAD\\".to_owned();
 
     let mut issuer = false;

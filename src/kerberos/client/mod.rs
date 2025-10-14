@@ -5,7 +5,7 @@ pub mod generators;
 
 use std::io::Write;
 
-pub use as_exchange::as_exchange;
+pub(crate) use as_exchange::as_exchange;
 pub use change_password::change_password;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;

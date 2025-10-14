@@ -9,7 +9,7 @@ use crate::kerberos::utils::serialize_message;
 use crate::{Error, ErrorKind, Kerberos, Result};
 
 /// Performs AS exchange as specified in [RFC 4210: The Authentication Service Exchange](https://www.rfc-editor.org/rfc/rfc4120#section-3.1).
-pub async fn as_exchange(
+pub(crate) async fn as_exchange(
     client: &mut Kerberos,
     yield_point: &mut YieldPointLocal,
     kdc_req_body: &KdcReqBody,

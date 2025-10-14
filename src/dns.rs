@@ -11,7 +11,7 @@ cfg_if::cfg_if! {
         use std::ptr::{null_mut};
         use core::ffi::{c_void};
 
-        pub fn dns_query_srv_records(name: &str) -> Vec<String> {
+        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<String> {
             let mut records = Vec::new();
             unsafe {
                 let mut p_query_results: *mut DNS_RECORDA = null_mut();
@@ -33,13 +33,13 @@ cfg_if::cfg_if! {
             records
         }
 
-        pub struct DnsClientNrptRule {
+        pub(crate) struct DnsClientNrptRule {
             rule_name: String,
             namespace: String,
             name_servers: Vec<String>
         }
 
-        pub fn get_dns_client_nrpt_rules() -> Vec<DnsClientNrptRule> {
+        pub(crate) fn get_dns_client_nrpt_rules() -> Vec<DnsClientNrptRule> {
             let mut rules: Vec<DnsClientNrptRule> = Vec::new();
             let hklm = LOCAL_MACHINE;
             let dns_policy_config_key_path = "System\\CurrentControlSet\\Services\\Dnscache\\Parameters\\DnsPolicyConfig";
@@ -63,7 +63,7 @@ cfg_if::cfg_if! {
             rules
         }
 
-        pub fn get_default_name_servers() -> Vec<String> {
+        pub(crate) fn get_default_name_servers() -> Vec<String> {
             let hklm = LOCAL_MACHINE;
             let tcpip_linkage_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Linkage";
             let tcpip_interfaces_key_path = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces";
@@ -95,7 +95,7 @@ cfg_if::cfg_if! {
             Vec::new()
         }
 
-        pub fn get_name_servers_for_domain(domain: &str) -> Vec<String> {
+        pub(crate) fn get_name_servers_for_domain(domain: &str) -> Vec<String> {
             let domain_namespace = if domain.starts_with('.') {
                 domain.to_string()
             } else {
@@ -111,7 +111,7 @@ cfg_if::cfg_if! {
             get_default_name_servers()
         }
 
-        pub fn detect_kdc_hosts_from_dns_windows(domain: &str) -> Vec<String> {
+        pub(crate) fn detect_kdc_hosts_from_dns_windows(domain: &str) -> Vec<String> {
             let krb_tcp_name = &format!("_kerberos._tcp.{}", domain);
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
@@ -309,7 +309,7 @@ cfg_if::cfg_if! {
             }
         }
 
-        pub fn detect_kdc_hosts_from_dns_resolver(domain: &str) -> Vec<String> {
+        pub(crate) fn detect_kdc_hosts_from_dns_resolver(domain: &str) -> Vec<String> {
             let mut kdc_hosts = Vec::new();
 
             if let Some(resolver) = get_dns_resolver(domain) {
@@ -372,7 +372,7 @@ where
 
 #[allow(unused_variables)]
 #[instrument(level = "debug", ret)]
-pub fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
+pub(crate) fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
     cfg_if::cfg_if! {
         if #[cfg(windows)] {
             detect_kdc_hosts_from_dns_windows(domain)

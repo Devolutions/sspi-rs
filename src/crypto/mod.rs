@@ -5,16 +5,16 @@ use std::io;
 use hmac::KeyInit;
 use md4::Md4;
 use md5::{Digest as _, Md5};
-pub use rc4::Rc4;
+pub(crate) use rc4::Rc4;
 use sha2::Sha256;
 
 use crate::channel_bindings::ChannelBindings;
 
-pub const HASH_SIZE: usize = 16;
+pub(crate) const HASH_SIZE: usize = 16;
 
 const SHA256_SIZE: usize = 32;
 
-pub fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
+pub(crate) fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
     use md4::Digest as _;
 
     let mut context = Md4::new();
@@ -25,7 +25,7 @@ pub fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
     result
 }
 
-pub fn compute_md5(data: &[u8]) -> [u8; HASH_SIZE] {
+pub(crate) fn compute_md5(data: &[u8]) -> [u8; HASH_SIZE] {
     let mut context = Md5::new();
     let mut result = [0x00; HASH_SIZE];
     context.update(data);
@@ -34,7 +34,7 @@ pub fn compute_md5(data: &[u8]) -> [u8; HASH_SIZE] {
     result
 }
 
-pub fn compute_md5_channel_bindings_hash(channel_bindings: &ChannelBindings) -> [u8; HASH_SIZE] {
+pub(crate) fn compute_md5_channel_bindings_hash(channel_bindings: &ChannelBindings) -> [u8; HASH_SIZE] {
     let mut context = Md5::new();
     let mut result = [0x00; HASH_SIZE];
 
@@ -57,7 +57,7 @@ pub fn compute_md5_channel_bindings_hash(channel_bindings: &ChannelBindings) -> 
     result
 }
 
-pub fn compute_sha256(data: &[u8]) -> [u8; SHA256_SIZE] {
+pub(crate) fn compute_sha256(data: &[u8]) -> [u8; SHA256_SIZE] {
     let mut context = Sha256::new();
     let mut result = [0x00; SHA256_SIZE];
     context.update(data);
@@ -66,7 +66,7 @@ pub fn compute_sha256(data: &[u8]) -> [u8; SHA256_SIZE] {
     result
 }
 
-pub fn compute_hmac_md5(key: &[u8], input: &[u8]) -> io::Result<[u8; HASH_SIZE]> {
+pub(crate) fn compute_hmac_md5(key: &[u8], input: &[u8]) -> io::Result<[u8; HASH_SIZE]> {
     use hmac::Mac as _;
 
     let mut mac = hmac::Hmac::<Md5>::new_from_slice(key)

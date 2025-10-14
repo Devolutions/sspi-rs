@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::kerberos::encryption_params::EncryptionParams;
 use crate::{Error, ErrorKind, Result};
 
-pub fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
+pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
     let mut data = Vec::new();
     // 4 bytes: length of the message
     data.write_all(&[0, 0, 0, 0])?;
@@ -21,7 +21,7 @@ pub fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
+pub(super) fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
     raw_token: &[u8],
     key_usage: i32,
     params: &EncryptionParams,
@@ -77,7 +77,7 @@ pub fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
     Ok(())
 }
 
-pub fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key: &[u8]) -> Result<Vec<u8>> {
     let mut mic_token = MicToken::with_initiator_flags().with_seq_number(seq_number);
 
     payload.extend_from_slice(&mic_token.header());
@@ -95,7 +95,7 @@ pub fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key
     Ok(mic_token_raw)
 }
 
-pub fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
+pub(super) fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
     if let Some(hostname) = hostname {
         Ok(hostname.into())
     } else {
