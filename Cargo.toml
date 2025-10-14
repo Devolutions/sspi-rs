@@ -41,8 +41,8 @@ rand = "0.9"
 getrandom = "0.3"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
-sha1 = { version = "0.11.0-rc.2", default-features = false }
-sha2 = "0.11.0-rc.2"
+sha1 = { version = "=0.11.0-rc.2", default-features = false }
+sha2 = "=0.11.0-rc.2"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
@@ -62,7 +62,7 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
-rsa = { version = "0.10.0-rc.9", default-features = false }
+rsa = { version = "=0.10.0-rc.9", default-features = false }
 windows-sys = "0.60"
 base64 = "0.22"
 whoami = "1.6"
@@ -70,8 +70,8 @@ tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
-crypto-bigint = { version = "0.7.0-rc.8", default-features = false, features = ["alloc"] }
-hmac = "0.13.0-rc.2"
+crypto-bigint = { version = "=0.7.0-rc.8", default-features = false, features = ["alloc"] }
+hmac = "=0.13.0-rc.2"
 
 [features]
 default = ["aws-lc-rs"]
@@ -122,7 +122,7 @@ crypto-bigint.workspace = true
 hmac.workspace = true
 url = "2.5"
 
-md-5 = "0.11.0-rc.2"
+md-5 = "=0.11.0-rc.2"
 md4 = "0.10"
 crypto-mac = "0.11"
 lazy_static = "1.5"
@@ -150,6 +150,18 @@ uuid = { workspace = true, features = ["js"]}
 async-dnssd = "0.5"
 futures = "0.3"
 tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
+
+# Pin transitive dependencies
+# TODO: Remove when stable versions will be released
+digest = "=0.11.0-rc.3"
+block-buffer = "=0.11.0-rc.5"
+crypto-common = "=0.2.0-rc.4"
+pkcs1 = "=0.8.0-rc.4"
+pkcs8 = "=0.11.0-rc.7"
+der = "=0.8.0-rc.9"
+spki = "=0.8.0-rc.4"
+pem-rfc7468 = "=1.0.0-rc.3"
+signature = "=3.0.0-rc.4"
 
 [dev-dependencies]
 base64.workspace = true
