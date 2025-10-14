@@ -313,7 +313,7 @@ impl Sspi for SspiCredSsp {
         _flags: u32,
         _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "make_signature is not supported",
@@ -325,7 +325,7 @@ impl Sspi for SspiCredSsp {
         &mut self,
         _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
-    ) -> crate::Result<u32> {
+    ) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",

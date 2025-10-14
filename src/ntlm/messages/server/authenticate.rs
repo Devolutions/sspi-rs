@@ -23,7 +23,7 @@ struct AuthenticateMessageFields {
     nt_challenge_response: MessageFields,
 }
 
-pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
+pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl Read) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);
@@ -49,7 +49,7 @@ pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl io::Read) -
 
     context.state = NtlmState::Completion;
 
-    Ok(crate::SecurityStatus::CompleteNeeded)
+    Ok(SecurityStatus::CompleteNeeded)
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {
@@ -63,7 +63,7 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
     }
 }
 
-fn read_header(mut buffer: impl io::Read) -> crate::Result<(AuthenticateMessageFields, NegotiateFlags)> {
+fn read_header(mut buffer: impl Read) -> crate::Result<(AuthenticateMessageFields, NegotiateFlags)> {
     let mut lm_challenge_response = MessageFields::new();
     let mut nt_challenge_response = MessageFields::new();
     let mut domain_name = MessageFields::new();
@@ -116,7 +116,7 @@ fn read_payload<T>(
     buffer: &mut io::Cursor<T>,
 ) -> crate::Result<Option<Mic>>
 where
-    io::Cursor<T>: io::Read + io::Seek,
+    io::Cursor<T>: Read + io::Seek,
 {
     let mic = if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO) {
         let mic_offset = buffer.position() as u8;

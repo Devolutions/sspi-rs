@@ -174,7 +174,7 @@ impl Negotiate {
                     debug!("Negotiate: try Kerberos");
 
                     self.protocol =
-                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(crate::KerberosConfig {
+                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
                             kdc_url: Some(host),
                             client_computer_name: Some(self.client_computer_name.clone()),
                         })?);
@@ -437,7 +437,7 @@ impl Sspi for Negotiate {
         flags: u32,
         message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.make_signature(flags, message, sequence_number),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.make_signature(flags, message, sequence_number),
@@ -445,7 +445,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> Result<u32> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_signature(message, sequence_number),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),
@@ -557,7 +557,7 @@ impl<'a> Negotiate {
 
         match &mut self.protocol {
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.change_password(yield_point, change_password).await,
-            _ => Err(crate::Error::new(
+            _ => Err(Error::new(
                 ErrorKind::UnsupportedFunction,
                 "cannot change password for this protocol",
             )),
@@ -619,7 +619,7 @@ impl<'a> Negotiate {
                     .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
                 debug!("Negotiate: try Kerberos");
 
-                let config = crate::KerberosConfig {
+                let config = KerberosConfig {
                     kdc_url: Some(host),
                     client_computer_name: Some(self.client_computer_name.clone()),
                 };

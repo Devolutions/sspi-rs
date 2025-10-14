@@ -14,7 +14,7 @@ use sspi::{
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let kdc_url = std::env::var("SSPI_KDC_URL").expect("missing KDC URL set in SSPI_KDC_URL"); //tcp://ad-compter-name.domain:88
     let hostname = std::env::var("SSPI_WINRM_HOST").expect("missing host name set in SSPI_WINRM_HOST"); // winrm_server_name.domain
     let username = std::env::var("SSPI_WINRM_USER").expect("missing username set in SSPI_WINRM_USER"); // username@domain
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if status == SecurityStatus::ContinueNeeded || status == SecurityStatus::Ok {
             let (token_from_server, status_code) =
                 process_authentication(&output_token, &mut client, &auth_method, &hostname)?;
-            if status_code == reqwest::StatusCode::OK {
+            if status_code == StatusCode::OK {
                 println!("authenticated");
                 break Ok(());
             }
@@ -77,7 +77,7 @@ pub(crate) fn process_authentication(
     client: &mut reqwest::blocking::Client,
     auth_method: &str,
     hostname: &str,
-) -> Result<(String, StatusCode), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, StatusCode), Box<dyn Error + Send + Sync>> {
     let server_result = send_http(token_neeeds_to_be_sent, client, hostname, auth_method)?;
     if server_result.status() == StatusCode::OK {
         return Ok((String::new(), StatusCode::OK));
@@ -123,7 +123,7 @@ fn step_helper(
     input_buffer: &mut [SecurityBuffer],
     output_buffer: &mut [SecurityBuffer],
     hostname: &str,
-) -> Result<InitializeSecurityContextResult, Box<dyn std::error::Error>> {
+) -> Result<InitializeSecurityContextResult, Box<dyn Error>> {
     let target_name = format!("HTTP/{}", hostname);
     let mut builder = kerberos
         .initialize_security_context()

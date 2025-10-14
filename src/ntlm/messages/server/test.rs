@@ -393,7 +393,7 @@ fn read_authenticate_local_logon_correct_reads_mic() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(
         expected.as_ref(),
@@ -416,7 +416,7 @@ fn read_authenticate_local_logon_correct_reads_encrypted_random_session_key() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(
         expected.as_ref(),
@@ -442,7 +442,7 @@ fn read_authenticate_local_logon_correct_reads_user_name() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
 }
@@ -461,7 +461,7 @@ fn read_authenticate_domain_logon_correct_reads_mic() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(
         expected.as_ref(),
@@ -483,7 +483,7 @@ fn read_authenticate_domain_logon_correct_reads_user_name() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
 }
@@ -502,7 +502,7 @@ fn read_authenticate_domain_logon_correct_reads_domain_name() {
     ));
     context.state = NtlmState::Authenticate;
 
-    authenticate::read_authenticate(&mut context, buffer.as_ref()).unwrap();
+    read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
     assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().domain.as_slice());
 }

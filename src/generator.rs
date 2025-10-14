@@ -125,7 +125,7 @@ fn execute_one_step<OutTy>(task: &mut PinnedFuture<'_, OutTy>) -> Option<OutTy> 
     struct NoopWake;
 
     impl Wake for NoopWake {
-        fn wake(self: std::sync::Arc<Self>) {
+        fn wake(self: Arc<Self>) {
             // do nothing
         }
     }
@@ -237,7 +237,7 @@ where
         loop {
             match state {
                 GeneratorState::Suspended(ref request) => {
-                    state = self.resume(crate::network_client::NetworkClient::send(network_client, request));
+                    state = self.resume(NetworkClient::send(network_client, request));
                 }
                 GeneratorState::Completed(res) => {
                     return res;

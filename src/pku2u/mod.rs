@@ -128,7 +128,7 @@ pub struct Pku2u {
 
 impl Pku2u {
     pub fn new_server_from_config(config: Pku2uConfig) -> Result<Self> {
-        let mut rng = rand::rngs::StdRng::try_from_os_rng()?;
+        let mut rng = StdRng::try_from_os_rng()?;
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
         rng.fill_bytes(&mut negoex_random);
 
@@ -321,8 +321,8 @@ impl Sspi for Pku2u {
                 username: identity.username,
             })
         } else {
-            Err(crate::Error::new(
-                crate::ErrorKind::NoCredentials,
+            Err(Error::new(
+                ErrorKind::NoCredentials,
                 String::from("Requested Names, but no credentials were provided"),
             ))
         }
@@ -362,7 +362,7 @@ impl Sspi for Pku2u {
         _flags: u32,
         _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "make_signature is not supported",
@@ -373,7 +373,7 @@ impl Sspi for Pku2u {
         &mut self,
         _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
-    ) -> crate::Result<u32> {
+    ) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",
@@ -409,7 +409,7 @@ impl SspiImpl for Pku2u {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, builder))]
     fn accept_security_context_impl<'a>(
         &'a mut self,
-        builder: crate::builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<GeneratorAcceptSecurityContext<'a>> {
         Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
             self.accept_security_context_impl(&mut yield_point, builder).await
@@ -433,7 +433,7 @@ impl Pku2u {
         &mut self,
         _yield_point: &mut YieldPointLocal,
         _builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> crate::Result<AcceptSecurityContextResult> {
+    ) -> Result<AcceptSecurityContextResult> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "accept_security_context_impl is not implemented yet",

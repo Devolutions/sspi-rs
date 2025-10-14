@@ -41,7 +41,7 @@ pub enum GkdiError {
     InvalidEllipticCurveId(Vec<u8>),
 }
 
-pub type GkdiResult<T> = core::result::Result<T, GkdiError>;
+pub type GkdiResult<T> = Result<T, GkdiError>;
 
 impl From<GkdiError> for DecodeError {
     fn from(err: GkdiError) -> Self {

@@ -16,7 +16,7 @@ pub(super) const TLS_PACKET_HEADER_LEN: usize = 1 /* ContentType */ + 2 /* Proto
 // https://datatracker.ietf.org/doc/html/rfc6101#page-14
 //
 // ...Sequence numbers are of type uint64 and may not exceed 2^64-1.
-const TLS_PACKET_SEQUENCE_NUMBER_LEN: usize = std::mem::size_of::<u64>();
+const TLS_PACKET_SEQUENCE_NUMBER_LEN: usize = size_of::<u64>();
 
 // The Secure Sockets Layer (SSL) Protocol Version 3.0
 // https://datatracker.ietf.org/doc/html/rfc6101#appendix-A.1

@@ -79,7 +79,7 @@ impl From<PduError> for DecodeError {
     }
 }
 
-pub(super) type PduResult<T> = core::result::Result<T, PduError>;
+pub(super) type PduResult<T> = Result<T, PduError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, FromPrimitive)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

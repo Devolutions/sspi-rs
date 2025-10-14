@@ -24,7 +24,7 @@ pub(crate) fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> c
 
     context.state = NtlmState::Challenge;
 
-    Ok(crate::SecurityStatus::ContinueNeeded)
+    Ok(SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {

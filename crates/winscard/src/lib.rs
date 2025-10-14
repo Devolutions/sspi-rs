@@ -30,7 +30,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::TryFromIntError;
-use core::{fmt, result};
+use core::fmt;
 
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;
@@ -47,7 +47,7 @@ pub use scard_context::{
 };
 
 /// The [WinScardResult] type.
-pub type WinScardResult<T> = result::Result<T, Error>;
+pub type WinScardResult<T> = Result<T, Error>;
 
 /// Represents a response after the APDU command execution.
 #[derive(Debug)]

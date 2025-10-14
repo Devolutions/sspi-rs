@@ -208,7 +208,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             let message = string_to_utf16("We're unable to load saved credentials\0");
             let caption = string_to_utf16("Enter credentials\0");
             let cred_ui_info = CREDUI_INFOW {
-                cbSize: std::mem::size_of::<CREDUI_INFOW>().try_into().unwrap(),
+                cbSize: size_of::<CREDUI_INFOW>().try_into().unwrap(),
                 hwndParent: null_mut(),
                 pszMessageText: message.as_ptr() as *const _,
                 pszCaptionText: caption.as_ptr() as *const _,
@@ -458,7 +458,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
     let domain = unsafe { credentials_str_into_bytes(domain as *const _, domain_len as usize * 2) };
-    let password: sspi::Secret<Vec<u8>> =
+    let password: Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
