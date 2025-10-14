@@ -18,8 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump picky to the latest version ([#516](https://github.com/Devolutions/sspi-rs/issues/516)) ([972e04b153](https://github.com/Devolutions/sspi-rs/commit/972e04b15393acf2028ae7fde0f55d104e8a9294)) 
 
-
-
 ## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-10-06
 
 ### <!-- 1 -->Features
