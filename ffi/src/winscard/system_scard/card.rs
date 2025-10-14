@@ -111,7 +111,7 @@ impl fmt::Debug for SystemScard {
 
 impl WinScard for SystemScard {
     #[instrument(ret)]
-    fn status(&self) -> WinScardResult<Status> {
+    fn status(&self) -> WinScardResult<Status<'_>> {
         // macOS PC/SC framework doesn't support `SCARD_AUTOALLOCATE` option, so we use preallocated buffer for reader name.
         let mut reader_name = vec![0; 1024];
         let mut reader_name_len = 1024;
@@ -352,7 +352,7 @@ impl WinScard for SystemScard {
         .unwrap_or_default())
     }
 
-    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<'_, [u8]>> {
         let attr_id = attribute_id
             .to_u32()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "cannot convert AttributeId -> u32"))?;

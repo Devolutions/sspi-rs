@@ -438,7 +438,7 @@ pub unsafe extern "system" fn DecryptMessage(
 /// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.
 #[allow(clippy::useless_conversion)]
-unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBufferRef>> {
+unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBufferRef<'_>>> {
     let mut buffers = Vec::with_capacity(raw_buffers.len());
 
     for raw_buffer in raw_buffers {
@@ -467,7 +467,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 ///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.
-unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBufferRef>) -> sspi::Result<()> {
+unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBufferRef<'_>>) -> sspi::Result<()> {
     // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 

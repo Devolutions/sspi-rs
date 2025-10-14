@@ -130,8 +130,8 @@ impl SspiImpl for SspiHandle {
 
     fn accept_security_context_impl(
         &mut self,
-        builder: sspi::builders::FilledAcceptSecurityContext<Self::CredentialsHandle>,
-    ) -> Result<sspi::generator::GeneratorAcceptSecurityContext> {
+        builder: sspi::builders::FilledAcceptSecurityContext<'_, Self::CredentialsHandle>,
+    ) -> Result<sspi::generator::GeneratorAcceptSecurityContext<'_>> {
         let mut context = self.sspi_context.lock()?;
         Ok(context.accept_security_context_sync(builder).into())
     }
@@ -145,7 +145,7 @@ impl Sspi for SspiHandle {
     fn encrypt_message(
         &mut self,
         flags: sspi::EncryptionFlags,
-        message: &mut [sspi::SecurityBufferRef],
+        message: &mut [sspi::SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<sspi::SecurityStatus> {
         self.sspi_context
@@ -155,7 +155,7 @@ impl Sspi for SspiHandle {
 
     fn decrypt_message(
         &mut self,
-        message: &mut [sspi::SecurityBufferRef],
+        message: &mut [sspi::SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<sspi::DecryptionFlags> {
         self.sspi_context.lock()?.decrypt_message(message, sequence_number)
@@ -208,7 +208,7 @@ impl Sspi for SspiHandle {
     fn make_signature(
         &mut self,
         _flags: u32,
-        _message: &mut [sspi::SecurityBufferRef],
+        _message: &mut [sspi::SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> Result<()> {
         Err(Error::new(
@@ -217,7 +217,7 @@ impl Sspi for SspiHandle {
         ))
     }
 
-    fn verify_signature(&mut self, _message: &mut [sspi::SecurityBufferRef], _sequence_number: u32) -> Result<u32> {
+    fn verify_signature(&mut self, _message: &mut [sspi::SecurityBufferRef<'_>], _sequence_number: u32) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",

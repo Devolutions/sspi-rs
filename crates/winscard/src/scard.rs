@@ -93,7 +93,7 @@ pub struct SmartCard<'a> {
 impl SmartCard<'_> {
     /// Creates a smart card instance based on the provided data.
     pub fn new(
-        reader_name: Cow<str>,
+        reader_name: Cow<'_, str>,
         pin: Vec<u8>,
         auth_cert_der: Vec<u8>,
         auth_pk: PrivateKey,
@@ -486,7 +486,7 @@ enum SCardState {
 }
 
 impl WinScard for SmartCard<'_> {
-    fn status(&self) -> WinScardResult<winscard::Status> {
+    fn status(&self) -> WinScardResult<winscard::Status<'_>> {
         Ok(winscard::Status {
             readers: vec![self.reader_name.clone()],
             // The original winscard always returns SCARD_SPECIFIC for a working inserted card
@@ -551,7 +551,7 @@ impl WinScard for SmartCard<'_> {
         Ok(SUPPORTED_CONNECTION_PROTOCOL)
     }
 
-    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>> {
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<'_, [u8]>> {
         let data = self.attributes.get(&attribute_id).map(AsRef::as_ref).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidParameter,
@@ -665,7 +665,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
     }
 
     // Helper function that calls the GET RESPONSE handler until there is no more data to read
-    fn get_all_available_data(mut response: Response, scard: &mut SmartCard) -> Vec<u8> {
+    fn get_all_available_data(mut response: Response, scard: &mut SmartCard<'_>) -> Vec<u8> {
         let mut complete_response = vec![];
         while let Status::MoreAvailable(bytes_left) = response.status {
             complete_response.extend_from_slice(&response.data.expect("Data should be present"));

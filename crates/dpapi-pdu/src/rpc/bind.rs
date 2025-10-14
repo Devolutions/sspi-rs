@@ -98,7 +98,7 @@ impl Encode for SyntaxId {
 }
 
 impl DecodeOwned for SyntaxId {
-    fn decode_owned(src: &mut ReadCursor) -> DecodeResult<Self> {
+    fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: Self::FIXED_PART_SIZE);
 
         Ok(Self {

@@ -233,7 +233,7 @@ impl CredSspClient {
     pub fn process(
         &mut self,
         ts_request: TsRequest,
-    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>> {
+    ) -> Generator<'_, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>> {
         Generator::<NetworkRequest, crate::Result<Vec<u8>>, crate::Result<ClientState>>::new(
             move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
         )
@@ -447,7 +447,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
     pub fn process(
         &mut self,
         ts_request: TsRequest,
-    ) -> Generator<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
+    ) -> Generator<'_, NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>> {
         Generator::<NetworkRequest, crate::Result<Vec<u8>>, Result<ServerState, ServerError>>::new(
             move |mut yield_point| async move { self.process_impl(&mut yield_point, ts_request).await },
         )
@@ -765,7 +765,7 @@ impl<'a> SspiContext {
     #[cfg(feature = "network_client")]
     pub fn initialize_security_context_sync(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<<Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         Generator::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
@@ -785,7 +785,7 @@ impl<'a> SspiContext {
     }
 
     #[cfg(feature = "network_client")]
-    pub fn change_password_sync(&mut self, builder: ChangePassword) -> crate::Result<()> {
+    pub fn change_password_sync(&mut self, builder: ChangePassword<'_>) -> crate::Result<()> {
         Generator::new(move |mut yield_point| async move { self.change_password_impl(&mut yield_point, builder).await })
             .resolve_with_default_network_client()
     }
@@ -887,7 +887,7 @@ impl Sspi for SspiContext {
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         match self {
@@ -903,7 +903,7 @@ impl Sspi for SspiContext {
     #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         match self {
@@ -1036,7 +1036,7 @@ impl Sspi for SspiContext {
     fn make_signature(
         &mut self,
         flags: u32,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<()> {
         match self {
@@ -1049,7 +1049,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.verify_signature(message, sequence_number),
             SspiContext::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),

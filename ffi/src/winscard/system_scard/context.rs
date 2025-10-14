@@ -518,7 +518,7 @@ impl WinScardContext for SystemScardContext {
         Ok(ScardConnectData { handle, protocol })
     }
 
-    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<'_, str>>> {
         let mut readers_buf_len = 0;
 
         #[cfg(not(target_os = "windows"))]
@@ -612,7 +612,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn reader_icon(&self, _reader_name: &str) -> WinScardResult<Icon> {
+    fn reader_icon(&self, _reader_name: &str) -> WinScardResult<Icon<'_>> {
         #[cfg(not(target_os = "windows"))]
         {
             use winscard::SmartCardInfo;
@@ -674,7 +674,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     #[instrument(ret)]
-    fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
+    fn read_cache(&self, _card_id: Uuid, _freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
             self.cache
@@ -779,7 +779,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<'_, str>>> {
         let mut reader_groups_buf_len = 0;
 
         #[cfg(not(target_os = "windows"))]
@@ -851,7 +851,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     #[instrument(ret)]
-    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState<'_>]) -> WinScardResult<()> {
         use std::ffi::NulError;
 
         #[cfg(target_os = "windows")]
@@ -923,7 +923,11 @@ impl WinScardContext for SystemScardContext {
         Ok(())
     }
 
-    fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_cards(
+        &self,
+        _atr: Option<&[u8]>,
+        _required_interfaces: Option<&[Uuid]>,
+    ) -> WinScardResult<Vec<Cow<'_, str>>> {
         #[cfg(not(target_os = "windows"))]
         {
             Ok(vec![Cow::Borrowed(DEFAULT_CARD_NAME)])
@@ -979,7 +983,7 @@ impl WinScardContext for SystemScardContext {
         }
     }
 
-    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<'_, str>> {
         #[cfg(not(target_os = "windows"))]
         {
             Ok(match provider_id {

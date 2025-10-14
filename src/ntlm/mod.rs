@@ -387,7 +387,7 @@ impl Ntlm {
 
     fn compute_checksum(
         &mut self,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
         digest: &[u8; 16],
     ) -> crate::Result<()> {
@@ -436,7 +436,7 @@ impl Sspi for Ntlm {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
@@ -474,7 +474,7 @@ impl Sspi for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
     fn decrypt_message(
         &mut self,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
@@ -570,8 +570,8 @@ impl Sspi for Ntlm {
 
     fn change_password(
         &mut self,
-        _: crate::builders::ChangePassword,
-    ) -> crate::Result<crate::generator::GeneratorChangePassword> {
+        _: crate::builders::ChangePassword<'_>,
+    ) -> crate::Result<crate::generator::GeneratorChangePassword<'_>> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "NTLM does not support change pasword",
@@ -581,7 +581,7 @@ impl Sspi for Ntlm {
     fn make_signature(
         &mut self,
         _flags: u32,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<()> {
         if self.send_sealing_key.is_none() {
@@ -598,7 +598,7 @@ impl Sspi for Ntlm {
         Ok(())
     }
 
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }

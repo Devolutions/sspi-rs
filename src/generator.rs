@@ -121,7 +121,7 @@ where
     }
 }
 
-fn execute_one_step<OutTy>(task: &mut PinnedFuture<OutTy>) -> Option<OutTy> {
+fn execute_one_step<OutTy>(task: &mut PinnedFuture<'_, OutTy>) -> Option<OutTy> {
     struct NoopWake;
 
     impl Wake for NoopWake {

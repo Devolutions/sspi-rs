@@ -419,7 +419,7 @@ impl WinScardContext for ScardContext<'_> {
         })
     }
 
-    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<'_, str>>> {
         Ok(vec![self.smart_card_info.reader.name.clone()])
     }
 
@@ -434,7 +434,7 @@ impl WinScardContext for ScardContext<'_> {
         Ok(self.smart_card_info.reader.device_type_id)
     }
 
-    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon> {
+    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon<'_>> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
@@ -449,7 +449,7 @@ impl WinScardContext for ScardContext<'_> {
         true
     }
 
-    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<[u8]>> {
+    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
         self.cache
             .get(key)
             .map(|item| Cow::Borrowed(item.as_slice()))
@@ -462,7 +462,7 @@ impl WinScardContext for ScardContext<'_> {
         Ok(())
     }
 
-    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<'_, str>>> {
         // We don't support configuring or introducing reader groups. So, we just return hardcoded values.
         //
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw
@@ -479,7 +479,7 @@ impl WinScardContext for ScardContext<'_> {
         Ok(())
     }
 
-    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()> {
+    fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState<'_>]) -> WinScardResult<()> {
         use crate::ATR;
 
         let supported_readers = self.list_readers()?;
@@ -502,12 +502,16 @@ impl WinScardContext for ScardContext<'_> {
         Ok(())
     }
 
-    fn list_cards(&self, _atr: Option<&[u8]>, _required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>> {
+    fn list_cards(
+        &self,
+        _atr: Option<&[u8]>,
+        _required_interfaces: Option<&[Uuid]>,
+    ) -> WinScardResult<Vec<Cow<'_, str>>> {
         // we have only one smart card with only one default name
         Ok(vec![DEFAULT_CARD_NAME.into()])
     }
 
-    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>> {
+    fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<'_, str>> {
         Ok(match provider_id {
             ProviderId::Primary => {
                 return Err(Error::new(
