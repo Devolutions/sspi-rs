@@ -183,7 +183,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptexportkey
     // If pbOutput parameter is NULL, this function will place the required size in the pcbResult parameter.
     let status = NCryptExportKey(
-        private_key_handle as _,
+        private_key_handle,
         0,
         BCRYPT_RSAFULLPRIVATE_BLOB,
         null(),
@@ -231,7 +231,7 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     let mut private_key_blob = vec![0; private_key_buffer_len as usize];
 
     let status = NCryptExportKey(
-        private_key_handle as _,
+        private_key_handle,
         0,
         BCRYPT_RSAFULLPRIVATE_BLOB,
         null(),
