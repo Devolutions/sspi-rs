@@ -73,6 +73,10 @@ pub struct InitializeSecurityContext<
     pub input: Option<&'a mut [SecurityBuffer]>,
 }
 
+// We allow it here because the crate does not compile with single lifetime.
+// The whole purpose of the `'a` lifetime is to allow the user to construct a new builder (via `full_transform` method)
+// with a different lifetime for `credentials_handle` field.
+#[allow(single_use_lifetimes)]
 impl<
         'b,
         'a: 'b,
@@ -92,6 +96,7 @@ impl<
     >
 {
     /// Creates a new builder with the other `AuthData` and `CredsHandle` types.
+    ///
     /// References to the input and output buffers will be moved to the created builder leaving the `None` instead.
     pub fn full_transform<CredsHandle2, CredHandleSet2: ToAssign>(
         &mut self,

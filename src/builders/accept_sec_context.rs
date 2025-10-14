@@ -226,7 +226,7 @@ impl<
     }
 }
 
-impl<'b, 'a: 'b, CredsHandle> FilledAcceptSecurityContext<'a, CredsHandle> {
+impl<'b, CredsHandle> FilledAcceptSecurityContext<'b, CredsHandle> {
     /// Transforms the builder into new one with the other `AuthData` and `CredsHandle` types.
     /// Useful when we need to pass the builder into the security package with other `AuthData` and `CredsHandle` types.
     pub(crate) fn full_transform<CredsHandle2>(

@@ -388,10 +388,10 @@ impl SspiCredSsp {
 
     #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     #[async_recursion]
-    pub(crate) async fn initialize_security_context_impl<'a>(
+    pub(crate) async fn initialize_security_context_impl(
         &mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &mut builders::FilledInitializeSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
         // In the CredSSP we always set DELEGATE flag
