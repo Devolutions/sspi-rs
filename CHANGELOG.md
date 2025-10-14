@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump the patch group across 1 directory with 2 updates ([#519](https://github.com/Devolutions/sspi-rs/issues/519)) ([aaa6e78617](https://github.com/Devolutions/sspi-rs/commit/aaa6e78617b17ee0870c3044f2ac6922c6831017)) 
 
-
-
 ## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-10-06
 
 ### <!-- 1 -->Features
