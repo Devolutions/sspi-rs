@@ -716,12 +716,8 @@ where
     ///
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
-    fn make_signature(
-        &mut self,
-        flags: u32,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<()>;
+    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef<'_>], sequence_number: u32)
+        -> Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
     ///

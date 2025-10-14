@@ -321,11 +321,7 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn verify_signature(
-        &mut self,
-        _message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<u32> {
+    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef<'_>], _sequence_number: u32) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",

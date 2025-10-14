@@ -29,8 +29,8 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::num::TryFromIntError;
 use core::fmt;
+use core::num::TryFromIntError;
 
 pub use ber_tlv::ber_tlv_length_encoding;
 use iso7816_tlv::TlvError;

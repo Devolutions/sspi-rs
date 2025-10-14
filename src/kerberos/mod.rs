@@ -581,11 +581,7 @@ impl Sspi for Kerberos {
         ))
     }
 
-    fn verify_signature(
-        &mut self,
-        _message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<u32> {
+    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef<'_>], _sequence_number: u32) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported. use decrypt_message to verify signatures instead",

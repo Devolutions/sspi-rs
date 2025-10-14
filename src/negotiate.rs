@@ -173,11 +173,10 @@ impl Negotiate {
                 if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
                     debug!("Negotiate: try Kerberos");
 
-                    self.protocol =
-                        NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                            kdc_url: Some(host),
-                            client_computer_name: Some(self.client_computer_name.clone()),
-                        })?);
+                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                        kdc_url: Some(host),
+                        client_computer_name: Some(self.client_computer_name.clone()),
+                    })?);
                 }
             }
         }
