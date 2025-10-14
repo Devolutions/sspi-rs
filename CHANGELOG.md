@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.17.0...sspi-v0.18.0)] - 2025-10-14
+
+### <!-- 4 -->Bug Fixes
+
+- DH client default parameters: remove leading zero ([#514](https://github.com/Devolutions/sspi-rs/issues/514)) ([8114b570bc](https://github.com/Devolutions/sspi-rs/commit/8114b570bcfa4320b4972c300705a5e93e762965)) 
+
+- [**breaking**] Async network client returns `!Send` future ([#513](https://github.com/Devolutions/sspi-rs/issues/513)) ([218ddf3e79](https://github.com/Devolutions/sspi-rs/commit/218ddf3e792580caf1f094ff197a3790f61248e5)) 
+
+### <!-- 7 -->Build
+
+- Bump picky to the latest version ([#516](https://github.com/Devolutions/sspi-rs/issues/516)) ([972e04b153](https://github.com/Devolutions/sspi-rs/commit/972e04b15393acf2028ae7fde0f55d104e8a9294)) 
+
+- Bump the patch group across 1 directory with 2 updates ([#519](https://github.com/Devolutions/sspi-rs/issues/519)) ([aaa6e78617](https://github.com/Devolutions/sspi-rs/commit/aaa6e78617b17ee0870c3044f2ac6922c6831017)) 
+
 ## [[0.17.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.16.1...sspi-v0.17.0)] - 2025-10-06
 
 ### <!-- 1 -->Features
