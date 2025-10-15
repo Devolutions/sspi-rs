@@ -139,7 +139,7 @@ cfg_if::cfg_if! {
         use async_dnssd::{query_record, QueryRecordResult, QueriedRecordFlags, Type};
 
         #[derive(Clone)]
-        pub struct DnsSrvRecord {
+        pub(crate) struct DnsSrvRecord {
             priority: u16,
             weight: u16,
             port: u16,
@@ -162,7 +162,7 @@ cfg_if::cfg_if! {
             }
         }
 
-        pub fn dns_decode_target_data_to_string(v: &[u8]) -> String {
+        pub(crate) fn dns_decode_target_data_to_string(v: &[u8]) -> String {
             let mut names = Vec::new();
 
             let mut i = 0;
@@ -178,7 +178,7 @@ cfg_if::cfg_if! {
             names.join(".")
         }
 
-        pub fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
+        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
             const QUERY_TIMEOUT: u64 = 1000;
 
             async fn query_with_timeout(name: &str, query_timeout: u64) -> Vec<DnsSrvRecord> {
@@ -214,7 +214,7 @@ cfg_if::cfg_if! {
             execute_future(query_with_timeout(name, QUERY_TIMEOUT))
         }
 
-        pub fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
+        pub(crate) fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
             let krb_tcp_name = &format!("_kerberos._tcp.{}", domain);
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
