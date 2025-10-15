@@ -5,7 +5,7 @@ use crate::tlv_tags;
 // ccc - Card Capability Container
 // Table 8. Card Capability Container
 // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=39
-pub fn build_ccc() -> Vec<u8> {
+pub(crate) fn build_ccc() -> Vec<u8> {
     let mut ccc = Vec::new();
 
     ccc.extend_from_slice(&[tlv_tags::DATA, 0x33]);

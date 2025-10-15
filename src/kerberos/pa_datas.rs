@@ -14,14 +14,14 @@ use crate::Result;
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
-pub enum AsReqPaDataOptions<'a> {
+pub(crate) enum AsReqPaDataOptions<'a> {
     AuthIdentity(AuthIdentityPaDataOptions<'a>),
     #[cfg(feature = "scard")]
     SmartCard(Box<SmartCardPaDataOptions<'a>>),
 }
 
 impl AsReqPaDataOptions<'_> {
-    pub fn generate(&mut self) -> Result<Vec<PaData>> {
+    pub(crate) fn generate(&mut self) -> Result<Vec<PaData>> {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
             #[cfg(feature = "scard")]
@@ -29,7 +29,7 @@ impl AsReqPaDataOptions<'_> {
         }
     }
 
-    pub fn with_pre_auth(&mut self, pre_auth: bool) {
+    pub(crate) fn with_pre_auth(&mut self, pre_auth: bool) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.with_pre_auth = pre_auth,
             #[cfg(feature = "scard")]
@@ -37,7 +37,7 @@ impl AsReqPaDataOptions<'_> {
         }
     }
 
-    pub fn with_salt(&mut self, salt: Vec<u8>) {
+    pub(crate) fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
             #[cfg(feature = "scard")]
@@ -49,7 +49,7 @@ impl AsReqPaDataOptions<'_> {
 // ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to extract session key from the AsRep.
 #[derive(Debug)]
-pub enum AsRepSessionKeyExtractor<'a> {
+pub(super) enum AsRepSessionKeyExtractor<'a> {
     AuthIdentity {
         salt: &'a str,
         password: &'a str,
@@ -64,7 +64,7 @@ pub enum AsRepSessionKeyExtractor<'a> {
 
 impl AsRepSessionKeyExtractor<'_> {
     #[instrument(level = "trace", ret, skip(self))]
-    pub fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
+    pub(super) fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
         match self {
             AsRepSessionKeyExtractor::AuthIdentity {
                 salt,

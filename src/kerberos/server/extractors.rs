@@ -15,7 +15,7 @@ use crate::{Error, ErrorKind, Result};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
 #[instrument(ret, level = "trace")]
-pub fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, MechTypeList)> {
+pub(super) fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, MechTypeList)> {
     let token: ApplicationTag0<GssApiNegInit> = picky_asn1_der::from_bytes(data)?;
     let NegTokenInit {
         mech_types,
@@ -59,7 +59,7 @@ pub fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, MechTypeL
 }
 
 /// Decodes incoming SPNEGO message and extracts [ApReq] Kerberos message.
-pub fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
+pub(super) fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
     let neg_token_targ: ExplicitContextTag1<NegTokenTarg> = picky_asn1_der::from_bytes(data)?;
 
     let krb_message = KrbMessage::<ApReq>::decode_application_krb_message(
@@ -92,7 +92,7 @@ pub fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
 }
 
 /// Decrypts the [ApReq] ticket and returns decoded encrypted part of the ticket.
-pub fn decrypt_ap_req_ticket(key: &[u8], ap_req: &ApReq) -> Result<EncTicketPart> {
+pub(super) fn decrypt_ap_req_ticket(key: &[u8], ap_req: &ApReq) -> Result<EncTicketPart> {
     let ticket_enc_part = &ap_req.0.ticket.0 .0.enc_part.0;
     let cipher = CipherSuite::try_from(ticket_enc_part.etype.0 .0.as_slice())?.cipher();
 
@@ -102,7 +102,7 @@ pub fn decrypt_ap_req_ticket(key: &[u8], ap_req: &ApReq) -> Result<EncTicketPart
 }
 
 /// Decrypts [ApReq] Authenticator and returns decoded authenticator.
-pub fn decrypt_ap_req_authenticator(session_key: &[u8], ap_req: &ApReq) -> Result<Authenticator> {
+pub(super) fn decrypt_ap_req_authenticator(session_key: &[u8], ap_req: &ApReq) -> Result<Authenticator> {
     let encrypted_authenticator = &ap_req.0.authenticator.0;
     let cipher = CipherSuite::try_from(encrypted_authenticator.etype.0 .0.as_slice())?.cipher();
 
@@ -115,7 +115,7 @@ pub fn decrypt_ap_req_authenticator(session_key: &[u8], ap_req: &ApReq) -> Resul
 /// Validated client final [NegTokenTarg1] message and extract its MIC token.
 ///
 /// **Note**: the input client message should be last message in the _authentication_ sequence.
-pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
     let NegTokenTarg {
         neg_result,
@@ -153,7 +153,7 @@ pub fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
 /// Selects the preferred Kerberos oid.
 ///
 /// 1.2.840.48018.1.2.2 (MS KRB5 - Microsoft Kerberos 5) is preferred over 1.2.840.113554.1.2.2 (KRB5 - Kerberos 5).
-pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
+pub(super) fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
     let ms_krb5 = oids::ms_krb5();
     if mech_list.0.iter().any(|mech_type| mech_type.0 == ms_krb5) {
         return Ok(ms_krb5);
@@ -171,7 +171,7 @@ pub fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentifier> {
 }
 
 /// Extract username from the [PrincipalName].
-pub fn extract_username(cname: &PrincipalName) -> Result<String> {
+pub(super) fn extract_username(cname: &PrincipalName) -> Result<String> {
     let name_type = &cname.name_type.0 .0;
     if name_type == &[NT_PRINCIPAL] {
         cname

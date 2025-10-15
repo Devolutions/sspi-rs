@@ -11,9 +11,9 @@ use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
 use super::CredSspMode;
 use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
 
-pub const TS_REQUEST_VERSION: u32 = 6;
+pub(super) const TS_REQUEST_VERSION: u32 = 6;
 
-pub const NONCE_SIZE: usize = 32;
+pub(super) const NONCE_SIZE: usize = 32;
 const NONCE_FIELD_LEN: u16 = 36;
 
 /// Used for communication in the CredSSP [client](struct.CredSspServer.html)

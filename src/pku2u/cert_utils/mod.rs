@@ -1,6 +1,6 @@
-pub mod validation;
+pub(super) mod validation;
 #[cfg(target_os = "windows")]
-pub mod win_extraction;
+pub(super) mod win_extraction;
 
 #[cfg(target_os = "windows")]
-pub use win_extraction as extraction;
+pub(super) use win_extraction as extraction;

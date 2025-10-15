@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 #[repr(u8)]
 #[allow(unused)]
-pub enum Pc {
+pub(crate) enum Pc {
     Primitive = 0x00,
     Construct = 0x20,
 }
@@ -36,27 +36,27 @@ enum Tag {
 
 const TAG_MASK: u8 = 0x1F;
 
-pub fn sizeof_sequence(length: u16) -> u16 {
+pub(crate) fn sizeof_sequence(length: u16) -> u16 {
     1 + sizeof_length(length) + length
 }
 
-pub fn sizeof_sequence_tag(length: u16) -> u16 {
+pub(crate) fn sizeof_sequence_tag(length: u16) -> u16 {
     1 + sizeof_length(length)
 }
 
-pub fn sizeof_contextual_tag(length: u16) -> u16 {
+pub(crate) fn sizeof_contextual_tag(length: u16) -> u16 {
     1 + sizeof_length(length)
 }
 
-pub fn sizeof_octet_string(length: u16) -> u16 {
+pub(crate) fn sizeof_octet_string(length: u16) -> u16 {
     1 + sizeof_length(length) + length
 }
 
-pub fn sizeof_sequence_octet_string(length: u16) -> u16 {
+pub(crate) fn sizeof_sequence_octet_string(length: u16) -> u16 {
     sizeof_contextual_tag(sizeof_octet_string(length)) + sizeof_octet_string(length)
 }
 
-pub fn sizeof_integer(value: u32) -> u16 {
+pub(crate) fn sizeof_integer(value: u32) -> u16 {
     if value < 0x80 {
         3
     } else if value < 0x8000 {
@@ -68,12 +68,12 @@ pub fn sizeof_integer(value: u32) -> u16 {
     }
 }
 
-pub fn write_sequence_tag(mut stream: impl io::Write, length: u16) -> io::Result<usize> {
+pub(crate) fn write_sequence_tag(mut stream: impl io::Write, length: u16) -> io::Result<usize> {
     write_universal_tag(&mut stream, Tag::Sequence, Pc::Construct)?;
     write_length(stream, length).map(|length| length + 1)
 }
 
-pub fn read_sequence_tag(mut stream: impl io::Read) -> io::Result<u16> {
+pub(crate) fn read_sequence_tag(mut stream: impl io::Read) -> io::Result<u16> {
     let identifier = stream.read_u8()?;
 
     if identifier != Class::Universal as u8 | Pc::Construct as u8 | (TAG_MASK & Tag::Sequence as u8) {
@@ -86,14 +86,14 @@ pub fn read_sequence_tag(mut stream: impl io::Read) -> io::Result<u16> {
     }
 }
 
-pub fn write_contextual_tag(mut stream: impl io::Write, tagnum: u8, length: u16, pc: Pc) -> io::Result<usize> {
+pub(crate) fn write_contextual_tag(mut stream: impl io::Write, tagnum: u8, length: u16, pc: Pc) -> io::Result<usize> {
     let identifier = Class::ContextSpecific as u8 | pc as u8 | (TAG_MASK & tagnum);
     stream.write_u8(identifier)?;
 
     write_length(stream, length).map(|length| length + 1)
 }
 
-pub fn read_contextual_tag(mut stream: impl io::Read, tagnum: u8, pc: Pc) -> io::Result<u16> {
+pub(crate) fn read_contextual_tag(mut stream: impl io::Read, tagnum: u8, pc: Pc) -> io::Result<u16> {
     let identifier = stream.read_u8()?;
 
     if identifier != Class::ContextSpecific as u8 | pc as u8 | (TAG_MASK & tagnum) {
@@ -106,7 +106,7 @@ pub fn read_contextual_tag(mut stream: impl io::Read, tagnum: u8, pc: Pc) -> io:
     }
 }
 
-pub fn read_contextual_tag_or_unwind(
+pub(crate) fn read_contextual_tag_or_unwind(
     mut stream: impl io::Read + io::Seek,
     tagnum: u8,
     pc: Pc,
@@ -121,7 +121,7 @@ pub fn read_contextual_tag_or_unwind(
     }
 }
 
-pub fn write_integer(mut stream: impl io::Write, value: u32) -> io::Result<usize> {
+pub(crate) fn write_integer(mut stream: impl io::Write, value: u32) -> io::Result<usize> {
     write_universal_tag(&mut stream, Tag::Integer, Pc::Primitive)?;
 
     if value < 0x80 {
@@ -148,7 +148,7 @@ pub fn write_integer(mut stream: impl io::Write, value: u32) -> io::Result<usize
     }
 }
 
-pub fn read_integer(mut stream: impl io::Read) -> io::Result<u64> {
+pub(crate) fn read_integer(mut stream: impl io::Read) -> io::Result<u64> {
     read_universal_tag(&mut stream, Tag::Integer, Pc::Primitive)?;
     let length = read_length(&mut stream)?;
 
@@ -170,7 +170,7 @@ pub fn read_integer(mut stream: impl io::Read) -> io::Result<u64> {
     }
 }
 
-pub fn write_sequence_octet_string(mut stream: impl io::Write, tagnum: u8, value: &[u8]) -> io::Result<usize> {
+pub(crate) fn write_sequence_octet_string(mut stream: impl io::Write, tagnum: u8, value: &[u8]) -> io::Result<usize> {
     let tag_len = write_contextual_tag(
         &mut stream,
         tagnum,
@@ -182,18 +182,18 @@ pub fn write_sequence_octet_string(mut stream: impl io::Write, tagnum: u8, value
     Ok(tag_len + string_len)
 }
 
-pub fn write_octet_string(mut stream: impl io::Write, value: &[u8]) -> io::Result<usize> {
+pub(crate) fn write_octet_string(mut stream: impl io::Write, value: &[u8]) -> io::Result<usize> {
     let tag_size = write_octet_string_tag(&mut stream, value.len() as u16)?;
     stream.write_all(value)?;
     Ok(tag_size + value.len())
 }
 
-pub fn write_octet_string_tag(mut stream: impl io::Write, length: u16) -> io::Result<usize> {
+pub(crate) fn write_octet_string_tag(mut stream: impl io::Write, length: u16) -> io::Result<usize> {
     write_universal_tag(&mut stream, Tag::OctetString, Pc::Primitive)?;
     write_length(&mut stream, length).map(|length| length + 1)
 }
 
-pub fn read_octet_string_tag(mut stream: impl io::Read) -> io::Result<u16> {
+pub(crate) fn read_octet_string_tag(mut stream: impl io::Read) -> io::Result<u16> {
     read_universal_tag(&mut stream, Tag::OctetString, Pc::Primitive)?;
     read_length(stream)
 }

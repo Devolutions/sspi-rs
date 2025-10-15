@@ -14,7 +14,7 @@ pub enum SidError {
 static SID_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^S-(\d)-(\d+)(?:-\d+){1,15}$").expect("valid SID regex"));
 
-pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
+pub(crate) fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
     if !SID_PATTERN.is_match(sid) {
         Err(SidError::InvalidSid(sid.to_owned()))?;
     }
@@ -53,7 +53,7 @@ pub fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn ace_to_bytes(sid: &str, access_mask: u32) -> Result<Vec<u8>> {
+pub(crate) fn ace_to_bytes(sid: &str, access_mask: u32) -> Result<Vec<u8>> {
     let sid = sid_to_bytes(sid)?;
 
     let mut data = Vec::new();
@@ -67,7 +67,7 @@ pub fn ace_to_bytes(sid: &str, access_mask: u32) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn acl_to_bytes(aces: &[Vec<u8>]) -> Result<Vec<u8>> {
+pub(crate) fn acl_to_bytes(aces: &[Vec<u8>]) -> Result<Vec<u8>> {
     let ace_data_len = aces.iter().map(|a| a.len()).sum::<usize>();
 
     let mut data = Vec::new();
@@ -85,7 +85,12 @@ pub fn acl_to_bytes(aces: &[Vec<u8>]) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-pub fn sd_to_bytes(owner: &str, group: &str, sacl: Option<&[Vec<u8>]>, dacl: Option<&[Vec<u8>]>) -> Result<Vec<u8>> {
+pub(crate) fn sd_to_bytes(
+    owner: &str,
+    group: &str,
+    sacl: Option<&[Vec<u8>]>,
+    dacl: Option<&[Vec<u8>]>,
+) -> Result<Vec<u8>> {
     // Self-Relative.
     let mut control: u16 = 0b10000000 << 8;
 

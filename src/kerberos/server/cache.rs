@@ -65,4 +65,4 @@ impl Hash for AuthenticatorCacheRecord {
     }
 }
 
-pub type AuthenticatorsCache = HashSet<AuthenticatorCacheRecord>;
+pub(super) type AuthenticatorsCache = HashSet<AuthenticatorCacheRecord>;

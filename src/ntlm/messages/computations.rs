@@ -17,8 +17,8 @@ use crate::ntlm::{
 };
 use crate::utils;
 
-pub const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
-pub const SINGLE_HOST_DATA_SIZE: usize = 48;
+pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
+pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
 
 const NT_V2_RESPONSE_BASE_SIZE: usize = 28;
 
@@ -28,7 +28,7 @@ const NT_V2_RESPONSE_BASE_SIZE: usize = 28;
 // the client and server are on the same host. If the server and client platforms are
 // different or if they are on different hosts, then the information MUST be ignored.
 // Any fields after the MachineID field MUST be ignored on receipt.
-pub static SINGLE_HOST_DATA: LazyLock<[u8; SINGLE_HOST_DATA_SIZE]> = LazyLock::new(|| {
+pub(super) static SINGLE_HOST_DATA: LazyLock<[u8; SINGLE_HOST_DATA_SIZE]> = LazyLock::new(|| {
     let mut result = [0x00; SINGLE_HOST_DATA_SIZE];
     let mut buffer = io::Cursor::new(result.as_mut());
 
@@ -64,7 +64,7 @@ fn convert_to_file_time(end_date: OffsetDateTime) -> crate::Result<u64> {
     }
 }
 
-pub fn get_challenge_target_info(timestamp: u64) -> crate::Result<Vec<u8>> {
+pub(super) fn get_challenge_target_info(timestamp: u64) -> crate::Result<Vec<u8>> {
     // Windows requires _DomainName, _ComputerName fields, but does not care what they are contain
     let av_pairs = vec![
         AvPair::NbDomainName(Vec::new()),
@@ -78,7 +78,7 @@ pub fn get_challenge_target_info(timestamp: u64) -> crate::Result<Vec<u8>> {
     Ok(AvPair::list_to_buffer(&av_pairs)?)
 }
 
-pub fn get_authenticate_target_info(
+pub(super) fn get_authenticate_target_info(
     target_info: &[u8],
     channel_bindings: Option<&ChannelBindings>,
     send_single_host_data: bool,
@@ -115,24 +115,24 @@ pub fn get_authenticate_target_info(
     Ok(authenticate_target_info)
 }
 
-pub fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
+pub(super) fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
     let mut challenge = [0; CHALLENGE_SIZE];
     let mut rand = StdRng::try_from_os_rng()?;
     rand.fill_bytes(challenge.as_mut());
     Ok(challenge)
 }
 
-pub fn now_file_time_timestamp() -> crate::Result<u64> {
+pub(super) fn now_file_time_timestamp() -> crate::Result<u64> {
     convert_to_file_time(OffsetDateTime::now_utc())
 }
 
-pub fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
+pub(super) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
     let mut value = exported_session_key.to_vec();
     value.extend_from_slice(sign_magic);
     compute_md5(value.as_ref())
 }
 
-pub fn compute_message_integrity_check(
+pub(super) fn compute_message_integrity_check(
     negotiate_message: &[u8],
     challenge_message: &[u8],
     authenticate_message: &[u8],
@@ -145,7 +145,7 @@ pub fn compute_message_integrity_check(
     compute_hmac_md5(exported_session_key, message_integrity_check.as_ref())
 }
 
-pub fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HASH_SIZE]> {
+pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HASH_SIZE]> {
     if identity_password.len() >= SSPI_CREDENTIALS_HASH_LENGTH_OFFSET + HASH_SIZE * 2 {
         let mut result = [0x00; HASH_SIZE];
         let password_hash =
@@ -174,7 +174,7 @@ pub fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HAS
     }
 }
 
-pub fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
+pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
         let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
             convert_password_hash(identity.password.as_ref())?
@@ -196,7 +196,7 @@ pub fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8
     // hash by the callback is not implemented because the callback never sets
 }
 
-pub fn compute_lm_v2_response(
+pub(super) fn compute_lm_v2_response(
     client_challenge: &[u8],
     server_challenge: &[u8],
     ntlm_v2_hash: &[u8],
@@ -211,7 +211,7 @@ pub fn compute_lm_v2_response(
     Ok(lm_challenge_response)
 }
 
-pub fn compute_ntlm_v2_response(
+pub(super) fn compute_ntlm_v2_response(
     client_challenge: &[u8],
     server_challenge: &[u8],
     target_info: &[u8],
@@ -240,7 +240,7 @@ pub fn compute_ntlm_v2_response(
     Ok((nt_challenge_response, key_exchange_key))
 }
 
-pub fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u8>, [u8; CHALLENGE_SIZE])> {
+pub(super) fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u8>, [u8; CHALLENGE_SIZE])> {
     let mut response = [0x00; HASH_SIZE];
     challenge_response.read_exact(response.as_mut())?;
     let _resp_type = challenge_response.read_u8()?;
@@ -259,7 +259,7 @@ pub fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u
     Ok((av_pairs, client_challenge))
 }
 
-pub fn get_av_flags_from_response(av_pairs: &[AvPair]) -> io::Result<MsvAvFlags> {
+pub(super) fn get_av_flags_from_response(av_pairs: &[AvPair]) -> io::Result<MsvAvFlags> {
     if let Some(AvPair::Flags(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_FLAGS) {
         Ok(MsvAvFlags::from_bits(*value).unwrap_or_else(MsvAvFlags::empty))
     } else {
@@ -267,7 +267,7 @@ pub fn get_av_flags_from_response(av_pairs: &[AvPair]) -> io::Result<MsvAvFlags>
     }
 }
 
-pub fn get_challenge_timestamp_from_response(target_info: &[u8]) -> crate::Result<u64> {
+pub(super) fn get_challenge_timestamp_from_response(target_info: &[u8]) -> crate::Result<u64> {
     let av_pairs = AvPair::buffer_to_av_pairs(target_info)?;
 
     if let Some(AvPair::Timestamp(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_TIMESTAMP) {

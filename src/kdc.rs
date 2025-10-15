@@ -17,7 +17,7 @@ use crate::krb::Krb5Conf;
 
 #[cfg(target_os = "windows")]
 #[instrument(level = "debug", ret)]
-pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
+pub(crate) fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     let domain_upper = domain.to_uppercase();
     let hklm = LOCAL_MACHINE;
     let domains_key_path = "SYSTEM\\CurrentControlSet\\Control\\Lsa\\Kerberos\\Domains";
@@ -32,7 +32,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 
 #[cfg(not(target_os = "windows"))]
 #[instrument(level = "debug", ret)]
-pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
+pub(crate) fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
 
     let krb5_config = env::var("KRB5_CONFIG").unwrap_or_else(|_| "/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
@@ -53,7 +53,7 @@ pub fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 }
 
 #[instrument(ret, level = "debug")]
-pub fn detect_kdc_hosts(domain: &str) -> Vec<String> {
+pub(crate) fn detect_kdc_hosts(domain: &str) -> Vec<String> {
     if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{}", domain)) {
         return vec![kdc_url];
     }

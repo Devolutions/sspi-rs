@@ -997,7 +997,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
             .is_ok());
     }
 
-    pub fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
+    fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
         let p = BoxedMontyParams::new_vartime(p);
         pow_mod_params(&public_key, &private_key, &p)
     }

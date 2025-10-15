@@ -15,7 +15,7 @@ struct NegotiateMessageFields {
 }
 
 impl NegotiateMessageFields {
-    pub fn new(offset: u32, workstation: Option<Vec<u8>>) -> Self {
+    pub(crate) fn new(offset: u32, workstation: Option<Vec<u8>>) -> Self {
         let mut domain_name = MessageFields::new();
         let mut workstation = MessageFields::with_buffer(workstation.unwrap_or_default());
 
@@ -28,7 +28,7 @@ impl NegotiateMessageFields {
         }
     }
 
-    pub fn data_len(&self) -> usize {
+    pub(crate) fn data_len(&self) -> usize {
         self.workstation.buffer_offset as usize + self.workstation.buffer.len()
     }
 }
@@ -44,7 +44,7 @@ fn check_state(state: NtlmState) -> crate::Result<()> {
     }
 }
 
-pub fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
+pub(crate) fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let negotiate_flags = get_flags(context);

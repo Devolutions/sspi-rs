@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{tlv_tags, Error, ErrorKind, WinScardResult};
 
 // CHUID will always have a fixed length when excluding optional fields and asymmetric signature
-pub const CHUID_LENGTH: usize = 61;
+pub(crate) const CHUID_LENGTH: usize = 61;
 
 // The CHUID has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)

@@ -8,19 +8,19 @@ use sspi::{
 };
 use time::OffsetDateTime;
 
-pub static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
+pub(crate) static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
     username: Username::new("Username", Some("Domain")).unwrap(),
     password: String::from("Password").into(),
 });
 
 const MESSAGE_TO_CLIENT: &[u8] = b"Hello, client!";
 
-pub struct CredentialsProxyImpl<'a> {
+pub(crate) struct CredentialsProxyImpl<'a> {
     credentials: &'a AuthIdentity,
 }
 
 impl<'a> CredentialsProxyImpl<'a> {
-    pub fn new(credentials: &'a AuthIdentity) -> Self {
+    pub(crate) fn new(credentials: &'a AuthIdentity) -> Self {
         Self { credentials }
     }
 }
@@ -35,7 +35,7 @@ impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
     }
 }
 
-pub fn create_client_credentials_handle<T>(
+pub(crate) fn create_client_credentials_handle<T>(
     client: &mut T,
     auth_data: Option<&T::AuthenticationData>,
 ) -> sspi::Result<T::CredentialsHandle>
@@ -66,7 +66,7 @@ where
     Ok(credentials_handle)
 }
 
-pub fn create_server_credentials_handle<T>(server: &mut T) -> sspi::Result<T::CredentialsHandle>
+pub(crate) fn create_server_credentials_handle<T>(server: &mut T) -> sspi::Result<T::CredentialsHandle>
 where
     T: Sspi,
 {
@@ -85,7 +85,7 @@ where
     Ok(credentials_handle)
 }
 
-pub fn process_authentication_without_complete<ClientSspi, ServerSspi>(
+pub(crate) fn process_authentication_without_complete<ClientSspi, ServerSspi>(
     client: &mut ClientSspi,
     mut client_creds_handle: ClientSspi::CredentialsHandle,
     server: &mut ServerSspi,
@@ -137,7 +137,7 @@ where
     }
 }
 
-pub fn try_complete_authentication<T>(server: &mut T, auth_server_status: SecurityStatus) -> sspi::Result<()>
+pub(crate) fn try_complete_authentication<T>(server: &mut T, auth_server_status: SecurityStatus) -> sspi::Result<()>
 where
     T: Sspi,
 {
@@ -150,7 +150,7 @@ where
     Ok(())
 }
 
-pub fn set_identity_and_try_complete_authentication<T, C>(
+pub(crate) fn set_identity_and_try_complete_authentication<T, C>(
     server: &mut T,
     auth_server_status: SecurityStatus,
     credentials_proxy: &mut C,
@@ -172,7 +172,7 @@ where
     Ok(())
 }
 
-pub fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi) -> sspi::Result<()> {
+pub(crate) fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi) -> sspi::Result<()> {
     let server_sizes = server.query_context_sizes()?;
     let sequence_number = 0;
 

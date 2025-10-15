@@ -36,7 +36,7 @@ impl ChallengeMessageFields {
     }
 }
 
-pub fn write_challenge(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
+pub(crate) fn write_challenge(context: &mut Ntlm, mut transport: impl io::Write) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let server_challenge = generate_challenge()?;

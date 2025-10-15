@@ -1,6 +1,6 @@
 #[cfg(not(any(test, miri)))]
 mod inner {
-    pub use dpapi::{n_crypt_protect_secret, n_crypt_unprotect_secret};
+    pub(crate) use dpapi::{n_crypt_protect_secret, n_crypt_unprotect_secret};
 }
 
 #[cfg(any(test, miri))]
@@ -25,7 +25,7 @@ mod inner {
     use uuid::Uuid;
 
     #[allow(clippy::extra_unused_type_parameters)]
-    pub async fn n_crypt_unprotect_secret<T: Transport>(
+    pub(crate) async fn n_crypt_unprotect_secret<T: Transport>(
         args: CryptUnprotectSecretArgs<'_, '_, '_, '_>,
     ) -> Result<Secret<Vec<u8>>> {
         if let Some(ProxyOptions {
@@ -46,7 +46,9 @@ mod inner {
     }
 
     #[allow(clippy::extra_unused_type_parameters)]
-    pub async fn n_crypt_protect_secret<T: Transport>(args: CryptProtectSecretArgs<'_, '_, '_>) -> Result<Vec<u8>> {
+    pub(crate) async fn n_crypt_protect_secret<T: Transport>(
+        args: CryptProtectSecretArgs<'_, '_, '_>,
+    ) -> Result<Vec<u8>> {
         if let Some(ProxyOptions {
             proxy,
             get_session_token,
@@ -64,7 +66,7 @@ mod inner {
         Ok(b"DPAPI_blob".to_vec())
     }
 
-    pub unsafe extern "system" fn get_session_token(
+    pub(crate) unsafe extern "system" fn get_session_token(
         session_id: LpCUuid,
         destination: LpCStr,
         token_buf: LpByte,
@@ -103,4 +105,4 @@ mod inner {
     }
 }
 
-pub use inner::*;
+pub(super) use inner::*;

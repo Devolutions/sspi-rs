@@ -11,7 +11,7 @@ const DES_BLOCK_SIZE: u32 = 8;
 
 use crate::{Error, ErrorKind, Result};
 
-pub fn get_cipher_block_size(cipher: CipherSuite) -> Result<u32> {
+pub(super) fn get_cipher_block_size(cipher: CipherSuite) -> Result<u32> {
     match cipher {
         // Block ciphers
         CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 => Ok(AES_BLOCK_SIZE),

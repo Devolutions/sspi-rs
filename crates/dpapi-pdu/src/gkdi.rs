@@ -339,7 +339,7 @@ impl arbitrary::Arbitrary<'_> for FfcdhParameters {
         let bits = field_order.bits().max(generator.bits());
 
         Ok(Self {
-            key_length: (bits as u32).div_ceil(8),
+            key_length: bits.div_ceil(8),
             field_order,
             generator,
         })
@@ -461,7 +461,7 @@ impl arbitrary::Arbitrary<'_> for FfcdhKey {
         let bits = field_order.bits().max(generator.bits().max(public_key.bits()));
 
         Ok(Self {
-            key_length: (bits as u32).div_ceil(8),
+            key_length: bits.div_ceil(8),
             field_order,
             generator,
             public_key,
@@ -611,7 +611,7 @@ impl arbitrary::Arbitrary<'_> for EcdhKey {
 
         Ok(Self {
             curve: u.arbitrary()?,
-            key_length: (bits as u32).div_ceil(8),
+            key_length: bits.div_ceil(8),
             x,
             y,
         })

@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 /// This function wraps a JS-function into a Rust closure which we can pass into the Rust API.
-pub fn session_token_fn(get_session_token: js_sys::Function) -> Box<GetSessionTokenFn> {
+pub(crate) fn session_token_fn(get_session_token: js_sys::Function) -> Box<GetSessionTokenFn> {
     Box::new(move |session_id: Uuid, destination: Url| {
         let get_session_token = get_session_token.clone();
         Box::pin(async move {

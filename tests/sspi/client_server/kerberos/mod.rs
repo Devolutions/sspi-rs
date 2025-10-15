@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 
-pub mod kdc;
-pub mod network_client;
+pub(super) mod kdc;
+pub(super) mod network_client;
 
 use std::collections::{HashMap, HashSet};
 use std::panic;
@@ -32,7 +32,7 @@ use crate::client_server::{test_encryption, test_rpc_request_encryption, test_st
 /// * realm and target application service name;
 ///
 /// It is used for simplifying tests environment preparation.
-pub struct KrbEnvironment {
+pub(super) struct KrbEnvironment {
     pub keys: HashMap<UserName, Vec<u8>>,
     pub users: HashMap<UserName, PasswordCreds>,
     pub credentials: Credentials,
@@ -45,7 +45,7 @@ pub struct KrbEnvironment {
 /// * User logon credentials (password-based).
 /// * Kerberos services keys.
 /// * Target machine name.
-pub fn init_krb_environment() -> KrbEnvironment {
+pub(super) fn init_krb_environment() -> KrbEnvironment {
     let username = "pw13";
     let user_password = "qweQWE123!@#";
     let domain = "EXAMPLE";
@@ -139,7 +139,7 @@ pub fn init_krb_environment() -> KrbEnvironment {
 
 /// Does all preparations and calls the [initialize_security_context_impl] function
 /// on the provided Kerberos context.
-pub fn initialize_security_context(
+pub(super) fn initialize_security_context(
     client: &mut SspiContext,
     credentials_handle: &mut Option<CredentialsBuffers>,
     flags: ClientRequestFlags,
@@ -169,7 +169,7 @@ pub fn initialize_security_context(
 
 /// Does all preparations and calls the [accept_security_context] function
 /// on the provided Kerberos context.
-pub fn accept_security_context(
+pub(super) fn accept_security_context(
     server: &mut SspiContext,
     credentials_handle: &mut Option<CredentialsBuffers>,
     flags: ServerRequestFlags,

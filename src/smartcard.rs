@@ -15,7 +15,7 @@ use winscard::SmartCard as PivSmartCard;
 use crate::{Error, ErrorKind, Result, Secret, SmartCardIdentity, SmartCardType};
 
 /// Smart cad API to use.
-pub enum SmartCardApi {
+pub(crate) enum SmartCardApi {
     /// Represents emulated smart cards API.
     ///
     /// No real device or driver is needed.
@@ -56,14 +56,14 @@ impl fmt::Debug for SmartCardApi {
 ///
 /// This implementation can use any supported smart card type. It depends on the provided credentials set.
 #[derive(Debug)]
-pub struct SmartCard {
+pub(crate) struct SmartCard {
     smart_card_type: SmartCardApi,
     pin: Secret<Vec<u8>>,
 }
 
 impl SmartCard {
     /// Creates a new [SmartCard] instance from the provided credentials.
-    pub fn from_credentials(credentials: &SmartCardIdentity) -> Result<Self> {
+    pub(crate) fn from_credentials(credentials: &SmartCardIdentity) -> Result<Self> {
         let SmartCardIdentity {
             username: _,
             certificate,
@@ -151,7 +151,7 @@ impl SmartCard {
     }
 
     /// Signs the provided byte slice using smart card.
-    pub fn sign(&mut self, digest: Vec<u8>) -> Result<Vec<u8>> {
+    pub(crate) fn sign(&mut self, digest: Vec<u8>) -> Result<Vec<u8>> {
         match &mut self.smart_card_type {
             SmartCardApi::PivEmulated(ref mut scard) => {
                 scard.verify_pin(self.pin.as_ref())?;

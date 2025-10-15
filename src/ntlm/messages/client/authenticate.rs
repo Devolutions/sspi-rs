@@ -30,7 +30,7 @@ struct AuthenticateMessageFields {
 }
 
 impl AuthenticateMessageFields {
-    pub fn new(
+    pub(crate) fn new(
         identity: &AuthIdentityBuffers,
         lm_challenge_response: &[u8],
         nt_challenge_response: &[u8],
@@ -75,12 +75,12 @@ impl AuthenticateMessageFields {
         }
     }
 
-    pub fn data_len(&self) -> usize {
+    pub(crate) fn data_len(&self) -> usize {
         self.encrypted_random_session_key.buffer_offset as usize + self.encrypted_random_session_key.buffer.len()
     }
 }
 
-pub fn write_authenticate(
+pub(crate) fn write_authenticate(
     context: &mut Ntlm,
     credentials: &AuthIdentityBuffers,
     mut transport: impl io::Write,

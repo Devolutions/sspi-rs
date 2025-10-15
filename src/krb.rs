@@ -47,7 +47,7 @@ fn try_read_line(reader: &mut impl BufRead, line: &mut String) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Krb5Conf {
+pub(crate) struct Krb5Conf {
     pub values: Vec<(String, String)>,
     path: Vec<String>,
 }
@@ -60,7 +60,7 @@ impl Krb5Conf {
         }
     }
 
-    pub fn new_from_file(filename: &Path) -> Option<Self> {
+    pub(crate) fn new_from_file(filename: &Path) -> Option<Self> {
         let file = File::open(filename).ok()?;
         let mut reader = BufReader::new(file);
         let mut config = Krb5Conf::new();
@@ -68,14 +68,14 @@ impl Krb5Conf {
         Some(config)
     }
 
-    pub fn new_from_data(data: &str) -> Option<Self> {
+    pub(crate) fn new_from_data(data: &str) -> Option<Self> {
         let mut reader = BufReader::new(data.as_bytes());
         let mut config = Krb5Conf::new();
         config.parse_from_reader(&mut reader);
         Some(config)
     }
 
-    pub fn get_value(&self, path: Vec<&str>) -> Option<String> {
+    pub(crate) fn get_value(&self, path: Vec<&str>) -> Option<String> {
         let path = path.join("|");
         for (key, val) in self.values.iter() {
             if key.eq_ignore_ascii_case(&path) {
@@ -85,7 +85,7 @@ impl Krb5Conf {
         None
     }
 
-    pub fn get_values_in_section(&self, path: &[&str]) -> Option<Vec<(&str, &str)>> {
+    pub(crate) fn get_values_in_section(&self, path: &[&str]) -> Option<Vec<(&str, &str)>> {
         let mut values = Vec::new();
 
         let path = path.join("|").to_ascii_lowercase();

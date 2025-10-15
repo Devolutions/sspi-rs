@@ -2,7 +2,7 @@ use std::slice::from_raw_parts;
 
 use libc::c_char;
 
-pub fn into_raw_ptr<T>(value: T) -> *mut T {
+pub(crate) fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
@@ -12,7 +12,7 @@ pub fn into_raw_ptr<T>(value: T) -> *mut T {
 /// Behavior is undefined is any of the following conditions are violated:
 ///
 /// * `s` must be a [valid] C string.
-pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
+pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> String {
     let mut len = 0;
 
     // SAFETY: The user must provide guarantees that `s` is a valid C string.
@@ -30,7 +30,7 @@ pub unsafe fn c_w_str_to_string(s: *const u16) -> String {
 /// Behavior is undefined is any of the following conditions are violated:
 ///
 /// * `s` must be a [valid] C string.
-pub unsafe fn w_str_len(s: *const u16) -> usize {
+pub(crate) unsafe fn w_str_len(s: *const u16) -> usize {
     let mut len = 0;
 
     // SAFETY: The user must provide guarantees that `s` is a valid C string.
@@ -54,7 +54,7 @@ pub unsafe fn w_str_len(s: *const u16) -> usize {
 /// * if `raw_buffer` is not null, then it must be valid for reads for `len` many bytes, and it must be properly aligned.
 /// * The total size `len` of the slice must be no larger than `isize::MAX`, and adding that size to `data`
 ///   must not "wrap around" the address space.
-pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
+pub(crate) unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     if !raw_buffer.is_null() {
         // SAFETY:
         // `raw_buffer` is not null: checked above. All other guarantees should be upheld by the caller.
@@ -65,6 +65,6 @@ pub unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) 
 }
 
 #[cfg(any(feature = "scard", feature = "tsssp"))]
-pub fn str_encode_utf16(data: &str) -> Vec<u8> {
+pub(crate) fn str_encode_utf16(data: &str) -> Vec<u8> {
     data.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
 }

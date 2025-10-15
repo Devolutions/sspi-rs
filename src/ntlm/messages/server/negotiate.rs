@@ -8,7 +8,7 @@ use crate::SecurityStatus;
 
 const HEADER_SIZE: usize = 32;
 
-pub fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
+pub(crate) fn read_negotiate(context: &mut Ntlm, mut stream: impl io::Read) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;
 
     let mut buffer = Vec::with_capacity(HEADER_SIZE);

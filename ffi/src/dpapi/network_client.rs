@@ -6,7 +6,7 @@ use sspi::network_client::{AsyncNetworkClient, NetworkClient};
 use sspi::{Error, ErrorKind, NetworkRequest, Result};
 
 #[derive(Debug)]
-pub struct SyncNetworkClient;
+pub(super) struct SyncNetworkClient;
 
 impl AsyncNetworkClient for SyncNetworkClient {
     fn send<'a>(&'a mut self, request: &'a NetworkRequest) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>> {

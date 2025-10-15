@@ -40,7 +40,7 @@ struct BcryptRsaKeyBlob {
 }
 
 impl BcryptRsaKeyBlob {
-    pub fn from_read(mut data: impl Read) -> Result<Self> {
+    pub(crate) fn from_read(mut data: impl Read) -> Result<Self> {
         Ok(Self {
             magic: data.read_u32::<LittleEndian>()?,
             bit_len: data.read_u32::<LittleEndian>()?,
@@ -320,7 +320,7 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 // During dev testing, we notice that they always are in the Personal folder.
 // So we assume that the needed certificates are placed in this folder
 // It uses the "My" certificates store that has access to the Personal folder in order to extract those certificates.
-pub fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
+pub(crate) fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
     unsafe {
         // "My\0" encoded as a wide string.
         // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks

@@ -33,6 +33,9 @@ exclude = [
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
+# == Style, readability == #
+unreachable_pub = "warn"
+
 [workspace.dependencies]
 uuid = { version = "1.18", default-features = false }
 tracing = { version = "0.1",  default-features = false }

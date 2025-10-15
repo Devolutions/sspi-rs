@@ -6,20 +6,20 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::crypto::HASH_SIZE;
 use crate::ntlm::messages::computations::SINGLE_HOST_DATA_SIZE;
 
-pub const AV_PAIR_ID_BYTES_SIZE: usize = 2;
-pub const AV_PAIR_LEN_BYTES_SIZE: usize = 2;
+pub(super) const AV_PAIR_ID_BYTES_SIZE: usize = 2;
+pub(super) const AV_PAIR_LEN_BYTES_SIZE: usize = 2;
 
-pub const AV_PAIR_EOL: u16 = 0;
-pub const AV_PAIR_NB_COMPUTER_NAME: u16 = 1;
-pub const AV_PAIR_NB_DOMAIN_NAME: u16 = 2;
-pub const AV_PAIR_DNS_COMPUTER_NAME: u16 = 3;
-pub const AV_PAIR_DNS_DOMAIN_NAME: u16 = 4;
-pub const AV_PAIR_DNS_TREE_NAME: u16 = 5;
-pub const AV_PAIR_FLAGS: u16 = 6;
-pub const AV_PAIR_TIMESTAMP: u16 = 7;
-pub const AV_PAIR_SINGLE_HOST: u16 = 8;
-pub const AV_PAIR_TARGET_NAME: u16 = 9;
-pub const AV_PAIR_CHANNEL_BINDINGS: u16 = 10;
+pub(super) const AV_PAIR_EOL: u16 = 0;
+pub(super) const AV_PAIR_NB_COMPUTER_NAME: u16 = 1;
+pub(super) const AV_PAIR_NB_DOMAIN_NAME: u16 = 2;
+pub(super) const AV_PAIR_DNS_COMPUTER_NAME: u16 = 3;
+pub(super) const AV_PAIR_DNS_DOMAIN_NAME: u16 = 4;
+pub(super) const AV_PAIR_DNS_TREE_NAME: u16 = 5;
+pub(super) const AV_PAIR_FLAGS: u16 = 6;
+pub(super) const AV_PAIR_TIMESTAMP: u16 = 7;
+pub(super) const AV_PAIR_SINGLE_HOST: u16 = 8;
+pub(super) const AV_PAIR_TARGET_NAME: u16 = 9;
+pub(super) const AV_PAIR_CHANNEL_BINDINGS: u16 = 10;
 
 const AV_PAIR_EOL_SIZE: usize = 0;
 const AV_PAIR_FLAGS_SIZE: usize = 4;
@@ -27,7 +27,7 @@ const AV_PAIR_TIMESTAMP_SIZE: usize = 8;
 
 #[derive(Clone)]
 #[allow(clippy::upper_case_acronyms)]
-pub enum AvPair {
+pub(super) enum AvPair {
     EOL,
     NbComputerName(Vec<u8>),
     NbDomainName(Vec<u8>),
@@ -42,7 +42,7 @@ pub enum AvPair {
 }
 
 impl AvPair {
-    pub fn from_buffer(mut buffer: impl io::Read) -> io::Result<Self> {
+    pub(super) fn from_buffer(mut buffer: impl io::Read) -> io::Result<Self> {
         let av_type = buffer.read_u16::<LittleEndian>()?;
         let len = buffer.read_u16::<LittleEndian>()? as usize;
 
@@ -128,7 +128,7 @@ impl AvPair {
             )),
         }
     }
-    pub fn buffer_to_av_pairs(mut buffer: &[u8]) -> io::Result<Vec<Self>> {
+    pub(super) fn buffer_to_av_pairs(mut buffer: &[u8]) -> io::Result<Vec<Self>> {
         let mut av_pairs = Vec::new();
         while !buffer.is_empty() {
             av_pairs.push(AvPair::from_buffer(&mut buffer)?);
@@ -136,7 +136,7 @@ impl AvPair {
 
         Ok(av_pairs)
     }
-    pub fn list_to_buffer(av_pairs: &[AvPair]) -> io::Result<Vec<u8>> {
+    pub(super) fn list_to_buffer(av_pairs: &[AvPair]) -> io::Result<Vec<u8>> {
         let mut buffer = Vec::with_capacity(av_pairs.len() * (AV_PAIR_ID_BYTES_SIZE + AV_PAIR_LEN_BYTES_SIZE));
         for av_pair in av_pairs.iter() {
             av_pair.write_to(&mut buffer)?;
@@ -144,7 +144,7 @@ impl AvPair {
 
         Ok(buffer)
     }
-    pub fn write_to(&self, mut buffer: impl io::Write) -> io::Result<()> {
+    pub(super) fn write_to(&self, mut buffer: impl io::Write) -> io::Result<()> {
         let av_type = self.as_u16();
         let (len, value) = match self {
             AvPair::EOL => (AV_PAIR_EOL_SIZE, Vec::new()),
@@ -165,7 +165,7 @@ impl AvPair {
 
         Ok(())
     }
-    pub fn as_u16(&self) -> u16 {
+    pub(super) fn as_u16(&self) -> u16 {
         match self {
             AvPair::EOL => AV_PAIR_EOL,
             AvPair::NbComputerName(_) => AV_PAIR_NB_COMPUTER_NAME,

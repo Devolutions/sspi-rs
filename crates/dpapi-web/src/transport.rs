@@ -8,13 +8,13 @@ use gloo_net::websocket::futures::WebSocket;
 use url::Url;
 use uuid::Uuid;
 
-pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin {}
+pub(crate) trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin {}
 
 impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite + Unpin + 'static {}
 
 type ErasedReadWrite = Box<dyn AsyncReadWrite>;
 
-pub struct FuturesStream<S> {
+pub(crate) struct FuturesStream<S> {
     stream: S,
 }
 
@@ -65,7 +65,7 @@ where
 /// WASM transport.
 ///
 /// It uses the WEB API under the hood to open the WS connection.
-pub struct WasmTransport;
+pub(crate) struct WasmTransport;
 
 impl WasmTransport {
     /// Connects to the RPC server via the Devolutions Gateway tunneled connection.

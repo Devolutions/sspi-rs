@@ -26,7 +26,7 @@ impl From<BindError> for DecodeError {
     }
 }
 
-pub type BindResult<T> = core::result::Result<T, BindError>;
+pub(super) type BindResult<T> = core::result::Result<T, BindError>;
 
 /// [BindTimeFeatureNegotiationBitmask](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rpce/cef529cc-77b5-4794-85dc-91e1467e80f0)
 ///
