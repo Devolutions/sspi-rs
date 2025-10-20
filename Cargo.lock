@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "dpapi"
-version = "0.3.0"
+version = "0.0.0"
 dependencies = [
  "aead",
  "aes",
@@ -2932,7 +2932,6 @@ dependencies = [
  "getrandom 0.3.3",
  "hickory-resolver",
  "hmac",
- "lazy_static",
  "md-5",
  "md4",
  "num-derive",
