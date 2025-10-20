@@ -20,7 +20,7 @@ pub fn str_to_w_buff(data: &str) -> Vec<u16> {
     data.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
+pub(crate) fn bytes_to_utf16_string(mut value: &[u8]) -> String {
     let mut value_u16 = vec![0x00; value.len() / 2];
     value
         .read_u16_into::<LittleEndian>(value_u16.as_mut())
@@ -30,7 +30,7 @@ pub fn bytes_to_utf16_string(mut value: &[u8]) -> String {
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(unused))]
-pub fn is_azure_ad_domain(domain: &str) -> bool {
+pub(crate) fn is_azure_ad_domain(domain: &str) -> bool {
     domain == crate::pku2u::AZURE_AD_DOMAIN
 }
 
@@ -44,7 +44,7 @@ pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
     )
 }
 
-pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {
+pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {
     let key_size = cipher.cipher().key_size();
     let mut key = vec![0; key_size];
     rnd.fill_bytes(&mut key);
@@ -52,7 +52,7 @@ pub fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> 
     key
 }
 
-pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
+pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
 
     match krb_error_code {
@@ -227,7 +227,7 @@ pub fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, Stri
     }
 }
 
-pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
+pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
     // the sub-session key is always preferred over the session key
     if let Some(key) = enc_params.sub_session_key.as_ref() {
         debug!("Encryption using sub-session key");
@@ -254,7 +254,7 @@ pub fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
 ///   But in such a case, the `SECBUFFER_DATA` buffer is empty. So, we take the inner buffer from
 ///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
-pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBufferRef]) -> Result<()> {
+pub(crate) fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBufferRef]) -> Result<()> {
     if let Ok(buffer) = SecurityBufferRef::find_buffer_mut(buffers, BufferType::Stream) {
         let decrypted_len = decrypted.len();
 
@@ -306,7 +306,7 @@ pub fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBu
 /// Extracts data to decrypt from the incoming buffers.
 ///
 /// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
-pub fn extract_encrypted_data(buffers: &[SecurityBufferRef]) -> Result<Vec<u8>> {
+pub(crate) fn extract_encrypted_data(buffers: &[SecurityBufferRef]) -> Result<Vec<u8>> {
     let mut encrypted = SecurityBufferRef::buf_data(buffers, BufferType::Token)
         .unwrap_or_default()
         .to_vec();
@@ -328,7 +328,7 @@ pub fn extract_encrypted_data(buffers: &[SecurityBufferRef]) -> Result<Vec<u8>> 
     Ok(encrypted)
 }
 
-pub fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
+pub(crate) fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
     let divider = target_name.find('/').ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidParameter,

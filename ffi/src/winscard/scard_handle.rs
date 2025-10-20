@@ -13,7 +13,7 @@ use winscard::{Error, ErrorKind, WinScardResult};
 ///
 /// Additionally, it holds allocated buffers and created smart card handles.
 /// We need them because during the smart card context deletion, we need to free all allcated resources.
-pub struct WinScardContextHandle {
+pub(super) struct WinScardContextHandle {
     /// Context of the emulated smart card.
     scard_context: Box<dyn WinScardContext>,
     /// Created smart card handles during the API usage.
@@ -35,7 +35,7 @@ impl fmt::Debug for WinScardContextHandle {
 
 impl WinScardContextHandle {
     /// Creates a new [WinScardContextHandle] based on the provided inner scard context.
-    pub fn with_scard_context(scard_context: Box<dyn WinScardContext>) -> Self {
+    pub(super) fn with_scard_context(scard_context: Box<dyn WinScardContext>) -> Self {
         Self {
             scard_context,
             scards: Vec::new(),
@@ -44,12 +44,12 @@ impl WinScardContextHandle {
     }
 
     /// Returns the shared reference to the inner [WinScardContext].
-    pub fn scard_context(&self) -> &dyn WinScardContext {
+    pub(super) fn scard_context(&self) -> &dyn WinScardContext {
         self.scard_context.as_ref()
     }
 
     /// Adds a new [ScardHandle] to the context handles.
-    pub fn add_scard(&mut self, scard: ScardHandle) -> WinScardResult<()> {
+    pub(super) fn add_scard(&mut self, scard: ScardHandle) -> WinScardResult<()> {
         if scard == 0 {
             return Err(Error::new(ErrorKind::InvalidHandle, "ScardHandle can not be NULL"));
         }
@@ -61,7 +61,7 @@ impl WinScardContextHandle {
 
     /// Removes the [ScardHandle] from the scard context.
     #[instrument(level = "debug", ret)]
-    pub fn remove_scard(&mut self, scard: ScardHandle) -> bool {
+    pub(super) fn remove_scard(&mut self, scard: ScardHandle) -> bool {
         if let Some(index) = self.scards.iter().position(|x| *x == scard) {
             self.scards.remove(index);
 
@@ -73,7 +73,7 @@ impl WinScardContextHandle {
 
     /// Allocated a new buffer inside the scard context.
     #[instrument(level = "debug", ret)]
-    pub fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
+    pub(super) fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
         // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
@@ -89,7 +89,7 @@ impl WinScardContextHandle {
 
     /// Deletes the buffer inside the scard context.
     #[instrument(level = "debug", ret)]
-    pub fn free_buffer(&mut self, buff: LpCVoid) -> bool {
+    pub(super) fn free_buffer(&mut self, buff: LpCVoid) -> bool {
         let buff = buff as usize;
 
         if let Some(index) = self.allocations.iter().position(|x| *x == buff) {
@@ -108,7 +108,11 @@ impl WinScardContextHandle {
     }
 
     /// Returns the icon of the specified reader.
-    pub fn get_reader_icon(&mut self, reader: &str, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub(super) fn get_reader_icon(
+        &mut self,
+        reader: &str,
+        buffer_type: RequestedBufferType,
+    ) -> WinScardResult<OutBuffer> {
         let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
 
         self.write_to_out_buf(&reader_icon, buffer_type)
@@ -116,7 +120,7 @@ impl WinScardContextHandle {
 
     /// Lists readers.
     #[instrument(level = "debug", ret)]
-    pub fn list_readers(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub(super) fn list_readers(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let readers: Vec<_> = self
             .scard_context()
             .list_readers()?
@@ -129,7 +133,7 @@ impl WinScardContextHandle {
 
     /// Lists readers but the resulting buffers contain wide strings.
     #[instrument(level = "debug", ret)]
-    pub fn list_readers_wide(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub(super) fn list_readers_wide(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
         let readers: Vec<_> = self
             .scard_context()
             .list_readers()?
@@ -142,7 +146,7 @@ impl WinScardContextHandle {
 
     /// Lists cards.
     #[instrument(level = "debug", ret)]
-    pub fn list_cards(
+    pub(super) fn list_cards(
         &mut self,
         atr: Option<&[u8]>,
         required_interfaces: Option<&[Uuid]>,
@@ -160,7 +164,7 @@ impl WinScardContextHandle {
 
     /// Lists readers but the resulting buffers contain wide strings.
     #[instrument(level = "debug", ret)]
-    pub fn list_cards_wide(
+    pub(super) fn list_cards_wide(
         &mut self,
         atr: Option<&[u8]>,
         required_interfaces: Option<&[Uuid]>,
@@ -178,7 +182,7 @@ impl WinScardContextHandle {
 
     /// Reads smart card cache.
     #[instrument(level = "debug", ret)]
-    pub fn read_cache(
+    pub(super) fn read_cache(
         &mut self,
         card_id: Uuid,
         freshness_counter: u32,
@@ -195,7 +199,7 @@ impl WinScardContextHandle {
 
     /// Converts provided strings to the C-multi-string and saves it.
     #[instrument(level = "debug", ret)]
-    pub fn write_multi_string(
+    pub(super) fn write_multi_string(
         &mut self,
         values: &[String],
         buffer_type: RequestedBufferType,
@@ -212,7 +216,7 @@ impl WinScardContextHandle {
     /// Converts provided strings to the C-multi-string and saves it but the resulting buffers contain
     /// wide strings.
     #[instrument(level = "debug", ret)]
-    pub fn write_multi_string_wide(
+    pub(super) fn write_multi_string_wide(
         &mut self,
         values: &[String],
         buffer_type: RequestedBufferType,
@@ -227,7 +231,7 @@ impl WinScardContextHandle {
     }
 
     /// Saves the provided data in the [OutBuffer] based on the [RequestedBufferType].
-    pub fn write_to_out_buf(
+    pub(super) fn write_to_out_buf(
         &mut self,
         data: &[u8],
         buffer_type: RequestedBufferType,
@@ -287,7 +291,7 @@ impl Drop for WinScardContextHandle {
 
 /// Represents how and what data the user want to extract.
 #[derive(Debug)]
-pub enum RequestedBufferType<'data> {
+pub(super) enum RequestedBufferType<'data> {
     /// This means the user wants the data filled in the provided buffer.
     Buf(&'data mut [u8]),
     /// The user want to query only the data length.
@@ -302,7 +306,7 @@ pub enum RequestedBufferType<'data> {
 /// However, buffer handling can be tricky in such situations. The user may want to allocate the memory
 /// or ask us to do it. This enum aimed to solve this complexity.
 #[derive(Debug)]
-pub enum OutBuffer<'data> {
+pub(super) enum OutBuffer<'data> {
     /// The data has been written into provided buffer by [RequestedBufferType::Buf].
     Written(usize),
     /// The user wants to know the requested data length to allocate the corresponding buffer in the future.
@@ -317,7 +321,7 @@ pub enum OutBuffer<'data> {
 ///
 /// This structure is aimed to represent smart card status data on the FFI layer.
 #[derive(Debug)]
-pub struct FfiScardStatus<'data> {
+pub(super) struct FfiScardStatus<'data> {
     /// List of display names (multi-string) by which the currently connected reader is known.
     pub readers: OutBuffer<'data>,
     /// Buffer that receives the ATR string from the currently inserted card, if available.
@@ -333,7 +337,7 @@ pub struct FfiScardStatus<'data> {
 /// Scard handle representation.
 ///
 /// It also holds a pointer to the smart card context to which it belongs.
-pub struct WinScardHandle {
+pub(super) struct WinScardHandle {
     /// The emulated smart card.
     scard: Box<dyn WinScard>,
     /// Pointer to the smart card context to which it belongs.
@@ -351,29 +355,29 @@ impl fmt::Debug for WinScardHandle {
 
 impl WinScardHandle {
     /// Creates a new [WinSCardHandle] based on the provided data.
-    pub fn new(scard: Box<dyn WinScard>, context: ScardContext) -> Self {
+    pub(super) fn new(scard: Box<dyn WinScard>, context: ScardContext) -> Self {
         Self { scard, context }
     }
 
     /// Returns the [WinScard] handle.
-    pub fn scard(&self) -> &dyn WinScard {
+    pub(super) fn scard(&self) -> &dyn WinScard {
         self.scard.as_ref()
     }
 
     /// Returns the mutable [WinScard] handle.
-    pub fn scard_mut(&mut self) -> &mut dyn WinScard {
+    pub(super) fn scard_mut(&mut self) -> &mut dyn WinScard {
         self.scard.as_mut()
     }
 
     /// Returns mutable reference to the parent [WinScardContextHandle].
-    pub fn context<'context>(&self) -> WinScardResult<&'context mut WinScardContextHandle> {
+    pub(super) fn context<'context>(&self) -> WinScardResult<&'context mut WinScardContextHandle> {
         // SAFETY: The WinScardHandle should not contain an invalid context handle.
         unsafe { raw_scard_context_handle_to_scard_context_handle(self.context) }
     }
 
     /// Returns the requested smart card attribute.
     #[instrument(level = "debug", ret)]
-    pub fn get_attribute(
+    pub(super) fn get_attribute(
         &self,
         attribute_id: AttributeId,
         buffer_type: RequestedBufferType,
@@ -385,7 +389,7 @@ impl WinScardHandle {
 
     /// Returns smart card status.
     #[instrument(level = "debug", ret)]
-    pub fn status(
+    pub(super) fn status(
         &mut self,
         readers_buf_type: RequestedBufferType,
         atr_but_type: RequestedBufferType,
@@ -407,7 +411,7 @@ impl WinScardHandle {
 
     /// Returns smart card status but all strings are wide.
     #[instrument(level = "debug", ret)]
-    pub fn status_wide(
+    pub(super) fn status_wide(
         &mut self,
         readers_buf_type: RequestedBufferType,
         atr_but_type: RequestedBufferType,
@@ -429,7 +433,7 @@ impl WinScardHandle {
 }
 
 /// Tries to convert the raw scard handle to the `&mut dyn WinScard`.
-pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
+pub(super) unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
     if handle == 0 {
         return Err(Error::new(ErrorKind::InvalidHandle, "scard handle cannot be zero"));
     }
@@ -446,7 +450,9 @@ pub unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResul
 }
 
 /// Tries to convert the raw scard handle to the [&mut WinScardHandle].
-pub unsafe fn raw_scard_handle_to_scard_handle<'a>(h_card: ScardHandle) -> WinScardResult<&'a mut WinScardHandle> {
+pub(super) unsafe fn raw_scard_handle_to_scard_handle<'a>(
+    h_card: ScardHandle,
+) -> WinScardResult<&'a mut WinScardHandle> {
     if h_card == 0 {
         return Err(Error::new(
             ErrorKind::InvalidHandle,
@@ -461,7 +467,7 @@ pub unsafe fn raw_scard_handle_to_scard_handle<'a>(h_card: ScardHandle) -> WinSc
 }
 
 /// Tries to convert the raw scard context handle to the [&mut WinScardContextHandle].
-pub unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
+pub(super) unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
     h_context: ScardContext,
 ) -> WinScardResult<&'a mut WinScardContextHandle> {
     if h_context == 0 {
@@ -478,7 +484,7 @@ pub unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
 }
 
 /// Tries to convert the raw scard context handle to the `&mut dyn WinScardContext`.
-pub unsafe fn scard_context_to_winscard_context<'a>(
+pub(super) unsafe fn scard_context_to_winscard_context<'a>(
     handle: ScardContext,
 ) -> WinScardResult<&'a mut dyn WinScardContext> {
     if handle == 0 {
@@ -500,7 +506,7 @@ pub unsafe fn scard_context_to_winscard_context<'a>(
 }
 
 /// Copies data from the Rust [IoRequest] to the C `SCARD_IO_REQUEST` ([LpScardIoRequest]).
-pub unsafe fn copy_io_request_to_scard_io_request(
+pub(super) unsafe fn copy_io_request_to_scard_io_request(
     io_request: &IoRequest,
     scard_io_request: LpScardIoRequest,
 ) -> WinScardResult<()> {

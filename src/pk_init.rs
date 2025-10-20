@@ -34,7 +34,7 @@ use crate::{Error, ErrorKind, Result};
 /// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
 /// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
 /// Key length of Aes256 is equal to 32
-pub const DH_NONCE_LEN: usize = 32;
+pub(crate) const DH_NONCE_LEN: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct DhParameters {
@@ -55,14 +55,14 @@ pub struct DhParameters {
 // PA_DATAs in the Kerberos smart card logon is packed into a wrapper with OID.
 // It's very similar to the `EncapsulatedContentInfo` structure, but the content field has another type.
 #[derive(Serialize, Deserialize)]
-pub struct Wrapper<T> {
+pub(crate) struct Wrapper<T> {
     pub content_info: ObjectIdentifierAsn1,
     pub content: ExplicitContextTag0<T>,
 }
 
-pub type SignDataFn = Box<dyn FnMut(&[u8]) -> Result<Vec<u8>> + Send>;
+pub(crate) type SignDataFn = Box<dyn FnMut(&[u8]) -> Result<Vec<u8>> + Send>;
 
-pub struct GenerateAsPaDataOptions<'a> {
+pub(crate) struct GenerateAsPaDataOptions<'a> {
     pub p2p_cert: Certificate,
     pub kdc_req_body: &'a KdcReqBody,
     pub dh_parameters: DhParameters,
@@ -72,7 +72,7 @@ pub struct GenerateAsPaDataOptions<'a> {
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
+pub(crate) fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         p2p_cert,
         kdc_req_body,
@@ -200,7 +200,7 @@ pub fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -
     ])
 }
 
-pub fn generate_signer_info(
+pub(crate) fn generate_signer_info(
     p2p_cert: &Certificate,
     digest: Vec<u8>,
     sign_data: &mut dyn FnMut(&[u8]) -> Result<Vec<u8>>,
@@ -239,7 +239,7 @@ pub fn generate_signer_info(
 }
 
 #[instrument(level = "trace", ret)]
-pub fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
+pub(crate) fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
     let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
     if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
         return Err(Error::new(

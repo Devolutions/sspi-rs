@@ -8,7 +8,7 @@ use crate::client_server::kerberos::kdc::KdcMock;
 ///
 /// Instead of sending Kerberos messages to the KDC service,
 /// it redirects them to the KDC mock implementation.
-pub struct NetworkClientMock {
+pub(crate) struct NetworkClientMock {
     pub kdc: KdcMock,
 }
 

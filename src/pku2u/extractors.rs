@@ -12,7 +12,7 @@ use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::pk_init::DH_NONCE_LEN;
 use crate::{Error, ErrorKind, Result};
 
-pub fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
+pub(super) fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
     Ok((picky_asn1_der::from_bytes(data)?, data))

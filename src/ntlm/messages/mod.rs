@@ -1,7 +1,7 @@
-pub mod client;
-pub mod server;
+pub(super) mod client;
+pub(super) mod server;
 #[cfg(test)]
-pub mod test;
+pub(super) mod test;
 
 mod av_pair;
 mod computations;
@@ -22,13 +22,13 @@ const CLIENT_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server s
 const SERVER_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client sealing key magic constant\0";
 
 #[derive(Clone, Copy)]
-pub enum MessageTypes {
+pub(super) enum MessageTypes {
     Negotiate = 1,
     Challenge = 2,
     Authenticate = 3,
 }
 
-pub struct MessageFields {
+pub(super) struct MessageFields {
     buffer: Vec<u8>,
     buffer_offset: u32,
 }
@@ -96,7 +96,7 @@ fn try_read_version(flags: NegotiateFlags, mut cursor: impl io::Read) -> io::Res
     }
 }
 
-pub fn read_ntlm_header(mut stream: impl io::Read, expected_message_type: MessageTypes) -> crate::Result<()> {
+pub(super) fn read_ntlm_header(mut stream: impl io::Read, expected_message_type: MessageTypes) -> crate::Result<()> {
     let mut signature = [0x00; NTLM_SIGNATURE_SIZE];
     stream.read_exact(signature.as_mut())?;
     let message_type = stream.read_u32::<LittleEndian>()?;

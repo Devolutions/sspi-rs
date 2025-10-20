@@ -18,7 +18,7 @@ use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
 use crate::{Result, KERBEROS_VERSION};
 
-pub fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
+pub(super) fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
     let response_token = tgt_rep
         .map(|tgt_rep| {
             Result::Ok(ExplicitContextTag2::from(OctetStringAsn1::from(
@@ -38,7 +38,7 @@ pub fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtR
     }))
 }
 
-pub fn generate_ap_rep(
+pub(super) fn generate_ap_rep(
     session_key: &[u8],
     ctime: KerberosTime,
     cusec: Microseconds,
@@ -73,7 +73,11 @@ pub fn generate_ap_rep(
     }))
 }
 
-pub fn generate_final_neg_token_targ(mech_id: ObjectIdentifier, ap_rep: ApRep, mic: Vec<u8>) -> Result<NegTokenTarg1> {
+pub(super) fn generate_final_neg_token_targ(
+    mech_id: ObjectIdentifier,
+    ap_rep: ApRep,
+    mic: Vec<u8>,
+) -> Result<NegTokenTarg1> {
     let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REP_TOKEN_ID,
@@ -90,7 +94,7 @@ pub fn generate_final_neg_token_targ(mech_id: ObjectIdentifier, ap_rep: ApRep, m
     }))
 }
 
-pub fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[u8]) -> Result<Vec<u8>> {
     let mut mic_token = MicToken::with_acceptor_flags().with_seq_number(seq_number);
 
     payload.extend_from_slice(&mic_token.header());
@@ -108,7 +112,7 @@ pub fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[
     Ok(mic_token_raw)
 }
 
-pub fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
+pub(super) fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
     TgtRep {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
