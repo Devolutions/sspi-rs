@@ -236,9 +236,12 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature="dns_resolver")] {
-        use hickory_resolver::TokioAsyncResolver;
+        use hickory_resolver::TokioResolver;
         use hickory_resolver::system_conf::read_system_conf;
-        use hickory_resolver::config::{ResolverConfig,NameServerConfig,Protocol,ResolverOpts};
+        use hickory_resolver::config::{ResolverConfig, NameServerConfig, ResolverOpts};
+        use hickory_resolver::proto::xfer::Protocol;
+        use hickory_resolver::name_server::GenericConnector;
+        use hickory_proto::runtime::TokioRuntimeProvider;
         use std::env;
         use std::net::{IpAddr,SocketAddr};
         use std::str::FromStr;
@@ -266,6 +269,7 @@ cfg_if::cfg_if! {
                             protocol,
                             tls_dns_name: None,
                             trust_negative_responses: false,
+                            http_endpoint: None,
                             bind_addr: None
                         });
                     }
@@ -275,7 +279,7 @@ cfg_if::cfg_if! {
             None
         }
 
-        fn get_dns_resolver_from_name_servers(name_servers: Vec<String>) -> TokioAsyncResolver {
+        fn get_dns_resolver_from_name_servers(name_servers: Vec<String>) -> TokioResolver {
             let mut resolver_config = ResolverConfig::new();
 
             for name_server_url in name_servers {
@@ -287,23 +291,27 @@ cfg_if::cfg_if! {
             let mut resolver_options = ResolverOpts::default();
             resolver_options.validate = false;
 
-            TokioAsyncResolver::tokio(resolver_config, resolver_options)
+            TokioResolver::builder_with_config(resolver_config, GenericConnector::new(TokioRuntimeProvider::new()))
+                .with_options(resolver_options)
+                .build()
         }
 
         #[cfg(target_os="windows")]
-        fn get_dns_resolver(domain: &str) -> Option<TokioAsyncResolver> {
+        fn get_dns_resolver(domain: &str) -> Option<TokioResolver> {
             let name_servers = get_name_servers_for_domain(domain);
             Some(get_dns_resolver_from_name_servers(name_servers))
         }
 
         #[cfg(not(target_os="windows"))]
-        fn get_dns_resolver(_domain: &str) -> Option<TokioAsyncResolver> {
+        fn get_dns_resolver(_domain: &str) -> Option<TokioResolver> {
             if let Ok(name_server_list) = env::var("SSPI_DNS_URL") {
                 let name_servers: Vec<String> = name_server_list
                     .split(',').map(|c|c.trim()).filter(|x| !x.is_empty()).map(String::from).collect();
                 Some(get_dns_resolver_from_name_servers(name_servers))
             } else if let Ok((resolver_config, resolver_options)) = read_system_conf() {
-                Some(TokioAsyncResolver::tokio(resolver_config, resolver_options))
+                Some(TokioResolver::builder_with_config(resolver_config, GenericConnector::new(TokioRuntimeProvider::new()))
+                    .with_options(resolver_options)
+                    .build())
             } else {
                 None
             }
