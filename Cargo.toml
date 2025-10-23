@@ -82,7 +82,7 @@ default = ["aws-lc-rs"]
 # Enable reqwest for HTTP requests.
 network_client = ["dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "__rustls-used"]
 # KDC discovery by querying DNS records.
-dns_resolver = ["dep:hickory-resolver", "dep:tokio"]
+dns_resolver = ["dep:hickory-resolver", "dep:hickory-proto","dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
 tsssp = ["dep:rustls", "__rustls-used"]
 # Turns on Kerberos smart card logon.
@@ -132,7 +132,8 @@ serde_derive = "1"
 oid = "0.2"
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
-hickory-resolver = { version = "0.24", optional = true }
+hickory-resolver = { version = "0.25", optional = true }
+hickory-proto = { version = "0.25", optional = true }
 portpicker = { version = "0.1", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 rustls-native-certs = { version = "0.8", optional = true }
