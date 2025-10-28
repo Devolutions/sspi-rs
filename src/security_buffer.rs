@@ -349,8 +349,8 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Returns the mutable reference to the inner buffer data leaving the empty buffer on its place.
-    pub fn take_buf_data_mut<'a>(
-        buffers: &'a mut [SecurityBufferRef<'data>],
+    pub fn take_buf_data_mut(
+        buffers: &mut [SecurityBufferRef<'data>],
         buffer_type: BufferType,
     ) -> Result<&'data mut [u8]> {
         Ok(SecurityBufferRef::find_buffer_mut(buffers, buffer_type)?.take_data())
