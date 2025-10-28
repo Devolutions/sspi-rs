@@ -37,6 +37,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 unreachable_pub = "warn"
 single_use_lifetimes = "warn"
 elided_lifetimes_in_paths = "warn"
+unused_lifetimes = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
 
 [workspace.dependencies]
 uuid = { version = "1.18", default-features = false }
