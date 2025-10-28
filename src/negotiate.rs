@@ -350,7 +350,7 @@ impl Sspi for Negotiate {
     fn encrypt_message(
         &mut self,
         flags: crate::EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         match &mut self.protocol {
@@ -435,7 +435,7 @@ impl Sspi for Negotiate {
     fn make_signature(
         &mut self,
         flags: u32,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<()> {
         match &mut self.protocol {
@@ -445,7 +445,7 @@ impl Sspi for Negotiate {
         }
     }
 
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_signature(message, sequence_number),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_signature(message, sequence_number),

@@ -611,7 +611,7 @@ pub trait WinScard {
     /// The SCardStatus function provides the current status of a smart card in a reader.
     /// You can call it any time after a successful call to `SCardConnect` and before a successful
     /// call to `SCardDisconnect`. It does not affect the state of the reader or reader driver.
-    fn status(&self) -> WinScardResult<Status>;
+    fn status(&self) -> WinScardResult<Status<'_>>;
 
     /// [SCardControl](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
     ///
@@ -660,7 +660,7 @@ pub trait WinScard {
     ///
     /// The SCardGetAttrib function retrieves the current reader attributes for the given handle.
     /// It does not affect the state of the reader, driver, or card.
-    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<[u8]>>;
+    fn get_attribute(&self, attribute_id: AttributeId) -> WinScardResult<Cow<'_, [u8]>>;
 
     /// [SCardSetAttrib](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib)
     ///
@@ -698,13 +698,14 @@ pub trait WinScardContext {
     /// [SCardListReadersW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersw)
     ///
     /// Provides the list of readers within a set of named reader groups, eliminating duplicates.
-    fn list_readers(&self) -> WinScardResult<Vec<Cow<str>>>;
+    fn list_readers(&self) -> WinScardResult<Vec<Cow<'_, str>>>;
 
     /// [SCardListCardsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw)
     ///
     /// The SCardListCards function searches the smart card database and provides a list of named cards previously
     /// introduced to the system by the user.
-    fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>) -> WinScardResult<Vec<Cow<str>>>;
+    fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>)
+        -> WinScardResult<Vec<Cow<'_, str>>>;
 
     /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
     ///
@@ -716,7 +717,7 @@ pub trait WinScardContext {
     ///
     /// The SCardGetReaderIcon function gets an icon of the smart card reader for a given reader's name.
     /// This function does not affect the state of the card reader.
-    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon>;
+    fn reader_icon(&self, reader_name: &str) -> WinScardResult<Icon<'_>>;
 
     /// [SCardIsValidContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardisvalidcontext)
     ///
@@ -726,7 +727,7 @@ pub trait WinScardContext {
     /// [SCardReadCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
     ///
     /// The SCardReadCache function retrieves the value portion of a name-value pair from the global cache maintained by the Smart Card Resource Manager.
-    fn read_cache(&self, card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<[u8]>>;
+    fn read_cache(&self, card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>>;
 
     /// [SCardWriteCacheW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
     ///
@@ -737,7 +738,7 @@ pub trait WinScardContext {
     /// [SCardListReaderGroupsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw)
     ///
     /// The SCardListReaderGroups function provides the list of reader groups that have previously been introduced to the system.
-    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<str>>>;
+    fn list_reader_groups(&self) -> WinScardResult<Vec<Cow<'_, str>>>;
 
     /// [SCardCancel](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
     ///
@@ -749,11 +750,11 @@ pub trait WinScardContext {
     /// [SCardGetStatusChangeW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
     ///
     /// The SCardGetStatusChange function blocks execution until the current availability of the cards in a specific set of readers changes.
-    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState]) -> WinScardResult<()>;
+    fn get_status_change(&mut self, timeout: u32, reader_states: &mut [ReaderState<'_>]) -> WinScardResult<()>;
 
     /// [SCardGetCardTypeProviderNameW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
     ///
     /// The SCardGetCardTypeProviderName function returns the name of the module (dynamic link library) that contains the provider for
     /// a given card name and provider type.
-    fn get_card_type_provider_name(&self, card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<str>>;
+    fn get_card_type_provider_name(&self, card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<'_, str>>;
 }

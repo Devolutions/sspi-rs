@@ -34,7 +34,7 @@ pub fn from_utf16_le(data: &[u8]) -> DecodeResult<String> {
 /// # Panics
 ///
 /// Panics when cursor's internal buffer doesn't have enough space.
-pub fn encode_utf16_le(data: &str, dst: &mut WriteCursor) {
+pub fn encode_utf16_le(data: &str, dst: &mut WriteCursor<'_>) {
     data.encode_utf16()
         .chain(core::iter::once(0))
         .for_each(|v| dst.write_u16(v));

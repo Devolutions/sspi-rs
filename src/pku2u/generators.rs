@@ -210,7 +210,7 @@ pub fn generate_authenticator_extension(key: &[u8], payload: &[u8]) -> Result<Au
 }
 
 #[instrument(level = "trace", ret)]
-pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
+pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,
         seq_num,

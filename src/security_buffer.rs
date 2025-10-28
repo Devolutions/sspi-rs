@@ -36,7 +36,7 @@ pub struct SecurityBufferRef<'data> {
 
 impl<'data> SecurityBufferRef<'data> {
     /// Creates a [SecurityBufferRef] with a `Data` buffer type and empty buffer flags.
-    pub fn data_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn data_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::Data(data),
             buffer_flags: Default::default(),
@@ -44,7 +44,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `Token` buffer type and empty buffer flags.
-    pub fn token_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn token_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::Token(data),
             buffer_flags: Default::default(),
@@ -52,7 +52,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `StreamHeader` buffer type and empty buffer flags.
-    pub fn stream_header_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn stream_header_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::StreamHeader(data),
             buffer_flags: Default::default(),
@@ -60,7 +60,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `StreamTrailer` buffer type and empty buffer flags.
-    pub fn stream_trailer_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn stream_trailer_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::StreamTrailer(data),
             buffer_flags: Default::default(),
@@ -68,7 +68,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `Stream` buffer type and empty buffer flags.
-    pub fn stream_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn stream_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::Stream(data),
             buffer_flags: Default::default(),
@@ -76,7 +76,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `Extra` buffer type and empty buffer flags.
-    pub fn extra_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn extra_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::Extra(data),
             buffer_flags: Default::default(),
@@ -84,7 +84,7 @@ impl<'data> SecurityBufferRef<'data> {
     }
 
     /// Creates a [SecurityBufferRef] with a `Padding` buffer type and empty buffer flags.
-    pub fn padding_buf(data: &mut [u8]) -> SecurityBufferRef {
+    pub fn padding_buf(data: &mut [u8]) -> SecurityBufferRef<'_> {
         SecurityBufferRef {
             buffer_type: UnflaggedSecurityBuffer::Padding(data),
             buffer_flags: Default::default(),

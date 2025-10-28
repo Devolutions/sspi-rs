@@ -74,7 +74,7 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
 }
 
 /// Saves the resulting data after the [RequestedBufferType] processing.
-pub(super) unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
+pub(super) unsafe fn save_out_buf(out_buf: OutBuffer<'_>, p_buf: LpByte, pcb_buf: LpDword) -> WinScardResult<()> {
     if pcb_buf.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }
@@ -120,7 +120,7 @@ pub(super) unsafe fn save_out_buf(out_buf: OutBuffer, p_buf: LpByte, pcb_buf: Lp
 /// This function behaves as the [save_out_buf] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is divided by two.
 #[instrument(level = "debug", ret)]
-pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
+pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer<'_>, p_buf: LpWStr, pcb_buf: LpDword) -> WinScardResult<()> {
     if pcb_buf.is_null() {
         return Err(Error::new(ErrorKind::InvalidParameter, "pcb_buf cannot be null"));
     }

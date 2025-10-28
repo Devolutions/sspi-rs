@@ -199,7 +199,7 @@ impl Sspi for Pku2u {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
@@ -259,7 +259,11 @@ impl Sspi for Pku2u {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(
+        &mut self,
+        message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -346,7 +350,7 @@ impl Sspi for Pku2u {
         })
     }
 
-    fn change_password(&mut self, _: ChangePassword) -> Result<crate::generator::GeneratorChangePassword> {
+    fn change_password(&mut self, _: ChangePassword<'_>) -> Result<crate::generator::GeneratorChangePassword<'_>> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Pku2u does not support change pasword",
@@ -356,7 +360,7 @@ impl Sspi for Pku2u {
     fn make_signature(
         &mut self,
         _flags: u32,
-        _message: &mut [SecurityBufferRef],
+        _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> crate::Result<()> {
         Err(Error::new(
@@ -365,7 +369,11 @@ impl Sspi for Pku2u {
         ))
     }
 
-    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef], _sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(
+        &mut self,
+        _message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> crate::Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",

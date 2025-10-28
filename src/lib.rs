@@ -607,7 +607,7 @@ where
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
@@ -719,7 +719,7 @@ where
     fn make_signature(
         &mut self,
         flags: u32,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<()>;
 
@@ -835,7 +835,7 @@ where
     ///
     /// # MSDN
     /// * [VerifySignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-verifysignature)
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> crate::Result<u32>;
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32>;
 
     /// Decrypts a message. Some packages do not encrypt and decrypt messages but rather perform and check an integrity hash.
     ///
@@ -953,7 +953,11 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], sequence_number: u32) -> Result<DecryptionFlags>;
+    fn decrypt_message(
+        &mut self,
+        message: &mut [SecurityBufferRef<'_>],
+        sequence_number: u32,
+    ) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///

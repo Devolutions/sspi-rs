@@ -155,7 +155,7 @@ impl Sspi for SspiCredSsp {
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
@@ -189,7 +189,11 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(
+        &mut self,
+        message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel
@@ -293,7 +297,10 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn change_password(&mut self, _change_password: builders::ChangePassword) -> Result<GeneratorChangePassword> {
+    fn change_password(
+        &mut self,
+        _change_password: builders::ChangePassword<'_>,
+    ) -> Result<GeneratorChangePassword<'_>> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "ChangePassword is not supported in SspiCredSsp context",
@@ -304,7 +311,7 @@ impl Sspi for SspiCredSsp {
     fn make_signature(
         &mut self,
         _flags: u32,
-        _message: &mut [SecurityBufferRef],
+        _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> crate::Result<()> {
         Err(Error::new(
@@ -314,7 +321,11 @@ impl Sspi for SspiCredSsp {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
-    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef], _sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(
+        &mut self,
+        _message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> crate::Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported",

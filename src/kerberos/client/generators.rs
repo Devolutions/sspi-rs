@@ -156,7 +156,7 @@ pub struct GenerateAsPaDataOptions<'a> {
 }
 
 #[instrument(level = "trace", ret, skip_all, fields(options.salt, options.enc_params, options.with_pre_auth))]
-pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions) -> Result<Vec<PaData>> {
+pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         password,
         salt,
@@ -227,7 +227,7 @@ pub struct GenerateAsReqOptions<'a> {
 }
 
 #[instrument(level = "trace", ret)]
-pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions) -> Result<KdcReqBody> {
+pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions<'_>) -> Result<KdcReqBody> {
     let GenerateAsReqOptions {
         realm,
         username,
@@ -318,7 +318,7 @@ pub struct GenerateTgsReqOptions<'a> {
 }
 
 #[instrument(level = "debug", ret)]
-pub fn generate_tgs_req(options: GenerateTgsReqOptions) -> Result<TgsReq> {
+pub fn generate_tgs_req(options: GenerateTgsReqOptions<'_>) -> Result<TgsReq> {
     let GenerateTgsReqOptions {
         realm,
         service_principal,
@@ -571,7 +571,7 @@ pub struct GenerateAuthenticatorOptions<'a> {
 
 /// Generated ApReq Authenticator.
 #[instrument(level = "trace", ret)]
-pub fn generate_authenticator(options: GenerateAuthenticatorOptions) -> Result<Authenticator> {
+pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,
         seq_num,

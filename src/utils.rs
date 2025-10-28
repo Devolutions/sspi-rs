@@ -254,7 +254,7 @@ pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]>
 ///   But in such a case, the `SECBUFFER_DATA` buffer is empty. So, we take the inner buffer from
 ///   the `SECBUFFER_STREAM` buffer, write decrypted data into it, and assign it to the `SECBUFFER_DATA` buffer.
 /// * If the `SECBUFFER_STREAM` is not present, we should just save all data in the `SECBUFFER_DATA` buffer.
-pub(crate) fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBufferRef]) -> Result<()> {
+pub(crate) fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [SecurityBufferRef<'_>]) -> Result<()> {
     if let Ok(buffer) = SecurityBufferRef::find_buffer_mut(buffers, BufferType::Stream) {
         let decrypted_len = decrypted.len();
 
@@ -306,7 +306,7 @@ pub(crate) fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [Sec
 /// Extracts data to decrypt from the incoming buffers.
 ///
 /// Data to decrypt is `Token` + `Stream`/`Data` buffers concatenated together.
-pub(crate) fn extract_encrypted_data(buffers: &[SecurityBufferRef]) -> Result<Vec<u8>> {
+pub(crate) fn extract_encrypted_data(buffers: &[SecurityBufferRef<'_>]) -> Result<Vec<u8>> {
     let mut encrypted = SecurityBufferRef::buf_data(buffers, BufferType::Token)
         .unwrap_or_default()
         .to_vec();

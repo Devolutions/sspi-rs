@@ -111,8 +111,8 @@ impl WinScardContextHandle {
     pub(super) fn get_reader_icon(
         &mut self,
         reader: &str,
-        buffer_type: RequestedBufferType,
-    ) -> WinScardResult<OutBuffer> {
+        buffer_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<OutBuffer<'_>> {
         let reader_icon = self.scard_context.reader_icon(reader)?.as_ref().to_vec();
 
         self.write_to_out_buf(&reader_icon, buffer_type)
@@ -120,7 +120,7 @@ impl WinScardContextHandle {
 
     /// Lists readers.
     #[instrument(level = "debug", ret)]
-    pub(super) fn list_readers(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub(super) fn list_readers(&mut self, buffer_type: RequestedBufferType<'_>) -> WinScardResult<OutBuffer<'_>> {
         let readers: Vec<_> = self
             .scard_context()
             .list_readers()?
@@ -133,7 +133,7 @@ impl WinScardContextHandle {
 
     /// Lists readers but the resulting buffers contain wide strings.
     #[instrument(level = "debug", ret)]
-    pub(super) fn list_readers_wide(&mut self, buffer_type: RequestedBufferType) -> WinScardResult<OutBuffer> {
+    pub(super) fn list_readers_wide(&mut self, buffer_type: RequestedBufferType<'_>) -> WinScardResult<OutBuffer<'_>> {
         let readers: Vec<_> = self
             .scard_context()
             .list_readers()?
@@ -150,8 +150,8 @@ impl WinScardContextHandle {
         &mut self,
         atr: Option<&[u8]>,
         required_interfaces: Option<&[Uuid]>,
-        buffer_type: RequestedBufferType,
-    ) -> WinScardResult<OutBuffer> {
+        buffer_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<OutBuffer<'_>> {
         let cards: Vec<_> = self
             .scard_context()
             .list_cards(atr, required_interfaces)?
@@ -168,8 +168,8 @@ impl WinScardContextHandle {
         &mut self,
         atr: Option<&[u8]>,
         required_interfaces: Option<&[Uuid]>,
-        buffer_type: RequestedBufferType,
-    ) -> WinScardResult<OutBuffer> {
+        buffer_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<OutBuffer<'_>> {
         let cards: Vec<_> = self
             .scard_context()
             .list_cards(atr, required_interfaces)?
@@ -187,8 +187,8 @@ impl WinScardContextHandle {
         card_id: Uuid,
         freshness_counter: u32,
         key: &str,
-        buffer_type: RequestedBufferType,
-    ) -> WinScardResult<OutBuffer> {
+        buffer_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<OutBuffer<'_>> {
         let cached_value = self
             .scard_context()
             .read_cache(card_id, freshness_counter, key)?
@@ -202,7 +202,7 @@ impl WinScardContextHandle {
     pub(super) fn write_multi_string(
         &mut self,
         values: &[String],
-        buffer_type: RequestedBufferType,
+        buffer_type: RequestedBufferType<'_>,
     ) -> WinScardResult<OutBuffer<'static>> {
         let data: Vec<_> = values
             .iter()
@@ -219,7 +219,7 @@ impl WinScardContextHandle {
     pub(super) fn write_multi_string_wide(
         &mut self,
         values: &[String],
-        buffer_type: RequestedBufferType,
+        buffer_type: RequestedBufferType<'_>,
     ) -> WinScardResult<OutBuffer<'static>> {
         let data: Vec<_> = values
             .iter()
@@ -234,7 +234,7 @@ impl WinScardContextHandle {
     pub(super) fn write_to_out_buf(
         &mut self,
         data: &[u8],
-        buffer_type: RequestedBufferType,
+        buffer_type: RequestedBufferType<'_>,
     ) -> WinScardResult<OutBuffer<'static>> {
         Ok(match buffer_type {
             RequestedBufferType::Buf(buf) => {
@@ -380,8 +380,8 @@ impl WinScardHandle {
     pub(super) fn get_attribute(
         &self,
         attribute_id: AttributeId,
-        buffer_type: RequestedBufferType,
-    ) -> WinScardResult<OutBuffer> {
+        buffer_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<OutBuffer<'_>> {
         let data = self.scard().get_attribute(attribute_id)?;
 
         self.context()?.write_to_out_buf(data.as_ref(), buffer_type)
@@ -391,9 +391,9 @@ impl WinScardHandle {
     #[instrument(level = "debug", ret)]
     pub(super) fn status(
         &mut self,
-        readers_buf_type: RequestedBufferType,
-        atr_but_type: RequestedBufferType,
-    ) -> WinScardResult<FfiScardStatus> {
+        readers_buf_type: RequestedBufferType<'_>,
+        atr_but_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<FfiScardStatus<'_>> {
         let status = self.scard().status()?;
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
         let context = self.context()?;
@@ -413,9 +413,9 @@ impl WinScardHandle {
     #[instrument(level = "debug", ret)]
     pub(super) fn status_wide(
         &mut self,
-        readers_buf_type: RequestedBufferType,
-        atr_but_type: RequestedBufferType,
-    ) -> WinScardResult<FfiScardStatus> {
+        readers_buf_type: RequestedBufferType<'_>,
+        atr_but_type: RequestedBufferType<'_>,
+    ) -> WinScardResult<FfiScardStatus<'_>> {
         let status = self.scard().status()?;
         let readers: Vec<_> = status.readers.into_iter().map(|r| r.to_string()).collect();
         let context = self.context()?;

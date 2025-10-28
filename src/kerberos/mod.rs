@@ -258,7 +258,7 @@ impl Sspi for Kerberos {
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
-        message: &mut [SecurityBufferRef],
+        message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
@@ -381,7 +381,11 @@ impl Sspi for Kerberos {
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef], _sequence_number: u32) -> Result<DecryptionFlags> {
+    fn decrypt_message(
+        &mut self,
+        message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -568,7 +572,7 @@ impl Sspi for Kerberos {
     fn make_signature(
         &mut self,
         _flags: u32,
-        _message: &mut [SecurityBufferRef],
+        _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> crate::Result<()> {
         Err(Error::new(
@@ -577,7 +581,11 @@ impl Sspi for Kerberos {
         ))
     }
 
-    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef], _sequence_number: u32) -> crate::Result<u32> {
+    fn verify_signature(
+        &mut self,
+        _message: &mut [SecurityBufferRef<'_>],
+        _sequence_number: u32,
+    ) -> crate::Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported. use decrypt_message to verify signatures instead",
