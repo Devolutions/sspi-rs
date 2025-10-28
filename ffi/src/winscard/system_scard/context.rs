@@ -208,7 +208,7 @@ fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -
             ));
             slot = Some(try_execute!(
                 SlotId::from_certificate_label(&label),
-                "failed to determine a lot id"
+                "failed to determine a slot id"
             ));
 
             if container_name.is_some() {
@@ -534,7 +534,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
         let mut value = container_name_encoded;
         value.push(slot.as_u8()); // Slot.
 
-        // The KeySpec values is not encoded inside certificate. We determine it by looking at the certificate slot id.
+        // The KeySpec value is not encoded inside certificate. We determine it by looking at the certificate slot id.
         let key_spec = match slot {
             SlotId::PivAuthentication => KeySpec::AtKeyExchange,
             SlotId::DigitalSignature => KeySpec::AtSignature,

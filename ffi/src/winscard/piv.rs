@@ -46,7 +46,7 @@ pub enum SlotId {
     DigitalSignature = 0x9c,
     /// Key Management Key.
     KeyManagement = 0x9d,
-    /// Card Card Authentication Key.
+    /// Card Authentication Key.
     CardAuthentication = 0x9e,
 }
 
