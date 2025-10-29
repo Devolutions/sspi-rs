@@ -487,9 +487,9 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
         AtSignature = 2,
     }
 
-    cache.insert("ykmd_cardcf".into(), CACHE_ITEM_HEADER.to_vec());
+    cache.insert("ykmd_cardcf".to_owned(), CACHE_ITEM_HEADER.to_vec());
 
-    cache.insert("ykmd_lastupdate".into(), {
+    cache.insert("ykmd_lastupdate".to_owned(), {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let now = SystemTime::now();
@@ -498,7 +498,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
         epoch_seconds.to_le_bytes().to_vec()
     });
 
-    cache.insert("ykmd_cmap".into(), {
+    cache.insert("ykmd_cmap".to_owned(), {
         use ffi_types::WChar;
         use sha2::Digest;
 
