@@ -4,7 +4,6 @@ use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-#[cfg(windows)]
 use sspi::Secret;
 use sspi::{string_to_utf16, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result};
 #[cfg(feature = "scard")]
