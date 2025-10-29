@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump hickory-resolver from 0.24.4 to 0.25.2 ([#426](https://github.com/Devolutions/sspi-rs/issues/426)) ([59857e66c2](https://github.com/Devolutions/sspi-rs/commit/59857e66c29e9130af2d24e3c7d79858ce1b55cd)) 
 
-
-
 ## [[0.18.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.17.0...sspi-v0.18.0)] - 2025-10-14
 
 ### <!-- 4 -->Bug Fixes
