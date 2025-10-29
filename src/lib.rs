@@ -192,7 +192,7 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
         pku2u::PACKAGE_INFO.clone(),
         ntlm::PACKAGE_INFO.clone(),
         #[cfg(feature = "tsssp")]
-        credssp::sspi_cred_ssp::PACKAGE_INFO.clone(),
+        sspi_cred_ssp::PACKAGE_INFO.clone(),
     ])
 }
 
@@ -716,12 +716,8 @@ where
     ///
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
-    fn make_signature(
-        &mut self,
-        flags: u32,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> crate::Result<()>;
+    fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef<'_>], sequence_number: u32)
+        -> Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
     ///
@@ -835,7 +831,7 @@ where
     ///
     /// # MSDN
     /// * [VerifySignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-verifysignature)
-    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32>;
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> Result<u32>;
 
     /// Decrypts a message. Some packages do not encrypt and decrypt messages but rather perform and check an integrity hash.
     ///
@@ -2324,14 +2320,14 @@ impl From<getrandom::Error> for Error {
     }
 }
 
-impl From<std::str::Utf8Error> for Error {
-    fn from(err: std::str::Utf8Error) -> Self {
+impl From<str::Utf8Error> for Error {
+    fn from(err: str::Utf8Error) -> Self {
         Self::new(ErrorKind::InternalError, err)
     }
 }
 
-impl From<std::string::FromUtf8Error> for Error {
-    fn from(err: std::string::FromUtf8Error) -> Self {
+impl From<string::FromUtf8Error> for Error {
+    fn from(err: string::FromUtf8Error) -> Self {
         Self::new(ErrorKind::InternalError, format!("UTF-8 error: {:?}", err))
     }
 }

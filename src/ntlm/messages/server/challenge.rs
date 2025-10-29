@@ -65,7 +65,7 @@ pub(crate) fn write_challenge(context: &mut Ntlm, mut transport: impl io::Write)
     context.challenge_message = Some(ChallengeMessage::new(message, target_info, server_challenge, timestamp));
     context.state = NtlmState::Authenticate;
 
-    Ok(crate::SecurityStatus::ContinueNeeded)
+    Ok(SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {

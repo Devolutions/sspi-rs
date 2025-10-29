@@ -177,7 +177,7 @@ pub(crate) fn write_authenticate(
     ));
     context.state = NtlmState::Final;
 
-    Ok(crate::SecurityStatus::Ok)
+    Ok(SecurityStatus::Ok)
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {

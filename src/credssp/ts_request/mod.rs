@@ -62,7 +62,7 @@ impl TsRequest {
     /// # Arguments
     ///
     /// * `stream` - an input stream
-    pub fn read_length(mut stream: impl io::Read) -> io::Result<usize> {
+    pub fn read_length(mut stream: impl Read) -> io::Result<usize> {
         let ts_request_len =
             ber::read_sequence_tag(&mut stream).map_err(|e| io::Error::new(io::ErrorKind::UnexpectedEof, e))?;
 
@@ -221,8 +221,8 @@ impl TsRequest {
 
     pub fn check_error(&self) -> crate::Result<()> {
         match self.error_code {
-            Some(error_code) if error_code != NStatusCode::SUCCESS => Err(crate::Error::new_with_nstatus(
-                crate::ErrorKind::InvalidToken,
+            Some(error_code) if error_code != NStatusCode::SUCCESS => Err(Error::new_with_nstatus(
+                ErrorKind::InvalidToken,
                 "CredSSP server returned an error status",
                 error_code,
             )),
@@ -348,7 +348,7 @@ fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdenti
     })
 }
 
-pub fn read_ts_credentials(mut buffer: impl io::Read) -> crate::Result<CredentialsBuffers> {
+pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBuffers> {
     let ts_credentials: TsCredentials = picky_asn1_der::from_reader(&mut buffer)?;
 
     match ts_credentials.cred_type.0 .0.first() {

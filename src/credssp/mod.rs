@@ -101,7 +101,7 @@ pub enum ServerState {
 #[derive(Debug, Clone)]
 pub struct ServerError {
     pub ts_request: Option<Box<TsRequest>>,
-    pub error: crate::Error,
+    pub error: Error,
 }
 
 /// The Early User Authorization Result PDU is sent from server to client
@@ -349,8 +349,8 @@ impl CredSspClient {
                 ts_request.nego_tokens = None;
 
                 let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
-                    crate::Error::new(
-                        crate::ErrorKind::InvalidToken,
+                    Error::new(
+                        ErrorKind::InvalidToken,
                         String::from("expected an encrypted public key"),
                     )
                 })?;
@@ -508,8 +508,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             CredSspState::AuthInfo => {
                 let auth_info = try_cred_ssp_server!(
                     ts_request.auth_info.take().ok_or_else(|| {
-                        crate::Error::new(
-                            crate::ErrorKind::InvalidToken,
+                        Error::new(
+                            ErrorKind::InvalidToken,
                             String::from("expected an encrypted ts credentials"),
                         )
                     }),
@@ -567,7 +567,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                         let auth_data = try_cred_ssp_server!(
                             self.credentials
                                 .auth_data_by_user(&username)
-                                .map_err(|e| crate::Error::new(crate::ErrorKind::LogonDenied, e.to_string())),
+                                .map_err(|e| Error::new(ErrorKind::LogonDenied, e.to_string())),
                             ts_request
                         );
                         try_cred_ssp_server!(
@@ -587,8 +587,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
                         let pub_key_auth = try_cred_ssp_server!(
                             ts_request.pub_key_auth.take().ok_or_else(|| {
-                                crate::Error::new(
-                                    crate::ErrorKind::InvalidToken,
+                                Error::new(
+                                    ErrorKind::InvalidToken,
                                     String::from("expected an encrypted public key"),
                                 )
                             }),
@@ -664,7 +664,7 @@ impl SspiContext {
             SspiContext::Negotiate(_) => negotiate::PKG_NAME,
             SspiContext::Pku2u(_) => pku2u::PKG_NAME,
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(_) => crate::credssp::sspi_cred_ssp::PKG_NAME,
+            SspiContext::CredSsp(_) => sspi_cred_ssp::PKG_NAME,
         }
     }
 }
@@ -755,7 +755,7 @@ impl<'a> SspiContext {
         match self {
             SspiContext::Kerberos(kerberos) => kerberos.change_password(yield_point, change_password).await,
             SspiContext::Negotiate(negotiate) => negotiate.change_password(yield_point, change_password).await,
-            _ => Err(crate::Error::new(
+            _ => Err(Error::new(
                 ErrorKind::UnsupportedFunction,
                 "change password not supported for this protocol",
             )),
@@ -1106,8 +1106,8 @@ impl CredSspContext {
     fn check_peer_version(&mut self, other_peer_version: u32) -> crate::Result<()> {
         if let Some(peer_version) = self.peer_version {
             if peer_version != other_peer_version {
-                Err(crate::Error::new(
-                    crate::ErrorKind::MessageAltered,
+                Err(Error::new(
+                    ErrorKind::MessageAltered,
                     format!(
                         "CredSSP peer changed protocol version from {} to {}",
                         peer_version, other_peer_version
@@ -1141,8 +1141,8 @@ impl CredSspContext {
             self.encrypt_public_key_hash(
                 public_key,
                 hash_magic,
-                &client_nonce.ok_or(crate::Error::new(
-                    crate::ErrorKind::InvalidToken,
+                &client_nonce.ok_or(Error::new(
+                    ErrorKind::InvalidToken,
                     String::from("client nonce from the TSRequest is empty, but a peer version is >= 5"),
                 ))?,
             )
@@ -1216,8 +1216,8 @@ impl CredSspContext {
         if public_key != decrypted_public_key.as_slice() {
             error!("Expected and decrypted public key are not the same");
 
-            return Err(crate::Error::new(
-                crate::ErrorKind::MessageAltered,
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
                 String::from("could not verify a public key echo"),
             ));
         }
@@ -1242,8 +1242,8 @@ impl CredSspContext {
         if expected_public_key.as_ref() != decrypted_public_key.as_slice() {
             error!("Expected and decrypted public key hash are not the same");
 
-            return Err(crate::Error::new(
-                crate::ErrorKind::MessageAltered,
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
                 String::from("could not verify a public key hash"),
             ));
         }
@@ -1329,7 +1329,7 @@ fn integer_increment_le(buffer: &mut [u8]) {
     }
 }
 
-fn construct_error(e: &crate::Error) -> NStatusCode {
+fn construct_error(e: &Error) -> NStatusCode {
     let code = ((e.error_type as i64 & 0x0000_FFFF) | (0x7 << 16) | 0xC000_0000) as u32;
     NStatusCode(code)
 }

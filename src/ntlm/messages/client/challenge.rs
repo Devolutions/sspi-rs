@@ -38,7 +38,7 @@ pub(crate) fn read_challenge(context: &mut Ntlm, mut stream: impl io::Read) -> c
 
     context.state = NtlmState::Authenticate;
 
-    Ok(crate::SecurityStatus::ContinueNeeded)
+    Ok(SecurityStatus::ContinueNeeded)
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {

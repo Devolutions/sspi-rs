@@ -922,7 +922,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         let data = "My message".as_bytes();
 
-        let rsa_pk = rsa::RsaPrivateKey::try_from(&scard.auth_pk).expect("Can't convert the private key");
+        let rsa_pk = RsaPrivateKey::try_from(&scard.auth_pk).expect("Can't convert the private key");
         // sign the data using the PKCS1-v1.5 padding scheme
         let signature_algorithm = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA3_512);
         let signed_data = signature_algorithm

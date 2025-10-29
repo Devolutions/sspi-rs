@@ -110,7 +110,7 @@ pub async fn accept_security_context(
     let input = builder
         .input
         .as_ref()
-        .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
     let status = match server.state {

@@ -71,7 +71,7 @@ pub(crate) fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write)
     context.negotiate_message = Some(NegotiateMessage::new(message));
     context.state = NtlmState::Challenge;
 
-    Ok(crate::SecurityStatus::ContinueNeeded)
+    Ok(SecurityStatus::ContinueNeeded)
 }
 
 fn get_flags(context: &Ntlm) -> NegotiateFlags {

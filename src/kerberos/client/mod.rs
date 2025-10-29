@@ -48,7 +48,7 @@ pub async fn initialize_security_context<'a>(
     client: &'a mut Kerberos,
     yield_point: &mut YieldPointLocal,
     builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
-) -> Result<crate::InitializeSecurityContextResult> {
+) -> Result<InitializeSecurityContextResult> {
     trace!(?builder);
 
     let status = match client.state {
@@ -86,7 +86,7 @@ pub async fn initialize_security_context<'a>(
             let input = builder
                 .input
                 .as_ref()
-                .ok_or_else(|| crate::Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
 
             if let Ok(sec_buffer) =
                 SecurityBuffer::find_buffer(builder.input.as_ref().unwrap(), BufferType::ChannelBindings)

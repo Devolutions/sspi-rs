@@ -574,18 +574,14 @@ impl Sspi for Kerberos {
         _flags: u32,
         _message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
-    ) -> crate::Result<()> {
+    ) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "make_signature is not supported. use encrypt_message to sign messages instead",
         ))
     }
 
-    fn verify_signature(
-        &mut self,
-        _message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> crate::Result<u32> {
+    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef<'_>], _sequence_number: u32) -> Result<u32> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "verify_signature is not supported. use decrypt_message to verify signatures instead",
@@ -602,7 +598,7 @@ impl SspiImpl for Kerberos {
     fn acquire_credentials_handle_impl(
         &mut self,
         builder: crate::builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
-    ) -> Result<crate::AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+    ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
@@ -661,7 +657,7 @@ impl<'a> Kerberos {
         yield_point: &mut YieldPointLocal,
         builder: crate::builders::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
-        server::accept_security_context(self, yield_point, builder).await
+        accept_security_context(self, yield_point, builder).await
     }
 
     pub(crate) async fn initialize_security_context_impl(
@@ -669,7 +665,7 @@ impl<'a> Kerberos {
         yield_point: &mut YieldPointLocal,
         builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<crate::InitializeSecurityContextResult> {
-        client::initialize_security_context(self, yield_point, builder).await
+        initialize_security_context(self, yield_point, builder).await
     }
 }
 

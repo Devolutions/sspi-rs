@@ -242,8 +242,8 @@ impl SspiImpl for Ntlm {
         builder: FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> crate::Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
-            return Err(crate::Error::new(
-                crate::ErrorKind::NoCredentials,
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
                 "The client must specify the auth data",
             ));
         }
@@ -286,7 +286,7 @@ impl Ntlm {
     ) -> crate::Result<AcceptSecurityContextResult> {
         let input = builder
             .input
-            .ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
         let status = match self.state {
             NtlmState::Initial => {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
@@ -309,8 +309,8 @@ impl Ntlm {
                 server::read_authenticate(self, input_token.buffer.as_slice())?
             }
             _ => {
-                return Err(crate::Error::new(
-                    crate::ErrorKind::OutOfSequence,
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
                     format!("got wrong NTLM state: {:?}", self.state),
                 ))
             }
@@ -347,8 +347,8 @@ impl Ntlm {
             }
             NtlmState::Challenge => {
                 let input = builder.input.as_ref().ok_or_else(|| {
-                    crate::Error::new(
-                        crate::ErrorKind::InvalidToken,
+                    Error::new(
+                        ErrorKind::InvalidToken,
                         "Input buffers must be specified on subsequent calls",
                     )
                 })?;
@@ -369,8 +369,8 @@ impl Ntlm {
                 )?
             }
             _ => {
-                return Err(crate::Error::new(
-                    crate::ErrorKind::OutOfSequence,
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
                     format!("Got wrong NTLM state: {:?}", self.state),
                 ))
             }
@@ -534,8 +534,8 @@ impl Sspi for Ntlm {
                 username: identity.username,
             })
         } else {
-            Err(crate::Error::new(
-                crate::ErrorKind::NoCredentials,
+            Err(Error::new(
+                ErrorKind::NoCredentials,
                 "Requested Names, but no credentials were provided",
             ))
         }
@@ -548,8 +548,8 @@ impl Sspi for Ntlm {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> crate::Result<CertTrustStatus> {
-        Err(crate::Error::new(
-            crate::ErrorKind::UnsupportedFunction,
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
             "Certificate trust status is not supported",
         ))
     }
