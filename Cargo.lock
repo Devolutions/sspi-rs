@@ -2934,6 +2934,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "sha1 0.11.0-rc.2",
+ "sha2",
  "sspi",
  "symbol-rename-macro",
  "tokio",

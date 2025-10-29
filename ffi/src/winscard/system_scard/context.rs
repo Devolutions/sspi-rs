@@ -85,12 +85,19 @@ impl SystemScardContext {
 
         #[cfg(not(target_os = "windows"))]
         if _with_cache {
-            let (container_name, auth_cert, auth_cert_der) = if let (Ok(auth_cert), Ok(container_name)) =
+            let scard_logon_params = if let (Ok(certificate), Ok(container_name)) =
                 (winscard::env::auth_cert_from_env(), winscard::env::container_name())
             {
-                let auth_cert_der = auth_cert.to_der()?;
+                use crate::winscard::piv::SlotId;
 
-                (container_name, auth_cert, auth_cert_der)
+                let certificate_der = certificate.to_der()?;
+
+                ScardLogonParams {
+                    container_name,
+                    certificate,
+                    certificate_der,
+                    slot: SlotId::PivAuthentication,
+                }
             } else {
                 use std::path::Path;
 
@@ -102,7 +109,7 @@ impl SystemScardContext {
                 try_extract_container_name_and_certificate(Path::new(&pkcs11_module_path))?
             };
 
-            scard_context.cache = init_scard_cache(&container_name, auth_cert, &auth_cert_der)?;
+            scard_context.cache = init_scard_cache(&scard_logon_params)?;
         }
 
         Ok(scard_context)
@@ -110,15 +117,21 @@ impl SystemScardContext {
 }
 
 #[cfg(not(target_os = "windows"))]
+struct ScardLogonParams {
+    container_name: String,
+    certificate: picky::x509::Cert,
+    certificate_der: Vec<u8>,
+    slot: crate::winscard::piv::SlotId,
+}
+
+#[cfg(not(target_os = "windows"))]
 #[instrument(err)]
-pub fn try_extract_container_name_and_certificate(
-    pkcs11_module: &std::path::Path,
-) -> Result<(String, picky::x509::Cert, Vec<u8>), Error> {
+fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -> Result<ScardLogonParams, Error> {
     use cryptoki::context::{CInitializeArgs, Pkcs11};
     use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
     use picky::x509::Cert;
 
-    use crate::winscard::piv::try_get_piv_container_name;
+    use crate::winscard::piv::{try_get_piv_container_name, SlotId};
 
     macro_rules! try_execute {
         ($x:expr, $msg:literal) => {{
@@ -177,6 +190,7 @@ pub fn try_extract_container_name_and_certificate(
         };
 
         let mut container_name = None;
+        let mut slot = None;
         // We found a suitable certificate for smart card logon on the device.
         // Next, we check if the inserted device is a PIV smart card. If so, we will attempt
         // to extract the container name using raw APDU commands.
@@ -192,6 +206,10 @@ pub fn try_extract_container_name_and_certificate(
                 try_get_piv_container_name(reader_name, &label),
                 "failed to construct a container name"
             ));
+            slot = Some(try_execute!(
+                SlotId::from_certificate_label(&label),
+                "failed to determine a slot id"
+            ));
 
             if container_name.is_some() {
                 break;
@@ -202,12 +220,21 @@ pub fn try_extract_container_name_and_certificate(
             continue;
         };
 
+        let Some(slot) = slot else {
+            continue;
+        };
+
         let certificate = try_execute!(
             Cert::from_der(&certificate_der),
             "failed to parse smart card certificate"
         );
 
-        return Ok((container_name, certificate, certificate_der));
+        return Ok(ScardLogonParams {
+            container_name,
+            certificate,
+            certificate_der,
+            slot,
+        });
     }
 
     Err(Error::new(
@@ -253,11 +280,14 @@ fn validate_certificate(certificate: &[u8]) -> Result<(), Error> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn init_scard_cache(
-    container_name: &str,
-    auth_cert: picky::x509::Cert,
-    auth_cert_der: &[u8],
-) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
+fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTreeMap<String, Vec<u8>>> {
+    let ScardLogonParams {
+        container_name,
+        certificate,
+        certificate_der,
+        slot,
+    } = scard_logon_params;
+
     use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 
     // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L86-L93
@@ -388,7 +418,7 @@ fn init_scard_cache(
         value.extend_from_slice(b"RSA1"); // magic = RSA1
         value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
 
-        let public_key = auth_cert.public_key();
+        let public_key = certificate.public_key();
         let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
         let (modulus, public_exponent) = match &public_key.subject_public_key {
             PublicKey::Rsa(rsa) => (
@@ -423,9 +453,9 @@ fn init_scard_cache(
         // unkown flags
         value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
 
-        value.extend_from_slice(&(u16::try_from(auth_cert_der.len())?.to_le_bytes())); // uncompressed certificate data len
+        value.extend_from_slice(&(u16::try_from(certificate_der.len())?.to_le_bytes())); // uncompressed certificate data len
         value.extend_from_slice(&[0x00, 0x00]); // flags that specify that the certificate is not compressed
-        value.extend_from_slice(auth_cert_der);
+        value.extend_from_slice(certificate_der);
 
         value
     });
@@ -439,6 +469,93 @@ fn init_scard_cache(
         // So, we just insert the extracted data from a real smart card.
         // Card capabilities:
         value.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+
+        value
+    });
+
+    //= YubiKey-related cache items =//
+
+    /// The KeySpec property identifies how a key that is generated or retrieved using the Microsoft CryptoAPI (CAPI)
+    /// from a Microsoft legacy Cryptographic Storage Provider (CSP) can be used.
+    ///
+    /// We need the [KeySpec] value to build scard cache items correctly.
+    #[repr(u8)]
+    enum KeySpec {
+        /// RSA key that can be used for signing and decryption.
+        AtKeyExchange = 1,
+        /// RSA signature only key.
+        AtSignature = 2,
+    }
+
+    cache.insert("ykmd_cardcf".to_owned(), CACHE_ITEM_HEADER.to_vec());
+
+    cache.insert("ykmd_lastupdate".to_owned(), {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now = SystemTime::now();
+        let epoch_seconds = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        epoch_seconds.to_le_bytes().to_vec()
+    });
+
+    cache.insert("ykmd_cmap".to_owned(), {
+        use ffi_types::WChar;
+        use sha2::Digest;
+
+        use crate::winscard::piv::SlotId;
+
+        // This cache item represents the `ykpiv_container` object:
+        //
+        // https://github.com/Yubico/yubico-piv-tool/blob/6444d40d73f4d4c029c9739938edf57ede23e6f1/lib/ykpiv.h#L268-L277
+        // ```C
+        //   typedef struct _ykpiv_container {
+        //     wchar_t name[40];
+        //     uint8_t slot;
+        //     uint8_t key_spec;
+        //     uint16_t key_size_bits;
+        //     uint8_t flags;
+        //     uint8_t pin_id;
+        //     uint8_t associated_echd_container;
+        //     uint8_t cert_fingerprint[20];
+        //   } ykpiv_container;
+        // ```
+
+        let mut container_name_encoded = container_name
+            .encode_utf16()
+            .chain(core::iter::once(0))
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+        let container_name_bytes_len = size_of::<WChar>() * MAX_CONTAINER_NAME_LEN;
+        debug_assert_eq!(container_name_bytes_len, 80);
+
+        container_name_encoded.resize(container_name_bytes_len, 0);
+        debug!(?container_name_encoded);
+
+        let mut value = container_name_encoded;
+        value.push(slot.as_u8()); // Slot.
+
+        // The KeySpec value is not encoded inside certificate. We determine it by looking at the certificate slot id.
+        let key_spec = match slot {
+            SlotId::PivAuthentication => KeySpec::AtKeyExchange,
+            SlotId::DigitalSignature => KeySpec::AtSignature,
+            SlotId::KeyManagement => KeySpec::AtKeyExchange,
+            SlotId::CardAuthentication => KeySpec::AtKeyExchange,
+        };
+        value.push(key_spec as u8);
+
+        value.extend_from_slice(&[0x00, 0x08]); // KeySize.
+        value.push(0x03); // Flags.
+        value.push(0x01); // PIN id.
+        value.push(0xff); // Associated ECHD container (none).
+
+        // Discovered experimentally:
+        // The `cert_fingerprint` field contains the first 20 bytes of SHA256 cert hash (instead of SHA1 cert hash).
+        let cert_fingerprint = sha2::Sha256::digest(certificate_der);
+        value.extend_from_slice(&cert_fingerprint.as_slice()[0..20]);
+
+        // The value length must be the correct size. The YubiKey Smart Card Minidriver checks it.
+        // The `0x6b` was extracted from the `ykmd.dll` and is also equal to the `ykpiv_container` size.
+        debug_assert_eq!(value.len(), 0x6b);
 
         value
     });
