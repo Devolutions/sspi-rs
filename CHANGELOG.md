@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Implement `Default` for `SmartCardType` ([#532](https://github.com/Devolutions/sspi-rs/issues/532)) ([3555b377e8](https://github.com/Devolutions/sspi-rs/commit/3555b377e8aeb5a8c376b2ecec9dcb1a2fd79560)) 
 
-
-
 ## [[0.18.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.0...sspi-v0.18.1)] - 2025-10-29
 
 ### <!-- 7 -->Build
