@@ -284,6 +284,14 @@ mod scard_credentials {
         WindowsNative,
     }
 
+    impl Default for SmartCardType {
+        fn default() -> Self {
+            Self::Emulated {
+                scard_pin: Secret::default(),
+            }
+        }
+    }
+
     /// Represents raw data needed for smart card authentication
     #[derive(Clone, Eq, PartialEq, Debug)]
     pub struct SmartCardIdentityBuffers {
