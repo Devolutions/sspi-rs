@@ -33,6 +33,9 @@ exclude = [
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
+# == Correctness == #
+keyword_idents_2024 = "warn"
+
 # == Style, readability == #
 unreachable_pub = "warn"
 single_use_lifetimes = "warn"
