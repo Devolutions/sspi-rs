@@ -45,6 +45,7 @@ pub(super) fn get_cipher_block_size(cipher: CipherSuite) -> Result<u32> {
         CipherSuite::TLS_PSK_WITH_AES_128_GCM_SHA256 => Ok(AES_BLOCK_SIZE),
         CipherSuite::TLS_PSK_WITH_AES_256_CBC_SHA384 => Ok(AES_BLOCK_SIZE),
         CipherSuite::TLS_PSK_WITH_AES_128_CBC_SHA256 => Ok(AES_BLOCK_SIZE),
+        CipherSuite::TLS13_AES_256_GCM_SHA384 => Ok(AES_BLOCK_SIZE),
         // Stream ciphers
         CipherSuite::TLS13_CHACHA20_POLY1305_SHA256 => Ok(0),
         CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 => Ok(0),
