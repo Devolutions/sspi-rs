@@ -7,7 +7,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
-use extractors::{extract_client_mic_token, extract_username, select_mech_type};
+use extractors::{extract_client_mic_token, select_mech_type};
 use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
@@ -30,6 +30,7 @@ use super::utils::validate_mic_token;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
+use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
@@ -288,10 +289,7 @@ pub async fn accept_security_context(
 
             debug!("ApReq Ticket and Authenticator are valid!");
 
-            server_data.client = Some(Username::new_upn(
-                &extract_username(&cname.0)?,
-                &crealm.0 .0.to_string().to_ascii_lowercase(),
-            )?);
+            server_data.client = Some(client_upn(&cname.0, &crealm.0)?);
 
             let ap_options_bytes = ap_req.0.ap_options.0 .0.as_bytes();
             // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)

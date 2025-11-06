@@ -3,15 +3,15 @@ use picky::oids;
 use picky_asn1::wrapper::ExplicitContextTag1;
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, AP_REQ_TOKEN_ID};
 use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TICKET_REP};
-use picky_krb::constants::types::NT_PRINCIPAL;
+use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL};
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::{Authenticator, EncTicketPart, PrincipalName};
+use picky_krb::data_types::{Authenticator, EncTicketPart, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
 use picky_krb::messages::{ApReq, TgtReq};
 
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, Username};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
 #[instrument(ret, level = "trace")]
@@ -170,17 +170,24 @@ pub(super) fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentif
     ))
 }
 
-/// Extract username from the [PrincipalName].
-pub(super) fn extract_username(cname: &PrincipalName) -> Result<String> {
+/// Constructs [Username] from the client's [PrincipalName] and realm.
+pub(super) fn client_upn(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> Result<Username> {
+    let username = cname
+        .name_string
+        .0
+         .0
+        .first()
+        .map(|name| name.to_string())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))?;
+
     let name_type = &cname.name_type.0 .0;
     if name_type == &[NT_PRINCIPAL] {
-        cname
-            .name_string
-            .0
-             .0
-            .first()
-            .map(|name| name.to_string())
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))
+        Ok(Username::new_upn(
+            &username,
+            &crealm.0.to_string().to_ascii_lowercase(),
+        )?)
+    } else if name_type == &[NT_ENTERPRISE] {
+        Ok(Username::parse(&username)?)
     } else {
         Err(Error::new(
             ErrorKind::InvalidToken,
