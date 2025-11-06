@@ -186,16 +186,28 @@ impl TlsConnection {
         // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
         let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
 
-        let tls_version: u16 = connection
+        let tls_version = connection
             .protocol_version()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
-            .into();
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?;
+        let tls_version = u16::from(if tls_version == ProtocolVersion::TLSv1_3 {
+            // TLS 1.3 uses the same version number as TLS 1.2 in the record layer.
+            ProtocolVersion::TLSv1_2
+        } else {
+            tls_version
+        });
 
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
         if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
-            return Err(Error::new(ErrorKind::InvalidToken, "invalid TLS packet header."));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                format!(
+                    "invalid TLS packet header: expected {:?} but got {:?}",
+                    tls_packet_start,
+                    &payload[0..3]
+                ),
+            ));
         }
 
         // Safe: payload length is checked above.
@@ -231,16 +243,28 @@ impl TlsConnection {
         // try to decrypt it -- it will just return a SEC_E_DECRYPT_FAILURE code."
         let mut tls_packet_start = vec![TLS_APPLICATION_DATA_CONTENT_TYPE];
 
-        let tls_version: u16 = connection
+        let tls_version = connection
             .protocol_version()
-            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?
-            .into();
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "can not query negotiated TLS version"))?;
+        let tls_version = u16::from(if tls_version == ProtocolVersion::TLSv1_3 {
+            // TLS 1.3 uses the same version number as TLS 1.2 in the record layer.
+            ProtocolVersion::TLSv1_2
+        } else {
+            tls_version
+        });
 
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
         if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
-            return Err(Error::new(ErrorKind::InvalidToken, "invalid TLS packet header."));
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                format!(
+                    "invalid TLS packet header: expected {:?} but got {:?}",
+                    tls_packet_start,
+                    &payload[0..3],
+                ),
+            ));
         }
 
         // Safe: payload length is checked above.
