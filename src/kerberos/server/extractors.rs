@@ -170,30 +170,24 @@ pub(super) fn select_mech_type(mech_list: &MechTypeList) -> Result<ObjectIdentif
     ))
 }
 
-/// Contructs [Username] from the client's [PrincipalName] and realm.
+/// Constructs [Username] from the client's [PrincipalName] and realm.
 pub(super) fn client_upn(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> Result<Username> {
+    let username = cname
+        .name_string
+        .0
+         .0
+        .first()
+        .map(|name| name.to_string())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))?;
+
     let name_type = &cname.name_type.0 .0;
     if name_type == &[NT_PRINCIPAL] {
-        let username = cname
-            .name_string
-            .0
-             .0
-            .first()
-            .map(|name| name.to_string())
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))?;
         Ok(Username::new_upn(
             &username,
             &crealm.0.to_string().to_ascii_lowercase(),
         )?)
     } else if name_type == &[NT_ENTERPRISE] {
-        let upn = cname
-            .name_string
-            .0
-             .0
-            .first()
-            .map(|name| name.to_string())
-            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))?;
-        Ok(Username::parse(&upn)?)
+        Ok(Username::parse(&username)?)
     } else {
         Err(Error::new(
             ErrorKind::InvalidToken,
