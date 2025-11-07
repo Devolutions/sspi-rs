@@ -42,9 +42,9 @@ sspi = { path = "../..", version = "0.18" } # public
 
 kbkdf = "0.0.1"
 elliptic-curve = { version = "=0.14.0-rc.15", features = ["sec1", "std"] }
-p521 = { version = "0.14.0-pre.11", features = ["ecdh"] }
-p256 = { version = "0.14.0-pre.11", features = ["ecdh"] }
-p384 = { version = "0.14.0-pre.11", features = ["ecdh"] }
+p521 = { version = "=0.14.0-pre.11", features = ["ecdh"] }
+p256 = { version = "=0.14.0-pre.11", features = ["ecdh"] }
+p384 = { version = "=0.14.0-pre.11", features = ["ecdh"] }
 concat-kdf = { git = "https://github.com/RustCrypto/KDFs.git", rev = "f2f5c03" } # TODO: We need the new version, but it's not released yet.
 typenum = "1.18"
 aes-kw = "=0.3.0-rc.1"
@@ -77,6 +77,23 @@ ctr = "=0.10.0-rc.1"
 ghash = "=0.6.0-rc.2"
 polyval = "=0.7.0-rc.2"
 universal-hash = "=0.6.0-rc.2"
+ed25519 ="=3.0.0-rc.1"
+cbc = "=0.2.0-rc.1"
+des = "=0.9.0-rc.1"
+pbkdf2 = "=0.13.0-rc.1"
+md-5 = "=0.11.0-rc.2"
+keccak = "=0.2.0-rc.0"
+pkcs1 = "=0.8.0-rc.4"
+rsa = "=0.10.0-rc.9"
+sha3 = "=0.11.0-rc.3"
+ff = { version = "=0.14.0-pre.0", default-features = false }
+group = "=0.14.0-pre.0"
+primefield = "=0.14.0-pre.6"
+primeorder = "=0.14.0-pre.9"
+ed25519-dalek = "=3.0.0-pre.1"
+curve25519-dalek = "=5.0.0-pre.1"
+crypto-primes = "=0.7.0-pre.3"
+x25519-dalek = "=3.0.0-pre.1"
 
 [dev-dependencies]
 paste = "1.0"
