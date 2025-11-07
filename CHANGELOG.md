@@ -36,8 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this rule doesn't work for an `rc` version. So we should pin the `rc`
   versions, to not allow _cargo_ update to a new `rc` automatically.
 
-
-
 ## [[0.18.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.1...sspi-v0.18.2)] - 2025-11-04 (Yanked)
 
 ### <!-- 1 -->Features
