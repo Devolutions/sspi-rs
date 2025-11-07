@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `NT_ENTERPRISE` support in server-side Kerberos ([#535](https://github.com/Devolutions/sspi-rs/issues/535)) ([40785e3123](https://github.com/Devolutions/sspi-rs/commit/40785e3123e381180ac9a75e99248a0287fc5d71)) 
 
-  Adds `NT_ENTERPRISE` support in server-side Kerberos.
   This is needed when want to connect using FQDN instead of down-level logon name.
 
 ### <!-- 3 -->Revert
