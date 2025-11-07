@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [[0.18.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.1...sspi-v0.18.2)] - 2025-11-04
+## [[0.18.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.1...sspi-v0.18.2)] - 2025-11-04 (Yanked)
 
 ### <!-- 1 -->Features
 
