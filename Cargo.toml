@@ -55,7 +55,7 @@ sha2 = "=0.11.0-rc.2"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { version = "7.0.0-rc.19", default-features = false }
+picky = { version = "=7.0.0-rc.20", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
@@ -162,6 +162,7 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
+# RustCrypto crates
 digest = "=0.11.0-rc.3"
 block-buffer = "=0.11.0-rc.5"
 crypto-common = "=0.2.0-rc.4"
@@ -171,6 +172,20 @@ der = "=0.8.0-rc.9"
 spki = "=0.8.0-rc.4"
 pem-rfc7468 = "=1.0.0-rc.3"
 signature = "=3.0.0-rc.4"
+p256 = "=0.14.0-pre.11"
+primefield = "=0.14.0-pre.6"
+primeorder = "=0.14.0-pre.9"
+p384 = "=0.14.0-pre.11"
+p521 = "=0.14.0-pre.11"
+crypto-primes = "=0.7.0-pre.3"
+
+# "Zero-knowledge Cryptography in Rust" crates
+ff = { version = "=0.14.0-pre.0", default-features = false }
+group = "=0.14.0-pre.0"
+
+# "dalek cryptography" crates
+ed25519-dalek = "=3.0.0-pre.1"
+curve25519-dalek = "=5.0.0-pre.1"
 
 [dev-dependencies]
 base64.workspace = true
