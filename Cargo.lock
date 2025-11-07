@@ -1934,21 +1934,25 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "picky"
-version = "7.0.0-rc.19"
+version = "7.0.0-rc.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "143fec6b7fa8ec91cbe1136f70ffa5de7e9627064da7bc3f7c0becc9b9493f8c"
+checksum = "4cdc52be663aebd70d7006ae305c87eb32a2b836d6c2f26f7e384f845d80b621"
 dependencies = [
  "base64",
  "block-buffer 0.11.0-rc.5",
  "block-padding",
  "crypto-bigint",
  "crypto-common 0.2.0-rc.4",
+ "crypto-primes",
+ "curve25519-dalek",
  "der",
  "digest 0.11.0-rc.3",
  "ecdsa",
  "ed25519",
  "ed25519-dalek",
  "elliptic-curve",
+ "ff",
+ "group",
  "hex",
  "hkdf",
  "inout",
