@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.2...sspi-v0.18.3)] - 2025-11-07
+
+### <!-- 1 -->Features
+
+- Add `NT_ENTERPRISE` support in server-side Kerberos ([#535](https://github.com/Devolutions/sspi-rs/issues/535)) ([40785e3123](https://github.com/Devolutions/sspi-rs/commit/40785e3123e381180ac9a75e99248a0287fc5d71)) 
+
+  Adds `NT_ENTERPRISE` support in server-side Kerberos.
+  This is needed when want to connect using FQDN instead of down-level logon name.
+
+### <!-- 3 -->Revert
+
+- Implement `Default` for `SmartCardType` ([#534](https://github.com/Devolutions/sspi-rs/issues/534)) ([7280f7a67b](https://github.com/Devolutions/sspi-rs/commit/7280f7a67b100719052ade72333d373bf956541f)) 
+
+  It actually does not make sense to implement Default for SmartCardType.
+  A user-provided PIN must be set.
+  
+  Release 0.18.2 was yanked.
+
+### <!-- 4 -->Bug Fixes
+
+- TLS 1.3 support in TSSSP module ([#536](https://github.com/Devolutions/sspi-rs/issues/536)) ([0605cf01f8](https://github.com/Devolutions/sspi-rs/commit/0605cf01f861aca8191e3134fb885bde5eb50506)) 
+
+  * Adds `CipherSuite::TLS13_AES_256_GCM_SHA384` support.
+  * Fixes TLS packet header validation: TLS 1.3 uses TLS 1.2 version in the packet header.
+
+- Pin leftover pre-release crypto crates ([#538](https://github.com/Devolutions/sspi-rs/issues/538)) ([6fc91fa977](https://github.com/Devolutions/sspi-rs/commit/6fc91fa977d217b04cdce23e66d56a8a398988e3)) 
+
+  The patch version upgrade is not allowed to bring breaking changes, but
+  this rule doesn't work for an `rc` version. So we should pin the `rc`
+  versions, to not allow _cargo_ update to a new `rc` automatically.
+
+
+
 ## [[0.18.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.1...sspi-v0.18.2)] - 2025-11-04 (Yanked)
 
 ### <!-- 1 -->Features
