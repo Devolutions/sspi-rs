@@ -69,13 +69,14 @@ pub struct SecPkgCredentialsKdcProxySettingsW {
 /// # Safety:
 ///
 /// * The pointer value must be [SecPkgCredentialsKdcProxySettingsW].
+///   The fields `proxy_server_offset`, `proxy_server_length`, `client_tls_cred_offset` and `client_tls_cred_length` must contain valid values.
 /// * The proxy server and client TLS credentials (if any) values must be placed right after the [SecPkgCredentialsKdcProxySettingsW] value.
 pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<KdcProxySettings> {
     let p_buffer = p_buffer.as_ptr();
 
     // SAFETY:
-    // * `p_buffer` is not null: checked above;
-    // * the user must all other properties of the pointer and the value behind this pointer.
+    // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
+    // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
     let kdc_proxy_settings = unsafe {
         p_buffer
             .cast::<SecPkgCredentialsKdcProxySettingsW>()
@@ -91,18 +92,31 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         ..
     } = kdc_proxy_settings;
 
-    // SAFETY: `p_buffer` is not null (checked above). `kdc_proxy_settings` was cast from the `p_buffer',
-    // so it's not null either.
+    // SAFETY:
+    // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
+    // - `proxy_server_offset` is valid.
+    // - The proxy server is placed in the memory at the offset `proxy_server_offset`.
+    let proxy_server_ptr = unsafe { p_buffer.add(*proxy_server_offset as usize) } as *const u16;
+
+    if proxy_server_ptr.is_null() {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "proxy_server_ptr cannot be null",
+        ));
+    }
+
+    // SAFETY:
+    // - `proxy_server_ptr` is guaranteed to be non-null due to the prior check.
+    // - `proxy_server_length` is valid.
     let proxy_server = String::from_utf16_lossy(unsafe {
-        from_raw_parts(
-            p_buffer.add(*proxy_server_offset as usize) as *const u16,
-            *proxy_server_length as usize / size_of::<SecWChar>(),
-        )
+        from_raw_parts(proxy_server_ptr, *proxy_server_length as usize / size_of::<SecWChar>())
     });
 
     let client_tls_cred = if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
-        // SAFETY: `p_buffer` is not null (checked above).
-        // The client have to ensure that the `client_tls_cred_offset` is valid.
+        // SAFETY:
+        // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
+        // - `client_tls_cred_offset` is valid.
+        // - The client TLS if placed in the memory at the offset `client_tls_cred_offset`.
         let client_tls_cred_ptr = unsafe { p_buffer.add(*client_tls_cred_offset as usize) } as *const u16;
         if client_tls_cred_ptr.is_null() {
             return Err(Error::new(
@@ -111,8 +125,9 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
             ));
         }
 
-        // SAFETY: `client_tls_cred_ptr` is not null (checked above).
-        // The client have to ensure that the `client_tls_cred_length` is valid.
+        // SAFETY:
+        // - `client_tls_cred_ptr` is guaranteed to be non-null due to the prior check.
+        // - `client_tls_cred_length` is valid.
         let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, *client_tls_cred_length as usize) };
         Some(String::from_utf16_lossy(client_tls_cred_data))
     } else {

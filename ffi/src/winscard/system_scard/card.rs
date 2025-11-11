@@ -91,7 +91,7 @@ impl Drop for SystemScard {
     fn drop(&mut self) {
         if let HandleState::Connected(handle) = self.h_card {
             if let Err(err) = try_execute!(
-                // SAFETY: This function is safe to call because the `handle` is valid.
+                // SAFETY: `handle` is valid.
                 unsafe { (self.api.SCardDisconnect)(handle, 0) }
             ) {
                 error!(?err, "Failed to disconnect the card");
@@ -132,8 +132,14 @@ impl WinScard for SystemScard {
         {
             // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
             try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card` is checked
-                // and all other values is type checked.
+                // SAFETY:
+                // - `h_card` is set by a previous call to `SCardConnectA`.
+                // - `reader_name.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `reader_name_len`.
+                // - `&mut reader_name_len` is a valid length for the `reader_name` buffer.
+                // - `&mut state` is a properly-aligned, writable pointer to a local variable.
+                // - `&mut protocol` is a properly-aligned, writable pointer to a local variable.
+                // - `atr.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size of 32 bytes.
+                // - `&mut atr_len` is a properly-aligned, both readable and writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardStatus)(
                         self.h_card()?,
@@ -152,8 +158,14 @@ impl WinScard for SystemScard {
         {
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
             try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card` is checked
-                // and all other values is type checked.
+                // SAFETY:
+                // - `h_card` is set by a previous call to `SCardConnectA`.
+                // - `reader_name.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `reader_name_len`.
+                // - `&mut reader_name_len` is a valid length for the `reader_name` buffer.
+                // - `&mut state` is a properly-aligned, writable pointer to a local variable.
+                // - `&mut protocol` is a properly-aligned, writable pointer to a local variable.
+                // - `atr.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size of 32 bytes.
+                // - `&mut atr_len` is a properly-aligned, both readable and writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardStatusA)(
                         self.h_card()?,
@@ -206,10 +218,17 @@ impl WinScard for SystemScard {
         Ok(status)
     }
 
+    // TODO: Question: Shouldn't this method be unsafe?
+    // What if the `code` will be corresponding to operation with output and
+    // user will use this method instead of `control_with_output`? Then safety conditions will be violated.
     fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `input.as_ptr()` is a valid, readable pointer to a
+            // - `lpOutBuffer` can be null.
+            // - `cbOutBufferSize` is 0 because `lpOutBuffer` is null.
+            // - `lpBytesReturned` can be null if `lpOutBuffer` is null.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
@@ -232,8 +251,12 @@ impl WinScard for SystemScard {
         let output_buf_len = output.len().try_into()?;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `input.as_ptr()` is a valid, readable pointer to a slice.
+            // - `output` is a properly-aligned, writable pointer to a valid slice with size of `output_buf_len`.
+            // - `output_buf_len` is valid length for `output` buffer.
+            // - `&mut receive_len` is a properly-aligned, writable pointer to a local variable.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
@@ -278,8 +301,14 @@ impl WinScard for SystemScard {
         };
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `poi_send_pci` is a properly-aligned, readable pointer to the `ScardIoRequest` structure.
+            // - `input_apdu.as_ptr()` is a properly-aligned, readable pointer to a slice.
+            // - `input_apdu.len()` is a valid size for `input_apdu` buffer.
+            // - `pioRecvPci` can be null.
+            // - `output_apdu.as_mut_ptr()` is a properly-aligned, writable pointer to a slice with a size of `output_apdu_len`.
+            // - `&mut output_apdu_len` is a properly-aligned, writable pointer to a local variable.
             unsafe {
                 (self.api.SCardTransmit)(
                     self.h_card()?,
@@ -306,7 +335,7 @@ impl WinScard for SystemScard {
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked.
+            // SAFETY: `h_card` is set by a previous call to `SCardConnectA`.
             unsafe { (self.api.SCardBeginTransaction)(self.h_card()?) },
             "SCardBeginTransaction failed"
         )
@@ -314,8 +343,7 @@ impl WinScard for SystemScard {
 
     fn end_transaction(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and the `disposition` parameter is type checked.
+            // SAFETY: `h_card` is set by a previous call to `SCardConnectA`.
             unsafe { (self.api.SCardEndTransaction)(self.h_card()?, disposition.into()) },
             "SCardEndTransaction failed"
         )
@@ -331,8 +359,9 @@ impl WinScard for SystemScard {
         let mut active_protocol = 0;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `&mut active_protocol` is a properly-aligned, writable pointer to a local variable.
             unsafe {
                 (self.api.SCardReconnect)(
                     self.h_card()?,
@@ -367,8 +396,10 @@ impl WinScard for SystemScard {
         // writes the length of the buffer that would have been returned if this parameter
         // had not been NULL to pcbAttrLen, and returns a success code.
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `pbAttr` can be null.
+            // - `&mut data_len` is a properly-aligned, writable pointer to a local variable.
             unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), null_mut(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
@@ -376,8 +407,11 @@ impl WinScard for SystemScard {
         let mut data = vec![0; data_len.try_into()?];
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `data.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `data_len`.
+            // - `&mut data_len` is a properly-aligned, both readable and writable pointer to a local variable.
+            //   The length is correct because it was set by a previous call to `SCardGetAttrib`.
             unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), data.as_mut_ptr(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
@@ -393,8 +427,9 @@ impl WinScard for SystemScard {
         let len = attribute_data.len().try_into()?;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY:
+            // - `h_card` is set by a previous call to `SCardConnectA`.
+            // - `attribute_data.as_ptr()` is a valid pointer to a valid slice with size of `len`.
             unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id.into(), attribute_data.as_ptr(), len) },
             "SCardSetAttrib failed"
         )
@@ -402,8 +437,7 @@ impl WinScard for SystemScard {
 
     fn disconnect(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is always a valid handle
-            // and the `disposition` parameter is type checked.
+            // SAFETY: `h_card` is set by a previous call to `SCardConnectA`.
             unsafe { (self.api.SCardDisconnect)(self.h_card()?, disposition.into()) },
             "SCardDisconnect failed"
         )?;

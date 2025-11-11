@@ -34,11 +34,10 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
             // SAFETY:
             // As per safety preconditions, the C function pointer is safe to be called with valid parameters.
             //
-            // Parameters are valid because:
             // * session_id is an object on stack.
             // * destination is created (and validated) using `CString`.
             // * token_buf is a non-empty Vec.
-            // * token len is a local variable.
+            // * token_len is a local variable.
             let status = unsafe {
                 get_session_token(
                     &session_id,

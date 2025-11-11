@@ -138,7 +138,7 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
 
     let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
 
-    // SAFETY: The library path is type checked.
+    // SAFETY: FFI call with no outstanding preconditions.
     let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), RTLD_LOCAL | RTLD_LAZY) };
     if handle.is_null() {
         return Err(Error::new(
