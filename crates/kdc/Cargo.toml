@@ -1,0 +1,21 @@
+[package]
+name = "kdc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+picky-asn1 = { workspace = true, features = ["time_conversion"] }
+picky-asn1-der.workspace = true
+picky-asn1-x509.workspace = true
+picky-krb.workspace = true
+tracing.workspace = true
+time.workspace = true
+serde.workspace = true
+
+sspi = { path = "../..", version = "0.18" }
+
+thiserror = "2.0"
+argon2 = { version = "0.5", features = ["std"] }
+
+[lints]
+workspace = true
