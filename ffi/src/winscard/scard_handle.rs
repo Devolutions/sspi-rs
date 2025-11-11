@@ -74,6 +74,7 @@ impl WinScardContextHandle {
     /// Allocated a new buffer inside the scard context.
     #[instrument(level = "debug", ret)]
     pub(super) fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
+        // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
             return Err(Error::new(
