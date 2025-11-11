@@ -38,25 +38,28 @@ type GetSessionTokenFn = unsafe extern "system" fn(LpCUuid, LpCStr, LpByte, LpDw
 ///
 /// This function simulated the `NCryptProtectSecret` function. Encryption requires making RPCs call to the domain.
 ///
+/// Note:
+/// - Do not use the IP address for target server hostname.
+/// - The `username` can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
+///
 /// # Safety
 ///
 /// Input parameters must meet the following requirements:
 ///
-/// * `secret` must be a valid pointer to the secret buffer. This parameter **cannot be NULL**.
-/// * `secret_len` is a length of the `secret` buffer.
-/// * `sid` must be a valid pointer to the UTF-8 SID string (with a null-terminator character). This parameter **cannot be NULL**.
-/// * `root_key` is a pointer to the root key UUID. This parameter is optional and can be NULL.
-/// * `server` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing target server hostname.
-///   Do not use IP address. This parameter **cannot be NULL**.
-/// * `username` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing username.
-///   This parameter **cannot be NULL**. The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format
-/// * `password` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing user's password.
-///   This parameter **cannot be NULL**.
-/// * `computer_name` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing client's computer name.
+/// * `secret` must be a non-null, properly-aligned pointer to the secret buffer, valid for reads of `secret_len` bytes.
+/// * `sid` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the SID.
+/// * `root_key` must be a valid, properly-aligned pointer to the root key UUID. This parameter is optional and can be NULL.
+/// * `server` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the target server hostname.
+/// * `username` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the username.
+/// * `password` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the user's password.
+/// * `computer_name` must be a pointer to a valid, null-terminated UTF-8 C string representing the client's computer name.
 ///   This parameter can be NULL. If it's NULL, the current computer name will be used.
-/// * `blob` is a pointer to the output buffer containing DPAPI blob. This parameter **cannot be NULL**.
+/// * `proxy_url` must be a valid pointer to a null-terminated UTF-8 C string representing the proxy address.
+///   This parameter can be NULL.
+/// * `get_session_token_fn` must be safe to call provided parameters are valid.
+/// * `blob` must be a non-null, properly-aligned pointer to the output buffer containing DPAPI blob, valid for reads of `blob_len` bytes.
 ///   The caller is responsible for freeing the memory using the [DpapiFree] function.
-/// * `blob_len` is a length of the output `blob` buffer. This parameter **cannot be NULL**.
+/// * `blob_len` must be a non-null, valid pointer to the length of the output `blob` buffer.
 ///
 /// MSDN:
 /// * [NCryptProtectSecret function (`ncryptprotect.h`)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptprotectsecret).
@@ -88,16 +91,21 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
 
         let secret =
-            // SAFETY: The `secret` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `secret` is non-null and properly-aligned.
+            // - The memory region `secret` points to is valid for reads of `secret_len` elements.
             unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
         let sid = try_execute!(
-            // SAFETY: The `sid` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `sid` is non-null.
+            // - The memory region `sid` contains a valid null-terminator at the end of string.
+            // - The memory region `sid` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(sid as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         )
         .to_owned();
         let root_key_id = if !root_key.is_null() {
-            // SAFETY: The `root_key` pointer is not NULL (checked above).
+            // SAFETY: `root_key` is guaranteed to be non-null due to the prior check.
             let id = unsafe { *root_key };
             let root_key = Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4);
 
@@ -106,17 +114,26 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             None
         };
         let server = try_execute!(
-            // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `server` is non-null.
+            // - The memory region `server` contains a valid null-terminator at the end of string.
+            // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(server as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let username = try_execute!(
-            // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `username` is non-null.
+            // - The memory region `username` contains a valid null-terminator at the end of string.
+            // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(username as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let password = try_execute!(
-            // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `password` is non-null.
+            // - The memory region `password` contains a valid null-terminator at the end of string.
+            // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(password as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         )
@@ -124,7 +141,10 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         let client_computer_name = if !computer_name.is_null() {
             Some(
                 try_execute!(
-                    // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                    // SAFETY:
+                    // - `computer_name` is guaranteed to be non-null due to the prior check.
+                    // - The memory region `computer_name` contains a valid null-terminator at the end of string.
+                    // - The memory region `computer_name` points to is valid for reads of bytes up to and including null-terminator.
                     unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
                     NTE_INVALID_PARAMETER
                 )
@@ -138,15 +158,17 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             info!("Proxy parameters are not empty. Proceeding with tunnelled connection.");
 
             let proxy_url = try_execute!(
-                // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                // SAFETY:
+                // - `proxy_url` is guaranteed to be non-null due to the prior check.
+                // - The memory region `proxy_url` contains a valid null-terminator at the end of string.
+                // - The memory region `proxy_url` points to is valid for reads of bytes up to and including null-terminator.
                 unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
                 NTE_INVALID_PARAMETER
             );
 
             Some(ProxyOptions {
                 proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
-                // SAFETY:
-                // The C function pointer must be safe to call. It's a user's responsibility to uphold its correctness.
+                // SAFETY: The C function pointer is safe to call.
                 get_session_token: unsafe {
                     session_token::session_token_fn(get_session_token_fn)
                 },
@@ -182,21 +204,26 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             return NTE_INTERNAL_ERROR;
         }
 
-        // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
+        // SAFETY: Memory allocation is safe.
         let blob_buf = unsafe { libc::malloc(blob_data.len()) as *mut u8 };
         if blob_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
             return NTE_NO_MEMORY;
         }
 
-        // SAFETY: The `blob_buf` pointer is not NULL (checked above). The slice construction is safe because `blob_buf`
-        // points to allocated, properly aligned, and not-empty bytes range.
+        // SAFETY:
+        // - `blob_buf` is guaranteed to be non-null due to the prior check.
+        // - `blob_buf` points to allocated, properly aligned, not-empty bytes range.
         let buf = unsafe { from_raw_parts_mut(blob_buf, blob_data.len()) };
         buf.copy_from_slice(blob_data.as_ref());
 
-        // SAFETY: The `blob` pointer is not NULL (checked above).
+        // SAFETY: `blob` is guaranteed to be non-null due to the prior check.
         unsafe {
             *blob = blob_buf;
+        }
+
+        // SAFETY: `blob_len` is guaranteed to be non-null due to the prior check.
+        unsafe {
             *blob_len = try_execute!(blob_data.len().try_into(), NTE_INTERNAL_ERROR);
         }
 
@@ -208,23 +235,26 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 ///
 /// This function simulated the `NCryptUnprotectSecret` function. Decryption requires making RPC calls to the domain.
 ///
+/// Note:
+/// - Do not use the IP address for target server hostname.
+/// - The `username` can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format.
+///
 /// # Safety
 ///
 /// Input parameters must meet the following requirements:
 ///
-/// * `blob` must be a valid pointer to the DPAPI blob buffer. This parameter **cannot be NULL**.
-/// * `blob_len` is a length of the `blob` buffer.
-/// * `server` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing target server hostname.
-///   Do not use IP address. This parameter **cannot be NULL**.
-/// * `username` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing username.
-///   This parameter **cannot be NULL**. The username can be specified in FQDN (DOMAIN\username) or UPN (username@domain) format
-/// * `password` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing user's password.
-///   This parameter **cannot be NULL**.
-/// * `computer_name` must be a valid pointer to the UTF-8 string (with a null-terminator character) containing client's computer name.
+/// * `blob` must be a non-null, properly-aligned pointer to the DPAPI blob buffer, valid for reads of `blob_len` bytes.
+/// * `server` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the target server hostname.
+/// * `username` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the username.
+/// * `password` must be a non-null pointer to a valid, null-terminated UTF-8 C string representing the user's password.
+/// * `computer_name` must be a pointer to a valid, null-terminated UTF-8 C string representing the client's computer name.
 ///   This parameter can be NULL. If it's NULL, the current computer name will be used.
-/// * `secret` is a pointer to the output buffer containing decrypted secret. This parameter **cannot be NULL**.
+/// * `proxy_url` must be a valid pointer to a null-terminated UTF-8 C string representing the proxy address.
+///   This parameter can be NULL.
+/// * `get_session_token_fn` must be safe to call provided parameters are valid.
+/// * `secret` must be a non-null, properly-aligned pointer to the output buffer containing decrypted secret, valid for reads of `secret_len` bytes.
 ///   The caller is responsible for freeing the memory using the [DpapiFree] function.
-/// * `secret_len` is a length of the output `secret` buffer. This parameter **cannot be NULL**.
+/// * `secret_len` must be a non-null, valid pointer to the length of the output `secret` buffer.
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
@@ -251,20 +281,31 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
         try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
 
-        // SAFETY: The `blob` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+        // SAFETY:
+        // - `blob` is non-null and properly-aligned.
+        // - The memory region `blob` points to is valid for reads of `blob_len` elements.
         let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
         let server = try_execute!(
-            // SAFETY: The `server` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `server` is non-null.
+            // - The memory region `server` contains a valid null-terminator at the end of string.
+            // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(server as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let username = try_execute!(
-            // SAFETY: The `username` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `username` is non-null.
+            // - The memory region `username` contains a valid null-terminator at the end of string.
+            // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(username as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let password = try_execute!(
-            // SAFETY: The `password` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+            // SAFETY:
+            // - `password` is non-null.
+            // - The memory region `password` contains a valid null-terminator at the end of string.
+            // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(password as *const _) }.to_str(),
             NTE_INVALID_PARAMETER
         )
@@ -272,7 +313,10 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         let client_computer_name = if !computer_name.is_null() {
             Some(
                 try_execute!(
-                    // SAFETY: The `computer_name` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                    // SAFETY:
+                    // - `computer_name` is guaranteed to be non-null due to the prior check.
+                    // - The memory region `computer_name` contains a valid null-terminator at the end of string.
+                    // - The memory region `computer_name` points to is valid for reads of bytes up to and including null-terminator.
                     unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
                     NTE_INVALID_PARAMETER
                 )
@@ -286,15 +330,17 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             info!("Proxy parameters are not empty. Proceeding  with tunnelled connection.");
 
             let proxy_url = try_execute!(
-                // SAFETY: The `proxy_url` pointer is not NULL (checked above). Other guarantees should be upheld by the caller.
+                // SAFETY:
+                // - `proxy_url` is guaranteed to be non-null due to the prior check.
+                // - The memory region `proxy_url` contains a valid null-terminator at the end of string.
+                // - The memory region `proxy_url` points to is valid for reads of bytes up to and including null-terminator.
                 unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
                 NTE_INVALID_PARAMETER
             );
 
             Some(ProxyOptions {
                 proxy: try_execute!(Url::parse(proxy_url), NTE_INVALID_PARAMETER),
-                // SAFETY:
-                // The C function pointer must be safe to call. It's a user's responsibility to uphold its correctness.
+                // SAFETY: The C function pointer is safe to call.
                 get_session_token: unsafe {
                     session_token::session_token_fn(get_session_token_fn)
                 },
@@ -327,21 +373,26 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             return NTE_INTERNAL_ERROR;
         }
 
-        // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
+        // SAFETY: Memory allocation is safe.
         let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
         if secret_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL.");
             return NTE_NO_MEMORY;
         }
 
-        // SAFETY: The `secret_buf` pointer is not NULL (checked above). The slice construction is safe because `secret_buf`
-        // points to allocated, properly aligned, and not-empty bytes range.
+        // SAFETY:
+        // - `secret_buf` is guaranteed to be non-null due to the prior check.
+        // - `secret_buf` points to allocated, properly aligned, not-empty bytes range.
         let buf = unsafe { from_raw_parts_mut(secret_buf, secret_data.as_ref().len()) };
         buf.copy_from_slice(secret_data.as_ref());
 
-        // SAFETY: The `secret` pointer is not NULL (checked above).
+        // SAFETY: `secret` is guaranteed to be non-null due to the prior check.
         unsafe {
             *secret = secret_buf;
+        }
+
+        // SAFETY: `secret_len` is guaranteed to be non-null due to the prior check.
+        unsafe {
             *secret_len = try_execute!(secret_data.as_ref().len().try_into(), NTE_INTERNAL_ERROR);
         }
 
@@ -353,15 +404,15 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 ///
 /// # Safety
 ///
-/// The `data` parameter must be a valid pointer to the memory allocated by the [DpapiProtectSecret] or
-/// [DpapiUnprotectSecret] functions and **cannot be NULL**.
+/// The `data` parameter must be a non-null, valid pointer to the memory allocated by the [DpapiProtectSecret] or
+/// [DpapiUnprotectSecret] functions.
 #[instrument(skip_all)]
 #[no_mangle]
 pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
     catch_panic! {
         check_null!(buf);
 
-        // SAFETY: The user should uphold that the passed pointer is a memory allocated by an out DPAPI functions.
+        // SAFETY: `buf` is allocated by the `DpapiProtectSecret` or `DpapiUnprotectSecret` functions.
         unsafe {
             libc::free(buf as _);
         }

@@ -66,8 +66,7 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         "WinSCard.dll".as_bytes().to_vec()
     })?;
 
-    // SAFETY: This function is safe to call because the `file_name.as_ptr()` is guaranteed to be
-    // the null-terminated C string by `CString` type.
+    // SAFETY: FFI call with no outstanding preconditions.
     let winscard_module = unsafe { LoadLibraryA(file_name.as_ptr() as *const _) };
 
     if winscard_module.is_null() {

@@ -19,20 +19,26 @@ use super::utils::transform_credentials_handle;
 use crate::sspi::sec_handle::SspiHandle;
 use crate::utils::into_raw_ptr;
 
+/// Frees [PCredHandle].
+///
+/// # Safety:
+///
+/// `ph_credentials` must be a non-null pointer, allocated by an SSPI function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
     check_null!(ph_credential);
 
-    // SAFETY: `ph_credentials` is not null. We've checked for this above.
+    // SAFETY:
+    // - `ph_credentials` is guaranteed to be non-null due to the prior check.
+    // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
     let cred_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
     check_null!(cred_handle);
 
-    // SAFETY: `cred_handle` is not null. We've checked for this above.
-    // We create and allocate credentials handles using `Box::into_raw`. Thus,
-    // it is safe to deallocate them using `Box::from_raw`.
-    // The user have to ensure that the credentials handle was created by us.
+    // SAFETY:
+    // - `cred_handle` is guaranteed to be non-null due to prior check.
+    // - `ph_credentials` is allocated by an SSPI function. It guarantees that the pointer was allocated using `Box::into_raw`.
     let _cred_handle = unsafe { Box::from_raw(cred_handle) };
 
     0
@@ -40,6 +46,19 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 
 pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> SecurityStatus;
 
+/// Note: `ph_context` can be null on the first call.
+///
+/// # Safety:
+///
+/// - `ph_credential` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`](crate::sspi::sec_handle::AcquireCredentialsHandleA)
+///   or [`AcquireCredentialsHandleW`](crate::sspi::sec_handle::AcquireCredentialsHandleW).
+/// - `ph_context` must be a valid pointer to a `SecHandle` structure.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+/// - `p_input` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
+/// - `ph_new_context` must be a non-null, properly-aligned pointer to a valid `SecHandle` structure.
+/// - `p_output` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
+///   It must contain enough buffers, and each buffer must have enough space to hold the output tokens.
+/// - `pf_context_attr` must be a non-null, properly-aligned pointer to a `u32` value.
 #[instrument(skip_all)]
 #[allow(clippy::useless_conversion)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcceptSecurityContext"))]
@@ -56,47 +75,64 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     _pts_expiry: PTimeStamp,
 ) -> SecurityStatus {
     catch_panic! {
-        // ph_context can be null on the first call
+        // ph_context must be null on the first call
         check_null!(ph_new_context);
         check_null!(ph_credential);
         check_null!(p_input);
         check_null!(p_output);
         check_null!(pf_context_attr);
 
-        // SAFETY: `ph_credentials` is not null. We've checked for this above.
+        // SAFETY:
+        // - `ph_credentials` is guaranteed to be non-null due to prior check.
+        // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
         let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
-        // SAFETY: It's safe to call the function, because it has internal null check and proper error handling.
-        let (auth_data, security_package_name, attributes) = unsafe {
-            match transform_credentials_handle(credentials_handle) {
+        // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
+        let transformed_credentials_handle = unsafe { transform_credentials_handle(credentials_handle) };
+
+        let (auth_data, security_package_name, attributes) =
+            match transformed_credentials_handle {
                 Some(data) => data,
                 None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
-            }
-        };
+            };
 
-        // SAFETY: It's safe to call the function, because:
-        // *`ph_context` can be null;
-        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
-        // * other parameters are type checked.
+        // SAFETY:
+        // - `ph_context` is either null or convertible to a reference.
+        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
         let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             Some(security_package_name),
             attributes,
         )});
 
-        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        // SAFETY: `p_input` is not null. We've checked for this above. Additionally, we check `p_buffers` for null.
-        // All other guarantees must be provided by user.
-        let mut input_tokens = try_execute!(unsafe {
-                if (*p_input).p_buffers.is_null() {
-                    Err(Error::new(ErrorKind::InvalidParameter, "p_buffers cannot be null"))
-                } else {
-                    Ok(p_sec_buffers_to_security_buffers(from_raw_parts((*p_input).p_buffers, (*p_input).c_buffers as usize)))
-                }
-        });
+        // SAFETY:
+        // - `p_input` is guaranteed to be non-null due to prior check.
+        // - `p_input` points to a valid `SecBufferDesc` structure.
+        let p_buffers = unsafe { (*p_input).p_buffers };
+
+        let mut input_tokens = try_execute!(
+            if p_buffers.is_null() {
+                Err(Error::new(ErrorKind::InvalidParameter, "p_buffers cannot be null"))
+            } else {
+                // SAFETY:
+                // - `p_input` is guaranteed to be non-null due to prior check.
+                // - `p_input` points to a valid `SecBufferDesc` structure.
+                let c_buffers = unsafe { (*p_input).c_buffers };
+
+                // SAFETY:
+                // - `p_buffers` is guaranteed to be non-null due to prior check.
+                // - The memory region `p_buffers` points to is valid for reads of `c_buffers` element.
+                let raw_buffers = unsafe {
+                    from_raw_parts(p_buffers, c_buffers as usize)
+                };
+                // SAFETY:
+                // - `raw_buffers` array contains valid `SecBuffer` structures.
+                // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
+                Ok(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) })
+            });
 
         let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
@@ -109,15 +145,23 @@ pub unsafe extern "system" fn AcceptSecurityContext(
             .with_output(&mut output_tokens);
         let result_status = try_execute!(sspi_context.accept_security_context_impl(builder)).resolve_with_default_network_client();
 
-        // SAFETY: `p_output` is not null. We've checked this above.
-        try_execute!(unsafe { copy_to_c_sec_buffer((*p_output).p_buffers, &output_tokens, false) });
+        // SAFETY:
+        // - `p_output` is guaranteed to be non-null due to prior check.
+        // - `p_output` points to a valid `SecBufferDesc` structure.
+        let p_buffers = unsafe { (*p_output).p_buffers };
+        // SAFETY:
+        // - `p_buffers` is a valid pointer to an array of security buffers.
+        // - The memory region `p_buffers` points to is valid for writes of `from_buffers.len()` elements.
+        // - For each element in the `p_buffers` array, the `pv_buffer` pointer points to a valid memory,
+        //   that is valid for writes of `cb_buffer` bytes.
+        try_execute!(unsafe { copy_to_c_sec_buffer(p_buffers, &output_tokens, false) });
 
-        // SAFETY: `ph_new_context` is not null. We've checked this above.
-        let ph_new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context should not be null");
+        // SAFETY: `ph_new_context` is convertible to a reference.
+        let ph_new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context is non-null");
 
         ph_new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
         ph_new_context.dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
-        // SAFETY: `pf_context_attr` is not null. We've checked this above.
+        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to prior check.
         unsafe {
             *pf_context_attr = f_context_req;
         }
@@ -139,6 +183,11 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+/// # Safety:
+///
+/// - `ph_context` must be a valid pointer to a `SecHandle` structure.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+/// - `p_token` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_CompleteAuthToken"))]
 #[no_mangle]
@@ -150,26 +199,37 @@ pub unsafe extern "system" fn CompleteAuthToken(
         check_null!(ph_context);
         check_null!(p_token);
 
-        // SAFETY: `p_token` is not null. We've checked this above.
-        unsafe { check_null!((*p_token).p_buffers); }
+        // SAFETY:
+        // - `p_token` is guaranteed to be non-null due to prior check.
+        // - `p_token` points to a valid `SecBufferDesc` structure.
+        let p_buffers = unsafe { (*p_token).p_buffers };
+        check_null!(p_buffers);
 
-        // SAFETY: It's safe to call the function, because:
-        // *`ph_context` can be null;
-        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
-        // * other parameters are type checked.
+        // SAFETY:
+        // - `ph_context` is either null or convertible to a reference.
+        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
         let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
         )});
 
-        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        // SAFETY: This function is safe to call because `p_buffers` is not null. We've checked this above.
-        let raw_buffers = unsafe { from_raw_parts((*p_token).p_buffers, (*p_token).c_buffers as usize) };
-        // SAFETY: This function is safe to call because `raw_buffers` is type checked. All other guarantees must be provided by user.
+        // SAFETY:
+        // - `p_token` is guaranteed to be non-null due to prior check.
+        // - `p_token` points to a valid `SecBufferDesc` structure.
+        let c_buffers = unsafe { (*p_token).c_buffers } as usize;
+
+        // SAFETY:
+        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - The memory region `p_buffers` points to is valid for reads of `c_buffers` elements.
+        let raw_buffers = unsafe { from_raw_parts(p_buffers, c_buffers) };
+
+        // SAFETY:
+        // - `raw_buffers` array contains valid `SecBuffer` structures.
+        // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
         let mut buffers = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
 
         sspi_context.complete_auth_token(&mut buffers).map_or_else(
@@ -181,6 +241,10 @@ pub unsafe extern "system" fn CompleteAuthToken(
 
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
+/// # Safety:
+///
+/// - `ph_context` must be a valid pointer to a `SecHandle` structure.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
@@ -188,28 +252,29 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        // SAFETY: It's safe to call the function, because:
-        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
-        // * other parameters are type checked.
+        // SAFETY:
+        // - `ph_context` is convertible to a reference.
+        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
         let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
         )});
 
-        // SAFETY: It's safe to constructs a box from a raw pointer because:
-        // * the `sspi_context_ptr` is not null;
-        // * the value behind `sspi_context_ptr` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+        // TODO: Do we need to split this? I don't think it's rationale!
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let _context: Box<SspiHandle> = unsafe {
             Box::from_raw(sspi_context_ptr.as_mut())
         };
 
-        // SAFETY: `ph_context` is not null. We've checked for it above.
+        // SAFETY:
+        // - `ph_context` is guaranteed to be non-null due to prior check.
+        // - `ph_context` points to a valid `SecHandle` structure.
         let dw_upper = unsafe { (*ph_context).dw_upper };
         if dw_upper != 0 {
-            // SAFETY: It's safe to constructs a box from a raw pointer because:
-            // * the `dw_upper` is not equal to zero;
-            // * the value behind `dw_upper` pointer must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
+            // SAFETY:
+            // - `dw_upper` is guaranteed to be non-null due to prior check.
+            // - The value behind `dw_upper` pointer is allocated by an SSPI function.
             let _name: Box<String> = unsafe { Box::from_raw(dw_upper as *mut String) };
         }
 
@@ -274,14 +339,17 @@ pub extern "system" fn VerifySignature(
 
 pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
+/// # Safety:
+///
+/// The `pv_context_buffer` must point to a memory allocated by an SSPI function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
 #[no_mangle]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
     // NOTE: see https://github.com/Devolutions/sspi-rs/pull/141 for rationale behind libc usage.
-    // SAFETY: Memory deallocation is safe.
-    // The user must call this function to free buffers allocated by ourself. On our side, we always use `malloc`
-    // to allocate buffers in in FFI.
+    // SAFETY:
+    // - Memory deallocation is safe.
+    // - The value behind `pv_context_buffer` is allocated by an SSPI function.
     unsafe {
         libc::free(pv_context_buffer);
     }
@@ -314,6 +382,11 @@ pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _toke
 
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
+/// # Safety:
+///
+/// - `ph_context` must be a valid pointer to a `SecHandle` structure.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+/// - `p_message` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
@@ -328,32 +401,39 @@ pub unsafe extern "system" fn EncryptMessage(
         check_null!(ph_context);
         check_null!(p_message);
 
-        // SAFETY: `p_message` is not null. We've checked this above.
-        unsafe { check_null!((*p_message).p_buffers); }
+        // SAFETY:
+        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` points to a valid `SecBufferDesc` structure.
+        let p_buffers = unsafe { (*p_message).p_buffers };
+        check_null!(p_buffers);
 
-        // SAFETY: It's safe to call the function, because:
-        // *`ph_context` can be null;
-        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
-        // * other parameters are type checked.
+        // SAFETY:
+        // - `ph_context` is convertible to a reference.
+        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
         let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
         )});
 
-        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        // SAFETY: `p_message` is not null. We've checked this above.
+        // SAFETY:
+        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` points to a valid `SecBufferDesc` structure.
         let len = unsafe { (*p_message).c_buffers as usize };
 
-        // SAFETY: `p_message` is not null. We've checked this above. Moreover, we've checked `p_buffers` for null above.
+        // SAFETY:
+        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - The memory region `p_buffers` points to is valid for reads of `len` elements.
         let raw_buffers = unsafe {
-            from_raw_parts((*p_message).p_buffers, len)
+            from_raw_parts(p_buffers, len)
         };
 
-        // SAFETY: The user must provide guarantees about the correctness of buffers in `raw_buffers'.
+        // SAFETY:
+        // - `raw_buffers` array contains valid `SecBuffer` structures.
+        // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
         let mut message = try_execute!(unsafe { p_sec_buffers_to_decrypt_buffers(raw_buffers)});
 
         let result_status = sspi_context.encrypt_message(
@@ -362,9 +442,13 @@ pub unsafe extern "system" fn EncryptMessage(
             message_seq_no.try_into().unwrap(),
         );
 
-        // SAFETY: `p_message` and `p_buffers` are not null. We've checked this above.
-        // All other guarantees must be provided by user.
-        try_execute!(unsafe { copy_decrypted_buffers((*p_message).p_buffers, message) });
+        // SAFETY:
+        // - `p_buffers` is a valid pointer to an array of security buffers.
+        // - The memory region `p_buffers` points to is valid for writes of `from_buffers.len()` elements.
+        // - For each element in the `p_buffers` array, the `pv_buffer` pointer points to a valid memory,
+        //   that is valid for writes of `cb_buffer` bytes.
+        // - There is enough space in the buffers, since we are writing encrypted data back to the same buffers it was read.
+        try_execute!(unsafe { copy_decrypted_buffers(p_buffers, message) });
 
         let result = try_execute!(result_status);
         result.to_u32().unwrap()
@@ -373,6 +457,14 @@ pub unsafe extern "system" fn EncryptMessage(
 
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
 
+/// Note: `pf_qop` can be null if this library is used as a CredSsp security package.
+///
+/// # Safety:
+///
+/// - `ph_context` must be a valid pointer to a `SecHandle` structure.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+/// - `p_message` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
+/// - `pf_qop` must be a valid, properly-aligned pointer to a `u32` value.
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
@@ -387,28 +479,37 @@ pub unsafe extern "system" fn DecryptMessage(
         check_null!(ph_context);
         check_null!(p_message);
 
-        // SAFETY: `p_message` is not null. We've checked this above.
-        unsafe { check_null!((*p_message).p_buffers); }
+        // SAFETY:
+        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` points to a valid `SecBufferDesc` structure.
+        let p_buffers = unsafe { (*p_message).p_buffers };
+        check_null!(p_buffers);
 
-        // SAFETY: It's safe to call the function, because:
-        // *`ph_context` can be null;
-        // * the value behind `ph_context` must be initialized by ourself: the user does not have to create the [CtxHandle] values ​​themselves.
-        // * other parameters are type checked.
+        // SAFETY:
+        // - `ph_context` is convertible to a reference.
+        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
         let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
             &mut ph_context,
             None,
             &CredentialsAttributes::default()
         )});
 
-        // SAFETY: It's safe to call the `as_mut` function, because `sspi_context_ptr` is a local pointer,
-        // which is initialized by the `p_ctx_handle_to_sspi_context` function. Thus, the value behind this pointer is valid.
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
-        // SAFETY: `p_message` is not null. We've checked this above.
+        // SAFETY:
+        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` points to a valid `SecBufferDesc` structure.
         let len = unsafe { (*p_message).c_buffers as usize };
-        // SAFETY: `p_message` and `p_buffers` is not null. We've checked this above.
-        let raw_buffers = unsafe { from_raw_parts((*p_message).p_buffers, len) };
-        // SAFETY: The user must provide guarantees about the correctness of buffers in `raw_buffers'.
+
+        // SAFETY:
+        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - The memory region `p_buffers` points to is valid for reads of `len` elements.
+        let raw_buffers = unsafe { from_raw_parts(p_buffers, len) };
+
+        // SAFETY:
+        // - `raw_buffers` array contains valid `SecBuffer` structures.
+        // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
         let mut message = try_execute!(unsafe { p_sec_buffers_to_decrypt_buffers(raw_buffers) });
 
         let (decryption_flags, result_status) =
@@ -417,13 +518,18 @@ pub unsafe extern "system" fn DecryptMessage(
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
 
-        // SAFETY: `p_message` and `p_buffers` is not null. We've checked this above.
-        // All other guarantees must be provided by user.
-        try_execute!(unsafe { copy_decrypted_buffers((*p_message).p_buffers, message) });
+        // SAFETY:
+        // - `p_buffers` is a valid pointer to an array of security buffers.
+        // - The memory region `p_buffers` points to is valid for writes of `from_buffers.len()` elements.
+        // - For each element in the `p_buffers` array, the `pv_buffer` pointer points to a valid memory,
+        //   that is valid for writes of `cb_buffer` bytes.
+        // - There is enough space in the buffers, since we are writing decrypted data back to the same buffers it was read.
+        try_execute!(unsafe { copy_decrypted_buffers(p_buffers, message) });
+
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
             let flags = try_execute!(decryption_flags.bits().try_into(), ErrorKind::InternalError);
-            // SAFETY: `pf_qop` is not null. We've checked this above.
+            // SAFETY: `pf_qop` is guaranteed to be non-null due to prior check.
             unsafe { *pf_qop = flags };
         }
 
@@ -435,8 +541,12 @@ pub unsafe extern "system" fn DecryptMessage(
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
-/// *Attention*: after this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
+/// # Safety:
+///
+/// After this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.
+///
+/// `raw_buffers` must be an array of valid `SecBuffer` structures.
 #[allow(clippy::useless_conversion)]
 unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::Result<Vec<SecurityBufferRef<'_>>> {
     let mut buffers = Vec::with_capacity(raw_buffers.len());
@@ -453,7 +563,9 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
             let data = if raw_buffer.pv_buffer.is_null() || raw_buffer.cb_buffer == 0 {
                 &mut []
             } else {
-                // SAFETY: the safety contract [raw_buffers] must be upheld by the caller.
+                // SAFETY:
+                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to prior check.
+                // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cb_buffer` bytes.
                 unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
             };
             buf.with_data(data)?
@@ -465,10 +577,16 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 
 /// Copies Rust-security-buffers into C-security-buffers.
 ///
+/// # Safety:
+///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.
+///
+/// `to_buffers` must be a non-null pointer valid for reads of `from_buffers.len()` elements.
 unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBufferRef<'_>>) -> sspi::Result<()> {
-    // SAFETY: the safety contract [to_buffers] must be upheld by the caller.
+    // SAFETY:
+    // - `to_buffers` is guaranteed to be non-null due to prior check.
+    // - The memory region `to_buffers` points to is valid for reads of `from_buffers.len()` elements.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
     for (to_buffer, mut from_buffer) in to_buffers.iter_mut().zip(from_buffers.into_iter()) {

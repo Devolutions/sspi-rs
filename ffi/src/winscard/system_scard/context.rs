@@ -61,8 +61,7 @@ impl SystemScardContext {
         let api = initialize_pcsc_lite_api()?;
 
         try_execute!(
-            // SAFETY: This function is safe to call because the `scope` parameter value is type checked
-            // and `*mut h_context` can't be `null`.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
             "SCardEstablishContext failed"
         )?;
@@ -566,7 +565,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
 impl Drop for SystemScardContext {
     fn drop(&mut self) {
         if let Err(err) = try_execute!(
-            // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardReleaseContext)(self.h_context) },
             "SCardReleaseContext failed"
         ) {
@@ -591,8 +590,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardConnect)(
                         self.h_context,
@@ -609,8 +607,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardConnectA)(
                         self.h_context,
@@ -645,8 +642,7 @@ impl WinScardContext for SystemScardContext {
             // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
             // `mszGroups`: List of groups to list readers (not used).
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe { (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
                 "SCardListReaders failed"
             )?;
@@ -659,8 +655,7 @@ impl WinScardContext for SystemScardContext {
             //  writes the length of the buffer that would have been returned if this parameter
             //  had not been NULL to pcchReaders, and returns a success code.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe { (self.api.SCardListReadersA)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
                 "SCardListReadersA failed"
             )?;
@@ -671,8 +666,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
@@ -682,8 +676,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListReadersA)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
@@ -708,8 +701,7 @@ impl WinScardContext for SystemScardContext {
             let c_reader_name = CString::new(_reader_name)?;
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetDeviceTypeIdA)(
                         self.h_context,
@@ -748,8 +740,7 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned to pcbIcon if this parameter
             // had not been NULL, and returns a success code.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
@@ -764,8 +755,7 @@ impl WinScardContext for SystemScardContext {
             let mut icon_buf = vec![0; icon_buf_len.try_into()?];
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
@@ -783,7 +773,7 @@ impl WinScardContext for SystemScardContext {
 
     fn is_valid(&self) -> bool {
         try_execute!(
-            // SAFETY: This function is safe to call because we are allowed to pass any value.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardIsValidContext)(self.h_context) },
             "SCardIsValidContext failed"
         )
@@ -814,8 +804,7 @@ impl WinScardContext for SystemScardContext {
             // It's not specified in the `SCardReadCacheA` function documentation, but after some
             // `msclmd.dll` reversing, we found out that this function supports the `SCARD_AUTOALLOCATE`.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardReadCacheA)(
                         self.h_context,
@@ -833,7 +822,7 @@ impl WinScardContext for SystemScardContext {
                 len
             } else {
                 try_execute!(
-                    // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+                    // SAFETY: FFI call with no outstanding preconditions.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;
@@ -843,13 +832,12 @@ impl WinScardContext for SystemScardContext {
 
             let mut cache_item = vec![0; data_len];
             cache_item.copy_from_slice(
-                // SAFETY: A slice creation is safe here because the `data` pointer is a local pointer and
-                // was initialized by `SCardReadCacheA` function.
+                // SAFETY: `data` pointer is a local pointer that was initialized by `SCardReadCacheA` function.
                 unsafe { from_raw_parts(data, data_len) },
             );
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                 "SCardFreeMemory failed"
             )?;
@@ -879,8 +867,7 @@ impl WinScardContext for SystemScardContext {
             let mut card_id = uuid_to_c_guid(_card_id);
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardWriteCacheA)(
                         self.h_context,
@@ -905,8 +892,7 @@ impl WinScardContext for SystemScardContext {
             //
             // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe { (self.api.SCardListReaderGroups)(self.h_context, null_mut(), &mut reader_groups_buf_len) },
                 "SCardListReaderGroups failed"
             )?;
@@ -919,8 +905,7 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned if this parameter had not been
             // NULL to pcchGroups, and returns a success code.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe { (self.api.SCardListReaderGroupsA)(self.h_context, null_mut(), &mut reader_groups_buf_len) },
                 "SCardListReaderGroupsA failed"
             )?;
@@ -931,8 +916,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListReaderGroups)(
                         self.h_context,
@@ -946,8 +930,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListReaderGroupsA)(
                         self.h_context,
@@ -963,7 +946,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {
-        // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+        // SAFETY: FFI call with no outstanding preconditions.
         try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) }, "SCardCancel failed")
     }
 
@@ -998,8 +981,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetStatusChange)(
                         self.h_context,
@@ -1015,8 +997,7 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetStatusChangeA)(
                         self.h_context,
@@ -1070,8 +1051,7 @@ impl WinScardContext for SystemScardContext {
             // pcchCards, returning the length of the buffer that would have been returned if this
             // parameter had not been NULL to pcchCards and a success code.
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListCardsA)(self.h_context, atr, c_uuids, uuids_len, null_mut(), &mut cards_buf_len)
                 },
@@ -1081,8 +1061,7 @@ impl WinScardContext for SystemScardContext {
             let mut cards = vec![0; cards_buf_len.try_into()?];
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardListCardsA)(
                         self.h_context,
@@ -1125,8 +1104,7 @@ impl WinScardContext for SystemScardContext {
             let c_card_name = CString::new(_card_name)?;
 
             try_execute!(
-                // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle
-                // and other parameters are type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardGetCardTypeProviderNameA)(
                         self.h_context,
@@ -1143,7 +1121,7 @@ impl WinScardContext for SystemScardContext {
                 len
             } else {
                 try_execute!(
-                    // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+                    // SAFETY: FFI call with no outstanding preconditions.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;
@@ -1152,14 +1130,13 @@ impl WinScardContext for SystemScardContext {
             };
 
             let name = if let Ok(name) = String::from_utf8(
-                // SAFETY: A slice create is safe because the `data` pointer is a local pointer and
-                // was initialized by `SCardGetCardTypeProviderNameA` function.
+                // SAFETY: `data` pointer is a local pointer that was initialized by `SCardGetCardTypeProviderNameA` function.
                 unsafe { from_raw_parts(data, data_len) }.to_vec(),
             ) {
                 name
             } else {
                 try_execute!(
-                    // SAFETY: This function is safe to call because the `self.h_context` is always a valid handle.
+                    // SAFETY: FFI call with no outstanding preconditions.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;

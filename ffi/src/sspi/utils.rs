@@ -12,7 +12,7 @@ use super::sec_handle::CredentialsHandle;
 pub unsafe fn transform_credentials_handle<'a>(
     credentials_handle: *mut CredentialsHandle,
 ) -> Option<(CredentialsBuffers, &'a str, &'a CredentialsAttributes)> {
-    // SAFETY: `credentials_handle` is not null. We've checked this above.
+    // SAFETY: `credentials_handle` is either null or it is convertible to a reference.
     unsafe { credentials_handle.as_mut() }.map(|cred_handle| {
         (
             cred_handle.credentials.clone(),

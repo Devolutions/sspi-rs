@@ -6,30 +6,32 @@ pub(crate) fn into_raw_ptr<T>(value: T) -> *mut T {
     Box::into_raw(Box::new(value))
 }
 
+/// *Note*: the resulting [String] will contain a null-terminator char at the end.
+///
 /// # Safety
 ///
-/// *Note*: the resulting [String] will contain a null-terminator char at the end.
 /// Behavior is undefined is any of the following conditions are violated:
 ///
-/// * `s` must be a [valid] C string.
+/// * `s` must be a [valid], null-terminated C string.
 pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> String {
     let mut len = 0;
 
-    // SAFETY: The user must provide guarantees that `s` is a valid C string.
+    // SAFETY: `s` is a valid, null-terminated C string.
     while unsafe { *(s.add(len)) } != 0 {
         len += 1;
     }
 
-    // SAFETY: The user must provide guarantees that `s` is a valid C string.
+    // SAFETY: `s` is a valid, null-terminated C string.
     String::from_utf16_lossy(unsafe { from_raw_parts(s, len) })
 }
 
+/// The returned length includes the null terminator char.
+///
 /// # Safety
 ///
-/// The returned length includes the null terminator char.
 /// Behavior is undefined is any of the following conditions are violated:
 ///
-/// * `s` must be a [valid] C string.
+/// * `s` must be a [valid], null-terminated C string.
 pub(crate) unsafe fn w_str_len(s: *const u16) -> usize {
     let mut len = 0;
 
@@ -57,7 +59,8 @@ pub(crate) unsafe fn w_str_len(s: *const u16) -> usize {
 pub(crate) unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     if !raw_buffer.is_null() {
         // SAFETY:
-        // `raw_buffer` is not null: checked above. All other guarantees should be upheld by the caller.
+        // - `raw_buffer` is guaranteed to be non-null due to prior check.
+        // - `raw_buffer` is valid for reads for `len` many bytes.
         unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
     } else {
         Vec::new()

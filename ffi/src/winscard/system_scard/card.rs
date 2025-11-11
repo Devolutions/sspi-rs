@@ -91,7 +91,7 @@ impl Drop for SystemScard {
     fn drop(&mut self) {
         if let HandleState::Connected(handle) = self.h_card {
             if let Err(err) = try_execute!(
-                // SAFETY: This function is safe to call because the `handle` is valid.
+                // SAFETY: `handle` is valid.
                 unsafe { (self.api.SCardDisconnect)(handle, 0) }
             ) {
                 error!(?err, "Failed to disconnect the card");
@@ -132,8 +132,7 @@ impl WinScard for SystemScard {
         {
             // https://pcsclite.apdu.fr/api/group__API.html#gae49c3c894ad7ac12a5b896bde70d0382
             try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card` is checked
-                // and all other values is type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardStatus)(
                         self.h_card()?,
@@ -152,8 +151,7 @@ impl WinScard for SystemScard {
         {
             // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa
             try_execute!(
-                // SAFETY: This function is safe to call because `self.h_card` is checked
-                // and all other values is type checked.
+                // SAFETY: FFI call with no outstanding preconditions.
                 unsafe {
                     (self.api.SCardStatusA)(
                         self.h_card()?,
@@ -208,8 +206,7 @@ impl WinScard for SystemScard {
 
     fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
@@ -232,8 +229,7 @@ impl WinScard for SystemScard {
         let output_buf_len = output.len().try_into()?;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
@@ -278,8 +274,7 @@ impl WinScard for SystemScard {
         };
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe {
                 (self.api.SCardTransmit)(
                     self.h_card()?,
@@ -306,7 +301,7 @@ impl WinScard for SystemScard {
 
     fn begin_transaction(&mut self) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardBeginTransaction)(self.h_card()?) },
             "SCardBeginTransaction failed"
         )
@@ -314,8 +309,7 @@ impl WinScard for SystemScard {
 
     fn end_transaction(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and the `disposition` parameter is type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardEndTransaction)(self.h_card()?, disposition.into()) },
             "SCardEndTransaction failed"
         )
@@ -331,8 +325,7 @@ impl WinScard for SystemScard {
         let mut active_protocol = 0;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe {
                 (self.api.SCardReconnect)(
                     self.h_card()?,
@@ -367,8 +360,7 @@ impl WinScard for SystemScard {
         // writes the length of the buffer that would have been returned if this parameter
         // had not been NULL to pcbAttrLen, and returns a success code.
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), null_mut(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
@@ -376,8 +368,7 @@ impl WinScard for SystemScard {
         let mut data = vec![0; data_len.try_into()?];
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardGetAttrib)(self.h_card()?, attr_id.into(), data.as_mut_ptr(), &mut data_len) },
             "SCardGetAttrib failed"
         )?;
@@ -393,8 +384,7 @@ impl WinScard for SystemScard {
         let len = attribute_data.len().try_into()?;
 
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is checked
-            // and other function parameters are type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardSetAttrib)(self.h_card()?, attr_id.into(), attribute_data.as_ptr(), len) },
             "SCardSetAttrib failed"
         )
@@ -402,8 +392,7 @@ impl WinScard for SystemScard {
 
     fn disconnect(&mut self, disposition: ReaderAction) -> WinScardResult<()> {
         try_execute!(
-            // SAFETY: This function is safe to call because `self.h_card` is always a valid handle
-            // and the `disposition` parameter is type checked.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { (self.api.SCardDisconnect)(self.h_card()?, disposition.into()) },
             "SCardDisconnect failed"
         )?;

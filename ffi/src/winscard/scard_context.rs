@@ -102,7 +102,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let raw_ptr = into_raw_ptr(scard_context) as ScardContext;
     info!(new_established_context = ?raw_ptr);
-    // SAFETY: The `context` is not null (checked above).
+    // SAFETY: The `context` is guaranteed to be non-null due to prior check.
     unsafe {
         *context = raw_ptr;
     }
@@ -111,6 +111,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// The `context` must be a valid pointer to a memory region that is allocated by [`SCardEstablishContext`] function.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -118,7 +121,10 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
     check_handle!(context);
 
     if is_present(context) {
-        // SAFETY: The `context` is not zero (checked above). All other guarantees should be provided by the user.
+        // SAFETY:
+        // - `context` is guaranteed to be non-null due to prior check.
+        // - `context` is allocated by `SCardEstablishContext` function.
+        //   It guarantees that the pointer was allocated using `Box::into_raw`.
         let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
         release_context(context);
 
@@ -132,6 +138,9 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
     }
 }
 
+/// # Safety:
+///
+/// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
@@ -139,7 +148,9 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
         check_handle!(context);
 
         let context = try_execute!(
-            // SAFETY: The `context` is not zero (checked above). All other guarantees should be provided by the user.
+            // SAFETY:
+            // - `context` is guaranteed to be non-zero due to prior check.
+            // - `context` is a valid raw scard context handle.
             unsafe { scard_context_to_winscard_context(context) }
         );
 
@@ -175,6 +186,11 @@ pub extern "system" fn SCardListReaderGroupsW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
+/// - `pcch_readers` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersA"))]
 #[no_mangle]
 pub unsafe extern "system" fn SCardListReadersA(
@@ -187,19 +203,28 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: The `msz_readers` and `pcch_readers` parameters are not null (checked above).
+    // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
     let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_readers, pcch_readers) });
 
     let out_buf = try_execute!(context.list_readers(buffer_type));
 
-    // SAFETY: The `msz_readers` and `pcch_readers` parameters are not null (checked above).
+    // SAFETY:
+    // - `msz_readers` is valid for writes.
+    // - `pcch_readers` is valid for writes.
     try_execute!(unsafe { save_out_buf(out_buf, msz_readers, pcch_readers) });
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
+/// - `pcch_readers` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -213,25 +238,35 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: The `msz_readers` and `pcch_readers` parameters are not null (checked above).
+    // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_readers, pcch_readers) });
 
     let out_buf = try_execute!(context.list_readers_wide(buffer_type));
 
-    // SAFETY: The `msz_readers` and `pcch_readers` parameters are not null (checked above).
+    // SAFETY:
+    // - `msz_readers` is valid for writes.
+    // - `pcch_readers` is valid for writes.
     try_execute!(unsafe { save_out_buf_wide(out_buf, msz_readers, pcch_readers) });
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// `guids` can be null.
+/// Else, `guids` must be valid for both reads and writes for `len` many elements, and it must be properly aligned.
 unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<Uuid>>> {
     Ok(if guids.is_null() {
         None
     } else {
         Some(
-            // SAFETY: The `guids` parameter is not null (checked above).
+            // SAFETY:
+            // - `guids` is guaranteed to be non-null due to prior check.
+            // - `guids` is valid for reads for `len` many elements.
             unsafe { from_raw_parts(guids, len.try_into()?) }
                 .iter()
                 .map(|id| Uuid::from_fields(id.data1, id.data2, id.data3, &id.data4))
@@ -240,13 +275,20 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
     })
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
+/// - `rgquid_interfaces` must be valid for both reads and writes for `cguid_interface_count` many elements, and it must be properly aligned.
+/// - `msz_cards` must be valid for both reads and writes for `*pcch_cards` elements, and it must be properly aligned.
+/// - `pcch_cards` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsA(
     context: ScardContext,
     pb_atr: LpCByte,
-    rgquid_nterfaces: LpCGuid,
+    rgquid_interfaces: LpCGuid,
     cguid_interface_count: u32,
     msz_cards: *mut u8,
     pcch_cards: LpDword,
@@ -257,37 +299,51 @@ pub unsafe extern "system" fn SCardListCardsA(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: The `msz_cards` and `pcch_cards` parameters are not null (checked above).
+    // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
     let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_cards, pcch_cards) });
     let atr = if pb_atr.is_null() {
         None
     } else {
-        // SAFETY: The `pb_atr` parameter is not null (checked above).
+        // SAFETY:
+        // - `pb_attr` is guaranteed to be non-null due to prior check.
+        // - `pb_attr` is valid for reads for 32 bytes.
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
     let required_interfaces = try_execute!(
-        // SAFETY: The `rgquid_nterfaces` parameter is checked inside the function.
-        // All other guarantees should be provided by the user.
-        unsafe { guids_to_uuids(rgquid_nterfaces, cguid_interface_count) }
+        // SAFETY:
+        // - `rgquid_interfaces` is guaranteed to be non-null due to prior check.
+        // - `rgquid_interfaces` is valid for both reads and writes for `cguid_interface_count` many elements.
+        unsafe { guids_to_uuids(rgquid_interfaces, cguid_interface_count) }
     );
 
     let out_buf = try_execute!(context.list_cards(atr, required_interfaces.as_deref(), buffer_type));
 
-    // SAFETY: The `msz_cards` and `pcch_cards` parameters are not null (checked above).
+    // SAFETY:
+    // - `msz_cards` is valid for writes.
+    // - `pcch_cards` is valid for writes.
     try_execute!(unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) });
 
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
+/// - `rgquid_interfaces` must be valid for both reads and writes for `cguid_interface_count` many elements, and it must be properly aligned.
+/// - `msz_cards` must be valid for both reads and writes for `*pcch_cards` elements, and it must be properly aligned.
+/// - `pcch_cards` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsW"))]
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardListCardsW(
     context: ScardContext,
     pb_atr: LpCByte,
-    rgquid_nterfaces: LpCGuid,
+    rgquid_interfaces: LpCGuid,
     cguid_interface_count: u32,
     msz_cards: *mut u16,
     pcch_cards: LpDword,
@@ -298,25 +354,32 @@ pub unsafe extern "system" fn SCardListCardsW(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: The `msz_cards` and `pcch_cards` parameters are not null (checked above).
+    // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_cards, pcch_cards) });
     let atr = if pb_atr.is_null() {
         None
     } else {
-        // SAFETY: The `pb_atr` parameter is not null (checked above).
+        // SAFETY:
+        // - `pb_attr` is guaranteed to be non-null due to prior check.
+        // - `pb_attr` is valid for reads for 32 bytes.
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
     let required_interfaces = try_execute!(
-        // SAFETY: The `rgquid_nterfaces` parameter is checked inside the function.
-        // All other guarantees should be provided by the user.
-        unsafe { guids_to_uuids(rgquid_nterfaces, cguid_interface_count) }
+        // SAFETY:
+        // - `rgquid_interfaces` is guaranteed to be non-null due to prior check.
+        // - `rgquid_interfaces` is valid for both reads and writes for `cguid_interface_count` many elements.
+        unsafe { guids_to_uuids(rgquid_interfaces, cguid_interface_count) }
     );
 
     let out_buf = try_execute!(context.list_cards_wide(atr, required_interfaces.as_deref(), buffer_type));
 
-    // SAFETY: The `msz_cards` and `pcch_cards` parameters are not null (checked above).
+    // SAFETY:
+    // - `msz_cards` is valid for writes.
+    // - `pcch_cards` is valid for writes.
     try_execute!(unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) });
 
     ErrorKind::Success.into()
@@ -368,6 +431,12 @@ pub extern "system" fn SCardGetProviderIdW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
+/// - `szProvider` must be valid for both reads and writes for `*pcch_provider` elements, and it must be properly aligned.
+/// - `pcch_provider` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -384,13 +453,17 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     check_null!(pcch_provider);
 
     let card_name = try_execute!(
-        // SAFETY: It's safe to construct a slice because the `sz_card_name` is not null (checked above).
-        // All other guarantees should be provided by the user.
+        // SAFETY:
+        // - `sz_card_name` is non-null.
+        // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
+        // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_card_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
 
     let context = context_handle.scard_context();
@@ -398,16 +471,24 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
         try_execute!(context.get_card_type_provider_name(card_name, try_execute!(dw_provide_id.try_into())))
             .to_string();
 
-    // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
+    // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
     let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
     let out_buf = try_execute!(context_handle.write_to_out_buf(provider_name.as_bytes(), buffer_type));
 
-    // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
+    // SAFETY:
+    // - `szProvider` is valid for writes.
+    // - `pcch_provider` is valid for writes.
     try_execute!(unsafe { save_out_buf(out_buf, szProvider, pcch_provider) });
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
+/// - `szProvider` must be valid for both reads and writes for `*pcch_provider` elements, and it must be properly aligned.
+/// - `pcch_provider` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -423,10 +504,15 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     check_null!(szProvider);
     check_null!(pcch_provider);
 
-    // SAFETY: The `sz_card_name` parameter is not null (checked above).
+    // SAFETY:
+    // - `sz_card_name` is non-null.
+    // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
+    // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
     let card_name = unsafe { c_w_str_to_string(sz_card_name) };
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
 
     let context = context_handle.scard_context();
@@ -434,11 +520,13 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
         try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())));
     let wide_provider_name = str_encode_utf16(provider_name.as_ref());
 
-    // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
+    // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
     let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(szProvider, pcch_provider) });
     let out_buf = try_execute!(context_handle.write_to_out_buf(&wide_provider_name, buffer_type));
 
-    // SAFETY: The `szProvider` and `pcch_provider` parameters are not null (checked above).
+    // SAFETY:
+    // - `szProvider` is valid for writes.
+    // - `pcch_provider` is valid for writes.
     try_execute!(unsafe { save_out_buf_wide(out_buf, szProvider, pcch_provider) });
 
     ErrorKind::Success.into()
@@ -622,13 +710,18 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// # Safety:
+///
+/// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
 #[instrument(ret)]
 #[no_mangle]
 pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
     check_handle!(context);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     if let Ok(context) = unsafe { raw_scard_context_handle_to_scard_context_handle(context) } {
         if context.free_buffer(pv_mem) {
             info!("Allocated buffer successfully freed");
@@ -652,12 +745,12 @@ static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
     use windows_sys::Win32::Foundation::GetLastError;
     use windows_sys::Win32::System::Threading::CreateEventA;
 
-    // SAFETY: All parameters are correct.
+    // SAFETY: FFI call with no outstanding preconditions.
     let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
     if handle.is_null() {
         error!(
             "Unable to create event: returned event handle is null. Last error: {}",
-            // SAFETY: it's safe to call this function.
+            // SAFETY: FFI call with no outstanding preconditions.
             unsafe { GetLastError() }
         );
     }
@@ -715,7 +808,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
         {
             // Use system-provided smart card.
             //
-            // SAFETY: The `WINSDCARD_API` is lazily initialized, so it's safe to call this function.
+            // SAFETY: The `WINSCARD_API` is lazily initialized.
             unsafe { (WINSCARD_API.SCardReleaseStartedEvent)() }
         } else {
             use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
@@ -726,11 +819,11 @@ pub extern "system" fn SCardReleaseStartedEvent() {
             // We assume we're always ready for our virtual smart cards. Moreover, we don't use reference counters
             // because we are always in a ready (signaled) state and have only one handle for the entire process.
             //
-            // SAFETY: It's safe to close the handle.
+            // SAFETY: The `START_EVENT_HANDLE` is lazily initialized.
             if unsafe { CloseHandle(*START_EVENT_HANDLE as *mut c_void) } == 0 {
                 error!(
                     "Cannot close the event handle. List error: {}",
-                    // SAFETY: it's safe to call this function.
+                    // SAFETY: FFI call with no outstanding preconditions.
                     unsafe { GetLastError() }
                 );
             }
@@ -794,6 +887,13 @@ pub extern "system" fn SCardLocateCardsByATRW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `rg_reader_state` must point to an array of valid [`ScardReaderStateA`](ffi_types::winscard::ScardReaderStateA) structures.
+///   Also, it must be valid for both reads and writes for `c_readers` many bytes, and it must be properly aligned.
+///   Each [`ScardReaderStateA`](ffi_types::winscard::ScardReaderStateA)'s `sz_reader` field must be a non-null pointer
+///   to a valid, null-terminated C string.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -806,10 +906,14 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
 
-    // SAFETY: The `rg_reader_states` parameter is not null (checked above).
+    // SAFETY:
+    // - `rg_reader_state` is guaranteed to be non-null due to prior check.
+    // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
     let c_reader_states = unsafe {
         from_raw_parts_mut(
             rg_reader_states,
@@ -822,8 +926,10 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
             check_null!(c_reader.sz_reader, "reader name in reader state");
 
             Ok(ReaderState {
-                // SAFETY: The reader name should not be null (checked above). All other guarantees
-                // should be provided by the user.
+                // SAFETY:
+                // - `c_reader.sz_reader` is non-null.
+                // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
+                // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
                 reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader as *const _) }.to_string_lossy(),
                 user_data: c_reader.pv_user_data as usize,
                 current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
@@ -844,6 +950,13 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `rg_reader_state` must point to an array of valid [`ScardReaderStateW`](ffi_types::winscard::ScardReaderStateW) structures.
+///   Also, it must be valid for both reads and writes for `c_readers` many bytes, and it must be properly aligned.
+///   Each [`ScardReaderStateW`](ffi_types::winscard::ScardReaderStateW)'s `sz_reader` field must be a non-null pointer
+///   to a valid, null-terminated C string.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -856,10 +969,14 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
 
-    // SAFETY: The `rg_reader_states` parameter is not null (checked above).
+    // SAFETY:
+    // - `rg_reader_state` is guaranteed to be non-null due to prior check.
+    // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
     let c_reader_states = unsafe {
         from_raw_parts_mut(
             rg_reader_states,
@@ -872,8 +989,10 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
             check_null!(c_reader.sz_reader, "reader name in reader state");
 
             Ok(ReaderState {
-                // SAFETY: The reader name should not be null (checked above). All other guarantees
-                // should be provided by the user.
+                // SAFETY:
+                // - `c_reader.sz_reader` is non-null.
+                // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
+                // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
                 reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
                 user_data: c_reader.pv_user_data as usize,
                 current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
@@ -894,19 +1013,30 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
 #[instrument(ret)]
 #[no_mangle]
-pub extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
+pub unsafe extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
     check_handle!(context);
 
-    // SAFETY: The `context` value is not zero (checked above). All other guarantees should be provided by the user.
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     try_execute!(context.cancel());
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `data` must be valid for both reads and writes for `*data_len` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 unsafe fn read_cache(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -919,10 +1049,14 @@ unsafe fn read_cache(
     check_null!(card_identifier, "scard card identifier");
     check_null!(data_len, "data buffer length");
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
 
-    // SAFETY: The `card_identifier` parameter is not null (checked above).
+    // SAFETY:
+    // - `card_identifier` is guaranteed to be non-null due to prior check.
+    // - `card_identifier` points to a valid `Uuid` structure.
     let card_id = unsafe {
         Uuid::from_fields(
             (*card_identifier).data1,
@@ -931,16 +1065,24 @@ unsafe fn read_cache(
             &(*card_identifier).data4,
         )
     };
-    // SAFETY: It's safe to call this function because the `data` parameter is allowed to be null
-    // and the `data_len` parameter cannot be null (checked above).
+    // SAFETY: `data` is valid for both reads and writes for `*data_len` many elements.
     let buffer_type = unsafe { build_buf_request_type(data, data_len) }?;
 
     let out_buf = context.read_cache(card_id, freshness_counter, lookup_name, buffer_type)?;
 
-    // SAFETY: It's safe to call this function because all parameters are checked above.
+    // SAFETY:
+    // - `data` is valid for writes.
+    // - `data_len` is valid for writes.
     unsafe { save_out_buf(out_buf, data, data_len) }
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `lookup_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `data` must be valid for both reads and writes for `*data_len` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -955,16 +1097,30 @@ pub unsafe extern "system" fn SCardReadCacheA(
     check_null!(lookup_name);
 
     let lookup_name = try_execute!(
-        // SAFETY: The `lookup_name` parameter is not null (checked above).
+        // SAFETY:
+        // - `lookup_name` is non-null.
+        // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
+        // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
+    // SAFETY:
+    // - `context` is a valid raw scard context handle.
+    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+    // - `data` is a valid for both reads and writes for `*data_len` elements, and it is properly-aligned.
+    // - `data_len` is valid for both reads and writes, and it is properly-aligned.
     try_execute!(unsafe { read_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `lookup_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `data` must be valid for both reads and writes for `*data_len` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -978,10 +1134,17 @@ pub unsafe extern "system" fn SCardReadCacheW(
 ) -> ScardStatus {
     check_null!(lookup_name);
 
-    // SAFETY: The `lookup_name` parameter is not null (checked above).
+    // SAFETY:
+    // - `lookup_name` is non-null.
+    // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
+    // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
     try_execute!(
-        // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function.
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+        // - `data` us a valid for both reads and writes for `*data_len` elements, and it is properly-aligned.
+        // - `data_len` is valid for both reads and writes, and it is properly-aligned.
         unsafe {
             read_cache(
                 context,
@@ -997,6 +1160,11 @@ pub unsafe extern "system" fn SCardReadCacheW(
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `data` must be valid for reads for `data_len` elements, and it must be properly aligned.
 unsafe fn write_cache(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -1008,7 +1176,9 @@ unsafe fn write_cache(
     check_handle!(context, "scard context handle");
     check_null!(card_identifier, "card identified");
 
-    // SAFETY: The `card_identifier` parameter is not null (checked above).
+    // SAFETY:
+    // - `card_identifier` is guaranteed to be non-null due to prior check.
+    // - `card_identifier` points to a valid `Uuid` structure.
     let card_id = unsafe {
         Uuid::from_fields(
             (*card_identifier).data1,
@@ -1018,7 +1188,7 @@ unsafe fn write_cache(
         )
     };
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY: `context` is a valid raw scard context handle.
     let context = unsafe { scard_context_to_winscard_context(context) }?;
     // The YubiKey Smart Card Minidriver can call `SCardWriteCacheW` with the `Data` pointer set to NULL and
     // `DataLen` equal to 0.
@@ -1032,6 +1202,12 @@ unsafe fn write_cache(
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `lookup_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `data` must be valid for reads for `data_len` elements, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1046,16 +1222,28 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     check_null!(lookup_name);
 
     let lookup_name = try_execute!(
-        // SAFETY: The `lookup_name` parameter is not null (checked above).
+        // SAFETY:
+        // - `lookup_name` is non-null.
+        // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
+        // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function
+    // SAFETY:
+    // - `context` is a valid raw scard context handle.
+    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+    // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
     try_execute!(unsafe { write_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
+/// - `lookup_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `data` must be valid for reads for `data_len` elements, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1069,9 +1257,15 @@ pub unsafe extern "system" fn SCardWriteCacheW(
 ) -> ScardStatus {
     check_null!(lookup_name);
 
-    // SAFETY: The `lookup_name` parameter is not null (checked above).
+    // SAFETY:
+    // - `lookup_name` is non-null.
+    // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
+    // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
-    // SAFETY: The `lookup_name` parameter is type checked. All other parameters are checked inside the function
+    // SAFETY:
+    // - `context` is a valid raw scard context handle.
+    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+    // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
     try_execute!(unsafe {
         write_cache(
             context,
@@ -1086,6 +1280,11 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `pb_icon` can be null. Else, it must be valid for reads for `*pb_icon` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 unsafe fn get_reader_icon(
     context: ScardContext,
     reader_name: &str,
@@ -1096,21 +1295,31 @@ unsafe fn get_reader_icon(
     // `pb_icon` can be null.
     check_null!(pcb_icon, "pcb_icon");
 
-    // SAFETY: The `context` value is not zero (checked above). All other guarantees should be provided by the user.
+    // SAFETY: `context` is a valid raw scard context handle.
     let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
 
-    // SAFETY: It's safe to call this function because the `pb_icon` parameter is allowed to be null
-    // and the `pcb_icon` parameter cannot be null (checked above).
+    // SAFETY:
+    // - `pb_icon` is allowed to be null.
+    // - If `pb_icon` is non-null, it is valid for both reads and writes for `*pcb_icon` many elements.
     let buffer_type = unsafe { build_buf_request_type(pb_icon, pcb_icon) }?;
 
     let out_buf = context.get_reader_icon(reader_name, buffer_type)?;
 
-    // SAFETY: It's safe to call this function because all parameters are checked above.
+    // SAFETY:
+    // - `pb_icon` is allowed to be null.
+    // ` If `pb_icon` is non-null, it is valid for writes.
+    // - `pcb_icon` is valid for writes.
     unsafe { save_out_buf(out_buf, pb_icon, pcb_icon) }?;
 
     Ok(())
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `pb_icon` can be null. Else, it must be valid for reads for `*pb_icon` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1123,19 +1332,31 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     check_null!(sz_reader_name);
 
     let reader_name = try_execute!(
-        // SAFETY: The `sz_reader_name` parameter is not null (checked above).
+        // SAFETY:
+        // - `sz_reader_name` is non-null.
+        // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
+        // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
     try_execute!(
-        // SAFETY: The `reader_name` parameter is type checked. All other parameters are checked inside the function
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `pb_icon` us a valid for both reads and writes for `*pcb_icon` elements, and it is properly-aligned.
+        // - `pcb_icon` is valid for both reads and writes, and it is properly-aligned.
         unsafe { get_reader_icon(context, reader_name, pb_icon, pcb_icon) }
     );
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `pb_icon` can be null. Else, it must be valid for reads for `*pb_icon` elements, and it must be properly aligned.
+/// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1147,17 +1368,27 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
 ) -> ScardStatus {
     check_null!(sz_reader_name);
 
-    // SAFETY: The `sz_reader_name` parameter is not null (checked above).
+    // SAFETY:
+    // - `sz_reader_name` is non-null.
+    // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
+    // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
     let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };
 
     try_execute!(
-        // SAFETY: The `reader_name` parameter is type checked. All other parameters are checked inside the function.
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `pb_icon` us a valid for both reads and writes for `*pcb_icon` elements, and it is properly-aligned.
+        // - `pcb_icon` is valid for both reads and writes, and it is properly-aligned.
         unsafe { get_reader_icon(context, &reader_name, pb_icon, pcb_icon) }
     );
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.
 unsafe fn get_device_type_id(
     context: ScardContext,
     reader_name: &str,
@@ -1166,10 +1397,12 @@ unsafe fn get_device_type_id(
     check_handle!(context, "scard context handle");
     check_null!(pdw_device_type_id, "pdw_device_type_id");
 
-    // SAFETY: The `context` value is not zero (checked above).
+    // SAFETY:
+    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is a valid raw scard context handle.
     let context = unsafe { scard_context_to_winscard_context(context) }?;
 
-    // SAFETY: The `pdw_device_type_id` parameter is not null (checked above).
+    // SAFETY: `pdw_device_type_id` is guaranteed to be non-null due to prior check.
     unsafe {
         *pdw_device_type_id = context.device_type_id(reader_name)?.into();
     }
@@ -1177,6 +1410,11 @@ unsafe fn get_device_type_id(
     Ok(())
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdA"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1188,20 +1426,29 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     check_null!(sz_reader_name);
 
     let reader_name = try_execute!(
-        // SAFETY: The `sz_reader_name` parameter is not null (checked above).
+        // SAFETY:
+        // - `sz_reader_name` is non-null.
+        // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
+        // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
     try_execute!(
-        // SAFETY: `context` and `pdw_device_type_id` parameters are checked inside the function.
-        // `reader_name` is type checked.
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `pdw_device_type_id` is a properly-aligned pointer that points to a memory region valid for both reads and writes.
         unsafe { get_device_type_id(context, reader_name, pdw_device_type_id) }
     );
 
     ErrorKind::Success.into()
 }
 
+/// # Safety:
+///
+/// - `context` must be a valid raw scard context handle.
+/// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
+/// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdW"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -1212,12 +1459,16 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
 ) -> ScardStatus {
     check_null!(sz_reader_name);
 
-    // SAFETY: The `sz_reader_name` parameter is not null (checked above).
+    // SAFETY:
+    // - `sz_reader_name` is non-null.
+    // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
+    // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
     let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };
 
     try_execute!(
-        // SAFETY: `context` and `pdw_device_type_id` parameters are checked inside the function.
-        // `reader_name` is type checked.
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `pdw_device_type_id` is a properly-aligned pointer that points to a memory region valid for both reads and writes.
         unsafe { get_device_type_id(context, &reader_name, pdw_device_type_id) }
     );
 

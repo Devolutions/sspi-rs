@@ -198,7 +198,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        // SAFETY: `pc_packages` is not null. We've checked this above.
+        // SAFETY: `pc_packages` is guaranteed to be non-null due to prior check.
         unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
@@ -224,7 +224,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
             // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
             // NOTE: this is not the only place that needs to be fixed. An audit is required.
-            // SAFETY: `package_ptr` is a local pointer and we've checked that it is not null above.
+            // SAFETY: `package_ptr` is a local pointer and it's convertible to a reference.
             let pkg_info_a = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
@@ -235,34 +235,39 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             let mut name = pkg_info.name.as_ref().as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             name.push(0);
-            // SAFETY: This function is safe to call because `name` is valid C string and
-            // `data_ptr` is a local pointer to allocated memory.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - `name` is valid C string.
+            // - `data_ptr` is a local pointer to allocated memory.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len()); }
             pkg_info_a.name = data_ptr as *mut _;
-            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Our allocated buffer is big enough to contain package name and comment.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(name.len()) };
 
             let mut comment = pkg_info.comment.as_bytes().to_vec();
             // We need to add the null-terminator during the conversion from Rust to C string.
             comment.push(0);
 
-            // SAFETY: This function is safe to call because `name` is valid C string and
-            // `data_ptr` is a local pointer to allocated memory.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - `name` is valid C string.
+            // - `data_ptr` is a local pointer to allocated memory.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len()); }
             pkg_info_a.comment = data_ptr as *mut _;
-            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Our allocated buffer is big enough to contain package name and comment.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(comment.len()) };
 
-            // SAFETY: Next structure (if any) is placed right after this structure.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Next structure (if any) is placed right after this structure.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        // SAFETY: `pp_package_into` is not null. We've checked this above.
+        // SAFETY: `pp_package_into` is guaranteed to be non-null due to prior check.
         unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
@@ -284,7 +289,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        // SAFETY: `pc_packages` is not null. We've checked this above.
+        // SAFETY: `pc_packages` is guaranteed to be non-null due to prior check.
         unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
@@ -325,30 +330,35 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
             pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
-            // SAFETY: This function is safe to call because `names[i]` is valid C string and
-            // `data_ptr` is a local pointer to allocated memory.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - `names[i]` is valid C string.
+            // - `data_ptr` is a local pointer to allocated memory.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len()); }
             pkg_info_w.name = data_ptr as *mut _;
-            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Our allocated buffer is big enough to contain package name and comment.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(names[i].len()) };
 
-            // SAFETY: This function is safe to call because `name` is valid C string and
-            // `data_ptr` is a local pointer to allocated memory.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - `name` is valid C string.
+            // - `data_ptr` is a local pointer to allocated memory.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len()); }
             pkg_info_w.comment = data_ptr as *mut _;
-            // SAFETY: Our allocated buffer is big enough to contain package name and comment.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Our allocated buffer is big enough to contain package name and comment.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             data_ptr = unsafe { data_ptr.add(comments[i].len()) };
 
-            // SAFETY: Next structure (if any) is placed right after this structure.
-            // We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
+            // SAFETY:
+            // - Next structure (if any) is placed right after this structure.
+            // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
             package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        // SAFETY: `pp_package_into` is not null. We've checked this above.
+        // SAFETY: `pp_package_into` is guaranteed to be non-null due to prior check.
         unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
@@ -357,6 +367,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut u32, *mut PSecPkgInfoW) -> SecurityStatus;
 
+/// # Safety:
+///
+/// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
 #[no_mangle]
@@ -368,8 +381,10 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        // SAFETY: This function is safe to call because `p_package_name` is not null, we've checked this above.
-        // All other guarantees about validity of C string must be provided by user.
+        // SAFETY:
+        // - `p_package_name` is guaranteed to be non-null due to prior check.
+        // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
+        // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
         let pkg_name = try_execute!(unsafe { CStr::from_ptr(p_package_name) }.to_str(), ErrorKind::InvalidParameter);
 
         let pkg_info: RawSecPkgInfoA = try_execute!(enumerate_security_packages())
@@ -377,7 +392,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
             .find(|pkg| pkg.name.as_ref() == pkg_name)
             .unwrap()
             .into();
-        // SAFETY: `pp_package_info` is not null. We've checked this above.
+        // SAFETY: `pp_package_info` is guaranteed to be non-null due to prior check.
         unsafe { *pp_package_info = pkg_info.0; }
 
         0
@@ -386,6 +401,9 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
+/// # Safety:
+///
+/// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
 #[no_mangle]
@@ -397,8 +415,10 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        // SAFETY: This function is safe to call because `p_package_name` is not null, we've checked this above.
-        // All other guarantees about validity of C string must be provided by user.
+        // SAFETY:
+        // - `p_package_name` is guaranteed to be non-null due to prior check.
+        // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
+        // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
         let pkg_name = unsafe { c_w_str_to_string(p_package_name) };
 
         let pkg_info: RawSecPkgInfoW = try_execute!(enumerate_security_packages())
@@ -406,7 +426,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
             .find(|pkg| pkg.name.to_string() == pkg_name)
             .unwrap()
             .into();
-        // SAFETY: `pp_package_info` is not null. We've checked this above.
+        // SAFETY: `pp_package_info` is guaranteed to be non-null due to prior check.
         unsafe { *pp_package_info = pkg_info.0; }
 
         0
