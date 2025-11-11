@@ -34,7 +34,7 @@ pub(super) unsafe fn build_buf_request_type<'data>(
         // would have been returned if this parameter had not been NULL, and returns a success code.
         return Ok(RequestedBufferType::Length);
     }
-    // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+    // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
     if unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // If the buffer length is specified as SCARD_AUTOALLOCATE, then data pointer is
         // converted to a pointer to a byte pointer, and receives the address of a block of memory
@@ -42,8 +42,9 @@ pub(super) unsafe fn build_buf_request_type<'data>(
         Ok(RequestedBufferType::Allocate)
     } else {
         // SAFETY:
-        // - The `pcb_buf` is guaranteed to be non-null due to prior check.
-        // - `p_buf` is non-null, valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
+        // - The `pcb_buf` is guaranteed to be non-null due to the prior check.
+        // - `p_buf` is guaranteed to be non-null due to the prior check.
+        // - `p_buf` is valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
         Ok(RequestedBufferType::Buf(unsafe {
             from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?)
         }))
@@ -72,7 +73,7 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
         // to pcbAttrLen, and returns a success code.
         RequestedBufferType::Length
     } else if
-    // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+    // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
     unsafe { *pcb_buf } == SCARD_AUTOALLOCATE {
         // https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib
         //
@@ -81,8 +82,9 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
         RequestedBufferType::Allocate
     } else {
         // SAFETY:
-        // - The `pcb_buf` is guaranteed to be non-null due to prior check.
-        // - `p_buf` is non-null, valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
+        // - The `pcb_buf` is guaranteed to be non-null due to the prior check.
+        // - `p_buf` is guaranteed to be non-null due to the prior check.
+        // - `p_buf` is valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
         RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf as *mut u8, usize::try_from(*pcb_buf)? * 2) })
     })
 }
@@ -99,12 +101,12 @@ pub(super) unsafe fn save_out_buf(out_buf: OutBuffer<'_>, p_buf: LpByte, pcb_buf
     }
 
     match out_buf {
-        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
         OutBuffer::Written(len) => unsafe {
             // We already wrote the requested data in the provided buffer, so we only need to write the data length.
             *pcb_buf = len.try_into()?
         },
-        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
         OutBuffer::DataLen(len) => unsafe {
             // The user requested only the requested data length, so we just return it.
             *pcb_buf = len.try_into()?
@@ -150,9 +152,9 @@ pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer<'_>, p_buf: LpWStr, pc
     }
 
     match out_buf {
-        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
         OutBuffer::Written(len) => unsafe { *pcb_buf = u32::try_from(len)? / 2 },
-        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to prior check.
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
         OutBuffer::DataLen(len) => unsafe { *pcb_buf = u32::try_from(len)? / 2 },
         OutBuffer::Allocated(data) => {
             if p_buf.is_null() {
@@ -161,11 +163,11 @@ pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer<'_>, p_buf: LpWStr, pc
 
             // We allocated a new memory for the requested data, so we need to save the buffer and buffer length.
             //
-            // SAFETY: The `p_buf` is guaranteed to be non-null due to prior check.
+            // SAFETY: The `p_buf` is guaranteed to be non-null due to the prior check.
             unsafe {
                 *(p_buf as *mut *mut u8) = data.as_mut_ptr();
             }
-            // SAFETY: The `p_buf` is guaranteed to be non-null due to prior check.
+            // SAFETY: The `p_buf` is guaranteed to be non-null due to the prior check.
             unsafe {
                 *pcb_buf = u32::try_from(data.len())? / 2;
             }

@@ -61,7 +61,11 @@ impl SystemScardContext {
         let api = initialize_pcsc_lite_api()?;
 
         try_execute!(
-            // SAFETY: FFI call with no outstanding preconditions.
+            // SAFETY:
+            // - `scope.into()` is a valid `u32` value corresponding to the scope of the resource manager context.
+            // - `pvReserved1` is null.
+            // - `pvReserved2` is null.
+            // - `&mut h_context` is a properly-aligned, writable pointer to a local variable.
             unsafe { (api.SCardEstablishContext)(scope.into(), null_mut(), null_mut(), &mut h_context) },
             "SCardEstablishContext failed"
         )?;
@@ -565,7 +569,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
 impl Drop for SystemScardContext {
     fn drop(&mut self) {
         if let Err(err) = try_execute!(
-            // SAFETY: FFI call with no outstanding preconditions.
+            // SAFETY: `h_context` is set by a previous call to `SCardEstablishContext`.
             unsafe { (self.api.SCardReleaseContext)(self.h_context) },
             "SCardReleaseContext failed"
         ) {
@@ -590,7 +594,14 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_string` is a valid, null-terminated C String due to the `CString` type.
+                // - `share_mode.into()` is a valid `u32` value corresponding to a share mode flag.
+                // - `protocol.unwrap_or_default.bits()` is a valid `u32` value corresponding to a
+                //   bitmask of acceptable protocols.
+                // - `&mut scard` is a properly-aligned, writable pointer to a local variable.
+                // - `&mut active_protocol` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardConnect)(
                         self.h_context,
@@ -607,7 +618,14 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_string` is a valid, null-terminated C String due to the `CString` type.
+                // - `share_mode.into()` is a valid `u32` value corresponding to a share mode flag.
+                // - `protocol.unwrap_or_default.bits()` is a valid `u32` value corresponding to a
+                //   bitmask of acceptable protocols.
+                // - `&mut scard` is a properly-aligned, writable pointer to a local variable.
+                // - `&mut active_protocol` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardConnectA)(
                         self.h_context,
@@ -642,7 +660,11 @@ impl WinScardContext for SystemScardContext {
             // If the application sends mszGroups and mszReaders as NULL then this function will return the size of the buffer needed to allocate in pcchReaders.
             // `mszGroups`: List of groups to list readers (not used).
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `mszReaders` can be null.
+                // - `&mut readers_buf_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe { (self.api.SCardListReaders)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
                 "SCardListReaders failed"
             )?;
@@ -655,7 +677,11 @@ impl WinScardContext for SystemScardContext {
             //  writes the length of the buffer that would have been returned if this parameter
             //  had not been NULL to pcchReaders, and returns a success code.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `mszReaders` can be null.
+                // - `&mut readers_buf_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe { (self.api.SCardListReadersA)(self.h_context, null(), null_mut(), &mut readers_buf_len) },
                 "SCardListReadersA failed"
             )?;
@@ -666,7 +692,12 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `readers.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `readers_buf_len`.
+                // - `&mut readers_buf_len` is a properly-aligned, writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardListReadersA`.
                 unsafe {
                     (self.api.SCardListReaders)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
@@ -676,7 +707,12 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `readers.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `readers_buf_len`.
+                // - `&mut readers_buf_len` is a properly-aligned, writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardListReadersA`.
                 unsafe {
                     (self.api.SCardListReadersA)(self.h_context, null(), readers.as_mut_ptr(), &mut readers_buf_len)
                 },
@@ -701,7 +737,10 @@ impl WinScardContext for SystemScardContext {
             let c_reader_name = CString::new(_reader_name)?;
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_reader_name` is a valid, null-terminated C String due to the `CString` type.
+                // - `device_type_id` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardGetDeviceTypeIdA)(
                         self.h_context,
@@ -740,7 +779,11 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned to pcbIcon if this parameter
             // had not been NULL, and returns a success code.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_reader_name` is a valid, null-terminated C String due to the `CString` type.
+                // - `pvIcon` can be null.
+                // - `&mut icon_buf_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
@@ -755,7 +798,12 @@ impl WinScardContext for SystemScardContext {
             let mut icon_buf = vec![0; icon_buf_len.try_into()?];
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_reader_name` is a valid, null-terminated C String due to the `CString` type.
+                // - `icon_buf.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `icon_buf_len`.
+                // - `&mut icon_buf_len` is a properly-aligned, writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardGetReaderIconA`.
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
@@ -773,7 +821,7 @@ impl WinScardContext for SystemScardContext {
 
     fn is_valid(&self) -> bool {
         try_execute!(
-            // SAFETY: FFI call with no outstanding preconditions.
+            // SAFETY: `h_context` is set by a previous call to `SCardEstablishContext`.
             unsafe { (self.api.SCardIsValidContext)(self.h_context) },
             "SCardIsValidContext failed"
         )
@@ -804,7 +852,12 @@ impl WinScardContext for SystemScardContext {
             // It's not specified in the `SCardReadCacheA` function documentation, but after some
             // `msclmd.dll` reversing, we found out that this function supports the `SCARD_AUTOALLOCATE`.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `&mut card_id` is a properly-aligned, readable pointer to a local variable.
+                // - `c_cache_key` is a valid, null-terminated C String due to the `CString` type.
+                // - `&mut data` is a properly-aligned, writable pointer to a local pointer.
+                // - `&mut data_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardReadCacheA)(
                         self.h_context,
@@ -822,7 +875,9 @@ impl WinScardContext for SystemScardContext {
                 len
             } else {
                 try_execute!(
-                    // SAFETY: FFI call with no outstanding preconditions.
+                    // SAFETY:
+                    // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                    // - `data` is a valid pointer that was allocated by a previous call to `SCardReadCacheA`.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;
@@ -837,7 +892,9 @@ impl WinScardContext for SystemScardContext {
             );
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `data` is a valid pointer that was allocated by a previous call to `SCardReadCacheA`.
                 unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                 "SCardFreeMemory failed"
             )?;
@@ -867,7 +924,12 @@ impl WinScardContext for SystemScardContext {
             let mut card_id = uuid_to_c_guid(_card_id);
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `&mut card_id` is a properly-aligned, readable pointer to a local variable.
+                // - `c_cache_key` is a valid, null-terminated C String due to the `CString` type.
+                // - `&mut value` is a properly-aligned, readable pointer to a local `Vec`.
+                // - `value.len()` is a valid length of the `value` buffer.
                 unsafe {
                     (self.api.SCardWriteCacheA)(
                         self.h_context,
@@ -892,7 +954,10 @@ impl WinScardContext for SystemScardContext {
             //
             // If the application sends mszGroups as NULL then this function will return the size of the buffer needed to allocate in pcchGroups.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `&mut reader_groups_buf_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe { (self.api.SCardListReaderGroups)(self.h_context, null_mut(), &mut reader_groups_buf_len) },
                 "SCardListReaderGroups failed"
             )?;
@@ -905,7 +970,10 @@ impl WinScardContext for SystemScardContext {
             // writes the length of the buffer that would have been returned if this parameter had not been
             // NULL to pcchGroups, and returns a success code.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `mszGroups` can be null.
+                // - `&mut reader_groups_buf_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe { (self.api.SCardListReaderGroupsA)(self.h_context, null_mut(), &mut reader_groups_buf_len) },
                 "SCardListReaderGroupsA failed"
             )?;
@@ -916,7 +984,11 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `reader_groups.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `reader_groups_buf_len`.
+                // - `&mut reader_groups_buf_len` is a properly-aligned, writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardListReaderGroupsA`.
                 unsafe {
                     (self.api.SCardListReaderGroups)(
                         self.h_context,
@@ -930,7 +1002,11 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `reader_groups.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `reader_groups_buf_len`.
+                // - `&mut reader_groups_buf_len` is a properly-aligned, writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardListReaderGroupsA`.
                 unsafe {
                     (self.api.SCardListReaderGroupsA)(
                         self.h_context,
@@ -946,7 +1022,7 @@ impl WinScardContext for SystemScardContext {
     }
 
     fn cancel(&mut self) -> WinScardResult<()> {
-        // SAFETY: FFI call with no outstanding preconditions.
+        // SAFETY: `h_context` is set by a previous call to `SCardEstablishContext`.
         try_execute!(unsafe { (self.api.SCardCancel)(self.h_context) }, "SCardCancel failed")
     }
 
@@ -981,14 +1057,18 @@ impl WinScardContext for SystemScardContext {
         #[cfg(not(target_os = "windows"))]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `states.as_mut_ptr()` is a properly-aligned, both readable and writable pointer
+                //   to a locally allocated `Vec` that contains `ScardReaderStateA` structures.
+                // - `states.len()` is a valid length of a `states` array.
                 unsafe {
                     (self.api.SCardGetStatusChange)(
                         self.h_context,
                         #[allow(clippy::useless_conversion)]
                         timeout.into(),
                         states.as_mut_ptr(),
-                        reader_states.len().try_into()?,
+                        states.len().try_into()?,
                     )
                 },
                 "SCardGetStatusChange failed"
@@ -997,13 +1077,17 @@ impl WinScardContext for SystemScardContext {
         #[cfg(target_os = "windows")]
         {
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `states.as_mut_ptr()` is a properly-aligned, both readable and writable pointer
+                //   to a locally allocated `Vec` that contains `ScardReaderStateA` structures.
+                // - `states.len()` is a valid length of a `states` array.
                 unsafe {
                     (self.api.SCardGetStatusChangeA)(
                         self.h_context,
                         timeout,
                         states.as_mut_ptr(),
-                        reader_states.len().try_into()?,
+                        states.len().try_into()?,
                     )
                 },
                 "SCardGetStatusChangeA failed"
@@ -1051,7 +1135,13 @@ impl WinScardContext for SystemScardContext {
             // pcchCards, returning the length of the buffer that would have been returned if this
             // parameter had not been NULL to pcchCards and a success code.
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `atr` TODO: Clarify the safety requirement.
+                // - `c_uuids` can be null. If it's non-null, it's a properly-aligned, readable pointer to a locally allocated `Vec`.
+                // - `uuids_len` is a valid length for `c_uuids` array.
+                // - `mszCards` can be null.
+                // - `&mut cards_buf_len` is a properly-aligned, both readable and writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardListCardsA)(self.h_context, atr, c_uuids, uuids_len, null_mut(), &mut cards_buf_len)
                 },
@@ -1061,7 +1151,14 @@ impl WinScardContext for SystemScardContext {
             let mut cards = vec![0; cards_buf_len.try_into()?];
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `atr` TODO: Clarify the safety requirement.
+                // - `c_uuids` can be null. If it's non-null, it's a properly-aligned, readable pointer to a locally allocated `Vec`.
+                // - `uuids_len` is a valid length for `c_uuids` array.
+                // - `cards.as_mut_ptr()` is a valid pointer to a locally allocated `Vec` with size `cards_buf_len`.
+                // - `&mut cards_buf_len` is a properly-aligned, both readable and writable pointer to a local variable.
+                //   The length is correct because it was set by a previous call to `SCardListCardsA`.
                 unsafe {
                     (self.api.SCardListCardsA)(
                         self.h_context,
@@ -1104,7 +1201,11 @@ impl WinScardContext for SystemScardContext {
             let c_card_name = CString::new(_card_name)?;
 
             try_execute!(
-                // SAFETY: FFI call with no outstanding preconditions.
+                // SAFETY:
+                // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                // - `c_card_name` is a valid, null-terminated C String due to the `CString` type.
+                // - `&mut data` is a properly-aligned, writable pointer to a local pointer. It can
+                //   be null because it receives the provider name upon successful completion of this function.
                 unsafe {
                     (self.api.SCardGetCardTypeProviderNameA)(
                         self.h_context,
@@ -1121,7 +1222,9 @@ impl WinScardContext for SystemScardContext {
                 len
             } else {
                 try_execute!(
-                    // SAFETY: FFI call with no outstanding preconditions.
+                    // SAFETY:
+                    // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                    // - `data` is a valid pointer that was allocated by a previous call to `SCardGetCardTypeProviderNameA`.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;
@@ -1136,7 +1239,9 @@ impl WinScardContext for SystemScardContext {
                 name
             } else {
                 try_execute!(
-                    // SAFETY: FFI call with no outstanding preconditions.
+                    // SAFETY:
+                    // - `h_context` is set by a previous call to `SCardEstablishContext`.
+                    // - `data` is a valid pointer that was allocated by a previous call to `SCardGetCardTypeProviderNameA`.
                     unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
                     "SCardFreeMemory failed"
                 )?;

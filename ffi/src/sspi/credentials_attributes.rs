@@ -75,7 +75,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     let p_buffer = p_buffer.as_ptr();
 
     // SAFETY:
-    // - `p_buffer` is non-null.
+    // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
     // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
     let kdc_proxy_settings = unsafe {
         p_buffer
@@ -93,7 +93,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     } = kdc_proxy_settings;
 
     // SAFETY:
-    // - `p_buffer` is guaranteed to be non-null due to `NonNull` wrapper.
+    // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
     // - `proxy_server_offset` is valid.
     // - The proxy server is placed in the memory at the offset `proxy_server_offset`.
     let proxy_server_ptr = unsafe { p_buffer.add(*proxy_server_offset as usize) } as *const u16;
@@ -106,7 +106,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     }
 
     // SAFETY:
-    // - `proxy_server_ptr` is guaranteed to be non-null due to prior check.
+    // - `proxy_server_ptr` is guaranteed to be non-null due to the prior check.
     // - `proxy_server_length` is valid.
     let proxy_server = String::from_utf16_lossy(unsafe {
         from_raw_parts(proxy_server_ptr, *proxy_server_length as usize / size_of::<SecWChar>())
@@ -114,7 +114,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
 
     let client_tls_cred = if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
         // SAFETY:
-        // - `p_buffer` is guaranteed to be non-null due to `NonNull` wrapper.
+        // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
         // - `client_tls_cred_offset` is valid.
         // - The client TLS if placed in the memory at the offset `client_tls_cred_offset`.
         let client_tls_cred_ptr = unsafe { p_buffer.add(*client_tls_cred_offset as usize) } as *const u16;
@@ -126,7 +126,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         }
 
         // SAFETY:
-        // - `client_tls_cred_ptr` is guaranteed to be non-null due to prior check.
+        // - `client_tls_cred_ptr` is guaranteed to be non-null due to the prior check.
         // - `client_tls_cred_length` is valid.
         let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, *client_tls_cred_length as usize) };
         Some(String::from_utf16_lossy(client_tls_cred_data))

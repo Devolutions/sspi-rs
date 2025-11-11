@@ -19,11 +19,13 @@ use super::utils::transform_credentials_handle;
 use crate::sspi::sec_handle::SspiHandle;
 use crate::utils::into_raw_ptr;
 
-/// Frees [PCredHandle].
+/// The `FreeCredentialsHandle` function notifies the security system that the credentials are no longer needed.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecredentialshandle)
 ///
 /// # Safety:
 ///
-/// `ph_credentials` must be a non-null pointer, allocated by an SSPI function.
+/// `ph_credentials` must be a non-null pointer, allocated by the `AcquireCredentialsHandleA/W` function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
 #[no_mangle]
@@ -32,13 +34,14 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 
     // SAFETY:
     // - `ph_credentials` is guaranteed to be non-null due to the prior check.
-    // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
+    // - `ph_credentials` points to a valid `credentials handle` allocated by the `AcquireCredentialsHandleA/W` function.
     let cred_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
     check_null!(cred_handle);
 
     // SAFETY:
-    // - `cred_handle` is guaranteed to be non-null due to prior check.
-    // - `ph_credentials` is allocated by an SSPI function. It guarantees that the pointer was allocated using `Box::into_raw`.
+    // - `cred_handle` is guaranteed to be non-null due to the prior check.
+    // - `ph_credentials` is allocated by the `AcquireCredentialsHandleA/W` function.
+    //   It guarantees that the pointer was allocated using `Box::into_raw`.
     let _cred_handle = unsafe { Box::from_raw(cred_handle) };
 
     0
@@ -46,14 +49,20 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 
 pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> SecurityStatus;
 
-/// Note: `ph_context` can be null on the first call.
+/// The `AcceptSecurityContext` function lets the server component of a transport application
+/// establish a security context between the server and a remote client.
+///
+/// Note: `ph_context` is null on the first call.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
 ///
 /// # Safety:
 ///
 /// - `ph_credential` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`](crate::sspi::sec_handle::AcquireCredentialsHandleA)
 ///   or [`AcquireCredentialsHandleW`](crate::sspi::sec_handle::AcquireCredentialsHandleW).
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
-///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+///   If this is not the first call to `AcceptSecurityContext`, then the pointer must point to the partially formed context
+///   returned in the `phNewContext` parameter by the first call.
 /// - `p_input` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
 /// - `ph_new_context` must be a non-null, properly-aligned pointer to a valid `SecHandle` structure.
 /// - `p_output` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
@@ -83,7 +92,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         check_null!(pf_context_attr);
 
         // SAFETY:
-        // - `ph_credentials` is guaranteed to be non-null due to prior check.
+        // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
         let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
@@ -109,7 +118,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY:
-        // - `p_input` is guaranteed to be non-null due to prior check.
+        // - `p_input` is guaranteed to be non-null due to the prior check.
         // - `p_input` points to a valid `SecBufferDesc` structure.
         let p_buffers = unsafe { (*p_input).p_buffers };
 
@@ -118,12 +127,12 @@ pub unsafe extern "system" fn AcceptSecurityContext(
                 Err(Error::new(ErrorKind::InvalidParameter, "p_buffers cannot be null"))
             } else {
                 // SAFETY:
-                // - `p_input` is guaranteed to be non-null due to prior check.
+                // - `p_input` is guaranteed to be non-null due to the prior check.
                 // - `p_input` points to a valid `SecBufferDesc` structure.
                 let c_buffers = unsafe { (*p_input).c_buffers };
 
                 // SAFETY:
-                // - `p_buffers` is guaranteed to be non-null due to prior check.
+                // - `p_buffers` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_buffers` points to is valid for reads of `c_buffers` element.
                 let raw_buffers = unsafe {
                     from_raw_parts(p_buffers, c_buffers as usize)
@@ -146,7 +155,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         let result_status = try_execute!(sspi_context.accept_security_context_impl(builder)).resolve_with_default_network_client();
 
         // SAFETY:
-        // - `p_output` is guaranteed to be non-null due to prior check.
+        // - `p_output` is guaranteed to be non-null due to the prior check.
         // - `p_output` points to a valid `SecBufferDesc` structure.
         let p_buffers = unsafe { (*p_output).p_buffers };
         // SAFETY:
@@ -161,7 +170,7 @@ pub unsafe extern "system" fn AcceptSecurityContext(
 
         ph_new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
         ph_new_context.dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
-        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to the prior check.
         unsafe {
             *pf_context_attr = f_context_req;
         }
@@ -183,10 +192,15 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+/// The `CompleteAuthToken` function completes an authentication token.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
-///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
+///   by the `InitializeSecurityContext` function or the `AcceptSecurityContext` function.
 /// - `p_token` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_CompleteAuthToken"))]
@@ -200,7 +214,7 @@ pub unsafe extern "system" fn CompleteAuthToken(
         check_null!(p_token);
 
         // SAFETY:
-        // - `p_token` is guaranteed to be non-null due to prior check.
+        // - `p_token` is guaranteed to be non-null due to the prior check.
         // - `p_token` points to a valid `SecBufferDesc` structure.
         let p_buffers = unsafe { (*p_token).p_buffers };
         check_null!(p_buffers);
@@ -218,12 +232,12 @@ pub unsafe extern "system" fn CompleteAuthToken(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY:
-        // - `p_token` is guaranteed to be non-null due to prior check.
+        // - `p_token` is guaranteed to be non-null due to the prior check.
         // - `p_token` points to a valid `SecBufferDesc` structure.
         let c_buffers = unsafe { (*p_token).c_buffers } as usize;
 
         // SAFETY:
-        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - `p_buffers` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_buffers` points to is valid for reads of `c_buffers` elements.
         let raw_buffers = unsafe { from_raw_parts(p_buffers, c_buffers) };
 
@@ -241,10 +255,17 @@ pub unsafe extern "system" fn CompleteAuthToken(
 
 pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
+/// The `DeleteSecurityContext` function deletes the local data structures associated with the specified
+/// `security context` initiated by a previous call to the `InitializeSecurityContext` function or the
+/// `AcceptSecurityContext` function.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-deletesecuritycontext)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
-///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
+///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
+///   by the `InitializeSecurityContext` function or the `AcceptSecurityContext` function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
 #[no_mangle]
@@ -261,19 +282,18 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
             &CredentialsAttributes::default()
         )});
 
-        // TODO: Do we need to split this? I don't think it's rationale!
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let _context: Box<SspiHandle> = unsafe {
             Box::from_raw(sspi_context_ptr.as_mut())
         };
 
         // SAFETY:
-        // - `ph_context` is guaranteed to be non-null due to prior check.
+        // - `ph_context` is guaranteed to be non-null due to the prior check.
         // - `ph_context` points to a valid `SecHandle` structure.
         let dw_upper = unsafe { (*ph_context).dw_upper };
         if dw_upper != 0 {
             // SAFETY:
-            // - `dw_upper` is guaranteed to be non-null due to prior check.
+            // - `dw_upper` is guaranteed to be non-null due to the prior check.
             // - The value behind `dw_upper` pointer is allocated by an SSPI function.
             let _name: Box<String> = unsafe { Box::from_raw(dw_upper as *mut String) };
         }
@@ -339,6 +359,11 @@ pub extern "system" fn VerifySignature(
 
 pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
+/// The `FreeContextBuffer` function enables callers of `security package` functions to free memory buffers
+/// allocated by the security package.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecontextbuffer)
+///
 /// # Safety:
 ///
 /// The `pv_context_buffer` must point to a memory allocated by an SSPI function.
@@ -382,6 +407,10 @@ pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _toke
 
 pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
+/// The `EncryptMessage` function encrypts a message to provide privacy.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
@@ -402,7 +431,7 @@ pub unsafe extern "system" fn EncryptMessage(
         check_null!(p_message);
 
         // SAFETY:
-        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
         let p_buffers = unsafe { (*p_message).p_buffers };
         check_null!(p_buffers);
@@ -420,12 +449,12 @@ pub unsafe extern "system" fn EncryptMessage(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY:
-        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
         let len = unsafe { (*p_message).c_buffers as usize };
 
         // SAFETY:
-        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - `p_buffers` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_buffers` points to is valid for reads of `len` elements.
         let raw_buffers = unsafe {
             from_raw_parts(p_buffers, len)
@@ -457,7 +486,11 @@ pub unsafe extern "system" fn EncryptMessage(
 
 pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
 
+/// The `DecryptMessage` function decrypts a message.
+///
 /// Note: `pf_qop` can be null if this library is used as a CredSsp security package.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
 ///
 /// # Safety:
 ///
@@ -480,7 +513,7 @@ pub unsafe extern "system" fn DecryptMessage(
         check_null!(p_message);
 
         // SAFETY:
-        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
         let p_buffers = unsafe { (*p_message).p_buffers };
         check_null!(p_buffers);
@@ -498,12 +531,12 @@ pub unsafe extern "system" fn DecryptMessage(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY:
-        // - `p_message` is guaranteed to be non-null due to prior check.
+        // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
         let len = unsafe { (*p_message).c_buffers as usize };
 
         // SAFETY:
-        // - `p_buffers` is guaranteed to be non-null due to prior check.
+        // - `p_buffers` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_buffers` points to is valid for reads of `len` elements.
         let raw_buffers = unsafe { from_raw_parts(p_buffers, len) };
 
@@ -529,7 +562,7 @@ pub unsafe extern "system" fn DecryptMessage(
         // `pf_qop` can be null if this library is used as a CredSsp security package
         if !pf_qop.is_null() {
             let flags = try_execute!(decryption_flags.bits().try_into(), ErrorKind::InternalError);
-            // SAFETY: `pf_qop` is guaranteed to be non-null due to prior check.
+            // SAFETY: `pf_qop` is guaranteed to be non-null due to the prior check.
             unsafe { *pf_qop = flags };
         }
 
@@ -538,6 +571,8 @@ pub unsafe extern "system" fn DecryptMessage(
         0
     }
 }
+
+pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
@@ -564,7 +599,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
                 &mut []
             } else {
                 // SAFETY:
-                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to prior check.
+                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cb_buffer` bytes.
                 unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
             };
@@ -585,7 +620,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 /// `to_buffers` must be a non-null pointer valid for reads of `from_buffers.len()` elements.
 unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<SecurityBufferRef<'_>>) -> sspi::Result<()> {
     // SAFETY:
-    // - `to_buffers` is guaranteed to be non-null due to prior check.
+    // - `to_buffers` is non-null due to the function's safety requirement.
     // - The memory region `to_buffers` points to is valid for reads of `from_buffers.len()` elements.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
@@ -614,8 +649,6 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
 
     Ok(())
 }
-
-pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
 #[cfg(test)]
 mod tests {

@@ -97,7 +97,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             unsafe { from_raw_parts(secret, try_execute!(secret_len.try_into(), NTE_INVALID_PARAMETER)) }.to_owned();
         let sid = try_execute!(
             // SAFETY:
-            // - `sid` is non-null.
+            // - `sid` is guaranteed to be non-null due to the prior check.
             // - The memory region `sid` contains a valid null-terminator at the end of string.
             // - The memory region `sid` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(sid as *const _) }.to_str(),
@@ -115,7 +115,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         };
         let server = try_execute!(
             // SAFETY:
-            // - `server` is non-null.
+            // - `server` is guaranteed to be non-null due to the prior check.
             // - The memory region `server` contains a valid null-terminator at the end of string.
             // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(server as *const _) }.to_str(),
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         );
         let username = try_execute!(
             // SAFETY:
-            // - `username` is non-null.
+            // - `username` is guaranteed to be non-null due to the prior check.
             // - The memory region `username` contains a valid null-terminator at the end of string.
             // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(username as *const _) }.to_str(),
@@ -131,7 +131,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         );
         let password = try_execute!(
             // SAFETY:
-            // - `password` is non-null.
+            // - `password` is guaranteed to be non-null due to the prior check.
             // - The memory region `password` contains a valid null-terminator at the end of string.
             // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(password as *const _) }.to_str(),
@@ -287,7 +287,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         let blob = unsafe { from_raw_parts(blob, try_execute!(blob_len.try_into(), NTE_INVALID_PARAMETER)) };
         let server = try_execute!(
             // SAFETY:
-            // - `server` is non-null.
+            // - `server` is guaranteed to be non-null due to the prior check.
             // - The memory region `server` contains a valid null-terminator at the end of string.
             // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(server as *const _) }.to_str(),
@@ -295,7 +295,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         );
         let username = try_execute!(
             // SAFETY:
-            // - `username` is non-null.
+            // - `username` is guaranteed to be non-null due to the prior check.
             // - The memory region `username` contains a valid null-terminator at the end of string.
             // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(username as *const _) }.to_str(),
@@ -303,7 +303,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         );
         let password = try_execute!(
             // SAFETY:
-            // - `password` is non-null.
+            // - `password` is guaranteed to be non-null due to the prior check.
             // - The memory region `password` contains a valid null-terminator at the end of string.
             // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { CStr::from_ptr(password as *const _) }.to_str(),

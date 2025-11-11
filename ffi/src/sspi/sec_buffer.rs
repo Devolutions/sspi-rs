@@ -38,7 +38,7 @@ pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Ve
             &[]
         } else {
             // SAFETY:
-            // - `p_buffers` is guaranteed to be non-null due to prior check.
+            // - `p_buffers` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffers` points to is valid for reads of `c_buffers` elements.
             unsafe { from_raw_parts(p_buffers, c_buffers as usize) }
         };
@@ -63,7 +63,7 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
                 Vec::new()
             } else {
                 // SAFETY:
-                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to prior check.
+                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cv_buffer` elements.
                 unsafe { from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize) }
                     .iter()
@@ -91,7 +91,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
     }
 
     // SAFETY:
-    // - `to_buffers` is guaranteed to be non-null due to prior check.
+    // - `to_buffers` is guaranteed to be non-null due to the prior check.
     // - The memory region `to_buffers` points to is valid for writes of `from_buffers.len()` elements.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
     for i in 0..from_buffers.len() {

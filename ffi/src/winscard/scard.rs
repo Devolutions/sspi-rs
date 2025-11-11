@@ -57,12 +57,12 @@ unsafe fn connect(
     let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
     context.add_scard(raw_card_handle)?;
 
-    // SAFETY: `ph_card` is guaranteed to be non-null due to prior check.
+    // SAFETY: `ph_card` is guaranteed to be non-null due to the prior check.
     unsafe {
         *ph_card = raw_card_handle;
     }
 
-    // SAFETY: `pdw_active_protocol` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_active_protocol` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_active_protocol = protocol.bits();
     }
@@ -70,6 +70,12 @@ unsafe fn connect(
     Ok(())
 }
 
+/// The `SCardConnectA` function establishes a connection (using a specific `resource manager context`)
+/// between the calling application and a smart card contained by a specific reader. If no card exists
+/// in the specified reader, an error is returned.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnecta)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -94,7 +100,7 @@ pub unsafe extern "system" fn SCardConnectA(
 
     let reader_name = try_execute!(
         // SAFETY:
-        // - `sz_reader` is non-null.
+        // - `sz_reader` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_reader as *const _) }.to_str(),
@@ -121,6 +127,12 @@ pub unsafe extern "system" fn SCardConnectA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardConnectW` function establishes a connection (using a specific `resource manager context`)
+/// between the calling application and a smart card contained by a specific reader. If no card exists
+/// in the specified reader, an error is returned.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -144,7 +156,7 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(pdw_active_protocol);
 
     // SAFETY:
-    // - `sz_reader` is non-null.
+    // - `sz_reader` is guaranteed to be non-null due to the prior check.
     // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
     // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
     let reader_name = unsafe { c_w_str_to_string(sz_reader) };
@@ -169,6 +181,11 @@ pub unsafe extern "system" fn SCardConnectW(
     ErrorKind::Success.into()
 }
 
+/// The `SCardReconnect` function reestablishes an existing connection between the calling application
+/// and a `smart card`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -196,7 +213,7 @@ pub unsafe extern "system" fn SCardReconnect(
     );
     let active_protocol = try_execute!(scard.reconnect(share_mode, protocol, initialization));
 
-    // SAFETY: `pdw_active_protocol` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_active_protocol` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_active_protocol = active_protocol.bits();
     }
@@ -204,6 +221,11 @@ pub unsafe extern "system" fn SCardReconnect(
     ErrorKind::Success.into()
 }
 
+/// The `SCardDisconnect` function terminates a connection previously opened between the calling
+/// application and a `smart card` in the target `reader`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scarddisconnect)
+///
 /// # Safety:
 ///
 /// The `handle` must be a valid raw scard context handle.
@@ -232,6 +254,10 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_dispositio
     ErrorKind::Success.into()
 }
 
+/// The `SCardBeginTransaction` function starts a `transaction`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardbegintransaction)
+///
 /// # Safety:
 ///
 /// The `handle` must be a valid raw scard context handle.
@@ -249,6 +275,11 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
     ErrorKind::Success.into()
 }
 
+/// The `SCardEndTransaction` function completes a previously declared `transaction`, allowing other
+/// applications to resume interactions with the card.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardendtransaction)
+///
 /// # Safety:
 ///
 /// The `handle` must be a valid raw scard context handle.
@@ -286,6 +317,10 @@ pub extern "system" fn SCardState(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardStatusA` function provides the current status of a `smart card` in a `reader`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -326,12 +361,12 @@ pub unsafe extern "system" fn SCardStatusA(
 
     let status = try_execute!(scard.status(readers_buf_type, atr_buf_type));
 
-    // SAFETY: `pdw_state` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_state` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_state = status.state.into();
     }
 
-    // SAFETY: `pdw_protocol` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_protocol` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_protocol = status.protocol.bits();
     }
@@ -349,6 +384,10 @@ pub unsafe extern "system" fn SCardStatusA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardStatusW` function provides the current status of a `smart card` in a `reader`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -389,12 +428,12 @@ pub unsafe extern "system" fn SCardStatusW(
 
     let status = try_execute!(scard.status_wide(readers_buf_type, atr_buf_type));
 
-    // SAFETY: `pdw_state` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_state` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_state = status.state.into();
     }
 
-    // SAFETY: `pdw_protocol` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_protocol` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_protocol = status.protocol.bits();
     }
@@ -412,6 +451,11 @@ pub unsafe extern "system" fn SCardStatusW(
     ErrorKind::Success.into()
 }
 
+/// The `SCardTransmit` function sends a service request to the `smart card` and expects to receive
+/// data back from the card.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -453,7 +497,7 @@ pub unsafe extern "system" fn SCardTransmit(
     let out_apdu_len = out_data.output_apdu.len();
     if out_apdu_len
         > try_execute!(
-            // SAFETY: `pcb_recv_length` is guaranteed to be non-null due to prior check.
+            // SAFETY: `pcb_recv_length` is guaranteed to be non-null due to the prior check.
             usize::try_from(unsafe { *pcb_recv_length }),
             ErrorKind::InsufficientBuffer
         )
@@ -463,7 +507,7 @@ pub unsafe extern "system" fn SCardTransmit(
     }
 
     // SAFETY:
-    // - `pb_recv_buffer` is guaranteed to be non-null due to prior check.
+    // - `pb_recv_buffer` is guaranteed to be non-null due to the prior check.
     // - `pb_recv_buffer` is valid for reads for `*pcb_recv_length` bytes.
     // - `out_apdu_len` is guaranteed to be less or equal than `*pcb_recv_length`.
     let recv_buffer = unsafe { from_raw_parts_mut(pb_recv_buffer, out_apdu_len) };
@@ -484,7 +528,7 @@ pub unsafe extern "system" fn SCardTransmit(
         );
     }
 
-    // SAFETY: `pcb_recv_length` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pcb_recv_length` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pcb_recv_length = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
     }
@@ -499,6 +543,10 @@ pub extern "system" fn SCardGetTransmitCount(_handle: ScardHandle, pc_transmit_c
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardControl` function gives you direct control of the `reader`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -526,7 +574,7 @@ pub unsafe extern "system" fn SCardControl(
 
     let in_buffer = if !lp_in_buffer.is_null() {
         // SAFETY:
-        // - `lp_in_buffer` is guaranteed to be non-null due to prior check.
+        // - `lp_in_buffer` is guaranteed to be non-null due to the prior check.
         // - `lp_in_buffer` is valid for reads for `cb_in_buffer_size` many bytes.
         unsafe {
             from_raw_parts(
@@ -540,7 +588,7 @@ pub unsafe extern "system" fn SCardControl(
 
     if !lp_out_buffer.is_null() {
         // SAFETY:
-        // - `lp_out_buffer` is guaranteed to be non-null due to prior check.
+        // - `lp_out_buffer` is guaranteed to be non-null due to the prior check.
         // - `lp_out_buffer` is valid for reads for `cb_out_buffer_size` many bytes.
         let lp_out_buffer = unsafe {
             from_raw_parts_mut(
@@ -551,7 +599,7 @@ pub unsafe extern "system" fn SCardControl(
 
         let out_bytes_count = try_execute!(scard.control_with_output(dw_control_code, in_buffer, lp_out_buffer));
         if !lp_bytes_returned.is_null() {
-            // SAFETY: `lp_bytes_returned` is guaranteed to be non-null due to prior check.
+            // SAFETY: `lp_bytes_returned` is guaranteed to be non-null due to the prior check.
             unsafe {
                 *lp_bytes_returned = try_execute!(out_bytes_count.try_into(), ErrorKind::InternalError);
             }
@@ -563,6 +611,10 @@ pub unsafe extern "system" fn SCardControl(
     ErrorKind::Success.into()
 }
 
+/// The `SCardGetAttrib` function retrieves the current reader attributes for the given handle.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -604,6 +656,10 @@ pub unsafe extern "system" fn SCardGetAttrib(
     ErrorKind::Success.into()
 }
 
+/// The `SCardSetAttrib` function sets the given reader attribute for the given handle.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib)
+///
 /// # Safety:
 ///
 /// - `handle` must be a valid raw scard context handle.
@@ -621,7 +677,7 @@ pub unsafe extern "system" fn SCardSetAttrib(
     check_null!(pb_attr);
 
     // SAFETY:
-    // - `pb_attr` is guaranteed to be non-null due to prior check.
+    // - `pb_attr` is guaranteed to be non-null due to the prior check.
     // - `pb_attr` is valid for reads for `cb_attr_len` many bytes.
     let attr_data = unsafe { from_raw_parts(pb_attr, cb_attr_len.try_into().unwrap()) };
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(

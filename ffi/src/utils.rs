@@ -59,7 +59,7 @@ pub(crate) unsafe fn w_str_len(s: *const u16) -> usize {
 pub(crate) unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: usize) -> Vec<u8> {
     if !raw_buffer.is_null() {
         // SAFETY:
-        // - `raw_buffer` is guaranteed to be non-null due to prior check.
+        // - `raw_buffer` is guaranteed to be non-null due to the prior check.
         // - `raw_buffer` is valid for reads for `len` many bytes.
         unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
     } else {

@@ -167,7 +167,7 @@ pub struct CredSspCred {
 /// - Else, if the version is [`SEC_WINNT_AUTH_IDENTITY_VERSION_2`], then `p_auth_data` must point to a [`SecWinntAuthIdentityEx2`].
 /// - Else, `p_auth_data` must point to a [`SecWinntAuthIdentityW`].
 pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_void) -> (u32, u32) {
-    // SAFETY: `p_auth_data` is non-null.
+    // SAFETY: `p_auth_data` is non-null due to the function's safety requirement.
     let auth_version = unsafe { *p_auth_data.cast::<u32>() };
     if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
@@ -202,7 +202,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
     // SAFETY:
-    // - `p_auth_data` is non-null.
+    // - `p_auth_data` is non-null due to the function's safety requirement.
     // - `p_auth_data` points to a valid `CredSspCred`.
     let credssp_cred = unsafe { p_auth_data.cast::<CredSspCred>().as_ref() }.unwrap();
 
@@ -256,7 +256,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
 
             // SAFETY:
             // `out_buffer` and `out_buffer_size` are initialized and valid because the result of
-            // `CredUIPromptForWindowsCredentialsW` function is guaranteed to be successful due to prior check.
+            // `CredUIPromptForWindowsCredentialsW` function is guaranteed to be successful due to the prior check.
             unsafe { unpack_sec_winnt_auth_identity_ex2_w_sized(out_buffer, out_buffer_size) }
         } else {
             // When we try to pass the plain password in the `ClearTextPassword` .rdp file property,
@@ -267,7 +267,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             // * [ClearTextPassword](https://github.com/Devolutions/MsRdpEx/blob/a7978812cb31e363f4b536316bd59e1573e69384/README.md#extended-rdp-file-options)
             //
             // SAFETY:
-            // - `credssp.p_spngeo_cred` is guaranteed to be non-null due to prior check.
+            // - `credssp.p_spngeo_cred` is guaranteed to be non-null due to the prior check.
             // - `credssp_cred.p_spnego_cred` points to a valid and correct data.
             unsafe { auth_data_to_identity_buffers_w(credssp_cred.p_spnego_cred, &mut None) }
         }
@@ -279,7 +279,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             ));
         }
         // SAFETY:
-        // - `credssp.p_spngeo_cred` is guaranteed to be non-null due to prior check.
+        // - `credssp.p_spngeo_cred` is guaranteed to be non-null due to the prior check.
         // - `credssp_cred.p_spnego_cred` points to a valid and correct data.
         unsafe { unpack_sec_winnt_auth_identity_ex2_w(credssp_cred.p_spnego_cred) }
     }
@@ -314,7 +314,7 @@ pub unsafe fn auth_data_to_identity_buffers(
     #[cfg(feature = "tsssp")]
     if _security_package_name == sspi::credssp::sspi_cred_ssp::PKG_NAME {
         // SAFETY:
-        // - `p_auth_data` is guaranteed to be non-null due to prior check.
+        // - `p_auth_data` is guaranteed to be non-null due to the prior check.
         // - `p_auth_data` points to a valid `CredSspCred` structure.
         return unsafe { credssp_auth_data_to_identity_buffers(p_auth_data) };
     }
@@ -352,7 +352,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
     }
 
     // SAFETY:
-    // - `p_auth_data` is guaranteed to be non-null due to prior check.
+    // - `p_auth_data` is guaranteed to be non-null due to the prior check.
     // - `p_auth_data` points to a correct variant of `SecWinntAuthIdentityExA` or `SecWinntAuthIdentityA`
     //   structure, depending on the `auth_version`.
     let (auth_version, _) = unsafe { get_auth_data_identity_version_and_flags(p_auth_data) };
@@ -463,7 +463,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 
     // SAFETY:
-    // - `p_auth_data` is guaranteed to be non-null due to prior check.
+    // - `p_auth_data` is guaranteed to be non-null due to the prior check.
     // - `p_auth_data` points to a correct variant of `SecWinntAuthIdentityExW` or `SecWinntAuthIdentityW`
     //   structure, depending on the `auth_version`.
     let (auth_version, _) = unsafe { get_auth_data_identity_version_and_flags(p_auth_data) };
@@ -674,7 +674,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
             "invalid credentials: username length pointer is null",
         ));
     }
-    // SAFETY: `user_len_ptr` is guaranteed to be non-null due to prior check.
+    // SAFETY: `user_len_ptr` is guaranteed to be non-null due to the prior check.
     let user_buffer_len = unsafe { *user_len_ptr as u32 };
 
     // SAFETY: Domain length is placed after 16 bytes from the username length, according to the documentation.
@@ -685,7 +685,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
             "invalid credentials: domain length pointer is null",
         ));
     }
-    // SAFETY: `domain_len_ptr` is guaranteed to be non-null due to prior check.
+    // SAFETY: `domain_len_ptr` is guaranteed to be non-null due to the prior check.
     let domain_buffer_len = unsafe { *domain_len_ptr as u32 };
 
     // SAFETY: Packet credentials length is placed after 16 bytes from the domain length
@@ -696,7 +696,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
             "invalid credentials: creds length pointer is null",
         ));
     }
-    // SAFETY: `creds_len_ptr` is guaranteed to be non-null due to prior check.
+    // SAFETY: `creds_len_ptr` is guaranteed to be non-null due to the prior check.
     let creds_buffer_len = unsafe { *creds_len_ptr as u32 };
 
     // The resulting size is equal to the header size + buffers size.
@@ -718,7 +718,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
         ));
     }
 
-    // SAFETY: `p_auth_data` is guaranteed to be non-null due to prior check.
+    // SAFETY: `p_auth_data` is guaranteed to be non-null due to the prior check.
     let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) }?;
 
     let mut username_len = 0;
@@ -826,7 +826,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     // So, we need add the NULL terminator.
     username.extend_from_slice(&[0, 0]);
 
-    // SAFETY: FFI call with no outstanding preconditions.
+    // SAFETY: `username` is a null-terminated C String because we've extended it with null-terminator above.
     if unsafe { CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) } == 0 {
         return Err(Error::new(
             ErrorKind::NoCredentials,
@@ -852,7 +852,6 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     )?;
 
     let username = string_to_utf16(crate::sspi::scard_cert::extract_upn_from_certificate(&certificate)?);
-    // SAFETY: FFI call with no outstanding preconditions.
     let SmartCardInfo {
         key_container_name,
         reader_name,
@@ -892,12 +891,12 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
     }
 
     // SAFETY:
-    // - `p_auth_data` is guaranteed to be non-null due to prior check.
+    // - `p_auth_data` is guaranteed to be non-null due to the prior check.
     // - `p_auth_data` points to the valid credentials represented by the SEC_WINNT_AUTH_IDENTITY_EX2 structure.
     let auth_data_len = unsafe { get_sec_winnt_auth_identity_ex2_size(p_auth_data) }?;
 
     // SAFETY:
-    // - `p_auth_data` is guaranteed to be non-null due to prior check.
+    // - `p_auth_data` is guaranteed to be non-null due to the prior check.
     // - `p_auth_data` points to the valid packed credentials.
     unsafe { unpack_sec_winnt_auth_identity_ex2_w_sized(p_auth_data, auth_data_len) }
 }
@@ -932,8 +931,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     let mut password_len = 0;
 
     // The first call is just to query the username, domain, and password lengths.
+    // Note: all null values are allowed by the documentation.
     //
-    // SAFETY: `p_auth_data` is guaranteed to be non-null due to prior check.
+    // SAFETY: `p_auth_data` is guaranteed to be non-null due to the prior check.
     unsafe {
         CredUnPackAuthenticationBufferW(
             CRED_PACK_PROTECTED_CREDENTIALS,
@@ -952,7 +952,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     let mut domain = vec![0_u8; domain_len as usize * 2];
     let mut password = Secret::new(vec![0_u8; password_len as usize * 2]);
 
-    // SAFETY: `p_auth_data` is guaranteed to be non-null due to prior check.
+    // SAFETY: `p_auth_data` is guaranteed to be non-null due to the prior check.
     let result = unsafe {
         CredUnPackAuthenticationBufferW(
             CRED_PACK_PROTECTED_CREDENTIALS,
@@ -1029,6 +1029,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
 
+/// Encodes a set of three credential strings as an authentication identity structure.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspiencodestringsasauthidentity)
+///
 /// # Safety:
 ///
 /// - `psz_user_name` must be a non-null pointer to a valid, null-terminated C string representing the username.
@@ -1053,17 +1057,17 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         check_null!(psz_packed_credentials_string);
 
         // SAFETY:
-        // - `psz_user_name` is non-null.
+        // - `psz_user_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_user_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_user_name` points to is valid for reads of bytes up to and including null-terminator.
         let user_length = unsafe { w_str_len(psz_user_name) };
         // SAFETY:
-        // - `psz_domain_name` is non-null.
+        // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
         let domain_length = unsafe { w_str_len(psz_domain_name) };
         // SAFETY:
-        // - `psz_packed_credentials_string` is non-null.
+        // - `psz_packed_credentials_string` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_packed_credentials_string` contains a valid null-terminator at the end of string.
         // - The memory region `psz_packed_credentials_string` points to is valid for reads of bytes up to and including null-terminator.
         let password_length = unsafe { w_str_len(psz_packed_credentials_string) };
@@ -1079,8 +1083,8 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         }
 
         // SAFETY:
-        // - `psz_user_name` is guaranteed to be non-null due to prior check.
-        // - `user` is guaranteed to be non-null due to prior check.
+        // - `psz_user_name` is guaranteed to be non-null due to the prior check.
+        // - `user` is guaranteed to be non-null due to the prior check.
         unsafe { copy_nonoverlapping(psz_user_name, user, user_length) };
 
         // SAFETY: Memory allocation is safe.
@@ -1090,8 +1094,8 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         }
 
         // SAFETY:
-        // - `psz_domain_name` is guaranteed to be non-null due to prior check.
-        // - `domain` is guaranteed to be non-null due to prior check.
+        // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
+        // - `domain` is guaranteed to be non-null due to the prior check.
         unsafe { copy_nonoverlapping(psz_domain_name, domain, domain_length) };
 
         // SAFETY: Memory allocation is safe.
@@ -1101,8 +1105,8 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         }
 
         // SAFETY:
-        // - `psz_packed_credentials_string` is guaranteed to be non-null due to prior check.
-        // - `password` is guaranteed to be non-null due to prior check.
+        // - `psz_packed_credentials_string` is guaranteed to be non-null due to the prior check.
+        // - `password` is guaranteed to be non-null due to the prior check.
         unsafe { copy_nonoverlapping(psz_packed_credentials_string, password, password_length) };
 
         let auth_identity = SecWinntAuthIdentityW {
@@ -1115,13 +1119,19 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
             flags: 0,
         };
 
-        // SAFETY: `pp_auth_identity` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pp_auth_identity` is guaranteed to be non-null due to the prior check.
         unsafe { *pp_auth_identity = into_raw_ptr(auth_identity) as *mut c_void; }
 
         0
     }
 }
-
+/// Frees the memory allocated for the specified identity structure.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspifreeauthidentity)
+///
+/// # Safety:
+///
+/// The `auth_data` must be a valid pointer to the identity structure allocated by an SSPI function.
 #[allow(clippy::missing_safety_doc)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiFreeAuthIdentity"))]

@@ -69,6 +69,14 @@ fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContex
     Ok(Box::new(PivCardContext::new(SmartCardInfo::try_from_env()?)?))
 }
 
+/// The `SCardEstablishContext` function establishes the `resource manager context` (the scope) within
+/// which database operations are performed.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardestablishcontext)
+///
+/// # Safety:
+///
+/// The `context` must be a properly-aligned pointer valid for writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -102,7 +110,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let raw_ptr = into_raw_ptr(scard_context) as ScardContext;
     info!(new_established_context = ?raw_ptr);
-    // SAFETY: The `context` is guaranteed to be non-null due to prior check.
+    // SAFETY: The `context` is guaranteed to be non-null due to the prior check.
     unsafe {
         *context = raw_ptr;
     }
@@ -111,6 +119,11 @@ pub unsafe extern "system" fn SCardEstablishContext(
     ErrorKind::Success.into()
 }
 
+/// The `SCardReleaseContext` function closes an established `resource manager context`, freeing any
+/// resources allocated under that context.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
+///
 /// # Safety:
 ///
 /// The `context` must be a valid pointer to a memory region that is allocated by [`SCardEstablishContext`] function.
@@ -122,7 +135,7 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 
     if is_present(context) {
         // SAFETY:
-        // - `context` is guaranteed to be non-null due to prior check.
+        // - `context` is guaranteed to be non-null due to the prior check.
         // - `context` is allocated by `SCardEstablishContext` function.
         //   It guarantees that the pointer was allocated using `Box::into_raw`.
         let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
@@ -138,6 +151,10 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
     }
 }
 
+/// The `SCardIsValidContext` function determines whether a `smart card` context handle is valid.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardisvalidcontext)
+///
 /// # Safety:
 ///
 /// The `context` must be a valid raw scard context handle.
@@ -149,7 +166,7 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
 
         let context = try_execute!(
             // SAFETY:
-            // - `context` is guaranteed to be non-zero due to prior check.
+            // - `context` is guaranteed to be non-zero due to the prior check.
             // - `context` is a valid raw scard context handle.
             unsafe { scard_context_to_winscard_context(context) }
         );
@@ -186,6 +203,10 @@ pub extern "system" fn SCardListReaderGroupsW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardListReadersA` function provides the list of `readers` within a set of named reader groups, eliminating duplicates.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -204,7 +225,7 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(pcch_readers);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
@@ -220,6 +241,10 @@ pub unsafe extern "system" fn SCardListReadersA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardListReadersW` function provides the list of `readers` within a set of named reader groups, eliminating duplicates.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersW)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -239,7 +264,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(pcch_readers);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
@@ -265,7 +290,7 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
     } else {
         Some(
             // SAFETY:
-            // - `guids` is guaranteed to be non-null due to prior check.
+            // - `guids` is guaranteed to be non-null due to the prior check.
             // - `guids` is valid for reads for `len` many elements.
             unsafe { from_raw_parts(guids, len.try_into()?) }
                 .iter()
@@ -275,6 +300,11 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
     })
 }
 
+/// The `SCardListCardsA` function searches the `smart card database` and provides a list of named cards
+/// previously introduced to the system by the user.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsa)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -300,7 +330,7 @@ pub unsafe extern "system" fn SCardListCardsA(
     check_null!(pcch_cards);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
@@ -309,13 +339,13 @@ pub unsafe extern "system" fn SCardListCardsA(
         None
     } else {
         // SAFETY:
-        // - `pb_attr` is guaranteed to be non-null due to prior check.
+        // - `pb_attr` is guaranteed to be non-null due to the prior check.
         // - `pb_attr` is valid for reads for 32 bytes.
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
     let required_interfaces = try_execute!(
         // SAFETY:
-        // - `rgquid_interfaces` is guaranteed to be non-null due to prior check.
+        // - `rgquid_interfaces` is guaranteed to be non-null due to the prior check.
         // - `rgquid_interfaces` is valid for both reads and writes for `cguid_interface_count` many elements.
         unsafe { guids_to_uuids(rgquid_interfaces, cguid_interface_count) }
     );
@@ -330,6 +360,11 @@ pub unsafe extern "system" fn SCardListCardsA(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardListCardsW` function searches the `smart card database` and provides a list of named cards
+/// previously introduced to the system by the user.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -355,7 +390,7 @@ pub unsafe extern "system" fn SCardListCardsW(
     check_null!(pcch_cards);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
     // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
@@ -364,13 +399,13 @@ pub unsafe extern "system" fn SCardListCardsW(
         None
     } else {
         // SAFETY:
-        // - `pb_attr` is guaranteed to be non-null due to prior check.
+        // - `pb_attr` is guaranteed to be non-null due to the prior check.
         // - `pb_attr` is valid for reads for 32 bytes.
         Some(unsafe { from_raw_parts(pb_atr, 32) })
     };
     let required_interfaces = try_execute!(
         // SAFETY:
-        // - `rgquid_interfaces` is guaranteed to be non-null due to prior check.
+        // - `rgquid_interfaces` is guaranteed to be non-null due to the prior check.
         // - `rgquid_interfaces` is valid for both reads and writes for `cguid_interface_count` many elements.
         unsafe { guids_to_uuids(rgquid_interfaces, cguid_interface_count) }
     );
@@ -431,6 +466,11 @@ pub extern "system" fn SCardGetProviderIdW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardGetCardTypeProviderNameA` function returns the name of the module (dynamic link library)
+/// that contains the provider for a given card name and provider type.
+///
+/// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamea)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -454,7 +494,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 
     let card_name = try_execute!(
         // SAFETY:
-        // - `sz_card_name` is non-null.
+        // - `sz_card_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_card_name as *const _) }.to_str(),
@@ -462,7 +502,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     );
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
 
@@ -483,6 +523,11 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardGetCardTypeProviderNameW` function returns the name of the module (dynamic link library)
+/// that contains the provider for a given card name and provider type.
+///
+/// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -505,13 +550,13 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     check_null!(pcch_provider);
 
     // SAFETY:
-    // - `sz_card_name` is non-null.
+    // - `sz_card_name` is guaranteed to be non-null due to the prior check.
     // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
     // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
     let card_name = unsafe { c_w_str_to_string(sz_card_name) };
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
 
@@ -710,6 +755,11 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardFreeMemory` function releases memory that has been returned from the `resource manager`
+/// using the `SCARD_AUTOALLOCATE` length designator.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardfreememory)
+///
 /// # Safety:
 ///
 /// The `context` must be a valid raw scard context handle.
@@ -720,7 +770,7 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
     check_handle!(context);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     if let Ok(context) = unsafe { raw_scard_context_handle_to_scard_context_handle(context) } {
         if context.free_buffer(pv_mem) {
@@ -757,6 +807,10 @@ static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
     handle as _
 });
 
+/// The `SCardAccessStartedEvent` function returns an event handle when an event signals that the smart
+/// card resource manager is started.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardaccessstartedevent)
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -796,6 +850,10 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     }
 }
 
+/// The `SCardReleaseStartedEvent` function decrements the reference count for a handle acquired by a
+/// previous call to the `SCardAccessStartedEvent` function.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasestartedevent)
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
 #[instrument(ret)]
 #[no_mangle]
@@ -887,6 +945,11 @@ pub extern "system" fn SCardLocateCardsByATRW(
     ErrorKind::UnsupportedFeature.into()
 }
 
+/// The `SCardGetStatusChangeA` function blocks execution until the current availability of the cards
+/// in a specific set of readers changes.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangea)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -907,12 +970,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_null!(rg_reader_states);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
 
     // SAFETY:
-    // - `rg_reader_state` is guaranteed to be non-null due to prior check.
+    // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
     // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
     let c_reader_states = unsafe {
         from_raw_parts_mut(
@@ -927,7 +990,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 
             Ok(ReaderState {
                 // SAFETY:
-                // - `c_reader.sz_reader` is non-null.
+                // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
                 // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
                 // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
                 reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader as *const _) }.to_string_lossy(),
@@ -950,6 +1013,11 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardGetStatusChangeW` function blocks execution until the current availability of the cards
+/// in a specific set of readers changes.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -970,12 +1038,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_null!(rg_reader_states);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
 
     // SAFETY:
-    // - `rg_reader_state` is guaranteed to be non-null due to prior check.
+    // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
     // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
     let c_reader_states = unsafe {
         from_raw_parts_mut(
@@ -990,7 +1058,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 
             Ok(ReaderState {
                 // SAFETY:
-                // - `c_reader.sz_reader` is non-null.
+                // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
                 // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
                 // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
                 reader_name: Cow::Owned(unsafe { c_w_str_to_string(c_reader.sz_reader) }),
@@ -1013,6 +1081,10 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     ErrorKind::Success.into()
 }
 
+/// The `SCardCancel` function terminates all outstanding actions within a specific `resource manager context`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
+///
 /// # Safety:
 ///
 /// The `context` must be a valid raw scard context handle.
@@ -1023,7 +1095,7 @@ pub unsafe extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus 
     check_handle!(context);
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
     try_execute!(context.cancel());
@@ -1050,12 +1122,12 @@ unsafe fn read_cache(
     check_null!(data_len, "data buffer length");
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
 
     // SAFETY:
-    // - `card_identifier` is guaranteed to be non-null due to prior check.
+    // - `card_identifier` is guaranteed to be non-null due to the prior check.
     // - `card_identifier` points to a valid `Uuid` structure.
     let card_id = unsafe {
         Uuid::from_fields(
@@ -1076,6 +1148,11 @@ unsafe fn read_cache(
     unsafe { save_out_buf(out_buf, data, data_len) }
 }
 
+/// The `SCardReadCacheA` function retrieves the value portion of a name-value pair from the global cache
+/// maintained by the `Smart Card Resource Manager`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachea)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1098,7 +1175,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
 
     let lookup_name = try_execute!(
         // SAFETY:
-        // - `lookup_name` is non-null.
+        // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
@@ -1114,6 +1191,11 @@ pub unsafe extern "system" fn SCardReadCacheA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardReadCacheW` function retrieves the value portion of a name-value pair from the global cache
+/// maintained by the `Smart Card Resource Manager`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1135,7 +1217,7 @@ pub unsafe extern "system" fn SCardReadCacheW(
     check_null!(lookup_name);
 
     // SAFETY:
-    // - `lookup_name` is non-null.
+    // - `lookup_name` is guaranteed to be non-null due to the prior check.
     // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
     // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
@@ -1177,7 +1259,7 @@ unsafe fn write_cache(
     check_null!(card_identifier, "card identified");
 
     // SAFETY:
-    // - `card_identifier` is guaranteed to be non-null due to prior check.
+    // - `card_identifier` is guaranteed to be non-null due to the prior check.
     // - `card_identifier` points to a valid `Uuid` structure.
     let card_id = unsafe {
         Uuid::from_fields(
@@ -1202,6 +1284,11 @@ unsafe fn write_cache(
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }
 
+/// The `SCardWriteCacheA` function writes a name-value pair from a smart card to the global cache
+/// maintained by the `Smart Card Resource Manager`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachea)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1223,7 +1310,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 
     let lookup_name = try_execute!(
         // SAFETY:
-        // - `lookup_name` is non-null.
+        // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
@@ -1238,6 +1325,11 @@ pub unsafe extern "system" fn SCardWriteCacheA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardWriteCacheW` function writes a name-value pair from a smart card to the global cache
+/// maintained by the `Smart Card Resource Manager`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1258,7 +1350,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     check_null!(lookup_name);
 
     // SAFETY:
-    // - `lookup_name` is non-null.
+    // - `lookup_name` is guaranteed to be non-null due to the prior check.
     // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
     // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
@@ -1314,6 +1406,10 @@ unsafe fn get_reader_icon(
     Ok(())
 }
 
+/// The `SCardGetReaderIconA` function gets an icon of the smart card reader for a given reader's name.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericona)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1333,7 +1429,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 
     let reader_name = try_execute!(
         // SAFETY:
-        // - `sz_reader_name` is non-null.
+        // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
@@ -1351,6 +1447,10 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardGetReaderIconW` function gets an icon of the smart card reader for a given reader's name.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericonw)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1369,7 +1469,7 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     check_null!(sz_reader_name);
 
     // SAFETY:
-    // - `sz_reader_name` is non-null.
+    // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
     // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
     // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
     let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };
@@ -1398,11 +1498,11 @@ unsafe fn get_device_type_id(
     check_null!(pdw_device_type_id, "pdw_device_type_id");
 
     // SAFETY:
-    // - `context` is guaranteed to be non-zero due to prior check.
+    // - `context` is guaranteed to be non-zero due to the prior check.
     // - `context` is a valid raw scard context handle.
     let context = unsafe { scard_context_to_winscard_context(context) }?;
 
-    // SAFETY: `pdw_device_type_id` is guaranteed to be non-null due to prior check.
+    // SAFETY: `pdw_device_type_id` is guaranteed to be non-null due to the prior check.
     unsafe {
         *pdw_device_type_id = context.device_type_id(reader_name)?.into();
     }
@@ -1410,6 +1510,10 @@ unsafe fn get_device_type_id(
     Ok(())
 }
 
+/// The `SCardGetDeviceTypeIdA` function gets the device type identifier of the card reader for the given reader name.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeida)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1427,7 +1531,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
 
     let reader_name = try_execute!(
         // SAFETY:
-        // - `sz_reader_name` is non-null.
+        // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
         unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
@@ -1444,6 +1548,10 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     ErrorKind::Success.into()
 }
 
+/// The `SCardGetDeviceTypeIdW` function gets the device type identifier of the card reader for the given reader name.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
+///
 /// # Safety:
 ///
 /// - `context` must be a valid raw scard context handle.
@@ -1460,7 +1568,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     check_null!(sz_reader_name);
 
     // SAFETY:
-    // - `sz_reader_name` is non-null.
+    // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
     // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
     // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
     let reader_name = unsafe { c_w_str_to_string(sz_reader_name) };

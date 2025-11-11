@@ -185,6 +185,15 @@ pub struct SecNegoInfoA {
     pub nego_state: u32,
 }
 
+/// The `EnumerateSecurityPackagesA` function returns an array of `SecPkgInfo` structures that provide
+/// information about the `security packages` available to the client.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesa)
+///
+/// # Safety:
+///
+/// - `pc_packages` must be a pointer that is valid for reads.
+/// - `pp_package_info` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
 #[no_mangle]
@@ -198,7 +207,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        // SAFETY: `pc_packages` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pc_packages` is guaranteed to be non-null due to the prior check.
         unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
@@ -267,7 +276,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        // SAFETY: `pp_package_into` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pp_package_into` is guaranteed to be non-null due to the prior check.
         unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
@@ -276,6 +285,15 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
 pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut u32, *mut PSecPkgInfoA) -> SecurityStatus;
 
+/// The `EnumerateSecurityPackagesW` function returns an array of `SecPkgInfo` structures that provide
+/// information about the `security packages` available to the client.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
+///
+/// # Safety:
+///
+/// - `pc_packages` must be a pointer that is valid for reads.
+/// - `pp_package_info` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
 #[no_mangle]
@@ -289,7 +307,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
-        // SAFETY: `pc_packages` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pc_packages` is guaranteed to be non-null due to the prior check.
         unsafe { *pc_packages = packages.len() as u32; }
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
@@ -358,7 +376,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             package_ptr = unsafe { package_ptr.add(1) };
         }
 
-        // SAFETY: `pp_package_into` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pp_package_into` is guaranteed to be non-null due to the prior check.
         unsafe { *pp_package_info = raw_packages as *mut _; }
 
         0
@@ -367,9 +385,15 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
 pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut u32, *mut PSecPkgInfoW) -> SecurityStatus;
 
+/// Retrieves information about a specified `security package`. This information includes the bounds on
+/// sizes of authentication information, credentials, and contexts.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfoa)
+///
 /// # Safety:
 ///
 /// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name.
+/// `pp_package_name` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
 #[no_mangle]
@@ -382,7 +406,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
         check_null!(pp_package_info);
 
         // SAFETY:
-        // - `p_package_name` is guaranteed to be non-null due to prior check.
+        // - `p_package_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
         // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
         let pkg_name = try_execute!(unsafe { CStr::from_ptr(p_package_name) }.to_str(), ErrorKind::InvalidParameter);
@@ -392,7 +416,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
             .find(|pkg| pkg.name.as_ref() == pkg_name)
             .unwrap()
             .into();
-        // SAFETY: `pp_package_info` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pp_package_info` is guaranteed to be non-null due to the prior check.
         unsafe { *pp_package_info = pkg_info.0; }
 
         0
@@ -401,9 +425,15 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
 
 pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar, *mut PSecPkgInfoA) -> SecurityStatus;
 
+/// Retrieves information about a specified `security package`. This information includes the bounds on
+/// sizes of authentication information, credentials, and contexts.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfow)
+///
 /// # Safety:
 ///
 /// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name.
+/// `pp_package_name` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
 #[no_mangle]
@@ -416,7 +446,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         check_null!(pp_package_info);
 
         // SAFETY:
-        // - `p_package_name` is guaranteed to be non-null due to prior check.
+        // - `p_package_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
         // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
         let pkg_name = unsafe { c_w_str_to_string(p_package_name) };
@@ -426,7 +456,7 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
             .find(|pkg| pkg.name.to_string() == pkg_name)
             .unwrap()
             .into();
-        // SAFETY: `pp_package_info` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pp_package_info` is guaranteed to be non-null due to the prior check.
         unsafe { *pp_package_info = pkg_info.0; }
 
         0

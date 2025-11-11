@@ -273,7 +273,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         });
     }
 
-    // SAFETY: `*context` is guaranteed to be non-null due to prior check.
+    // SAFETY: `*context` is guaranteed to be non-null due to the prior check.
     if unsafe { (*(*context)).dw_lower } == 0 {
         if security_package_name.is_none() {
             return Err(Error::new(
@@ -340,7 +340,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
     }
 
     Ok(NonNull::new(
-        // SAFETY: `*context` is guaranteed to be non-null due to prior check.
+        // SAFETY: `*context` is guaranteed to be non-null due to the prior check.
         unsafe { (*(*context)).dw_lower as *mut _ },
     )
     .expect("dw_lower must be initialized"))
@@ -358,10 +358,12 @@ fn verify_security_package(package_name: &str) -> Result<()> {
     }
 }
 
-/// AcquireCredentialsHandleA function acquires a handle to preexisting credentials of a security principal.
+/// The `AcquireCredentialsHandleA` function acquires a handle to preexisting credentials of a security principal.
 ///
 /// NOTE: Although in the original Windows SSPI, `p_auth_data` parameter can be NULL, in our implementation it must be non-NULL.
 /// That's because we cannot get the default credentials handle for security package, like Windows can.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlea)
 ///
 /// # Safety:
 ///
@@ -374,7 +376,7 @@ fn verify_security_package(package_name: &str) -> Result<()> {
 pub unsafe extern "system" fn AcquireCredentialsHandleA(
     _psz_principal: LpStr,
     psz_package: LpStr,
-    _f_aredential_use: u32,
+    _f_credential_use: u32,
     _pv_logon_id: *const c_void,
     p_auth_data: *const c_void,
     _p_get_key_fn: SecGetKeyFn,
@@ -389,7 +391,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let security_package_name =
             // SAFETY:
-            // - `psz_package` is non-null.
+            // - `psz_package` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_package` contains a valid null-terminator at the end of string.
             // - The memory region `psz_package` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_package) }.to_str(), ErrorKind::InvalidParameter).to_owned();
@@ -403,7 +405,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
         let credentials = try_execute!(unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) });
 
-        // SAFETY: `ph_credentials` is non-null.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
             (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
                 credentials,
@@ -428,10 +430,12 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-/// AcquireCredentialsHandleW function acquires a handle to preexisting credentials of a security principal.
+/// The `AcquireCredentialsHandleW` function acquires a handle to preexisting credentials of a security principal.
 ///
 /// NOTE: Although in the original Windows SSPI, `p_auth_data` parameter can be NULL, in our implementation it must be non-NULL.
 /// That's because we cannot get the default credentials handle for security package, like Windows can.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
 ///
 /// # Safety:
 ///
@@ -458,7 +462,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         check_null!(ph_credential);
 
         // SAFETY:
-        // - `psz_package` is non-null.
+        // - `psz_package` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_package` contains a valid null-terminator at the end of string.
         // - The memory region `psz_package` points to is valid for reads of bytes up to and including null-terminator.
         let security_package_name = unsafe { c_w_str_to_string(psz_package) };
@@ -471,7 +475,7 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
         let credentials = try_execute!(unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) });
 
-        // SAFETY: `ph_credentials` is non-null.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
             (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
                 credentials,
@@ -522,6 +526,14 @@ pub extern "system" fn QueryCredentialsAttributesW(
 
 pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
 
+/// The `InitializeSecurityContextA` function initiates the client side, outbound `security context` from
+/// a credential handle. The function is used to build a security context between the client application
+/// and a remote peer. `InitializeSecurityContextA` returns a token that the client must pass to the remote peer,
+/// which the peer in turn submits to the local security implementation through the `AcceptSecurityContext` call.
+/// The token generated should be considered opaque by all callers.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontexta)
+///
 /// # Safety:
 ///
 /// - `ph_credentials` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`]
@@ -560,7 +572,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         check_null!(p_output);
         check_null!(pf_context_attr);
 
-        // SAFETY: `p_output` is non-null.
+        // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let p_output_buffers = unsafe { (*p_output).p_buffers };
         check_null!(p_output_buffers);
 
@@ -568,14 +580,14 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             ""
         } else {
             // SAFETY:
-            // - `p_target_name` is guaranteed to be non-null due to prior check.
+            // - `p_target_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_target_name` contains a valid null-terminator at the end of string.
             // - The memory region `p_target_name` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(p_target_name) }.to_str(), ErrorKind::InvalidParameter)
         };
         debug!(?service_principal, "Target name (SPN)");
 
-        // SAFETY: `ph_credentials` is non-null.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
         // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
@@ -600,11 +612,11 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
         let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
 
-        // SAFETY: `p_output` is non-null.
+        // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let len = unsafe { (*p_output).c_buffers as usize };
 
         // SAFETY:
-        // - `p_output_buffers` is guaranteed to be non-null due to prior check.
+        // - `p_output_buffers` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_output_buffers` points to is valid for reads of `len` elements.
         let raw_buffers = unsafe { from_raw_parts(p_output_buffers, len) };
 
@@ -643,7 +655,7 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // if it was previously null.
         new_context.dw_upper = unsafe { (*ph_context).dw_upper };
 
-        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to the prior check.
         unsafe { *pf_context_attr = f_context_req; }
 
         let result = try_execute!(result_status);
@@ -666,6 +678,14 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
+/// The `InitializeSecurityContextW` function initiates the client side, outbound `security context` from
+/// a credential handle. The function is used to build a security context between the client application
+/// and a remote peer. `InitializeSecurityContextW` returns a token that the client must pass to the remote peer,
+/// which the peer in turn submits to the local security implementation through the `AcceptSecurityContext` call.
+/// The token generated should be considered opaque by all callers.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
+///
 /// # Safety:
 ///
 /// - `ph_credentials` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`]
@@ -704,7 +724,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         check_null!(p_output);
         check_null!(pf_context_attr);
 
-        // SAFETY: `p_output` is non-null.
+        // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let p_output_buffers = unsafe { (*p_output).p_buffers };
         check_null!(p_output_buffers);
 
@@ -712,14 +732,14 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             String::new()
         } else {
             // SAFETY:
-            // - `p_target_name` is guaranteed to be non-null due to prior check.
+            // - `p_target_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_target_name` contains a valid null-terminator at the end of string.
             // - The memory region `p_target_name` points to is valid for reads of bytes up to and including null-terminator.
             unsafe { c_w_str_to_string(p_target_name) }
         };
         debug!(?service_principal, "Target name (SPN)");
 
-        // SAFETY: `ph_credentials` is non-null.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
         // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
@@ -744,11 +764,11 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
         let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
 
-        // SAFETY: `p_output` is non-null.
+        // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let len = unsafe { (*p_output).c_buffers as usize };
 
         // SAFETY:
-        // - `p_output_buffers` is guaranteed to be non-null due to prior check.
+        // - `p_output_buffers` is guaranteed to be non-null due to the prior check.
         // - The memory region `p_output_buffers` points to is valid for reads of `len` elements.
         let raw_buffers = unsafe { from_raw_parts(p_output_buffers, len) };
 
@@ -787,7 +807,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // if it was previously null.
         new_context.dw_upper = unsafe { (*ph_context).dw_upper };
 
-        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to prior check.
+        // SAFETY: `pf_context_attr` is guaranteed to be non-null due to the prior check.
         unsafe { *pf_context_attr = f_context_req; }
 
         let result = try_execute!(result_status);
@@ -1007,6 +1027,11 @@ unsafe fn query_context_attributes_common(
     }
 }
 
+/// The `QueryContextAttributesA` function lets a transport application query the Credential Security
+/// Support Provider (CredSSP) `security package` for certain attributes of a `security context`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesa)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
@@ -1025,12 +1050,17 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     // SAFETY:
     // - `ph_context` is either null or convertible to a reference.
     // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-    // - `p_buffer` is non-null.
+    // - `p_buffer` is guaranteed to be non-null due to the prior check.
     unsafe { query_context_attributes_common(ph_context, ul_attribute, p_buffer, false) }
 }
 
 pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void) -> SecurityStatus;
 
+/// The `QueryContextAttributesW` function lets a transport application query the Credential Security
+/// Support Provider (CredSSP) `security package` for certain attributes of a `security context`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesw)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
@@ -1049,7 +1079,7 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     // SAFETY:
     // - `ph_context` is either null or convertible to a reference.
     // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-    // - `p_buffer` is non-null.
+    // - `p_buffer` is guaranteed to be non-null due to the prior check.
     unsafe { query_context_attributes_common(ph_context, ul_attribute, p_buffer, true) }
 }
 
@@ -1166,6 +1196,11 @@ pub extern "system" fn SetContextAttributesW(
 
 pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
+/// Sets the `attributes` of a `credential`, such as the name associated with the credential. The information
+/// is valid for any `security context` created with the specified credential.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-setcredentialsattributesa)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a non-null, valid pointer to a `SecHandle` structure.
@@ -1187,7 +1222,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         check_null!(p_buffer);
 
         // SAFETY:
-        // - `ph_credentials` is guaranteed to be non-null due to prior check.
+        // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
         let credentials_handle_ptr = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
@@ -1203,7 +1238,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
             let workstation =
                 // SAFETY:
-                // - `p_buffer` is guaranteed to be non-null due to prior check.
+                // - `p_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
                 // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
                 try_execute!(unsafe { CStr::from_ptr(p_buffer as *const _) }.to_str(), ErrorKind::InvalidParameter).to_owned();
@@ -1222,7 +1257,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlA>();
             // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to prior check.
+            // - `p_buffer` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
             // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
             let kdc_url = try_execute!(unsafe { CStr::from_ptr((*cred_attr).kdc_url) }.to_str(), ErrorKind::InvalidParameter);
@@ -1236,6 +1271,11 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
 
 pub type SetCredentialsAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
+/// Sets the `attributes` of a `credential`, such as the name associated with the credential. The information
+/// is valid for any `security context` created with the specified credential.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-setcredentialsattributesw)
+///
 /// # Safety:
 ///
 /// - `ph_context` must be a non-null, valid pointer to a `SecHandle` structure.
@@ -1257,7 +1297,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         check_null!(p_buffer);
 
         // SAFETY:
-        // - `ph_credentials` is guaranteed to be non-null due to prior check.
+        // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
         let credentials_handle_ptr = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
 
@@ -1272,7 +1312,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
 
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
             // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to prior check.
+            // - `p_buffer` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
             // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
             let workstation = unsafe { c_w_str_to_string(p_buffer as *const _) };
@@ -1291,7 +1331,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlW>();
             // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to prior check.
+            // - `p_buffer` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
             // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
             let kdc_url = unsafe { c_w_str_to_string((*cred_attr).kdc_url as *const u16) };
@@ -1306,6 +1346,11 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
 
 pub type SetCredentialsAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
+/// The `ChangeAccountPasswordA` function changes the password for a Windows domain account by using
+/// the specified `Security Support Provider`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpassworda)
+///
 /// # Safety:
 ///
 /// - `psz_package_name` must be a non-null pointer to a valid, null-terminated C string representing the package name.
@@ -1338,32 +1383,32 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         let security_package_name =
             // SAFETY:
-            // - `psz_package_name` is guaranteed to be non-null due to prior check.
+            // - `psz_package_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_package_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_package_name` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_package_name) }.to_str(), ErrorKind::InvalidParameter);
 
         let domain =
             // SAFETY:
-            // - `psz_domain_name` is guaranteed to be non-null due to prior check.
+            // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_domain_name) }.to_str(), ErrorKind::InvalidParameter);
         let username =
             // SAFETY:
-            // - `psz_account_name` is guaranteed to be non-null due to prior check.
+            // - `psz_account_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_account_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_account_name` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_account_name) }.to_str(), ErrorKind::InvalidParameter);
         let password =
             // SAFETY:
-            // - `psz_old_password` is guaranteed to be non-null due to prior check.
+            // - `psz_old_password` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_old_password` contains a valid null-terminator at the end of string.
             // - The memory region `psz_old_password` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_old_password) }.to_str(), ErrorKind::InvalidParameter);
         let new_password =
             // SAFETY:
-            // - `psz_new_password` is guaranteed to be non-null due to prior check.
+            // - `psz_new_password` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_new_password` contains a valid null-terminator at the end of string.
             // - The memory region `psz_new_password` points to is valid for reads of bytes up to and including null-terminator.
             try_execute!(unsafe { CStr::from_ptr(psz_new_password) }.to_str(), ErrorKind::InvalidParameter);
@@ -1376,7 +1421,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         let mut output_tokens =
             // SAFETY:
-            // - `p_output.p_buffers` is guaranteed to be non-null due to prior check.
+            // - `p_output.p_buffers` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_output.p_buffers` points to is valid for reads of `len` elements.
             unsafe { p_sec_buffers_to_security_buffers(from_raw_parts(p_output.p_buffers, len)) };
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
@@ -1440,6 +1485,11 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
     PSecBufferDesc,
 ) -> SecurityStatus;
 
+/// The `ChangeAccountPasswordW` function changes the password for a Windows domain account by using
+/// the specified `Security Support Provider`.
+///
+/// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
+///
 /// # Safety:
 ///
 /// - `psz_package_name` must be a non-null pointer to a valid, null-terminated C string representing the package name.
@@ -1471,28 +1521,28 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
         check_null!(p_output);
 
         // SAFETY:
-        // - `psz_package_name` is guaranteed to be non-null due to prior check.
+        // - `psz_package_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_package_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_package_name` points to is valid for reads of bytes up to and including null-terminator.
         let mut security_package_name = unsafe { c_w_str_to_string(psz_package_name) };
 
         // SAFETY:
-        // - `psz_domain_name` is guaranteed to be non-null due to prior check.
+        // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
         let mut domain = unsafe { c_w_str_to_string(psz_domain_name) };
         // SAFETY:
-        // - `psz_account_name` is guaranteed to be non-null due to prior check.
+        // - `psz_account_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_account_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_account_name` points to is valid for reads of bytes up to and including null-terminator.
         let mut username = unsafe { c_w_str_to_string(psz_account_name) };
         // SAFETY:
-        // - `psz_old_password` is guaranteed to be non-null due to prior check.
+        // - `psz_old_password` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_old_password` contains a valid null-terminator at the end of string.
         // - The memory region `psz_old_password` points to is valid for reads of bytes up to and including null-terminator.
         let mut password = Secret::new(unsafe { c_w_str_to_string(psz_old_password) });
         // SAFETY:
-        // - `psz_new_password` is guaranteed to be non-null due to prior check.
+        // - `psz_new_password` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_new_password` contains a valid null-terminator at the end of string.
         // - The memory region `psz_new_password` points to is valid for reads of bytes up to and including null-terminator.
         let mut new_password = Secret::new(unsafe { c_w_str_to_string(psz_new_password) });

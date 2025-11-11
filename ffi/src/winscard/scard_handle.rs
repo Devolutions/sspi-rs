@@ -369,7 +369,7 @@ impl WinScardHandle {
 
     /// Returns mutable reference to the parent [WinScardContextHandle].
     pub(super) fn context<'context>(&self) -> WinScardResult<&'context mut WinScardContextHandle> {
-        // SAFETY: The `WinScardHandle` contains valid context handle.
+        // SAFETY: The `WinScardHandle` contains a valid context handle.
         unsafe { raw_scard_context_handle_to_scard_context_handle(self.context) }
     }
 
@@ -441,7 +441,7 @@ pub(super) unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinSca
     }
 
     // SAFETY:
-    // - `handle` is guaranteed to be non-null due to prior check.
+    // - `handle` is guaranteed to be non-null due to the prior check.
     // - `handle` is a valid raw scard handle.
     if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
         Ok(scard.scard.as_mut())
@@ -469,7 +469,7 @@ pub(super) unsafe fn raw_scard_handle_to_scard_handle<'a>(
     }
 
     // SAFETY:
-    // - `h_card` is guaranteed to be non-null due to prior check.
+    // - `h_card` is guaranteed to be non-null due to the prior check.
     // - `h_card` is a valid raw scard handle.
     unsafe { (h_card as *mut WinScardHandle).as_mut() }
         .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
@@ -491,7 +491,7 @@ pub(super) unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
     }
 
     // SAFETY:
-    // - `h_context` is guaranteed to be non-null due to prior check.
+    // - `h_context` is guaranteed to be non-null due to the prior check.
     // - `h_context` is a valid raw scard context handle.
     unsafe { (h_context as *mut WinScardContextHandle).as_mut() }
         .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
@@ -513,7 +513,7 @@ pub(super) unsafe fn scard_context_to_winscard_context<'a>(
     }
 
     // SAFETY:
-    // - `handle` is guaranteed to be non-null due to prior check.
+    // - `handle` is guaranteed to be non-null due to the prior check.
     // - `handle` is a valid raw scard context handle.
     if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
         Ok(context.scard_context.as_mut())
@@ -542,7 +542,7 @@ pub(super) unsafe fn copy_io_request_to_scard_io_request(
     }
 
     let pci_info_len = io_request.pci_info.len();
-    // SAFETY: `scard_io_request` is guaranteed to be non-null due to prior check.
+    // SAFETY: `scard_io_request` is guaranteed to be non-null due to the prior check.
     let cb_pci_length = unsafe { (*scard_io_request).cb_pci_length };
     let scard_pci_info_len = usize::try_from(cb_pci_length)?;
 
@@ -556,12 +556,12 @@ pub(super) unsafe fn copy_io_request_to_scard_io_request(
         ));
     }
 
-    // SAFETY: `scard_io_request` is guaranteed to be non-null due to prior check.
+    // SAFETY: `scard_io_request` is guaranteed to be non-null due to the prior check.
     unsafe {
         (*scard_io_request).dw_protocol = io_request.protocol.bits();
     }
 
-    // SAFETY: `scard_io_request` is guaranteed to be non-null due to prior check.
+    // SAFETY: `scard_io_request` is guaranteed to be non-null due to the prior check.
     unsafe {
         (*scard_io_request).cb_pci_length = pci_info_len.try_into()?;
     }
