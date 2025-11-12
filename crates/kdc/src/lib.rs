@@ -1,5 +1,5 @@
 mod as_exchange;
-mod config;
+pub mod config;
 mod error;
 mod tgs_exchange;
 mod ticket;
