@@ -34,7 +34,6 @@ exclude = [
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 # == Correctness == #
-keyword_idents_2024 = "warn"
 ambiguous_negative_literals = "warn"
 
 # == Style, readability == #
