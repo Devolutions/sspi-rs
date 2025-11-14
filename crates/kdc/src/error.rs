@@ -109,7 +109,7 @@ impl KdcError {
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
                     KerberosStringAsn1::from(
                         IA5String::from_string(TGT_SERVICE_NAME.to_owned())
-                            .expect("TBT_SERVICE_NAME is valid KerberosString"),
+                            .expect("TGT_SERVICE_NAME is valid KerberosString"),
                     ),
                     realm,
                 ])),

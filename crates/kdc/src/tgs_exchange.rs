@@ -9,9 +9,7 @@ use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1
 use picky_krb::constants::key_usages::{
     TGS_REP_ENC_SESSION_KEY, TGS_REP_ENC_SUB_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TICKET_REP,
 };
-use picky_krb::constants::types::{
-    AS_REQ_MSG_TYPE, ENC_TGS_REP_PART_TYPE, PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE, TGS_REQ_MSG_TYPE,
-};
+use picky_krb::constants::types::{ENC_TGS_REP_PART_TYPE, PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE, TGS_REQ_MSG_TYPE};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
     Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, PaData, PrincipalName, TicketInner,
@@ -45,7 +43,7 @@ struct TgsPreAuth {
     tgs_rep_key_usage: i32,
 }
 
-/// Performs TGS pre-authentication: validated incoming PA-DATAs and extract needed parameters.
+/// Performs TGS pre-authentication: validates incoming PA-DATAs and extracts needed parameters.
 fn tgs_preauth(
     realm: &str,
     pa_datas: &Asn1SequenceOf<PaData>,
@@ -162,7 +160,7 @@ pub(super) fn handle_tgs_req(
     if msg_type.0.0 != [TGS_REQ_MSG_TYPE] {
         return Err(KdcError::BadMsgType {
             msg_type: msg_type.0.0.clone(),
-            expected: AS_REQ_MSG_TYPE,
+            expected: TGS_REQ_MSG_TYPE,
         });
     }
 
