@@ -100,7 +100,7 @@ fn validate_request_from_and_till(
     // > If the requested expiration time minus the starttime (as determined above) is less than a site-determined minimum lifetime,
     // > an error message with code KDC_ERR_NEVER_VALID is returned.
     //
-    // We do not have a ticket minimum lifetime value configured, so we only check that the `end_time`` is after the `auth_time`.
+    // We do not have a ticket minimum lifetime value configured, so we only check that the `end_time` is after the `auth_time`.
     if end_time < auth_time {
         return Err(KdcError::NeverValid("end_time is earlier than auth_time".to_owned()));
     }
