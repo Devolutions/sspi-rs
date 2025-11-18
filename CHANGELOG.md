@@ -14,8 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   This fixes builds for the wasm32 target.
 
-
-
 ## [[0.18.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.2...sspi-v0.18.3)] - 2025-11-07
 
 ### <!-- 1 -->Features
