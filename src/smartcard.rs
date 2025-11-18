@@ -2,13 +2,20 @@
 
 use std::borrow::Cow;
 use std::fmt;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
+#[cfg(not(target_arch = "wasm32"))]
 use cryptoki::context::{CInitializeArgs, Pkcs11};
+#[cfg(not(target_arch = "wasm32"))]
 use cryptoki::mechanism::Mechanism;
+#[cfg(not(target_arch = "wasm32"))]
 use cryptoki::object::{Attribute, KeyType, ObjectClass};
+#[cfg(not(target_arch = "wasm32"))]
 use cryptoki::session::UserType;
+#[cfg(not(target_arch = "wasm32"))]
 use cryptoki::types::AuthPin;
+
 use picky::key::PrivateKey;
 use winscard::SmartCard as PivSmartCard;
 
@@ -20,6 +27,7 @@ pub(crate) enum SmartCardApi {
     ///
     /// No real device or driver is needed.
     PivEmulated(Box<PivSmartCard<'static>>),
+    #[cfg(not(target_arch = "wasm32"))]
     /// Represents system-provided smart card API.
     ///
     /// PKCS11 API will be used for data signing.
@@ -45,6 +53,7 @@ impl fmt::Debug for SmartCardApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PivEmulated { .. } => f.write_str("SmartCardApi::PivEmulated"),
+            #[cfg(not(target_arch = "wasm32"))]
             Self::Pkcs11 { .. } => f.write_str("SmartCardApi::Pkcs11"),
             #[cfg(target_os = "windows")]
             Self::Windows { .. } => f.write_str("SmartCardApi::Windows"),
@@ -97,6 +106,7 @@ impl SmartCard {
                     picky_asn1_der::to_vec(certificate)?,
                 )
             }
+            #[cfg(not(target_arch = "wasm32"))]
             SmartCardType::SystemProvided { pkcs11_module_path } => {
                 Self::new_system_provided(pkcs11_module_path, user_pin, reader_name.clone())
             }
@@ -137,6 +147,7 @@ impl SmartCard {
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside.
+    #[cfg(not(target_arch = "wasm32"))]
     fn new_system_provided(pkcs11_module_path: &Path, user_pin: Secret<Vec<u8>>, reader_name: String) -> Result<Self> {
         let pkcs11 = Pkcs11::new(pkcs11_module_path)?;
         pkcs11.initialize(CInitializeArgs::OsThreads)?;
@@ -157,6 +168,7 @@ impl SmartCard {
                 scard.verify_pin(self.pin.as_ref())?;
                 Ok(scard.sign_hashed(&encode_digest(digest)?)?)
             }
+            #[cfg(not(target_arch = "wasm32"))]
             SmartCardApi::Pkcs11 {
                 pkcs11_module,
                 reader_name,
