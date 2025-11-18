@@ -15,7 +15,7 @@ use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
 };
-use crate::{NtlmHash, NtlmHashError, Secret, utils};
+use crate::{NtlmHash, NtlmHashError, Secret, Utf16StringExt};
 
 pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
@@ -175,8 +175,8 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
-        let password_bytes = identity.password.as_ref();
-        let password_str = utils::bytes_to_utf16_string(password_bytes)?;
+        let password_bytes = identity.password.as_ref().0.as_bytes();
+        let password_str = identity.password.as_ref().0.to_string();
 
         // Check if the password field contains an NT hash with the prefix.
         let hmac_key = if let Some(hash_hex) = password_str.strip_prefix(crate::ntlm::hash::NTLM_HASH_PREFIX) {
@@ -201,9 +201,8 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
             }
         };
 
-        let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
-        let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
-        user_uppercase_with_domain.extend(&identity.domain);
+        let mut user_uppercase_with_domain = identity.user.to_uppercase().to_bytes();
+        user_uppercase_with_domain.extend(identity.domain.as_bytes());
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     } else {

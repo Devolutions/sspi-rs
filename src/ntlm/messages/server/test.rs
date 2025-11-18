@@ -1,5 +1,6 @@
 use super::*;
 use crate::auth_identity::AuthIdentityBuffers;
+use crate::Utf16StringExt;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
 
@@ -445,7 +446,7 @@ fn read_authenticate_local_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes());
 }
 
 #[test]
@@ -486,7 +487,7 @@ fn read_authenticate_domain_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes());
 }
 
 #[test]
@@ -505,7 +506,7 @@ fn read_authenticate_domain_logon_correct_reads_domain_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().domain.as_slice());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().domain.as_bytes());
 }
 
 #[test]

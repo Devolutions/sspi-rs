@@ -177,6 +177,9 @@ zeroize = { version = "1.8", features = ["zeroize_derive"] }
 async-recursion = "1.1"
 
 
+widestring = "1.2"
+bytemuck = "1.24"
+
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"
 windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_System", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }

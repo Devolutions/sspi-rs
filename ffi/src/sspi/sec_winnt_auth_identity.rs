@@ -2,7 +2,11 @@ use std::ptr::copy_nonoverlapping;
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret, string_to_utf16};
+use sspi::utf16string::ZeroizedUtf16String;
+use sspi::{
+    AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, NonEmpty, Result, Secret, Utf16String, Utf16StringExt,
+    string_to_utf16,
+};
 #[cfg(feature = "scard")]
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
@@ -402,9 +406,9 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user,
-            domain,
-            password: password.into(),
+            user: Utf16String::from_bytes_le(user)?,
+            domain: Utf16String::from_bytes_le(domain)?,
+            password: ZeroizedUtf16String::from_bytes_le(password)?.into(),
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
@@ -439,9 +443,9 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-            user,
-            domain,
-            password: password.into(),
+            user: Utf16String::from_bytes_le(user)?,
+            domain: Utf16String::from_bytes_le(domain)?,
+            password: ZeroizedUtf16String::from_bytes_le(password)?.into(),
         }))
     }
 }
@@ -537,9 +541,9 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }
 
     Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
-        user,
-        domain,
-        password,
+        user: Utf16String::from_bytes_le(user)?,
+        domain: Utf16String::from_bytes_le(domain)?,
+        password: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
     }))
 }
 
@@ -561,8 +565,9 @@ fn collect_smart_card_creds(
 ) -> Result<SmartCardIdentityBuffers> {
     use std::env;
 
+    use sspi::{Utf16String, Utf16StringExt};
+
     use crate::sspi::utils::raw_wide_str_trim_nulls;
-    use crate::utils::str_encode_utf16;
 
     const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
     const SCARD_EMULATED: &str = "emulated";
@@ -605,14 +610,14 @@ fn collect_smart_card_creds(
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
             Ok(SmartCardIdentityBuffers {
-                username,
-                certificate: auth_cert_der.clone(),
-                card_name: Some(str_encode_utf16(DEFAULT_CARD_NAME)),
-                reader_name: str_encode_utf16(reader.name.as_ref()),
-                container_name: Some(str_encode_utf16(container_name.as_ref())),
-                csp_name: str_encode_utf16(MICROSOFT_DEFAULT_CSP),
-                pin: pin.into(),
-                private_key_pem: Some(str_encode_utf16(auth_pk_pem.as_ref())),
+                username: Utf16String::from_bytes_le(username)?,
+                certificate: auth_cert_der.clone().try_into()?,
+                card_name: NonEmpty::new(DEFAULT_CARD_NAME.into()),
+                reader_name: reader.name.as_ref().into(),
+                container_name: NonEmpty::new(container_name.as_ref().into()),
+                csp_name: MICROSOFT_DEFAULT_CSP.into(),
+                pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
+                private_key_pem: NonEmpty::new(auth_pk_pem.as_ref().into()),
                 scard_type: SmartCardType::Emulated {
                     scard_pin: scard_pin.into(),
                 },
@@ -640,14 +645,24 @@ fn collect_smart_card_creds(
 
             info!("System-provided smart card credentials have been collected. Process with scard-based logon.");
 
+            let card_name = match card_name {
+                Some(value) => NonEmpty::new(Utf16String::from_bytes_le(value)?),
+                None => None,
+            };
+
+            let container_name = match container_name {
+                Some(value) => NonEmpty::new(Utf16String::from_bytes_le(value)?),
+                None => None,
+            };
+
             Ok(SmartCardIdentityBuffers {
-                username,
-                certificate,
+                username: Utf16String::from_bytes_le(username)?,
+                certificate: certificate.try_into()?,
                 card_name,
-                reader_name,
+                reader_name: Utf16String::from_bytes_le(reader_name)?,
                 container_name,
-                csp_name,
-                pin: pin.into(),
+                csp_name: Utf16String::from_bytes_le(csp_name)?,
+                pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
                 private_key_pem: None,
                 scard_type: SmartCardType::SystemProvided {
                     pkcs11_module_path: pkcs11_module.into(),
@@ -727,6 +742,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
 #[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use sspi::credssp::NStatusCode;
+    use sspi::{Utf16String, Utf16StringExt};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
     use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferA};
     use windows::core::{HRESULT, PSTR};
@@ -814,27 +830,29 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, username data is a C string and we need to delete the NULL terminator.
     username.pop();
-    auth_identity_buffers.user = username;
+    auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
-            auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
-            auth_identity_buffers.user = auth_identity_buffers.user[(index + 1)..].to_vec();
+        if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
+            auth_identity_buffers.domain =
+                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[0..index].to_vec())?;
+            auth_identity_buffers.user =
+                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[(index + 1)..].to_vec())?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, domain data is a C string and we need to delete the NULL terminator.
         domain.pop();
-        auth_identity_buffers.domain = domain;
+        auth_identity_buffers.domain = Utf16String::from_bytes_le(domain)?;
     }
 
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, password data is a C string and we need to delete the NULL terminator.
     password.as_mut().pop();
-    auth_identity_buffers.password = password;
+    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into();
 
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
@@ -912,13 +930,13 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     } = finalize_smart_card_info(&certificate.tbs_certificate.serial_number.0)?;
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
-        certificate: raw_certificate,
-        reader_name: string_to_utf16(reader_name),
-        pin: password,
-        username,
+        certificate: raw_certificate.try_into()?,
+        reader_name: reader_name.into(),
+        pin: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
+        username: Utf16String::from_bytes_le(username)?,
         card_name: None,
-        container_name: Some(string_to_utf16(key_container_name)),
-        csp_name: string_to_utf16(csp_name),
+        container_name: NonEmpty::new(key_container_name.into()),
+        csp_name: csp_name.into(),
         private_key_pem: None,
         scard_type: SmartCardType::WindowsNative,
     });
@@ -966,6 +984,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     auth_data_len: u32,
 ) -> Result<CredentialsBuffers> {
     use sspi::credssp::NStatusCode;
+    use sspi::{Utf16String, Utf16StringExt};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
     use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferW};
     use windows::core::{HRESULT, PWSTR};
@@ -1066,27 +1085,29 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, username data is a wide C string and we need to delete the NULL terminator.
     raw_wide_str_trim_nulls(&mut username);
-    auth_identity_buffers.user = username;
+    auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = auth_identity_buffers.user.iter().position(|b| *b == b'\\') {
-            auth_identity_buffers.domain = auth_identity_buffers.user[0..index].to_vec();
-            auth_identity_buffers.user = auth_identity_buffers.user[(index + 2)..].to_vec();
+        if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
+            auth_identity_buffers.domain =
+                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[0..index].to_vec())?;
+            auth_identity_buffers.user =
+                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[(index + 2)..].to_vec())?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, domain data is a wide C string and we need to delete the NULL terminator.
         domain.truncate(domain.len() - 2);
-        auth_identity_buffers.domain = domain;
+        auth_identity_buffers.domain = Utf16String::from_bytes_le(domain)?;
     }
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
     if let Ok(scard_creds) = collect_smart_card_creds(
-        auth_identity_buffers.user.clone(),
-        auth_identity_buffers.domain.clone(),
+        auth_identity_buffers.user.as_bytes().to_vec(),
+        auth_identity_buffers.domain.as_bytes().to_vec(),
         password.as_ref().to_vec(),
     ) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
@@ -1097,7 +1118,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // So, password data is a wide C string and we need to delete the NULL terminator.
     let new_len = password.as_ref().len() - 2;
     password.as_mut().truncate(new_len);
-    auth_identity_buffers.password = password;
+    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref().to_vec())?.into();
 
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }

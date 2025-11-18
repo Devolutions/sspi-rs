@@ -31,7 +31,7 @@ use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
+use crate::utils::generate_random_symmetric_key;
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
@@ -85,9 +85,9 @@ pub async fn initialize_security_context<'a>(
 
             let (username, password, realm, cname_type) = match credentials {
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
-                    let username = utf16_bytes_to_utf8_string(&auth_identity.user)?;
-                    let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-                    let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref())?;
+                    let username = auth_identity.user.to_string();
+                    let domain = auth_identity.domain.to_string();
+                    let password = auth_identity.password.as_ref().0.to_string();
 
                     let realm = get_client_principal_realm(&username, &domain);
                     let cname_type = get_client_principal_name_type(&username, &domain);
@@ -96,8 +96,8 @@ pub async fn initialize_security_context<'a>(
                 }
                 #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(smart_card) => {
-                    let username = utf16_bytes_to_utf8_string(&smart_card.username)?;
-                    let password = utf16_bytes_to_utf8_string(smart_card.pin.as_ref())?;
+                    let username = smart_card.username.to_string();
+                    let password = smart_card.pin.as_ref().as_ref().to_string();
 
                     let realm = get_client_principal_realm(&username, "");
                     let cname_type = get_client_principal_name_type(&username, "");
@@ -122,7 +122,7 @@ pub async fn initialize_security_context<'a>(
 
             let pa_data_options = match credentials {
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
-                    let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
+                    let domain = auth_identity.domain.to_string();
                     let salt = format!("{domain}{username}");
 
                     AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {

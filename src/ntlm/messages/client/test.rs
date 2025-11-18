@@ -1,4 +1,5 @@
 use super::*;
+use crate::Utf16StringExt;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
 
@@ -329,7 +330,7 @@ fn write_authenticate_correct_writes_domain_name() {
         expected
     );
     assert_eq!(
-        buff[AUTHENTICATE_OFFSET_WITH_MIC..AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.len()],
+        buff[AUTHENTICATE_OFFSET_WITH_MIC..AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes().len()],
         expected_buffer[..]
     );
 }
@@ -363,8 +364,11 @@ fn write_authenticate_correct_writes_user_name() {
         buff[AUTHENTICATE_USER_NAME_START..AUTHENTICATE_WORKSTATION_START],
         expected
     );
-    let offset = AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.len();
-    assert_eq!(buff[offset..offset + TEST_CREDENTIALS.user.len()], expected_buffer[..]);
+    let offset = AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes().len();
+    assert_eq!(
+        buff[offset..offset + TEST_CREDENTIALS.user.as_bytes().len()],
+        expected_buffer[..]
+    );
 }
 
 #[test]
