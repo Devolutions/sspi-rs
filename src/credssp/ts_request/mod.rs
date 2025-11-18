@@ -7,9 +7,11 @@ use std::io::{self, Read};
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
 use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
+use widestring::Utf16String;
 
 use super::CredSspMode;
-use crate::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, ber};
+use crate::utf16string::ZeroizedUtf16String;
+use crate::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Utf16StringExt, ber};
 
 pub(super) const TS_REQUEST_VERSION: u32 = 6;
 
@@ -257,27 +259,29 @@ fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -
     use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
     use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
 
+    use crate::Utf16StringExt;
+
     let smart_card_creds = TsSmartCardCreds {
-        pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().to_vec())),
+        pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
             key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![AT_KEYEXCHANGE])),
             card_name: Optional::from(
                 credentials
                     .card_name
-                    .clone()
-                    .map(|name| ExplicitContextTag1::from(OctetStringAsn1::from(name))),
+                    .as_ref()
+                    .map(|name| ExplicitContextTag1::from(OctetStringAsn1::from(name.as_ref().to_bytes()))),
             ),
             reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-                credentials.reader_name.clone(),
+                credentials.reader_name.to_bytes(),
             )))),
             container_name: Optional::from(
                 credentials
                     .container_name
-                    .clone()
-                    .map(|name| ExplicitContextTag3::from(OctetStringAsn1::from(name))),
+                    .as_ref()
+                    .map(|name| ExplicitContextTag3::from(OctetStringAsn1::from(name.as_ref().to_bytes()))),
             ),
             csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(
-                credentials.csp_name.clone(),
+                credentials.csp_name.to_bytes(),
             )))),
         }),
         user_hint: Optional::from(None),
@@ -325,11 +329,11 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     /* TSPasswordCreds (SEQUENCE) */
     ber::write_sequence_tag(&mut buffer, password_credentials_len)?;
     /* [0] domainName (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 0, &identity.domain)?;
+    ber::write_sequence_octet_string(&mut buffer, 0, identity.domain.as_bytes())?;
     /* [1] userName (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 1, &identity.user)?;
+    ber::write_sequence_octet_string(&mut buffer, 1, identity.user.as_bytes())?;
     /* [2] password (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref())?;
+    ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref().0.as_bytes())?;
 
     Ok(buffer)
 }
@@ -343,7 +347,11 @@ fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdenti
         password,
     } = password_creds;
 
-    Ok(AuthIdentityBuffers::new(user_name.0.0, domain_name.0.0, password.0.0))
+    Ok(AuthIdentityBuffers {
+        user: Utf16String::from_bytes_le(user_name.0.0)?,
+        domain: Utf16String::from_bytes_le(domain_name.0.0)?,
+        password: ZeroizedUtf16String::from_bytes_le(password.0.0)?.into(),
+    })
 }
 
 pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBuffers> {
@@ -375,9 +383,9 @@ fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
 }
 
 fn sizeof_ts_password_creds(identity: &AuthIdentityBuffers) -> u16 {
-    ber::sizeof_sequence_octet_string(identity.domain.len() as u16)
-        + ber::sizeof_sequence_octet_string(identity.user.len() as u16)
-        + ber::sizeof_sequence_octet_string(identity.password.as_ref().len() as u16)
+    ber::sizeof_sequence_octet_string(identity.domain.as_bytes().len() as u16)
+        + ber::sizeof_sequence_octet_string(identity.user.as_bytes().len() as u16)
+        + ber::sizeof_sequence_octet_string(identity.password.as_ref().0.as_bytes().len() as u16)
 }
 
 fn get_nego_tokens_len(nego_tokens: &Option<Vec<u8>>) -> u16 {

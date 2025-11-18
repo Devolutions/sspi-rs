@@ -1,4 +1,3 @@
-use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
@@ -18,15 +17,6 @@ pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
 
 pub fn str_to_w_buff(data: &str) -> Vec<u16> {
     data.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-pub(crate) fn bytes_to_utf16_string(mut value: &[u8]) -> Result<String> {
-    let mut value_u16 = vec![0x00; value.len() / 2];
-    value
-        .read_u16_into::<LittleEndian>(value_u16.as_mut())
-        .expect("read_u16_into cannot fail at this point");
-
-    String::from_utf16(value_u16.as_ref()).map_err(Error::from)
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(unused))]
