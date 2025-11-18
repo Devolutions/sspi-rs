@@ -85,6 +85,8 @@ jobs:
     needs:
       - preflight
       - build-managed
+    permissions:
+      id-token: write
 
     steps:
       - name: Download NuGet package artifact
@@ -93,21 +95,27 @@ jobs:
           name: sspi-nupkg
           path: package
 
+      - name: NuGet login (OIDC)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_BOT_USERNAME }}
+
       - name: Publish to nuget.org
         shell: pwsh
         run: |
           Set-PSDebug -Trace 1
 
           $Files = Get-ChildItem -Recurse package/*.nupkg
-    
+
           foreach ($File in $Files) {
             $PushCmd = @(
-              'dotnet', 
-              'nuget', 
-              'push', 
+              'dotnet',
+              'nuget',
+              'push',
               "$File",
               '--api-key',
-              '${{ secrets.NUGET_API_KEY }}',
+              '${{ steps.nuget-login.outputs.NUGET_API_KEY }}',
               '--source',
               'https://api.nuget.org/v3/index.json',
               '--skip-duplicate'
