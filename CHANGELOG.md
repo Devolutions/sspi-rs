@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.3...sspi-v0.18.4)] - 2025-11-18
+
+### <!-- 7 -->Build
+
+- Exclude cryptoki for WASM ([#545](https://github.com/Devolutions/sspi-rs/issues/545)) ([9e4a84a9ee](https://github.com/Devolutions/sspi-rs/commit/9e4a84a9ee07c81da07e799e3e209094c9045c83)) 
+
+  This fixes builds for the wasm32 target.
+
+
+
 ## [[0.18.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.2...sspi-v0.18.3)] - 2025-11-07
 
 ### <!-- 1 -->Features
