@@ -270,6 +270,7 @@ mod scard_credentials {
             /// This is smart card PIN code, not the PIN code provided by the user.
             scard_pin: Secret<Vec<u8>>,
         },
+        #[cfg(not(target_arch = "wasm32"))]
         /// System-provided smart card.
         ///
         /// Real smart card device in use.
