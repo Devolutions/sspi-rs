@@ -18,8 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The zlib backends are described
   [here](https://github.com/rust-lang/flate2-rs?tab=readme-ov-file#backends).
 
-
-
 ## [[0.2.3](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.2...winscard-v0.2.3)] - 2025-10-06
 
 ### <!-- 1 -->Features
