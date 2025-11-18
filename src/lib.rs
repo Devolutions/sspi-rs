@@ -2375,7 +2375,7 @@ impl From<winscard::Error> for Error {
     }
 }
 
-#[cfg(feature = "scard")]
+#[cfg(all(feature = "scard", not(target_arch = "wasm32")))]
 impl From<cryptoki::error::Error> for Error {
     fn from(value: cryptoki::error::Error) -> Self {
         Self::new(

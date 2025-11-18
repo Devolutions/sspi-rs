@@ -250,6 +250,7 @@ impl TryFrom<AuthIdentityBuffers> for AuthIdentity {
 
 #[cfg(feature = "scard")]
 mod scard_credentials {
+    #[cfg(not(target_arch = "wasm32"))]
     use std::path::PathBuf;
 
     use picky::key::PrivateKey;
