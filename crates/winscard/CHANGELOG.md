@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.2.4](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.3...winscard-v0.2.4)] - 2025-11-18
+
+### <!-- 7 -->Build
+
+- No zlib for flate2 on WASM ([#547](https://github.com/Devolutions/sspi-rs/issues/547)) ([9867f451f0](https://github.com/Devolutions/sspi-rs/commit/9867f451f0ab75204f900977c85ff387c31d1423)) 
+
+  This PR switches flate2 to the default `miniz_oxide` (Rust-only
+  implementation) for WASM and keeps using system `zlib` otherwise.
+  
+  The zlib backends are described
+  [here](https://github.com/rust-lang/flate2-rs?tab=readme-ov-file#backends).
+
 ## [[0.2.3](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.2...winscard-v0.2.3)] - 2025-10-06
 
 ### <!-- 1 -->Features
