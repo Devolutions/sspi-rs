@@ -91,7 +91,7 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
 
 /// Saves the resulting data after the [RequestedBufferType] processing.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `p_buf` can be null. Else, it must be a properly-aligned pointer, that points to a valid memory region and valid for both reads and writes.
 /// - `pcb_buf` must be a properly-aligned pointer, that points to a valid memory region and valid for both reads and writes.

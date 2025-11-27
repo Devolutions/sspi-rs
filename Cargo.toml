@@ -46,6 +46,15 @@ redundant_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unused_qualifications = "warn"
 
+[workspace.lints.clippy]
+
+# == Safer unsafe == #
+as_ptr_cast_mut = "warn"
+fn_to_numeric_cast_any = "warn"
+ptr_cast_constness = "warn"
+unnecessary_safety_comment = "warn"
+missing_safety_doc = "warn"
+
 [workspace.dependencies]
 uuid = { version = "1.18", default-features = false }
 tracing = { version = "0.1",  default-features = false }

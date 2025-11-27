@@ -66,7 +66,7 @@ pub struct SecPkgCredentialsKdcProxySettingsW {
 
 /// Extracts [KdcProxySettings].
 ///
-/// # Safety:
+/// # Safety
 ///
 /// * The pointer value must be [SecPkgCredentialsKdcProxySettingsW].
 ///   The fields `proxy_server_offset`, `proxy_server_length`, `client_tls_cred_offset` and `client_tls_cred_length` must contain valid values.

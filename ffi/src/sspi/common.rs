@@ -612,7 +612,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
 
 /// Copies Rust-security-buffers into C-security-buffers.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// This function accepts owned [from_buffers] to avoid UB and other errors. Rust-buffers should
 /// not be used after the data is copied into C-buffers.

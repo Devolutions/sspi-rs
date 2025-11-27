@@ -23,7 +23,7 @@ pub struct SecBufferDesc {
 
 pub type PSecBufferDesc = *mut SecBufferDesc;
 
-/// # Safety:
+/// # Safety
 ///
 /// * The input pointer can be null.
 /// * If the input pointer is non-null, then it must point to the valid [SecBufferDesc] structure. Moreover,
@@ -77,7 +77,7 @@ pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]
 
 /// Copies buffers from `from_buffers` to `to_buffers`.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `to_buffers` must be a valid pointer to an array of security buffers. It must be valid for writes of `from_buffers.len()` elements.
 /// Additionally, if `allocate` is `false`, each `to_buffers[i].pv_buffer` must be a valid pointer for writes of `from_buffers[i].buffer.len()` elements.

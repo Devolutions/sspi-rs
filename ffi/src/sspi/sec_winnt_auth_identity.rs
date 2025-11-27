@@ -157,7 +157,7 @@ pub struct CredSspCred {
 
 /// Returns auth identity version and flags.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `p_auth_data` must a non-null pointer to one of the following structures:
 /// [`SecWinntAuthIdentityExW`], [`SecWinntAuthIdentityEx2`], or [`SecWinntAuthIdentityW`].
@@ -291,7 +291,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
 /// Actually, on Linux FreeRDP can pass UNICODE credentials into the AcquireCredentialsHandleA function.
 /// So, we need to be able to handle any credentials format in the AcquireCredentialsHandleA/W functions.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `p_auth_data` must a non-null pointer to one of the following structures:
 /// [`CredSspCred`], [`SecWinntAuthIdentityExW`], [`SecWinntAuthIdentityEx2`], or [`SecWinntAuthIdentityW`].
@@ -335,7 +335,7 @@ pub unsafe fn auth_data_to_identity_buffers(
     }
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// The `p_auth_data` must be a valid pointer to one of the following structures:
 /// [`SecWinntAuthIdentityExA`] or [`SecWinntAuthIdentityA`].
@@ -446,7 +446,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
     }
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// The `p_auth_data` must be a valid pointer to one of the following structures:
 /// [`SecWinntAuthIdentityExW`] or [`SecWinntAuthIdentityW`].
@@ -852,6 +852,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     )?;
 
     let username = string_to_utf16(crate::sspi::scard_cert::extract_upn_from_certificate(&certificate)?);
+
     let SmartCardInfo {
         key_container_name,
         reader_name,

@@ -280,7 +280,7 @@ pub unsafe extern "system" fn SCardListReadersW(
     ErrorKind::Success.into()
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// `guids` can be null.
 /// Else, `guids` must be valid for both reads and writes for `len` many elements, and it must be properly aligned.
@@ -1103,7 +1103,7 @@ pub unsafe extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus 
     ErrorKind::Success.into()
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1242,7 +1242,7 @@ pub unsafe extern "system" fn SCardReadCacheW(
     ErrorKind::Success.into()
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1372,7 +1372,7 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     ErrorKind::Success.into()
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pb_icon` can be null. Else, it must be valid for reads for `*pb_icon` elements, and it must be properly aligned.
@@ -1485,7 +1485,7 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
     ErrorKind::Success.into()
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.

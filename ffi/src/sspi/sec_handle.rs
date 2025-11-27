@@ -830,7 +830,7 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -845,14 +845,14 @@ unsafe fn query_context_attributes_common(
     catch_panic! {
         check_null!(p_buffer);
 
-        // SAFETY:
-        // - `ph_context` is either null or convertible to a reference.
-        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
-            &mut ph_context,
-            None,
-            &CredentialsAttributes::default()
-        )});
+        let mut sspi_context_ptr = try_execute!(
+            // SAFETY:
+            // - `ph_context` is either null or convertible to a reference.
+            // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
+            unsafe {
+                p_ctxt_handle_to_sspi_context(&mut ph_context, None, &CredentialsAttributes::default())
+            }
+        );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };

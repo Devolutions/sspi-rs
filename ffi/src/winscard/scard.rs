@@ -19,7 +19,7 @@ use crate::winscard::scard_handle::{
     raw_scard_handle_to_scard_handle, scard_context_to_winscard_context, scard_handle_to_winscard, WinScardHandle,
 };
 
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `ph_card` must be a properly-aligned pointer, valid for writes.

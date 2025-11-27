@@ -6,7 +6,7 @@ use super::sec_handle::CredentialsHandle;
 /// Transforms a passed pointer to the credentials handle into a triplet of [CredentialsBuffers],
 /// security package name, and [CredentialsAttributes].
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The caller have to ensure that either the pointer is null or the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
 pub unsafe fn transform_credentials_handle<'a>(
