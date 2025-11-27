@@ -267,8 +267,10 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_dispositio
 pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> ScardStatus {
     check_handle!(handle);
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { scard_handle_to_winscard(handle) }
+    );
 
     try_execute!(scard.begin_transaction());
 
@@ -289,8 +291,10 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 pub unsafe extern "system" fn SCardEndTransaction(handle: ScardHandle, dw_disposition: u32) -> ScardStatus {
     check_handle!(handle);
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { scard_handle_to_winscard(handle) }
+    );
 
     try_execute!(scard.end_transaction(try_execute!(dw_disposition.try_into())));
 
@@ -352,12 +356,18 @@ pub unsafe extern "system" fn SCardStatusA(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
-    // SAFETY: `msz_reader_names` is valid for both reads and writes for `*pcch_reader_len` many bytes.
-    let readers_buf_type = try_execute!(unsafe { build_buf_request_type(msz_reader_names, pcch_reader_len) });
-    // SAFETY: `pb_atr` is valid for both reads and writes for `*pcb_atr_len` many bytes.
-    let atr_buf_type = try_execute!(unsafe { build_buf_request_type(pb_atr, pcb_atr_len) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { raw_scard_handle_to_scard_handle(handle) }
+    );
+    let readers_buf_type = try_execute!(
+        // SAFETY: `msz_reader_names` is valid for both reads and writes for `*pcch_reader_len` many bytes.
+        unsafe { build_buf_request_type(msz_reader_names, pcch_reader_len) }
+    );
+    let atr_buf_type = try_execute!(
+        // SAFETY: `pb_atr` is valid for both reads and writes for `*pcb_atr_len` many bytes.
+        unsafe { build_buf_request_type(pb_atr, pcb_atr_len) }
+    );
 
     let status = try_execute!(scard.status(readers_buf_type, atr_buf_type));
 
@@ -371,15 +381,19 @@ pub unsafe extern "system" fn SCardStatusA(
         *pdw_protocol = status.protocol.bits();
     }
 
-    // SAFETY:
-    // - `msz_reader_names` is valid for writes.
-    // - `pcch_reader_len` is valid for writes.
-    try_execute!(unsafe { save_out_buf(status.readers, msz_reader_names, pcch_reader_len) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_reader_names` is valid for writes.
+        // - `pcch_reader_len` is valid for writes.
+        unsafe { save_out_buf(status.readers, msz_reader_names, pcch_reader_len) }
+    );
 
-    // SAFETY:
-    // - `pb_attr` can to be null. If non-null, it is valid for writes.
-    // - `pcch_reader_len` is valid for writes.
-    try_execute!(unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) });
+    try_execute!(
+        // SAFETY:
+        // - `pb_attr` can to be null. If non-null, it is valid for writes.
+        // - `pcch_reader_len` is valid for writes.
+        unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -419,12 +433,18 @@ pub unsafe extern "system" fn SCardStatusW(
     // it's not specified in a docs, but `msclmd.dll` can invoke this function with pb_atr = 0.
     check_null!(pcb_atr_len);
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
-    // SAFETY: `msz_reader_names` is valid for both reads and writes for `*pcch_reader_len` many bytes.
-    let readers_buf_type = try_execute!(unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) });
-    // SAFETY: `pb_atr` is valid for both reads and writes for `*pcb_atr_len` many bytes.
-    let atr_buf_type = try_execute!(unsafe { build_buf_request_type(pb_atr, pcb_atr_len) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { raw_scard_handle_to_scard_handle(handle) }
+    );
+    let readers_buf_type = try_execute!(
+        // SAFETY: `msz_reader_names` is valid for both reads and writes for `*pcch_reader_len` many bytes.
+        unsafe { build_buf_request_type_wide(msz_reader_names, pcch_reader_len) }
+    );
+    let atr_buf_type = try_execute!(
+        // SAFETY: `pb_atr` is valid for both reads and writes for `*pcb_atr_len` many bytes.
+        unsafe { build_buf_request_type(pb_atr, pcb_atr_len) }
+    );
 
     let status = try_execute!(scard.status_wide(readers_buf_type, atr_buf_type));
 
@@ -438,15 +458,19 @@ pub unsafe extern "system" fn SCardStatusW(
         *pdw_protocol = status.protocol.bits();
     }
 
-    // SAFETY:
-    // - `msz_reader_names` is valid for writes.
-    // - `pcch_reader_len` is valid for writes.
-    try_execute!(unsafe { save_out_buf_wide(status.readers, msz_reader_names, pcch_reader_len) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_reader_names` is valid for writes.
+        // - `pcch_reader_len` is valid for writes.
+        unsafe { save_out_buf_wide(status.readers, msz_reader_names, pcch_reader_len) }
+    );
 
-    // SAFETY:
-    // - `pb_attr` can to be null. If non-null, it is valid for writes.
-    // - `pcch_reader_len` is valid for writes.
-    try_execute!(unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) });
+    try_execute!(
+        // SAFETY:
+        // - `pb_attr` can to be null. If non-null, it is valid for writes.
+        // - `pcch_reader_len` is valid for writes.
+        unsafe { save_out_buf(status.atr, pb_atr, pcb_atr_len) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -481,8 +505,10 @@ pub unsafe extern "system" fn SCardTransmit(
     check_null!(pb_send_buffer);
     check_null!(pcb_recv_length);
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { scard_handle_to_winscard(handle) }
+    );
 
     // SAFETY: The `pb_send_buffer` parameter cannot be null (checked above).
     let input_apdu = unsafe {
@@ -638,20 +664,26 @@ pub unsafe extern "system" fn SCardGetAttrib(
         format!("invalid attribute id: {}", dw_attr_id)
     )));
 
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { raw_scard_handle_to_scard_handle(handle) });
-    // SAFETY:
-    // - `pb_attr` can be null.
-    // - If `pb_attr` is non-null, it is valid for both reads and writes for `*pcb_atr_len` many bytes.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(pb_attr, pcb_attr_len) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { raw_scard_handle_to_scard_handle(handle) }
+    );
+    let buffer_type = try_execute!(
+        // SAFETY:
+        // - `pb_attr` can be null.
+        // - If `pb_attr` is non-null, it is valid for both reads and writes for `*pcb_atr_len` many bytes.
+        unsafe { build_buf_request_type(pb_attr, pcb_attr_len) }
+    );
 
     let out_buf = try_execute!(scard.get_attribute(attr_id, buffer_type));
 
-    // SAFETY:
-    // - `pb_attr` can be null.
-    // - If `pb_attr` is non-null, it is valid for writes.
-    // - `pcb_attr_len` is valid for writes.
-    try_execute!(unsafe { save_out_buf(out_buf, pb_attr, pcb_attr_len) });
+    try_execute!(
+        // SAFETY:
+        // - `pb_attr` can be null.
+        // - If `pb_attr` is non-null, it is valid for writes.
+        // - `pcb_attr_len` is valid for writes.
+        unsafe { save_out_buf(out_buf, pb_attr, pcb_attr_len) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -684,8 +716,10 @@ pub unsafe extern "system" fn SCardSetAttrib(
         ErrorKind::InvalidParameter,
         format!("Invalid attribute id: {}", dw_attr_id)
     )));
-    // SAFETY: `handle` is a valid raw scard context handle.
-    let scard = try_execute!(unsafe { scard_handle_to_winscard(handle) });
+    let scard = try_execute!(
+        // SAFETY: `handle` is a valid raw scard context handle.
+        unsafe { scard_handle_to_winscard(handle) }
+    );
 
     try_execute!(scard.set_attribute(attr_id, attr_data));
 

@@ -224,19 +224,25 @@ pub unsafe extern "system" fn SCardListReadersA(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_readers, pcch_readers) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
+    let buffer_type = try_execute!(
+        // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
+        unsafe { build_buf_request_type(msz_readers, pcch_readers) }
+    );
 
     let out_buf = try_execute!(context.list_readers(buffer_type));
 
-    // SAFETY:
-    // - `msz_readers` is valid for writes.
-    // - `pcch_readers` is valid for writes.
-    try_execute!(unsafe { save_out_buf(out_buf, msz_readers, pcch_readers) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_readers` is valid for writes.
+        // - `pcch_readers` is valid for writes.
+        unsafe { save_out_buf(out_buf, msz_readers, pcch_readers) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -263,19 +269,25 @@ pub unsafe extern "system" fn SCardListReadersW(
     check_null!(msz_readers);
     check_null!(pcch_readers);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_readers, pcch_readers) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
+    let buffer_type = try_execute!(
+        // SAFETY: `msz_readers` is valid for both reads and writes for `*pcch_readers` many bytes.
+        unsafe { build_buf_request_type_wide(msz_readers, pcch_readers) }
+    );
 
     let out_buf = try_execute!(context.list_readers_wide(buffer_type));
 
-    // SAFETY:
-    // - `msz_readers` is valid for writes.
-    // - `pcch_readers` is valid for writes.
-    try_execute!(unsafe { save_out_buf_wide(out_buf, msz_readers, pcch_readers) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_readers` is valid for writes.
+        // - `pcch_readers` is valid for writes.
+        unsafe { save_out_buf_wide(out_buf, msz_readers, pcch_readers) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -329,12 +341,16 @@ pub unsafe extern "system" fn SCardListCardsA(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(msz_cards, pcch_cards) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
+    let buffer_type = try_execute!(
+        // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
+        unsafe { build_buf_request_type(msz_cards, pcch_cards) }
+    );
     let atr = if pb_atr.is_null() {
         None
     } else {
@@ -352,10 +368,12 @@ pub unsafe extern "system" fn SCardListCardsA(
 
     let out_buf = try_execute!(context.list_cards(atr, required_interfaces.as_deref(), buffer_type));
 
-    // SAFETY:
-    // - `msz_cards` is valid for writes.
-    // - `pcch_cards` is valid for writes.
-    try_execute!(unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_cards` is valid for writes.
+        // - `pcch_cards` is valid for writes.
+        unsafe { save_out_buf(out_buf, msz_cards, pcch_cards) }
+    );
 
     ErrorKind::UnsupportedFeature.into()
 }
@@ -389,12 +407,16 @@ pub unsafe extern "system" fn SCardListCardsW(
     check_null!(msz_cards);
     check_null!(pcch_cards);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
-    // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(msz_cards, pcch_cards) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
+    let buffer_type = try_execute!(
+        // SAFETY: `msz_cards` is valid for both reads and writes for `*pcch_cards` many elements.
+        unsafe { build_buf_request_type_wide(msz_cards, pcch_cards) }
+    );
     let atr = if pb_atr.is_null() {
         None
     } else {
@@ -412,10 +434,12 @@ pub unsafe extern "system" fn SCardListCardsW(
 
     let out_buf = try_execute!(context.list_cards_wide(atr, required_interfaces.as_deref(), buffer_type));
 
-    // SAFETY:
-    // - `msz_cards` is valid for writes.
-    // - `pcch_cards` is valid for writes.
-    try_execute!(unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) });
+    try_execute!(
+        // SAFETY:
+        // - `msz_cards` is valid for writes.
+        // - `pcch_cards` is valid for writes.
+        unsafe { save_out_buf_wide(out_buf, msz_cards, pcch_cards) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -501,24 +525,30 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
         ErrorKind::InvalidParameter
     );
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
+    let context_handle = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
 
     let context = context_handle.scard_context();
     let provider_name =
         try_execute!(context.get_card_type_provider_name(card_name, try_execute!(dw_provide_id.try_into())))
             .to_string();
 
-    // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type(szProvider, pcch_provider) });
+    let buffer_type = try_execute!(
+        // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
+        unsafe { build_buf_request_type(szProvider, pcch_provider) }
+    );
     let out_buf = try_execute!(context_handle.write_to_out_buf(provider_name.as_bytes(), buffer_type));
 
-    // SAFETY:
-    // - `szProvider` is valid for writes.
-    // - `pcch_provider` is valid for writes.
-    try_execute!(unsafe { save_out_buf(out_buf, szProvider, pcch_provider) });
+    try_execute!(
+        // SAFETY:
+        // - `szProvider` is valid for writes.
+        // - `pcch_provider` is valid for writes.
+        unsafe { save_out_buf(out_buf, szProvider, pcch_provider) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -555,24 +585,30 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
     let card_name = unsafe { c_w_str_to_string(sz_card_name) };
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context_handle = try_execute!(unsafe { raw_scard_context_handle_to_scard_context_handle(context) });
+    let context_handle = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { raw_scard_context_handle_to_scard_context_handle(context) }
+    );
 
     let context = context_handle.scard_context();
     let provider_name =
         try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())));
     let wide_provider_name = str_encode_utf16(provider_name.as_ref());
 
-    // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
-    let buffer_type = try_execute!(unsafe { build_buf_request_type_wide(szProvider, pcch_provider) });
+    let buffer_type = try_execute!(
+        // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
+        unsafe { build_buf_request_type_wide(szProvider, pcch_provider) }
+    );
     let out_buf = try_execute!(context_handle.write_to_out_buf(&wide_provider_name, buffer_type));
 
-    // SAFETY:
-    // - `szProvider` is valid for writes.
-    // - `pcch_provider` is valid for writes.
-    try_execute!(unsafe { save_out_buf_wide(out_buf, szProvider, pcch_provider) });
+    try_execute!(
+        // SAFETY:
+        // - `szProvider` is valid for writes.
+        // - `pcch_provider` is valid for writes.
+        unsafe { save_out_buf_wide(out_buf, szProvider, pcch_provider) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -969,10 +1005,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { scard_context_to_winscard_context(context) }
+    );
 
     // SAFETY:
     // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
@@ -1037,10 +1075,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
     check_handle!(context);
     check_null!(rg_reader_states);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { scard_context_to_winscard_context(context) }
+    );
 
     // SAFETY:
     // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
@@ -1094,10 +1134,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 pub unsafe extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
     check_handle!(context);
 
-    // SAFETY:
-    // - `context` is guaranteed to be non-zero due to the prior check.
-    // - `context` is a valid raw scard context handle.
-    let context = try_execute!(unsafe { scard_context_to_winscard_context(context) });
+    let context = try_execute!(
+        // SAFETY:
+        // - `context` is guaranteed to be non-zero due to the prior check.
+        // - `context` is a valid raw scard context handle.
+        unsafe { scard_context_to_winscard_context(context) }
+    );
     try_execute!(context.cancel());
 
     ErrorKind::Success.into()
@@ -1181,12 +1223,14 @@ pub unsafe extern "system" fn SCardReadCacheA(
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY:
-    // - `context` is a valid raw scard context handle.
-    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
-    // - `data` is a valid for both reads and writes for `*data_len` elements, and it is properly-aligned.
-    // - `data_len` is valid for both reads and writes, and it is properly-aligned.
-    try_execute!(unsafe { read_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
+    try_execute!(
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+        // - `data` is a valid for both reads and writes for `*data_len` elements, and it is properly-aligned.
+        // - `data_len` is valid for both reads and writes, and it is properly-aligned.
+        unsafe { read_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -1316,11 +1360,13 @@ pub unsafe extern "system" fn SCardWriteCacheA(
         unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
         ErrorKind::InvalidParameter
     );
-    // SAFETY:
-    // - `context` is a valid raw scard context handle.
-    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
-    // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
-    try_execute!(unsafe { write_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) });
+    try_execute!(
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+        // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
+        unsafe { write_cache(context, card_identifier, freshness_counter, lookup_name, data, data_len,) }
+    );
 
     ErrorKind::Success.into()
 }
@@ -1354,20 +1400,22 @@ pub unsafe extern "system" fn SCardWriteCacheW(
     // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
     // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
     let lookup_name = unsafe { c_w_str_to_string(lookup_name) };
-    // SAFETY:
-    // - `context` is a valid raw scard context handle.
-    // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
-    // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
-    try_execute!(unsafe {
-        write_cache(
-            context,
-            card_identifier,
-            freshness_counter,
-            &lookup_name,
-            data,
-            data_len,
-        )
-    });
+    try_execute!(
+        // SAFETY:
+        // - `context` is a valid raw scard context handle.
+        // - `card_identifier` is a pointer to a valid `Uuid` structure, and it is properly-aligned.
+        // - `data` us a valid for reads for `data_len` elements, and it is properly-aligned.
+        unsafe {
+            write_cache(
+                context,
+                card_identifier,
+                freshness_counter,
+                &lookup_name,
+                data,
+                data_len,
+            )
+        }
+    );
 
     ErrorKind::Success.into()
 }
