@@ -405,11 +405,14 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoA(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        // SAFETY:
-        // - `p_package_name` is guaranteed to be non-null due to the prior check.
-        // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
-        // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
-        let pkg_name = try_execute!(unsafe { CStr::from_ptr(p_package_name) }.to_str(), ErrorKind::InvalidParameter);
+        let pkg_name = try_execute!(
+            // SAFETY:
+            // - `p_package_name` is guaranteed to be non-null due to the prior check.
+            // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
+            // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { CStr::from_ptr(p_package_name) }.to_str(),
+            ErrorKind::InvalidParameter
+        );
 
         let pkg_info: RawSecPkgInfoA = try_execute!(enumerate_security_packages())
             .into_iter()

@@ -402,8 +402,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
 
         let mut package_list: Option<String> = None;
 
-        // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
-        let credentials = try_execute!(unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) });
+        let credentials = try_execute!(
+            // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
+            unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) }
+        );
 
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
@@ -472,8 +474,10 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
 
         let mut package_list: Option<String> = None;
 
-        // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
-        let credentials = try_execute!(unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) });
+        let credentials = try_execute!(
+            // SAFETY: `p_auth_data` is non-null pointer to a valid credentials structure.
+            unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) }
+        );
 
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
@@ -597,14 +601,16 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
             None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
         };
 
-        // SAFETY:
-        // - `ph_context` is either null or convertible to a reference.
-        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
-            &mut ph_context,
-            Some(security_package_name),
-            attributes
-        )});
+        let mut sspi_context_ptr = try_execute!(
+            // SAFETY:
+            // - `ph_context` is either null or convertible to a reference.
+            // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
+            unsafe { p_ctxt_handle_to_sspi_context(
+                &mut ph_context,
+                Some(security_package_name),
+                attributes
+            )}
+        );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
@@ -749,14 +755,16 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             None => return ErrorKind::InvalidHandle.to_u32().unwrap(),
         };
 
-        // SAFETY:
-        // - `ph_context` is either null or convertible to a reference.
-        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
-            &mut ph_context,
-            Some(security_package_name),
-            attributes,
-        )});
+        let mut sspi_context_ptr = try_execute!(
+            // SAFETY:
+            // - `ph_context` is either null or convertible to a reference.
+            // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
+            unsafe { p_ctxt_handle_to_sspi_context(
+                &mut ph_context,
+                Some(security_package_name),
+                attributes,
+            )}
+        );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
@@ -791,12 +799,14 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         let context_requirements = ClientRequestFlags::from_bits_retain(f_context_req);
         let allocate = context_requirements.contains(ClientRequestFlags::ALLOCATE_MEMORY);
 
-        // SAFETY:
-        // - `p_buffers` is a valid pointer to an array of security buffers.
-        // - The memory region `p_buffers` points to is valid for writes of `from_buffers.len()` elements.
-        // - For each element in the `p_buffers` array, the `pv_buffer` pointer points to a valid memory,
-        //   that is valid for writes of `cb_buffer` bytes.
-        try_execute!(unsafe { copy_to_c_sec_buffer(p_output_buffers, &output_tokens, allocate) });
+        try_execute!(
+            // SAFETY:
+            // - `p_buffers` is a valid pointer to an array of security buffers.
+            // - The memory region `p_buffers` points to is valid for writes of `from_buffers.len()` elements.
+            // - For each element in the `p_buffers` array, the `pv_buffer` pointer points to a valid memory,
+            //   that is valid for writes of `cb_buffer` bytes.
+            unsafe { copy_to_c_sec_buffer(p_output_buffers, &output_tokens, allocate) }
+        );
 
         // SAFETY: `ph_new_context` is convertible to a reference.
         let new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context is non-null");
@@ -830,7 +840,7 @@ pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
     PTimeStamp,
 ) -> SecurityStatus;
 
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -845,14 +855,14 @@ unsafe fn query_context_attributes_common(
     catch_panic! {
         check_null!(p_buffer);
 
-        // SAFETY:
-        // - `ph_context` is either null or convertible to a reference.
-        // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
-        let mut sspi_context_ptr = try_execute!(unsafe { p_ctxt_handle_to_sspi_context(
-            &mut ph_context,
-            None,
-            &CredentialsAttributes::default()
-        )});
+        let mut sspi_context_ptr = try_execute!(
+            // SAFETY:
+            // - `ph_context` is either null or convertible to a reference.
+            // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
+            unsafe {
+                p_ctxt_handle_to_sspi_context(&mut ph_context, None, &CredentialsAttributes::default())
+            }
+        );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
@@ -1237,30 +1247,38 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
 
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
             let workstation =
-                // SAFETY:
-                // - `p_buffer` is guaranteed to be non-null due to the prior check.
-                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                try_execute!(unsafe { CStr::from_ptr(p_buffer as *const _) }.to_str(), ErrorKind::InvalidParameter).to_owned();
+                try_execute!(
+                    // SAFETY:
+                    // - `p_buffer` is guaranteed to be non-null due to the prior check.
+                    // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
+                    // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
+                    unsafe { CStr::from_ptr(p_buffer as *const _) }.to_str(),
+                    ErrorKind::InvalidParameter
+                ).to_owned();
 
             credentials_handle.attributes.workstation = Some(workstation);
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             credentials_handle.attributes.kdc_proxy_settings =
-                // SAFETY:
-                // - `p_buffer` is not-null.
-                // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
-                Some(try_execute!(unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }));
+                Some(try_execute!(
+                    // SAFETY:
+                    // - `p_buffer` is not-null.
+                    // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
+                    unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }
+                ));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlA>();
-            // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-            // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-            let kdc_url = try_execute!(unsafe { CStr::from_ptr((*cred_attr).kdc_url) }.to_str(), ErrorKind::InvalidParameter);
+            let kdc_url = try_execute!(
+                // SAFETY:
+                // - `p_buffer` is guaranteed to be non-null due to the prior check.
+                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
+                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { CStr::from_ptr((*cred_attr).kdc_url) }.to_str(),
+                ErrorKind::InvalidParameter
+            );
             credentials_handle.attributes.kdc_url = Some(kdc_url.to_string());
             0
         } else {
@@ -1322,10 +1340,12 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS {
             credentials_handle.attributes.kdc_proxy_settings =
-                // SAFETY:
-                // - `p_buffer` is not-null.
-                // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
-                Some(try_execute!(unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }));
+                Some(try_execute!(
+                    // SAFETY:
+                    // - `p_buffer` is not-null.
+                    // - `p_buffer` points to a valid `SecPkgCredentialsKdcProxySettingsW` structure.
+                    unsafe { extract_kdc_proxy_settings(NonNull::new(p_buffer).expect("p_buffer should not be null")) }
+                ));
 
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
@@ -1334,7 +1354,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
             // - `p_buffer` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
             // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-            let kdc_url = unsafe { c_w_str_to_string((*cred_attr).kdc_url as *const u16) };
+            let kdc_url = unsafe { c_w_str_to_string((*cred_attr).kdc_url.cast_const()) };
             credentials_handle.attributes.kdc_url = Some(kdc_url);
 
             0

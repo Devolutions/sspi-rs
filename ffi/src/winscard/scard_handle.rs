@@ -433,7 +433,7 @@ impl WinScardHandle {
 
 /// Tries to convert the raw scard handle to the `&mut dyn WinScard`.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `handle` must be a valid raw scard handle.
 pub(super) unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinScardResult<&'a mut dyn WinScard> {
@@ -456,7 +456,7 @@ pub(super) unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinSca
 
 /// Tries to convert the raw scard handle to the [&mut WinScardHandle].
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `h_card` must be a valid raw scard handle.
 pub(super) unsafe fn raw_scard_handle_to_scard_handle<'a>(
@@ -478,7 +478,7 @@ pub(super) unsafe fn raw_scard_handle_to_scard_handle<'a>(
 
 /// Tries to convert the raw scard context handle to the [&mut WinScardContextHandle].
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `h_context` must be a valid raw scard context handle.
 pub(super) unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
@@ -500,7 +500,7 @@ pub(super) unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
 
 /// Tries to convert the raw scard context handle to the `&mut dyn WinScardContext`.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `handle` must be a valid raw scard context handle.
 pub(super) unsafe fn scard_context_to_winscard_context<'a>(
@@ -528,7 +528,7 @@ pub(super) unsafe fn scard_context_to_winscard_context<'a>(
 
 /// Copies data from the Rust [IoRequest] to the C `SCARD_IO_REQUEST` ([LpScardIoRequest]).
 ///
-/// # Safety:
+/// # Safety
 ///
 /// `scard_io_request` must be a pointer to a valid `ScardIoRequest` structure.
 pub(super) unsafe fn copy_io_request_to_scard_io_request(
