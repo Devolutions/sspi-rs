@@ -7,7 +7,6 @@ use std::io::{self, Read};
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
 use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
-use windows::core::HRESULT;
 
 use super::CredSspMode;
 use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
@@ -540,10 +539,11 @@ impl fmt::Display for NStatusCode {
     }
 }
 
-impl TryFrom<HRESULT> for NStatusCode {
+#[cfg(target_os = "windows")]
+impl TryFrom<windows::core::HRESULT> for NStatusCode {
     type Error = &'static str;
 
-    fn try_from(hresult: HRESULT) -> Result<Self, Self::Error> {
+    fn try_from(hresult: windows::core::HRESULT) -> Result<Self, Self::Error> {
         // More info: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/0642cb2f-2075-4469-918c-4441e69c548a
         const NSTATUS_BIT: i32 = 0x1000_0000;
 
