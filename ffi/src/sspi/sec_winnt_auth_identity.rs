@@ -7,7 +7,6 @@ use sspi::{string_to_utf16, AuthIdentityBuffers, CredentialsBuffers, Error, Erro
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use windows::core::PCWSTR;
 #[cfg(all(feature = "scard", target_os = "windows"))]
 use windows::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
@@ -200,6 +199,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     use std::ptr::null_mut;
 
     use sspi::string_to_utf16;
+    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{ERROR_SUCCESS, HWND};
     use windows::Win32::Graphics::Gdi::HBITMAP;
     use windows::Win32::Security::Credentials::CREDUIWIN_FLAGS;
@@ -527,8 +527,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     let mut username = user.clone();
     username.extend_from_slice(&[0, 0]);
     #[cfg(all(feature = "scard", target_os = "windows"))]
-    // SAFETY: This function is safe to call because argument is validated.
-    if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(PCWSTR::from_raw(username.as_ptr().cast())) }.into() {
+    if !user.is_empty()
+        // SAFETY: This function is safe to call because argument is validated.
+        && unsafe { CredIsMarshaledCredentialW(windows::core::PCWSTR::from_raw(username.as_ptr().cast())) }.into()
+    {
         return handle_smart_card_creds(user, password);
     }
 
@@ -840,6 +842,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
     use sspi::credssp::NStatusCode;
     use sspi::string_to_utf16;
+    use windows::core::PCWSTR;
     use windows::Win32::Security::Credentials::{
         CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE,
     };
@@ -1034,7 +1037,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     #[cfg(feature = "scard")]
     if !username.is_empty()
         // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
-        && unsafe { CredIsMarshaledCredentialW(PCWSTR::from_raw(username.as_ptr().cast())) }.into()
+        && unsafe { CredIsMarshaledCredentialW(windows::core::PCWSTR::from_raw(username.as_ptr().cast())) }.into()
     {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.

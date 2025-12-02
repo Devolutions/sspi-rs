@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
-use std::ptr::with_exposed_provenance_mut;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::{LazyLock, Mutex};
 
@@ -912,7 +911,11 @@ pub extern "system" fn SCardReleaseStartedEvent() {
             // because we are always in a ready (signaled) state and have only one handle for the entire process.
             //
             // SAFETY: The `START_EVENT_HANDLE` is lazily initialized.
-            let result = unsafe { CloseHandle(HANDLE(with_exposed_provenance_mut(*START_EVENT_HANDLE as usize))) };
+            let result = unsafe {
+                CloseHandle(HANDLE(std::ptr::with_exposed_provenance_mut(
+                    *START_EVENT_HANDLE as usize,
+                )))
+            };
 
             if let Err(error) = result {
                 error!(?error, "Cannot close the event handle");
