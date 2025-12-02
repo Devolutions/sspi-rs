@@ -211,7 +211,7 @@ impl Negotiate {
                     "ntlm" => ntlm = enabled,
                     "kerberos" => kerberos = enabled,
                     "pku2u" => pku2u = enabled,
-                    _ => eprintln!("unexpected package name: {}", &package_name),
+                    _ => warn!("unexpected package name: {}", &package_name),
                 }
             }
         }
