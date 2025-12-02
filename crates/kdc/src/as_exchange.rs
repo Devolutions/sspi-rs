@@ -15,14 +15,15 @@ use picky_krb::constants::types::{
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{EncryptedData, EtypeInfo2Entry, KerberosStringAsn1, PaData, PaEncTsEnc};
 use picky_krb::messages::{AsRep, AsReq, KdcRep, KdcReq, KdcReqBody};
-use sspi::kerberos::TGT_SERVICE_NAME;
-use sspi::{KERBEROS_VERSION, Secret};
 use time::OffsetDateTime;
+use zeroize::Zeroizing;
 
 use crate::config::{DomainUser, KerberosServer};
 use crate::error::KdcError;
 use crate::ticket::{MakeTicketParams, RepEncPartParams, make_rep_enc_part, make_ticket};
-use crate::{find_user_credentials, validate_request_from_and_till, validate_request_sname};
+use crate::{
+    KERBEROS_VERSION, TGT_SERVICE_NAME, find_user_credentials, validate_request_from_and_till, validate_request_sname,
+};
 
 /// Validates AS-REQ PA-DATAs.
 ///
@@ -32,7 +33,7 @@ fn validate_pa_data_timestamp(
     domain_user: &DomainUser,
     max_time_skew: u64,
     pa_datas: &[PaData],
-) -> Result<Secret<Vec<u8>>, KdcError> {
+) -> Result<Zeroizing<Vec<u8>>, KdcError> {
     let pa_data = pa_datas
         .iter()
         .find_map(|pa_data| {
@@ -52,7 +53,7 @@ fn validate_pa_data_timestamp(
     let cipher = CipherSuite::try_from(encrypted_timestamp.etype.0.0.as_slice())
         .map_err(|_| KdcError::PreAuthFailed("invalid etype in PA_ENC_TIMESTAMP"))?
         .cipher();
-    let key = Secret::new(
+    let key = Zeroizing::new(
         cipher
             .generate_key_from_password(domain_user.password.as_bytes(), domain_user.salt.as_bytes())
             .map_err(|_| KdcError::InternalError("failed to generate user's key"))?,

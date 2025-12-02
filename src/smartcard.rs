@@ -15,7 +15,6 @@ use cryptoki::object::{Attribute, KeyType, ObjectClass};
 use cryptoki::session::UserType;
 #[cfg(not(target_arch = "wasm32"))]
 use cryptoki::types::AuthPin;
-
 use picky::key::PrivateKey;
 use winscard::SmartCard as PivSmartCard;
 

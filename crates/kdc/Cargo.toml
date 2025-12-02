@@ -2,6 +2,7 @@
 name = "kdc"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 picky-asn1 = { workspace = true, features = ["time_conversion"] }
@@ -12,10 +13,10 @@ tracing.workspace = true
 time.workspace = true
 serde.workspace = true
 
-sspi = { path = "../..", version = "0.18" }
-
 thiserror = "2.0"
 argon2 = { version = "0.5", features = ["std"] }
+
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [lints]
 workspace = true

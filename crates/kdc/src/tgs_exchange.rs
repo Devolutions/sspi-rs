@@ -15,14 +15,12 @@ use picky_krb::data_types::{
     Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, PaData, PrincipalName, TicketInner,
 };
 use picky_krb::messages::{ApReq, ApReqInner, KdcRep, KdcReq, KdcReqBody, TgsRep, TgsReq};
-use sspi::KERBEROS_VERSION;
-use sspi::kerberos::TGT_SERVICE_NAME;
 use time::OffsetDateTime;
 
 use crate::config::KerberosServer;
 use crate::error::KdcError;
 use crate::ticket::{MakeTicketParams, RepEncPartParams, make_rep_enc_part, make_ticket};
-use crate::{validate_request_from_and_till, validate_request_sname};
+use crate::{KERBEROS_VERSION, TGT_SERVICE_NAME, validate_request_from_and_till, validate_request_sname};
 
 /// Kerberos service name for the Terminal Server.
 const TERMSRV: &str = "TERMSRV";

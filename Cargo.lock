@@ -1617,10 +1617,10 @@ dependencies = [
  "picky-asn1-x509",
  "picky-krb",
  "serde",
- "sspi",
  "thiserror 2.0.17",
  "time",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
