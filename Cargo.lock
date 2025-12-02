@@ -2991,7 +2991,6 @@ dependencies = [
  "whoami",
  "windows",
  "windows-registry",
- "windows-sys 0.60.2",
  "winscard",
  "zeroize",
 ]
@@ -3024,7 +3023,6 @@ dependencies = [
  "uuid",
  "whoami",
  "windows",
- "windows-sys 0.60.2",
  "winscard",
 ]
 

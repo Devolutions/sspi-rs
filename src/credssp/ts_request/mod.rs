@@ -7,6 +7,7 @@ use std::io::{self, Read};
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
 use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
+use windows::core::HRESULT;
 
 use super::CredSspMode;
 use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
@@ -535,6 +536,25 @@ impl fmt::Display for NStatusCode {
             write!(f, "{name} [{:#x}]", self.0)
         } else {
             write!(f, "NSTATUS code {:#x}", self.0)
+        }
+    }
+}
+
+impl TryFrom<HRESULT> for NStatusCode {
+    type Error = &'static str;
+
+    fn try_from(hresult: HRESULT) -> Result<Self, Self::Error> {
+        // More info: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/0642cb2f-2075-4469-918c-4441e69c548a
+        const NSTATUS_BIT: i32 = 0x1000_0000;
+
+        if hresult.0 & NSTATUS_BIT != 0 {
+            #[expect(
+                clippy::as_conversions,
+                reason = "casting via `as` is correct here (all we care about is bit pattern of nstatus"
+            )]
+            Ok(NStatusCode((hresult.0 & !NSTATUS_BIT) as u32))
+        } else {
+            Err("HRESULT does not represent NStatusCode")
         }
     }
 }

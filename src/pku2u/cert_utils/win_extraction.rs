@@ -1,21 +1,21 @@
-use std::ffi::c_void;
 use std::io::Read;
-use std::ptr::{null, null_mut};
 use std::slice::from_raw_parts;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::BoxedUint;
 use picky::key::PrivateKey;
 use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
-use windows_sys::Win32::Foundation;
-use windows_sys::Win32::Security::Cryptography::{
+use windows::Win32::Foundation;
+use windows::Win32::Security::Cryptography::{
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
     CryptAcquireCertificatePrivateKey, NCryptExportKey, NCryptFreeObject, BCRYPT_RSAFULLPRIVATE_BLOB,
-    BCRYPT_RSAFULLPRIVATE_MAGIC, CERT_CONTEXT, CERT_KEY_SPEC, CERT_STORE_PROV_SYSTEM_W,
-    CERT_SYSTEM_STORE_CURRENT_USER_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
-    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE,
+    BCRYPT_RSAFULLPRIVATE_MAGIC, BCRYPT_RSAKEY_BLOB_MAGIC, CERT_CONTEXT, CERT_KEY_SPEC, CERT_OPEN_STORE_FLAGS,
+    CERT_QUERY_ENCODING_TYPE, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
+    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCERTSTORE, HCRYPTPROV_LEGACY,
+    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, NCRYPT_FLAGS, NCRYPT_HANDLE, NCRYPT_KEY_HANDLE,
 };
 
+use crate::credssp::NStatusCode;
 use crate::{Error, ErrorKind, Result};
 
 /// [BCRYPT_RSAKEY_BLOB](https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_rsakey_blob)
@@ -31,7 +31,7 @@ use crate::{Error, ErrorKind, Result};
 /// ```
 #[derive(Debug)]
 struct BcryptRsaKeyBlob {
-    pub magic: u32,
+    pub magic: BCRYPT_RSAKEY_BLOB_MAGIC,
     pub bit_len: u32,
     pub public_exp: u32,
     pub modulus: u32,
@@ -42,7 +42,7 @@ struct BcryptRsaKeyBlob {
 impl BcryptRsaKeyBlob {
     pub(crate) fn from_read(mut data: impl Read) -> Result<Self> {
         Ok(Self {
-            magic: data.read_u32::<LittleEndian>()?,
+            magic: BCRYPT_RSAKEY_BLOB_MAGIC(data.read_u32::<LittleEndian>()?),
             bit_len: data.read_u32::<LittleEndian>()?,
             public_exp: data.read_u32::<LittleEndian>()?,
             modulus: data.read_u32::<LittleEndian>()?,
@@ -57,8 +57,8 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
 
     if rsa_key_blob.magic != BCRYPT_RSAFULLPRIVATE_MAGIC {
         debug!(
-            expected = BCRYPT_RSAFULLPRIVATE_MAGIC,
-            actual = rsa_key_blob.magic,
+            expected = BCRYPT_RSAFULLPRIVATE_MAGIC.0,
+            actual = rsa_key_blob.magic.0,
             "Invalid RSA key blob magic",
         );
 
@@ -154,21 +154,24 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
 unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<PrivateKey> {
     let mut private_key_handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
     let mut spec = CERT_KEY_SPEC::default();
-    let mut free = windows_sys::core::BOOL::default();
+    let mut free = windows::core::BOOL::default();
 
     let status = CryptAcquireCertificatePrivateKey(
         cert,
         CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
-        null_mut(),
+        None,
         &mut private_key_handle,
-        &mut spec,
-        &mut free,
+        Some(&mut spec),
+        Some(&mut free),
     );
 
-    if status == 0 || private_key_handle == 0 {
+    if let Err(error) = status {
+        let code = error.code();
+
         error!(
-            ?status,
-            private_key_handle, "Cannot acquire certificate private key handle",
+            code = code.0,
+            private_key_handle = private_key_handle.0,
+            "Cannot acquire certificate private key handle",
         );
 
         return Err(Error::new(
@@ -183,18 +186,19 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptexportkey
     // If pbOutput parameter is NULL, this function will place the required size in the pcbResult parameter.
     let status = NCryptExportKey(
-        private_key_handle,
-        0,
+        NCRYPT_KEY_HANDLE(private_key_handle.0),
+        None,
         BCRYPT_RSAFULLPRIVATE_BLOB,
-        null(),
-        null_mut::<u8>(),
-        0,
+        None,
+        None,
         &mut private_key_buffer_len,
-        0,
+        NCRYPT_FLAGS(0),
     );
 
-    if status != 0 {
-        NCryptFreeObject(private_key_handle);
+    if let Err(error) = status {
+        let status = error.code();
+
+        let _ = NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0));
 
         return match status {
             Foundation::NTE_BAD_TYPE => Err(Error::new(
@@ -231,19 +235,20 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     let mut private_key_blob = vec![0; private_key_buffer_len as usize];
 
     let status = NCryptExportKey(
-        private_key_handle,
-        0,
+        NCRYPT_KEY_HANDLE(private_key_handle.0),
+        None,
         BCRYPT_RSAFULLPRIVATE_BLOB,
-        null(),
-        private_key_blob.as_mut_ptr(),
-        private_key_blob.len() as _,
+        None,
+        Some(&mut private_key_blob),
         &mut private_key_buffer_len,
-        0,
+        NCRYPT_FLAGS(0),
     );
 
-    NCryptFreeObject(private_key_handle);
+    let _ = NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0));
 
-    if status != 0 {
+    if let Err(error) = status {
+        let status = error.code();
+
         return match status {
             Foundation::NTE_BAD_TYPE => Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -283,15 +288,15 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     Ok(private_key)
 }
 
-unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Certificate, PrivateKey)> {
-    let mut certificate = CertEnumCertificatesInStore(cert_store, null_mut());
+unsafe fn extract_client_p2p_certificate(cert_store: HCERTSTORE) -> Result<(Certificate, PrivateKey)> {
+    let mut certificate = CertEnumCertificatesInStore(cert_store, None);
 
     while !certificate.is_null() {
         let cert_der = from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize);
         let cert: Certificate = picky_asn1_der::from_bytes(cert_der)?;
 
         if !validate_client_p2p_certificate(&cert) {
-            let next_certificate = CertEnumCertificatesInStore(cert_store, certificate);
+            let next_certificate = CertEnumCertificatesInStore(cert_store, Some(certificate));
 
             certificate = next_certificate;
 
@@ -305,7 +310,9 @@ unsafe fn extract_client_p2p_certificate(cert_store: *mut c_void) -> Result<(Cer
 
         let private_key = export_certificate_private_key(certificate);
 
-        CertFreeCertificateContext(certificate);
+        // The function always returns nonzero.
+        // More info: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certfreecertificatecontext.
+        let _ = CertFreeCertificateContext(Some(certificate));
 
         return Ok((cert, private_key?));
     }
@@ -327,22 +334,23 @@ pub(crate) fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateK
         let my: [u16; 3] = [77, 121, 0];
         let cert_store = CertOpenStore(
             CERT_STORE_PROV_SYSTEM_W,
-            0,
-            0,
-            CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT,
-            my.as_ptr() as *const _,
+            CERT_QUERY_ENCODING_TYPE(0),
+            Some(HCRYPTPROV_LEGACY(0)),
+            CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT),
+            Some(my.as_ptr() as *const _),
         );
 
-        if cert_store.is_null() {
-            return Err(Error::new(
-                ErrorKind::InternalError,
-                "Cannot initialize certificate store: permission denied",
-            ));
-        }
+        let cert_store = cert_store.map_err(|error| Error {
+            error_type: ErrorKind::InternalError,
+            description: "Cannot initialize certificate store".into(),
+            nstatus: NStatusCode::try_from(error.code()).ok(),
+        })?;
 
         let cert_and_key = extract_client_p2p_certificate(cert_store);
 
-        CertCloseStore(cert_store, 0);
+        // The function always returns nonzero.
+        // More info: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certfreecertificatecontext.
+        let _ = CertCloseStore(Some(cert_store), 0);
 
         cert_and_key
     }

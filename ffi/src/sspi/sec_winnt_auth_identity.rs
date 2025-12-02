@@ -1,6 +1,4 @@
 use std::ptr::copy_nonoverlapping;
-#[cfg(windows)]
-use std::ptr::null_mut;
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
@@ -9,10 +7,11 @@ use sspi::{string_to_utf16, AuthIdentityBuffers, CredentialsBuffers, Error, Erro
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
+use windows::core::PCWSTR;
 #[cfg(all(feature = "scard", target_os = "windows"))]
-use windows_sys::Win32::Security::Credentials::CredIsMarshaledCredentialW;
+use windows::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
-use windows_sys::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
+use windows::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{credentials_str_into_bytes, into_raw_ptr, w_str_len};
@@ -198,8 +197,12 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 /// * The user must ensure that `p_auth_data` must be non-null and point to the valid [CredSspCred] structure.
 #[cfg(feature = "tsssp")]
 unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    use std::ptr::null_mut;
+
     use sspi::string_to_utf16;
-    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::Foundation::{ERROR_SUCCESS, HWND};
+    use windows::Win32::Graphics::Gdi::HBITMAP;
+    use windows::Win32::Security::Credentials::CREDUIWIN_FLAGS;
 
     // SAFETY:
     // - `p_auth_data` is non-null due to the function's safety requirement.
@@ -221,10 +224,10 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             let caption = string_to_utf16("Enter credentials\0");
             let cred_ui_info = CREDUI_INFOW {
                 cbSize: size_of::<CREDUI_INFOW>().try_into().unwrap(),
-                hwndParent: null_mut(),
-                pszMessageText: message.as_ptr() as *const _,
-                pszCaptionText: caption.as_ptr() as *const _,
-                hbmBanner: null_mut(),
+                hwndParent: HWND::default(),
+                pszMessageText: PCWSTR::from_raw(message.as_ptr().cast()),
+                pszCaptionText: PCWSTR::from_raw(caption.as_ptr().cast()),
+                hbmBanner: HBITMAP::default(),
             };
             let mut auth_package_count = 0;
             let mut out_buffer_size = 1024;
@@ -235,19 +238,19 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             // - All other (null and zero) values are allowed according to the function documentation.
             let result = unsafe {
                 CredUIPromptForWindowsCredentialsW(
-                    &cred_ui_info,
+                    Some(&cred_ui_info),
                     0,
                     &mut auth_package_count,
-                    null_mut(),
+                    None,
                     0,
                     &mut out_buffer,
                     &mut out_buffer_size,
-                    null_mut(),
-                    0,
+                    None,
+                    CREDUIWIN_FLAGS(0),
                 )
             };
 
-            if result != ERROR_SUCCESS {
+            if result != ERROR_SUCCESS.0 {
                 return Err(Error::new(
                     ErrorKind::NoCredentials,
                     format!("Can not get user credentials: {:0x?}", result),
@@ -525,7 +528,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     username.extend_from_slice(&[0, 0]);
     #[cfg(all(feature = "scard", target_os = "windows"))]
     // SAFETY: This function is safe to call because argument is validated.
-    if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
+    if !user.is_empty() && unsafe { CredIsMarshaledCredentialW(PCWSTR::from_raw(username.as_ptr().cast())) }.into() {
         return handle_smart_card_creds(user, password);
     }
 
@@ -709,7 +712,10 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
 #[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
-    use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
+    use sspi::credssp::NStatusCode;
+    use windows::core::{HRESULT, PSTR};
+    use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
+    use windows::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
 
     if p_auth_data.is_null() {
         return Err(Error::new(
@@ -726,20 +732,37 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     let mut password_len = 0;
 
     // The first call is just to query the username, domain, and password lengths.
-    //
     // SAFETY: FFI call with no outstanding preconditions.
-    unsafe {
+    let result = unsafe {
         CredUnPackAuthenticationBufferA(
             CRED_PACK_PROTECTED_CREDENTIALS,
             p_auth_data,
             auth_data_len,
-            null_mut() as *mut _,
+            None,
             &mut username_len,
-            null_mut() as *mut _,
-            &mut domain_len,
-            null_mut() as *mut _,
+            None,
+            Some(&mut domain_len),
+            None,
             &mut password_len,
         )
+    };
+
+    match result {
+        Ok(()) => {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "CredUnPackAuthenticationBufferA succeded when expected to fail".into(),
+                nstatus: None,
+            });
+        }
+        Err(error) if error.code() != HRESULT::from_win32(ERROR_INSUFFICIENT_BUFFER.0) => {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "CredUnPackAuthenticationBufferA failed with wrong error code".into(),
+                nstatus: NStatusCode::try_from(error.code()).ok(),
+            });
+        }
+        Err(_) => (),
     };
 
     let mut username = vec![0_u8; username_len as usize];
@@ -754,20 +777,21 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
             CRED_PACK_PROTECTED_CREDENTIALS,
             p_auth_data,
             auth_data_len,
-            username.as_mut_ptr() as *mut _,
+            Some(PSTR::from_raw(username.as_mut_ptr().cast())),
             &mut username_len,
-            domain.as_mut_ptr() as *mut _,
-            &mut domain_len,
-            password.as_mut().as_mut_ptr() as *mut _,
+            Some(PSTR::from_raw(domain.as_mut_ptr().cast())),
+            Some(&mut domain_len),
+            Some(PSTR::from_raw(password.as_mut().as_mut_ptr().cast())),
             &mut password_len,
         )
     };
 
-    if result != 1 {
-        return Err(Error::new(
-            ErrorKind::WrongCredentialHandle,
-            "Cannot unpack credentials",
-        ));
+    if let Err(error) = result {
+        return Err(Error {
+            error_type: ErrorKind::WrongCredentialHandle,
+            description: "cannot unpack credentials".into(),
+            nstatus: NStatusCode::try_from(error.code()).ok(),
+        });
     }
 
     let mut auth_identity_buffers = AuthIdentityBuffers::default();
@@ -814,12 +838,15 @@ pub fn unpack_sec_winnt_auth_identity_ex2_w(_p_auth_data: *const c_void) -> Resu
 fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
+    use sspi::credssp::NStatusCode;
     use sspi::string_to_utf16;
-    use windows_sys::Win32::Security::Credentials::{CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO};
+    use windows::Win32::Security::Credentials::{
+        CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE,
+    };
 
     use crate::sspi::win_scard_cert::{extract_certificate_by_thumbprint, finalize_smart_card_info, SmartCardInfo};
 
-    let mut cred_type = 0;
+    let mut cred_type = CRED_MARSHAL_TYPE(0);
     let mut credential = null_mut();
 
     // Win API expects the C string as the first input parameter.
@@ -827,11 +854,20 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     username.extend_from_slice(&[0, 0]);
 
     // SAFETY: `username` is a null-terminated C String because we've extended it with null-terminator above.
-    if unsafe { CredUnmarshalCredentialW(username.as_ptr() as *const _, &mut cred_type, &mut credential) } == 0 {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "Cannot unmarshal smart card credentials",
-        ));
+    let result = unsafe {
+        CredUnmarshalCredentialW(
+            PCWSTR::from_raw(username.as_ptr().cast()),
+            &mut cred_type,
+            &mut credential,
+        )
+    };
+
+    if let Err(error) = result {
+        return Err(Error {
+            error_type: ErrorKind::NoCredentials,
+            description: "cannot unmarshal smart card credentials".into(),
+            nstatus: NStatusCode::try_from(error.code()).ok(),
+        });
     }
 
     if cred_type != CertCredential {
@@ -914,9 +950,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     p_auth_data: *const c_void,
     auth_data_len: u32,
 ) -> Result<CredentialsBuffers> {
-    use std::ptr::null_mut;
-
-    use windows_sys::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
+    use sspi::credssp::NStatusCode;
+    use windows::core::{HRESULT, PWSTR};
+    use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
+    use windows::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
 
     use super::utils::raw_wide_str_trim_nulls;
 
@@ -935,18 +972,36 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // Note: all null values are allowed by the documentation.
     //
     // SAFETY: `p_auth_data` is guaranteed to be non-null due to the prior check.
-    unsafe {
+    let result = unsafe {
         CredUnPackAuthenticationBufferW(
             CRED_PACK_PROTECTED_CREDENTIALS,
             p_auth_data,
             auth_data_len,
-            null_mut() as *mut _,
+            None,
             &mut username_len,
-            null_mut() as *mut _,
-            &mut domain_len,
-            null_mut() as *mut _,
+            None,
+            Some(&mut domain_len),
+            None,
             &mut password_len,
         )
+    };
+
+    match result {
+        Ok(()) => {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "CredUnPackAuthenticationBufferW succeded when expected to fail".into(),
+                nstatus: None,
+            });
+        }
+        Err(error) if error.code() != HRESULT::from_win32(ERROR_INSUFFICIENT_BUFFER.0) => {
+            return Err(Error {
+                error_type: ErrorKind::InternalError,
+                description: "CredUnPackAuthenticationBufferW failed with wrong error code".into(),
+                nstatus: NStatusCode::try_from(error.code()).ok(),
+            });
+        }
+        Err(_) => (),
     };
 
     let mut username = vec![0_u8; username_len as usize * 2];
@@ -959,16 +1014,16 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
             CRED_PACK_PROTECTED_CREDENTIALS,
             p_auth_data,
             auth_data_len,
-            username.as_mut_ptr() as *mut _,
+            Some(PWSTR::from_raw(username.as_mut_ptr().cast())),
             &mut username_len,
-            domain.as_mut_ptr() as *mut _,
-            &mut domain_len,
-            password.as_mut().as_mut_ptr() as *mut _,
+            Some(PWSTR::from_raw(domain.as_mut_ptr().cast())),
+            Some(&mut domain_len),
+            Some(PWSTR::from_raw(password.as_mut().as_mut_ptr().cast())),
             &mut password_len,
         )
     };
 
-    if result != 1 {
+    if result.is_err() {
         return Err(Error::new(
             ErrorKind::WrongCredentialHandle,
             "Cannot unpack credentials",
@@ -977,8 +1032,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Only marshaled smart card creds starts with '@' char.
     #[cfg(feature = "scard")]
-    // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
-    if !username.is_empty() && unsafe { CredIsMarshaledCredentialW(username.as_ptr() as *const _) } != 0 {
+    if !username.is_empty()
+        // SAFETY: `username` is a Rust-allocated buffer which data has been written by the `CredUnPackAuthenticationBufferW` function.
+        && unsafe { CredIsMarshaledCredentialW(PCWSTR::from_raw(username.as_ptr().cast())) }.into()
+    {
         // The `handle_smart_card_creds` function expects credentials in a form of raw wide strings without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, password data is a wide C string and we need to delete the NULL terminator.
