@@ -368,7 +368,7 @@ impl KdcMock {
             renew_till: Optional::from(None),
             srealm: ExplicitContextTag9::from(realm.clone()),
             sname: ExplicitContextTag10::from(sname.clone()),
-            caadr: Optional::from(None),
+            caddr: Optional::from(None),
             encrypted_pa_data: Optional::from(None),
         });
         let as_rep_enc_data = cipher
@@ -595,7 +595,7 @@ impl KdcMock {
             renew_till: Optional::from(None),
             srealm: ExplicitContextTag9::from(realm.clone()),
             sname: ExplicitContextTag10::from(sname.clone()),
-            caadr: Optional::from(None),
+            caddr: Optional::from(None),
             encrypted_pa_data: Optional::from(None),
         });
         let tgs_rep_enc_data = cipher
