@@ -153,7 +153,7 @@ pub(super) fn make_rep_enc_part<const TAG: u8>(
         sname: ExplicitContextTag10::from(sname),
         // RFC (https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3):
         // > ...It then formats a KRB_AS_REP message, copying the addresses in the request into the caddr of the response...
-        caadr: Optional::from(addresses.map(|addresses| ExplicitContextTag11::from(Asn1SequenceOf::from(addresses.0)))),
+        caddr: Optional::from(addresses.map(|addresses| ExplicitContextTag11::from(Asn1SequenceOf::from(addresses.0)))),
         encrypted_pa_data: Optional::from(None),
     });
 
