@@ -18,13 +18,11 @@ use picky_krb::data_types::{
     EtypeInfo2Entry, KerberosStringAsn1, KerberosTime, Microseconds, PaData, PrincipalName, Realm,
 };
 use picky_krb::messages::{KdcReqBody, KrbError, KrbErrorInner};
-use sspi::KERBEROS_VERSION;
-use sspi::kerberos::TGT_SERVICE_NAME;
 use thiserror::Error;
 use time::OffsetDateTime;
 
 use crate::config::KerberosServer;
-use crate::find_user_credentials;
+use crate::{KERBEROS_VERSION, TGT_SERVICE_NAME, find_user_credentials};
 
 #[derive(Error, Debug)]
 pub(super) enum KdcError {

@@ -18,6 +18,21 @@ use crate::config::{DomainUser, KerberosServer};
 use crate::error::KdcError;
 use crate::tgs_exchange::handle_tgs_req;
 
+/// Kerberos versions.
+///
+/// [5.4.1. KRB_KDC_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1):
+/// ```not_rust
+/// pvno            [1] INTEGER (5) ,
+/// ```
+const KERBEROS_VERSION: u8 = 0x05;
+/// Name of the ticket-granting service.
+///
+/// [Name of the TGS](https://www.rfc-editor.org/rfc/rfc4120#section-7.3):
+/// > The principal identifier of the ticket-granting service shall be composed of three parts:
+/// > the realm of the KDC issuing the TGS ticket, and a two-part name of type NT-SRV-INST,
+/// > with the first part "krbtgt" and the second part the name of the realm that will accept the TGT.
+const TGT_SERVICE_NAME: &str = "krbtgt";
+
 fn find_user_credentials<'a>(
     cname: &PrincipalName,
     realm: &str,

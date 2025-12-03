@@ -14,9 +14,9 @@ use picky_krb::data_types::{
     LastReq, LastReqInner, PrincipalName, Realm, Ticket, TicketInner, TransitedEncoding,
 };
 use picky_krb::messages::EncKdcRepPart;
-use sspi::KERBEROS_VERSION;
 use time::OffsetDateTime;
 
+use crate::KERBEROS_VERSION;
 use crate::error::KdcError;
 
 pub(super) struct MakeTicketParams<'ticket_enc_key> {
