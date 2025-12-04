@@ -19,9 +19,9 @@ use sspi::{
     Sspi, SspiImpl, StreamSizes,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Security::Cryptography::{
-    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_STORE_ADD_REPLACE_EXISTING,
-    CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
+use windows::Win32::Security::Cryptography::{
+    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_QUERY_ENCODING_TYPE,
+    CERT_STORE_ADD_REPLACE_EXISTING, CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
 };
 
 cfg_if::cfg_if! {
@@ -929,33 +929,38 @@ unsafe fn query_context_attributes_common(
             SECPKG_ATTR_REMOTE_CERT_CONTEXT => {
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "windows")] {
-                        use std::ptr::{null, null_mut};
+                        use std::ptr::{null_mut};
 
                         let cert_context = try_execute!(sspi_context.query_context_remote_cert());
 
                         // SAFETY: FFI call without no outstanding preconditions.
-                        let store = unsafe { CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, CERT_STORE_CREATE_NEW_FLAG, null()) };
+                        let store = unsafe { CertOpenStore(CERT_STORE_PROV_MEMORY, CERT_QUERY_ENCODING_TYPE(0), None, CERT_STORE_CREATE_NEW_FLAG, None) };
 
-                        if store.is_null() {
-                            return ErrorKind::InternalError.to_u32().unwrap();
-                        }
+                        let Ok(store) = store.inspect_err(|error| {
+                            error!(?error, "Failed to open store");
+                        }) else {
+                            return ErrorKind::InternalError.to_u32().expect("ErrorKind is castable to u32")
+                        };
 
                         let mut p_cert_context = null_mut();
 
+                        let encoding_type = cert_context.encoding_type.to_u32().expect("cert_context.encoding_type is castable to u32");
+
                         // SAFETY: FFI call without no outstanding preconditions.
                         let result = unsafe { CertAddEncodedCertificateToStore(
-                            store,
-                            cert_context.encoding_type.to_u32().unwrap(),
-                            cert_context.raw_cert.as_ptr(),
-                            cert_context.raw_cert.len() as u32,
+                            Some(store),
+                            CERT_QUERY_ENCODING_TYPE(encoding_type),
+                            &cert_context.raw_cert,
                             CERT_STORE_ADD_REPLACE_EXISTING,
-                            &mut p_cert_context
+                            Some(&mut p_cert_context),
                         )};
-                        if result != 1 {
-                            return std::io::Error::last_os_error().raw_os_error().unwrap_or_else(|| ErrorKind::InternalError.to_i32().unwrap()) as u32;
+
+                        if let Err(error) = result {
+                            return error.code().0.to_u32().expect("error.code() is castable to u32");
                         }
 
                         let p_cert_buffer = p_buffer.cast::<*const CERT_CONTEXT>();
+
                         // SAFETY: `p_cert_buffer` is non-null because it was cast from a non-null `p_buffer`.
                         unsafe { *p_cert_buffer = p_cert_context; }
 

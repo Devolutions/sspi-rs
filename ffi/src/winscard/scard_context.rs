@@ -826,21 +826,18 @@ pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpC
 // Note. If the `SCardAccessStartedEvent` frunction is not be called, the event will not be created.
 #[cfg(target_os = "windows")]
 static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
-    use std::ptr::null;
-
-    use windows_sys::Win32::Foundation::GetLastError;
-    use windows_sys::Win32::System::Threading::CreateEventA;
+    use windows::Win32::System::Threading::CreateEventA;
 
     // SAFETY: FFI call with no outstanding preconditions.
-    let handle = unsafe { CreateEventA(null(), 1, 1, null()) };
-    if handle.is_null() {
-        error!(
-            "Unable to create event: returned event handle is null. Last error: {}",
-            // SAFETY: FFI call with no outstanding preconditions.
-            unsafe { GetLastError() }
-        );
-    }
-    handle as _
+    let handle = unsafe { CreateEventA(None, true, true, None) };
+
+    let handle = handle
+        .inspect_err(|error| {
+            error!(?error, "Unable to create event",);
+        })
+        .unwrap_or_default();
+
+    handle.0.expose_provenance() as isize
 });
 
 /// The `SCardAccessStartedEvent` function returns an event handle when an event signals that the smart
@@ -905,7 +902,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
             // SAFETY: The `WINSCARD_API` is lazily initialized.
             unsafe { (WINSCARD_API.SCardReleaseStartedEvent)() }
         } else {
-            use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
+            use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
 
             // Use emulated smart card.
             //
@@ -914,12 +911,14 @@ pub extern "system" fn SCardReleaseStartedEvent() {
             // because we are always in a ready (signaled) state and have only one handle for the entire process.
             //
             // SAFETY: The `START_EVENT_HANDLE` is lazily initialized.
-            if unsafe { CloseHandle(*START_EVENT_HANDLE as *mut c_void) } == 0 {
-                error!(
-                    "Cannot close the event handle. List error: {}",
-                    // SAFETY: FFI call with no outstanding preconditions.
-                    unsafe { GetLastError() }
-                );
+            let result = unsafe {
+                CloseHandle(HANDLE(std::ptr::with_exposed_provenance_mut(
+                    *START_EVENT_HANDLE as usize,
+                )))
+            };
+
+            if let Err(error) = result {
+                error!(?error, "Cannot close the event handle");
             }
         }
     }

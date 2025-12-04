@@ -538,3 +538,23 @@ impl fmt::Display for NStatusCode {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+impl TryFrom<windows::core::HRESULT> for NStatusCode {
+    type Error = &'static str;
+
+    fn try_from(hresult: windows::core::HRESULT) -> Result<Self, Self::Error> {
+        // More info: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-erref/0642cb2f-2075-4469-918c-4441e69c548a
+        const NSTATUS_BIT: i32 = 0x1000_0000;
+
+        if hresult.0 & NSTATUS_BIT != 0 {
+            #[expect(
+                clippy::as_conversions,
+                reason = "casting via `as` is correct here (all we care about is bit pattern of nstatus"
+            )]
+            Ok(NStatusCode((hresult.0 & !NSTATUS_BIT) as u32))
+        } else {
+            Err("HRESULT does not represent NStatusCode")
+        }
+    }
+}

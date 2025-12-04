@@ -51,8 +51,8 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
     use std::ffi::CString;
     use std::mem::transmute;
 
-    use windows_sys::s;
-    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    use windows::core::PCSTR;
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
     use winscard::{Error, ErrorKind};
 
     /// Path to the `winscard` module.
@@ -66,24 +66,29 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
         "WinSCard.dll".as_bytes().to_vec()
     })?;
 
-    // SAFETY: FFI call with no outstanding preconditions.
-    let winscard_module = unsafe { LoadLibraryA(file_name.as_ptr() as *const _) };
+    let file_name = PCSTR::from_raw(file_name.as_ptr().cast());
 
-    if winscard_module.is_null() {
-        return Err(Error::new(
+    // SAFETY: `file_name` is guaranteed to be the null-terminated C string as it's a pointer to `CString`
+    let winscard_module = unsafe { LoadLibraryA(file_name) };
+
+    let winscard_module = winscard_module.map_err(|_| {
+        Error::new(
             ErrorKind::InternalError,
             "can not load the winscard module: LoadLibrary function has returned NULL",
-        ));
-    } else {
-        info!("The winscard module has been loaded");
-    }
+        )
+    })?;
+
+    info!("The winscard module has been loaded");
 
     macro_rules! load_fn {
         ($func_name:literal) => {{
+            let func_name = CString::new($func_name).expect("func_name is valid to pass to CString::new");
+            let func_name = PCSTR::from_raw(func_name.as_ptr().cast());
+
             // SAFETY:
             // - We've checked the `winscard_module` handle above.
             // - `$func_name` is correct and hardcoded in the code.
-            let fn_handle = unsafe { GetProcAddress(winscard_module, s!($func_name)) };
+            let fn_handle = unsafe { GetProcAddress(winscard_module, func_name) };
             // SAFETY:
             // - FARPROC is a C-function pointer. It has the same layout as other C function pointers.
             //   Thus, we can safely transmute it to another C function pointer.
@@ -91,24 +96,27 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
             unsafe {
                 // Not great to silent, but mostly fine in this context.
                 #[expect(clippy::missing_transmute_annotations)]
-                transmute::<windows_sys::Win32::Foundation::FARPROC, _>(fn_handle)
+                transmute::<windows::Win32::Foundation::FARPROC, _>(fn_handle)
             }
         }};
     }
 
     macro_rules! load_io_request {
         ($req_name:literal) => {{
+            let req_name = CString::new($req_name).expect("req_name is valid to pass to CString::new");
+            let req_name = PCSTR::from_raw(req_name.as_ptr().cast());
+
             // SAFETY:
             // - We've checked the `winscard_module` handle above.
             // - `$req_name` is correct and hardcoded in the code.
-            let req_handle = unsafe { GetProcAddress(winscard_module, s!($req_name)) };
+            let req_handle = unsafe { GetProcAddress(winscard_module, req_name) };
             // SAFETY:
             // - FARPROC is a C-function pointer. But it can also mean variable pointer. [GetProcAddress](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getprocaddress):
             //   > If the function succeeds, the return value is the address of the exported function or variable.
             //   Thus, we can safely transmute it to another C structure pointer.
             // - FARPROC will never be `None` in this context, because all names are hardcoded in the code and are valid.
             let send_pci = unsafe {
-                transmute::<windows_sys::Win32::Foundation::FARPROC, LpCScardIoRequest>(req_handle)
+                transmute::<windows::Win32::Foundation::FARPROC, LpCScardIoRequest>(req_handle)
             };
             // SAFETY:
             // - `send_pci` is not NULL and valid, because its initial handle is valid, because library variable names are valid and hardcoded in the code.
