@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.4...sspi-v0.18.5)] - 2025-12-04
+
+### <!-- 1 -->Features
+
+- Add initial KDC implementation ([#541](https://github.com/Devolutions/sspi-rs/issues/541)) ([10ed474fe5](https://github.com/Devolutions/sspi-rs/commit/10ed474fe577583095305dd9ef0d5172321a643f)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Don't use eprintln on unknown packages ([#558](https://github.com/Devolutions/sspi-rs/issues/558)) ([df6181291c](https://github.com/Devolutions/sspi-rs/commit/df6181291ccf6f9fb2a0a59151b43676663b2d74)) 
+
+  This is an annoyance; `freerdp` uses `u2u` _not_ `pku2u` here. Every
+  time we use sspi-rs from `freerdp` I'm passing `!u2u` on the package
+  list, and sspi-rs is spamming stderr with this message.
+
+### <!-- 7 -->Build
+
+- Bump tokio-tungstenite from 0.27.0 to 0.28.0 ([#554](https://github.com/Devolutions/sspi-rs/issues/554)) ([b6e36c9dcc](https://github.com/Devolutions/sspi-rs/commit/b6e36c9dcc9bcb12423df278ebc909d127986eb5)) 
+
+- Bump the patch group across 1 directory with 5 updates ([#552](https://github.com/Devolutions/sspi-rs/issues/552)) ([879bcaa619](https://github.com/Devolutions/sspi-rs/commit/879bcaa61921a66823776af1909a6a1c4cfbf599)) 
+
+- Bump libc from 0.2.177 to 0.2.178 in the patch group across 1 directory ([#559](https://github.com/Devolutions/sspi-rs/issues/559)) ([3301ab3026](https://github.com/Devolutions/sspi-rs/commit/3301ab30261e67ac2cbfe0d2855deee075f8a7d7)) 
+
+- Update picky-krb requirement from 0.11 to 0.12 in /fuzz ([#555](https://github.com/Devolutions/sspi-rs/issues/555)) ([6395577128](https://github.com/Devolutions/sspi-rs/commit/6395577128bc3ae4b3e5982a8e08369a678a0212)) 
+
+- Bump picky-krb from 0.11.3 to 0.12.0 ([#553](https://github.com/Devolutions/sspi-rs/issues/553)) ([f636f48164](https://github.com/Devolutions/sspi-rs/commit/f636f4816438ff430973c140a9a63fd5708d1439)) 
+
+
+
 ## [[0.18.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.3...sspi-v0.18.4)] - 2025-11-18
 
 ### <!-- 7 -->Build
