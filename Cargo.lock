@@ -1553,7 +1553,6 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
- "serde",
  "thiserror 2.0.17",
  "time",
  "tracing",

@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 /// Domain user credentials.
-#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct DomainUser {
     /// Username in FQDN format (e.g. "pw13@example.com").
     pub username: String,
@@ -16,7 +14,7 @@ pub struct DomainUser {
 /// Kerberos server config
 ///
 /// This config is used to configure the Kerberos server during RDP proxying.
-#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct KerberosServer {
     /// KDC and Kerberos Application Server realm.
     ///
