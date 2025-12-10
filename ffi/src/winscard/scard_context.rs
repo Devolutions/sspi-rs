@@ -1040,7 +1040,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
                 atr: c_reader.rgb_atr,
             })
         })
-        .collect::<Result<Vec<_>, winscard::Error>>());
+        .collect::<Result<Vec<_>, Error>>());
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
@@ -1112,7 +1112,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
                 atr: c_reader.rgb_atr,
             })
         })
-        .collect::<Result<Vec<_>, winscard::Error>>());
+        .collect::<Result<Vec<_>, Error>>());
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
