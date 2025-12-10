@@ -370,10 +370,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
             *package_list = Some(
                 // SAFETY: `auth_data.package_list` is a non-null pointer to a valid buffer valid for reads of `auth_data.package_list_length` bytes.
                 String::from_utf8_lossy(unsafe {
-                    from_raw_parts(
-                        auth_data.package_list as *const _,
-                        auth_data.package_list_length as usize,
-                    )
+                    from_raw_parts(auth_data.package_list.cast(), auth_data.package_list_length as usize)
                 })
                 .to_string(),
             );
@@ -518,16 +515,16 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let user = unsafe { credentials_str_into_bytes(user as *const _, user_len as usize * 2) };
+    let user = unsafe { credentials_str_into_bytes(user.cast(), user_len as usize * 2) };
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let domain = unsafe { credentials_str_into_bytes(domain as *const _, domain_len as usize * 2) };
+    let domain = unsafe { credentials_str_into_bytes(domain.cast(), domain_len as usize * 2) };
     let password: Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        unsafe { credentials_str_into_bytes(password as *const _, password_len as usize * 2) }.into();
+        unsafe { credentials_str_into_bytes(password.cast(), password_len as usize * 2) }.into();
 
     let mut username = user.clone();
     username.extend_from_slice(&[0, 0]);
@@ -1214,13 +1211,13 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
         let auth_data = unsafe { auth_data.as_mut() }.expect("auth_data pointer should not be null");
 
         // SAFETY: `auth_data` was allocated by us.
-        unsafe { libc::free(auth_data.user as *mut _); }
+        unsafe { libc::free(auth_data.user.cast::<c_void>().cast_mut()); }
 
         // SAFETY: `auth_data` was allocated by us.
-        unsafe { libc::free(auth_data.domain as *mut _); }
+        unsafe { libc::free(auth_data.domain.cast::<c_void>().cast_mut()); }
 
         // SAFETY: `auth_data` was allocated by us.
-        unsafe { libc::free(auth_data.password as *mut _); }
+        unsafe { libc::free(auth_data.password.cast::<c_void>().cast_mut()); }
 
         // SAFETY:
         // - `auth_data` is guaranteed to be non-null.
@@ -1285,7 +1282,7 @@ mod tests {
                     .expect("domain is a correct utf-16 string")
             );
 
-            let status = SspiFreeAuthIdentity(identity as *mut _);
+            let status = SspiFreeAuthIdentity(identity.cast());
             assert_eq!(status, 0);
         }
     }

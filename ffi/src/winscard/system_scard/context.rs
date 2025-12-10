@@ -605,7 +605,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardConnect)(
                         self.h_context,
-                        c_string.as_ptr() as *const _,
+                        c_string.as_ptr().cast(),
                         share_mode.into(),
                         protocol.unwrap_or_default().bits().into(),
                         &mut scard,
@@ -629,7 +629,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardConnectA)(
                         self.h_context,
-                        c_string.as_ptr() as *const _,
+                        c_string.as_ptr().cast(),
                         share_mode.into(),
                         protocol.unwrap_or_default().bits(),
                         &mut scard,
@@ -742,11 +742,7 @@ impl WinScardContext for SystemScardContext {
                 // - `c_reader_name` is a valid, null-terminated C String due to the `CString` type.
                 // - `device_type_id` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
-                    (self.api.SCardGetDeviceTypeIdA)(
-                        self.h_context,
-                        c_reader_name.as_ptr() as *const _,
-                        &mut device_type_id,
-                    )
+                    (self.api.SCardGetDeviceTypeIdA)(self.h_context, c_reader_name.as_ptr().cast(), &mut device_type_id)
                 },
                 "SCardGetDeviceTypeIdA failed"
             )?;
@@ -787,7 +783,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
-                        c_reader_name.as_ptr() as *const _,
+                        c_reader_name.as_ptr().cast(),
                         null_mut(),
                         &mut icon_buf_len,
                     )
@@ -807,7 +803,7 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardGetReaderIconA)(
                         self.h_context,
-                        c_reader_name.as_ptr() as *const _,
+                        c_reader_name.as_ptr().cast(),
                         icon_buf.as_mut_ptr(),
                         &mut icon_buf_len,
                     )
@@ -839,6 +835,8 @@ impl WinScardContext for SystemScardContext {
         }
         #[cfg(target_os = "windows")]
         {
+            use std::ptr;
+
             use super::uuid_to_c_guid;
             use crate::winscard::buf_alloc::SCARD_AUTOALLOCATE;
 
@@ -863,8 +861,8 @@ impl WinScardContext for SystemScardContext {
                         self.h_context,
                         &mut card_id,
                         _freshness_counter,
-                        c_cache_key.into_raw() as *mut _,
-                        ((&mut data) as *mut *mut u8) as *mut _,
+                        c_cache_key.into_raw().cast(),
+                        ptr::from_mut(&mut data).cast(),
                         &mut data_len,
                     )
                 },
@@ -878,7 +876,7 @@ impl WinScardContext for SystemScardContext {
                     // SAFETY:
                     // - `h_context` is set by a previous call to `SCardEstablishContext`.
                     // - `data` is a valid pointer that was allocated by a previous call to `SCardReadCacheA`.
-                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
+                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data.cast()) },
                     "SCardFreeMemory failed"
                 )?;
 
@@ -895,7 +893,7 @@ impl WinScardContext for SystemScardContext {
                 // SAFETY:
                 // - `h_context` is set by a previous call to `SCardEstablishContext`.
                 // - `data` is a valid pointer that was allocated by a previous call to `SCardReadCacheA`.
-                unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
+                unsafe { (self.api.SCardFreeMemory)(self.h_context, data.cast()) },
                 "SCardFreeMemory failed"
             )?;
 
@@ -935,7 +933,7 @@ impl WinScardContext for SystemScardContext {
                         self.h_context,
                         &mut card_id,
                         _freshness_counter,
-                        c_cache_key.into_raw() as *mut _,
+                        c_cache_key.into_raw().cast(),
                         value.as_ptr(),
                         value.len().try_into()?,
                     )
@@ -1045,7 +1043,7 @@ impl WinScardContext for SystemScardContext {
 
         for (reader_state, c_reader) in reader_states.iter_mut().zip(c_readers.iter()) {
             states.push(ScardReaderState {
-                sz_reader: c_reader.as_ptr() as *const _,
+                sz_reader: c_reader.as_ptr().cast(),
                 pv_user_data: reader_state.user_data as _,
                 dw_current_state: reader_state.current_state.bits(),
                 dw_event_state: reader_state.event_state.bits(),
@@ -1209,9 +1207,9 @@ impl WinScardContext for SystemScardContext {
                 unsafe {
                     (self.api.SCardGetCardTypeProviderNameA)(
                         self.h_context,
-                        c_card_name.as_ptr() as *const _,
+                        c_card_name.as_ptr().cast(),
                         provider_id.into(),
-                        ((&mut data) as *mut *mut u8) as *mut _,
+                        ((&mut data) as *mut *mut u8).cast(),
                         &mut data_len,
                     )
                 },
@@ -1225,7 +1223,7 @@ impl WinScardContext for SystemScardContext {
                     // SAFETY:
                     // - `h_context` is set by a previous call to `SCardEstablishContext`.
                     // - `data` is a valid pointer that was allocated by a previous call to `SCardGetCardTypeProviderNameA`.
-                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
+                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data.cast()) },
                     "SCardFreeMemory failed"
                 )?;
 
@@ -1242,7 +1240,7 @@ impl WinScardContext for SystemScardContext {
                     // SAFETY:
                     // - `h_context` is set by a previous call to `SCardEstablishContext`.
                     // - `data` is a valid pointer that was allocated by a previous call to `SCardGetCardTypeProviderNameA`.
-                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data as *const _) },
+                    unsafe { (self.api.SCardFreeMemory)(self.h_context, data.cast()) },
                     "SCardFreeMemory failed"
                 )?;
 

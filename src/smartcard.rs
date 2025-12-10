@@ -241,6 +241,8 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 /// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
 #[cfg(target_os = "windows")]
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
+    use std::ptr;
+
     use windows::core::{Owned, PCWSTR};
     use windows::Win32::Security::Cryptography::{
         NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_PKCS1_PADDING_INFO,
@@ -314,7 +316,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     unsafe {
         NCryptSignHash(
             *key,
-            Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
+            Some(ptr::from_ref(&padding_info).cast()),
             data_to_sign,
             None,
             &mut signature_len,
@@ -336,7 +338,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     unsafe {
         NCryptSignHash(
             *key,
-            Some(&padding_info as *const BCRYPT_PKCS1_PADDING_INFO as *const _),
+            Some(ptr::from_ref(&padding_info).cast()),
             data_to_sign,
             Some(&mut signature),
             &mut signature_len,

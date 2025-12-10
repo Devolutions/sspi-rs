@@ -337,7 +337,7 @@ pub(crate) fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateK
             CERT_QUERY_ENCODING_TYPE(0),
             Some(HCRYPTPROV_LEGACY(0)),
             CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT),
-            Some(my.as_ptr() as *const _),
+            Some(my.as_ptr().cast()),
         );
 
         let cert_store = cert_store.map_err(|error| Error {

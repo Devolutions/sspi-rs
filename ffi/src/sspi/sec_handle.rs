@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
 
@@ -339,10 +339,13 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
         }
     }
 
-    Ok(NonNull::new(
+    Ok(NonNull::new(ptr::with_exposed_provenance_mut(
         // SAFETY: `*context` is guaranteed to be non-null due to the prior check.
-        unsafe { (*(*context)).dw_lower as *mut _ },
-    )
+        unsafe { &**context }
+            .dw_lower
+            .try_into()
+            .expect("c_ulonglong should be castable to usize"),
+    ))
     .expect("dw_lower must be initialized"))
 }
 
@@ -1261,7 +1264,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
                     // - `p_buffer` is guaranteed to be non-null due to the prior check.
                     // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
                     // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                    unsafe { CStr::from_ptr(p_buffer as *const _) }.to_str(),
+                    unsafe { CStr::from_ptr(p_buffer.cast()) }.to_str(),
                     ErrorKind::InvalidParameter
                 ).to_owned();
 
@@ -1343,7 +1346,7 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
                 // - `p_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
                 // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { c_w_str_to_string(p_buffer as *const _) }.map_err(Error::from)
+                unsafe { c_w_str_to_string(p_buffer.cast()) }.map_err(Error::from)
             );
 
             credentials_handle.attributes.workstation = Some(workstation);
@@ -1599,11 +1602,11 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
         // * `p_output' is not-null pointer to a valid `SecBufferDesc` structure.
         unsafe {
             ChangeAccountPasswordA(
-                security_package_name.as_mut_ptr() as *mut _,
-                domain.as_mut_ptr() as *mut _,
-                username.as_mut_ptr() as *mut _,
-                password.as_mut().as_mut_ptr() as *mut _,
-                new_password.as_mut().as_mut_ptr() as *mut _,
+                security_package_name.as_mut_ptr().cast(),
+                domain.as_mut_ptr().cast(),
+                username.as_mut_ptr().cast(),
+                password.as_mut().as_mut_ptr().cast(),
+                new_password.as_mut().as_mut_ptr().cast(),
                 b_impersonating,
                 dw_reserved,
                 p_output,
@@ -1682,7 +1685,7 @@ pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, 
 #[cfg(test)]
 mod tests {
     use std::ffi::CStr;
-    use std::ptr::{null, null_mut};
+    use std::ptr::{self, null, null_mut};
 
     use libc::c_void;
 
@@ -1722,7 +1725,7 @@ mod tests {
 
         let cb_max_token = unsafe { (*pkg_info).cb_max_token };
 
-        let status = unsafe { FreeContextBuffer(pkg_info as *mut _) };
+        let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
         assert_eq!(status, 0);
 
         let mut pc_packages = 0;
@@ -1738,7 +1741,7 @@ mod tests {
             println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
         }
 
-        let status = unsafe { FreeContextBuffer(packages as *mut _) };
+        let status = unsafe { FreeContextBuffer(packages.cast()) };
         assert_eq!(status, 0);
 
         let user = "user".encode_utf16().collect::<Vec<_>>();
@@ -1763,10 +1766,10 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleW(
                 null_mut(),
-                pkg_name.as_ptr() as *const _,
+                pkg_name.as_ptr().cast(),
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
-                &credentials as *const _ as *const c_void,
+                ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
                 &mut cred_handle,
@@ -1790,7 +1793,7 @@ mod tests {
         let mut out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
             buffer_type: 2,
-            pv_buffer: out_buffer.as_mut_ptr() as *mut _,
+            pv_buffer: out_buffer.as_mut_ptr().cast(),
         };
         let mut out_buffer_desk = SecBufferDesc {
             ul_version: 0,
@@ -1808,7 +1811,7 @@ mod tests {
             InitializeSecurityContextW(
                 &mut cred_handle,
                 &mut sec_context,
-                target_name.as_mut_ptr() as *mut _,
+                target_name.as_mut_ptr().cast(),
                 0,
                 0,
                 0x10, /* SECURITY_NATIVE_DREP */
@@ -1837,7 +1840,7 @@ mod tests {
         let pkg_name = "NTLM\0";
         let mut pkg_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
-        let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr() as *const _, &mut pkg_info) };
+        let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr().cast(), &mut pkg_info) };
         assert_eq!(status, 0);
 
         // We left all `println`s on purpose:
@@ -1848,7 +1851,7 @@ mod tests {
 
         let cb_max_token = unsafe { (*pkg_info).cb_max_token };
 
-        let status = unsafe { FreeContextBuffer(pkg_info as *mut _) };
+        let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
         assert_eq!(status, 0);
 
         let mut pc_packages = 0;
@@ -1864,7 +1867,7 @@ mod tests {
             println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).comment).to_str().unwrap() });
         }
 
-        let status = unsafe { FreeContextBuffer(packages as *mut _) };
+        let status = unsafe { FreeContextBuffer(packages.cast()) };
         assert_eq!(status, 0);
 
         let user = "user";
@@ -1872,11 +1875,11 @@ mod tests {
         let password = "password";
 
         let credentials = SecWinntAuthIdentityA {
-            user: user.as_ptr() as *const _,
+            user: user.as_ptr().cast(),
             user_length: user.len() as u32,
-            domain: domain.as_ptr() as *const _,
+            domain: domain.as_ptr().cast(),
             domain_length: domain.len() as u32,
-            password: password.as_ptr() as *const _,
+            password: password.as_ptr().cast(),
             password_length: password.len() as u32,
             flags: 1,
         };
@@ -1889,10 +1892,10 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleA(
                 null_mut(),
-                pkg_name.as_ptr() as *const _,
+                pkg_name.as_ptr().cast(),
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
-                &credentials as *const _ as *const c_void,
+                ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
                 &mut cred_handle,
@@ -1916,7 +1919,7 @@ mod tests {
         let mut out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
             buffer_type: 2,
-            pv_buffer: out_buffer.as_mut_ptr() as *mut _,
+            pv_buffer: out_buffer.as_mut_ptr().cast(),
         };
         let mut out_buffer_desk = SecBufferDesc {
             ul_version: 0,
@@ -1934,7 +1937,7 @@ mod tests {
             InitializeSecurityContextA(
                 &mut cred_handle,
                 &mut sec_context,
-                target_name.as_mut_ptr() as *mut _,
+                target_name.as_mut_ptr().cast(),
                 0,
                 0,
                 0x10, /* SECURITY_NATIVE_DREP */
@@ -2005,10 +2008,10 @@ mod tests {
             let status = unsafe {
                 AcquireCredentialsHandleW(
                     null_mut(),
-                    pkg_name.as_ptr() as *const _,
+                    pkg_name.as_ptr().cast(),
                     2, /* SECPKG_CRED_OUTBOUND */
                     null::<c_void>(),
-                    &credentials as *const _ as *const c_void,
+                    ptr::from_ref(&credentials).cast(),
                     dummy,
                     null::<c_void>(),
                     &mut cred_handle,
@@ -2051,10 +2054,10 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleW(
                 null_mut(),
-                pkg_name.as_ptr() as *const _,
+                pkg_name.as_ptr().cast(),
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
-                &credentials as *const _ as *const c_void,
+                ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
                 &mut cred_handle,
@@ -2082,25 +2085,25 @@ mod tests {
             SecWinntAuthIdentityA {
                 user: null(),
                 user_length: 0,
-                domain: domain.as_ptr() as *const _,
+                domain: domain.as_ptr().cast(),
                 domain_length: domain.len() as u32,
-                password: password.as_ptr() as *const _,
+                password: password.as_ptr().cast(),
                 password_length: password.len() as u32,
                 flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
-                user: user.as_ptr() as *const _,
+                user: user.as_ptr().cast(),
                 user_length: user.len() as u32,
                 domain: null(),
                 domain_length: 0,
-                password: password.as_ptr() as *const _,
+                password: password.as_ptr().cast(),
                 password_length: password.len() as u32,
                 flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
-                user: user.as_ptr() as *const _,
+                user: user.as_ptr().cast(),
                 user_length: user.len() as u32,
-                domain: domain.as_ptr() as *const _,
+                domain: domain.as_ptr().cast(),
                 domain_length: domain.len() as u32,
                 password: null(),
                 password_length: 0,
@@ -2117,10 +2120,10 @@ mod tests {
             let status = unsafe {
                 AcquireCredentialsHandleA(
                     null_mut(),
-                    pkg_name.as_ptr() as *const _,
+                    pkg_name.as_ptr().cast(),
                     2, /* SECPKG_CRED_OUTBOUND */
                     null::<c_void>(),
-                    &credentials as *const _ as *const c_void,
+                    ptr::from_ref(&credentials).cast(),
                     dummy,
                     null::<c_void>(),
                     &mut cred_handle,
@@ -2146,11 +2149,11 @@ mod tests {
         let password = "";
 
         let credentials = SecWinntAuthIdentityA {
-            user: user.as_ptr() as *const _,
+            user: user.as_ptr().cast(),
             user_length: user.len() as u32,
-            domain: domain.as_ptr() as *const _,
+            domain: domain.as_ptr().cast(),
             domain_length: domain.len() as u32,
-            password: password.as_ptr() as *const _,
+            password: password.as_ptr().cast(),
             password_length: password.len() as u32,
             flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
         };
@@ -2163,10 +2166,10 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleA(
                 null_mut(),
-                pkg_name.as_ptr() as *const _,
+                pkg_name.as_ptr().cast(),
                 2, /* SECPKG_CRED_OUTBOUND */
                 null::<c_void>(),
-                &credentials as *const _ as *const c_void,
+                ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
                 &mut cred_handle,

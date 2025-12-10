@@ -41,7 +41,7 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
             let status = unsafe {
                 get_session_token(
                     &session_id,
-                    destination.as_ptr() as *const _,
+                    destination.as_ptr().cast(),
                     token_buf.as_mut_ptr(),
                     &mut token_len,
                 )

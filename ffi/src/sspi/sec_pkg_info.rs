@@ -66,9 +66,9 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         // * pkg_name ptr is valid for read because it is Rust-allocated vector.
         // * name_ptr is valid for write because we took into account its length during memory allocation.
         unsafe {
-            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+            copy_nonoverlapping(pkg_name.as_ptr().cast(), name_ptr, name_bytes_len);
         }
-        pkg_info_w.name = name_ptr as *mut _;
+        pkg_info_w.name = name_ptr.cast();
 
         let comment_ptr;
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
@@ -79,9 +79,9 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         // * pkg_comment ptr is valid for read because it is Rust-allocated vector.
         // * pkg_comment is valid for write because we took into account its length during memory allocation.
         unsafe {
-            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr().cast(), comment_ptr, comment_bytes_len);
         }
-        pkg_info_w.comment = comment_ptr as *mut _;
+        pkg_info_w.comment = comment_ptr.cast();
 
         Self(raw_pkg_info as *mut SecPkgInfoW)
     }
@@ -150,9 +150,9 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         // * pkg_name ptr is valid for read because it is Rust-allocated vector.
         // * name_ptr is valid for write because we took into account its length during memory allocation.
         unsafe {
-            copy_nonoverlapping(pkg_name.as_ptr() as *const _, name_ptr, name_bytes_len);
+            copy_nonoverlapping(pkg_name.as_ptr().cast(), name_ptr, name_bytes_len);
         }
-        pkg_info_a.name = name_ptr as *mut _;
+        pkg_info_a.name = name_ptr.cast();
 
         let comment_ptr;
         // SAFETY: Our allocated buffer is big enough to contain package name and comment.
@@ -163,9 +163,9 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         // * pkg_comment ptr is valid for read because it is Rust-allocated vector.
         // * pkg_comment is valid for write because we took into account its length during memory allocation.
         unsafe {
-            copy_nonoverlapping(pkg_comment.as_ptr() as *const _, comment_ptr, comment_bytes_len);
+            copy_nonoverlapping(pkg_comment.as_ptr().cast(), comment_ptr, comment_bytes_len);
         }
-        pkg_info_a.comment = comment_ptr as *mut _;
+        pkg_info_a.comment = comment_ptr.cast();
 
         Self(raw_pkg_info as *mut SecPkgInfoA)
     }
@@ -248,8 +248,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             // - `name` is valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr as *mut _, name.len()); }
-            pkg_info_a.name = data_ptr as *mut _;
+            unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr.cast(), name.len()); }
+            pkg_info_a.name = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
@@ -263,8 +263,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             // - `name` is valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr as *mut _, comment.len()); }
-            pkg_info_a.comment = data_ptr as *mut _;
+            unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr.cast(), comment.len()); }
+            pkg_info_a.comment = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
@@ -277,7 +277,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
         }
 
         // SAFETY: `pp_package_into` is guaranteed to be non-null due to the prior check.
-        unsafe { *pp_package_info = raw_packages as *mut _; }
+        unsafe { *pp_package_info = raw_packages.cast(); }
 
         0
     }
@@ -352,8 +352,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             // - `names[i]` is valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr, names[i].len()); }
-            pkg_info_w.name = data_ptr as *mut _;
+            unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr.cast(), names[i].len()); }
+            pkg_info_w.name = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
@@ -363,8 +363,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             // - `name` is valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr, comments[i].len()); }
-            pkg_info_w.comment = data_ptr as *mut _;
+            unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr.cast(), comments[i].len()); }
+            pkg_info_w.comment = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
@@ -377,7 +377,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         }
 
         // SAFETY: `pp_package_into` is guaranteed to be non-null due to the prior check.
-        unsafe { *pp_package_info = raw_packages as *mut _; }
+        unsafe { *pp_package_info = raw_packages.cast(); }
 
         0
     }
@@ -501,7 +501,7 @@ mod tests {
                 let _ = packages.add(i).as_mut().unwrap();
             }
 
-            let status = FreeContextBuffer(packages as *mut _);
+            let status = FreeContextBuffer(packages.cast());
             assert_eq!(status, 0);
         }
     }
@@ -530,7 +530,7 @@ mod tests {
                 let _ = packages.add(i).as_mut().unwrap();
             }
 
-            let status = FreeContextBuffer(packages as *mut _);
+            let status = FreeContextBuffer(packages.cast());
             assert_eq!(status, 0);
         }
     }

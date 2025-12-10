@@ -100,7 +100,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             // - `sid` is guaranteed to be non-null due to the prior check.
             // - The memory region `sid` contains a valid null-terminator at the end of string.
             // - The memory region `sid` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(sid as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(sid.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         )
         .to_owned();
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             // - `server` is guaranteed to be non-null due to the prior check.
             // - The memory region `server` contains a valid null-terminator at the end of string.
             // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(server as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(server.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let username = try_execute!(
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             // - `username` is guaranteed to be non-null due to the prior check.
             // - The memory region `username` contains a valid null-terminator at the end of string.
             // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(username as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(username.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let password = try_execute!(
@@ -134,7 +134,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
             // - `password` is guaranteed to be non-null due to the prior check.
             // - The memory region `password` contains a valid null-terminator at the end of string.
             // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(password as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(password.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         )
         .to_owned();
@@ -145,7 +145,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                     // - `computer_name` is guaranteed to be non-null due to the prior check.
                     // - The memory region `computer_name` contains a valid null-terminator at the end of string.
                     // - The memory region `computer_name` points to is valid for reads of bytes up to and including null-terminator.
-                    unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
+                    unsafe { CStr::from_ptr(computer_name.cast()) }.to_str(),
                     NTE_INVALID_PARAMETER
                 )
                 .to_owned(),
@@ -162,7 +162,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
                 // - `proxy_url` is guaranteed to be non-null due to the prior check.
                 // - The memory region `proxy_url` contains a valid null-terminator at the end of string.
                 // - The memory region `proxy_url` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
+                unsafe { CStr::from_ptr(proxy_url.cast()) }.to_str(),
                 NTE_INVALID_PARAMETER
             );
 
@@ -290,7 +290,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             // - `server` is guaranteed to be non-null due to the prior check.
             // - The memory region `server` contains a valid null-terminator at the end of string.
             // - The memory region `server` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(server as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(server.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let username = try_execute!(
@@ -298,7 +298,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             // - `username` is guaranteed to be non-null due to the prior check.
             // - The memory region `username` contains a valid null-terminator at the end of string.
             // - The memory region `username` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(username as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(username.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         );
         let password = try_execute!(
@@ -306,7 +306,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
             // - `password` is guaranteed to be non-null due to the prior check.
             // - The memory region `password` contains a valid null-terminator at the end of string.
             // - The memory region `password` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { CStr::from_ptr(password as *const _) }.to_str(),
+            unsafe { CStr::from_ptr(password.cast()) }.to_str(),
             NTE_INVALID_PARAMETER
         )
         .to_owned();
@@ -317,7 +317,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
                     // - `computer_name` is guaranteed to be non-null due to the prior check.
                     // - The memory region `computer_name` contains a valid null-terminator at the end of string.
                     // - The memory region `computer_name` points to is valid for reads of bytes up to and including null-terminator.
-                    unsafe { CStr::from_ptr(computer_name as *const _) }.to_str(),
+                    unsafe { CStr::from_ptr(computer_name.cast()) }.to_str(),
                     NTE_INVALID_PARAMETER
                 )
                 .to_owned(),
@@ -334,7 +334,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
                 // - `proxy_url` is guaranteed to be non-null due to the prior check.
                 // - The memory region `proxy_url` contains a valid null-terminator at the end of string.
                 // - The memory region `proxy_url` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { CStr::from_ptr(proxy_url as *const _) }.to_str(),
+                unsafe { CStr::from_ptr(proxy_url.cast()) }.to_str(),
                 NTE_INVALID_PARAMETER
             );
 
