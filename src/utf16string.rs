@@ -103,7 +103,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.err().expect("result is err").error_type,
+            result.expect_err("result is err").error_type,
             ErrorKind::InvalidParameter
         );
     }
@@ -119,7 +119,7 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            result.err().expect("result is err").error_type,
+            result.expect_err("result is err").error_type,
             ErrorKind::InvalidParameter
         );
     }
@@ -134,7 +134,7 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_ok());
-        assert_eq!(result.ok().expect("result is ok"), "El Psy Congroo");
+        assert_eq!(result.expect("result is ok"), "El Psy Congroo");
     }
 
     #[test]
@@ -147,8 +147,8 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_ok());
-        assert_eq!(result.as_ref().ok().expect("result is ok").as_bytes(), bytes);
-        assert_eq!(result.as_ref().ok().expect("result is ok").as_bytes(), Vec::from(bytes));
+        assert_eq!(result.as_ref().expect("result is ok").as_bytes(), bytes);
+        assert_eq!(result.as_ref().expect("result is ok").as_bytes(), Vec::from(bytes));
     }
 
     #[test]

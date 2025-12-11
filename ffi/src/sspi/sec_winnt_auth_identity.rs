@@ -836,9 +836,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
         // Sometimes username can be formatted as `DOMAIN\username`.
         if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
             auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[0..index].to_vec())?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[0..index])?;
             auth_identity_buffers.user =
-                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[(index + 1)..].to_vec())?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[(index + 1)..])?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
@@ -1091,9 +1091,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         // Sometimes username can be formatted as `DOMAIN\username`.
         if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
             auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[0..index].to_vec())?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[0..index])?;
             auth_identity_buffers.user =
-                Utf16String::from_bytes_le(auth_identity_buffers.user.as_bytes()[(index + 2)..].to_vec())?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[(index + 2)..])?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
@@ -1118,7 +1118,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // So, password data is a wide C string and we need to delete the NULL terminator.
     let new_len = password.as_ref().len() - 2;
     password.as_mut().truncate(new_len);
-    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref().to_vec())?.into();
+    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into();
 
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
