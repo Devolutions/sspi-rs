@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.2.5](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.4...winscard-v0.2.5)] - 2025-12-11
+
+### <!-- 4 -->Bug Fixes
+
+- Replace `String::from_utf16_lossy` with `String::from_utf16` ([#568](https://github.com/Devolutions/sspi-rs/issues/568)) ([a4889f5b1e](https://github.com/Devolutions/sspi-rs/commit/a4889f5b1e802395b09954f5846d1a6433546281)) 
+
+
+
 ## [[0.2.4](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.3...winscard-v0.2.4)] - 2025-11-18
 
 ### <!-- 7 -->Build
