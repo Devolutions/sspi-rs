@@ -475,18 +475,14 @@ pub unsafe fn auth_data_to_identity_buffers_w(
             let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
             if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
-                *package_list = Some(
-                    String::from_utf16(
-                        // SAFETY: `package_list` is not null due to a prior check.
-                        unsafe {
-                            from_raw_parts(
-                                auth_data.package_list,
-                                usize::try_from(auth_data.package_list_length).unwrap(),
-                            )
-                        },
+                // SAFETY: `package_list` is not null due to a prior check.
+                let package_list_data = unsafe {
+                    from_raw_parts(
+                        auth_data.package_list,
+                        usize::try_from(auth_data.package_list_length).unwrap(),
                     )
-                    .map_err(Error::from)?,
-                );
+                };
+                *package_list = Some(String::from_utf16(package_list_data)?);
             }
 
             (
