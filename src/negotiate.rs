@@ -613,7 +613,7 @@ impl<'a> Negotiate {
         #[cfg(feature = "scard")]
         if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
             if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
-                let username = crate::utils::bytes_to_utf16_string(&identity.username);
+                let username = crate::utils::bytes_to_utf16_string(&identity.username)?;
                 let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
                     .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
                 debug!("Negotiate: try Kerberos");

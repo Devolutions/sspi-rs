@@ -463,11 +463,13 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         check_null!(p_auth_data);
         check_null!(ph_credential);
 
-        // SAFETY:
-        // - `psz_package` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_package` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_package` points to is valid for reads of bytes up to and including null-terminator.
-        let security_package_name = unsafe { c_w_str_to_string(psz_package) };
+        let security_package_name = try_execute!(
+            // SAFETY:
+            // - `psz_package` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_package` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_package` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_package) }.map_err(Error::from)
+        );
         try_execute!(verify_security_package(&security_package_name));
 
         debug!(?security_package_name);
@@ -737,11 +739,13 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         let service_principal = if p_target_name.is_null() {
             String::new()
         } else {
-            // SAFETY:
-            // - `p_target_name` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_target_name` contains a valid null-terminator at the end of string.
-            // - The memory region `p_target_name` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(p_target_name) }
+            try_execute!(
+                // SAFETY:
+                // - `p_target_name` is guaranteed to be non-null due to the prior check.
+                // - The memory region `p_target_name` contains a valid null-terminator at the end of string.
+                // - The memory region `p_target_name` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { c_w_str_to_string(p_target_name) }.map_err(Error::from)
+            )
         };
         debug!(?service_principal, "Target name (SPN)");
 
@@ -1334,11 +1338,13 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         };
 
         if ul_attribute == SECPKG_CRED_ATTR_NAMES {
-            // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-            // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-            let workstation = unsafe { c_w_str_to_string(p_buffer as *const _) };
+            let workstation = try_execute!(
+                // SAFETY:
+                // - `p_buffer` is guaranteed to be non-null due to the prior check.
+                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
+                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { c_w_str_to_string(p_buffer as *const _) }.map_err(Error::from)
+            );
 
             credentials_handle.attributes.workstation = Some(workstation);
 
@@ -1355,11 +1361,13 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlW>();
-            // SAFETY:
-            // - `p_buffer` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-            // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-            let kdc_url = unsafe { c_w_str_to_string((*cred_attr).kdc_url.cast_const()) };
+            let kdc_url = try_execute!(
+                // SAFETY:
+                // - `p_buffer` is guaranteed to be non-null due to the prior check.
+                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
+                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { c_w_str_to_string((*cred_attr).kdc_url.cast_const()) }.map_err(Error::from)
+            );
             credentials_handle.attributes.kdc_url = Some(kdc_url);
 
             0
@@ -1545,32 +1553,42 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
         check_null!(psz_new_password);
         check_null!(p_output);
 
-        // SAFETY:
-        // - `psz_package_name` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_package_name` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_package_name` points to is valid for reads of bytes up to and including null-terminator.
-        let mut security_package_name = unsafe { c_w_str_to_string(psz_package_name) };
+        let mut security_package_name = try_execute!(
+            // SAFETY:
+            // - `psz_package_name` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_package_name` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_package_name` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_package_name) }.map_err(Error::from)
+        );
 
-        // SAFETY:
-        // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
-        let mut domain = unsafe { c_w_str_to_string(psz_domain_name) };
-        // SAFETY:
-        // - `psz_account_name` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_account_name` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_account_name` points to is valid for reads of bytes up to and including null-terminator.
-        let mut username = unsafe { c_w_str_to_string(psz_account_name) };
-        // SAFETY:
-        // - `psz_old_password` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_old_password` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_old_password` points to is valid for reads of bytes up to and including null-terminator.
-        let mut password = Secret::new(unsafe { c_w_str_to_string(psz_old_password) });
-        // SAFETY:
-        // - `psz_new_password` is guaranteed to be non-null due to the prior check.
-        // - The memory region `psz_new_password` contains a valid null-terminator at the end of string.
-        // - The memory region `psz_new_password` points to is valid for reads of bytes up to and including null-terminator.
-        let mut new_password = Secret::new(unsafe { c_w_str_to_string(psz_new_password) });
+        let mut domain = try_execute!(
+            // SAFETY:
+            // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_domain_name) }.map_err(Error::from)
+        );
+        let mut username = try_execute!(
+            // SAFETY:
+            // - `psz_account_name` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_account_name` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_account_name` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_account_name) }.map_err(Error::from)
+        );
+        let mut password = Secret::new(try_execute!(
+            // SAFETY:
+            // - `psz_old_password` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_old_password` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_old_password` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_old_password) }.map_err(Error::from)
+        ));
+        let mut new_password = Secret::new(try_execute!(
+            // SAFETY:
+            // - `psz_new_password` is guaranteed to be non-null due to the prior check.
+            // - The memory region `psz_new_password` contains a valid null-terminator at the end of string.
+            // - The memory region `psz_new_password` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(psz_new_password) }.map_err(Error::from)
+        ));
 
         // SAFETY:
         // * `security_package_name' is a `String`.

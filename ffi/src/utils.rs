@@ -1,4 +1,5 @@
 use std::slice::from_raw_parts;
+use std::string::FromUtf16Error;
 
 use libc::c_char;
 
@@ -13,7 +14,7 @@ pub(crate) fn into_raw_ptr<T>(value: T) -> *mut T {
 /// Behavior is undefined is any of the following conditions are violated:
 ///
 /// * `s` must be a [valid], null-terminated C string.
-pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> String {
+pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> Result<String, FromUtf16Error> {
     let mut len = 0;
 
     // SAFETY: `s` is a valid, null-terminated C string.
@@ -22,7 +23,7 @@ pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> String {
     }
 
     // SAFETY: `s` is a valid, null-terminated C string.
-    String::from_utf16_lossy(unsafe { from_raw_parts(s, len) })
+    String::from_utf16(unsafe { from_raw_parts(s, len) })
 }
 
 /// The returned length includes the null terminator char.

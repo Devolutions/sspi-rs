@@ -20,13 +20,13 @@ pub fn str_to_w_buff(data: &str) -> Vec<u16> {
     data.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub(crate) fn bytes_to_utf16_string(mut value: &[u8]) -> String {
+pub(crate) fn bytes_to_utf16_string(mut value: &[u8]) -> Result<String> {
     let mut value_u16 = vec![0x00; value.len() / 2];
     value
         .read_u16_into::<LittleEndian>(value_u16.as_mut())
         .expect("read_u16_into cannot fail at this point");
 
-    String::from_utf16_lossy(value_u16.as_ref())
+    String::from_utf16(value_u16.as_ref()).map_err(Error::from)
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(unused))]
@@ -34,14 +34,15 @@ pub(crate) fn is_azure_ad_domain(domain: &str) -> bool {
     domain == crate::pku2u::AZURE_AD_DOMAIN
 }
 
-pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> String {
+pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> Result<String> {
     debug_assert_eq!(data.len() % 2, 0);
-    String::from_utf16_lossy(
+    String::from_utf16(
         &data
             .chunks(2)
             .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
             .collect::<Vec<u16>>(),
     )
+    .map_err(Error::from)
 }
 
 pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {

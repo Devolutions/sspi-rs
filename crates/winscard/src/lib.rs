@@ -185,6 +185,13 @@ impl From<core::str::Utf8Error> for Error {
 }
 
 #[cfg(feature = "std")]
+impl From<std::string::FromUtf16Error> for Error {
+    fn from(value: std::string::FromUtf16Error) -> Self {
+        Error::new(ErrorKind::InvalidParameter, value.to_string())
+    }
+}
+
+#[cfg(feature = "std")]
 impl From<std::ffi::NulError> for Error {
     fn from(value: std::ffi::NulError) -> Self {
         Error::new(ErrorKind::InvalidParameter, value.to_string())

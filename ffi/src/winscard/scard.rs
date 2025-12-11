@@ -155,11 +155,13 @@ pub unsafe extern "system" fn SCardConnectW(
     check_null!(ph_card);
     check_null!(pdw_active_protocol);
 
-    // SAFETY:
-    // - `sz_reader` is guaranteed to be non-null due to the prior check.
-    // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
-    // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-    let reader_name = unsafe { c_w_str_to_string(sz_reader) };
+    let reader_name = try_execute!(
+        // SAFETY:
+        // - `sz_reader` is guaranteed to be non-null due to the prior check.
+        // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
+        // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
+        unsafe { c_w_str_to_string(sz_reader) }.map_err(Error::from)
+    );
 
     try_execute!(
         // SAFETY:
