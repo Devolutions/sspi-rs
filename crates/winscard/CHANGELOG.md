@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Use `String::from_utf16_lossy` over `String::from_utf16` to avoid changing the meaning of some buffers in case of invalid UTF-16 input ([#568](https://github.com/Devolutions/sspi-rs/issues/568)) ([a4889f5b1e](https://github.com/Devolutions/sspi-rs/commit/a4889f5b1e802395b09954f5846d1a6433546281)) 
 
-
-
 ## [[0.2.4](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.3...winscard-v0.2.4)] - 2025-11-18
 
 ### <!-- 7 -->Build
