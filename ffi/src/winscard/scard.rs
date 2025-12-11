@@ -103,7 +103,7 @@ pub unsafe extern "system" fn SCardConnectA(
         // - `sz_reader` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(sz_reader as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
 

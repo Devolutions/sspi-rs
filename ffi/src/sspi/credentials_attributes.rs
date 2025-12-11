@@ -110,8 +110,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     // - `proxy_server_length` is valid.
     let proxy_server = String::from_utf16(unsafe {
         from_raw_parts(proxy_server_ptr, *proxy_server_length as usize / size_of::<SecWChar>())
-    })
-    .map_err(Error::from)?;
+    })?;
 
     let client_tls_cred = if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
         // SAFETY:
@@ -131,7 +130,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         // - `client_tls_cred_length` is valid.
         let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, *client_tls_cred_length as usize) };
 
-        let client_tls_cred = String::from_utf16(client_tls_cred_data).map_err(Error::from)?;
+        let client_tls_cred = String::from_utf16(client_tls_cred_data)?;
 
         Some(client_tls_cred)
     } else {

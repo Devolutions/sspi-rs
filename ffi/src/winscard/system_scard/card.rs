@@ -233,7 +233,7 @@ impl WinScard for SystemScard {
                 (self.api.SCardControl)(
                     self.h_card()?,
                     code.into(),
-                    input.as_ptr() as *const _,
+                    input.as_ptr().cast(),
                     input.len().try_into()?,
                     null_mut(),
                     0,
@@ -261,9 +261,9 @@ impl WinScard for SystemScard {
                 (self.api.SCardControl)(
                     self.h_card()?,
                     code.into(),
-                    input.as_ptr() as *const _,
+                    input.as_ptr().cast(),
                     input.len().try_into()?,
-                    output.as_mut_ptr() as *mut _,
+                    output.as_mut_ptr().cast(),
                     output_buf_len,
                     &mut receive_len,
                 )

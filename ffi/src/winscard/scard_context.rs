@@ -521,7 +521,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
         // - `sz_card_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(sz_card_name as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(sz_card_name.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
@@ -1032,7 +1032,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
                 // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
                 // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
                 // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-                reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader as *const _) }.to_string_lossy(),
+                reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader.cast()) }.to_string_lossy(),
                 user_data: c_reader.pv_user_data as usize,
                 current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
                 event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
@@ -1223,7 +1223,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
         // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(lookup_name.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
     try_execute!(
@@ -1363,7 +1363,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
         // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(lookup_name as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(lookup_name.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
     try_execute!(
@@ -1488,7 +1488,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
         // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader_name.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
 
@@ -1592,7 +1592,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
         // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { CStr::from_ptr(sz_reader_name as *const _) }.to_str(),
+        unsafe { CStr::from_ptr(sz_reader_name.cast()) }.to_str(),
         ErrorKind::InvalidParameter
     );
 

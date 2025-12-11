@@ -663,7 +663,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
         if from_buffer.buffer_type() != BufferType::Missing {
             // We don't need to copy the actual content of the buffer because [from_buffer] is created
             // from the C-input-buffer and all decryption is performed in-place.
-            to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr() as *mut _;
+            to_buffer.pv_buffer = from_buffer.take_data().as_mut_ptr().cast();
         }
     }
 
@@ -724,7 +724,7 @@ mod tests {
             SecBuffer {
                 cb_buffer: stream_buffer_data_len,
                 buffer_type: 10,
-                pv_buffer: stream_buffer_data.as_mut_ptr() as *mut _,
+                pv_buffer: stream_buffer_data.as_mut_ptr().cast(),
             },
             SecBuffer {
                 cb_buffer: 0,
@@ -781,12 +781,12 @@ mod tests {
             SecBuffer {
                 cb_buffer: token.len().try_into().unwrap(),
                 buffer_type: 2, // Token
-                pv_buffer: token.as_mut_ptr() as *mut _,
+                pv_buffer: token.as_mut_ptr().cast(),
             },
             SecBuffer {
                 cb_buffer: data.len().try_into().unwrap(),
                 buffer_type: 1, // Data
-                pv_buffer: data.as_mut_ptr() as *mut _,
+                pv_buffer: data.as_mut_ptr().cast(),
             },
         ];
         let mut message = SecBufferDesc {
@@ -811,12 +811,12 @@ mod tests {
             SecBuffer {
                 cb_buffer: token.len().try_into().unwrap(),
                 buffer_type: 2, // Token
-                pv_buffer: token.as_mut_ptr() as *mut _,
+                pv_buffer: token.as_mut_ptr().cast(),
             },
             SecBuffer {
                 cb_buffer: data.len().try_into().unwrap(),
                 buffer_type: 1, // Data
-                pv_buffer: data.as_mut_ptr() as *mut _,
+                pv_buffer: data.as_mut_ptr().cast(),
             },
         ];
         let mut message = SecBufferDesc {

@@ -54,6 +54,7 @@ fn_to_numeric_cast_any = "warn"
 ptr_cast_constness = "warn"
 unnecessary_safety_comment = "warn"
 missing_safety_doc = "warn"
+as_pointer_underscore = "warn"
 
 [workspace.dependencies]
 uuid = { version = "1.18", default-features = false }

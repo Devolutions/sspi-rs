@@ -87,7 +87,7 @@ mod inner {
         // - `destination` is guaranteed to be non-null due to the prior check.
         // - The memory region `destination` contains a valid null-terminator at the end of string.
         // - The memory region `destination` points to is valid for reads of bytes up to and including null-terminator.
-        let destination = unsafe { CStr::from_ptr(destination as *const _) }.to_str().unwrap();
+        let destination = unsafe { CStr::from_ptr(destination.cast()) }.to_str().unwrap();
 
         println!("session id: {:?}. destination: {:?}.", session_id, destination);
 

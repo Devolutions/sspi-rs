@@ -86,7 +86,7 @@ fn open_user_cert_store() -> Result<HCERTSTORE> {
             // This parameter is not used and should be set to NULL.
             None,
             CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT),
-            Some(my.as_ptr() as *const _),
+            Some(my.as_ptr().cast()),
         )
         .map_err(|err| Error::new(ErrorKind::NoCredentials, format!("failed to open cert store: {err:?}")))
     }
