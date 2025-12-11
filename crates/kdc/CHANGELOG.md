@@ -12,8 +12,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add initial KDC implementation ([#541](https://github.com/Devolutions/sspi-rs/issues/541)) ([10ed474fe5](https://github.com/Devolutions/sspi-rs/commit/10ed474fe577583095305dd9ef0d5172321a643f)) 
 
-### <!-- 7 -->Build
-
-- Update picky-krb requirement from 0.11 to 0.12 in /fuzz ([#555](https://github.com/Devolutions/sspi-rs/issues/555)) ([6395577128](https://github.com/Devolutions/sspi-rs/commit/6395577128bc3ae4b3e5982a8e08369a678a0212)) 
-
-
