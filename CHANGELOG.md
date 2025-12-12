@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.4...sspi-v0.18.5)] - 2025-12-11
+
+### <!-- 4 -->Bug Fixes
+
+- Don't use eprintln on unknown packages ([#558](https://github.com/Devolutions/sspi-rs/issues/558)) ([df6181291c](https://github.com/Devolutions/sspi-rs/commit/df6181291ccf6f9fb2a0a59151b43676663b2d74)) 
+
+- Use `String::from_utf16_lossy` over `String::from_utf16` to avoid changing the meaning of some buffers in case of invalid UTF-16 input ([#568](https://github.com/Devolutions/sspi-rs/issues/568)) ([a4889f5b1e](https://github.com/Devolutions/sspi-rs/commit/a4889f5b1e802395b09954f5846d1a6433546281)) 
+
+### <!-- 7 -->Build
+
+- Update dependencies
+
 ## [[0.18.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.3...sspi-v0.18.4)] - 2025-11-18
 
 ### <!-- 7 -->Build
