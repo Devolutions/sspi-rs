@@ -182,7 +182,7 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
             compute_md4(identity.password.as_ref())
         };
 
-        let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref());
+        let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
         let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
         user_uppercase_with_domain.extend(&identity.domain);
 

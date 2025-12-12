@@ -479,12 +479,15 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
             if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
                 // SAFETY: `package_list` is not null due to a prior check.
-                *package_list = Some(String::from_utf16_lossy(unsafe {
-                    from_raw_parts(
-                        auth_data.package_list,
-                        usize::try_from(auth_data.package_list_length).unwrap(),
-                    )
-                }));
+                *package_list = Some(
+                    String::from_utf16(unsafe {
+                        from_raw_parts(
+                            auth_data.package_list,
+                            usize::try_from(auth_data.package_list_length).unwrap(),
+                        )
+                    })
+                    .map_err(Error::from)?,
+                );
             }
 
             (
@@ -1263,18 +1266,21 @@ mod tests {
 
             assert_eq!(
                 "user",
-                String::from_utf16_lossy(from_raw_parts((*identity).user, (*identity).user_length as usize))
+                String::from_utf16(from_raw_parts((*identity).user, (*identity).user_length as usize))
+                    .expect("user is a correct utf-16 string")
             );
             assert_eq!(
                 "pass",
-                String::from_utf16_lossy(from_raw_parts(
+                String::from_utf16(from_raw_parts(
                     (*identity).password,
                     (*identity).password_length as usize
                 ))
+                .expect("password is a correct utf-16 string")
             );
             assert_eq!(
                 "domain",
-                String::from_utf16_lossy(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
+                String::from_utf16(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
+                    .expect("domain is a correct utf-16 string")
             );
 
             let status = SspiFreeAuthIdentity(identity as *mut _);

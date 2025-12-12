@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use sspi::{enumerate_security_packages, str_to_w_buff, PackageInfo, KERBEROS_VERSION};
+use sspi::{enumerate_security_packages, str_to_w_buff, Error, PackageInfo, KERBEROS_VERSION};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -448,11 +448,13 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         check_null!(p_package_name);
         check_null!(pp_package_info);
 
-        // SAFETY:
-        // - `p_package_name` is guaranteed to be non-null due to the prior check.
-        // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
-        // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
-        let pkg_name = unsafe { c_w_str_to_string(p_package_name) };
+        let pkg_name = try_execute!(
+            // SAFETY:
+            // - `p_package_name` is guaranteed to be non-null due to the prior check.
+            // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
+            // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
+            unsafe { c_w_str_to_string(p_package_name) }.map_err(Error::from)
+        );
 
         let pkg_info: RawSecPkgInfoW = try_execute!(enumerate_security_packages())
             .into_iter()

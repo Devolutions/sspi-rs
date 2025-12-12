@@ -5,6 +5,7 @@ use crate::{utils, Error, Secret};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
     MixedFormat,
+    InvalidUtf16,
 }
 
 impl std::error::Error for UsernameError {}
@@ -13,6 +14,7 @@ impl fmt::Display for UsernameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UsernameError::MixedFormat => write!(f, "mixed username format"),
+            UsernameError::InvalidUtf16 => write!(f, "invalid UTF-16 string"),
         }
     }
 }
@@ -226,15 +228,18 @@ impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
     type Error = UsernameError;
 
     fn try_from(credentials_buffers: &AuthIdentityBuffers) -> Result<Self, Self::Error> {
-        let account_name = utils::bytes_to_utf16_string(&credentials_buffers.user);
+        let account_name =
+            utils::bytes_to_utf16_string(&credentials_buffers.user).map_err(|_| UsernameError::InvalidUtf16)?;
         let domain_name = if !credentials_buffers.domain.is_empty() {
-            Some(utils::bytes_to_utf16_string(&credentials_buffers.domain))
+            Some(utils::bytes_to_utf16_string(&credentials_buffers.domain).map_err(|_| UsernameError::InvalidUtf16)?)
         } else {
             None
         };
 
         let username = Username::new(&account_name, domain_name.as_deref())?;
-        let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref()).into();
+        let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref())
+            .map_err(|_| UsernameError::InvalidUtf16)?
+            .into();
 
         Ok(Self { username, password })
     }
@@ -367,7 +372,7 @@ mod scard_credentials {
         fn try_from(value: &SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
             let private_key = if let Some(key) = &value.private_key_pem {
                 Some(SecretPrivateKey::new(
-                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)).map_err(|e| {
+                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)?).map_err(|e| {
                         Error::new(
                             ErrorKind::InternalError,
                             format!("Unable to create a PrivateKey from a PEM string: {}", e),
@@ -380,12 +385,20 @@ mod scard_credentials {
 
             Ok(Self {
                 certificate: picky_asn1_der::from_bytes(&value.certificate)?,
-                reader_name: utils::bytes_to_utf16_string(&value.reader_name),
-                pin: utils::bytes_to_utf16_string(value.pin.as_ref()).into_bytes().into(),
-                username: utils::bytes_to_utf16_string(&value.username),
-                card_name: value.card_name.as_deref().map(utils::bytes_to_utf16_string),
-                container_name: value.container_name.as_deref().map(utils::bytes_to_utf16_string),
-                csp_name: utils::bytes_to_utf16_string(&value.csp_name),
+                reader_name: utils::bytes_to_utf16_string(&value.reader_name)?,
+                pin: utils::bytes_to_utf16_string(value.pin.as_ref())?.into_bytes().into(),
+                username: utils::bytes_to_utf16_string(&value.username)?,
+                card_name: value
+                    .card_name
+                    .as_deref()
+                    .map(utils::bytes_to_utf16_string)
+                    .transpose()?,
+                container_name: value
+                    .container_name
+                    .as_deref()
+                    .map(utils::bytes_to_utf16_string)
+                    .transpose()?,
+                csp_name: utils::bytes_to_utf16_string(&value.csp_name)?,
                 private_key,
                 scard_type: value.scard_type.clone(),
             })

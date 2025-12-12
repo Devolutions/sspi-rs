@@ -53,7 +53,7 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
     let pkcs11 = Pkcs11::new(pkcs11_module)?;
     pkcs11.initialize(CInitializeArgs::OsThreads)?;
 
-    let username = utf16_bytes_to_utf8_string(username);
+    let username = utf16_bytes_to_utf8_string(username)?;
 
     for slot in pkcs11.get_slots_with_token()? {
         let session = pkcs11.open_ro_session(slot)?;
