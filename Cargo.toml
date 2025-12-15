@@ -146,7 +146,7 @@ url = "2.5"
 md-5 = "=0.11.0-rc.2"
 md4 = "0.10"
 crypto-mac = "0.11"
-oid = "0.2"
+oid = "0.3"
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
 hickory-resolver = { version = "0.25", optional = true }
