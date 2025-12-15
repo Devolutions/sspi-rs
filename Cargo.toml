@@ -199,7 +199,7 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
 digest = "=0.11.0-rc.3"
-block-buffer = "=0.11.0-rc.5"
+block-buffer = "=0.11.0"
 crypto-common = "=0.2.0-rc.4"
 pkcs1 = "=0.8.0-rc.4"
 pkcs8 = "=0.11.0-rc.7"
