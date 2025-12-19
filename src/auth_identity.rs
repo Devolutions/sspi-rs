@@ -510,7 +510,7 @@ mod tests {
                 assert_eq!(upn.domain_name(), initial_username.domain_name());
             }
 
-            // A down-level user name can’t contain a @ in the account name
+            // A down-level user name can't contain a @ in the account name
             if !initial_username.account_name().contains('@') {
                 let netbios_name = Username::new(initial_username.account_name(), initial_username.domain_name()).expect("NetBIOS");
                 assert_eq!(netbios_name.format(), UserNameFormat::DownLevelLogonName);

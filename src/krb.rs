@@ -188,7 +188,7 @@ mod tests {
     use super::Krb5Conf;
     #[test]
     fn test_parse_krb5_conf() {
-        let krb5_conf_data = r#"
+        let krb5_conf_data = "
 [libdefaults]
 	default_realm = AD.IT-HELP.NINJA
 	udp_preference_limit = 1
@@ -204,7 +204,7 @@ mod tests {
 		admin_server = IT-HELP-DC.ad.it-help.ninja:88
 		default_domain = ad.it-help.ninja
 	}
-"#;
+";
         let krb5_conf = Krb5Conf::new_from_data(krb5_conf_data).unwrap();
 
         assert_eq!(

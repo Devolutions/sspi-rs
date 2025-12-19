@@ -4,7 +4,7 @@ mod api;
 mod network_client;
 mod session_token;
 
-use std::ffi::CStr;
+use std::ffi::{c_void, CStr};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
@@ -414,7 +414,7 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
 
         // SAFETY: `buf` is allocated by the `DpapiProtectSecret` or `DpapiUnprotectSecret` functions.
         unsafe {
-            libc::free(buf as _);
+            libc::free(buf.cast::<c_void>().cast_mut());
         }
 
         ERROR_SUCCESS

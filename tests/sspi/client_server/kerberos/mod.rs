@@ -245,7 +245,7 @@ fn kerberos_auth() {
         target_service_name,
     } = init_krb_environment();
 
-    let ticket_decryption_key = keys.get(&UserName(target_service_name.clone())).unwrap().clone();
+    let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
     let kdc = KdcMock::new(
         realm,

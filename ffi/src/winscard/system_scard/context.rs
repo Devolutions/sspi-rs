@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::fmt;
-use std::ptr::{null, null_mut};
+use std::ptr::{null, null_mut, with_exposed_provenance_mut};
 #[cfg(target_os = "windows")]
 use std::slice::from_raw_parts;
 
@@ -1044,7 +1044,7 @@ impl WinScardContext for SystemScardContext {
         for (reader_state, c_reader) in reader_states.iter_mut().zip(c_readers.iter()) {
             states.push(ScardReaderState {
                 sz_reader: c_reader.as_ptr().cast(),
-                pv_user_data: reader_state.user_data as _,
+                pv_user_data: with_exposed_provenance_mut(reader_state.user_data),
                 dw_current_state: reader_state.current_state.bits(),
                 dw_event_state: reader_state.event_state.bits(),
                 cb_atr: reader_state.atr_len.try_into()?,
