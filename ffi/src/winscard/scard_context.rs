@@ -1174,14 +1174,15 @@ unsafe fn read_cache(
     // SAFETY:
     // - `card_identifier` is guaranteed to be non-null due to the prior check.
     // - `card_identifier` points to a valid `Uuid` structure.
-    let card_id = unsafe {
-        Uuid::from_fields(
-            (*card_identifier).data1,
-            (*card_identifier).data2,
-            (*card_identifier).data3,
-            &(*card_identifier).data4,
-        )
-    };
+    let card_identifier = unsafe { *card_identifier };
+
+    let card_id = Uuid::from_fields(
+        card_identifier.data1,
+        card_identifier.data2,
+        card_identifier.data3,
+        &card_identifier.data4,
+    );
+
     // SAFETY: `data` is valid for both reads and writes for `*data_len` many elements.
     let buffer_type = unsafe { build_buf_request_type(data, data_len) }?;
 
@@ -1311,14 +1312,14 @@ unsafe fn write_cache(
     // SAFETY:
     // - `card_identifier` is guaranteed to be non-null due to the prior check.
     // - `card_identifier` points to a valid `Uuid` structure.
-    let card_id = unsafe {
-        Uuid::from_fields(
-            (*card_identifier).data1,
-            (*card_identifier).data2,
-            (*card_identifier).data3,
-            &(*card_identifier).data4,
-        )
-    };
+    let card_identifier = unsafe { *card_identifier };
+
+    let card_id = Uuid::from_fields(
+        card_identifier.data1,
+        card_identifier.data2,
+        card_identifier.data3,
+        &card_identifier.data4,
+    );
 
     // SAFETY: `context` is a valid raw scard context handle.
     let context = unsafe { scard_context_to_winscard_context(context) }?;

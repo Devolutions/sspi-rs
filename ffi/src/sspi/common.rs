@@ -671,6 +671,10 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
     use std::ptr::null_mut;
     use std::slice::from_raw_parts;

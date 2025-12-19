@@ -13,23 +13,44 @@ cfg_if::cfg_if! {
 
         pub(crate) fn dns_query_srv_records(name: &str) -> Vec<String> {
             let mut records = Vec::new();
-            unsafe {
-                let mut p_query_results: *mut DNS_RECORDA = null_mut();
-                let dns_status = DnsQuery_W(&HSTRING::from(name), DNS_TYPE_SRV,
-                    DNS_QUERY_STANDARD, None, &mut p_query_results, None);
 
-                match dns_status.ok() {
-                    Ok(()) => {
-                        let p_name_target = (*p_query_results).Data.Srv.pNameTarget;
-                        if let Ok(name_target) = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16).to_string() {
-                            records.push(name_target);
-                        }
+            let mut p_query_results: *mut DNS_RECORDA = null_mut();
+
+            // SAFETY: FFI call with no outstanding preconditions.
+            let dns_status = unsafe {
+                DnsQuery_W(
+                    &HSTRING::from(name),
+                    DNS_TYPE_SRV,
+                    DNS_QUERY_STANDARD,
+                    None,
+                    &mut p_query_results,
+                    None
+                )
+            };
+
+            match dns_status.ok() {
+                Ok(()) => {
+                    // SAFETY: `p_query_results` in non-null because `dns_status` is Ok.
+                    let query_results = unsafe { *p_query_results };
+                    // SAFETY: `query_results.Data` is guaranteed to contain `SRV` because
+                    // of arguments to `DnsQuery_W`.
+                    let p_name_target = unsafe { query_results.Data.Srv.pNameTarget };
+                    let name_target = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16);
+                    // SAFETY: `name_target` is guaranteed to be correct at this point.
+                    let name_target = unsafe {name_target.to_string()};
+
+                    if let Ok(name_target) = name_target {
+                        records.push(name_target);
                     }
-                    Err(error) => error!(%error, "DnsQuery_W failed"),
                 }
+                Err(error) => error!(%error, "DnsQuery_W failed"),
+            }
 
+            // SAFETY: `p_query_results` is not null.
+            unsafe {
                 DnsFree(Some(p_query_results as *const c_void), DnsFreeRecordList);
             }
+
             records
         }
 

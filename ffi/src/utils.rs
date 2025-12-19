@@ -15,12 +15,8 @@ pub(crate) fn into_raw_ptr<T>(value: T) -> *mut T {
 ///
 /// * `s` must be a [valid], null-terminated C string.
 pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> Result<String, FromUtf16Error> {
-    let mut len = 0;
-
     // SAFETY: `s` is a valid, null-terminated C string.
-    while unsafe { *(s.add(len)) } != 0 {
-        len += 1;
-    }
+    let len = unsafe { w_str_len(s) };
 
     // SAFETY: `s` is a valid, null-terminated C string.
     String::from_utf16(unsafe { from_raw_parts(s, len) })
@@ -36,8 +32,13 @@ pub(crate) unsafe fn c_w_str_to_string(s: *const u16) -> Result<String, FromUtf1
 pub(crate) unsafe fn w_str_len(s: *const u16) -> usize {
     let mut len = 0;
 
-    // SAFETY: The user must provide guarantees that `s` is a valid C string.
-    while unsafe { *(s.add(len)) } != 0 {
+    while {
+        // SAFETY: `s` is a valid, null-terminated C string.
+        let s = unsafe { s.add(len) };
+        // SAFETY: `s` is a valid, null-terminated C string.
+        unsafe { *s }
+    } != 0
+    {
         len += 1;
     }
 

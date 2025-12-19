@@ -1683,6 +1683,10 @@ pub extern "system" fn QueryCredentialsAttributesExW(
 pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
     use std::ffi::CStr;
     use std::ptr::{self, null, null_mut};
@@ -1717,15 +1721,18 @@ mod tests {
         let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
         assert_eq!(status, 0);
 
+        let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
-        println!("{:?}", unsafe { &*pkg_info });
-        println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).name) });
-        println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
+        println!("{:?}", pkg_info);
+        println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
+        println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
 
-        let cb_max_token = unsafe { (*pkg_info).cb_max_token };
+        let cb_max_token = pkg_info.cb_max_token;
 
-        let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
+        let pv_context_buffer = ptr::from_mut(pkg_info).cast();
+        let status = unsafe { FreeContextBuffer(pv_context_buffer) };
         assert_eq!(status, 0);
 
         let mut pc_packages = 0;
@@ -1736,9 +1743,11 @@ mod tests {
 
         for i in 0..pc_packages as usize {
             let pkg_info = unsafe { packages.add(i) };
-            println!("{:?}", unsafe { &*pkg_info });
-            println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).name) });
-            println!("{:?}", unsafe { c_w_str_to_string((*pkg_info).comment) });
+            let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
+
+            println!("{:?}", pkg_info);
+            println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
+            println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
         }
 
         let status = unsafe { FreeContextBuffer(packages.cast()) };
@@ -1843,15 +1852,18 @@ mod tests {
         let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr().cast(), &mut pkg_info) };
         assert_eq!(status, 0);
 
+        let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
-        println!("{:?}", unsafe { &*pkg_info });
-        println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).name).to_str().unwrap() });
-        println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).comment).to_str().unwrap() });
+        println!("{:?}", pkg_info);
+        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
+        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
 
-        let cb_max_token = unsafe { (*pkg_info).cb_max_token };
+        let cb_max_token = pkg_info.cb_max_token;
 
-        let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
+        let pv_context_buffer = ptr::from_mut(pkg_info).cast();
+        let status = unsafe { FreeContextBuffer(pv_context_buffer) };
         assert_eq!(status, 0);
 
         let mut pc_packages = 0;
@@ -1862,9 +1874,11 @@ mod tests {
 
         for i in 0..pc_packages as usize {
             let pkg_info = unsafe { packages.add(i) };
-            println!("{:?}", unsafe { &*pkg_info });
-            println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).name).to_str().unwrap() });
-            println!("{:?}", unsafe { CStr::from_ptr((*pkg_info).comment).to_str().unwrap() });
+            let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
+
+            println!("{:?}", pkg_info);
+            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
+            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
         }
 
         let status = unsafe { FreeContextBuffer(packages.cast()) };

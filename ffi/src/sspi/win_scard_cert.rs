@@ -34,20 +34,24 @@ pub type HCRYPTKEY = usize; // ULONG_PTR
 /// * `cert_store` must be a valid cert store handle obtained using the `CertOpenStore` function.
 #[instrument(level = "trace", ret)]
 unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: HCERTSTORE) -> Result<Vec<u8>> {
-    // SAFETY:
-    // `cert_store` must be valid certificate (upheld by the caller).
-    let mut certificate = unsafe { CertEnumCertificatesInStore(cert_store, None) };
+    // SAFETY: `cert_store` must be valid certificate (upheld by the caller).
+    let certificate = unsafe { CertEnumCertificatesInStore(cert_store, None) };
 
-    while !certificate.is_null() {
-        // SAFETY: `certificate` is a valid certificate handle obtained from the Windows certificate store.
-        let cert_der = unsafe { from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize) };
+    // SAFETY: `certificate` is either null or convertible to a reference to `CERT_CONTEXT`
+    let mut certificate = unsafe { certificate.as_ref() };
+
+    while let Some(curr_certificate) = certificate {
+        let cert_der = {
+            // SAFETY: `certificate` is a valid certificate handle obtained from the Windows certificate store.
+            unsafe { from_raw_parts(curr_certificate.pbCertEncoded, curr_certificate.cbCertEncoded as usize) }
+        };
         let mut sha1 = Sha1::new();
         sha1.update(cert_der);
         let cert_thumbprint = sha1.finalize().to_vec();
 
         if cert_thumbprint == thumbprint {
             // SAFETY: `certificate` is a valid certificate handle obtained from the Windows certificate store.
-            let _ = unsafe { CertFreeCertificateContext(Some(certificate)) };
+            let _ = unsafe { CertFreeCertificateContext(Some(curr_certificate)) };
 
             return Ok(cert_der.to_vec());
         }
@@ -55,9 +59,10 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: HCERTSTORE)
         // SAFETY:
         // - `certificate` is a valid certificate handle obtained from the Windows certificate store.
         // - `cert_store` must be valid certificate (upheld by the caller).
-        let next_certificate = unsafe { CertEnumCertificatesInStore(cert_store, Some(certificate)) };
+        let next_certificate = unsafe { CertEnumCertificatesInStore(cert_store, Some(curr_certificate)) };
 
-        certificate = next_certificate;
+        // SAFETY: `certificate` is either null or convertible to a reference to `CERT_CONTEXT`
+        certificate = unsafe { next_certificate.as_ref() };
     }
 
     Err(Error::new(
