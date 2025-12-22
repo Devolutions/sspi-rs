@@ -1,8 +1,7 @@
-use std::fmt;
 use std::iter::once;
 use std::mem::size_of;
-use std::ptr::with_exposed_provenance_mut;
 use std::slice::from_raw_parts_mut;
+use std::{fmt, ptr};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
@@ -98,7 +97,7 @@ impl WinScardContextHandle {
 
             // SAFETY: The `allocations` collection contains only allocated memory pointers, so it's
             // safe to deallocate them using the `libc::free` function.
-            unsafe { libc::free(with_exposed_provenance_mut(buff)) }
+            unsafe { libc::free(ptr::with_exposed_provenance_mut(buff)) }
 
             true
         } else {
@@ -281,7 +280,7 @@ impl Drop for WinScardContextHandle {
         for buff in &self.allocations {
             // SAFETY: `WinScardContextHandle` contains only allocated memory pointers.
             unsafe {
-                libc::free(with_exposed_provenance_mut(*buff));
+                libc::free(ptr::with_exposed_provenance_mut(*buff));
             }
         }
     }
