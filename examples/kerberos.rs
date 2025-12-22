@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             &mut acq_creds_handle_result.credentials_handle,
             &input_token,
             &hostname,
-        );
+        )?;
+
         if status == SecurityStatus::ContinueNeeded || status == SecurityStatus::Ok {
             let (token_from_server, status_code) =
                 process_authentication(&output_token, &mut client, &auth_method, &hostname)?;
@@ -49,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
             input_token = token_from_server;
         } else {
-            panic!("Having problem continue authentication");
+            return Err("Having problem continue authentication".into());
         }
     }
 }
@@ -123,7 +124,7 @@ fn step_helper(
     input_buffer: &mut [SecurityBuffer],
     output_buffer: &mut [SecurityBuffer],
     hostname: &str,
-) -> Result<InitializeSecurityContextResult, Box<dyn Error>> {
+) -> Result<InitializeSecurityContextResult, Box<dyn Error + Send + Sync>> {
     let target_name = format!("HTTP/{}", hostname);
     let mut builder = kerberos
         .initialize_security_context()
@@ -146,26 +147,23 @@ pub fn step(
     cred_handle: &mut <Kerberos as SspiImpl>::CredentialsHandle,
     input_token: &String,
     hostname: &str,
-) -> (String, SecurityStatus) {
+) -> Result<(String, SecurityStatus), Box<dyn Error + Send + Sync>> {
     let input_buffer = base64::engine::general_purpose::STANDARD.decode(input_token).unwrap();
     let mut secure_input_buffer = vec![SecurityBuffer::new(input_buffer, BufferType::Token)];
     let mut secure_output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-    match step_helper(
+
+    let result = step_helper(
         kerberos,
         cred_handle,
         &mut secure_input_buffer,
         &mut secure_output_buffer,
         hostname,
-    ) {
-        Ok(result) => {
-            let output_buffer = secure_output_buffer[0].to_owned();
-            (
-                base64::engine::general_purpose::STANDARD.encode(output_buffer.buffer),
-                result.status,
-            )
-        }
-        Err(_) => {
-            panic!("error stepping");
-        }
-    }
+    )?;
+
+    let output_buffer = secure_output_buffer[0].to_owned();
+
+    Ok((
+        base64::engine::general_purpose::STANDARD.encode(output_buffer.buffer),
+        result.status,
+    ))
 }

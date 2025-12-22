@@ -1,7 +1,7 @@
-use std::fmt;
 use std::iter::once;
 use std::mem::size_of;
 use std::slice::from_raw_parts_mut;
+use std::{fmt, ptr};
 
 use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
@@ -90,16 +90,14 @@ impl WinScardContextHandle {
     /// Deletes the buffer inside the scard context.
     #[instrument(level = "debug", ret)]
     pub(super) fn free_buffer(&mut self, buff: LpCVoid) -> bool {
-        let buff = buff as usize;
+        let buff = buff.expose_provenance();
 
         if let Some(index) = self.allocations.iter().position(|x| *x == buff) {
             self.allocations.remove(index);
 
             // SAFETY: The `allocations` collection contains only allocated memory pointers, so it's
             // safe to deallocate them using the `libc::free` function.
-            unsafe {
-                libc::free(buff as _);
-            }
+            unsafe { libc::free(ptr::with_exposed_provenance_mut(buff)) }
 
             true
         } else {
@@ -282,7 +280,7 @@ impl Drop for WinScardContextHandle {
         for buff in &self.allocations {
             // SAFETY: `WinScardContextHandle` contains only allocated memory pointers.
             unsafe {
-                libc::free(*buff as _);
+                libc::free(ptr::with_exposed_provenance_mut(*buff));
             }
         }
     }
