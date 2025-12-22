@@ -471,6 +471,10 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
 pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar, *mut PSecPkgInfoW) -> SecurityStatus;
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
     use std::ptr::null_mut;
 
@@ -490,20 +494,20 @@ mod tests {
         let mut packages_amount = 0;
         let mut packages = null_mut::<SecPkgInfoA>();
 
-        unsafe {
-            let status = EnumerateSecurityPackagesA(&mut packages_amount, &mut packages);
+        let status = unsafe { EnumerateSecurityPackagesA(&mut packages_amount, &mut packages) };
 
-            assert_eq!(status, 0);
-            assert_eq!(packages_amount, expected_packages_amount);
-            assert!(!packages.is_null());
+        assert_eq!(status, 0);
+        assert_eq!(packages_amount, expected_packages_amount);
+        assert!(!packages.is_null());
 
-            for i in 0..(packages_amount as usize) {
-                let _ = packages.add(i).as_mut().unwrap();
-            }
-
-            let status = FreeContextBuffer(packages.cast());
-            assert_eq!(status, 0);
+        for i in 0..(packages_amount as usize) {
+            let pkg_info = unsafe { packages.add(i) };
+            let _ = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
         }
+
+        let pv_context_buffer = packages.cast();
+        let status = unsafe { FreeContextBuffer(pv_context_buffer) };
+        assert_eq!(status, 0);
     }
 
     #[test]
@@ -519,19 +523,19 @@ mod tests {
         let mut packages_amount = 0;
         let mut packages = null_mut::<SecPkgInfoW>();
 
-        unsafe {
-            let status = EnumerateSecurityPackagesW(&mut packages_amount, &mut packages);
+        let status = unsafe { EnumerateSecurityPackagesW(&mut packages_amount, &mut packages) };
 
-            assert_eq!(status, 0);
-            assert_eq!(packages_amount, expected_packages_amount);
-            assert!(!packages.is_null());
+        assert_eq!(status, 0);
+        assert_eq!(packages_amount, expected_packages_amount);
+        assert!(!packages.is_null());
 
-            for i in 0..(packages_amount as usize) {
-                let _ = packages.add(i).as_mut().unwrap();
-            }
-
-            let status = FreeContextBuffer(packages.cast());
-            assert_eq!(status, 0);
+        for i in 0..(packages_amount as usize) {
+            let pkg_info = unsafe { packages.add(i) };
+            let _ = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
         }
+
+        let pv_context_buffer = packages.cast();
+        let status = unsafe { FreeContextBuffer(pv_context_buffer) };
+        assert_eq!(status, 0);
     }
 }

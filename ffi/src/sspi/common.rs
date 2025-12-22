@@ -291,8 +291,10 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
         );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
+        let sspi_context_ptr = unsafe { sspi_context_ptr.as_mut() };
+        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let _context: Box<SspiHandle> = unsafe {
-            Box::from_raw(sspi_context_ptr.as_mut())
+            Box::from_raw(sspi_context_ptr)
         };
 
         // SAFETY:
@@ -671,6 +673,10 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
     use std::ptr::null_mut;
     use std::slice::from_raw_parts;

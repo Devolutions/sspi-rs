@@ -278,6 +278,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         check_null!(username);
         check_null!(password);
         check_null!(secret);
+        check_null!(secret_len);
 
         try_execute!(sspi::install_default_crypto_provider_if_necessary().map_err(|_| "failed to initialize default crypto provider"), NTE_INTERNAL_ERROR);
 
@@ -422,6 +423,10 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
     //! This tests simulate `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
     //! It's better to run them using Miri: https://github.com/rust-lang/miri.
@@ -488,10 +493,8 @@ mod tests {
         assert!(!decrypted_secret.is_null());
         assert!(secret_len > 0);
 
-        unsafe {
-            DpapiFree(blob);
-            DpapiFree(decrypted_secret);
-        }
+        unsafe { DpapiFree(blob) };
+        unsafe { DpapiFree(decrypted_secret) };
     }
 
     #[test]
@@ -549,9 +552,7 @@ mod tests {
         assert!(!decrypted_secret.is_null());
         assert!(secret_len > 0);
 
-        unsafe {
-            DpapiFree(blob);
-            DpapiFree(decrypted_secret);
-        }
+        unsafe { DpapiFree(blob) };
+        unsafe { DpapiFree(decrypted_secret) };
     }
 }

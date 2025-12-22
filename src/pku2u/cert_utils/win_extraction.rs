@@ -328,32 +328,36 @@ unsafe fn extract_client_p2p_certificate(cert_store: HCERTSTORE) -> Result<(Cert
 // So we assume that the needed certificates are placed in this folder
 // It uses the "My" certificates store that has access to the Personal folder in order to extract those certificates.
 pub(crate) fn extract_client_p2p_cert_and_key() -> Result<(Certificate, PrivateKey)> {
-    unsafe {
-        // "My\0" encoded as a wide string.
-        // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
-        let my: [u16; 3] = [77, 121, 0];
-        let cert_store = CertOpenStore(
+    // "My\0" encoded as a wide string.
+    // More info: https://docs.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certopenstore#remarks
+    let my: [u16; 3] = [77, 121, 0];
+
+    // SAFETY: `my` is not null and is a correct wide string, and all other arguments are type-checked.
+    let cert_store = unsafe {
+        CertOpenStore(
             CERT_STORE_PROV_SYSTEM_W,
             CERT_QUERY_ENCODING_TYPE(0),
             Some(HCRYPTPROV_LEGACY(0)),
             CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT),
             Some(my.as_ptr().cast()),
-        );
+        )
+    };
 
-        let cert_store = cert_store.map_err(|error| Error {
-            error_type: ErrorKind::InternalError,
-            description: "Cannot initialize certificate store".into(),
-            nstatus: NStatusCode::try_from(error.code()).ok(),
-        })?;
+    let cert_store = cert_store.map_err(|error| Error {
+        error_type: ErrorKind::InternalError,
+        description: "Cannot initialize certificate store".into(),
+        nstatus: NStatusCode::try_from(error.code()).ok(),
+    })?;
 
-        let cert_and_key = extract_client_p2p_certificate(cert_store);
+    // SAFETY: `cert_store` is not null. We've checked this above.
+    let cert_and_key = unsafe { extract_client_p2p_certificate(cert_store) };
 
-        // The function always returns nonzero.
-        // More info: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certfreecertificatecontext.
-        let _ = CertCloseStore(Some(cert_store), 0);
+    // The function always returns nonzero.
+    // More info: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certfreecertificatecontext.
+    // SAFETY: `cert_store` is not null. We've checked this above.
+    let _ = unsafe { CertCloseStore(Some(cert_store), 0) };
 
-        cert_and_key
-    }
+    cert_and_key
 }
 
 #[cfg(test)]

@@ -41,13 +41,12 @@ pub(super) unsafe fn build_buf_request_type<'data>(
         // containing the attribute.
         Ok(RequestedBufferType::Allocate)
     } else {
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
+        let len = unsafe { *pcb_buf }.try_into()?;
         // SAFETY:
-        // - The `pcb_buf` is guaranteed to be non-null due to the prior check.
         // - `p_buf` is guaranteed to be non-null due to the prior check.
         // - `p_buf` is valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
-        Ok(RequestedBufferType::Buf(unsafe {
-            from_raw_parts_mut(p_buf, (*pcb_buf).try_into()?)
-        }))
+        Ok(RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf, len) }))
     }
 }
 
@@ -81,11 +80,13 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
         // to a byte pointer, and receives the address of a block of memory containing the attribute.
         RequestedBufferType::Allocate
     } else {
+        // SAFETY: The `pcb_buf` is guaranteed to be non-null due to the prior check.
+        let cb_buf = unsafe { *pcb_buf };
+        let len = usize::try_from(cb_buf)? * 2;
         // SAFETY:
-        // - The `pcb_buf` is guaranteed to be non-null due to the prior check.
         // - `p_buf` is guaranteed to be non-null due to the prior check.
         // - `p_buf` is valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
-        RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf as *mut u8, usize::try_from(*pcb_buf)? * 2) })
+        RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf as *mut u8, len) })
     })
 }
 

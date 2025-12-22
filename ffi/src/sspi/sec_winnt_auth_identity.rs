@@ -468,45 +468,43 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     //   structure, depending on the `auth_version`.
     let (auth_version, _) = unsafe { get_auth_data_identity_version_and_flags(p_auth_data) };
 
-    let (user, user_len, domain, domain_len, password, password_len) =
-        if auth_version == SEC_WINNT_AUTH_IDENTITY_VERSION {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
-            // SAFETY: `auth_data` is not null. We've checked this above.
-            let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+    let (user, user_len, domain, domain_len, password, password_len) = if auth_version
+        == SEC_WINNT_AUTH_IDENTITY_VERSION
+    {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityExW>();
+        // SAFETY: `auth_data` is not null. We've checked this above.
+        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
 
-            if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
-                // SAFETY: `package_list` is not null due to a prior check.
-                let package_list_data = unsafe {
-                    from_raw_parts(
-                        auth_data.package_list,
-                        usize::try_from(auth_data.package_list_length).unwrap(),
-                    )
-                };
-                *package_list = Some(String::from_utf16(package_list_data)?);
-            }
+        if !auth_data.package_list.is_null() && auth_data.package_list_length > 0 {
+            let package_list_length = usize::try_from(auth_data.package_list_length).expect("u32 is castable to usize");
 
-            (
-                auth_data.user,
-                auth_data.user_length,
-                auth_data.domain,
-                auth_data.domain_length,
-                auth_data.password,
-                auth_data.password_length,
-            )
-        } else {
-            let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
-            // SAFETY: `auth_data` is not null. We've checked this above.
-            let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+            // SAFETY: `package_list` is not null due to a prior check.
+            let package_list_data = unsafe { from_raw_parts(auth_data.package_list, package_list_length) };
+            *package_list = Some(String::from_utf16(package_list_data)?);
+        }
 
-            (
-                auth_data.user,
-                auth_data.user_length,
-                auth_data.domain,
-                auth_data.domain_length,
-                auth_data.password,
-                auth_data.password_length,
-            )
-        };
+        (
+            auth_data.user,
+            auth_data.user_length,
+            auth_data.domain,
+            auth_data.domain_length,
+            auth_data.password,
+            auth_data.password_length,
+        )
+    } else {
+        let auth_data = p_auth_data.cast::<SecWinntAuthIdentityW>();
+        // SAFETY: `auth_data` is not null. We've checked this above.
+        let auth_data = unsafe { auth_data.as_ref() }.expect("auth_data pointer should not be null");
+
+        (
+            auth_data.user,
+            auth_data.user_length,
+            auth_data.domain,
+            auth_data.domain_length,
+            auth_data.password,
+            auth_data.password_length,
+        )
+    };
 
     // SAFETY:
     // - Credentials pointers can be NULL.
@@ -526,7 +524,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     username.extend_from_slice(&[0, 0]);
     #[cfg(all(feature = "scard", target_os = "windows"))]
     if !user.is_empty()
-        // SAFETY: This function is safe to call because argument is validated.
+    // SAFETY: `username` is a null-terminated wide string.
         && unsafe { CredIsMarshaledCredentialW(windows::core::PCWSTR::from_raw(username.as_ptr().cast())) }.into()
     {
         return handle_smart_card_creds(user, password);
@@ -1226,8 +1224,12 @@ pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> Se
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::undocumented_unsafe_blocks,
+    reason = "undocumented unsafe is acceptable in tests"
+)]
 mod tests {
-    use std::ptr::{null, null_mut};
+    use std::ptr::{self, null, null_mut};
     use std::slice::from_raw_parts;
 
     use libc::c_void;
@@ -1250,37 +1252,38 @@ mod tests {
         let (username, password, domain) = get_user_credentials();
         let mut identity = null_mut::<c_void>();
 
-        unsafe {
-            let status =
-                SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
+        let status = unsafe {
+            SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity)
+        };
 
-            assert_eq!(status, 0);
-            assert!(!identity.is_null());
+        assert_eq!(status, 0);
+        assert!(!identity.is_null());
 
-            let identity = identity.cast::<SecWinntAuthIdentityW>();
+        let identity = identity.cast::<SecWinntAuthIdentityW>();
+        let identity = unsafe { identity.as_mut() }.expect("identity is not null");
 
-            assert_eq!(
-                "user",
-                String::from_utf16(from_raw_parts((*identity).user, (*identity).user_length as usize))
-                    .expect("user is a correct utf-16 string")
-            );
-            assert_eq!(
-                "pass",
-                String::from_utf16(from_raw_parts(
-                    (*identity).password,
-                    (*identity).password_length as usize
-                ))
+        assert_eq!(
+            "user",
+            String::from_utf16(unsafe { from_raw_parts(identity.user, identity.user_length as usize) })
+                .expect("user is a correct utf-16 string")
+        );
+
+        assert_eq!(
+            "pass",
+            String::from_utf16(unsafe { from_raw_parts(identity.password, identity.password_length as usize) })
                 .expect("password is a correct utf-16 string")
-            );
-            assert_eq!(
-                "domain",
-                String::from_utf16(from_raw_parts((*identity).domain, (*identity).domain_length as usize))
-                    .expect("domain is a correct utf-16 string")
-            );
+        );
 
-            let status = SspiFreeAuthIdentity(identity.cast());
-            assert_eq!(status, 0);
-        }
+        assert_eq!(
+            "domain",
+            String::from_utf16(unsafe { from_raw_parts(identity.domain, identity.domain_length as usize) })
+                .expect("domain is a correct utf-16 string")
+        );
+
+        let auth_data = ptr::from_mut(identity).cast();
+        let status = unsafe { SspiFreeAuthIdentity(auth_data) };
+
+        assert_eq!(status, 0);
     }
 
     #[test]
@@ -1316,14 +1319,13 @@ mod tests {
         let (username, password, domain) = get_user_credentials();
         let mut identity = null_mut::<c_void>();
 
-        unsafe {
-            let status =
-                SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity);
-            assert_eq!(status, 0);
+        let status = unsafe {
+            SspiEncodeStringsAsAuthIdentity(username.as_ptr(), domain.as_ptr(), password.as_ptr(), &mut identity)
+        };
+        assert_eq!(status, 0);
 
-            let status = SspiFreeAuthIdentity(identity);
-            assert_eq!(status, 0);
-        }
+        let status = unsafe { SspiFreeAuthIdentity(identity) };
+        assert_eq!(status, 0);
     }
 
     #[test]
