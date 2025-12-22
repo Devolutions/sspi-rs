@@ -818,7 +818,9 @@ impl<'a> SspiContext {
                 ntlm.accept_security_context_impl(new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
-            SspiContext::Negotiate(negotiate) => negotiate.accept_security_context_impl(yield_point, builder).await,
+            SspiContext::Negotiate(negotiate) => {
+                negotiate::server::accept_security_context(negotiate, yield_point, builder).await
+            }
             SspiContext::Pku2u(pku2u) => {
                 let mut creds_handle = builder
                     .credentials_handle
@@ -852,7 +854,9 @@ impl<'a> SspiContext {
                 ntlm.initialize_security_context_impl(&mut new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(yield_point, builder).await,
-            SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(yield_point, builder).await,
+            SspiContext::Negotiate(negotiate) => {
+                negotiate::client::initialize_security_context(negotiate, yield_point, builder).await
+            }
             SspiContext::Pku2u(pku2u) => {
                 let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
                     builder.credentials_handle_mut()
