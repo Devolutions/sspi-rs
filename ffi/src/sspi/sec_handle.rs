@@ -1283,12 +1283,23 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlA>();
+
+            // SAFETY:
+            // - `cred_attr` is guaranteed to be non-null due to the prior check.
+            let kdc_url = unsafe {
+                (*cred_attr).kdc_url
+            };
+
+            if kdc_url.is_null() {
+                return ErrorKind::IncompleteCredentials.to_u32().unwrap();
+            }
+
             let kdc_url = try_execute!(
                 // SAFETY:
-                // - `p_buffer` is guaranteed to be non-null due to the prior check.
-                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { CStr::from_ptr((*cred_attr).kdc_url) }.to_str(),
+                // - `kdc_url` is non-null due to the prior check.
+                // - The memory region `kdc_url` contains a valid null-terminator at the end of string.
+                // - The memory region `kdc_url` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { CStr::from_ptr(kdc_url) }.to_str(),
                 ErrorKind::InvalidParameter
             );
             credentials_handle.attributes.kdc_url = Some(kdc_url.to_string());
@@ -1364,12 +1375,22 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
             0
         } else if ul_attribute == SECPKG_CRED_ATTR_KDC_URL {
             let cred_attr = p_buffer.cast::<SecPkgCredentialsKdcUrlW>();
+            // SAFETY:
+            // - `cred_attr` is guaranteed to be non-null due to the prior check.
+            let kdc_url = unsafe {
+                (*cred_attr).kdc_url
+            }.cast_const();
+
+            if kdc_url.is_null() {
+                return ErrorKind::IncompleteCredentials.to_u32().unwrap();
+            }
+
             let kdc_url = try_execute!(
                 // SAFETY:
-                // - `p_buffer` is guaranteed to be non-null due to the prior check.
-                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { c_w_str_to_string((*cred_attr).kdc_url.cast_const()) }.map_err(Error::from)
+                // - `kdc_url` is non-null due to the prior check.
+                // - The memory region `kdc_url` contains a valid null-terminator at the end of string.
+                // - The memory region `kdc_url` points to is valid for reads of bytes up to and including null-terminator.
+                unsafe { c_w_str_to_string(kdc_url) }.map_err(Error::from)
             );
             credentials_handle.attributes.kdc_url = Some(kdc_url);
 
@@ -1455,11 +1476,13 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         check_null!(p_output.p_buffers);
 
-        let mut output_tokens =
-            // SAFETY:
-            // - `p_output.p_buffers` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_output.p_buffers` points to is valid for reads of `len` elements.
-            unsafe { p_sec_buffers_to_security_buffers(from_raw_parts(p_output.p_buffers, len)) };
+        // SAFETY:
+        // - `p_output.p_buffers` is guaranteed to be non-null due to the prior check.
+        // - The memory region `p_output.p_buffers` points to is valid for reads of `len` elements.
+        let p_buffers = unsafe { from_raw_parts(p_output.p_buffers, len) };
+        // SAFETY:
+        // - `p_buffers` must contain valid [SecBuffer] structures: upheld by the user.
+        let mut output_tokens = unsafe { p_sec_buffers_to_security_buffers(p_buffers) };
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let change_password = ChangePasswordBuilder::new()
