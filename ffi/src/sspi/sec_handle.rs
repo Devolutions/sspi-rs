@@ -1739,12 +1739,12 @@ mod tests {
     #[test]
     fn initialize_security_context_w() {
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
-        let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+        let mut pkg_info_ptr: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
-        let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
+        let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info_ptr) };
         assert_eq!(status, 0);
 
-        let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+        let pkg_info = unsafe { pkg_info_ptr.as_mut() }.expect("pkg_info is not null");
 
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
@@ -1754,7 +1754,7 @@ mod tests {
 
         let cb_max_token = pkg_info.cb_max_token;
 
-        let pv_context_buffer = ptr::from_mut(pkg_info).cast();
+        let pv_context_buffer = pkg_info_ptr.cast();
         let status = unsafe { FreeContextBuffer(pv_context_buffer) };
         assert_eq!(status, 0);
 
@@ -1870,12 +1870,12 @@ mod tests {
     #[test]
     fn initialize_security_context_a() {
         let pkg_name = "NTLM\0";
-        let mut pkg_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
+        let mut pkg_info_ptr: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
-        let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr().cast(), &mut pkg_info) };
+        let status = unsafe { QuerySecurityPackageInfoA(pkg_name.as_ptr().cast(), &mut pkg_info_ptr) };
         assert_eq!(status, 0);
 
-        let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+        let pkg_info = unsafe { pkg_info_ptr.as_mut() }.expect("pkg_info is not null");
 
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
@@ -1885,7 +1885,7 @@ mod tests {
 
         let cb_max_token = pkg_info.cb_max_token;
 
-        let pv_context_buffer = ptr::from_mut(pkg_info).cast();
+        let pv_context_buffer = pkg_info_ptr.cast();
         let status = unsafe { FreeContextBuffer(pv_context_buffer) };
         assert_eq!(status, 0);
 
