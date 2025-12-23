@@ -1,8 +1,16 @@
+use std::io::Write;
+
+use picky_krb::gss_api::NegTokenTarg1;
+
 use crate::generator::YieldPointLocal;
+use crate::negotiate::generators::{generate_mech_type_list, generate_neg_token_init};
+use crate::negotiate::NegotiateState;
 use crate::ntlm::NtlmConfig;
+use crate::utils::parse_target_name;
 use crate::{
-    AuthIdentity, CredentialsBuffers, Error, ErrorKind, InitializeSecurityContextResult, Negotiate, NegotiatedProtocol,
-    Ntlm, Result, SspiImpl,
+    AuthIdentity, BufferType, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
+    InitializeSecurityContextResult, Negotiate, NegotiatedProtocol, Ntlm, Result, SecurityBuffer, SecurityStatus,
+    SspiImpl, ClientRequestFlags,
 };
 
 /// Performs one authentication step.
@@ -32,6 +40,9 @@ pub(crate) async fn initialize_security_context<'a>(
         use crate::NegotiatedProtocol;
 
         if let NegotiatedProtocol::Ntlm(_) = &negotiate.protocol {
+            // If the user provided smart card credentials, then they definitely want to use Kerberos,
+            // because NTLM does not support scard logon.
+
             use crate::kerberos::client::generators::get_client_principal_realm;
             use crate::{detect_kdc_url, Kerberos, KerberosConfig};
 
@@ -72,19 +83,81 @@ pub(crate) async fn initialize_security_context<'a>(
         };
     }
 
-    match &mut negotiate.protocol {
-        NegotiatedProtocol::Pku2u(pku2u) => {
-            let mut credentials_handle = negotiate.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
-            let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+    match negotiate.state {
+        NegotiateState::Initial => {
+            let sname = if builder
+                .context_requirements
+                .contains(ClientRequestFlags::USE_SESSION_KEY)
+            {
+                let (service_name, service_principal_name) =
+                    parse_target_name(builder.target_name.ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::NoCredentials,
+                            "Service target name (service principal name) is not provided",
+                        )
+                    })?)?;
 
-            pku2u.initialize_security_context_impl(&mut transformed_builder)
-        }
-        NegotiatedProtocol::Kerberos(kerberos) => kerberos.initialize_security_context_impl(yield_point, builder).await,
-        NegotiatedProtocol::Ntlm(ntlm) => {
-            let mut credentials_handle = negotiate.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
-            let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+                Some([service_name, service_principal_name])
+            } else {
+                None
+            };
 
-            ntlm.initialize_security_context_impl(&mut transformed_builder)
+            debug!(?sname);
+
+            let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
+                sname.as_ref().map(|sname| sname.as_slice()),
+                generate_mech_type_list(matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_))),
+            )?)?;
+
+            let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+            output_token.buffer.write_all(&encoded_neg_token_init)?;
+
+            negotiate.state = NegotiateState::InProgress;
+
+            Ok(InitializeSecurityContextResult {
+                status: SecurityStatus::ContinueNeeded,
+                flags: ClientResponseFlags::empty(),
+                expiry: None,
+            })
         }
+        NegotiateState::InProgress => {
+            let input = builder
+                .input
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
+                
+            let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
+            let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(input_token.buffer.as_slice())?;
+
+            let result = match &mut negotiate.protocol {
+                NegotiatedProtocol::Pku2u(pku2u) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                    pku2u.initialize_security_context_impl(&mut transformed_builder)?
+                }
+                NegotiatedProtocol::Kerberos(kerberos) => {
+                    kerberos.initialize_security_context_impl(yield_point, builder).await?
+                }
+                NegotiatedProtocol::Ntlm(ntlm) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_mut().and_then(|c| c.clone().auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                    ntlm.initialize_security_context_impl(&mut transformed_builder)?
+                }
+            };
+
+            if result.status == SecurityStatus::Ok {
+                negotiate.state = NegotiateState::Ok;
+            }
+
+            Ok(result)
+        }
+        NegotiateState::Ok => Err(Error::new(
+            ErrorKind::OutOfSequence,
+            "initialize_security_context called after negotiation completed",
+        )),
     }
 }

@@ -1,5 +1,7 @@
 pub(crate) mod client;
 mod config;
+mod extractors;
+mod generators;
 pub(crate) mod server;
 
 use std::fmt::Debug;
@@ -51,8 +53,17 @@ impl NegotiatedProtocol {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+enum NegotiateState {
+    #[default]
+    Initial,
+    InProgress,
+    Ok,
+}
+
 #[derive(Clone, Debug)]
 pub struct Negotiate {
+    state: NegotiateState,
     protocol: NegotiatedProtocol,
     package_list: Option<String>,
     auth_identity: Option<CredentialsBuffers>,
@@ -77,6 +88,7 @@ impl Negotiate {
         }
 
         Ok(Negotiate {
+            state: Default::default(),
             protocol,
             package_list: config.package_list,
             auth_identity: None,
@@ -95,6 +107,7 @@ impl Negotiate {
         }
 
         Ok(Negotiate {
+            state: Default::default(),
             protocol,
             package_list: config.package_list,
             auth_identity: None,
