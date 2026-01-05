@@ -36,7 +36,7 @@ pub(super) enum AvPair {
     DnsTreeName(Vec<u8>),
     Flags(u32),
     Timestamp(u64),
-    SingleHost(Vec<u8>),
+    SingleHost([u8; SINGLE_HOST_DATA_SIZE]),
     TargetName(Vec<u8>),
     ChannelBindings([u8; HASH_SIZE]),
 }
@@ -97,7 +97,8 @@ impl AvPair {
                 }
             }
             AV_PAIR_SINGLE_HOST => {
-                // MS-NLMP: MsvAvSingleHost can be extended; fields after MachineID MUST be ignored.
+                // MS-NLMP: "Any fields after the MachineID field MUST be ignored on receipt."
+                // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/f221c061-cc40-4471-95da-d2ff71c85c5b
                 // Windows 11 Build 26200+ sends 80 bytes instead of the traditional 48.
                 if len < SINGLE_HOST_DATA_SIZE {
                     Err(io::Error::new(
@@ -105,8 +106,16 @@ impl AvPair {
                         format!("Got SingleHost AvPair with len {} < {}", len, SINGLE_HOST_DATA_SIZE),
                     ))
                 } else {
-                    let mut value = vec![0x00; len];
+                    let mut value = [0x00; SINGLE_HOST_DATA_SIZE];
                     buffer.read_exact(value.as_mut())?;
+
+                    // Skip any trailing bytes beyond SINGLE_HOST_DATA_SIZE
+                    let trailing = len - SINGLE_HOST_DATA_SIZE;
+                    if trailing > 0 {
+                        let mut discard = vec![0x00; trailing];
+                        buffer.read_exact(discard.as_mut())?;
+                    }
+
                     Ok(AvPair::SingleHost(value))
                 }
             }
@@ -157,7 +166,7 @@ impl AvPair {
             | AvPair::TargetName(value) => (value.len(), value.clone()),
             AvPair::Flags(value) => (AV_PAIR_FLAGS_SIZE, value.to_le_bytes().to_vec()),
             AvPair::Timestamp(value) => (AV_PAIR_TIMESTAMP_SIZE, value.to_le_bytes().to_vec()),
-            AvPair::SingleHost(value) => (value.len(), value.clone()),
+            AvPair::SingleHost(value) => (SINGLE_HOST_DATA_SIZE, value.to_vec()),
             AvPair::ChannelBindings(value) => (HASH_SIZE, value.to_vec()),
         };
         buffer.write_u16::<LittleEndian>(av_type)?;

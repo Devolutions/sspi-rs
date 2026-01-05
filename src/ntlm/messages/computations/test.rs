@@ -444,7 +444,7 @@ fn av_pair_list_to_buffer_with_all_possible_pairs() {
     let dns_tree_name = b"DnsTreeName".to_vec();
     let flags = 0;
     let timestamp = 1_234_567_890;
-    let single_host_data = SINGLE_HOST_DATA.to_vec();
+    let single_host_data = *SINGLE_HOST_DATA;
     let target_name = b"TargetName".to_vec();
     let channel_bindings = [0xff; HASH_SIZE];
 

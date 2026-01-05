@@ -92,7 +92,7 @@ pub(super) fn get_authenticate_target_info(
     av_pairs.push(flags_av_pair);
 
     if send_single_host_data {
-        let single_host_av_pair = AvPair::SingleHost(SINGLE_HOST_DATA.to_vec());
+        let single_host_av_pair = AvPair::SingleHost(*SINGLE_HOST_DATA);
         av_pairs.push(single_host_av_pair);
     }
 
