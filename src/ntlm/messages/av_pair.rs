@@ -36,7 +36,7 @@ pub(super) enum AvPair {
     DnsTreeName(Vec<u8>),
     Flags(u32),
     Timestamp(u64),
-    SingleHost([u8; SINGLE_HOST_DATA_SIZE]),
+    SingleHost(Vec<u8>),
     TargetName(Vec<u8>),
     ChannelBindings([u8; HASH_SIZE]),
 }
@@ -97,15 +97,16 @@ impl AvPair {
                 }
             }
             AV_PAIR_SINGLE_HOST => {
-                if len != SINGLE_HOST_DATA_SIZE {
+                // MS-NLMP: MsvAvSingleHost can be extended; fields after MachineID MUST be ignored.
+                // Windows 11 Build 26200+ sends 80 bytes instead of the traditional 48.
+                if len < SINGLE_HOST_DATA_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got SingleHost AvPair with len {} != {}", len, SINGLE_HOST_DATA_SIZE),
+                        format!("Got SingleHost AvPair with len {} < {}", len, SINGLE_HOST_DATA_SIZE),
                     ))
                 } else {
-                    let mut value = [0x00; SINGLE_HOST_DATA_SIZE];
+                    let mut value = vec![0x00; len];
                     buffer.read_exact(value.as_mut())?;
-
                     Ok(AvPair::SingleHost(value))
                 }
             }
@@ -156,7 +157,7 @@ impl AvPair {
             | AvPair::TargetName(value) => (value.len(), value.clone()),
             AvPair::Flags(value) => (AV_PAIR_FLAGS_SIZE, value.to_le_bytes().to_vec()),
             AvPair::Timestamp(value) => (AV_PAIR_TIMESTAMP_SIZE, value.to_le_bytes().to_vec()),
-            AvPair::SingleHost(value) => (SINGLE_HOST_DATA_SIZE, value.to_vec()),
+            AvPair::SingleHost(value) => (value.len(), value.clone()),
             AvPair::ChannelBindings(value) => (HASH_SIZE, value.to_vec()),
         };
         buffer.write_u16::<LittleEndian>(av_type)?;
