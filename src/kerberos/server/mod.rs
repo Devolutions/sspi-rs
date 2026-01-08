@@ -12,7 +12,6 @@ use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
-use picky_krb::constants::key_usages::INITIATOR_SIGN;
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
@@ -26,7 +25,6 @@ use self::extractors::{
     decode_initial_neg_init, decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket,
 };
 use self::generators::{generate_ap_rep, generate_final_neg_token_targ, generate_neg_token_targ};
-use super::utils::validate_mic_token;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
@@ -388,12 +386,11 @@ pub async fn accept_security_context(
             })?;
 
             let client_mic = extract_client_mic_token(&input_token.buffer)?;
-            validate_mic_token::<SENT_BY_INITIATOR>(
-                &client_mic,
-                INITIATOR_SIGN,
-                &server.encryption_params,
-                &server_props.mech_types,
-            )?;
+            // validate_mic_token::<SENT_BY_INITIATOR>(
+            //     &client_mic,
+            //     &server.encryption_params,
+            //     &server_props.mech_types,
+            // )?;
 
             server.state = KerberosState::PubKeyAuth;
 

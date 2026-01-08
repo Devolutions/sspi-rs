@@ -9,6 +9,8 @@ use std::net::IpAddr;
 use std::sync::LazyLock;
 
 pub use config::{NegotiateConfig, ProtocolConfig};
+use picky::oids;
+use picky_krb::gss_api::MechType;
 
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
@@ -49,6 +51,22 @@ impl NegotiatedProtocol {
             NegotiatedProtocol::Pku2u(_) => pku2u::PKG_NAME,
             NegotiatedProtocol::Kerberos(_) => kerberos::PKG_NAME,
             NegotiatedProtocol::Ntlm(_) => ntlm::PKG_NAME,
+        }
+    }
+
+    pub fn validate_mic_token(&mut self, token: &[u8], data: &[u8]) -> Result<()> {
+        match self {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.validate_mic_token(token, data),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.validate_mic_token(token, data),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.validate_mic_token(token, data),
+        }
+    }
+
+    pub fn generate_mic_token(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        match self {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.generate_mic_token(data),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.generate_mic_token(data),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.generate_mic_token(data),
         }
     }
 }
@@ -118,6 +136,48 @@ impl Negotiate {
 
     fn protocol_name(&self) -> &str {
         self.protocol.protocol_name()
+    }
+
+    fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
+        let enabled_packages = Self::parse_package_list_config(&self.package_list);
+
+        if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
+            if !enabled_packages.kerberos {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    "Kerberos mechanism was selected by the server but is disabled in package_list",
+                ));
+            }
+
+            if self.protocol_name() != kerberos::PKG_NAME {
+                let kerberos = Kerberos::new_client_from_config(KerberosConfig {
+                    client_computer_name: Some(self.client_computer_name.clone()),
+                    kdc_url: None,
+                })?;
+                self.protocol = NegotiatedProtocol::Kerberos(kerberos);
+            }
+
+            return Ok(());
+        }
+
+        if mech_type == &oids::ntlm_ssp() {
+            if !enabled_packages.ntlm {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    "NTLM mechanism was selected by the server but is disabled in package_list",
+                ));
+            }
+
+            if self.protocol_name() != ntlm::PKG_NAME {
+                self.protocol =
+                    NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
+            }
+        }
+
+        Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("unsupported mech_type: {mech_type:?}"),
+        ))
     }
 
     // negotiates the authorization protocol based on the username and the domain
@@ -507,7 +567,7 @@ impl SspiImpl for Negotiate {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,

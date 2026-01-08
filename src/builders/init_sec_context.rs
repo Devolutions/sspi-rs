@@ -9,16 +9,18 @@ use super::{
 };
 use crate::{ClientRequestFlags, ClientResponseFlags, DataRepresentation, SecurityBuffer, SecurityStatus};
 
-pub type EmptyInitializeSecurityContext<'a, C> = InitializeSecurityContext<
+pub type EmptyInitializeSecurityContext<'a, 'output, C> = InitializeSecurityContext<
     'a,
+    'output,
     C,
     WithoutCredentialsHandle,
     WithoutContextRequirements,
     WithoutTargetDataRepresentation,
     WithoutOutput,
 >;
-pub type FilledInitializeSecurityContext<'a, C> = InitializeSecurityContext<
+pub type FilledInitializeSecurityContext<'a, 'output, C> = InitializeSecurityContext<
     'a,
+    'output,
     C,
     WithCredentialsHandle,
     WithContextRequirements,
@@ -48,6 +50,7 @@ pub struct InitializeSecurityContextResult {
 #[derive(Debug)]
 pub struct InitializeSecurityContext<
     'a,
+    'output,
     CredsHandle,
     CredsHandleSet,
     ContextRequirementsSet,
@@ -67,7 +70,7 @@ pub struct InitializeSecurityContext<
     pub credentials_handle: Option<&'a mut CredsHandle>,
     pub context_requirements: ClientRequestFlags,
     pub target_data_representation: DataRepresentation,
-    pub output: &'a mut [SecurityBuffer],
+    pub output: &'output mut [SecurityBuffer],
 
     pub target_name: Option<&'a str>,
     pub input: Option<&'a mut [SecurityBuffer]>,
@@ -80,6 +83,7 @@ pub struct InitializeSecurityContext<
 impl<
         'b,
         'a: 'b,
+        'output,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -88,6 +92,7 @@ impl<
     >
     InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -103,6 +108,7 @@ impl<
         credentials_handle: Option<&'b mut CredsHandle2>,
     ) -> InitializeSecurityContext<
         'b,
+        'output,
         CredsHandle2,
         CredHandleSet2,
         ContextRequirementsSet,
@@ -127,6 +133,7 @@ impl<
 
 impl<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet: ToAssign,
         ContextRequirementsSet: ToAssign,
@@ -135,6 +142,7 @@ impl<
     >
     InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -174,6 +182,7 @@ impl<
         credentials_handle: &'a mut CredsHandle,
     ) -> InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         WithCredentialsHandle,
         ContextRequirementsSet,
@@ -202,6 +211,7 @@ impl<
         context_requirements: ClientRequestFlags,
     ) -> InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet,
         WithContextRequirements,
@@ -230,6 +240,7 @@ impl<
         target_data_representation: DataRepresentation,
     ) -> InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -255,9 +266,10 @@ impl<
     /// Specifies a mutable reference to a buffer with [SecurityBuffer] that receives the output data.
     pub fn with_output(
         self,
-        output: &'a mut [SecurityBuffer],
+        output: &'output mut [SecurityBuffer],
     ) -> InitializeSecurityContext<
         'a,
+        'output,
         CredsHandle,
         CredsHandleSet,
         ContextRequirementsSet,
@@ -306,6 +318,7 @@ impl<
         OutputSet: ToAssign,
     > Default
     for InitializeSecurityContext<
+        '_,
         '_,
         CredsHandle,
         CredsHandleSet,

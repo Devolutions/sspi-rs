@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use picky_krb::constants::key_usages::INITIATOR_SIGN;
+use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
 use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
-use picky_krb::gss_api::{MechTypeList, MicToken};
+use picky_krb::gss_api::MicToken;
 use serde::Serialize;
 
 use crate::kerberos::encryption_params::EncryptionParams;
@@ -21,12 +21,14 @@ pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>>
     Ok(data)
 }
 
-pub(super) fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
+pub(super) fn validate_mic_token(
+    is_client: bool,
     raw_token: &[u8],
-    key_usage: i32,
     params: &EncryptionParams,
-    mech_types: &MechTypeList,
+    mech_types: &[u8],
 ) -> Result<()> {
+    let key_usage = if is_client { ACCEPTOR_SIGN } else { INITIATOR_SIGN };
+
     let token = MicToken::decode(raw_token)?;
     let token_flags = token.flags;
 
@@ -40,7 +42,7 @@ pub(super) fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
     //                             is the context acceptor.  When not set,
     //                             it indicates the sender is the context
     //                             initiator.
-    if token_flags & 0b01 != IS_SENT_BY_ACCEPTOR {
+    if token_flags & 0b01 != u8::from(is_client) {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             "invalid MIC token SentByAcceptor flag",
@@ -56,7 +58,7 @@ pub(super) fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
         ));
     }
 
-    let mut payload = picky_asn1_der::to_vec(mech_types)?;
+    let mut payload = mech_types.to_vec();
     payload.extend_from_slice(&token.header());
 
     // The sub-session key is always preferred over the session key.
@@ -77,17 +79,23 @@ pub(super) fn validate_mic_token<const IS_SENT_BY_ACCEPTOR: u8>(
     Ok(())
 }
 
-pub(super) fn generate_initiator_raw(mut payload: Vec<u8>, seq_number: u64, session_key: &[u8]) -> Result<Vec<u8>> {
-    let mut mic_token = MicToken::with_initiator_flags().with_seq_number(seq_number);
+pub(super) fn generate_mic_token(
+    is_client: bool,
+    seq_number: u64,
+    mut payload: Vec<u8>,
+    session_key: &[u8],
+) -> Result<Vec<u8>> {
+    let (mic_token, key_usage) = if is_client {
+        (MicToken::with_initiator_flags(), INITIATOR_SIGN)
+    } else {
+        (MicToken::with_acceptor_flags(), ACCEPTOR_SIGN)
+    };
+
+    let mut mic_token = mic_token.with_seq_number(seq_number);
 
     payload.extend_from_slice(&mic_token.header());
 
-    mic_token.set_checksum(checksum_sha_aes(
-        session_key,
-        INITIATOR_SIGN,
-        &payload,
-        &AesSize::Aes256,
-    )?);
+    mic_token.set_checksum(checksum_sha_aes(session_key, key_usage, &payload, &AesSize::Aes256)?);
 
     let mut mic_token_raw = Vec::new();
     mic_token.encode(&mut mic_token_raw)?;

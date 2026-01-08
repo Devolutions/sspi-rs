@@ -9,10 +9,8 @@ pub(crate) use as_exchange::as_exchange;
 pub use change_password::change_password;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
-use picky_krb::constants::key_usages::ACCEPTOR_SIGN;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
-use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::TgsRep;
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
@@ -23,23 +21,20 @@ use self::extractors::{
 };
 use self::generators::{
     generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_neg_ap_req,
-    generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
-    get_mech_list, ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags,
+    generate_tgs_req, get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, ChecksumValues,
+    EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, GenerateTgsReqOptions,
+    GssFlags,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
-use crate::kerberos::utils::{serialize_message, unwrap_hostname, validate_mic_token};
+use crate::kerberos::utils::{serialize_message, unwrap_hostname};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
-
-/// Indicated that the MIC token `SentByAcceptor` flag must be enabled in the incoming MIC token.
-const SENT_BY_ACCEPTOR: u8 = 1;
 
 /// Performs one authentication step.
 ///
@@ -47,41 +42,15 @@ const SENT_BY_ACCEPTOR: u8 = 1;
 pub async fn initialize_security_context<'a>(
     client: &'a mut Kerberos,
     yield_point: &mut YieldPointLocal,
-    builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
+    builder: &'a mut crate::builders::FilledInitializeSecurityContext<
+        '_,
+        '_,
+        <Kerberos as SspiImpl>::CredentialsHandle,
+    >,
 ) -> Result<InitializeSecurityContextResult> {
     trace!(?builder);
 
     let status = match client.state {
-        KerberosState::Negotiate => {
-            let sname = if builder
-                .context_requirements
-                .contains(ClientRequestFlags::USE_SESSION_KEY)
-            {
-                let (service_name, service_principal_name) =
-                    parse_target_name(builder.target_name.ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::NoCredentials,
-                            "Service target name (service principal name) is not provided",
-                        )
-                    })?)?;
-
-                Some([service_name, service_principal_name])
-            } else {
-                None
-            };
-
-            debug!(?sname);
-
-            let encoded_neg_token_init =
-                picky_asn1_der::to_vec(&generate_neg_token_init(sname.as_ref().map(|sname| sname.as_slice()))?)?;
-
-            let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-            output_token.buffer.write_all(&encoded_neg_token_init)?;
-
-            client.state = KerberosState::Preauthentication;
-
-            SecurityStatus::ContinueNeeded
-        }
         KerberosState::Preauthentication => {
             let input = builder
                 .input
@@ -94,14 +63,16 @@ pub async fn initialize_security_context<'a>(
                 client.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
             }
 
-            let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
+            let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)
+                .map(|security_buffer| security_buffer.buffer.as_slice())
+                .unwrap_or_default();
 
-            let (tgt_ticket, mech_id) =
-                if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_with_oid(&input_token.buffer)? {
-                    (Some(tbt_ticket), mech_oid.0)
-                } else {
-                    (None, oids::krb5())
-                };
+            let (tgt_ticket, mech_id) = if let Some((tbt_ticket, mech_oid)) = extract_tgt_ticket_with_oid(input_token)?
+            {
+                (Some(tbt_ticket), mech_oid.0)
+            } else {
+                (None, oids::krb5())
+            };
             client.krb5_user_to_user = mech_id == oids::krb5_user_to_user();
 
             let credentials = builder
@@ -338,13 +309,15 @@ pub async fn initialize_security_context<'a>(
                 context_requirements.into(),
             )?;
 
+            let encoded_ap_req = picky_asn1_der::to_vec(&ap_req)?;
+
             let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
                 // Wrap in a NegToken.
                 picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?
             } else {
                 // Do not wrap if the `USE_DCE_STYLE` flag is set.
                 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
-                picky_asn1_der::to_vec(&ap_req)?
+                encoded_ap_req
             };
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -389,13 +362,7 @@ pub async fn initialize_security_context<'a>(
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
             } else {
-                let neg_token_targ = {
-                    let mut d = picky_asn1_der::Deserializer::new_from_bytes(&input_token.buffer);
-                    let neg_token_targ: NegTokenTarg1 = KrbResult::deserialize(&mut d)??;
-                    neg_token_targ
-                };
-
-                let ap_rep = extract_ap_rep_from_neg_token_targ(&neg_token_targ)?;
+                let ap_rep = extract_ap_rep_from_neg_token_targ(&input_token.buffer)?;
 
                 let session_key = client
                     .encryption_params
@@ -407,17 +374,7 @@ pub async fn initialize_security_context<'a>(
 
                 client.encryption_params.sub_session_key = Some(sub_session_key);
 
-                if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
-                    validate_mic_token::<SENT_BY_ACCEPTOR>(
-                        &token.0 .0,
-                        ACCEPTOR_SIGN,
-                        &client.encryption_params,
-                        &get_mech_list(),
-                    )?;
-                }
-
                 client.next_seq_number();
-                client.prepare_final_neg_token(builder)?;
             }
 
             client.state = KerberosState::PubKeyAuth;

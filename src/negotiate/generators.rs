@@ -1,30 +1,43 @@
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
-    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1, ObjectIdentifierAsn1,
-    OctetStringAsn1, Optional,
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1,
+    ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
-use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
+use picky_asn1_der::Asn1RawDer;
+use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::{NT_SRV_INST, TGT_REQ_MSG_TYPE};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
-use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit};
+use picky_krb::gss_api::{
+    ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
+};
 use picky_krb::messages::TgtReq;
 
-use crate::{Result, KERBEROS_VERSION};
+use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// Generates supported mechanism type list.
-pub(super) fn generate_mech_type_list(kerberos: bool) -> MechTypeList {
-    if kerberos {
-        MechTypeList::from(vec![
-            // Order is important: prefer Kerberos over NTLM.
-            MechType::from(oids::ms_krb5()),
-            MechType::from(oids::krb5()),
-            MechType::from(oids::negoex()),
-            MechType::from(oids::ntlm_ssp()),
-        ])
-    } else {
-        MechTypeList::from(vec![MechType::from(oids::ntlm_ssp())])
+pub(super) fn generate_mech_type_list(kerberos: bool, no_ntlm_fallback: bool) -> Result<MechTypeList> {
+    if no_ntlm_fallback && !kerberos {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "no_ntlm_fallback is set, but Kerberos is not enabled",
+        ));
     }
+
+    let mut mech_types = Vec::new();
+
+    if kerberos {
+        mech_types.push(MechType::from(oids::ms_krb5()));
+        mech_types.push(MechType::from(oids::krb5()));
+        // NEGOEX is not supported.
+        // mech_types.push(MechType::from(oids::negoex()));
+    }
+
+    if !no_ntlm_fallback {
+        mech_types.push(MechType::from(oids::ntlm_ssp()));
+    }
+
+    Ok(MechTypeList::from(Asn1SequenceOf::from(mech_types)))
 }
 
 /// Generates the initial SPNEGO token.
@@ -70,4 +83,24 @@ pub(super) fn generate_neg_token_init(
             mech_list_mic: Optional::from(None),
         }),
     }))
+}
+
+pub(super) fn generate_neg_token_targ_1(response_token: Option<Vec<u8>>) -> NegTokenTarg1 {
+    NegTokenTarg1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
+        supported_mech: Optional::from(None),
+        response_token: Optional::from(
+            response_token.map(|token| ExplicitContextTag2::from(OctetStringAsn1::from(token))),
+        ),
+        mech_list_mic: Optional::from(None),
+    })
+}
+
+pub(super) fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
+    NegTokenTarg1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))),
+        supported_mech: Optional::from(None),
+        response_token: Optional::from(None),
+        mech_list_mic: Optional::from(mech_list_mic.map(|v| ExplicitContextTag3::from(OctetStringAsn1::from(v)))),
+    })
 }

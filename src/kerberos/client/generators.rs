@@ -13,11 +13,8 @@ use picky_asn1::wrapper::{
     ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
     Optional,
 };
-use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::{
-    ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID,
-};
+use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::key_usages::{
     AP_REP_ENC, AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
 };
@@ -33,9 +30,7 @@ use picky_krb::data_types::{
     KerbPaPacRequest, KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName,
     Realm, Ticket,
 };
-use picky_krb::gss_api::{
-    ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
-};
+use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit};
 use picky_krb::messages::{
     ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
     KrbPrivMessage, TgsReq, TgtReq,
@@ -798,30 +793,14 @@ pub fn generate_neg_token_init(sname: Option<&[&str]>) -> Result<ApplicationTag0
     }))
 }
 
-pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<Vec<u8>> {
     let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
         krb_msg: ap_req,
     });
 
-    Ok(ExplicitContextTag1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
-        supported_mech: Optional::from(None),
-        response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&krb_blob)?,
-        )))),
-        mech_list_mic: Optional::from(None),
-    }))
-}
-
-pub fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
-    NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))),
-        supported_mech: Optional::from(None),
-        response_token: Optional::from(None),
-        mech_list_mic: Optional::from(mech_list_mic.map(|v| ExplicitContextTag3::from(OctetStringAsn1::from(v)))),
-    })
+    Ok(picky_asn1_der::to_vec(&krb_blob)?)
 }
 
 #[instrument(level = "trace", ret)]

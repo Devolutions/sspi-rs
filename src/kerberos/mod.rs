@@ -9,7 +9,6 @@ mod tests;
 mod utils;
 
 use std::fmt::Debug;
-use std::io::Write;
 use std::sync::LazyLock;
 
 use picky_asn1::restricted_string::IA5String;
@@ -32,8 +31,6 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
     YieldPointLocal,
 };
-use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
-use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
 use crate::pk_init::DhParameters;
@@ -110,7 +107,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
-            state: KerberosState::Negotiate,
+            state: KerberosState::Preauthentication,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
@@ -130,7 +127,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
-            state: KerberosState::Negotiate,
+            state: KerberosState::Preauthentication,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
@@ -143,6 +140,10 @@ impl Kerberos {
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
         })
+    }
+
+    pub fn is_client(&self) -> bool {
+        self.server.is_none()
     }
 
     pub fn config(&self) -> &KerberosConfig {
@@ -225,26 +226,6 @@ impl Kerberos {
             };
         }
         Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
-    }
-
-    fn prepare_final_neg_token(
-        &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<()> {
-        let neg_token_targ = generate_final_neg_token_targ(Some(generate_initiator_raw(
-            picky_asn1_der::to_vec(&get_mech_list())?,
-            self.seq_number as u64,
-            self.encryption_params
-                .sub_session_key
-                .as_ref()
-                .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
-        )?));
-
-        let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
-
-        let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-        output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
-        Ok(())
     }
 }
 
@@ -630,7 +611,7 @@ impl SspiImpl for Kerberos {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'b,
@@ -663,7 +644,11 @@ impl<'a> Kerberos {
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &'a mut crate::builders::FilledInitializeSecurityContext<
+            '_,
+            '_,
+            <Self as SspiImpl>::CredentialsHandle,
+        >,
     ) -> Result<crate::InitializeSecurityContextResult> {
         initialize_security_context(self, yield_point, builder).await
     }
@@ -675,6 +660,22 @@ impl SspiEx for Kerberos {
         self.auth_identity = Some(identity.try_into()?);
 
         Ok(())
+    }
+
+    fn validate_mic_token(&mut self, token: &[u8], data: &[u8]) -> Result<()> {
+        utils::validate_mic_token(self.is_client(), token, &self.encryption_params, data)
+    }
+
+    fn generate_mic_token(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        utils::generate_mic_token(
+            self.is_client(),
+            self.seq_number as u64,
+            data.to_vec(),
+            self.encryption_params
+                .sub_session_key
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
+        )
     }
 }
 

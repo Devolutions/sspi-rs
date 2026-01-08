@@ -291,10 +291,8 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
         );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
-        let sspi_context_ptr = unsafe { sspi_context_ptr.as_mut() };
-        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let _context: Box<SspiHandle> = unsafe {
-            Box::from_raw(sspi_context_ptr)
+            Box::from_raw(sspi_context_ptr.as_ptr())
         };
 
         // SAFETY:

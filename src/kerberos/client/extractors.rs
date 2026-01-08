@@ -7,7 +7,6 @@ use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Ticket};
-use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
@@ -170,19 +169,9 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
-/// Extracts [ApRep] from the [NegTokenTarg1] .
+/// Extracts [ApRep] from the [NegTokenTarg1].
 #[instrument(ret, level = "trace")]
-pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep> {
-    let resp_token = &token
-        .0
-        .response_token
-        .0
-        .as_ref()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing response token in NegTokenTarg"))?
-        .0
-         .0;
-
-    let mut data = resp_token.as_slice();
+pub fn extract_ap_rep_from_neg_token_targ(mut data: &[u8]) -> Result<ApRep> {
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
     let mut t = [0, 0];
@@ -266,27 +255,19 @@ pub fn extract_sub_session_key_from_ap_rep(
 ///
 /// We use this oid to choose between the regular Kerberos 5 and Kerberos 5 User-to-User authentication.
 #[instrument(level = "trace", ret)]
-pub fn extract_tgt_ticket_with_oid(data: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
-    if data.is_empty() {
+pub fn extract_tgt_ticket_with_oid(mut resp_token: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
+    if resp_token.is_empty() {
         return Ok(None);
     }
 
-    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
+    let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut resp_token)?;
+    let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0 .0)?;
 
-    if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0 .0) {
-        let mut c = resp_token.as_slice();
+    let mut t = [0, 0];
 
-        let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)?;
-        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0 .0)?;
+    resp_token.read_exact(&mut t)?;
 
-        let mut t = [0, 0];
+    let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut resp_token)?;
 
-        c.read_exact(&mut t)?;
-
-        let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c)?;
-
-        Ok(Some((tgt_rep.ticket.0, oid)))
-    } else {
-        Ok(None)
-    }
+    Ok(Some((tgt_rep.ticket.0, oid)))
 }

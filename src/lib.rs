@@ -317,7 +317,9 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context<'a>(&mut self) -> EmptyInitializeSecurityContext<'a, Self::CredentialsHandle> {
+    fn initialize_security_context<'a, 'output>(
+        &mut self,
+    ) -> EmptyInitializeSecurityContext<'a, 'output, Self::CredentialsHandle> {
         InitializeSecurityContext::new()
     }
 
@@ -1277,7 +1279,7 @@ pub trait SspiImpl {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -1294,6 +1296,20 @@ where
     Self: Sized + SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
+
+    fn validate_mic_token(&mut self, _token: &[u8], _data: &[u8]) -> Result<()> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "validate_mic_token is not supported",
+        ))
+    }
+
+    fn generate_mic_token(&mut self, _token: &[u8]) -> Result<Vec<u8>> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "generate_mic_token is not supported",
+        ))
+    }
 }
 
 pub type SspiPackage<'a, CredsHandle, AuthData> =
