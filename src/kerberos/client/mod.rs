@@ -20,7 +20,7 @@ use self::extractors::{
     extract_session_key_from_tgs_rep, extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
-    generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_neg_ap_req,
+    generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_blob,
     generate_tgs_req, get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, ChecksumValues,
     EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, GenerateTgsReqOptions,
     GssFlags,
@@ -312,16 +312,16 @@ pub async fn initialize_security_context<'a>(
             let encoded_ap_req = picky_asn1_der::to_vec(&ap_req)?;
 
             let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                // Wrap in a NegToken.
-                picky_asn1_der::to_vec(&generate_neg_ap_req(ap_req, mech_id)?)?
+                generate_krb_blob(ap_req, mech_id)?
             } else {
                 // Do not wrap if the `USE_DCE_STYLE` flag is set.
                 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
                 encoded_ap_req
             };
+            debug!("krbblob: {encoded_neg_ap_req:?}");
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-            output_token.buffer.write_all(&encoded_neg_ap_req)?;
+            output_token.buffer = encoded_neg_ap_req;
 
             client.state = KerberosState::ApExchange;
 

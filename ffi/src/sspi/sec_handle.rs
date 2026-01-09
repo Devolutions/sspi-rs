@@ -118,7 +118,7 @@ impl SspiImpl for SspiHandle {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut sspi::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut sspi::builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<sspi::generator::GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,

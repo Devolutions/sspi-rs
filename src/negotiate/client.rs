@@ -68,6 +68,9 @@ pub(crate) async fn initialize_security_context<'a>(
 
     match negotiate.state {
         NegotiateState::Initial => {
+            // FIXME
+            builder.context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
+
             let sname = if builder
                 .context_requirements
                 .contains(ClientRequestFlags::USE_SESSION_KEY)
@@ -134,6 +137,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             if let Some(selected_mech) = supported_mech.0 {
                 let selected_mech = &selected_mech.0;
+                debug!("The remote server has selected {selected_mech:?} mechanism id.");
 
                 negotiate.negotiate_protocol_by_mech_type(selected_mech)?;
             }
@@ -190,6 +194,7 @@ pub(crate) async fn initialize_security_context<'a>(
                 prepare_final_neg_token(negotiate, builder)?;
             } else {
                 if let Some(token) = SecurityBuffer::find_buffer_mut(&mut builder.output, BufferType::Token).ok() {
+                    debug!("outtokenbuffer: {:?}", token.buffer);
                     let output_token = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
                         // Wrap in a NegToken.
                         picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut token.buffer))))?

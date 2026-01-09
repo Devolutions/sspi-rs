@@ -793,7 +793,7 @@ pub fn generate_neg_token_init(sname: Option<&[&str]>) -> Result<ApplicationTag0
     }))
 }
 
-pub fn generate_neg_ap_req(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<Vec<u8>> {
+pub fn generate_krb_blob(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<Vec<u8>> {
     let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REQ_TOKEN_ID,
