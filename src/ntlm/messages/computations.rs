@@ -176,10 +176,18 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
-        let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
-            convert_password_hash(identity.password.as_ref())?
-        } else {
-            compute_md4(identity.password.as_ref())
+        let hmac_key = match &identity.credential {
+            crate::auth_identity::CredentialType::Password(password) => {
+                if password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
+                    convert_password_hash(password.as_ref())?
+                } else {
+                    compute_md4(password.as_ref())
+                }
+            }
+            crate::auth_identity::CredentialType::NtlmHash(hash) => {
+                // NT hash is already the MD4 hash of the password, use it directly
+                *hash.as_ref()
+            }
         };
 
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;

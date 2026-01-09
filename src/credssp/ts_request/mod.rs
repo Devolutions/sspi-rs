@@ -327,7 +327,11 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     /* [1] userName (OCTET STRING) */
     ber::write_sequence_octet_string(&mut buffer, 1, &identity.user)?;
     /* [2] password (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref())?;
+    let password = identity.password().ok_or_else(|| Error::new(
+        ErrorKind::InvalidParameter,
+        "Password required for CredSSP authentication"
+    ))?;
+    ber::write_sequence_octet_string(&mut buffer, 2, password)?;
 
     Ok(buffer)
 }
@@ -341,11 +345,11 @@ fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdenti
         password,
     } = password_creds;
 
-    Ok(AuthIdentityBuffers {
-        user: user_name.0 .0,
-        domain: domain_name.0 .0,
-        password: password.0 .0.into(),
-    })
+    Ok(AuthIdentityBuffers::new(
+        user_name.0 .0,
+        domain_name.0 .0,
+        password.0 .0,
+    ))
 }
 
 pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBuffers> {
@@ -377,9 +381,10 @@ fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
 }
 
 fn sizeof_ts_password_creds(identity: &AuthIdentityBuffers) -> u16 {
+    let password_len = identity.password().map(|p| p.len()).unwrap_or(0);
     ber::sizeof_sequence_octet_string(identity.domain.len() as u16)
         + ber::sizeof_sequence_octet_string(identity.user.len() as u16)
-        + ber::sizeof_sequence_octet_string(identity.password.as_ref().len() as u16)
+        + ber::sizeof_sequence_octet_string(password_len as u16)
 }
 
 fn get_nego_tokens_len(nego_tokens: &Option<Vec<u8>>) -> u16 {

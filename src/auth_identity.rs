@@ -2,6 +2,75 @@ use std::fmt;
 
 use crate::{utils, Error, Secret};
 
+/// Type alias for NT hash bytes (16 bytes)
+pub type NtlmHashBytes = [u8; 16];
+
+/// Represents an NT hash (16 bytes) used for pass-the-hash authentication
+#[derive(Clone, Eq, PartialEq)]
+pub struct NtlmHash([u8; 16]);
+
+impl NtlmHash {
+    /// Creates a new NtlmHash from a byte array
+    pub fn new(hash: [u8; 16]) -> Self {
+        Self(hash)
+    }
+
+    /// Returns a reference to the hash bytes
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+}
+
+impl TryFrom<&[u8]> for NtlmHash {
+    type Error = &'static str;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != 16 {
+            return Err("NTLM hash must be exactly 16 bytes");
+        }
+
+        let mut hash = [0u8; 16];
+        hash.copy_from_slice(value);
+        Ok(NtlmHash(hash))
+    }
+}
+
+impl From<NtlmHash> for [u8; 16] {
+    fn from(hash: NtlmHash) -> Self {
+        hash.0
+    }
+}
+
+impl TryFrom<&str> for NtlmHash {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() != 32 {
+            return Err("NTLM hash must be a 32-character hex string");
+        }
+        
+        let mut hash = [0u8; 16];
+        for i in 0..16 {
+            let hex_byte = &value[i * 2..i * 2 + 2];
+            hash[i] = u8::from_str_radix(hex_byte, 16).map_err(|_| "Invalid hex string")?;
+        }
+
+        Ok(NtlmHash(hash))
+    }
+}
+
+impl AsRef<NtlmHash> for NtlmHash {
+    fn as_ref(&self) -> &NtlmHash {
+        self
+    }
+}
+
+impl fmt::Debug for NtlmHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NtlmHash([redacted])")
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
     MixedFormat,
@@ -153,8 +222,64 @@ pub struct AuthIdentity {
     pub password: Secret<String>,
 }
 
+impl AuthIdentity {
+    /// Creates a new AuthIdentity with a password
+    pub fn new_password(username: Username, password: String) -> Self {
+        Self {
+            username,
+            password: Secret::new(password),
+        }
+    }
+}
+
+/// Credential type for AuthIdentityBuffers
+#[derive(Clone, Eq, PartialEq)]
+pub enum CredentialType {
+    /// Password-based credential (UTF-16 encoded)
+    Password(Secret<Vec<u8>>),
+    /// NT hash-based credential (16 bytes)
+    NtlmHash(Secret<NtlmHashBytes>),
+}
+
+impl CredentialType {
+    /// Returns true if this is a password credential
+    pub fn is_password(&self) -> bool {
+        matches!(self, CredentialType::Password(_))
+    }
+
+    /// Returns true if this is an NT hash credential
+    pub fn is_ntlm_hash(&self) -> bool {
+        matches!(self, CredentialType::NtlmHash(_))
+    }
+
+    /// Returns the password bytes if this is a password credential
+    pub fn password(&self) -> Option<&[u8]> {
+        match self {
+            CredentialType::Password(p) => Some(p.as_ref()),
+            CredentialType::NtlmHash(_) => None,
+        }
+    }
+
+    /// Returns the NT hash if this is an NT hash credential
+    pub fn ntlm_hash(&self) -> Option<&NtlmHashBytes> {
+        match self {
+            CredentialType::NtlmHash(h) => Some(h.as_ref()),
+            CredentialType::Password(_) => None,
+        }
+    }
+}
+
+impl fmt::Debug for CredentialType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CredentialType::Password(_) => write!(f, "Password([redacted])"),
+            CredentialType::NtlmHash(_) => write!(f, "NtlmHash([redacted])"),
+        }
+    }
+}
+
 /// Auth identity buffers for password-based logon.
-#[derive(Clone, Eq, PartialEq, Default)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthIdentityBuffers {
     /// Username.
     ///
@@ -164,10 +289,11 @@ pub struct AuthIdentityBuffers {
     ///
     /// Must be UTF-16 encoded.
     pub domain: Vec<u8>,
-    /// Password.
+    /// Password or NT hash.
     ///
-    /// Must be UTF-16 encoded.
-    pub password: Secret<Vec<u8>>,
+    /// For passwords, must be UTF-16 encoded.
+    /// For NT hashes, must be 16 bytes.
+    pub credential: CredentialType,
 }
 
 impl AuthIdentityBuffers {
@@ -178,7 +304,16 @@ impl AuthIdentityBuffers {
         Self {
             user,
             domain,
-            password: password.into(),
+            credential: CredentialType::Password(password.into()),
+        }
+    }
+
+    /// Creates a new [AuthIdentityBuffers] object with an NT hash.
+    pub fn new_with_hash(user: Vec<u8>, domain: Vec<u8>, hash: NtlmHashBytes) -> Self {
+        Self {
+            user,
+            domain,
+            credential: CredentialType::NtlmHash(hash.into()),
         }
     }
 
@@ -193,7 +328,41 @@ impl AuthIdentityBuffers {
         Self {
             user: utils::string_to_utf16(user),
             domain: utils::string_to_utf16(domain),
-            password: utils::string_to_utf16(password).into(),
+            credential: CredentialType::Password(utils::string_to_utf16(password).into()),
+        }
+    }
+
+    /// Creates a new [AuthIdentityBuffers] object with a UTF-8 username/domain and NT hash.
+    pub fn from_utf8_with_hash(user: &str, domain: &str, hash: NtlmHashBytes) -> Self {
+        Self {
+            user: utils::string_to_utf16(user),
+            domain: utils::string_to_utf16(domain),
+            credential: CredentialType::NtlmHash(hash.into()),
+        }
+    }
+
+    /// Returns the credential type (password or NT hash)
+    pub fn credential_type(&self) -> &CredentialType {
+        &self.credential
+    }
+
+    /// Returns the password if using password authentication (for backward compatibility)
+    pub fn password(&self) -> Option<&[u8]> {
+        self.credential.password()
+    }
+
+    /// Returns the NT hash if using hash authentication
+    pub fn ntlm_hash(&self) -> Option<&NtlmHashBytes> {
+        self.credential.ntlm_hash()
+    }
+}
+
+impl Default for AuthIdentityBuffers {
+    fn default() -> Self {
+        Self {
+            user: Vec::new(),
+            domain: Vec::new(),
+            credential: CredentialType::Password(Vec::new().into()),
         }
     }
 }
@@ -204,7 +373,7 @@ impl fmt::Debug for AuthIdentityBuffers {
         self.user.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", domain: 0x")?;
         self.domain.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
-        write!(f, ", password: {:?} }}", self.password)?;
+        write!(f, ", credential: {:?} }}", self.credential)?;
 
         Ok(())
     }
@@ -219,7 +388,7 @@ impl From<AuthIdentity> for AuthIdentityBuffers {
                 .domain_name()
                 .map(utils::string_to_utf16)
                 .unwrap_or_default(),
-            password: utils::string_to_utf16(credentials.password.as_ref()).into(),
+            credential: CredentialType::Password(utils::string_to_utf16(credentials.password.as_ref()).into()),
         }
     }
 }
@@ -237,9 +406,19 @@ impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
         };
 
         let username = Username::new(&account_name, domain_name.as_deref())?;
-        let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref())
-            .map_err(|_| UsernameError::InvalidUtf16)?
-            .into();
+        
+        // Only password credentials can be converted to AuthIdentity
+        let password = match &credentials_buffers.credential {
+            CredentialType::Password(pwd) => {
+                utils::bytes_to_utf16_string(pwd.as_ref())
+                    .map_err(|_| UsernameError::InvalidUtf16)?
+                    .into()
+            }
+            CredentialType::NtlmHash(_) => {
+                // Can't convert hash back to password
+                return Err(UsernameError::InvalidUtf16);
+            }
+        };
 
         Ok(Self { username, password })
     }

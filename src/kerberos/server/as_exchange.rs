@@ -50,7 +50,10 @@ pub(super) async fn request_tgt(
         CredentialsBuffers::AuthIdentity(auth_identity) => {
             let username = utf16_bytes_to_utf8_string(&auth_identity.user)?;
             let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-            let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref())?;
+            let password = auth_identity
+                .password()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Password required for Kerberos authentication"))?;
+            let password = utf16_bytes_to_utf8_string(password)?;
 
             let realm = get_client_principal_realm(&username, &domain);
             let cname_type = get_client_principal_name_type(&username, &domain);
