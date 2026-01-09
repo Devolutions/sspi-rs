@@ -1304,7 +1304,7 @@ where
         ))
     }
 
-    fn generate_mic_token(&mut self, _token: &[u8]) -> Result<Vec<u8>> {
+    fn generate_mic_token(&mut self, _token: &[u8]) -> Result<Option<Vec<u8>>> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "generate_mic_token is not supported",

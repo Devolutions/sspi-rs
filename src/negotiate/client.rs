@@ -69,7 +69,7 @@ pub(crate) async fn initialize_security_context<'a>(
     match negotiate.state {
         NegotiateState::Initial => {
             // FIXME
-            builder.context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
+            // builder.context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
 
             let sname = if builder
                 .context_requirements
@@ -227,7 +227,7 @@ fn prepare_final_neg_token(
         !package_list.ntlm,
     )?;
     let mech_types = picky_asn1_der::to_vec(&mech_types)?;
-    let neg_token_targ = generate_final_neg_token_targ(Some(negotiate.protocol.generate_mic_token(&mech_types)?));
+    let neg_token_targ = generate_final_neg_token_targ(negotiate.protocol.generate_mic_token(&mech_types)?);
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
 

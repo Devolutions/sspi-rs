@@ -624,6 +624,10 @@ impl SspiEx for Ntlm {
 
         Ok(())
     }
+
+    fn generate_mic_token(&mut self, data: &[u8]) -> crate::Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 }
 
 impl NegotiateMessage {

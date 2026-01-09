@@ -666,7 +666,7 @@ impl SspiEx for Kerberos {
         utils::validate_mic_token(self.is_client(), token, &self.encryption_params, data)
     }
 
-    fn generate_mic_token(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+    fn generate_mic_token(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>> {
         utils::generate_mic_token(
             self.is_client(),
             self.seq_number as u64,
@@ -675,7 +675,7 @@ impl SspiEx for Kerberos {
                 .sub_session_key
                 .as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
-        )
+        ).map(Some)
     }
 }
 

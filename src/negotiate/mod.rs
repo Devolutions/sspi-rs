@@ -62,7 +62,7 @@ impl NegotiatedProtocol {
         }
     }
 
-    pub fn generate_mic_token(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+    pub fn generate_mic_token(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>> {
         match self {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.generate_mic_token(data),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.generate_mic_token(data),
@@ -89,6 +89,7 @@ pub struct Negotiate {
     is_client: bool,
 }
 
+#[derive(Debug)]
 struct PackageListConfig {
     ntlm: bool,
     kerberos: bool,
@@ -140,6 +141,7 @@ impl Negotiate {
 
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
         let enabled_packages = Self::parse_package_list_config(&self.package_list);
+        debug!(?enabled_packages, "ptri: {}", self.protocol_name());
 
         if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
             if !enabled_packages.kerberos {
@@ -172,11 +174,14 @@ impl Negotiate {
                 self.protocol =
                     NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
             }
+
+            return Ok(());
         }
 
+        let s: String = (&mech_type.0).into();
         Err(Error::new(
             ErrorKind::InvalidToken,
-            format!("unsupported mech_type: {mech_type:?}"),
+            format!("unsupported mech_type: {s}"),
         ))
     }
 
