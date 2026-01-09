@@ -24,8 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Fixes RDP credential injection failures when clients use Windows 11
   Build 26200 or later.
 
-
-
 ## [[0.18.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.4...sspi-v0.18.5)] - 2025-12-11
 
 ### <!-- 4 -->Bug Fixes
