@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.6](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.5...sspi-v0.18.6)] - 2026-01-05
+
+### <!-- 4 -->Bug Fixes
+
+- Accept variable-length MsvAvSingleHost AvPair ([#580](https://github.com/Devolutions/sspi-rs/issues/580)) ([28f8d74b8c](https://github.com/Devolutions/sspi-rs/commit/28f8d74b8c4f982e047f0bc7738498ac217f6553)) 
+
+  Windows 11 Build 26200+ sends an 80-byte MsvAvSingleHost structure
+  instead of the traditional 48 bytes. Per MS-NLMP specification, fields
+  after MachineID MUST be ignored on receipt.
+  
+  This change:
+  - Changes SingleHost from fixed [u8; 48] to Vec<u8>
+  - Relaxes validation from == 48 to >= 48 bytes
+  - Preserves full data for round-trip serialization
+  
+  Fixes RDP credential injection failures when clients use Windows 11
+  Build 26200 or later.
+
 ## [[0.18.5](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.4...sspi-v0.18.5)] - 2025-12-11
 
 ### <!-- 4 -->Bug Fixes
