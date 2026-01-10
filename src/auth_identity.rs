@@ -22,11 +22,11 @@ impl NtlmHash {
 }
 
 impl TryFrom<&[u8]> for NtlmHash {
-    type Error = &'static str;
+    type Error = NtlmHashError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != 16 {
-            return Err("NTLM hash must be exactly 16 bytes");
+            return Err(NtlmHashError::ByteLength);
         }
 
         let mut hash = [0u8; 16];
@@ -42,17 +42,17 @@ impl From<NtlmHash> for [u8; 16] {
 }
 
 impl TryFrom<&str> for NtlmHash {
-    type Error = &'static str;
+    type Error = NtlmHashError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.len() != 32 {
-            return Err("NTLM hash must be a 32-character hex string");
+            return Err(NtlmHashError::StringLength);
         }
 
         let mut hash = [0u8; 16];
         for i in 0..16 {
             let hex_byte = &value[i * 2..i * 2 + 2];
-            hash[i] = u8::from_str_radix(hex_byte, 16).map_err(|_| "Invalid hex string")?;
+            hash[i] = u8::from_str_radix(hex_byte, 16).map_err(|_| NtlmHashError::Hex)?;
         }
 
         Ok(NtlmHash(hash))
@@ -68,6 +68,30 @@ impl AsRef<NtlmHash> for NtlmHash {
 impl fmt::Debug for NtlmHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "NtlmHash([redacted])")
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NtlmHashError {
+    /// Invalid string length for NTLM hash (must be 32-character hex string)
+    StringLength,
+    /// Invalid byte length for NTLM hash (must be 16 bytes)
+    ByteLength,
+    /// Invalid hex string
+    Hex,
+}
+
+impl std::error::Error for NtlmHashError {}
+
+impl fmt::Display for NtlmHashError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NtlmHashError::StringLength => {
+                write!(f, "invalid length: expected 32-character hex string for NTLM hash")
+            }
+            NtlmHashError::ByteLength => write!(f, "invalid length: expected 16 bytes for NTLM hash"),
+            NtlmHashError::Hex => write!(f, "invalid hex string for NTLM hash"),
+        }
     }
 }
 
@@ -726,5 +750,104 @@ mod tests {
 
             check_round_trip_property(&username);
         })
+    }
+
+    #[test]
+    fn test_ntlm_hash_from_hex_string() {
+        // Test valid 32-character hex string
+        let hash_str = "32ed87bdb5fdc5e9cba88547376818d4";
+        let result: Result<NtlmHash, _> = hash_str.try_into();
+        assert!(result.is_ok());
+
+        let hash = result.unwrap();
+        assert_eq!(hash.as_bytes().len(), 16);
+    }
+
+    #[test]
+    fn test_ntlm_hash_from_bytes() {
+        let bytes = [
+            0x32, 0xed, 0x87, 0xbd, 0xb5, 0xfd, 0xc5, 0xe9, 0xcb, 0xa8, 0x85, 0x47, 0x37, 0x68, 0x18, 0xd4,
+        ];
+
+        let result: Result<NtlmHash, _> = bytes.as_slice().try_into();
+        assert!(result.is_ok());
+
+        let hash = result.unwrap();
+        assert_eq!(hash.as_bytes(), &bytes);
+    }
+
+    #[test]
+    fn test_ntlm_hash_invalid_hex_length() {
+        // Too short
+        let hash_str = "32ed87bdb5fdc5e9cba885473768";
+        let result: Result<NtlmHash, _> = hash_str.try_into();
+        assert!(result.is_err());
+
+        // Too long
+        let hash_str = "32ed87bdb5fdc5e9cba88547376818d4ff";
+        let result: Result<NtlmHash, _> = hash_str.try_into();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ntlm_hash_invalid_hex_characters() {
+        let hash_str = "32ed87bdb5fdc5e9cba88547376818zz";
+        let result: Result<NtlmHash, _> = hash_str.try_into();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ntlm_hash_invalid_byte_length() {
+        let bytes = [0x32, 0xed, 0x87, 0xbd, 0xb5];
+        let result: Result<NtlmHash, _> = bytes.as_slice().try_into();
+        assert!(result.is_err());
+
+        // Invalid length
+        let invalid_len: Result<NtlmHash, _> = "32ed87bd".try_into();
+        assert!(invalid_len.is_err());
+
+        let empty: Result<NtlmHash, _> = "".try_into();
+        assert!(empty.is_err());
+    }
+
+    #[test]
+    fn test_auth_identity_buffers_with_hash() {
+        let hash_str = "32ed87bdb5fdc5e9cba88547376818d4";
+        let hash: NtlmHash = hash_str.try_into().unwrap();
+
+        let credentials = AuthIdentityBuffers::from_utf8_with_hash("Administrator", "CONTOSO", *hash.as_bytes());
+
+        assert!(!credentials.user.is_empty());
+        assert!(!credentials.domain.is_empty());
+        assert!(credentials.ntlm_hash().is_some());
+        assert!(credentials.password().is_none());
+        assert!(credentials.credential_type().is_ntlm_hash());
+        assert!(!credentials.credential_type().is_password());
+    }
+
+    #[test]
+    fn test_auth_identity_buffers_with_password() {
+        let credentials = AuthIdentityBuffers::from_utf8("Administrator", "CONTOSO", "MyPassword123");
+
+        assert!(!credentials.user.is_empty());
+        assert!(!credentials.domain.is_empty());
+        assert!(credentials.password().is_some());
+        assert!(credentials.ntlm_hash().is_none());
+        assert!(credentials.credential_type().is_password());
+        assert!(!credentials.credential_type().is_ntlm_hash());
+    }
+
+    #[test]
+    fn test_ntlm_hash_case_insensitive() {
+        let lowercase = "32ed87bdb5fdc5e9cba88547376818d4";
+        let uppercase = "32ED87BDB5FDC5E9CBA88547376818D4";
+        let mixed = "32Ed87BdB5FdC5e9CbA88547376818D4";
+
+        let hash1: NtlmHash = lowercase.try_into().unwrap();
+        let hash2: NtlmHash = uppercase.try_into().unwrap();
+        let hash3: NtlmHash = mixed.try_into().unwrap();
+
+        assert_eq!(hash1.as_bytes(), hash2.as_bytes());
+        assert_eq!(hash2.as_bytes(), hash3.as_bytes());
     }
 }
