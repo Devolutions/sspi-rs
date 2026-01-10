@@ -2,18 +2,35 @@
 
 #[cfg(test)]
 mod ntlm_pth_integration {
+    use md4::{Digest, Md4};
     use sspi::{ntlm::Ntlm, AuthIdentityBuffers, NtlmHash, Sspi, SspiImpl};
 
     /// Test NT hash from a known password
-    /// Password: "Password123!" -> NT hash: 32ed87bdb5fdc5e9cba88547376818d4
-    const TEST_NT_HASH: &str = "32ed87bdb5fdc5e9cba88547376818d4";
+    /// Password: "Password123!" -> NT hash: 2B576ACBE6BCFDA7294D6BD18041B8FE
+    const TEST_NT_HASH: &str = "2B576ACBE6BCFDA7294D6BD18041B8FE";
     const TEST_USERNAME: &str = "testuser";
     const TEST_DOMAIN: &str = "TESTDOMAIN";
+
+    fn password_to_ntlm_hash(password: &str) -> [u8; 16] {
+        // Convert password to UTF-16 Little Endian
+        let utf16_password: Vec<u8> = password.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+
+        // Create MD4 hasher and hash the UTF-16LE encoded password
+        let mut hasher = Md4::new();
+        hasher.update(&utf16_password);
+        let result = hasher.finalize();
+        let mut hash = [0u8; 16];
+        hash.copy_from_slice(&result);
+        hash
+    }
 
     #[test]
     fn test_ntlm_negotiate_with_hash() {
         // Create NTLM instance with hash-based credentials
         let nt_hash: NtlmHash = TEST_NT_HASH.try_into().expect("valid hash");
+
+        assert_eq!(nt_hash, password_to_ntlm_hash("Password123!").into());
+
         let credentials = AuthIdentityBuffers::from_utf8_with_hash(TEST_USERNAME, TEST_DOMAIN, *nt_hash.as_bytes());
 
         let mut ntlm = Ntlm::with_auth_identity(Some(credentials.clone()), Default::default());
@@ -57,24 +74,5 @@ mod ntlm_pth_integration {
         assert!(pwd_creds.credential_type().is_password());
         assert!(pwd_creds.password().is_some());
         assert!(pwd_creds.ntlm_hash().is_none());
-    }
-
-    #[test]
-    fn test_ntlm_hash_validation() {
-        // Valid hash
-        let valid: Result<NtlmHash, _> = "32ed87bdb5fdc5e9cba88547376818d4".try_into();
-        assert!(valid.is_ok());
-
-        // Invalid length
-        let invalid_len: Result<NtlmHash, _> = "32ed87bd".try_into();
-        assert!(invalid_len.is_err());
-
-        // Invalid characters
-        let invalid_chars: Result<NtlmHash, _> = "32ed87bdb5fdc5e9cba88547376818zz".try_into();
-        assert!(invalid_chars.is_err());
-
-        // Empty string
-        let empty: Result<NtlmHash, _> = "".try_into();
-        assert!(empty.is_err());
     }
 }

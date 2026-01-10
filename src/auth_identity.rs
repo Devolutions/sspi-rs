@@ -31,7 +31,14 @@ impl TryFrom<&[u8]> for NtlmHash {
 
         let mut hash = [0u8; 16];
         hash.copy_from_slice(value);
+
         Ok(NtlmHash(hash))
+    }
+}
+
+impl From<[u8; 16]> for NtlmHash {
+    fn from(value: [u8; 16]) -> Self {
+        NtlmHash(value)
     }
 }
 
