@@ -48,7 +48,7 @@ impl TryFrom<&str> for NtlmHash {
         if value.len() != 32 {
             return Err("NTLM hash must be a 32-character hex string");
         }
-        
+
         let mut hash = [0u8; 16];
         for i in 0..16 {
             let hex_byte = &value[i * 2..i * 2 + 2];
@@ -406,14 +406,12 @@ impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
         };
 
         let username = Username::new(&account_name, domain_name.as_deref())?;
-        
+
         // Only password credentials can be converted to AuthIdentity
         let password = match &credentials_buffers.credential {
-            CredentialType::Password(pwd) => {
-                utils::bytes_to_utf16_string(pwd.as_ref())
-                    .map_err(|_| UsernameError::InvalidUtf16)?
-                    .into()
-            }
+            CredentialType::Password(pwd) => utils::bytes_to_utf16_string(pwd.as_ref())
+                .map_err(|_| UsernameError::InvalidUtf16)?
+                .into(),
             CredentialType::NtlmHash(_) => {
                 // Can't convert hash back to password
                 return Err(UsernameError::InvalidUtf16);

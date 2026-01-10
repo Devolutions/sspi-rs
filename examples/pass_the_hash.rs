@@ -44,8 +44,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✓ Created AuthIdentityBuffers with NT hash");
     println!("  - Credential type: {:?}", credentials_with_hash.credential_type());
-    println!("  - Is NT hash: {}", credentials_with_hash.credential_type().is_ntlm_hash());
-    println!("  - Is password: {}", credentials_with_hash.credential_type().is_password());
+    println!(
+        "  - Is NT hash: {}",
+        credentials_with_hash.credential_type().is_ntlm_hash()
+    );
+    println!(
+        "  - Is password: {}",
+        credentials_with_hash.credential_type().is_password()
+    );
     println!();
 
     // Compare with password-based credentials
@@ -53,15 +59,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("For comparison, password-based credentials:");
     println!("  - Credential type: {:?}", credentials_with_password.credential_type());
-    println!("  - Is NT hash: {}", credentials_with_password.credential_type().is_ntlm_hash());
-    println!("  - Is password: {}", credentials_with_password.credential_type().is_password());
+    println!(
+        "  - Is NT hash: {}",
+        credentials_with_password.credential_type().is_ntlm_hash()
+    );
+    println!(
+        "  - Is password: {}",
+        credentials_with_password.credential_type().is_password()
+    );
     println!();
 
     // In a real NTLM authentication scenario:
     // 1. Create Ntlm instance with hash-based credentials
     // 2. The library will automatically use the NT hash in NTLMv2 calculations
     // 3. No password hashing is needed - the hash is used directly
-    
+
     println!("=== How Pass-the-Hash Works ===");
     println!("1. Instead of hashing a password, the NT hash is used directly");
     println!("2. The NT hash is the MD4 hash of the UTF-16LE encoded password");
@@ -69,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   NTLMv2_hash = HMAC-MD5(NT_hash, uppercase(username) + domain)");
     println!("4. The authentication process then continues as normal");
     println!();
-    
+
     println!("=== Integration with sspi-rs ===");
     println!("To use pass-the-hash in your application:");
     println!();

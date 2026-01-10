@@ -327,10 +327,12 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     /* [1] userName (OCTET STRING) */
     ber::write_sequence_octet_string(&mut buffer, 1, &identity.user)?;
     /* [2] password (OCTET STRING) */
-    let password = identity.password().ok_or_else(|| Error::new(
-        ErrorKind::InvalidParameter,
-        "Password required for CredSSP authentication"
-    ))?;
+    let password = identity.password().ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidParameter,
+            "Password required for CredSSP authentication",
+        )
+    })?;
     ber::write_sequence_octet_string(&mut buffer, 2, password)?;
 
     Ok(buffer)
