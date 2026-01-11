@@ -66,6 +66,15 @@ impl TryFrom<&str> for NtlmHash {
     }
 }
 
+// for compatibility with clap
+impl std::str::FromStr for NtlmHash {
+    type Err = NtlmHashError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        NtlmHash::try_from(s)
+    }
+}
+
 impl AsRef<NtlmHash> for NtlmHash {
     fn as_ref(&self) -> &NtlmHash {
         self
