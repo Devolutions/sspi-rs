@@ -2,9 +2,6 @@ use std::fmt;
 
 use crate::{utils, Error, Secret};
 
-/// Type alias for NT hash bytes (16 bytes)
-pub type NtlmHashBytes = [u8; 16];
-
 /// Represents an NT hash (16 bytes) used for pass-the-hash authentication
 #[derive(Clone, Eq, PartialEq)]
 pub struct NtlmHash([u8; 16]);
