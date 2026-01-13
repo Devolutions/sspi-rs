@@ -31,7 +31,7 @@ mod ntlm_pth_integration {
 
         assert_eq!(nt_hash, password_to_ntlm_hash("Password123!").into());
 
-        let credentials = AuthIdentityBuffers::from_utf8_with_hash(TEST_USERNAME, TEST_DOMAIN, *nt_hash.as_bytes());
+        let credentials = AuthIdentityBuffers::from_utf8_with_hash(TEST_USERNAME, TEST_DOMAIN, nt_hash);
 
         let mut ntlm = Ntlm::with_auth_identity(Some(credentials.clone()), Default::default());
 
@@ -60,7 +60,7 @@ mod ntlm_pth_integration {
     fn test_credential_type_detection() {
         // Hash-based credentials
         let nt_hash: NtlmHash = TEST_NT_HASH.try_into().expect("valid hash");
-        let hash_creds = AuthIdentityBuffers::from_utf8_with_hash(TEST_USERNAME, TEST_DOMAIN, *nt_hash.as_bytes());
+        let hash_creds = AuthIdentityBuffers::from_utf8_with_hash(TEST_USERNAME, TEST_DOMAIN, nt_hash);
 
         assert!(hash_creds.credential_type().is_ntlm_hash());
         assert!(!hash_creds.credential_type().is_password());

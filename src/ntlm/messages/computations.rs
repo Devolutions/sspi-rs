@@ -186,7 +186,7 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
             }
             crate::auth_identity::CredentialType::NtlmHash(hash) => {
                 // NT hash is already the MD4 hash of the password, use it directly
-                *hash.as_ref()
+                *hash.as_ref().as_bytes()
             }
         };
 

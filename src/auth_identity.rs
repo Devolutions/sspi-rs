@@ -3,7 +3,7 @@ use std::fmt;
 use crate::{utils, Error, Secret};
 
 /// Represents an NT hash (16 bytes) used for pass-the-hash authentication
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, zeroize::Zeroize)]
 pub struct NtlmHash([u8; 16]);
 
 impl NtlmHash {
@@ -275,7 +275,7 @@ pub enum CredentialType {
     /// Password-based credential (UTF-16 encoded)
     Password(Secret<Vec<u8>>),
     /// NT hash-based credential (16 bytes)
-    NtlmHash(Secret<NtlmHashBytes>),
+    NtlmHash(Secret<NtlmHash>),
 }
 
 impl CredentialType {
@@ -298,7 +298,7 @@ impl CredentialType {
     }
 
     /// Returns the NT hash if this is an NT hash credential
-    pub fn ntlm_hash(&self) -> Option<&NtlmHashBytes> {
+    pub fn ntlm_hash(&self) -> Option<&NtlmHash> {
         match self {
             CredentialType::NtlmHash(h) => Some(h.as_ref()),
             CredentialType::Password(_) => None,
@@ -346,7 +346,7 @@ impl AuthIdentityBuffers {
     }
 
     /// Creates a new [AuthIdentityBuffers] object with an NT hash.
-    pub fn new_with_hash(user: Vec<u8>, domain: Vec<u8>, hash: NtlmHashBytes) -> Self {
+    pub fn new_with_hash(user: Vec<u8>, domain: Vec<u8>, hash: NtlmHash) -> Self {
         Self {
             user,
             domain,
@@ -370,7 +370,7 @@ impl AuthIdentityBuffers {
     }
 
     /// Creates a new [AuthIdentityBuffers] object with a UTF-8 username/domain and NT hash.
-    pub fn from_utf8_with_hash(user: &str, domain: &str, hash: NtlmHashBytes) -> Self {
+    pub fn from_utf8_with_hash(user: &str, domain: &str, hash: NtlmHash) -> Self {
         Self {
             user: utils::string_to_utf16(user),
             domain: utils::string_to_utf16(domain),
@@ -389,7 +389,7 @@ impl AuthIdentityBuffers {
     }
 
     /// Returns the NT hash if using hash authentication
-    pub fn ntlm_hash(&self) -> Option<&NtlmHashBytes> {
+    pub fn ntlm_hash(&self) -> Option<&NtlmHash> {
         self.credential.ntlm_hash()
     }
 }
@@ -828,7 +828,7 @@ mod tests {
         let hash_str = "32ed87bdb5fdc5e9cba88547376818d4";
         let hash: NtlmHash = hash_str.try_into().unwrap();
 
-        let credentials = AuthIdentityBuffers::from_utf8_with_hash("Administrator", "CONTOSO", *hash.as_bytes());
+        let credentials = AuthIdentityBuffers::from_utf8_with_hash("Administrator", "CONTOSO", hash);
 
         assert!(!credentials.user.is_empty());
         assert!(!credentials.domain.is_empty());
