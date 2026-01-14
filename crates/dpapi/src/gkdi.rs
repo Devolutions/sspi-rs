@@ -39,17 +39,19 @@ pub enum GkdiError {
 
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].
 pub fn unpack_response(data: &[u8]) -> Result<GroupKeyEnvelope> {
-    if data.len() < 4 /* key_length */ + 4 /* padding */ + 8 /* referent id */ + 8 /* pointer size */ + 4
-    /* status */
-    {
-        Err(GkdiError::BadResponse("response data length is too small"))?;
-    }
-
-    let (key_buf, mut hresult_buf) = data.split_at(data.len() - size_of::<u32>());
+    let (key_buf, mut hresult_buf) = data
+        .split_at_checked(data.len() - size_of::<u32>())
+        .ok_or(GkdiError::BadResponse("response data length is too small"))?;
 
     let hresult = hresult_buf.read_u32::<LittleEndian>()?;
     if hresult != 0 {
         Err(GkdiError::BadHresult(hresult))?;
+    }
+
+    if data.len() < 4 /* key_length */ + 4 /* padding */ + 8 /* referent id */ + 8 /* pointer size */ + 4
+    /* status */
+    {
+        Err(GkdiError::BadResponse("response data length is too small"))?;
     }
 
     let mut src = ReadCursor::new(key_buf);
