@@ -179,7 +179,7 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
         let password_bytes = identity.password.as_ref();
         let password_str = utils::bytes_to_utf16_string(password_bytes)?;
 
-        // Check if the password field contains an NT hash with the prefix
+        // Check if the password field contains an NT hash with the prefix.
         let hmac_key = if let Some(hash_hex) = password_str.strip_prefix(crate::ntlm::hash::NTLM_HASH_PREFIX) {
             let nt_hash: NtlmHash = hash_hex.parse().map_err(|e| match e {
                 NtlmHashError::StringLength => crate::Error::new(
@@ -194,7 +194,7 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
 
             *nt_hash.as_bytes()
         } else {
-            // Standard password path - compute MD4
+            // Usual password - compute MD4.
             if password_bytes.len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
                 convert_password_hash(password_bytes)?
             } else {

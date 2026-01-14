@@ -29,7 +29,7 @@ fn successful_ntlm_authentication_with_client_auth_data() {
     check_messages_encryption(&mut client, &mut server).unwrap();
 }
 
-mod pth {
+mod nt_hash {
     use md4::{Digest, Md4};
     use sspi::{ntlm::Ntlm, AuthIdentityBuffers, NtlmHash, Sspi, SspiImpl};
 
