@@ -153,18 +153,8 @@ pub struct AuthIdentity {
     pub password: Secret<String>,
 }
 
-impl AuthIdentity {
-    /// Creates a new AuthIdentity with a password
-    pub fn new_password(username: Username, password: String) -> Self {
-        Self {
-            username,
-            password: Secret::new(password),
-        }
-    }
-}
-
 /// Auth identity buffers for password-based logon.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
     /// Username.
     ///
@@ -221,23 +211,13 @@ impl AuthIdentityBuffers {
     }
 }
 
-impl Default for AuthIdentityBuffers {
-    fn default() -> Self {
-        Self {
-            user: Vec::new(),
-            domain: Vec::new(),
-            password: Vec::new().into(),
-        }
-    }
-}
-
 impl fmt::Debug for AuthIdentityBuffers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AuthIdentityBuffers {{ user: 0x")?;
         self.user.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", domain: 0x")?;
         self.domain.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
-        write!(f, ", password: [redacted] }}")?;
+        write!(f, ", password: {:?} }}", self.password)?;
 
         Ok(())
     }
