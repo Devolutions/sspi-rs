@@ -211,6 +211,7 @@ impl AuthIdentityBuffers {
         }
     }
 
+    /// Creates a new [AuthIdentityBuffers] object based on UTF-8 username and domain, and NT hash for the password.
     pub fn from_utf8_with_hash(user: &str, domain: &str, nt_hash: &crate::NtlmHash) -> Self {
         Self {
             user: utils::string_to_utf16(user),
