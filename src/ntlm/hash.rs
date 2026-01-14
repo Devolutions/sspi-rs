@@ -7,38 +7,31 @@ pub const NTLM_HASH_PREFIX: &str = "$NTLM$:";
 ///
 /// This type provides type safety and validation for NT hashes.
 ///
-/// It can be parsed from hex strings and converted
-/// to the format expected by the sspi API using [`to_sspi_password`](NtlmHash::to_sspi_password).
+/// It can be parsed from hex strings and used to create [`AuthIdentityBuffers`](crate::AuthIdentityBuffers) with [`AuthIdentityBuffers::from_utf8_with_hash`](crate::AuthIdentityBuffers::from_utf8_with_hash).
 ///
 /// # Example
 ///
 /// ```
 /// use sspi::ntlm::NtlmHash;
 ///
-/// // Parse from hex string
+/// // Parse from hex string.
 /// let hash = "8119935C5F7FA5F57135620C8073AACA".parse::<NtlmHash>().unwrap();
 ///
-/// // Convert to sspi password format
-/// let password = hash.to_sspi_password();
-///
-/// use sspi::ntlm::NTLM_HASH_PREFIX;
-/// assert_eq!(password, format!("{NTLM_HASH_PREFIX}{}", "8119935c5f7fa5f57135620c8073aaca"));
-///
-/// // Use with AuthIdentityBuffers
+/// // Use with AuthIdentityBuffers.
 /// use sspi::AuthIdentityBuffers;
-/// let creds = AuthIdentityBuffers::from_utf8("username", "DOMAIN", &password);
+/// let creds = AuthIdentityBuffers::from_utf8_with_hash("username", "DOMAIN", &hash);
 /// ```
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct NtlmHash([u8; 16]);
 
 impl NtlmHash {
-    /// Creates a new NtlmHash from a byte array
+    /// Creates a new NtlmHash from a byte array.
     #[inline]
     pub fn from_bytes(hash: [u8; 16]) -> Self {
         Self(hash)
     }
 
-    /// Attempts to create an NtlmHash from a byte slice
+    /// Attempts to create an NtlmHash from a byte slice.
     ///
     /// # Errors
     ///
@@ -48,7 +41,7 @@ impl NtlmHash {
         NtlmHash::try_from(bytes)
     }
 
-    /// Attempts to create an NtlmHash from a hex string
+    /// Attempts to create an NtlmHash from a hex string.
     ///
     /// # Errors
     ///
@@ -60,7 +53,7 @@ impl NtlmHash {
         NtlmHash::try_from(s.as_ref())
     }
 
-    /// Returns a reference to the hash bytes
+    /// Returns a reference to the hash bytes.
     #[inline]
     pub fn as_bytes(&self) -> &[u8; 16] {
         &self.0
@@ -68,7 +61,7 @@ impl NtlmHash {
 
     /// Converts the NT hash to the password format expected by sspi when constructing [`AuthIdentityBuffers`](crate::AuthIdentityBuffers).
     ///
-    /// Consider using [`AuthIdentityBuffers::from_utf8_with_hash`](crate::AuthIdentityBuffers::from_utf8_with_hash) instead.
+    /// Called internally during [`AuthIdentityBuffers::from_utf8_with_hash`](crate::AuthIdentityBuffers::from_utf8_with_hash).
     pub(crate) fn as_sspi_password(&self) -> String {
         let mut hex = String::with_capacity(self.0.len() * 2);
         for byte in &self.0 {
@@ -127,14 +120,14 @@ impl TryFrom<&[u8]> for NtlmHash {
     }
 }
 
-/// Errors that can occur when parsing or creating an NT hash
+/// Errors that can occur when parsing or creating an NT hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NtlmHashError {
-    /// Invalid string length for NTLM hash (must be 32-character hex string)
+    /// Invalid string length for NTLM hash (must be 32-character hex string).
     StringLength,
-    /// Invalid byte length for NTLM hash (must be 16 bytes)
+    /// Invalid byte length for NTLM hash (must be 16 bytes).
     ByteLength,
-    /// Invalid hex string
+    /// Invalid hex string.
     Hex,
 }
 
@@ -225,5 +218,16 @@ mod tests {
 
         assert_eq!(hash1.as_bytes(), hash2.as_bytes());
         assert_eq!(hash2.as_bytes(), hash3.as_bytes());
+    }
+
+    #[test]
+    fn test_ntlm_hash_as_sspi_password() {
+        let hash_str = "32ed87bdb5fdc5e9cba88547376818d4";
+        let hash: NtlmHash = hash_str.parse().unwrap();
+        let sspi_password = hash.as_sspi_password();
+        assert_eq!(
+            sspi_password,
+            format!("{NTLM_HASH_PREFIX}{}", "32ed87bdb5fdc5e9cba88547376818d4")
+        );
     }
 }
