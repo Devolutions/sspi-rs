@@ -101,8 +101,7 @@ use utils::map_keb_error_code_to_sspi_error;
 pub use utils::{modpow, str_to_w_buff, string_to_utf16, utf16_bytes_to_utf8_string};
 
 pub use self::auth_identity::{
-    AuthIdentity, AuthIdentityBuffers, CredentialType, Credentials, CredentialsBuffers, NtlmHash, UserNameFormat,
-    Username,
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, UserNameFormat, Username,
 };
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
@@ -116,7 +115,10 @@ pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::Ntlm;
+pub use self::ntlm::{
+    hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX},
+    Ntlm,
+};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
 use crate::builders::{

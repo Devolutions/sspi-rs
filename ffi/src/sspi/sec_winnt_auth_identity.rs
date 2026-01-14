@@ -404,7 +404,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
             domain,
-            credential: sspi::CredentialType::Password(password.into()),
+            password: password.into(),
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
@@ -441,7 +441,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user,
             domain,
-            credential: sspi::CredentialType::Password(password.into()),
+            password: password.into(),
         }))
     }
 }
@@ -539,7 +539,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
         user,
         domain,
-        credential: sspi::CredentialType::Password(password),
+        password,
     }))
 }
 
