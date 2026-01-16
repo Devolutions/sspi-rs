@@ -180,7 +180,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         };
         let mut network_client = network_client::SyncNetworkClient;
 
-        let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
+        let runtime  = try_execute!(Builder::new_current_thread().enable_all().build(), NTE_INTERNAL_ERROR);
         let blob_data = try_execute!(
             runtime.block_on(n_crypt_protect_secret::<NativeTransport>(
                 CryptProtectSecretArgs {
@@ -353,7 +353,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         };
         let mut network_client = network_client::SyncNetworkClient;
 
-        let runtime  = try_execute!(Builder::new_current_thread().build(), NTE_INTERNAL_ERROR);
+        let runtime  = try_execute!(Builder::new_current_thread().enable_all().build(), NTE_INTERNAL_ERROR);
         let secret_data = try_execute!(
             runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(
                 CryptUnprotectSecretArgs {

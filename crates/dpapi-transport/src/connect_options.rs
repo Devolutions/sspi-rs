@@ -1,8 +1,9 @@
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
 
 use thiserror::Error;
-use url::Url;
+use url::{Host, Url};
 use uuid::Uuid;
 
 /// Type that represents a function for obtaining the session token.
@@ -70,6 +71,13 @@ impl ConnectOptions {
     pub fn new(destination: &str, proxy_options: Option<ProxyOptions>) -> Result<Self> {
         let mut destination = Url::parse(&if destination.contains("://") {
             destination.to_owned()
+        } else if let Ok(ip_attempt) = destination.parse::<IpAddr>() {
+            // Ensure IP address format is valid for URLs
+            let ip_str_valid = match ip_attempt {
+                IpAddr::V4(ipv4_addr) => Host::Ipv4::<String>(ipv4_addr).to_string(),
+                IpAddr::V6(ipv6_addr) => Host::Ipv6::<String>(ipv6_addr).to_string(),
+            };
+            format!("tcp://{ip_str_valid}")
         } else {
             format!("tcp://{destination}")
         })?;
