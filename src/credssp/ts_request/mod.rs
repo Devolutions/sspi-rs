@@ -341,11 +341,11 @@ fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdenti
         password,
     } = password_creds;
 
-    Ok(AuthIdentityBuffers {
-        user: user_name.0 .0,
-        domain: domain_name.0 .0,
-        password: password.0 .0.into(),
-    })
+    Ok(AuthIdentityBuffers::new(
+        user_name.0 .0,
+        domain_name.0 .0,
+        password.0 .0,
+    ))
 }
 
 pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBuffers> {

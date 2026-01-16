@@ -1,4 +1,5 @@
 mod config;
+pub mod hash;
 mod messages;
 #[cfg(test)]
 mod test;
@@ -24,6 +25,7 @@ use crate::{
     SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
     SspiImpl, PACKAGE_ID_NONE,
 };
+pub use hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
 
 pub const PKG_NAME: &str = "NTLM";
 pub const NTLM_VERSION_SIZE: usize = 8;

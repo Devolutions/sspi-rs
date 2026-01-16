@@ -167,6 +167,10 @@ pub struct AuthIdentityBuffers {
     /// Password.
     ///
     /// Must be UTF-16 encoded.
+    ///
+    /// If the password is an NT hash, it should be prefixed with [`NTLM_HASH_PREFIX`](crate::NTLM_HASH_PREFIX) followed by the hash in hexadecimal format.
+    ///
+    /// See [`NtlmHash`](crate::NtlmHash) for more details.
     pub password: Secret<Vec<u8>>,
 }
 
@@ -194,6 +198,15 @@ impl AuthIdentityBuffers {
             user: utils::string_to_utf16(user),
             domain: utils::string_to_utf16(domain),
             password: utils::string_to_utf16(password).into(),
+        }
+    }
+
+    /// Creates a new [AuthIdentityBuffers] object based on UTF-8 username and domain, and NT hash for the password.
+    pub fn from_utf8_with_hash(user: &str, domain: &str, nt_hash: &crate::NtlmHash) -> Self {
+        Self {
+            user: utils::string_to_utf16(user),
+            domain: utils::string_to_utf16(domain),
+            password: utils::string_to_utf16(nt_hash.to_sspi_password()).into(),
         }
     }
 }

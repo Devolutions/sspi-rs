@@ -15,7 +15,7 @@ use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
 };
-use crate::utils;
+use crate::{utils, NtlmHash, NtlmHashError};
 
 pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
@@ -176,10 +176,30 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
-        let hmac_key = if identity.password.as_ref().len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
-            convert_password_hash(identity.password.as_ref())?
+        let password_bytes = identity.password.as_ref();
+        let password_str = utils::bytes_to_utf16_string(password_bytes)?;
+
+        // Check if the password field contains an NT hash with the prefix.
+        let hmac_key = if let Some(hash_hex) = password_str.strip_prefix(crate::ntlm::hash::NTLM_HASH_PREFIX) {
+            let nt_hash: NtlmHash = hash_hex.parse().map_err(|e| match e {
+                NtlmHashError::StringLength => crate::Error::new(
+                    crate::ErrorKind::InvalidToken,
+                    "NT hash must be exactly 32 hex characters",
+                ),
+                NtlmHashError::Hex => {
+                    crate::Error::new(crate::ErrorKind::InvalidToken, "Invalid hex character in NT hash")
+                }
+                NtlmHashError::ByteLength => unreachable!(),
+            })?;
+
+            *nt_hash.as_bytes()
         } else {
-            compute_md4(identity.password.as_ref())
+            // Usual password - compute MD4.
+            if password_bytes.len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
+                convert_password_hash(password_bytes)?
+            } else {
+                compute_md4(password_bytes)
+            }
         };
 
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
