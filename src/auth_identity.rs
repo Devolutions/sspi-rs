@@ -206,7 +206,7 @@ impl AuthIdentityBuffers {
         Self {
             user: utils::string_to_utf16(user),
             domain: utils::string_to_utf16(domain),
-            password: utils::string_to_utf16(nt_hash.as_sspi_password()).into(),
+            password: utils::string_to_utf16(nt_hash.to_sspi_password()).into(),
         }
     }
 }

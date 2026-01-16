@@ -62,7 +62,7 @@ impl NtlmHash {
     /// Converts the NT hash to the password format expected by sspi when constructing [`AuthIdentityBuffers`](crate::AuthIdentityBuffers).
     ///
     /// Called internally during [`AuthIdentityBuffers::from_utf8_with_hash`](crate::AuthIdentityBuffers::from_utf8_with_hash).
-    pub(crate) fn as_sspi_password(&self) -> String {
+    pub(crate) fn to_sspi_password(&self) -> String {
         let mut hex = String::with_capacity(self.0.len() * 2);
         for byte in &self.0 {
             hex.push_str(&format!("{:02x}", byte));
@@ -221,10 +221,10 @@ mod tests {
     }
 
     #[test]
-    fn test_ntlm_hash_as_sspi_password() {
+    fn test_ntlm_hash_to_sspi_password() {
         let hash_str = "32ed87bdb5fdc5e9cba88547376818d4";
         let hash: NtlmHash = hash_str.parse().unwrap();
-        let sspi_password = hash.as_sspi_password();
+        let sspi_password = hash.to_sspi_password();
         assert_eq!(
             sspi_password,
             format!("{NTLM_HASH_PREFIX}{}", "32ed87bdb5fdc5e9cba88547376818d4")
