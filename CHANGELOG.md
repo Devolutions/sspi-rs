@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.7](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.6...sspi-v0.18.7)] - 2026-01-16
+
+### <!-- 1 -->Features
+
+- NT Hash Authentication ([#585](https://github.com/Devolutions/sspi-rs/issues/585)) ([21b45e16dc](https://github.com/Devolutions/sspi-rs/commit/21b45e16dcee7171cd9ae70df37cee8cdf41df0e)) 
+
+  Adds support for NT hash (pass-the-hash) authentication,
+  allowing authentication using pre-computed NT hashes instead of
+  plaintext passwords.
+
+
+
 ## [[0.18.6](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.5...sspi-v0.18.6)] - 2026-01-05
 
 ### <!-- 4 -->Bug Fixes
