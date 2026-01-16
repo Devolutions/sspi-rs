@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allowing authentication using pre-computed NT hashes instead of
   plaintext passwords.
 
-
-
 ## [[0.18.6](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.5...sspi-v0.18.6)] - 2026-01-05
 
 ### <!-- 4 -->Bug Fixes
