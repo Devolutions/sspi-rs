@@ -82,7 +82,7 @@ async fn run(data: Dpapi) -> Result<()> {
                 stdin().bytes().collect::<Result<Vec<_>>>()?
             };
 
-            let result = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
+            let secret = Box::pin(dpapi::n_crypt_unprotect_secret::<NativeTransport>(
                 CryptUnprotectSecretArgs {
                     blob: &blob,
                     server: &server,
@@ -94,17 +94,10 @@ async fn run(data: Dpapi) -> Result<()> {
                     kerberos_config: None,
                 },
             ))
-            .await;
+            .await
+            .unwrap();
 
-            match result {
-                Ok(secret) => {
-                    stdout().write_all(secret.as_ref())?;
-                }
-                Err(error) => {
-                    println!("{:?}", error);
-                }
-            }
-            
+            stdout().write_all(secret.as_ref())?;
         }
     }
 
