@@ -72,7 +72,7 @@ impl ConnectOptions {
         let mut destination = Url::parse(&if destination.contains("://") {
             destination.to_owned()
         } else if let Ok(ip_attempt) = destination.parse::<IpAddr>() {
-            // Ensure IP address format is valid for URLs
+            // Ensure IPv6 addresses are wrapped with []
             let ip_str_valid = match ip_attempt {
                 IpAddr::V4(ipv4_addr) => Host::Ipv4::<String>(ipv4_addr).to_string(),
                 IpAddr::V6(ipv6_addr) => Host::Ipv6::<String>(ipv6_addr).to_string(),
