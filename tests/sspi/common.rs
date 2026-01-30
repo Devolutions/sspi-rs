@@ -33,6 +33,10 @@ impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
 
         Ok(self.credentials.clone())
     }
+
+    fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>> {
+        Ok(vec![self.credentials.clone()])
+    }
 }
 
 pub(crate) fn create_client_credentials_handle<T>(

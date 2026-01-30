@@ -96,6 +96,7 @@ pub struct Ntlm {
     // If the NTLM is used as server, then our_seq_number is the server sequence number and remote seq_number is the client sequence number.
     our_seq_number: u32,
     remote_seq_number: u32,
+    is_client: bool,
 
     session_key: Option<[u8; SESSION_KEY_SIZE]>,
 }
@@ -156,6 +157,7 @@ impl Ntlm {
 
             our_seq_number: 0,
             remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -186,6 +188,7 @@ impl Ntlm {
 
             our_seq_number: 0,
             remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -216,6 +219,7 @@ impl Ntlm {
 
             our_seq_number: 0,
             remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -252,10 +256,17 @@ impl Ntlm {
             )
         })?;
 
-        self.send_signing_key = generate_signing_key(session_key, SERVER_SIGN_MAGIC);
-        self.recv_signing_key = generate_signing_key(session_key, CLIENT_SIGN_MAGIC);
-        self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, SERVER_SEAL_MAGIC)));
-        self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, CLIENT_SEAL_MAGIC)));
+        if self.is_client {
+            self.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
+            self.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
+            self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+            self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
+        } else {
+            self.send_signing_key = generate_signing_key(session_key, SERVER_SIGN_MAGIC);
+            self.recv_signing_key = generate_signing_key(session_key, CLIENT_SIGN_MAGIC);
+            self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, SERVER_SEAL_MAGIC)));
+            self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, CLIENT_SEAL_MAGIC)));
+        }
 
         Ok(())
     }
@@ -311,6 +322,8 @@ impl SspiImpl for Ntlm {
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
+        self.is_client = false;
+
         Ok(GeneratorAcceptSecurityContext::new(move |_yield_point| async move {
             self.accept_security_context_impl(builder)
         }))
@@ -325,6 +338,8 @@ impl SspiImpl for Ntlm {
         'ctx: 'g,
         'b: 'g,
     {
+        self.is_client = true;
+
         Ok(self.initialize_security_context_impl(builder).into())
     }
 }
@@ -446,6 +461,7 @@ impl Ntlm {
         sequence_number: u32,
         digest: &[u8; 16],
     ) -> crate::Result<()> {
+        println!("CHECKSUM GENERATION: {:?} {:?}", self.send_sealing_key, digest);
         let checksum = self
             .send_sealing_key
             .as_mut()
@@ -463,6 +479,7 @@ impl Ntlm {
     }
 
     fn check_signature(&mut self, sequence_number: u32, digest: &[u8; 16], signature: &[u8]) -> crate::Result<()> {
+        println!("CHECKSUM VALIDATION: {:?} {:?}", self.send_sealing_key, digest);
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -717,11 +734,16 @@ impl SspiEx for Ntlm {
     fn validate_mic_token(&mut self, signature: &[u8], data: &[u8]) -> crate::Result<()> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
+        } else {
+            warn!("auth token is already completed!");
+            // self.reset_cipher_state()?;
         }
 
-        debug!(?self, ?signature, ?data, "checkmictokenfoire");
+        println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
 
         let seq_number = self.remote_seq_num();
+
+        debug!(?self, ?signature, ?data, ?seq_number, "checkmictokenfoire");
 
         let digest = compute_digest(&self.recv_signing_key, seq_number, data)?;
         self.check_signature(seq_number, &digest, signature)?;
@@ -736,7 +758,12 @@ impl SspiEx for Ntlm {
     fn generate_mic_token(&mut self, data: &[u8]) -> crate::Result<Option<Vec<u8>>> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
+        } else {
+            warn!("auth token is already completed!");
+            // self.reset_cipher_state()?;
         }
+
+        println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
 
         let seq_number = self.our_seq_num();
 
@@ -906,6 +933,8 @@ fn compute_digest(key: &[u8], seq_num: u32, data: &[u8]) -> io::Result<[u8; 16]>
     let mut digest_data = Vec::with_capacity(SIGNATURE_SEQ_NUM_SIZE + data.len());
     digest_data.write_u32::<LittleEndian>(seq_num)?;
     digest_data.extend_from_slice(data);
+
+    println!("COMPUTE DIGEST: {:?} {:?}", key, digest_data);
 
     compute_hmac_md5(key, &digest_data)
 }

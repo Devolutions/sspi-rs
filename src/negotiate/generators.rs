@@ -100,15 +100,13 @@ pub(super) fn generate_neg_token_targ_1(response_token: Option<Vec<u8>>) -> NegT
 }
 
 pub(super) fn generate_final_neg_token_targ(
-    neg_result: Option<Vec<u8>>,
+    neg_result: Vec<u8>,
     response_token: Option<Vec<u8>>,
     mech_list_mic: Option<Vec<u8>>,
 ) -> NegTokenTarg1 {
     NegTokenTarg1::from(NegTokenTarg {
         neg_result: Optional::from(
-            // Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))
-            // None
-            neg_result.map(|neg_result| ExplicitContextTag0::from(Asn1RawDer(neg_result))),
+            Some(ExplicitContextTag0::from(Asn1RawDer(neg_result)))
         ),
         supported_mech: Optional::from(None),
         response_token: Optional::from(

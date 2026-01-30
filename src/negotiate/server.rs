@@ -193,7 +193,7 @@ fn prepare_final_neg_token(
 
     let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
     let neg_token_targ = generate_final_neg_token_targ(
-        Some(neg_result),
+        neg_result,
         response_token,
         negotiate.protocol.generate_mic_token(&mech_types)?,
     );

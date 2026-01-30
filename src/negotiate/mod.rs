@@ -101,6 +101,7 @@ pub struct Negotiate {
     client_computer_name: String,
     mode: NegotiateMode,
     mech_types: picky_krb::gss_api::MechTypeList,
+    mic_verified: bool,
 }
 
 #[derive(Debug)]
@@ -128,6 +129,7 @@ impl Negotiate {
             client_computer_name: config.client_computer_name,
             mode,
             mech_types: Default::default(),
+            mic_verified: false,
         })
     }
 
@@ -148,6 +150,7 @@ impl Negotiate {
             client_computer_name: config.client_computer_name,
             mode,
             mech_types: Default::default(),
+            mic_verified: false,
         })
     }
 
@@ -166,7 +169,20 @@ impl Negotiate {
             return Err(Error::new(ErrorKind::InternalError, "set_auth_identity must be called only on server side"));
         };
 
-        let auth_data = auth_data.iter().find(|auth_data| auth_data.username == username).ok_or_else(|| Error::new(ErrorKind::NoCredentials, "user credentials are not found on the server side"))?.clone();
+        let auth_data = auth_data.iter()
+            .find(|auth_data| {
+                println!("Comparing server auth_data username: {:?} with negotiated username: {:?}", auth_data.username, username);
+
+                let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
+                    (Some(auth_domain), Some(negotiated_domain)) => auth_domain.eq_ignore_ascii_case(negotiated_domain),
+                    (None, None) => true,
+                    _ => false,
+                };
+
+                auth_data.username.account_name().eq_ignore_ascii_case(&username.account_name()) && domains_equal
+            })
+            .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "user credentials are not found on the server side"))?
+            .clone();
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(auth_data)?,

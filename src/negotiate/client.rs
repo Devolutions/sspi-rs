@@ -182,10 +182,6 @@ pub(crate) async fn initialize_security_context<'a>(
 
             debug!("resultstatus: {:?}", result.status);
             if result.status == SecurityStatus::Ok {
-                negotiate.state = NegotiateState::VerifyMic;
-
-                result.status = SecurityStatus::ContinueNeeded;
-
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
                 if let Some(mech_list_mic) = mech_list_mic {
                     let package_list = Negotiate::parse_package_list_config(&negotiate.package_list);
@@ -196,14 +192,26 @@ pub(crate) async fn initialize_security_context<'a>(
                     let mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
                     negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
+
+                    negotiate.mic_verified = true;
                 }
 
+                let neg_result = if negotiate.mic_verified {
+                    result.status = SecurityStatus::Ok;
+                    negotiate.state = NegotiateState::Ok;
+
+                    picky_krb::constants::gss_api::ACCEPT_COMPLETE.to_vec()
+                } else {
+                    result.status = SecurityStatus::ContinueNeeded;
+                    negotiate.state = NegotiateState::VerifyMic;
+
+                    picky_krb::constants::gss_api::ACCEPT_INCOMPLETE.to_vec()
+                };
+
                 prepare_final_neg_token(
-                    Some(picky_krb::constants::gss_api::ACCEPT_INCOMPLETE.to_vec()),
-                    // None,
+                    neg_result,
                     negotiate,
                     builder,
-                    true,
                 )?;
 
                 trace!(?builder, "outbuilderdata");
@@ -240,13 +248,13 @@ pub(crate) async fn initialize_security_context<'a>(
                 mech_list_mic,
             } = neg_token_targ.0;
 
-            // let neg_result = neg_result.0.map(|neg_result| neg_result.0 .0);
-            // if neg_result.as_deref() != Some(&picky_krb::constants::gss_api::ACCEPT_COMPLETE) {
-            //     return Err(Error::new(
-            //         ErrorKind::InvalidToken,
-            //         format!("unexpected NegResult: {neg_result:?}"),
-            //     ));
-            // }
+            let neg_result = neg_result.0.map(|neg_result| neg_result.0 .0);
+            if neg_result.as_deref() != Some(&picky_krb::constants::gss_api::ACCEPT_COMPLETE) {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("unexpected NegResult: {neg_result:?}"),
+                ));
+            }
 
             let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
             if let Some(mech_list_mic) = mech_list_mic {
@@ -259,21 +267,21 @@ pub(crate) async fn initialize_security_context<'a>(
 
                 negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
                 warn!("server mic token is valid");
+
+                negotiate.mic_verified = true;
             } else {
                 warn!("mech_list_mic is not present in server token");
             }
 
-            prepare_final_neg_token(
-                // Some(picky_krb::constants::gss_api::ACCEPT_COMPLETE.to_vec()),
-                None, negotiate, builder, true,
-            )?;
-
-            trace!(?builder, "outbuilderdata");
-
-            negotiate.state = NegotiateState::Ok;
+            let status = if negotiate.mic_verified {
+                negotiate.state = NegotiateState::Ok;
+                SecurityStatus::Ok
+            } else {
+                SecurityStatus::ContinueNeeded
+            };
 
             Ok(InitializeSecurityContextResult {
-                status: SecurityStatus::Ok,
+                status,
                 flags: ClientResponseFlags::empty(),
                 expiry: None,
             })
@@ -286,10 +294,9 @@ pub(crate) async fn initialize_security_context<'a>(
 }
 
 fn prepare_final_neg_token(
-    neg_result: Option<Vec<u8>>,
+    neg_result: Vec<u8>,
     negotiate: &mut Negotiate,
     builder: &mut crate::builders::FilledInitializeSecurityContext<'_, '_, <Negotiate as SspiImpl>::CredentialsHandle>,
-    delete_it_mic: bool,
 ) -> Result<()> {
     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
@@ -308,11 +315,7 @@ fn prepare_final_neg_token(
     let neg_token_targ = generate_final_neg_token_targ(
         neg_result,
         response_token,
-        if delete_it_mic {
-            negotiate.protocol.generate_mic_token(&mech_types)?
-        } else {
-            None
-        },
+        negotiate.protocol.generate_mic_token(&mech_types)?
     );
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;

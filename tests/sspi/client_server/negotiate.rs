@@ -32,7 +32,7 @@ fn run_spnego() {
             Box::new(ntlm_config),
             Some(String::from("ntlm,!kerberos")),
             "WIN-956CQOSSJTF.tbt.com".into(),
-        ))
+        ), vec![credentials.clone().auth_identity().unwrap()])
         .unwrap(),
     );
 
@@ -92,6 +92,8 @@ fn run_spnego() {
 
         output_token[0].buffer.clear();
         println!("{input_token:?}");
+
+        println!("===================================================================");
 
         if status == SecurityStatus::Ok {
             println!("SPNEGO authentication completed successfully");
