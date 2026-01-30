@@ -60,23 +60,7 @@ pub(super) fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, Me
 
 /// Decodes incoming SPNEGO message and extracts [ApReq] Kerberos message.
 pub(super) fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
-    let neg_token_targ: ExplicitContextTag1<NegTokenTarg> = picky_asn1_der::from_bytes(data)?;
-
-    let krb_message = KrbMessage::<ApReq>::decode_application_krb_message(
-        &neg_token_targ
-            .0
-            .response_token
-            .0
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    "response_token is missing in NegTokenTarg message",
-                )
-            })?
-            .0
-             .0,
-    )?
-    .0;
+    let krb_message = KrbMessage::<ApReq>::decode_application_krb_message(data)?.0;
 
     if krb_message.krb5_token_id != AP_REQ_TOKEN_ID {
         return Err(Error::new(

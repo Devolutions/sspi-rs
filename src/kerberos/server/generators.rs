@@ -73,25 +73,17 @@ pub(super) fn generate_ap_rep(
     }))
 }
 
-pub(super) fn generate_final_neg_token_targ(
+pub(super) fn generate_ap_rep_krb_blob(
     mech_id: ObjectIdentifier,
     ap_rep: ApRep,
-    mic: Vec<u8>,
-) -> Result<NegTokenTarg1> {
+) -> Result<Vec<u8>> {
     let krb_blob = ApplicationTag0(KrbMessage {
         krb5_oid: ObjectIdentifierAsn1::from(mech_id),
         krb5_token_id: AP_REP_TOKEN_ID,
         krb_msg: ap_rep,
     });
 
-    Ok(NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
-        supported_mech: Optional::from(None),
-        response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&krb_blob)?,
-        )))),
-        mech_list_mic: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(mic)))),
-    }))
+    Ok(picky_asn1_der::to_vec(&krb_blob)?)
 }
 
 pub(super) fn generate_mic_token(seq_number: u64, mut payload: Vec<u8>, session_key: &[u8]) -> Result<Vec<u8>> {

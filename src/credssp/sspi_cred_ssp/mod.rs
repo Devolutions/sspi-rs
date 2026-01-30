@@ -359,7 +359,7 @@ impl SspiImpl for SspiCredSsp {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -398,7 +398,7 @@ impl SspiCredSsp {
     pub(crate) async fn initialize_security_context_impl(
         &mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &mut builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut builders::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
         // In the CredSSP we always set DELEGATE flag

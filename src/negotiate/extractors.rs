@@ -53,11 +53,19 @@ pub(super) fn decode_initial_neg_init(data: &[u8]) -> crate::Result<(Option<TgtR
     Ok((tgt_req, mech_types))
 }
 
-/// Selects the preferred Kerberos oid.
+/// Selects the preferred authentication protocol OID.
 ///
 /// 1.2.840.48018.1.2.2 (MS KRB5 - Microsoft Kerberos 5) is preferred over 1.2.840.113554.1.2.2 (KRB5 - Kerberos 5).
 pub(super) fn select_mech_type(mech_list: &MechTypeList) -> crate::Result<ObjectIdentifier> {
-    // TODO: Support more mech types if needed.
+    let ms_krb5 = oids::ms_krb5();
+    if mech_list.0.iter().any(|mech_type| mech_type.0 == ms_krb5) {
+        return Ok(ms_krb5);
+    }
+
+    let krb5 = oids::krb5();
+    if mech_list.0.iter().any(|mech_type| mech_type.0 == krb5) {
+        return Ok(krb5);
+    }
 
     let ntlm_oid = oids::ntlm_ssp();
     if mech_list.0.iter().any(|mech_type| mech_type.0 == ntlm_oid) {

@@ -15,7 +15,7 @@ use crate::{
     AcceptSecurityContextResult, BufferType, Negotiate, NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus,
     SspiImpl,
 };
-use picky_krb::constants::gss_api::ACCEPT_COMPLETE;
+use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE};
 use picky_krb::gss_api::NegTokenTarg;
 use picky_krb::gss_api::NegTokenTarg1;
 use std::mem;
@@ -50,6 +50,7 @@ pub(crate) async fn accept_security_context(
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = std::mem::take(&mut encoded_neg_token_targ);
+            warn!(?output_token.buffer);
 
             negotiate.state = NegotiateState::InProgress;
 
@@ -58,6 +59,7 @@ pub(crate) async fn accept_security_context(
         NegotiateState::InProgress => {
             warn!(?input_token.buffer);
             let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
+            warn!("neg_token_targ parsed!");
             let NegTokenTarg {
                 neg_result: _,
                 supported_mech: _,
@@ -131,21 +133,20 @@ pub(crate) async fn accept_security_context(
                 result.status = SecurityStatus::ContinueNeeded;
 
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-                if let Some(mech_list_mic) = mech_list_mic {
-                    warn!("MIC token present");
-                    println!("MIC token present");
+                let neg_result = if let Some(mech_list_mic) = mech_list_mic {
                     let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
 
                     negotiate.set_auth_identity()?;
-
-                    warn!("authidentity is set!");
-
                     negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
-                } else {
-                    warn!("MIC token does not present :(");
-                }
 
-                prepare_final_neg_token(ACCEPT_COMPLETE.to_vec(), negotiate, &mut builder)?;
+                    negotiate.mic_verified = true;
+
+                    ACCEPT_COMPLETE.to_vec()
+                } else {
+                    ACCEPT_INCOMPLETE.to_vec()
+                };
+
+                prepare_final_neg_token(neg_result, negotiate, &mut builder)?;
 
                 trace!(?builder.output, "outbuilderdata");
             } else {
@@ -161,6 +162,29 @@ pub(crate) async fn accept_security_context(
             result.status
         }
         NegotiateState::VerifyMic => {
+            if !negotiate.mic_verified {
+                let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                warn!("neg_token_targ parsed!");
+                let NegTokenTarg {
+                    neg_result: _,
+                    supported_mech: _,
+                    response_token: _,
+                    mech_list_mic,
+                } = neg_token_targ.0;
+
+                let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
+                let neg_result = if let Some(mech_list_mic) = mech_list_mic {
+                    let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
+
+                    negotiate.set_auth_identity()?;
+                    negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
+
+                    negotiate.mic_verified = true;
+                } else {
+                    return Err(Error::new(ErrorKind::InvalidToken, "mech_list_mic is not present in SPNEGO message"));
+                };
+            }
+
             SecurityStatus::Ok
         }
         _ => {
