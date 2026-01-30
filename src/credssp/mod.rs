@@ -50,6 +50,8 @@ pub trait CredentialsProxy {
     ///
     /// * `username` - The username in UPN or Down-Level Logon Name format
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData>;
+
+    fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>>;
 }
 
 macro_rules! try_cred_ssp_server {
@@ -458,6 +460,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         yield_point: &mut YieldPointLocal,
         mut ts_request: TsRequest,
     ) -> Result<ServerState, ServerError> {
+        error!(?ts_request);
         if self.context.is_none() {
             self.context = match self
                 .context_config
@@ -465,7 +468,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .expect("CredSsp client mode should never be empty")
             {
                 ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    try_cred_ssp_server!(Negotiate::new_server(neg_config), ts_request),
+                    try_cred_ssp_server!(Negotiate::new_server(neg_config, try_cred_ssp_server!(self.credentials.auth_data(), ts_request)), ts_request),
                 ))),
                 ServerMode::Kerberos(kerberos_mode) => {
                     let (kerberos_config, server_properties) = *kerberos_mode;
@@ -537,6 +540,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
+                warn!("CREDSSP acceptor tbtcreds_handle: {:?}", credentials_handle);
                 let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
 
                 let builder = sspi_context
@@ -1236,7 +1240,9 @@ impl CredSspContext {
         hash_magic: &[u8],
         client_nonce: &[u8],
     ) -> crate::Result<()> {
+        warn!("before public key hash decryption");
         let decrypted_public_key = self.decrypt_message(encrypted_public_key)?;
+        warn!("after public key hash decryption");
 
         let mut data = hash_magic.to_vec();
         data.extend(client_nonce);
@@ -1302,6 +1308,7 @@ impl CredSspContext {
         ];
 
         let recv_seq_num = self.recv_seq_num;
+        warn!(?recv_seq_num);
 
         self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
 

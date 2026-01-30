@@ -2,6 +2,7 @@
 
 mod credssp;
 mod kerberos;
+mod negotiate;
 mod ntlm;
 
 use sspi::credssp::SspiContext;

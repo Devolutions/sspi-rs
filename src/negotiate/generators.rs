@@ -1,3 +1,4 @@
+use oid::ObjectIdentifier;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
@@ -5,12 +6,14 @@ use picky_asn1::wrapper::{
     ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
 use picky_asn1_der::Asn1RawDer;
+use picky_krb::constants::gss_api::TGT_REP_TOKEN_ID;
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::{NT_SRV_INST, TGT_REQ_MSG_TYPE};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
+use picky_krb::messages::TgtRep;
 use picky_krb::messages::TgtReq;
 
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
@@ -96,11 +99,41 @@ pub(super) fn generate_neg_token_targ_1(response_token: Option<Vec<u8>>) -> NegT
     })
 }
 
-pub(super) fn generate_final_neg_token_targ(mech_list_mic: Option<Vec<u8>>) -> NegTokenTarg1 {
+pub(super) fn generate_final_neg_token_targ(
+    neg_result: Option<Vec<u8>>,
+    response_token: Option<Vec<u8>>,
+    mech_list_mic: Option<Vec<u8>>,
+) -> NegTokenTarg1 {
     NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))),
+        neg_result: Optional::from(
+            // Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_COMPLETE.to_vec())))
+            // None
+            neg_result.map(|neg_result| ExplicitContextTag0::from(Asn1RawDer(neg_result))),
+        ),
         supported_mech: Optional::from(None),
-        response_token: Optional::from(None),
+        response_token: Optional::from(
+            response_token.map(|token| ExplicitContextTag2::from(OctetStringAsn1::from(token))),
+        ),
         mech_list_mic: Optional::from(mech_list_mic.map(|v| ExplicitContextTag3::from(OctetStringAsn1::from(v)))),
     })
+}
+
+pub(super) fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
+    let response_token = tgt_rep
+        .map(|tgt_rep| {
+            Result::Ok(ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
+                    krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
+                    krb5_token_id: TGT_REP_TOKEN_ID,
+                    krb_msg: tgt_rep,
+                }))?,
+            )))
+        })
+        .transpose()?;
+    Ok(NegTokenTarg1::from(NegTokenTarg {
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
+        supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(mech_type)))),
+        response_token: Optional::from(response_token),
+        mech_list_mic: Optional::from(None),
+    }))
 }

@@ -24,7 +24,7 @@ use crate::{
     builders, kerberos, ntlm, pku2u, AcquireCredentialsHandleResult, CertTrustStatus, ContextNames, ContextSizes,
     CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, Ntlm,
     PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType,
-    SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE, AuthIdentity,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -76,7 +76,20 @@ enum NegotiateState {
     #[default]
     Initial,
     InProgress,
+    VerifyMic,
     Ok,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum NegotiateMode {
+    Client,
+    Server(Vec<AuthIdentity>),
+}
+
+impl NegotiateMode {
+    fn is_client(&self) -> bool {
+        self == &NegotiateMode::Client
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -86,7 +99,8 @@ pub struct Negotiate {
     package_list: Option<String>,
     auth_identity: Option<CredentialsBuffers>,
     client_computer_name: String,
-    is_client: bool,
+    mode: NegotiateMode,
+    mech_types: picky_krb::gss_api::MechTypeList,
 }
 
 #[derive(Debug)]
@@ -98,10 +112,10 @@ struct PackageListConfig {
 
 impl Negotiate {
     pub fn new_client(config: NegotiateConfig) -> Result<Self> {
-        let is_client = true;
+        let mode = NegotiateMode::Client;
         let mut protocol = config.protocol_config.new_instance()?;
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, is_client)?
+            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, true)?
         {
             protocol = filtered_protocol;
         }
@@ -112,15 +126,16 @@ impl Negotiate {
             package_list: config.package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
-            is_client,
+            mode,
+            mech_types: Default::default(),
         })
     }
 
-    pub fn new_server(config: NegotiateConfig) -> Result<Self> {
-        let is_client = false;
+    pub fn new_server(config: NegotiateConfig, auth_data: Vec<AuthIdentity>) -> Result<Self> {
+        let mode = NegotiateMode::Server(auth_data);
         let mut protocol = config.protocol_config.new_instance()?;
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, is_client)?
+            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, false)?
         {
             protocol = filtered_protocol;
         }
@@ -131,12 +146,35 @@ impl Negotiate {
             package_list: config.package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
-            is_client,
+            mode,
+            mech_types: Default::default(),
         })
     }
 
     fn protocol_name(&self) -> &str {
         self.protocol.protocol_name()
+    }
+
+    fn set_auth_identity(&mut self) -> Result<()> {
+        let ContextNames { username } = match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names()?,
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_names()?,
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names()?,
+        };
+
+        let NegotiateMode::Server(auth_data) = &self.mode else {
+            return Err(Error::new(ErrorKind::InternalError, "set_auth_identity must be called only on server side"));
+        };
+
+        let auth_data = auth_data.iter().find(|auth_data| auth_data.username == username).ok_or_else(|| Error::new(ErrorKind::NoCredentials, "user credentials are not found on the server side"))?.clone();
+
+        match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(auth_data)?,
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(Credentials::AuthIdentity(auth_data))?,
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(auth_data)?,
+        }
+
+        Ok(())
     }
 
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
@@ -224,7 +262,7 @@ impl Negotiate {
             &self.protocol,
             &self.package_list,
             &self.client_computer_name,
-            self.is_client,
+            self.mode.is_client(),
         )? {
             self.protocol = filtered_protocol;
         }

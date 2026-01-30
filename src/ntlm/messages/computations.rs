@@ -117,16 +117,22 @@ pub(super) fn get_authenticate_target_info(
 
 pub(super) fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
     let mut challenge = [0; CHALLENGE_SIZE];
-    let mut rand = StdRng::try_from_os_rng()?;
-    rand.fill_bytes(challenge.as_mut());
+    // let mut rand = StdRng::try_from_os_rng()?;
+    // rand.fill_bytes(challenge.as_mut());
+
+    for i in 0..CHALLENGE_SIZE {
+        challenge[i] = (i + 1) as u8;
+    }
+
     Ok(challenge)
 }
 
 pub(super) fn now_file_time_timestamp() -> crate::Result<u64> {
-    convert_to_file_time(OffsetDateTime::now_utc())
+    // convert_to_file_time(OffsetDateTime::now_utc())
+    convert_to_file_time(time::macros::datetime!(2026-01-22 16:30 UTC))
 }
 
-pub(super) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
+pub(crate) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
     let mut value = exported_session_key.to_vec();
     value.extend_from_slice(sign_magic);
     compute_md5(value.as_ref())
@@ -175,6 +181,7 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 }
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
+    println!("Computing NTLMv2 hash for identity: {:?}", identity.password.as_ref());
     if !identity.is_empty() {
         let password_bytes = identity.password.as_ref();
         let password_str = utils::bytes_to_utf16_string(password_bytes)?;
@@ -205,6 +212,8 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
         let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
         user_uppercase_with_domain.extend(&identity.domain);
+
+        println!("user_uppercase_with_domain: {:?}", user_uppercase_with_domain);
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     } else {

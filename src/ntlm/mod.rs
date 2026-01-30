@@ -92,6 +92,11 @@ pub struct Ntlm {
     send_sealing_key: Option<Rc4>,
     recv_sealing_key: Option<Rc4>,
 
+    // If the NTLM is used as client, then our_seq_number is the client sequence number and remote seq_number is the server sequence number.
+    // If the NTLM is used as server, then our_seq_number is the server sequence number and remote seq_number is the client sequence number.
+    our_seq_number: u32,
+    remote_seq_number: u32,
+
     session_key: Option<[u8; SESSION_KEY_SIZE]>,
 }
 
@@ -148,6 +153,9 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
         }
     }
 
@@ -175,6 +183,9 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
         }
     }
 
@@ -202,6 +213,9 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
         }
     }
 
@@ -225,6 +239,39 @@ impl Ntlm {
             acceptor: vec![],
             application_data: token.to_vec(),
         });
+    }
+
+    fn reset_cipher_state(&mut self) -> crate::Result<()> {
+        use crate::ntlm::messages::computations::generate_signing_key;
+        use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
+
+        let session_key = self.session_key.as_ref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::OutOfSequence,
+                "the session key is not established, cannot reset cipher state",
+            )
+        })?;
+
+        self.send_signing_key = generate_signing_key(session_key, SERVER_SIGN_MAGIC);
+        self.recv_signing_key = generate_signing_key(session_key, CLIENT_SIGN_MAGIC);
+        self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, SERVER_SEAL_MAGIC)));
+        self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, CLIENT_SEAL_MAGIC)));
+
+        Ok(())
+    }
+
+    fn our_seq_num(&mut self) -> u32 {
+        let seq_num = self.our_seq_number;
+        self.our_seq_number = self.our_seq_number.wrapping_add(1);
+
+        seq_num
+    }
+
+    fn remote_seq_num(&mut self) -> u32 {
+        let seq_num = self.remote_seq_number;
+        self.remote_seq_number = self.remote_seq_number.wrapping_add(1);
+
+        seq_num
     }
 }
 
@@ -251,6 +298,7 @@ impl SspiImpl for Ntlm {
         }
 
         self.identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        warn!("NTLMTBTacquiredidentity: {:?} {:?}", self.identity, self.identity.as_ref().map(|id| id.password.as_ref()));
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.identity.clone(),
@@ -289,6 +337,9 @@ impl Ntlm {
         let input = builder
             .input
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+        warn!("NTLM acceptor input buffer: {:?}", input);
+        warn!("NTLM acceptor tbtcreds_handle: {:?}", builder.credentials_handle);
+
         let status = match self.state {
             NtlmState::Initial => {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
@@ -330,6 +381,8 @@ impl Ntlm {
         builder: &mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         trace!(?builder);
+
+        warn!("NTLM initiator input buffer: {:?}", builder.input);
 
         let status = match self.state {
             NtlmState::Initial => {
@@ -439,11 +492,13 @@ impl Sspi for Ntlm {
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
+        _sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
+
+        let sequence_number = self.our_seq_num();
 
         // check if exists
         SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
@@ -473,14 +528,18 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
     fn decrypt_message(
         &mut self,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
+        _sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
+            warn!("complete auth token");
             self.complete_auth_token(&mut [])?;
+        } else {
+            warn!("auth token is already completed!");
+            // self.reset_cipher_state()?;
         }
 
         let encrypted = extract_encrypted_data(message)?;
@@ -490,6 +549,24 @@ impl Sspi for Ntlm {
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
+        let sequence_number = u32::from_le_bytes(
+            signature[12..]
+                .try_into()
+                .unwrap(),
+        );
+        warn!(?sequence_number, "decrypt_message sequence number");
+
+        let expected_seq_number = self.remote_seq_num();
+        if sequence_number != expected_seq_number {
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
+                format!(
+                    "invalid sequence number: expected {}, got {}",
+                    expected_seq_number,
+                    sequence_number
+                ),
+            ));
+        }
 
         let decrypted = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
@@ -510,8 +587,10 @@ impl Sspi for Ntlm {
                 }
                 acc
             });
+        warn!(?data_to_sign, ?message, "decrypt_message data to sign");
         let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
         self.check_signature(sequence_number, &digest, signature)?;
+        warn!("signature is valid!!!!");
 
         Ok(DecryptionFlags::empty())
     }
@@ -620,13 +699,56 @@ impl Sspi for Ntlm {
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
-        self.identity = Some(identity.into());
+        warn!("NTLMTBTcustom_set_auth_identity: {:?} {:?}", self.identity, self.identity.as_ref().map(|id| id.password.as_ref()));
+
+        if let Some(credentials) = &mut self.identity {
+            if credentials.password.as_ref().is_empty() {
+                warn!("NTLMTBTcustom_set_auth_identity setting password");
+                let identity: AuthIdentityBuffers = identity.into();
+                credentials.password = identity.password;
+            }
+        } else {
+            self.identity = Some(identity.into());
+        }
+
+        Ok(())
+    }
+
+    fn validate_mic_token(&mut self, signature: &[u8], data: &[u8]) -> crate::Result<()> {
+        if self.recv_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
+        debug!(?self, ?signature, ?data, "checkmictokenfoire");
+
+        let seq_number = self.remote_seq_num();
+
+        let digest = compute_digest(&self.recv_signing_key, seq_number, data)?;
+        self.check_signature(seq_number, &digest, signature)?;
+
+        self.reset_cipher_state()?;
+
+        warn!("WHOAWHOAWHOAWHOAWHOAWHOAWHOAWHOA");
 
         Ok(())
     }
 
     fn generate_mic_token(&mut self, data: &[u8]) -> crate::Result<Option<Vec<u8>>> {
-        Ok(None)
+        if self.send_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        }
+
+        let seq_number = self.our_seq_num();
+
+        let digest = compute_digest(&self.send_signing_key, seq_number, data)?;
+
+        let mut mic_token = vec![0; SIGNATURE_SIZE];
+        let mut message = [SecurityBufferRef::token_buf(&mut mic_token)];
+        self.compute_checksum(&mut message, seq_number, &digest)?;
+
+        self.reset_cipher_state()?;
+
+        Ok(Some(mic_token))
     }
 }
 

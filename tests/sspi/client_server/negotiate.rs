@@ -1,0 +1,108 @@
+use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
+use sspi::credssp::SspiContext;
+use sspi::ntlm::NtlmConfig;
+use sspi::{
+    AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
+    DataRepresentation, InitializeSecurityContextResult, Negotiate, NegotiateConfig, Ntlm, Secret, SecurityBuffer,
+    SecurityStatus, ServerRequestFlags, Sspi, Username,
+};
+
+use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+
+fn run_spnego() {
+    let ntlm_config = NtlmConfig {
+        client_computer_name: Some("DESKTOP-IHPPQ95".to_owned()),
+    };
+    let credentials = Credentials::AuthIdentity(AuthIdentity {
+        username: Username::parse("t2@tbt.com").unwrap(),
+        password: Secret::from("qqqQQQ111!!!".to_owned()),
+    });
+    let target_name = "TERMSRV/WIN-956CQOSSJTF.tbt.com";
+
+    let mut client = SspiContext::Negotiate(
+        Negotiate::new_client(NegotiateConfig::new(
+            Box::new(ntlm_config.clone()),
+            Some(String::from("ntlm,!kerberos")),
+            "DESKTOP-3D83IAN.tbt.com".into(),
+        ))
+        .unwrap(),
+    );
+    let mut server = SspiContext::Negotiate(
+        Negotiate::new_server(NegotiateConfig::new(
+            Box::new(ntlm_config),
+            Some(String::from("ntlm,!kerberos")),
+            "WIN-956CQOSSJTF.tbt.com".into(),
+        ))
+        .unwrap(),
+    );
+
+    let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+    let AcquireCredentialsHandleResult {
+        credentials_handle: mut client_credentials_handle,
+        ..
+    } = builder
+        .with_auth_data(&credentials)
+        .with_credential_use(CredentialUse::Outbound)
+        .execute(&mut client)
+        .unwrap();
+
+    let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
+    let AcquireCredentialsHandleResult {
+        credentials_handle: mut server_credentials_handle,
+        ..
+    } = builder
+        .with_auth_data(&credentials)
+        .with_credential_use(CredentialUse::Inbound)
+        .execute(&mut server)
+        .unwrap();
+
+    let mut input_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+    let mut output_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+
+    for i in 0..4 {
+        println!("START STEP {i}");
+
+        let mut builder = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut client_credentials_handle)
+            .with_context_requirements(
+                ClientRequestFlags::MUTUAL_AUTH
+                    | ClientRequestFlags::USE_SESSION_KEY
+                    | ClientRequestFlags::INTEGRITY
+                    | ClientRequestFlags::CONFIDENTIALITY,
+            )
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(target_name)
+            .with_input(&mut input_token)
+            .with_output(&mut output_token);
+        let InitializeSecurityContextResult { status, .. } =
+            client.initialize_security_context_sync(&mut builder).unwrap();
+
+        input_token[0].buffer.clear();
+        println!("{output_token:?}");
+
+        let builder = server
+            .accept_security_context()
+            .with_credentials_handle(&mut server_credentials_handle)
+            .with_context_requirements(ServerRequestFlags::empty())
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_input(&mut output_token)
+            .with_output(&mut input_token);
+        server.accept_security_context_sync(builder).unwrap();
+
+        output_token[0].buffer.clear();
+        println!("{input_token:?}");
+
+        if status == SecurityStatus::Ok {
+            println!("SPNEGO authentication completed successfully");
+            return;
+        }
+    }
+
+    panic!("SPNEGO authentication should not exceed 4 steps")
+}
+
+#[test]
+fn spnego_ntlm_client_server() {
+    run_spnego();
+}

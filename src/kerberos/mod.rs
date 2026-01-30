@@ -675,7 +675,8 @@ impl SspiEx for Kerberos {
                 .sub_session_key
                 .as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
-        ).map(Some)
+        )
+        .map(Some)
     }
 }
 
