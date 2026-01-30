@@ -249,6 +249,7 @@ impl Ntlm {
         use crate::ntlm::messages::computations::generate_signing_key;
         use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
 
+        println!("SESSION KEY: {:?} is_client: {}", self.session_key, self.is_client);
         let session_key = self.session_key.as_ref().ok_or_else(|| {
             Error::new(
                 ErrorKind::OutOfSequence,
@@ -322,8 +323,6 @@ impl SspiImpl for Ntlm {
         &'a mut self,
         builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> crate::Result<GeneratorAcceptSecurityContext<'a>> {
-        self.is_client = false;
-
         Ok(GeneratorAcceptSecurityContext::new(move |_yield_point| async move {
             self.accept_security_context_impl(builder)
         }))
@@ -338,8 +337,6 @@ impl SspiImpl for Ntlm {
         'ctx: 'g,
         'b: 'g,
     {
-        self.is_client = true;
-
         Ok(self.initialize_security_context_impl(builder).into())
     }
 }
@@ -349,6 +346,9 @@ impl Ntlm {
         &mut self,
         builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
+        println!("ACCEPT_SEC_CONTEXT");
+        self.is_client = false;
+
         let input = builder
             .input
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
@@ -395,6 +395,8 @@ impl Ntlm {
         &mut self,
         builder: &mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
+        self.is_client = true;
+
         trace!(?builder);
 
         warn!("NTLM initiator input buffer: {:?}", builder.input);
@@ -736,7 +738,7 @@ impl SspiEx for Ntlm {
             self.complete_auth_token(&mut [])?;
         } else {
             warn!("auth token is already completed!");
-            // self.reset_cipher_state()?;
+            self.reset_cipher_state()?;
         }
 
         println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
@@ -760,7 +762,7 @@ impl SspiEx for Ntlm {
             self.complete_auth_token(&mut [])?;
         } else {
             warn!("auth token is already completed!");
-            // self.reset_cipher_state()?;
+            self.reset_cipher_state()?;
         }
 
         println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
