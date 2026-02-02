@@ -29,15 +29,12 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
         .as_ref()
         .expect("authenticate message must be set on authenticate phase");
 
-    println!("{negotiate_message:?} {challenge_message:?} {authenticate_message:?}");
-
     let ntlm_v2_hash = compute_ntlm_v2_hash(
         context
             .identity
             .as_ref()
             .expect("Identity must be present on complete_authenticate phase"),
     )?;
-    println!("NTLMv2 Hash: {:?}", ntlm_v2_hash);
     let (_, key_exchange_key) = compute_ntlm_v2_response(
         authenticate_message.client_challenge.as_ref(),
         challenge_message.server_challenge.as_ref(),
@@ -45,14 +42,11 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
-    println!("Key Exchange Key: {:?}", key_exchange_key);
     let session_key = authenticate_message
         .encrypted_random_session_key
         .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {
             get_session_key(key_exchange_key, &encrypted_random_session_key, context.flags)
         })?;
-    println!("Session Key: {:?}", session_key);
-    println!("MIC: {:?}", authenticate_message.mic);
 
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
@@ -95,9 +89,6 @@ fn check_mic_correctness(
             authenticate_message.as_ref(),
             exported_session_key,
         )?;
-
-        warn!(?mic.value, ?calculated_mic);
-        println!("MIC value: {:?}, calculated MIC: {:?}", mic.value, calculated_mic);
 
         if mic.value != calculated_mic {
             return Err(crate::Error::new(

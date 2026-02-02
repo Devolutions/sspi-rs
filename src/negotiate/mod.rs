@@ -175,11 +175,6 @@ impl Negotiate {
         let auth_data = auth_data
             .iter()
             .find(|auth_data| {
-                println!(
-                    "Comparing server auth_data username: {:?} with negotiated username: {:?}",
-                    auth_data.username, username
-                );
-
                 let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
                     (Some(auth_domain), Some(negotiated_domain)) => auth_domain.eq_ignore_ascii_case(negotiated_domain),
                     (None, None) => true,

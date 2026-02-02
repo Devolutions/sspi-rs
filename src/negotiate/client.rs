@@ -207,18 +207,18 @@ pub(crate) async fn initialize_security_context<'a>(
 
                 prepare_final_neg_token(neg_result, negotiate, builder)?;
             } else {
-                if let Ok(token) = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token) {
-                    let output_token = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                        // Wrap in a NegToken.
-                        picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut token.buffer))))?
-                    } else {
-                        // Do not wrap if the `USE_DCE_STYLE` flag is set.
-                        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
-                        mem::take(&mut token.buffer)
-                    };
+                let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                    token.buffer = output_token;
-                }
+                let output_token = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+                    // Wrap in a NegToken.
+                    picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut token.buffer))))?
+                } else {
+                    // Do not wrap if the `USE_DCE_STYLE` flag is set.
+                    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
+                    mem::take(&mut token.buffer)
+                };
+
+                token.buffer = output_token;
             }
 
             Ok(result)

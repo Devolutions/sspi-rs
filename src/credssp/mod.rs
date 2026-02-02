@@ -546,7 +546,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
                 let mut credentials_handle = self.credentials_handle.take();
-                warn!("CREDSSP acceptor tbtcreds_handle: {:?}", credentials_handle);
                 let sspi_context = &mut self.context.as_mut().unwrap().sspi_context;
 
                 let builder = sspi_context

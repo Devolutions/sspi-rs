@@ -103,7 +103,6 @@ pub async fn accept_security_context(
         .as_ref()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-    warn!(?input_token.buffer, "Kerberos input buffer");
 
     let status = match server.state {
         KerberosState::Preauthentication => {

@@ -177,7 +177,6 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 }
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
-    println!("Computing NTLMv2 hash for identity: {:?}", identity.password.as_ref());
     if !identity.is_empty() {
         let password_bytes = identity.password.as_ref();
         let password_str = utils::bytes_to_utf16_string(password_bytes)?;
@@ -208,8 +207,6 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
         let mut user_uppercase_with_domain = utils::string_to_utf16(user_utf16.to_uppercase().as_str());
         user_uppercase_with_domain.extend(&identity.domain);
-
-        println!("user_uppercase_with_domain: {:?}", user_uppercase_with_domain);
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     } else {

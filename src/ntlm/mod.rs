@@ -249,7 +249,6 @@ impl Ntlm {
         use crate::ntlm::messages::computations::generate_signing_key;
         use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
 
-        println!("SESSION KEY: {:?} is_client: {}", self.session_key, self.is_client);
         let session_key = self.session_key.as_ref().ok_or_else(|| {
             Error::new(
                 ErrorKind::OutOfSequence,
@@ -310,11 +309,6 @@ impl SspiImpl for Ntlm {
         }
 
         self.identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
-        warn!(
-            "NTLMTBTacquiredidentity: {:?} {:?}",
-            self.identity,
-            self.identity.as_ref().map(|id| id.password.as_ref())
-        );
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.identity.clone(),
@@ -350,14 +344,11 @@ impl Ntlm {
         &mut self,
         builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
-        println!("ACCEPT_SEC_CONTEXT");
         self.is_client = false;
 
         let input = builder
             .input
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
-        warn!("NTLM acceptor input buffer: {:?}", input);
-        warn!("NTLM acceptor tbtcreds_handle: {:?}", builder.credentials_handle);
 
         let status = match self.state {
             NtlmState::Initial => {
@@ -402,8 +393,6 @@ impl Ntlm {
         self.is_client = true;
 
         trace!(?builder);
-
-        warn!("NTLM initiator input buffer: {:?}", builder.input);
 
         let status = match self.state {
             NtlmState::Initial => {
@@ -467,7 +456,6 @@ impl Ntlm {
         sequence_number: u32,
         digest: &[u8; 16],
     ) -> crate::Result<()> {
-        println!("CHECKSUM GENERATION: {:?} {:?}", self.send_sealing_key, digest);
         let checksum = self
             .send_sealing_key
             .as_mut()
@@ -485,7 +473,6 @@ impl Ntlm {
     }
 
     fn check_signature(&mut self, sequence_number: u32, digest: &[u8; 16], signature: &[u8]) -> crate::Result<()> {
-        println!("CHECKSUM VALIDATION: {:?} {:?}", self.send_sealing_key, digest);
         let checksum = self
             .recv_sealing_key
             .as_mut()
@@ -558,11 +545,7 @@ impl Sspi for Ntlm {
         _sequence_number: u32,
     ) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
-            warn!("complete auth token");
             self.complete_auth_token(&mut [])?;
-        } else {
-            warn!("auth token is already completed!");
-            // self.reset_cipher_state()?;
         }
 
         let encrypted = extract_encrypted_data(message)?;
@@ -573,7 +556,6 @@ impl Sspi for Ntlm {
 
         let (signature, encrypted_message) = encrypted.split_at(16);
         let sequence_number = u32::from_le_bytes(signature[12..].try_into().unwrap());
-        warn!(?sequence_number, "decrypt_message sequence number");
 
         let expected_seq_number = self.remote_seq_num();
         if sequence_number != expected_seq_number {
@@ -605,10 +587,8 @@ impl Sspi for Ntlm {
                 }
                 acc
             });
-        warn!(?data_to_sign, ?message, "decrypt_message data to sign");
         let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
         self.check_signature(sequence_number, &digest, signature)?;
-        warn!("signature is valid!!!!");
 
         Ok(DecryptionFlags::empty())
     }
@@ -717,15 +697,8 @@ impl Sspi for Ntlm {
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
-        warn!(
-            "NTLMTBTcustom_set_auth_identity: {:?} {:?}",
-            self.identity,
-            self.identity.as_ref().map(|id| id.password.as_ref())
-        );
-
         if let Some(credentials) = &mut self.identity {
             if credentials.password.as_ref().is_empty() {
-                warn!("NTLMTBTcustom_set_auth_identity setting password");
                 let identity: AuthIdentityBuffers = identity.into();
                 credentials.password = identity.password;
             }
@@ -740,14 +713,8 @@ impl SspiEx for Ntlm {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         } else {
-            warn!("auth token is already completed!");
             self.reset_cipher_state()?;
         }
-
-        println!(
-            "KEYS: {:?} {:?} {:?} {:?}",
-            self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key
-        );
 
         let seq_number = self.remote_seq_num();
 
@@ -758,8 +725,6 @@ impl SspiEx for Ntlm {
 
         self.reset_cipher_state()?;
 
-        warn!("WHOAWHOAWHOAWHOAWHOAWHOAWHOAWHOA");
-
         Ok(())
     }
 
@@ -767,14 +732,8 @@ impl SspiEx for Ntlm {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         } else {
-            warn!("auth token is already completed!");
             self.reset_cipher_state()?;
         }
-
-        println!(
-            "KEYS: {:?} {:?} {:?} {:?}",
-            self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key
-        );
 
         let seq_number = self.our_seq_num();
 
@@ -944,8 +903,6 @@ fn compute_digest(key: &[u8], seq_num: u32, data: &[u8]) -> io::Result<[u8; 16]>
     let mut digest_data = Vec::with_capacity(SIGNATURE_SEQ_NUM_SIZE + data.len());
     digest_data.write_u32::<LittleEndian>(seq_num)?;
     digest_data.extend_from_slice(data);
-
-    println!("COMPUTE DIGEST: {:?} {:?}", key, digest_data);
 
     compute_hmac_md5(key, &digest_data)
 }

@@ -28,11 +28,9 @@ pub(crate) async fn accept_security_context(
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
 
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-    warn!(?input_token.buffer);
 
     let status = match negotiate.state {
         NegotiateState::Initial => {
-            warn!("Initial Negotiate State");
             let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
             let mech_type = select_mech_type(&mech_types)?;
             negotiate.mech_types = mech_types;
@@ -41,16 +39,13 @@ pub(crate) async fn accept_security_context(
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = mem::take(&mut encoded_neg_token_targ);
-            warn!(?output_token.buffer);
 
             negotiate.state = NegotiateState::InProgress;
 
             SecurityStatus::ContinueNeeded
         }
         NegotiateState::InProgress => {
-            warn!(?input_token.buffer);
             let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
-            warn!("neg_token_targ parsed!");
             let NegTokenTarg {
                 neg_result: _,
                 supported_mech: _,
@@ -68,8 +63,6 @@ pub(crate) async fn accept_security_context(
 
             let mut output_tokens = builder.output.to_vec();
             let mut input_tokens = input.to_vec();
-
-            warn!(?input_tokens);
 
             let mut result = match &mut negotiate.protocol {
                 NegotiatedProtocol::Pku2u(pku2u) => {
@@ -117,8 +110,6 @@ pub(crate) async fn accept_security_context(
             let ot = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             ot.buffer = output_token.buffer.clone();
 
-            warn!(?result.status);
-
             if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
                 negotiate.state = NegotiateState::VerifyMic;
                 result.status = SecurityStatus::ContinueNeeded;
@@ -145,7 +136,6 @@ pub(crate) async fn accept_security_context(
                 let ot = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
                 let spnego_token = picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut ot.buffer))))?;
-                warn!(?spnego_token);
 
                 ot.buffer = spnego_token;
             }
@@ -155,7 +145,6 @@ pub(crate) async fn accept_security_context(
         NegotiateState::VerifyMic => {
             if !negotiate.mic_verified {
                 let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
-                warn!("neg_token_targ parsed!");
                 let NegTokenTarg {
                     neg_result: _,
                     supported_mech: _,
@@ -217,8 +206,6 @@ fn prepare_final_neg_token(
     );
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
-
-    warn!(?encoded_final_neg_token_targ);
 
     output_token.buffer = encoded_final_neg_token_targ;
 
