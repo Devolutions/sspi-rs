@@ -51,6 +51,8 @@ pub trait CredentialsProxy {
     /// * `username` - The username in UPN or Down-Level Logon Name format
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData>;
 
+    /// A method signature for implementing a behavior of searching and returning
+    /// all available authentication data.
     fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>>;
 }
 
@@ -460,7 +462,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
         yield_point: &mut YieldPointLocal,
         mut ts_request: TsRequest,
     ) -> Result<ServerState, ServerError> {
-        error!(?ts_request);
         if self.context.is_none() {
             self.context = match self
                 .context_config

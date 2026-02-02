@@ -295,11 +295,7 @@ pub async fn accept_security_context(
 
             SecurityStatus::Ok
         }
-        KerberosState::Negotiate
-        | KerberosState::PubKeyAuth
-        | KerberosState::Credentials
-        | KerberosState::Final
-        | KerberosState::ApExchange => {
+        KerberosState::ApExchange | KerberosState::Final => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

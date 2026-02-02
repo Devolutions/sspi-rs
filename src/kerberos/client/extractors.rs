@@ -3,6 +3,7 @@ use std::io::Read;
 use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
+use picky_krb::constants::gss_api::AP_REP_TOKEN_ID;
 use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
@@ -169,13 +170,22 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
-/// Extracts [ApRep] from the [NegTokenTarg1].
+/// Extracts [ApRep] from the krb_token.
 #[instrument(ret, level = "trace")]
-pub fn extract_ap_rep_from_neg_token_targ(mut data: &[u8]) -> Result<ApRep> {
+pub fn extract_ap_rep_from_krb_blob(mut data: &[u8]) -> Result<ApRep> {
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
 
-    let mut t = [0, 0];
-    data.read_exact(&mut t)?;
+    let mut id = [0, 0];
+    data.read_exact(&mut id)?;
+
+    if id != AP_REP_TOKEN_ID {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!(
+                "invalid kerberos token id: expected {AP_REP_TOKEN_ID:?} but got {id:?}",
+            ),
+        ));
+    }
 
     Ok(picky_asn1_der::from_reader(&mut data)?)
 }

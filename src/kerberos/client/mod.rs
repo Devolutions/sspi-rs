@@ -16,7 +16,7 @@ use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 
 use self::extractors::{
-    extract_ap_rep_from_neg_token_targ, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
+    extract_ap_rep_from_krb_blob, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
     extract_session_key_from_tgs_rep, extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
@@ -362,7 +362,7 @@ pub async fn initialize_security_context<'a>(
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
             } else {
-                let ap_rep = extract_ap_rep_from_neg_token_targ(&input_token.buffer)?;
+                let ap_rep = extract_ap_rep_from_krb_blob(&input_token.buffer)?;
 
                 let session_key = client
                     .encryption_params
@@ -377,10 +377,10 @@ pub async fn initialize_security_context<'a>(
                 client.next_seq_number();
             }
 
-            client.state = KerberosState::PubKeyAuth;
+            client.state = KerberosState::Final;
             SecurityStatus::Ok
         }
-        _ => {
+        KerberosState::Final => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", client.state),

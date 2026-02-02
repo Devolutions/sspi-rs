@@ -75,13 +75,10 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("Kerberos Security Package"),
 });
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KerberosState {
-    Negotiate,
     Preauthentication,
     ApExchange,
-    PubKeyAuth,
-    Credentials,
     Final,
 }
 
@@ -242,6 +239,13 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> Result<SecurityStatus> {
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ))
+        }
+
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
@@ -327,36 +331,26 @@ impl Sspi for Kerberos {
         let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + WrapToken::header_len());
         wrap_token.encode(&mut raw_wrap_token)?;
 
-        match self.state {
-            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
+        let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
 
-                let (token, data) = if raw_wrap_token.len() < security_trailer_len {
-                    (raw_wrap_token.as_slice(), &[] as &[u8])
-                } else {
-                    raw_wrap_token.split_at(security_trailer_len)
-                };
-
-                let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
-                    message,
-                    BufferType::Data,
-                    SecurityBufferFlags::NONE,
-                )
-                .next()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
-
-                data_buffer.write_data(data)?;
-
-                let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
-                token_buffer.write_data(token)?;
-            }
-            KerberosState::Negotiate | KerberosState::Preauthentication | KerberosState::ApExchange => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("Kerberos context is not established: current state: {:?}", self.state),
-                ))
-            }
+        let (token, data) = if raw_wrap_token.len() < security_trailer_len {
+            (raw_wrap_token.as_slice(), &[] as &[u8])
+        } else {
+            raw_wrap_token.split_at(security_trailer_len)
         };
+
+        let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
+            message,
+            BufferType::Data,
+            SecurityBufferFlags::NONE,
+        )
+        .next()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
+
+        data_buffer.write_data(data)?;
+
+        let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
+        token_buffer.write_data(token)?;
 
         Ok(SecurityStatus::Ok)
     }
@@ -367,6 +361,13 @@ impl Sspi for Kerberos {
         message: &mut [SecurityBufferRef<'_>],
         _sequence_number: u32,
     ) -> Result<DecryptionFlags> {
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ))
+        }
+
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -459,37 +460,26 @@ impl Sspi for Kerberos {
 
         save_decrypted_data(plaintext, message)?;
 
-        match self.state {
-            KerberosState::PubKeyAuth => {
-                self.state = KerberosState::Credentials;
-                Ok(DecryptionFlags::empty())
-            }
-            KerberosState::Credentials => {
-                self.state = KerberosState::Final;
-                Ok(DecryptionFlags::empty())
-            }
-            _ => Ok(DecryptionFlags::empty()),
-        }
+        Ok(DecryptionFlags::empty())
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         // We prevent users from calling `query_context_sizes` on a non-established security context
         // because it can lead to invalid values being returned.
-        match self.state {
-            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => Ok(ContextSizes {
-                max_token: PACKAGE_INFO.max_token_len,
-                max_signature: MAX_SIGNATURE as u32,
-                block: 0,
-                security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
-            }),
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    "Kerberos context is not established",
-                ))
-            }
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ))
         }
+
+        Ok(ContextSizes {
+            max_token: PACKAGE_INFO.max_token_len,
+            max_signature: MAX_SIGNATURE as u32,
+            block: 0,
+            security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
+        })
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
