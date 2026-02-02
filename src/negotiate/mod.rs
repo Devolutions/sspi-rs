@@ -69,6 +69,10 @@ impl NegotiatedProtocol {
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.generate_mic_token(data, sealed),
         }
     }
+
+    pub fn is_kerberos(&self) -> bool {
+        matches!(self, NegotiatedProtocol::Kerberos(_))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -87,6 +91,7 @@ enum NegotiateMode {
 }
 
 impl NegotiateMode {
+    /// Returns true if the mode is [NegotiateMode::Client].
     fn is_client(&self) -> bool {
         self == &NegotiateMode::Client
     }
@@ -111,12 +116,40 @@ struct PackageListConfig {
     pku2u: bool,
 }
 
+impl PackageListConfig {
+    fn parse(package_list: &Option<String>) -> PackageListConfig {
+        let mut ntlm: bool = true;
+        let mut kerberos: bool = true;
+        let mut pku2u: bool = true;
+
+        if let Some(package_list) = &package_list {
+            for package in package_list.split(',') {
+                let (package_name, enabled) = if let Some(package_name) = package.strip_prefix('!') {
+                    (package_name.to_lowercase(), false)
+                } else {
+                    let package_name = package.to_lowercase();
+                    (package_name, true)
+                };
+
+                match package_name.as_str() {
+                    "ntlm" => ntlm = enabled,
+                    "kerberos" => kerberos = enabled,
+                    "pku2u" => pku2u = enabled,
+                    _ => warn!("unexpected package name: {}", &package_name),
+                }
+            }
+        }
+
+        PackageListConfig { ntlm, kerberos, pku2u }
+    }
+}
+
 impl Negotiate {
     pub fn new_client(config: NegotiateConfig) -> Result<Self> {
         let mode = NegotiateMode::Client;
         let mut protocol = config.protocol_config.new_instance()?;
 
-        let package_list = Self::parse_package_list_config(&config.package_list);
+        let package_list = PackageListConfig::parse(&config.package_list);
         if let Some(filtered_protocol) =
             Self::filter_protocol(&protocol, package_list, &config.client_computer_name, true)?
         {
@@ -139,7 +172,7 @@ impl Negotiate {
         let mode = NegotiateMode::Server(auth_data);
         let mut protocol = config.protocol_config.new_instance()?;
 
-        let package_list = Self::parse_package_list_config(&config.package_list);
+        let package_list = PackageListConfig::parse(&config.package_list);
         if let Some(filtered_protocol) =
             Self::filter_protocol(&protocol, package_list, &config.client_computer_name, false)?
         {
@@ -302,32 +335,6 @@ impl Negotiate {
         }
 
         Ok(())
-    }
-
-    fn parse_package_list_config(package_list: &Option<String>) -> PackageListConfig {
-        let mut ntlm: bool = true;
-        let mut kerberos: bool = true;
-        let mut pku2u: bool = true;
-
-        if let Some(package_list) = &package_list {
-            for package in package_list.split(',') {
-                let (package_name, enabled) = if let Some(package_name) = package.strip_prefix('!') {
-                    (package_name.to_lowercase(), false)
-                } else {
-                    let package_name = package.to_lowercase();
-                    (package_name, true)
-                };
-
-                match package_name.as_str() {
-                    "ntlm" => ntlm = enabled,
-                    "kerberos" => kerberos = enabled,
-                    "pku2u" => pku2u = enabled,
-                    _ => warn!("unexpected package name: {}", &package_name),
-                }
-            }
-        }
-
-        PackageListConfig { ntlm, kerberos, pku2u }
     }
 
     fn filter_protocol(

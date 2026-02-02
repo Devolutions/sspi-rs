@@ -1,4 +1,4 @@
-mod as_exchange;
+pub(crate) mod as_exchange;
 mod cache;
 mod extractors;
 mod generators;

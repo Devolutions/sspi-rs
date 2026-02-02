@@ -68,9 +68,6 @@ pub(crate) async fn initialize_security_context<'a>(
 
     match negotiate.state {
         NegotiateState::Initial => {
-            // FIXME
-            // builder.context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
-
             let sname = if builder
                 .context_requirements
                 .contains(ClientRequestFlags::USE_SESSION_KEY)

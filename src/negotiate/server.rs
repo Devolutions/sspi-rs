@@ -5,12 +5,15 @@ use picky_krb::gss_api::{NegTokenTarg, NegTokenTarg1};
 
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
-use crate::negotiate::extractors::{decode_initial_neg_init, select_mech_type};
-use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
+use crate::kerberos::server::as_exchange::request_tgt;
+use crate::negotiate::extractors::{decode_initial_neg_init, negotiate_mech_type};
+use crate::negotiate::generators::{
+    generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1, generate_tgt_rep,
+};
 use crate::negotiate::NegotiateState;
 use crate::{
     AcceptSecurityContextResult, BufferType, EmptyAcceptSecurityContext, Error, ErrorKind, Negotiate,
-    NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl,
+    NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Performs one authentication step.
@@ -32,10 +35,41 @@ pub(crate) async fn accept_security_context(
     let status = match negotiate.state {
         NegotiateState::Initial => {
             let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
-            let mech_type = select_mech_type(&mech_types)?;
+            let mech_type = negotiate_mech_type(&mech_types, negotiate.package_list, &mut negotiate.protocol)?;
             negotiate.mech_types = mech_types;
 
-            let mut encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, None)?)?;
+            let tgt_rep = if let (Some(tgt_req), NegotiatedProtocol::Kerberos(kerberos)) =
+                (tgt_req, &mut negotiate.protocol)
+            {
+                // If user sent us TgtReq than they want Kerberos User-to-User auth.
+                // At this point, we need to request TGT token in KDC and send it back to the user.
+
+                if !builder
+                    .context_requirements
+                    .contains(ServerRequestFlags::USE_SESSION_KEY)
+                {
+                    warn!("KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set.");
+                }
+
+                kerberos.krb5_user_to_user = true;
+
+                let credentials = kerberos
+                    .server
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::IncompleteCredentials, "Kerberos server configuration not present"))?
+                    .user
+                    .as_ref()
+                    .ok_or_else(|| Error::new(ErrorKind::IncompleteCredentials, "KRB5 U2U has been negotiated (requested by the client) but the user credentials are not preset in Kerberos server configuration"))?
+                    .clone();
+
+                Some(generate_tgt_rep(
+                    request_tgt(kerberos, &credentials, &tgt_req, yield_point).await?,
+                ))
+            } else {
+                None
+            };
+
+            let mut encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, tgt_rep)?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = mem::take(&mut encoded_neg_token_targ);

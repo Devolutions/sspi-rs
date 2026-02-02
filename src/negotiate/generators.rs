@@ -7,8 +7,8 @@ use picky_asn1::wrapper::{
 };
 use picky_asn1_der::Asn1RawDer;
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
-use picky_krb::constants::types::{NT_SRV_INST, TGT_REQ_MSG_TYPE};
-use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
+use picky_krb::constants::types::{NT_SRV_INST, TGT_REP_MSG_TYPE, TGT_REQ_MSG_TYPE};
+use picky_krb::data_types::{KerberosStringAsn1, PrincipalName, Ticket};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
@@ -130,4 +130,12 @@ pub(super) fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Opti
         response_token: Optional::from(response_token),
         mech_list_mic: Optional::from(None),
     }))
+}
+
+pub(super) fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
+    TgtRep {
+        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
+        ticket: ExplicitContextTag2::from(ticket),
+    }
 }
