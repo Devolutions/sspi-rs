@@ -44,7 +44,11 @@ pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl Read) -> cr
         message,
         &context.channel_bindings,
     )?;
-    warn!("NTLMTBTupdated_identity: {:?} {:?}", updated_identity, updated_identity.password.as_ref());
+    warn!(
+        "NTLMTBTupdated_identity: {:?} {:?}",
+        updated_identity,
+        updated_identity.password.as_ref()
+    );
     context.identity = Some(updated_identity);
     context.authenticate_message = Some(authenticate_message);
 

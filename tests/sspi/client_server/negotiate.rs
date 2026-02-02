@@ -28,11 +28,14 @@ fn run_spnego() {
         .unwrap(),
     );
     let mut server = SspiContext::Negotiate(
-        Negotiate::new_server(NegotiateConfig::new(
-            Box::new(ntlm_config),
-            Some(String::from("ntlm,!kerberos")),
-            "WIN-956CQOSSJTF.tbt.com".into(),
-        ), vec![credentials.clone().auth_identity().unwrap()])
+        Negotiate::new_server(
+            NegotiateConfig::new(
+                Box::new(ntlm_config),
+                Some(String::from("ntlm,!kerberos")),
+                "WIN-956CQOSSJTF.tbt.com".into(),
+            ),
+            vec![credentials.clone().auth_identity().unwrap()],
+        )
         .unwrap(),
     );
 

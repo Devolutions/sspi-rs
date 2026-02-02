@@ -1,24 +1,17 @@
-use crate::builders::AcceptSecurityContext;
+use std::mem;
+
+use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE};
+use picky_krb::gss_api::{NegTokenTarg, NegTokenTarg1};
+
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
-use crate::negotiate::extractors::decode_initial_neg_init;
-use crate::negotiate::extractors::select_mech_type;
-use crate::negotiate::generators::generate_final_neg_token_targ;
-use crate::negotiate::generators::generate_neg_token_targ;
-use crate::negotiate::generators::generate_neg_token_targ_1;
+use crate::negotiate::extractors::{decode_initial_neg_init, select_mech_type};
+use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
 use crate::negotiate::NegotiateState;
-use crate::EmptyAcceptSecurityContext;
-use crate::Error;
-use crate::ErrorKind;
-use crate::ServerResponseFlags;
 use crate::{
-    AcceptSecurityContextResult, BufferType, Negotiate, NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus,
-    SspiImpl,
+    AcceptSecurityContextResult, BufferType, EmptyAcceptSecurityContext, Error, ErrorKind, Negotiate,
+    NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl,
 };
-use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE};
-use picky_krb::gss_api::NegTokenTarg;
-use picky_krb::gss_api::NegTokenTarg1;
-use std::mem;
 
 /// Performs one authentication step.
 ///
@@ -33,8 +26,6 @@ pub(crate) async fn accept_security_context(
         .input
         .as_mut()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
-    warn!("SPNEGO acceptor input buffer: {:?}", input);
-    warn!("SPNEGO acceptor tbtcreds_handle: {:?}", builder.credentials_handle);
 
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
     warn!(?input_token.buffer);
@@ -49,7 +40,7 @@ pub(crate) async fn accept_security_context(
             let mut encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, None)?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-            output_token.buffer = std::mem::take(&mut encoded_neg_token_targ);
+            output_token.buffer = mem::take(&mut encoded_neg_token_targ);
             warn!(?output_token.buffer);
 
             negotiate.state = NegotiateState::InProgress;
@@ -87,7 +78,7 @@ pub(crate) async fn accept_security_context(
                         .as_ref()
                         .and_then(|creds| (*creds).clone())
                         .and_then(|creds_handle| creds_handle.auth_identity());
-                    let new_builder: FilledAcceptSecurityContext<Option<crate::AuthIdentityBuffers>> =
+                    let new_builder: FilledAcceptSecurityContext<'_, Option<crate::AuthIdentityBuffers>> =
                         EmptyAcceptSecurityContext::new()
                             .with_context_requirements(builder.context_requirements)
                             .with_target_data_representation(builder.target_data_representation)
@@ -173,7 +164,7 @@ pub(crate) async fn accept_security_context(
                 } = neg_token_targ.0;
 
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-                let neg_result = if let Some(mech_list_mic) = mech_list_mic {
+                if let Some(mech_list_mic) = mech_list_mic {
                     let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
 
                     negotiate.set_auth_identity()?;
@@ -181,8 +172,11 @@ pub(crate) async fn accept_security_context(
 
                     negotiate.mic_verified = true;
                 } else {
-                    return Err(Error::new(ErrorKind::InvalidToken, "mech_list_mic is not present in SPNEGO message"));
-                };
+                    return Err(Error::new(
+                        ErrorKind::InvalidToken,
+                        "mech_list_mic is not present in SPNEGO message",
+                    ));
+                }
             }
 
             SecurityStatus::Ok

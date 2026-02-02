@@ -122,11 +122,8 @@ pub(crate) fn write_authenticate(
 
     let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
         let mut session_key = [0; SESSION_KEY_SIZE];
-        // let mut rand = StdRng::try_from_os_rng()?;
-        // rand.fill_bytes(session_key.as_mut());
-        for i in 0..SESSION_KEY_SIZE {
-            session_key[i] = (i + 1) as u8;
-        }
+        let mut rand = StdRng::try_from_os_rng()?;
+        rand.fill_bytes(session_key.as_mut());
         session_key
     } else {
         key_exchange_key

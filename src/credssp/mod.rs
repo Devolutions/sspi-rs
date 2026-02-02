@@ -467,9 +467,15 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .take()
                 .expect("CredSsp client mode should never be empty")
             {
-                ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    try_cred_ssp_server!(Negotiate::new_server(neg_config, try_cred_ssp_server!(self.credentials.auth_data(), ts_request)), ts_request),
-                ))),
+                ServerMode::Negotiate(neg_config) => {
+                    Some(CredSspContext::new(SspiContext::Negotiate(try_cred_ssp_server!(
+                        Negotiate::new_server(
+                            neg_config,
+                            try_cred_ssp_server!(self.credentials.auth_data(), ts_request)
+                        ),
+                        ts_request
+                    ))))
+                }
                 ServerMode::Kerberos(kerberos_mode) => {
                     let (kerberos_config, server_properties) = *kerberos_mode;
                     Some(CredSspContext::new(SspiContext::Kerberos(try_cred_ssp_server!(
@@ -1097,16 +1103,12 @@ impl SspiEx for SspiContext {
 struct CredSspContext {
     peer_version: Option<u32>,
     sspi_context: SspiContext,
-    send_seq_num: u32,
-    recv_seq_num: u32,
 }
 
 impl CredSspContext {
     fn new(sspi_context: SspiContext) -> Self {
         Self {
             peer_version: None,
-            send_seq_num: 0,
-            recv_seq_num: 0,
             sspi_context,
         }
     }
@@ -1240,9 +1242,7 @@ impl CredSspContext {
         hash_magic: &[u8],
         client_nonce: &[u8],
     ) -> crate::Result<()> {
-        warn!("before public key hash decryption");
         let decrypted_public_key = self.decrypt_message(encrypted_public_key)?;
-        warn!("after public key hash decryption");
 
         let mut data = hash_magic.to_vec();
         data.extend(client_nonce);
@@ -1284,17 +1284,13 @@ impl CredSspContext {
             SecurityBufferRef::data_buf(data.as_mut_slice()),
         ];
 
-        let send_seq_num = self.send_seq_num;
-
         self.sspi_context
-            .encrypt_message(EncryptionFlags::empty(), &mut buffers, send_seq_num)?;
+            .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)?;
 
         let mut output = SecurityBufferRef::find_buffer(&buffers, BufferType::Token)?
             .data()
             .to_vec();
         output.extend_from_slice(SecurityBufferRef::find_buffer_mut(&mut buffers, BufferType::Data)?.data());
-
-        self.send_seq_num += 1;
 
         Ok(output)
     }
@@ -1307,14 +1303,9 @@ impl CredSspContext {
             SecurityBufferRef::token_buf(signature),
         ];
 
-        let recv_seq_num = self.recv_seq_num;
-        warn!(?recv_seq_num);
-
-        self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
+        self.sspi_context.decrypt_message(&mut buffers, 0)?;
 
         let output = SecurityBufferRef::buf_data(&buffers, BufferType::Data)?.to_vec();
-
-        self.recv_seq_num += 1;
 
         Ok(output)
     }

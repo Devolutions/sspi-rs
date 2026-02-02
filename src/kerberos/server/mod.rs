@@ -7,8 +7,6 @@ use std::io::Write;
 use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
-use extractors::{extract_client_mic_token, select_mech_type};
-use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
@@ -19,11 +17,8 @@ use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
-use self::as_exchange::request_tgt;
 use self::cache::AuthenticatorsCache;
-use self::extractors::{
-    decode_initial_neg_init, decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket,
-};
+use self::extractors::{decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
 use self::generators::{generate_ap_rep, generate_ap_rep_krb_blob};
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
@@ -32,11 +27,8 @@ use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
-    SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
+    SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl, Username,
 };
-
-/// Indicated that the MIC token `SentByAcceptor` flag must not be enabled in the incoming MIC token.
-const SENT_BY_INITIATOR: u8 = 0;
 
 /// Additional properties that are needed only for server-side Kerberos.
 #[derive(Debug, Clone)]
@@ -103,7 +95,7 @@ impl ServerProperties {
 /// The user should call this function until it returns `SecurityStatus::Ok`.
 pub async fn accept_security_context(
     server: &mut Kerberos,
-    yield_point: &mut YieldPointLocal,
+    _yield_point: &mut YieldPointLocal,
     builder: FilledAcceptSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<AcceptSecurityContextResult> {
     let input = builder
@@ -304,7 +296,11 @@ pub async fn accept_security_context(
 
             SecurityStatus::Ok
         }
-        KerberosState::Negotiate | KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final | KerberosState::ApExchange => {
+        KerberosState::Negotiate
+        | KerberosState::PubKeyAuth
+        | KerberosState::Credentials
+        | KerberosState::Final
+        | KerberosState::ApExchange => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

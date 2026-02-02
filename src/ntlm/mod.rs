@@ -310,7 +310,11 @@ impl SspiImpl for Ntlm {
         }
 
         self.identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
-        warn!("NTLMTBTacquiredidentity: {:?} {:?}", self.identity, self.identity.as_ref().map(|id| id.password.as_ref()));
+        warn!(
+            "NTLMTBTacquiredidentity: {:?} {:?}",
+            self.identity,
+            self.identity.as_ref().map(|id| id.password.as_ref())
+        );
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.identity.clone(),
@@ -568,11 +572,7 @@ impl Sspi for Ntlm {
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
-        let sequence_number = u32::from_le_bytes(
-            signature[12..]
-                .try_into()
-                .unwrap(),
-        );
+        let sequence_number = u32::from_le_bytes(signature[12..].try_into().unwrap());
         warn!(?sequence_number, "decrypt_message sequence number");
 
         let expected_seq_number = self.remote_seq_num();
@@ -581,8 +581,7 @@ impl Sspi for Ntlm {
                 ErrorKind::MessageAltered,
                 format!(
                     "invalid sequence number: expected {}, got {}",
-                    expected_seq_number,
-                    sequence_number
+                    expected_seq_number, sequence_number
                 ),
             ));
         }
@@ -718,7 +717,11 @@ impl Sspi for Ntlm {
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
-        warn!("NTLMTBTcustom_set_auth_identity: {:?} {:?}", self.identity, self.identity.as_ref().map(|id| id.password.as_ref()));
+        warn!(
+            "NTLMTBTcustom_set_auth_identity: {:?} {:?}",
+            self.identity,
+            self.identity.as_ref().map(|id| id.password.as_ref())
+        );
 
         if let Some(credentials) = &mut self.identity {
             if credentials.password.as_ref().is_empty() {
@@ -741,7 +744,10 @@ impl SspiEx for Ntlm {
             self.reset_cipher_state()?;
         }
 
-        println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
+        println!(
+            "KEYS: {:?} {:?} {:?} {:?}",
+            self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key
+        );
 
         let seq_number = self.remote_seq_num();
 
@@ -765,7 +771,10 @@ impl SspiEx for Ntlm {
             self.reset_cipher_state()?;
         }
 
-        println!("KEYS: {:?} {:?} {:?} {:?}", self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key);
+        println!(
+            "KEYS: {:?} {:?} {:?} {:?}",
+            self.send_signing_key, self.recv_signing_key, self.send_sealing_key, self.recv_sealing_key
+        );
 
         let seq_number = self.our_seq_num();
 

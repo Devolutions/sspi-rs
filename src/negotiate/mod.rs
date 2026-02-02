@@ -21,10 +21,10 @@ use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 use crate::{
-    builders, kerberos, ntlm, pku2u, AcquireCredentialsHandleResult, CertTrustStatus, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, Ntlm,
-    PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType,
-    SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE, AuthIdentity,
+    builders, kerberos, ntlm, pku2u, AcquireCredentialsHandleResult, AuthIdentity, CertTrustStatus, ContextNames,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, Kerberos,
+    KerberosConfig, Ntlm, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef,
+    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -166,12 +166,19 @@ impl Negotiate {
         };
 
         let NegotiateMode::Server(auth_data) = &self.mode else {
-            return Err(Error::new(ErrorKind::InternalError, "set_auth_identity must be called only on server side"));
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "set_auth_identity must be called only on server side",
+            ));
         };
 
-        let auth_data = auth_data.iter()
+        let auth_data = auth_data
+            .iter()
             .find(|auth_data| {
-                println!("Comparing server auth_data username: {:?} with negotiated username: {:?}", auth_data.username, username);
+                println!(
+                    "Comparing server auth_data username: {:?} with negotiated username: {:?}",
+                    auth_data.username, username
+                );
 
                 let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
                     (Some(auth_domain), Some(negotiated_domain)) => auth_domain.eq_ignore_ascii_case(negotiated_domain),
@@ -179,14 +186,25 @@ impl Negotiate {
                     _ => false,
                 };
 
-                auth_data.username.account_name().eq_ignore_ascii_case(&username.account_name()) && domains_equal
+                auth_data
+                    .username
+                    .account_name()
+                    .eq_ignore_ascii_case(username.account_name())
+                    && domains_equal
             })
-            .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "user credentials are not found on the server side"))?
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::NoCredentials,
+                    "user credentials are not found on the server side",
+                )
+            })?
             .clone();
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(auth_data)?,
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.custom_set_auth_identity(Credentials::AuthIdentity(auth_data))?,
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                kerberos.custom_set_auth_identity(Credentials::AuthIdentity(auth_data))?
+            }
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(auth_data)?,
         }
 

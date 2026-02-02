@@ -6,15 +6,13 @@ use picky_asn1::wrapper::{
     ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
 use picky_asn1_der::Asn1RawDer;
-use picky_krb::constants::gss_api::TGT_REP_TOKEN_ID;
-use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE, TGT_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::{NT_SRV_INST, TGT_REQ_MSG_TYPE};
 use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::{
     ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
-use picky_krb::messages::TgtRep;
-use picky_krb::messages::TgtReq;
+use picky_krb::messages::{TgtRep, TgtReq};
 
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
@@ -105,9 +103,7 @@ pub(super) fn generate_final_neg_token_targ(
     mech_list_mic: Option<Vec<u8>>,
 ) -> NegTokenTarg1 {
     NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(
-            Some(ExplicitContextTag0::from(Asn1RawDer(neg_result)))
-        ),
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(neg_result)))),
         supported_mech: Optional::from(None),
         response_token: Optional::from(
             response_token.map(|token| ExplicitContextTag2::from(OctetStringAsn1::from(token))),

@@ -1,12 +1,9 @@
-use crate::{Error, ErrorKind, Result};
 use oid::ObjectIdentifier;
 use picky::oids;
-use picky_krb::gss_api::ApplicationTag0;
-use picky_krb::gss_api::GssApiNegInit;
-use picky_krb::gss_api::KrbMessage;
-use picky_krb::gss_api::MechTypeList;
-use picky_krb::gss_api::NegTokenInit;
+use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechTypeList, NegTokenInit};
 use picky_krb::messages::TgtReq;
+
+use crate::{Error, ErrorKind};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
 #[instrument(ret, level = "trace")]

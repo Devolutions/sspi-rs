@@ -124,28 +124,3 @@ fn write_payload(message_fields: &NegotiateMessageFields, mut buffer: impl io::W
 
     Ok(())
 }
-
-#[cfg(test)]
-mod flags {
-    use super::NegotiateFlags;
-
-    use std::io::Read;
-    use byteorder::{LittleEndian, ReadBytesExt};
-
-    fn read(mut buffer: impl Read) -> u32 {
-        buffer.read_u32::<LittleEndian>().unwrap()
-    }
-
-    #[test]
-    fn ntlm_flags() {
-        let mut buffer = vec![183_u8, 130, 8, 226];
-        let flags = NegotiateFlags::from_bits(read(&buffer as &[u8])).unwrap();
-
-        println!("{flags:?}");
-
-        let mut buffer = vec![183_u8, 162, 8, 226];
-        let flags = NegotiateFlags::from_bits(read(&buffer as &[u8])).unwrap();
-
-        println!("{flags:?}");
-    }
-}

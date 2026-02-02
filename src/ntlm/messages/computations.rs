@@ -117,12 +117,8 @@ pub(super) fn get_authenticate_target_info(
 
 pub(super) fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
     let mut challenge = [0; CHALLENGE_SIZE];
-    // let mut rand = StdRng::try_from_os_rng()?;
-    // rand.fill_bytes(challenge.as_mut());
-
-    for i in 0..CHALLENGE_SIZE {
-        challenge[i] = (i + 1) as u8;
-    }
+    let mut rand = StdRng::try_from_os_rng()?;
+    rand.fill_bytes(challenge.as_mut());
 
     Ok(challenge)
 }
