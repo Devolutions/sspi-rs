@@ -96,7 +96,7 @@ impl NegotiateMode {
 pub struct Negotiate {
     state: NegotiateState,
     protocol: NegotiatedProtocol,
-    package_list: Option<String>,
+    package_list: PackageListConfig,
     auth_identity: Option<CredentialsBuffers>,
     client_computer_name: String,
     mode: NegotiateMode,
@@ -104,7 +104,7 @@ pub struct Negotiate {
     mic_verified: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct PackageListConfig {
     ntlm: bool,
     kerberos: bool,
@@ -115,8 +115,10 @@ impl Negotiate {
     pub fn new_client(config: NegotiateConfig) -> Result<Self> {
         let mode = NegotiateMode::Client;
         let mut protocol = config.protocol_config.new_instance()?;
+
+        let package_list = Self::parse_package_list_config(&config.package_list);
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, true)?
+            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, true)?
         {
             protocol = filtered_protocol;
         }
@@ -124,7 +126,7 @@ impl Negotiate {
         Ok(Negotiate {
             state: Default::default(),
             protocol,
-            package_list: config.package_list,
+            package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
             mode,
@@ -136,8 +138,10 @@ impl Negotiate {
     pub fn new_server(config: NegotiateConfig, auth_data: Vec<AuthIdentity>) -> Result<Self> {
         let mode = NegotiateMode::Server(auth_data);
         let mut protocol = config.protocol_config.new_instance()?;
+
+        let package_list = Self::parse_package_list_config(&config.package_list);
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, &config.package_list, &config.client_computer_name, false)?
+            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, false)?
         {
             protocol = filtered_protocol;
         }
@@ -145,7 +149,7 @@ impl Negotiate {
         Ok(Negotiate {
             state: Default::default(),
             protocol,
-            package_list: config.package_list,
+            package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
             mode,
@@ -159,17 +163,17 @@ impl Negotiate {
     }
 
     fn set_auth_identity(&mut self) -> Result<()> {
-        let ContextNames { username } = match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names()?,
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_names()?,
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names()?,
-        };
-
         let NegotiateMode::Server(auth_data) = &self.mode else {
             return Err(Error::new(
                 ErrorKind::InternalError,
                 "set_auth_identity must be called only on server side",
             ));
+        };
+
+        let ContextNames { username } = match &mut self.protocol {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names()?,
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_names()?,
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names()?,
         };
 
         let auth_data = auth_data
@@ -209,7 +213,7 @@ impl Negotiate {
     }
 
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
-        let enabled_packages = Self::parse_package_list_config(&self.package_list);
+        let enabled_packages = self.package_list;
 
         if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
             if !enabled_packages.kerberos {
@@ -262,7 +266,7 @@ impl Negotiate {
     // 5) in any other cases, it'll use NTLM
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip(self))]
     fn negotiate_protocol(&mut self, username: &str, domain: &str) -> Result<()> {
-        let enabled_packages = Self::parse_package_list_config(&self.package_list);
+        let enabled_packages = self.package_list;
 
         if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
             #[cfg(target_os = "windows")]
@@ -290,7 +294,7 @@ impl Negotiate {
 
         if let Some(filtered_protocol) = Self::filter_protocol(
             &self.protocol,
-            &self.package_list,
+            self.package_list,
             &self.client_computer_name,
             self.mode.is_client(),
         )? {
@@ -328,7 +332,7 @@ impl Negotiate {
 
     fn filter_protocol(
         negotiated_protocol: &NegotiatedProtocol,
-        package_list: &Option<String>,
+        package_list: PackageListConfig,
         client_computer_name: &str,
         is_client: bool,
     ) -> Result<Option<NegotiatedProtocol>> {
@@ -337,7 +341,7 @@ impl Negotiate {
             ntlm: is_ntlm,
             kerberos: is_kerberos,
             pku2u: is_pku2u,
-        } = Self::parse_package_list_config(package_list);
+        } = package_list;
 
         match &negotiated_protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
@@ -395,8 +399,7 @@ impl Negotiate {
     }
 
     fn can_downgrade_ntlm(&self) -> bool {
-        let package_list = Self::parse_package_list_config(&self.package_list);
-        package_list.ntlm
+        self.package_list.ntlm
     }
 
     fn is_target_name_ip_address(address: &str) -> bool {

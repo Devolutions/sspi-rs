@@ -90,10 +90,9 @@ pub(crate) async fn initialize_security_context<'a>(
 
             debug!(?sname);
 
-            let package_list = Negotiate::parse_package_list_config(&negotiate.package_list);
             let mech_types = generate_mech_type_list(
                 matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-                !package_list.ntlm,
+                !negotiate.package_list.ntlm,
             )?;
 
             let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
@@ -181,10 +180,9 @@ pub(crate) async fn initialize_security_context<'a>(
             if result.status == SecurityStatus::Ok {
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
                 if let Some(mech_list_mic) = mech_list_mic {
-                    let package_list = Negotiate::parse_package_list_config(&negotiate.package_list);
                     let mech_types = generate_mech_type_list(
                         matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-                        !package_list.ntlm,
+                        !negotiate.package_list.ntlm,
                     )?;
                     let mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
@@ -250,10 +248,9 @@ pub(crate) async fn initialize_security_context<'a>(
 
             let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
             if let Some(mech_list_mic) = mech_list_mic {
-                let package_list = Negotiate::parse_package_list_config(&negotiate.package_list);
                 let mech_types = generate_mech_type_list(
                     matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-                    !package_list.ntlm,
+                    !negotiate.package_list.ntlm,
                 )?;
                 let mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
@@ -297,10 +294,9 @@ fn prepare_final_neg_token(
         None
     };
 
-    let package_list = Negotiate::parse_package_list_config(&negotiate.package_list);
     let mech_types = generate_mech_type_list(
         matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-        !package_list.ntlm,
+        !negotiate.package_list.ntlm,
     )?;
     let mech_types = picky_asn1_der::to_vec(&mech_types)?;
     let neg_token_targ = generate_final_neg_token_targ(
