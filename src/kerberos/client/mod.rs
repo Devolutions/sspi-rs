@@ -294,8 +294,6 @@ pub async fn initialize_security_context<'a>(
             };
 
             let authenticator = generate_authenticator(authenticator_options)?;
-            let encoded_auth = picky_asn1_der::to_vec(&authenticator)?;
-            debug!(encoded_ap_req_authenticator = ?encoded_auth);
 
             let ap_req = generate_ap_req(
                 tgs_rep.0.ticket.0,
@@ -318,7 +316,6 @@ pub async fn initialize_security_context<'a>(
                 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
                 encoded_ap_req
             };
-            debug!("krbblob: {encoded_neg_ap_req:?}");
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_neg_ap_req;

@@ -745,8 +745,6 @@ impl SspiEx for Ntlm {
 
         let seq_number = self.remote_seq_num();
 
-        debug!(?self, ?signature, ?data, ?seq_number, "checkmictokenfoire");
-
         let digest = compute_digest(&self.recv_signing_key, seq_number, data)?;
         self.check_signature(seq_number, &digest, signature)?;
 

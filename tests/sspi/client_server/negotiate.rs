@@ -3,27 +3,29 @@ use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
-    DataRepresentation, InitializeSecurityContextResult, Negotiate, NegotiateConfig, Ntlm, Secret, SecurityBuffer,
+    DataRepresentation, InitializeSecurityContextResult, Negotiate, NegotiateConfig, Secret, SecurityBuffer,
     SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
-fn run_spnego() {
+const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
+
+fn run_spnego_ntlm() {
     let ntlm_config = NtlmConfig {
-        client_computer_name: Some("DESKTOP-IHPPQ95".to_owned()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
     let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::parse("t2@tbt.com").unwrap(),
-        password: Secret::from("qqqQQQ111!!!".to_owned()),
+        username: Username::parse("test_user@example.com").unwrap(),
+        password: Secret::from("test_password".to_owned()),
     });
-    let target_name = "TERMSRV/WIN-956CQOSSJTF.tbt.com";
+    let target_name = "TERMSRV/DESKTOP-8F33RFH.example.com";
 
     let mut client = SspiContext::Negotiate(
         Negotiate::new_client(NegotiateConfig::new(
             Box::new(ntlm_config.clone()),
             Some(String::from("ntlm,!kerberos")),
-            "DESKTOP-3D83IAN.tbt.com".into(),
+            CLIENT_COMPUTER_NAME.into(),
         ))
         .unwrap(),
     );
@@ -32,7 +34,7 @@ fn run_spnego() {
             NegotiateConfig::new(
                 Box::new(ntlm_config),
                 Some(String::from("ntlm,!kerberos")),
-                "WIN-956CQOSSJTF.tbt.com".into(),
+                "WIN-956CQOSSJTF.example.com".into(),
             ),
             vec![credentials.clone().auth_identity().unwrap()],
         )
@@ -62,9 +64,7 @@ fn run_spnego() {
     let mut input_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut output_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
-    for i in 0..4 {
-        println!("START STEP {i}");
-
+    for _ in 0..4 {
         let mut builder = client
             .initialize_security_context()
             .with_credentials_handle(&mut client_credentials_handle)
@@ -82,7 +82,6 @@ fn run_spnego() {
             client.initialize_security_context_sync(&mut builder).unwrap();
 
         input_token[0].buffer.clear();
-        println!("{output_token:?}");
 
         let builder = server
             .accept_security_context()
@@ -94,12 +93,11 @@ fn run_spnego() {
         server.accept_security_context_sync(builder).unwrap();
 
         output_token[0].buffer.clear();
-        println!("{input_token:?}");
-
-        println!("===================================================================");
 
         if status == SecurityStatus::Ok {
-            println!("SPNEGO authentication completed successfully");
+            test_encryption(&mut client, &mut server);
+            test_stream_buffer_encryption(&mut client, &mut server);
+            test_rpc_request_encryption(&mut client, &mut server);
             return;
         }
     }
@@ -109,5 +107,5 @@ fn run_spnego() {
 
 #[test]
 fn spnego_ntlm_client_server() {
-    run_spnego();
+    run_spnego_ntlm();
 }

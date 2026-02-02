@@ -175,6 +175,8 @@ impl Negotiate {
         let auth_data = auth_data
             .iter()
             .find(|auth_data| {
+                trace!("Comparing usernames: {:?} with {:?}", auth_data.username, username);
+
                 let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
                     (Some(auth_domain), Some(negotiated_domain)) => auth_domain.eq_ignore_ascii_case(negotiated_domain),
                     (None, None) => true,
@@ -208,7 +210,6 @@ impl Negotiate {
 
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
         let enabled_packages = Self::parse_package_list_config(&self.package_list);
-        debug!(?enabled_packages, "ptri: {}", self.protocol_name());
 
         if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
             if !enabled_packages.kerberos {

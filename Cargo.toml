@@ -187,7 +187,7 @@ time = { workspace = true, features = ["wasm-bindgen"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cryptoki = { version = "0.10", optional = true }
-time = { workspace = true, features = ["std", "macros"] }
+time = { workspace = true, features = ["std"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"

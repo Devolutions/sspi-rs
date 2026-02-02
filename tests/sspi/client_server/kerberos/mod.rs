@@ -16,7 +16,8 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
-    KerberosConfig, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
+    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, SecurityBuffer, SecurityStatus,
+    ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
 
@@ -410,6 +411,103 @@ fn kerberos_u2u_auth() {
         client_flags,
         &target_name,
         &mut SspiContext::Kerberos(kerberos_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+    );
+}
+
+#[test]
+fn spnego_kerberos() {
+    let KrbEnvironment {
+        realm,
+        credentials,
+        keys,
+        users,
+        target_name,
+        target_service_name,
+    } = init_krb_environment();
+
+    let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+
+    let identity_1 = credentials.clone().auth_identity().unwrap();
+    let mut identity_2 = identity_1.clone();
+    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+
+    let kdc = KdcMock::new(
+        realm,
+        keys,
+        users,
+        Validators {
+            as_req: Box::new(|_as_req| {
+                // Nothing to validate in AsReq.
+            }),
+            tgs_req: Box::new(|_tgs_req| {
+                // Nothing to validate in TgsReq.
+            }),
+        },
+    );
+    let mut network_client = NetworkClientMock { kdc };
+
+    let client_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+    };
+    let spnego_client = Negotiate::new_client(NegotiateConfig::new(
+        Box::new(client_config.clone()),
+        Some(String::from("kerberos,!ntlm")),
+        CLIENT_COMPUTER_NAME.into(),
+    ))
+    .unwrap();
+
+    let server_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+    };
+    let server_properties = ServerProperties {
+        mech_types: MechTypeList::from(Vec::new()),
+        max_time_skew: MAX_TIME_SKEW,
+        ticket_decryption_key: Some(ticket_decryption_key),
+        service_name: target_service_name,
+        user: None,
+        client: None,
+        authenticators_cache: HashSet::new(),
+    };
+    let kerberos_server_config = KerberosServerConfig {
+        kerberos_config: server_config,
+        server_properties,
+    };
+    let spnego_server = Negotiate::new_server(
+        NegotiateConfig::new(
+            Box::new(kerberos_server_config),
+            Some(String::from("kerberos,!ntlm")),
+            "WIN-956CQOSSJTF.example.com".into(),
+        ),
+        vec![identity_1, identity_2],
+    )
+    .unwrap();
+
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+    let mut client_credentials_handle = Some(credentials.clone());
+    let mut server_credentials_handle = Some(credentials);
+
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+
+    run_kerberos(
+        &mut SspiContext::Negotiate(spnego_client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        &mut SspiContext::Negotiate(spnego_server),
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
