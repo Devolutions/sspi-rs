@@ -181,9 +181,7 @@ pub fn extract_ap_rep_from_krb_blob(mut data: &[u8]) -> Result<ApRep> {
     if id != AP_REP_TOKEN_ID {
         return Err(Error::new(
             ErrorKind::InvalidToken,
-            format!(
-                "invalid kerberos token id: expected {AP_REP_TOKEN_ID:?} but got {id:?}",
-            ),
+            format!("invalid kerberos token id: expected {AP_REP_TOKEN_ID:?} but got {id:?}",),
         ));
     }
 

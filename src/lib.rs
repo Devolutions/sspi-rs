@@ -1291,20 +1291,32 @@ pub trait SspiImpl {
     ) -> Result<GeneratorAcceptSecurityContext<'a>>;
 }
 
+mod private {
+    pub struct Sealed;
+}
+
 pub trait SspiEx
 where
     Self: Sized + SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
 
-    fn validate_mic_token(&mut self, _token: &[u8], _data: &[u8]) -> Result<()> {
+    /// Verifies a MIC (Message Integrity Code) token for the specified message data.
+    ///
+    /// This method is used only by the Negotiate security package (SPNEGO protocol implementation)
+    /// to verify the `mechListMIC` token during the authentication process.
+    fn verify_mic_token(&mut self, _token: &[u8], _data: &[u8], _: private::Sealed) -> Result<()> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
-            "validate_mic_token is not supported",
+            "verify_mic_token is not supported",
         ))
     }
 
-    fn generate_mic_token(&mut self, _token: &[u8]) -> Result<Option<Vec<u8>>> {
+    /// Generates a MIC (Message Integrity Code) token for the specified message data.
+    ///
+    /// This method is used only by the Negotiate security package (SPNEGO protocol implementation)
+    /// to generate `mechListMIC` token during the authentication process.
+    fn generate_mic_token(&mut self, _token: &[u8], _: private::Sealed) -> Result<Vec<u8>> {
         Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "generate_mic_token is not supported",

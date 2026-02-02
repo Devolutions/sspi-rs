@@ -54,19 +54,19 @@ impl NegotiatedProtocol {
         }
     }
 
-    pub fn validate_mic_token(&mut self, token: &[u8], data: &[u8]) -> Result<()> {
+    pub fn validate_mic_token(&mut self, token: &[u8], data: &[u8], sealed: crate::private::Sealed) -> Result<()> {
         match self {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.validate_mic_token(token, data),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.validate_mic_token(token, data),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.validate_mic_token(token, data),
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_mic_token(token, data, sealed),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_mic_token(token, data, sealed),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.verify_mic_token(token, data, sealed),
         }
     }
 
-    pub fn generate_mic_token(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub fn generate_mic_token(&mut self, data: &[u8], sealed: crate::private::Sealed) -> Result<Vec<u8>> {
         match self {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.generate_mic_token(data),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.generate_mic_token(data),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.generate_mic_token(data),
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.generate_mic_token(data, sealed),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.generate_mic_token(data, sealed),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.generate_mic_token(data, sealed),
         }
     }
 }

@@ -243,7 +243,7 @@ impl Sspi for Kerberos {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("Kerberos context is not established: current state: {:?}", self.state),
-            ))
+            ));
         }
 
         trace!(encryption_params = ?self.encryption_params);
@@ -339,13 +339,10 @@ impl Sspi for Kerberos {
             raw_wrap_token.split_at(security_trailer_len)
         };
 
-        let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
-            message,
-            BufferType::Data,
-            SecurityBufferFlags::NONE,
-        )
-        .next()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
+        let data_buffer =
+            SecurityBufferRef::buffers_of_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE)
+                .next()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
         data_buffer.write_data(data)?;
 
@@ -365,7 +362,7 @@ impl Sspi for Kerberos {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("Kerberos context is not established: current state: {:?}", self.state),
-            ))
+            ));
         }
 
         trace!(encryption_params = ?self.encryption_params);
@@ -471,7 +468,7 @@ impl Sspi for Kerberos {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("Kerberos context is not established: current state: {:?}", self.state),
-            ))
+            ));
         }
 
         Ok(ContextSizes {
@@ -652,11 +649,11 @@ impl SspiEx for Kerberos {
         Ok(())
     }
 
-    fn validate_mic_token(&mut self, token: &[u8], data: &[u8]) -> Result<()> {
+    fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
         utils::validate_mic_token(self.is_client(), token, &self.encryption_params, data)
     }
 
-    fn generate_mic_token(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
         utils::generate_mic_token(
             self.is_client(),
             self.seq_number as u64,
@@ -666,7 +663,6 @@ impl SspiEx for Kerberos {
                 .as_ref()
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
         )
-        .map(Some)
     }
 }
 

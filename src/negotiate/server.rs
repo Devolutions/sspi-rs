@@ -119,7 +119,9 @@ pub(crate) async fn accept_security_context(
                     let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
 
                     negotiate.set_auth_identity()?;
-                    negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
+                    negotiate
+                        .protocol
+                        .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
 
                     negotiate.mic_verified = true;
 
@@ -157,7 +159,9 @@ pub(crate) async fn accept_security_context(
                     let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
 
                     negotiate.set_auth_identity()?;
-                    negotiate.protocol.validate_mic_token(&mech_list_mic, &mech_types)?;
+                    negotiate
+                        .protocol
+                        .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
 
                     negotiate.mic_verified = true;
                 } else {
@@ -202,7 +206,11 @@ fn prepare_final_neg_token(
     let neg_token_targ = generate_final_neg_token_targ(
         neg_result,
         response_token,
-        negotiate.protocol.generate_mic_token(&mech_types)?,
+        Some(
+            negotiate
+                .protocol
+                .generate_mic_token(&mech_types, crate::private::Sealed)?,
+        ),
     );
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;

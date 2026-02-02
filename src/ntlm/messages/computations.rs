@@ -124,8 +124,7 @@ pub(super) fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
 }
 
 pub(super) fn now_file_time_timestamp() -> crate::Result<u64> {
-    // convert_to_file_time(OffsetDateTime::now_utc())
-    convert_to_file_time(time::macros::datetime!(2026-01-22 16:30 UTC))
+    convert_to_file_time(OffsetDateTime::now_utc())
 }
 
 pub(crate) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
