@@ -1,6 +1,6 @@
 # FFI Types
 
-Provides definitions for types from [windows-sys] crate, so they are available on platforms other than Windows.
+Provides definitions for types from the [windows-sys] crate, so they are available on platforms other than Windows.
 
 This crate is part of the [sspi-rs] project.
 

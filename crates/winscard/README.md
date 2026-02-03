@@ -2,7 +2,7 @@
 
 [![](https://docs.rs/winscard/badge.svg)](https://docs.rs/winscard/) [![](https://img.shields.io/crates/v/winscard)](https://crates.io/crates/winscard)
 
-Provides Rust implementation for emulated smart cards and exports useful traits to help working with the [WinSCard] API.
+Provides a Rust implementation of emulated smart cards and exports useful traits to help working with the [WinSCard] API.
 
 This crate is part of the [sspi-rs] project.
 
