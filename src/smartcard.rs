@@ -163,7 +163,7 @@ impl SmartCard {
     /// Signs the provided byte slice using smart card.
     pub(crate) fn sign(&mut self, digest: Vec<u8>) -> Result<Vec<u8>> {
         match &mut self.smart_card_type {
-            SmartCardApi::PivEmulated(ref mut scard) => {
+            SmartCardApi::PivEmulated(scard) => {
                 scard.verify_pin(self.pin.as_ref())?;
                 Ok(scard.sign_hashed(&encode_digest(digest)?)?)
             }
@@ -208,7 +208,9 @@ impl SmartCard {
 
                 Err(Error::new(
                     ErrorKind::NoCredentials,
-                    format!("the selected PKCS11 slot ({reader_name}) does not have a suitable private key for data signing"),
+                    format!(
+                        "the selected PKCS11 slot ({reader_name}) does not have a suitable private key for data signing"
+                    ),
                 ))
             }
             #[cfg(target_os = "windows")]
@@ -243,12 +245,12 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
     use std::ptr;
 
-    use windows::core::{Owned, PCWSTR};
     use windows::Win32::Security::Cryptography::{
-        NCryptOpenKey, NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash, BCRYPT_PKCS1_PADDING_INFO,
-        BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER, NCRYPT_FLAGS, NCRYPT_PAD_PKCS1_FLAG,
-        NCRYPT_PIN_PROPERTY, NCRYPT_SILENT_FLAG,
+        BCRYPT_PKCS1_PADDING_INFO, BCRYPT_SHA1_ALGORITHM, CERT_KEY_SPEC, MS_SMART_CARD_KEY_STORAGE_PROVIDER,
+        NCRYPT_FLAGS, NCRYPT_PAD_PKCS1_FLAG, NCRYPT_PIN_PROPERTY, NCRYPT_SILENT_FLAG, NCryptOpenKey,
+        NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash,
     };
+    use windows::core::{Owned, PCWSTR};
 
     use crate::utils::{str_to_w_buff, string_to_utf16};
 

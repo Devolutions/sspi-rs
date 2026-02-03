@@ -72,13 +72,13 @@ pub struct AcceptSecurityContext<
 }
 
 impl<
-        'a,
-        CredsHandle,
-        CredsHandleSet: ToAssign,
-        ContextRequirementsSet: ToAssign,
-        TargetDataRepresentationSet: ToAssign,
-        OutputSet: ToAssign,
-    >
+    'a,
+    CredsHandle,
+    CredsHandleSet: ToAssign,
+    ContextRequirementsSet: ToAssign,
+    TargetDataRepresentationSet: ToAssign,
+    OutputSet: ToAssign,
+>
     AcceptSecurityContext<
         'a,
         CredsHandle,

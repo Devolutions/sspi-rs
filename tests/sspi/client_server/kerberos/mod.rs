@@ -21,7 +21,7 @@ use sspi::{
 use url::Url;
 
 use crate::client_server::kerberos::kdc::{
-    KdcMock, PasswordCreds, UserName, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW,
+    CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, PasswordCreds, UserName, Validators,
 };
 use crate::client_server::kerberos::network_client::NetworkClientMock;
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
@@ -258,7 +258,7 @@ fn kerberos_auth() {
             tgs_req: Box::new(|tgs_req| {
                 // Here, we should check that the Kerberos client does not negotiated Kerberos U2U auth and not enabled any unneeded flags.
 
-                let kdc_options = tgs_req.0.req_body.kdc_options.0 .0.as_bytes();
+                let kdc_options = tgs_req.0.req_body.kdc_options.0.0.as_bytes();
                 // enc-tkt-in-skey must be disabled.
                 assert_eq!(kdc_options[4], 0x00, "some unneeded KDC options are enabled");
 
@@ -269,7 +269,7 @@ fn kerberos_auth() {
                     .additional_tickets
                     .0
                     .as_ref()
-                    .map(|additional_tickets| additional_tickets.0 .0.as_slice());
+                    .map(|additional_tickets| additional_tickets.0.0.as_slice());
                 assert!(
                     matches!(additional_tickets, None | Some(&[])),
                     "TgsReq should not contain any additional tickets"
@@ -349,13 +349,13 @@ fn kerberos_u2u_auth() {
             tgs_req: Box::new(|tgs_req| {
                 // Here, we should check that the Kerberos client successfully negotiated Kerberos U2U auth.
 
-                let kdc_options = tgs_req.0.req_body.kdc_options.0 .0.as_bytes();
+                let kdc_options = tgs_req.0.req_body.kdc_options.0.0.as_bytes();
                 // KDC options must have enc-tkt-in-skey enabled.
                 assert_eq!(kdc_options[4], 0x08, "the enc-tkt-in-skey KDC option is not enabled");
 
                 if let Some(tickets) = tgs_req.0.req_body.0.additional_tickets.0.as_ref() {
                     assert!(
-                        !tickets.0 .0.is_empty(),
+                        !tickets.0.0.is_empty(),
                         "TgsReq must have at least one additional ticket: TGT from the application service"
                     );
                 } else {

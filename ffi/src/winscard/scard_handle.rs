@@ -3,8 +3,8 @@ use std::mem::size_of;
 use std::slice::from_raw_parts_mut;
 use std::{fmt, ptr};
 
-use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
+use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use uuid::Uuid;
 use winscard::winscard::{AttributeId, IoRequest, Protocol, State, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
@@ -237,15 +237,14 @@ impl WinScardContextHandle {
         Ok(match buffer_type {
             RequestedBufferType::Buf(buf) => {
                 if buf.len() < data.len() {
-                    return Err(
-                        Error::new(
-                            ErrorKind::InsufficientBuffer, format!(
-                                "provided buffer is too small to fill the requested attribute into: buffer len: {}, attribute data len: {}.",
-                                buf.len(),
-                                data.len()
-                            )
-                        )
-                    );
+                    return Err(Error::new(
+                        ErrorKind::InsufficientBuffer,
+                        format!(
+                            "provided buffer is too small to fill the requested attribute into: buffer len: {}, attribute data len: {}.",
+                            buf.len(),
+                            data.len()
+                        ),
+                    ));
                 }
 
                 buf[0..data.len()].copy_from_slice(data);

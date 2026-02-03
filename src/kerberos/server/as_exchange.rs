@@ -2,18 +2,18 @@ use crypto_bigint::rand_core::RngCore;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::Ticket;
 use picky_krb::messages::TgtReq;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
 use crate::kerberos::client::generators::{
-    generate_as_req_kdc_body, get_client_principal_name_type, get_client_principal_realm, GenerateAsPaDataOptions,
-    GenerateAsReqOptions,
+    GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body, get_client_principal_name_type,
+    get_client_principal_realm,
 };
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::unwrap_hostname;
-use crate::kerberos::{client, TGT_SERVICE_NAME};
+use crate::kerberos::{TGT_SERVICE_NAME, client};
 use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
 

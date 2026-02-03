@@ -2,9 +2,9 @@ use std::io;
 use std::sync::LazyLock;
 
 use sspi::{
-    credssp, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, ContextNames, CredentialUse,
+    AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, ContextNames, CredentialUse,
     DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi,
-    SspiEx, Username,
+    SspiEx, Username, credssp,
 };
 use time::OffsetDateTime;
 

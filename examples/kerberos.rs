@@ -1,18 +1,18 @@
 use std::error::Error;
 
 use base64::Engine;
+use reqwest::StatusCode;
 use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, HOST, USER_AGENT,
     WWW_AUTHENTICATE,
 };
-use reqwest::StatusCode;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
     InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityStatus, Sspi, SspiImpl,
     Username,
 };
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let kdc_url = std::env::var("SSPI_KDC_URL").expect("missing KDC URL set in SSPI_KDC_URL"); //tcp://ad-compter-name.domain:88

@@ -9,7 +9,7 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use uuid::Uuid;
 
-use crate::scard::{SmartCard, SUPPORTED_CONNECTION_PROTOCOL};
+use crate::scard::{SUPPORTED_CONNECTION_PROTOCOL, SmartCard};
 use crate::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
 };
@@ -68,7 +68,7 @@ impl<'a> SmartCardInfo<'a> {
     #[cfg(feature = "std")]
     pub fn try_from_env() -> WinScardResult<Self> {
         use crate::env::{
-            auth_cert_from_env, container_name, private_key_from_env, WINSCARD_PIN_ENV, WINSCARD_READER_NAME_ENV,
+            WINSCARD_PIN_ENV, WINSCARD_READER_NAME_ENV, auth_cert_from_env, container_name, private_key_from_env,
         };
 
         let container_name = container_name()?.into();
@@ -293,7 +293,7 @@ impl<'a> ScardContext<'a> {
                     return Err(Error::new(
                         ErrorKind::UnsupportedFeature,
                         "only RSA 2048 keys are supported",
-                    ))
+                    ));
                 }
             };
 
@@ -517,7 +517,7 @@ impl WinScardContext for ScardContext<'_> {
                 return Err(Error::new(
                     ErrorKind::UnsupportedFeature,
                     "ProviderId::Primary is not supported for emulated smart card",
-                ))
+                ));
             }
             ProviderId::Csp => MICROSOFT_DEFAULT_CSP.into(),
             ProviderId::Ksp => MICROSOFT_DEFAULT_KSP.into(),

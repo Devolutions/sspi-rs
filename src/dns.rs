@@ -371,7 +371,7 @@ cfg_if::cfg_if! {
 #[cfg(any(feature = "dns_resolver", target_os = "macos", target_os = "ios"))]
 fn execute_future<Fut>(fut: Fut) -> Fut::Output
 where
-    Fut: std::future::IntoFuture + Send,
+    Fut: IntoFuture + Send,
     Fut::Output: Send,
 {
     use std::thread;

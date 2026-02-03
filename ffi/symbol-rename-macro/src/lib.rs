@@ -33,7 +33,7 @@ pub fn rename_symbol(attr: proc_macro::TokenStream, item: proc_macro::TokenStrea
     }
 }
 
-const ATTR_NO_MANGLE: &str = "#[no_mangle]";
+const ATTR_NO_MANGLE: &str = "#[unsafe(no_mangle)]";
 
 fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
     use std::fmt::Write as _;
@@ -65,7 +65,7 @@ fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
 
         writeln!(
             out,
-            r#"#[no_mangle] pub unsafe extern "{call_conv}" fn {new_symbol}{fn_signature} {{"#
+            r#"#[unsafe(no_mangle)] pub unsafe extern "{call_conv}" fn {new_symbol}{fn_signature} {{"#
         )?;
         writeln!(out, "\t{fn_symbol}(")?;
         for arg in fn_args {

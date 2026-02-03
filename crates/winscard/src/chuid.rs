@@ -1,10 +1,10 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use time::{format_description, Duration, OffsetDateTime};
+use time::{Duration, OffsetDateTime, format_description};
 use uuid::Uuid;
 
-use crate::{tlv_tags, Error, ErrorKind, WinScardResult};
+use crate::{Error, ErrorKind, WinScardResult, tlv_tags};
 
 // CHUID will always have a fixed length when excluding optional fields and asymmetric signature
 pub(crate) const CHUID_LENGTH: usize = 61;

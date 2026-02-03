@@ -113,12 +113,10 @@ use self::builders::{
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
-pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
+pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{
-    hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX},
-    Ntlm,
-};
+pub use self::ntlm::Ntlm;
+pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
 use crate::builders::{
@@ -720,7 +718,7 @@ where
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
     fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef<'_>], sequence_number: u32)
-        -> Result<()>;
+    -> Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
     ///

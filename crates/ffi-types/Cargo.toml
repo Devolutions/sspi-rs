@@ -2,7 +2,7 @@
 name = "ffi-types"
 version = "0.0.0"
 license = "MIT/Apache-2.0"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [features]

@@ -2,8 +2,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
-use rand::rngs::StdRng;
 use rand::RngCore;
+use rand::rngs::StdRng;
 
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
@@ -239,7 +239,9 @@ pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]>
 
         Ok(key)
     } else {
-        error!("No encryption keys in the krb context. Maybe security context is not established, but encryption key is requested");
+        error!(
+            "No encryption keys in the krb context. Maybe security context is not established, but encryption key is requested"
+        );
 
         Err(Error::new(
             ErrorKind::OutOfSequence,

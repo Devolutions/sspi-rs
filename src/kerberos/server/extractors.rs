@@ -35,7 +35,7 @@ pub(super) fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, Me
         .0;
 
     let tgt_req = if let Some(mech_token) = mech_token.0 {
-        let encoded_tgt_req = mech_token.0 .0;
+        let encoded_tgt_req = mech_token.0.0;
         let neg_token_init = KrbMessage::<TgtReq>::decode_application_krb_message(&encoded_tgt_req)?;
 
         let token_oid = &neg_token_init.0.krb5_oid.0;
@@ -74,7 +74,7 @@ pub(super) fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
                 )
             })?
             .0
-             .0,
+            .0,
     )?
     .0;
 
@@ -93,10 +93,10 @@ pub(super) fn decode_neg_ap_req(data: &[u8]) -> Result<ApReq> {
 
 /// Decrypts the [ApReq] ticket and returns decoded encrypted part of the ticket.
 pub(super) fn decrypt_ap_req_ticket(key: &[u8], ap_req: &ApReq) -> Result<EncTicketPart> {
-    let ticket_enc_part = &ap_req.0.ticket.0 .0.enc_part.0;
-    let cipher = CipherSuite::try_from(ticket_enc_part.etype.0 .0.as_slice())?.cipher();
+    let ticket_enc_part = &ap_req.0.ticket.0.0.enc_part.0;
+    let cipher = CipherSuite::try_from(ticket_enc_part.etype.0.0.as_slice())?.cipher();
 
-    let encoded_enc_part = cipher.decrypt(key, TICKET_REP, &ticket_enc_part.cipher.0 .0)?;
+    let encoded_enc_part = cipher.decrypt(key, TICKET_REP, &ticket_enc_part.cipher.0.0)?;
 
     Ok(picky_asn1_der::from_bytes(&encoded_enc_part)?)
 }
@@ -104,10 +104,10 @@ pub(super) fn decrypt_ap_req_ticket(key: &[u8], ap_req: &ApReq) -> Result<EncTic
 /// Decrypts [ApReq] Authenticator and returns decoded authenticator.
 pub(super) fn decrypt_ap_req_authenticator(session_key: &[u8], ap_req: &ApReq) -> Result<Authenticator> {
     let encrypted_authenticator = &ap_req.0.authenticator.0;
-    let cipher = CipherSuite::try_from(encrypted_authenticator.etype.0 .0.as_slice())?.cipher();
+    let cipher = CipherSuite::try_from(encrypted_authenticator.etype.0.0.as_slice())?.cipher();
 
     let encoded_authenticator =
-        cipher.decrypt(session_key, AP_REQ_AUTHENTICATOR, &encrypted_authenticator.cipher.0 .0)?;
+        cipher.decrypt(session_key, AP_REQ_AUTHENTICATOR, &encrypted_authenticator.cipher.0.0)?;
 
     Ok(picky_asn1_der::from_bytes(&encoded_authenticator)?)
 }
@@ -128,7 +128,7 @@ pub(super) fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
         .0
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "neg_result is missing in NegTokenTarg message"))?
         .0
-         .0;
+        .0;
     if neg_result != ACCEPT_COMPLETE {
         return Err(Error::new(
             ErrorKind::InvalidToken,
@@ -145,7 +145,7 @@ pub(super) fn extract_client_mic_token(data: &[u8]) -> Result<Vec<u8>> {
             )
         })?
         .0
-         .0;
+        .0;
 
     Ok(mic_token)
 }
@@ -175,12 +175,12 @@ pub(super) fn client_upn(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> 
     let username = cname
         .name_string
         .0
-         .0
+        .0
         .first()
         .map(|name| name.to_string())
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing cname value in token"))?;
 
-    let name_type = &cname.name_type.0 .0;
+    let name_type = &cname.name_type.0.0;
     if name_type == &[NT_PRINCIPAL] {
         Ok(Username::new_upn(
             &username,

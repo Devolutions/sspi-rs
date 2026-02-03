@@ -9,8 +9,8 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
+pub use ts_request::{NStatusCode, TsRequest, read_ts_credentials, write_ts_credentials};
 
 #[cfg(feature = "tsssp")]
 use self::sspi_cred_ssp::SspiCredSsp;
@@ -25,12 +25,12 @@ use crate::kerberos::{self, Kerberos, ServerProperties};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
-    negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
-    BufferType, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error,
-    ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
+    Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferRef,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username, negotiate,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -687,7 +687,7 @@ impl SspiImpl for SspiContext {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
                             "smart card auth is not supported in NTLM",
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -804,14 +804,14 @@ impl<'a> SspiContext {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
                             "smart card auth is not supported in NTLM",
-                        ))
+                        ));
                     }
                     Some(None) => None,
                     None => {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
                             "credentials handle is not provided for the NTLM",
-                        ))
+                        ));
                     }
                 };
                 let new_builder = builder.full_transform(Some(&mut auth_identity));
@@ -841,26 +841,24 @@ impl<'a> SspiContext {
     ) -> crate::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
+                let mut auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle_mut() {
+                        Some(identity.clone())
+                    } else {
+                        None
+                    };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 ntlm.initialize_security_context_impl(&mut new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(yield_point, builder).await,
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(yield_point, builder).await,
             SspiContext::Pku2u(pku2u) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
+                let mut auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle_mut() {
+                        Some(identity.clone())
+                    } else {
+                        None
+                    };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 pku2u.initialize_security_context_impl(&mut new_builder)
             }

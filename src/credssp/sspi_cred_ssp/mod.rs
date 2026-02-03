@@ -10,7 +10,7 @@ use rand::{RngCore, SeedableRng};
 use rustls::client::ClientConfig;
 use rustls::{ClientConnection, Connection};
 
-use self::tls_connection::{danger, TlsConnection};
+use self::tls_connection::{TlsConnection, danger};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
@@ -18,12 +18,12 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType,
-    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags,
-    ConnectionInfo, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
-    SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType, CertTrustErrorStatus,
+    CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes,
+    builders, negotiate,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";

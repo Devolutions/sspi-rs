@@ -8,14 +8,14 @@ use picky_asn1::wrapper::{
     ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8,
     ImplicitContextTag0, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
-use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate};
+use picky_asn1_der::application_tag::ApplicationTag;
+use picky_asn1_x509::{AttributeTypeAndValueParameters, Certificate, oids};
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::KEY_USAGE_FINISHED;
 use picky_krb::constants::types::NT_SRV_INST;
-use picky_krb::crypto::diffie_hellman::generate_private_key;
 use picky_krb::crypto::ChecksumSuite;
+use picky_krb::crypto::diffie_hellman::generate_private_key;
 use picky_krb::data_types::{
     Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncryptionKey,
     KerbAdRestrictionEntry, KerberosStringAsn1, KerberosTime, LsapTokenInfoIntegrity, PrincipalName, Realm,
@@ -25,8 +25,8 @@ use picky_krb::gss_api::{
 };
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
-use rand::rngs::StdRng;
 use rand::RngCore;
+use rand::rngs::StdRng;
 use time::OffsetDateTime;
 
 use super::Pku2uConfig;
@@ -35,7 +35,7 @@ use crate::kerberos::client::generators::{
     AuthenticatorChecksumExtension, ChecksumOptions, EncKey, GenerateAuthenticatorOptions, MAX_MICROSECONDS,
 };
 use crate::pk_init::DhParameters;
-use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
+use crate::{Error, ErrorKind, KERBEROS_VERSION, Result};
 
 /// [The PKU2U Realm Name](https://datatracker.ietf.org/doc/html/draft-zhu-pku2u-09#section-3)
 /// The PKU2U realm name is defined as a reserved Kerberos realm name, and it has the value of "WELLKNOWN:PKU2U".
@@ -314,7 +314,7 @@ pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificat
     let mut username = "AzureAD\\".to_owned();
 
     let mut issuer = false;
-    for attr_type_and_value in certificate.tbs_certificate.issuer.0 .0.iter() {
+    for attr_type_and_value in certificate.tbs_certificate.issuer.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
             if v.ty.0 == oids::at_common_name() {
                 if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
@@ -335,7 +335,7 @@ pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificat
     username.push('\\');
 
     let mut subject = false;
-    for attr_type_and_value in certificate.tbs_certificate.subject.0 .0.iter() {
+    for attr_type_and_value in certificate.tbs_certificate.subject.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
             if v.ty.0 == oids::at_common_name() {
                 if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {

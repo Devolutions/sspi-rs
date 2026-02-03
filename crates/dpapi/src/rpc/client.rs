@@ -1,14 +1,14 @@
-use dpapi_core::{compute_padding, decode_owned, EncodeVec, FixedPartSize};
+use dpapi_core::{EncodeVec, FixedPartSize, compute_padding, decode_owned};
 use dpapi_pdu::rpc::{
     AlterContext, Bind, BindAck, BindTimeFeatureNegotiationBitmask, ContextElement, ContextResultCode, DataRepr,
     PacketFlags, PacketType, Pdu, PduData, PduHeader, Request, SecurityTrailer, SyntaxId, VerificationTrailer,
 };
 use dpapi_transport::{ConnectOptions, Stream, Transport};
 use thiserror::Error;
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
-use crate::rpc::AuthProvider;
 use crate::Result;
+use crate::rpc::AuthProvider;
 
 pub const NDR64: SyntaxId = SyntaxId {
     uuid: uuid!("71710533-beba-4937-8319-b5dbef9ccc36"),

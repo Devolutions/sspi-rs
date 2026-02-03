@@ -1,8 +1,8 @@
 use std::io::Read;
 
 use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
+use picky_asn1_der::application_tag::ApplicationTag;
 use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
@@ -10,7 +10,7 @@ use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Ti
 use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep};
 
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
+use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{Error, ErrorKind, Result};
 
 /// Extracts password salt from the KRB error.
@@ -25,14 +25,14 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     trace!(?error, "KRB_ERROR");
 
     if let Some(e_data) = error.0.e_data.0.as_ref() {
-        let pa_datas: Asn1SequenceOf<PaData> = picky_asn1_der::from_bytes(&e_data.0 .0)?;
+        let pa_datas: Asn1SequenceOf<PaData> = picky_asn1_der::from_bytes(&e_data.0.0)?;
 
         if let Some(pa_etype_info_2) = pa_datas
             .0
             .into_iter()
-            .find(|pa_data| pa_data.padata_type.0 .0 == PA_ETYPE_INFO2_TYPE)
+            .find(|pa_data| pa_data.padata_type.0.0 == PA_ETYPE_INFO2_TYPE)
         {
-            let etype_info_2: EtypeInfo2 = picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0 .0)?;
+            let etype_info_2: EtypeInfo2 = picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0.0)?;
             if let Some(params) = etype_info_2.0.first() {
                 return Ok(params.salt.0.as_ref().map(|salt| salt.0.to_string()));
             }
@@ -58,7 +58,7 @@ pub fn extract_session_key_from_as_rep(
 
     let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
 
-    let enc_data = cipher.decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)?;
+    let enc_data = cipher.decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
@@ -79,7 +79,7 @@ pub fn extract_session_key_from_tgs_rep(
         .cipher();
 
     let enc_data = cipher
-        .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
+        .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0.0)
         .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
 
     trace!(?enc_data, "Plain TgsRep::EncData");
@@ -102,10 +102,10 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
         .0
         .as_ref()
         .map(|v| {
-            v.0 .0
+            v.0.0
                 .iter()
-                .find(|e| e.padata_type.0 .0 == PA_ETYPE_INFO2_TYPE)
-                .map(|pa_data| pa_data.padata_data.0 .0.clone())
+                .find(|e| e.padata_type.0.0 == PA_ETYPE_INFO2_TYPE)
+                .map(|pa_data| pa_data.padata_data.0.0.clone())
         })
         .unwrap_or_default()
     {
@@ -117,7 +117,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                 .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing EtypeInto2Entry in EtypeInfo2"))?;
 
             Ok((
-                pa_etype_info2.etype.0 .0.first().copied().unwrap(),
+                pa_etype_info2.etype.0.0.first().copied().unwrap(),
                 pa_etype_info2
                     .salt
                     .0
@@ -126,7 +126,7 @@ pub fn extract_encryption_params_from_as_rep(as_rep: &AsRep) -> Result<(u8, Stri
                     .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "Missing salt in EtypeInto2Entry"))?,
             ))
         }
-        None => Ok((*as_rep.0.enc_part.0.etype.0 .0.first().unwrap(), Default::default())),
+        None => Ok((*as_rep.0.enc_part.0.etype.0.0.first().unwrap(), Default::default())),
     }
 }
 
@@ -146,19 +146,16 @@ pub fn extract_status_code_from_krb_priv_response(
                 .0
                 .etype
                 .0
-                 .0
+                .0
                 .first()
                 .unwrap_or(&((&DEFAULT_ENCRYPTION_TYPE).into())) as usize,
         )?);
 
     let cipher = encryption_type.cipher();
 
-    let enc_part: EncKrbPrivPart = picky_asn1_der::from_bytes(&cipher.decrypt(
-        auth_key,
-        KRB_PRIV_ENC_PART,
-        &krb_priv.0.enc_part.0.cipher.0 .0,
-    )?)?;
-    let user_data = enc_part.0.user_data.0 .0;
+    let enc_part: EncKrbPrivPart =
+        picky_asn1_der::from_bytes(&cipher.decrypt(auth_key, KRB_PRIV_ENC_PART, &krb_priv.0.enc_part.0.cipher.0.0)?)?;
+    let user_data = enc_part.0.user_data.0.0;
 
     if user_data.len() < 2 {
         return Err(Error::new(
@@ -180,7 +177,7 @@ pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep
         .as_ref()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing response token in NegTokenTarg"))?
         .0
-         .0;
+        .0;
 
     let mut data = resp_token.as_slice();
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
@@ -205,7 +202,7 @@ pub fn extract_seq_number_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -221,7 +218,7 @@ pub fn extract_seq_number_from_ap_rep(
         .0
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sequence number in ap_rep"))?
         .0
-         .0)
+        .0)
 }
 
 /// Extracts a sub-session key from the [ApRep].
@@ -238,7 +235,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -256,7 +253,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .0
         .key_value
         .0
-         .0)
+        .0)
 }
 
 /// Extracts TGT Ticket from encoded [NegTokenTarg1].
@@ -273,11 +270,11 @@ pub fn extract_tgt_ticket_with_oid(data: &[u8]) -> Result<Option<(Ticket, Object
 
     let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
 
-    if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0 .0) {
+    if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0.0) {
         let mut c = resp_token.as_slice();
 
         let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)?;
-        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0 .0)?;
+        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0.0)?;
 
         let mut t = [0, 0];
 

@@ -1,9 +1,9 @@
 use sspi::Ntlm;
 
 use crate::common::{
-    check_messages_encryption, create_client_credentials_handle, create_server_credentials_handle,
-    process_authentication_without_complete, set_identity_and_try_complete_authentication, try_complete_authentication,
-    CredentialsProxyImpl, CREDENTIALS,
+    CREDENTIALS, CredentialsProxyImpl, check_messages_encryption, create_client_credentials_handle,
+    create_server_credentials_handle, process_authentication_without_complete,
+    set_identity_and_try_complete_authentication, try_complete_authentication,
 };
 
 #[test]
@@ -31,7 +31,8 @@ fn successful_ntlm_authentication_with_client_auth_data() {
 
 mod nt_hash {
     use md4::{Digest, Md4};
-    use sspi::{ntlm::Ntlm, AuthIdentityBuffers, NtlmHash, Sspi, SspiImpl};
+    use sspi::ntlm::Ntlm;
+    use sspi::{AuthIdentityBuffers, NtlmHash, Sspi, SspiImpl};
 
     /// Password: "Password123!" -> NT hash: 2B576ACBE6BCFDA7294D6BD18041B8FE
     const TEST_NT_HASH: &str = "2B576ACBE6BCFDA7294D6BD18041B8FE";

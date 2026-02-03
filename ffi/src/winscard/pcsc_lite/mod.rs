@@ -9,7 +9,7 @@ use std::env;
 use std::ffi::CString;
 
 use ffi_types::{LpCStr, LpVoid};
-use libc::{dlopen, dlsym, RTLD_LAZY, RTLD_LOCAL};
+use libc::{RTLD_LAZY, RTLD_LOCAL, dlopen, dlsym};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;

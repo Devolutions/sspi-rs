@@ -11,9 +11,9 @@ use std::borrow::Cow;
 pub use card::SystemScard;
 pub use context::SystemScardContext;
 #[cfg(target_os = "windows")]
-use ffi_types::winscard::functions::SCardApiFunctionTable;
-#[cfg(target_os = "windows")]
 use ffi_types::winscard::LpCScardIoRequest;
+#[cfg(target_os = "windows")]
+use ffi_types::winscard::functions::SCardApiFunctionTable;
 use winscard::WinScardResult;
 
 fn parse_multi_string(buf: &[u8]) -> WinScardResult<Vec<&str>> {
@@ -51,8 +51,8 @@ pub fn init_scard_api_table() -> WinScardResult<SCardApiFunctionTable> {
     use std::ffi::CString;
     use std::mem::transmute;
 
-    use windows::core::PCSTR;
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    use windows::core::PCSTR;
     use winscard::{Error, ErrorKind};
 
     /// Path to the `winscard` module.

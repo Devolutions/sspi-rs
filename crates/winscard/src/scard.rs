@@ -13,10 +13,10 @@ use rsa::{Pkcs1v15Sign, RsaPrivateKey};
 use sha1::Sha1;
 
 use crate::card_capability_container::build_ccc;
-use crate::chuid::{build_chuid, CHUID_LENGTH};
+use crate::chuid::{CHUID_LENGTH, build_chuid};
 use crate::piv_cert::build_auth_cert;
 use crate::winscard::{AttributeId, ControlCode, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard};
-use crate::{tlv_tags, winscard, Error, ErrorKind, Response, Status, WinScardResult};
+use crate::{Error, ErrorKind, Response, Status, WinScardResult, tlv_tags, winscard};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
 pub const PIV_AID: Aid = Aid::new_truncatable(&[0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00], 9);
@@ -374,7 +374,10 @@ impl SmartCard<'_> {
         if cmd.p1 != RSA_ALGORITHM || (cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY && cmd.p2 != PIV_AUTHENTICATION_KEY) {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
-                format!("provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a or 0x9c", cmd.p1, cmd.p2)
+                format!(
+                    "provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a or 0x9c",
+                    cmd.p1, cmd.p2
+                ),
             ));
         }
         let request = Tlv::from_bytes(cmd.data())?;
@@ -403,7 +406,7 @@ impl SmartCard<'_> {
             ))?;
         // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
         let challenge = match challenge.value() {
-            Value::Primitive(ref challenge) => challenge,
+            Value::Primitive(challenge) => challenge,
             Value::Constructed(_) => {
                 // this tag must contain a primitive value
                 return Err(Error::new(
@@ -587,10 +590,10 @@ mod tests {
     use picky::signature::SignatureAlgorithm;
     use proptest::prelude::*;
     use proptest::{collection, option, prop_compose};
-    use rand::distr::Uniform;
     use rand::Rng;
-    use rsa::traits::PublicKeyParts;
+    use rand::distr::Uniform;
     use rsa::BoxedUint;
+    use rsa::traits::PublicKeyParts;
 
     use super::*;
     use crate::ber_tlv::ber_tlv_length_encoding;
@@ -824,19 +827,23 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let mut apdu_get_response = vec![0x00, 0xC0, 0x00, 0x00, bytes_left];
 
         let response = scard.handle_command(&apdu_get_response);
-        assert!(response
-            .as_ref()
-            .is_ok_and(|resp| resp.status == Status::MoreAvailable(0)
-                && resp.data.is_some()
-                && resp.data.as_ref().unwrap() == &data[0..256]));
+        assert!(
+            response
+                .as_ref()
+                .is_ok_and(|resp| resp.status == Status::MoreAvailable(0)
+                    && resp.data.is_some()
+                    && resp.data.as_ref().unwrap() == &data[0..256])
+        );
         received_result.extend_from_slice(&response.unwrap().data.unwrap());
 
         let response = scard.handle_command(&apdu_get_response);
-        assert!(response
-            .as_ref()
-            .is_ok_and(|resp| resp.status == Status::MoreAvailable(1)
-                && resp.data.is_some()
-                && resp.data.as_ref().unwrap() == &data[256..512]));
+        assert!(
+            response
+                .as_ref()
+                .is_ok_and(|resp| resp.status == Status::MoreAvailable(1)
+                    && resp.data.is_some()
+                    && resp.data.as_ref().unwrap() == &data[256..512])
+        );
         received_result.extend_from_slice(&response.unwrap().data.unwrap());
 
         // set the Le field to 1 so that we get the last remaining byte
@@ -985,16 +992,18 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
             Value::Primitive(signed_hash) => signed_hash,
         };
         // verify that the returned signature can be verified using the corresponding public key
-        assert!(signature_algorithm
-            .verify(
-                &scard
-                    .auth_pk
-                    .to_public_key()
-                    .expect("Error while creating public key from a private key"),
-                data,
-                signed_hash
-            )
-            .is_ok());
+        assert!(
+            signature_algorithm
+                .verify(
+                    &scard
+                        .auth_pk
+                        .to_public_key()
+                        .expect("Error while creating public key from a private key"),
+                    data,
+                    signed_hash
+                )
+                .is_ok()
+        );
     }
 
     fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {

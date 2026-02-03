@@ -6,22 +6,22 @@ use std::sync::Mutex;
 use libc::{c_ulonglong, c_void};
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::ChangePasswordBuilder;
+use sspi::credssp::SspiContext;
 #[cfg(feature = "tsssp")]
 use sspi::credssp::sspi_cred_ssp;
 #[cfg(feature = "tsssp")]
 use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
-use sspi::credssp::SspiContext;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers,
-    DataRepresentation, Error, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret,
-    Sspi, SspiImpl, StreamSizes,
+    CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers, DataRepresentation, Error,
+    ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret, Sspi, SspiImpl, StreamSizes,
+    kerberos, negotiate, ntlm, pku2u,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::Security::Cryptography::{
-    CertAddEncodedCertificateToStore, CertOpenStore, CERT_CONTEXT, CERT_QUERY_ENCODING_TYPE,
-    CERT_STORE_ADD_REPLACE_EXISTING, CERT_STORE_CREATE_NEW_FLAG, CERT_STORE_PROV_MEMORY,
+    CERT_CONTEXT, CERT_QUERY_ENCODING_TYPE, CERT_STORE_ADD_REPLACE_EXISTING, CERT_STORE_CREATE_NEW_FLAG,
+    CERT_STORE_PROV_MEMORY, CertAddEncodedCertificateToStore, CertOpenStore,
 };
 
 cfg_if::cfg_if! {
@@ -32,11 +32,11 @@ cfg_if::cfg_if! {
 }
 
 use super::credentials_attributes::{
-    extract_kdc_proxy_settings, CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW,
+    CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW, extract_kdc_proxy_settings,
 };
 use super::sec_buffer::{
-    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, sec_buffer_desc_to_security_buffers, PSecBuffer,
-    PSecBufferDesc,
+    PSecBuffer, PSecBufferDesc, copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
+    sec_buffer_desc_to_security_buffers,
 };
 use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
@@ -375,7 +375,7 @@ fn verify_security_package(package_name: &str) -> Result<()> {
 /// `ph_credentials` must be a non-null pointer to a valid `SecHandle` structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn AcquireCredentialsHandleA(
     _psz_principal: LpStr,
     psz_package: LpStr,
@@ -449,7 +449,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
 /// `ph_credentials` must be a non-null pointer to a valid `SecHandle` structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcquireCredentialsHandleW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn AcquireCredentialsHandleW(
     _psz_principal: LpcWStr,
     psz_package: LpcWStr,
@@ -511,7 +511,7 @@ pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryCredentialsAttributesA(
     _ph_credential: PCredHandle,
     _ul_attribute: u32,
@@ -524,7 +524,7 @@ pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, u32, *m
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryCredentialsAttributesW(
     _ph_credential: PCredHandle,
     _ul_attribute: u32,
@@ -558,7 +558,7 @@ pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *m
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn InitializeSecurityContextA(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
@@ -712,7 +712,7 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitializeSecurityContextW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn InitializeSecurityContextW(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
@@ -1061,7 +1061,7 @@ unsafe fn query_context_attributes_common(
 /// - `p_buffer` must be a non-null, valid pointer to some attribute structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn QueryContextAttributesA(
     ph_context: PCtxtHandle,
     ul_attribute: u32,
@@ -1090,7 +1090,7 @@ pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32,
 /// - `p_buffer` must be a non-null, valid pointer to some attribute structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn QueryContextAttributesW(
     ph_context: PCtxtHandle,
     ul_attribute: u32,
@@ -1109,7 +1109,7 @@ pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32,
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn ImportSecurityContextA(
     _psz_package: PSecurityString,
     _p_packed_context: PSecBuffer,
@@ -1124,7 +1124,7 @@ pub type ImportSecurityContextFnA =
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn ImportSecurityContextW(
     _psz_package: PSecurityString,
     _p_packed_context: PSecBuffer,
@@ -1139,7 +1139,7 @@ pub type ImportSecurityContextFnW =
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn AddCredentialsA(
     _ph_credential: PCredHandle,
     _s1: *mut SecChar,
@@ -1166,7 +1166,7 @@ pub type AddCredentialsFnA = extern "system" fn(
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn AddCredentialsW(
     _ph_credential: PCredHandle,
     _s1: *mut SecWChar,
@@ -1193,7 +1193,7 @@ pub type AddCredentialsFnW = extern "system" fn(
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SetContextAttributesA(
     _ph_context: PCtxtHandle,
     _ul_attribute: u32,
@@ -1206,7 +1206,7 @@ pub extern "system" fn SetContextAttributesA(
 pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SetContextAttributesW(
     _ph_context: PCtxtHandle,
     _ul_attribute: u32,
@@ -1232,7 +1232,7 @@ pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, u32, *mut c_v
 /// - Else, `p_buffer` must be a non-null pointer to a valid [`SecPkgCredentialsKdcProxySettingsW`] structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SetCredentialsAttributesA(
     ph_credential: PCtxtHandle,
     ul_attribute: u32,
@@ -1326,7 +1326,7 @@ pub type SetCredentialsAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u3
 /// - Else, `p_buffer` must be a non-null pointer to a valid [`SecPkgCredentialsKdcProxySettingsW`] structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetCredentialsAttributesW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SetCredentialsAttributesW(
     ph_credential: PCtxtHandle,
     ul_attribute: u32,
@@ -1419,7 +1419,7 @@ pub type SetCredentialsAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u3
 ///   It must contain enough buffers, and each buffer must have enough space to hold the output tokens.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn ChangeAccountPasswordA(
     psz_package_name: *mut SecChar,
     psz_domain_name: *mut SecChar,
@@ -1560,7 +1560,7 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
 ///   It must contain enough buffers, and each buffer must have enough space to hold the output tokens.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ChangeAccountPasswordW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn ChangeAccountPasswordW(
     psz_package_name: *mut SecWChar,
     psz_domain_name: *mut SecWChar,
@@ -1651,7 +1651,7 @@ pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryContextAttributesExA(
     _ph_context: PCtxtHandle,
     _ul_attribute: u32,
@@ -1665,7 +1665,7 @@ pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, u32, *mut
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryContextAttributesExW(
     _ph_context: PCtxtHandle,
     _ul_attribute: u32,
@@ -1679,7 +1679,7 @@ pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, u32, *mut
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryCredentialsAttributesExA(
     _ph_credential: PCredHandle,
     _ul_attribute: u32,
@@ -1693,7 +1693,7 @@ pub type QueryCredentialsAttributesExFnA = extern "system" fn(PCredHandle, u32, 
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QueryCredentialsAttributesExW(
     _ph_aredential: PCredHandle,
     _ul_attribute: u32,
@@ -1727,7 +1727,7 @@ mod tests {
         QuerySecurityPackageInfoW, SecPkgInfoA, SecPkgInfoW,
     };
     use crate::sspi::sec_winnt_auth_identity::{
-        SecWinntAuthIdentityA, SecWinntAuthIdentityW, SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE,
+        SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SecWinntAuthIdentityA, SecWinntAuthIdentityW,
     };
     use crate::utils::c_w_str_to_string;
 

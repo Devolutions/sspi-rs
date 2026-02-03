@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{utils, Error, Secret};
+use crate::{Error, Secret, utils};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
@@ -275,7 +275,7 @@ mod scard_credentials {
     use picky_asn1_x509::Certificate;
 
     use crate::secret::SecretPrivateKey;
-    use crate::{utils, Error, ErrorKind, Secret};
+    use crate::{Error, ErrorKind, Secret, utils};
 
     /// Smart card type.
     #[derive(Clone, Eq, PartialEq, Debug)]

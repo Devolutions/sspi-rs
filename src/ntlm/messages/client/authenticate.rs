@@ -4,17 +4,17 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 
+use crate::SecurityStatus;
 use crate::crypto::Rc4;
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{
-    MessageFields, MessageTypes, CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, NTLM_SIGNATURE, NTLM_VERSION_SIZE,
+    CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE,
     SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC,
 };
 use crate::ntlm::{
-    AuthIdentityBuffers, AuthenticateMessage, Mic, NegotiateFlags, Ntlm, NtlmState, ENCRYPTED_RANDOM_SESSION_KEY_SIZE,
-    MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE,
+    AuthIdentityBuffers, AuthenticateMessage, ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE, Mic,
+    NegotiateFlags, Ntlm, NtlmState, SESSION_KEY_SIZE,
 };
-use crate::SecurityStatus;
 
 const MIC_SIZE: usize = 16;
 const BASE_OFFSET: usize = 64;

@@ -16,7 +16,7 @@ use super::parse_multi_string_owned;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+use crate::winscard::pcsc_lite::{ScardContext, ScardHandle, initialize_pcsc_lite_api};
 
 /// Represents a state of the current `SystemScard`.
 #[derive(Copy, Clone, Debug)]
@@ -296,7 +296,7 @@ impl WinScard for SystemScard {
                         "failed to extract container name: smart card selected invalid ({:?}) connection protocol",
                         self.active_protocol
                     ),
-                ))
+                ));
             }
         };
 

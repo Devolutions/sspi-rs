@@ -171,7 +171,7 @@ impl<'data> SecurityBufferRef<'data> {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         "the missing buffer type does not hold any buffers inside",
-                    ))
+                    ));
                 }
                 UnflaggedSecurityBuffer::Empty => UnflaggedSecurityBuffer::Empty,
             },
@@ -195,7 +195,7 @@ impl<'data> SecurityBufferRef<'data> {
                 return Err(Error::new(
                     ErrorKind::InternalError,
                     "the missing buffer type does not hold any buffers inside",
-                ))
+                ));
             }
             UnflaggedSecurityBuffer::Empty => {}
         };

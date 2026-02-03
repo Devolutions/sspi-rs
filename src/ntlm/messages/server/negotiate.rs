@@ -2,9 +2,9 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::ntlm::messages::{read_ntlm_header, try_read_version, MessageFields, MessageTypes};
-use crate::ntlm::{NegotiateFlags, NegotiateMessage, Ntlm, NtlmState};
 use crate::SecurityStatus;
+use crate::ntlm::messages::{MessageFields, MessageTypes, read_ntlm_header, try_read_version};
+use crate::ntlm::{NegotiateFlags, NegotiateMessage, Ntlm, NtlmState};
 
 const HEADER_SIZE: usize = 32;
 

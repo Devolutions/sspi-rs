@@ -2,7 +2,7 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use sspi::{enumerate_security_packages, str_to_w_buff, Error, PackageInfo, KERBEROS_VERSION};
+use sspi::{Error, KERBEROS_VERSION, PackageInfo, enumerate_security_packages, str_to_w_buff};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -196,7 +196,7 @@ pub struct SecNegoInfoA {
 /// - `pp_package_info` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn EnumerateSecurityPackagesA(
     pc_packages: *mut u32,
     pp_package_info: *mut PSecPkgInfoA,
@@ -296,7 +296,7 @@ pub type EnumerateSecurityPackagesFnA = unsafe extern "system" fn(*mut u32, *mut
 /// - `pp_package_info` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EnumerateSecurityPackagesW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn EnumerateSecurityPackagesW(
     pc_packages: *mut u32,
     pp_package_info: *mut *mut SecPkgInfoW,
@@ -396,7 +396,7 @@ pub type EnumerateSecurityPackagesFnW = unsafe extern "system" fn(*mut u32, *mut
 /// `pp_package_name` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn QuerySecurityPackageInfoA(
     p_package_name: *const SecChar,
     pp_package_info: *mut PSecPkgInfoA,
@@ -439,7 +439,7 @@ pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar,
 /// `pp_package_name` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn QuerySecurityPackageInfoW(
     p_package_name: *const SecWChar,
     pp_package_info: *mut PSecPkgInfoW,

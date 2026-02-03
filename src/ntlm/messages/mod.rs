@@ -10,7 +10,7 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::ntlm::{NegotiateFlags, NTLM_VERSION_SIZE};
+use crate::ntlm::{NTLM_VERSION_SIZE, NegotiateFlags};
 
 const NTLM_SIGNATURE: &[u8; NTLM_SIGNATURE_SIZE] = b"NTLMSSP\0";
 const NTLM_SIGNATURE_SIZE: usize = 8;

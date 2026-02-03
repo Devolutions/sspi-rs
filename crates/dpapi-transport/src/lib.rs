@@ -7,7 +7,7 @@ use std::future::Future;
 use std::io::Result;
 
 pub use connect_options::{
-    ConnectOptions, Error as ConnectOptionsError, GetSessionTokenFn, ProxyOptions, DEFAULT_RPC_PORT,
+    ConnectOptions, DEFAULT_RPC_PORT, Error as ConnectOptionsError, GetSessionTokenFn, ProxyOptions,
 };
 
 /// Represents a transport for communicating with the target server.

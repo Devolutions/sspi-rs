@@ -11,9 +11,9 @@ use sspi::ntlm::NtlmConfig;
 use sspi::{AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, Secret, Username};
 use url::Url;
 
-use super::kerberos::kdc::{KdcMock, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW};
+use super::kerberos::kdc::{CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, Validators};
 use super::kerberos::network_client::NetworkClientMock;
-use super::kerberos::{init_krb_environment, KrbEnvironment};
+use super::kerberos::{KrbEnvironment, init_krb_environment};
 use crate::common::CredentialsProxyImpl;
 
 const PUBLIC_KEY: &[u8] = &[

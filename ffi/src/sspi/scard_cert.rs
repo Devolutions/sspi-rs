@@ -13,8 +13,8 @@ use std::path::Path;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
 use picky_asn1::wrapper::Utf8StringAsn1;
-use picky_asn1_x509::{oids, Certificate, ExtendedKeyUsage, ExtensionView, GeneralName};
-use sspi::{utf16_bytes_to_utf8_string, Error, ErrorKind, Result};
+use picky_asn1_x509::{Certificate, ExtendedKeyUsage, ExtensionView, GeneralName, oids};
+use sspi::{Error, ErrorKind, Result, utf16_bytes_to_utf8_string};
 use winscard::MICROSOFT_DEFAULT_CSP;
 
 use crate::utils::str_encode_utf16;
@@ -177,7 +177,7 @@ pub fn extract_extended_key_usage_from_certificate(certificate: &Certificate) ->
         .tbs_certificate
         .extensions
         .0
-         .0
+        .0
         .iter()
         .find(|extension| extension.extn_id().0 == oids::extended_key_usage())
         .ok_or_else(|| {
@@ -205,7 +205,7 @@ pub fn extract_upn_from_certificate(certificate: &Certificate) -> Result<String>
         .tbs_certificate
         .extensions
         .0
-         .0
+        .0
         .iter()
         .find(|extension| extension.extn_id().0 == oids::subject_alternative_name())
         .ok_or_else(|| {
@@ -238,7 +238,7 @@ pub fn extract_upn_from_certificate(certificate: &Certificate) -> Result<String>
         ));
     }
 
-    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0 .0)?;
+    let data: Utf8StringAsn1 = picky_asn1_der::from_bytes(&other_name.value.0.0)?;
     Ok(data.to_string())
 }
 
