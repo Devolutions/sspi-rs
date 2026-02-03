@@ -404,7 +404,7 @@ impl WinScardContext for ScardContext<'_> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
-                format!("reader {:?} not found", reader_name),
+                format!("reader {reader_name:?} not found"),
             ));
         }
 
@@ -427,7 +427,7 @@ impl WinScardContext for ScardContext<'_> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
-                format!("reader {:?} not found", reader_name),
+                format!("reader {reader_name:?} not found"),
             ));
         }
 
@@ -438,7 +438,7 @@ impl WinScardContext for ScardContext<'_> {
         if self.smart_card_info.reader.name != reader_name {
             return Err(Error::new(
                 ErrorKind::UnknownReader,
-                format!("reader {:?} not found", reader_name),
+                format!("reader {reader_name:?} not found"),
             ));
         }
 
@@ -453,7 +453,7 @@ impl WinScardContext for ScardContext<'_> {
         self.cache
             .get(key)
             .map(|item| Cow::Borrowed(item.as_slice()))
-            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
+            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
     }
 
     fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {

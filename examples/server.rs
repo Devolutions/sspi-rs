@@ -25,8 +25,7 @@ fn main() -> Result<(), io::Error> {
 
     let account_name = whoami::username();
     let computer_name = whoami::fallible::hostname().unwrap();
-    let username =
-        Username::new(&account_name, Some(&computer_name)).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let username = Username::new(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
 
     let identity = AuthIdentity {
         username,
@@ -53,7 +52,7 @@ fn main() -> Result<(), io::Error> {
         SecurityBufferRef::data_buf(data.as_mut_slice()),
     ];
 
-    println!("Unencrypted message: [{}]", msg);
+    println!("Unencrypted message: [{msg}]");
     println!("Encrypting...");
 
     let _result = ntlm.encrypt_message(EncryptionFlags::empty(), &mut msg_buffer, 0)?;

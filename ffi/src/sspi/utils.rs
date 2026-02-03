@@ -48,7 +48,7 @@ pub fn hostname() -> Result<String> {
         whoami::fallible::hostname().map_err(|err| {
             Error::new(
                 ErrorKind::InternalError,
-                format!("can not query the system hostname: {:?}", err),
+                format!("can not query the system hostname: {err:?}"),
             )
         })
     }

@@ -84,7 +84,7 @@ pub(super) async fn request_tgt(
     let pa_data_options = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
             let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-            let salt = format!("{}{}", domain, username);
+            let salt = format!("{domain}{username}");
 
             AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
                 password: &password,

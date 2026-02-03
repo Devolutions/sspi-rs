@@ -54,8 +54,7 @@ fn is_present(context: ScardContext) -> bool {
     SCARD_CONTEXTS
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
-        .iter()
-        .any(|ctx| *ctx == context)
+        .contains(&context)
 }
 
 fn release_context(context: ScardContext) {

@@ -32,7 +32,7 @@ pub async fn change_password<'a>(
     let domain = &change_password.domain_name;
     let password = &change_password.old_password;
 
-    let salt = format!("{}{}", domain, username);
+    let salt = format!("{domain}{username}");
 
     let cname_type = get_client_principal_name_type(username, domain);
     let realm = &get_client_principal_realm(username, domain);
@@ -122,7 +122,7 @@ pub async fn change_password<'a>(
         let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
             Error::new(
                 ErrorKind::InvalidToken,
-                format!("cannot deserialize krb_priv_response: {:?}", err),
+                format!("cannot deserialize krb_priv_response: {err:?}"),
             )
         })?;
 
@@ -135,7 +135,7 @@ pub async fn change_password<'a>(
         if result_status != 0 {
             return Err(Error::new(
                 ErrorKind::WrongCredentialHandle,
-                format!("unsuccessful krb result code: {}. expected 0", result_status),
+                format!("unsuccessful krb result code: {result_status}. expected 0"),
             ));
         }
     } else {

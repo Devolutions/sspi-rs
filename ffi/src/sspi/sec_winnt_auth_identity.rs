@@ -253,7 +253,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             if result != ERROR_SUCCESS.0 {
                 return Err(Error::new(
                     ErrorKind::NoCredentials,
-                    format!("Can not get user credentials: {:0x?}", result),
+                    format!("Can not get user credentials: {result:0x?}"),
                 ));
             }
 
@@ -580,8 +580,8 @@ fn collect_smart_card_creds(
 
     let scard_type = env::var(SCARD_TYPE_ENV).map_err(|err| {
         let message = match err {
-            env::VarError::NotPresent => format!("failed to collect smart card credentials: {} env variable is not present. Process with password-based logon", SCARD_TYPE_ENV),
-            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", SCARD_TYPE_ENV),
+            env::VarError::NotPresent => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable is not present. Process with password-based logon"),
+            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable contains invalid unicode data. Process with password-based logon"),
         };
 
         Error::new(ErrorKind::NoCredentials, message)
@@ -623,8 +623,8 @@ fn collect_smart_card_creds(
 
             let pkcs11_module = env::var(PKCS11_MODULE_PATH_ENV).map_err(|err| {
                 let message = match err {
-                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {} env variable is not present. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
-                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
+                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable is not present. Process with password-based logon"),
+                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable contains invalid unicode data. Process with password-based logon"),
                 };
 
                 Error::new(ErrorKind::NoCredentials, message)
@@ -657,8 +657,7 @@ fn collect_smart_card_creds(
         scard_type => Err(Error::new(
             ErrorKind::NoCredentials,
             format!(
-                "failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon",
-                scard_type
+                "failed to collect smart card credentials: unsupported scard type: {scard_type}. Process with password-based logon"
             ),
         )),
     }

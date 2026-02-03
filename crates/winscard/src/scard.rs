@@ -151,7 +151,7 @@ impl SmartCard<'_> {
             error!(?error, "APDU command parsing error");
             Error::new(
                 ErrorKind::InternalError,
-                format!("error: an error happened while parsing an APDU command: {:?}", error),
+                format!("error: an error happened while parsing an APDU command: {error:?}"),
             )
         })?;
         let cmd = if let Some(mut chained) = self.pending_command.take() {
@@ -504,7 +504,7 @@ impl WinScard for SmartCard<'_> {
         if code != IO_CTL {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
-                format!("unsupported control code: {:?}", code),
+                format!("unsupported control code: {code:?}"),
             ));
         }
 
@@ -558,7 +558,7 @@ impl WinScard for SmartCard<'_> {
         let data = self.attributes.get(&attribute_id).map(AsRef::as_ref).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidParameter,
-                format!("The {:?} attribute id is not present", attribute_id),
+                format!("The {attribute_id:?} attribute id is not present"),
             )
         })?;
 
@@ -1008,7 +1008,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
     fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
         let p = BoxedMontyParams::new_vartime(p);
-        pow_mod_params(&public_key, &private_key, &p)
+        pow_mod_params(public_key, private_key, &p)
     }
 
     // Copied from `rsa` crate: https://github.com/RustCrypto/RSA/blob/eb1cca7b7ea42445dc874c1c1ce38873e4adade7/src/algorithms/rsa.rs#L232-L241

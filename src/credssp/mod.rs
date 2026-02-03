@@ -126,7 +126,7 @@ impl EarlyUserAuthResult {
         EarlyUserAuthResult::from_u32(result).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("got invalid Early User Authorization Result: {:x}", result),
+                format!("got invalid Early User Authorization Result: {result:x}"),
             )
         })
     }
@@ -1106,10 +1106,7 @@ impl CredSspContext {
             if peer_version != other_peer_version {
                 Err(Error::new(
                     ErrorKind::MessageAltered,
-                    format!(
-                        "CredSSP peer changed protocol version from {} to {}",
-                        peer_version, other_peer_version
-                    ),
+                    format!("CredSSP peer changed protocol version from {peer_version} to {other_peer_version}"),
                 ))
             } else {
                 Ok(())

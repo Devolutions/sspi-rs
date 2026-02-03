@@ -32,7 +32,7 @@ impl From<EpmError> for DecodeError {
             EpmError::InvalidFloorProtocol(_) => DecodeError::invalid_field("Floor", "floor protocol", "invalid value"),
             EpmError::InvalidFloorValue(_) => DecodeError::invalid_field("Floor", "floor value", "invalid value"),
             EpmError::UnsupportedFloor(floor_protocol) => {
-                DecodeError::unsupported_value("Floor", "floor", format!("{:?}", floor_protocol))
+                DecodeError::unsupported_value("Floor", "floor", format!("{floor_protocol:?}"))
             }
         }
         .with_source(err)

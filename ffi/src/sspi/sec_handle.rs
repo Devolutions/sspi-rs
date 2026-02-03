@@ -326,7 +326,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
             _ => {
                 return Err(Error::new(
                     ErrorKind::SecurityPackageNotFound,
-                    format!("security package name `{}` is not supported", name),
+                    format!("security package name `{name}` is not supported"),
                 ));
             }
         });
@@ -356,7 +356,7 @@ fn verify_security_package(package_name: &str) -> Result<()> {
         sspi_cred_ssp::PKG_NAME => Ok(()),
         _ => Err(Error::new(
             ErrorKind::SecurityPackageNotFound,
-            format!("security package name `{}` is not supported", package_name),
+            format!("security package name `{package_name}` is not supported"),
         )),
     }
 }
@@ -1748,7 +1748,7 @@ mod tests {
 
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
-        println!("{:?}", pkg_info);
+        println!("{pkg_info:?}");
         println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
         println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
 
@@ -1768,7 +1768,7 @@ mod tests {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
-            println!("{:?}", pkg_info);
+            println!("{pkg_info:?}");
             println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
             println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
         }
@@ -1879,7 +1879,7 @@ mod tests {
 
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
-        println!("{:?}", pkg_info);
+        println!("{pkg_info:?}");
         println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
         println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
 
@@ -1899,7 +1899,7 @@ mod tests {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
-            println!("{:?}", pkg_info);
+            println!("{pkg_info:?}");
             println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
             println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
         }

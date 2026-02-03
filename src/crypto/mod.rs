@@ -70,7 +70,7 @@ pub(crate) fn compute_hmac_md5(key: &[u8], input: &[u8]) -> io::Result<[u8; HASH
     use hmac::Mac as _;
 
     let mut mac = hmac::Hmac::<Md5>::new_from_slice(key)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to compute hmac md5: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("Failed to compute hmac md5: {e}")))?;
     let mut result = [0x00; HASH_SIZE];
     mac.update(input);
     result.clone_from_slice(&mac.finalize().into_bytes());

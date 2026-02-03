@@ -134,7 +134,7 @@ impl TsRequest {
                 if length != NONCE_SIZE as u16 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got ClientNonce with invalid length: {}", length),
+                        format!("Got ClientNonce with invalid length: {length}"),
                     ));
                 }
 
@@ -357,7 +357,7 @@ pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBu
         )),
         Some(cred_type) => Err(Error::new(
             ErrorKind::InvalidToken,
-            format!("Invalid or unsupported TsCredentials::cred_type value: {}", cred_type),
+            format!("Invalid or unsupported TsCredentials::cred_type value: {cred_type}"),
         )),
         None => Err(Error::new(
             ErrorKind::InvalidToken,

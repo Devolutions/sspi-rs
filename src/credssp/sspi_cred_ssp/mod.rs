@@ -436,7 +436,7 @@ impl SspiCredSsp {
                             target_hostname.to_owned().try_into().map_err(|e| {
                                 Error::new(
                                     ErrorKind::InvalidParameter,
-                                    format!("provided target name is not valid DNS name: {:?}", e),
+                                    format!("provided target name is not valid DNS name: {e:?}"),
                                 )
                             })?,
                         )

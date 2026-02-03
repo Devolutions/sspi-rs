@@ -52,8 +52,7 @@ fn convert_to_file_time(end_date: OffsetDateTime) -> crate::Result<u64> {
         Err(crate::Error::new(
             crate::ErrorKind::InternalError,
             format!(
-                "Failed to convert system time to file time, where the start date: {:?}, end date: {:?}",
-                start_date, end_date
+                "Failed to convert system time to file time, where the start date: {start_date:?}, end date: {end_date:?}"
             ),
         ))
     } else {

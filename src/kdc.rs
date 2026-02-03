@@ -24,7 +24,7 @@ pub(crate) fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     let domain_key_path = format!("{}\\{}", domains_key_path, &domain_upper);
     if let Ok(domain_key) = hklm.open(domain_key_path) {
         let kdc_names: Vec<String> = domain_key.get_multi_string("KdcNames").unwrap_or_default();
-        kdc_names.iter().map(|x| format!("tcp://{}:88", x)).collect()
+        kdc_names.iter().map(|x| format!("tcp://{x}:88")).collect()
     } else {
         Vec::new()
     }
@@ -54,7 +54,7 @@ pub(crate) fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
 
 #[instrument(ret, level = "debug")]
 pub(crate) fn detect_kdc_hosts(domain: &str) -> Vec<String> {
-    if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{}", domain)) {
+    if let Ok(kdc_url) = env::var(format!("SSPI_KDC_URL_{domain}")) {
         return vec![kdc_url];
     }
 
@@ -94,7 +94,7 @@ mod tests {
             println!("Finding KDC for {} domain", &domain);
             let kdc_hosts = detect_kdc_hosts(&domain);
             if let Some(kdc_host) = kdc_hosts.first() {
-                println!("KDC server: {}", kdc_host);
+                println!("KDC server: {kdc_host}");
             } else {
                 println!("No KDC server found!");
             }

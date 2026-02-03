@@ -62,7 +62,7 @@ pub(super) fn get_cipher_block_size(cipher: CipherSuite) -> Result<u32> {
         // Unsupported ciphers or others
         cipher => Err(Error::new(
             ErrorKind::InternalError,
-            format!("can not get block size of cipher: {:?}", cipher),
+            format!("can not get block size of cipher: {cipher:?}"),
         )),
     }
 }

@@ -752,7 +752,7 @@ impl WinScardContext for SystemScardContext {
             DeviceTypeId::from_u32(device_type_id).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
-                    format!("WinSCard has returned invalid device type id: {}", device_type_id),
+                    format!("WinSCard has returned invalid device type id: {device_type_id}"),
                 )
             })
         }

@@ -47,7 +47,7 @@ impl TryFrom<u32> for ReaderAction {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Gow invalid disposition value: {}", value),
+                    format!("Gow invalid disposition value: {value}"),
                 ));
             }
         })
@@ -286,7 +286,7 @@ impl TryFrom<u32> for ScardScope {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Invalid ScardScope value: {}", value),
+                    format!("Invalid ScardScope value: {value}"),
                 ));
             }
         })
@@ -343,7 +343,7 @@ impl TryFrom<u32> for ShareMode {
             3 => Ok(Self::Direct),
             _ => Err(Error::new(
                 ErrorKind::InvalidParameter,
-                format!("Invalid ShareMode value: {}", value),
+                format!("Invalid ShareMode value: {value}"),
             )),
         }
     }
@@ -411,7 +411,7 @@ impl TryFrom<u32> for State {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
-                    format!("Invalid State value: {}", value),
+                    format!("Invalid State value: {value}"),
                 ));
             }
         })
@@ -587,7 +587,7 @@ impl TryFrom<u32> for ProviderId {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Invalid provider id: {}", value),
+                    format!("Invalid provider id: {value}"),
                 ));
             }
         })

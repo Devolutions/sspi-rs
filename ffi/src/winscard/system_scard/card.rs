@@ -206,12 +206,7 @@ impl WinScard for SystemScard {
                 #[allow(clippy::useless_conversion)]
                 protocol.try_into()?,
             )
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InternalError,
-                    format!("Invalid protocol value: {}", protocol),
-                )
-            })?,
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, format!("Invalid protocol value: {protocol}")))?,
             atr: atr.into(),
         };
 

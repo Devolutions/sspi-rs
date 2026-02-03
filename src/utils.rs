@@ -224,7 +224,7 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
         KDC_ERR_REVOCATION_STATUS_UNAVAILABLE => (ErrorKind::InternalError, "revoked status unavailable".into()),
         KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "client name mismatch".into()),
         KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
-        code => (ErrorKind::Unknown, format!("unknown Kerberos error: {}", code)),
+        code => (ErrorKind::Unknown, format!("unknown Kerberos error: {code}")),
     }
 }
 
