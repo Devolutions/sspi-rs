@@ -71,7 +71,7 @@ END
         file.write_all(version_rc_data.as_bytes())
             .expect("Failed to write version.rc file");
 
-        embed_resource::compile(&version_rc_file, embed_resource::NONE);
+        let _ = embed_resource::compile(&version_rc_file, embed_resource::NONE);
     }
 }
 
