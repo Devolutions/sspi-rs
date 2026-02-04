@@ -62,7 +62,7 @@ END
         )
     }
 
-    pub fn embed_version_info() {
+    pub(crate) fn embed_version_info() {
         let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
         let version_rc_file = out_dir.join("version.rc");
         let version_rc_data = generate_version_rc();
@@ -71,7 +71,7 @@ END
         file.write_all(version_rc_data.as_bytes())
             .expect("Failed to write version.rc file");
 
-        embed_resource::compile(&version_rc_file, embed_resource::NONE);
+        embed_resource::compile(&version_rc_file, embed_resource::NONE).expect("Failed to compile version resource");
     }
 }
 
