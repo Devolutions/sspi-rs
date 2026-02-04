@@ -598,7 +598,7 @@ pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDes
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// After this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.

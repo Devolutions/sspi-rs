@@ -169,15 +169,15 @@ impl Negotiate {
                 )?);
             }
 
-            if enabled_packages.kerberos {
-                if let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain)) {
-                    debug!("Negotiate: try Kerberos");
+            if enabled_packages.kerberos
+                && let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain))
+            {
+                debug!("Negotiate: try Kerberos");
 
-                    self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                        kdc_url: Some(host),
-                        client_computer_name: Some(self.client_computer_name.clone()),
-                    })?);
-                }
+                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                    kdc_url: Some(host),
+                    client_computer_name: Some(self.client_computer_name.clone()),
+                })?);
             }
         }
 
@@ -611,20 +611,20 @@ impl<'a> Negotiate {
         }
 
         #[cfg(feature = "scard")]
-        if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
-            if let NegotiatedProtocol::Ntlm(_) = &self.protocol {
-                let username = crate::utils::bytes_to_utf16_string(&identity.username)?;
-                let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
-                    .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
-                debug!("Negotiate: try Kerberos");
+        if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle
+            && let NegotiatedProtocol::Ntlm(_) = &self.protocol
+        {
+            let username = crate::utils::bytes_to_utf16_string(&identity.username)?;
+            let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
+                .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
+            debug!("Negotiate: try Kerberos");
 
-                let config = KerberosConfig {
-                    kdc_url: Some(host),
-                    client_computer_name: Some(self.client_computer_name.clone()),
-                };
+            let config = KerberosConfig {
+                kdc_url: Some(host),
+                client_computer_name: Some(self.client_computer_name.clone()),
+            };
 
-                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(config)?);
-            }
+            self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(config)?);
         }
 
         if let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol {

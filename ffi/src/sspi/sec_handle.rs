@@ -257,7 +257,7 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
 ///
 /// *Note*: `*context` **can** be NULL: the function will create a new security context if [PCtxHandle] is NULL.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The caller have to ensure that either `*(context)` is null or the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
 #[instrument(ret)]

@@ -50,12 +50,12 @@ pub fn auth_cert_from_env() -> WinScardResult<Cert> {
         })?;
         Ok(Cert::from_pem_str(&raw_certificate)?)
     } else {
-        return Err(Error::new(
+        Err(Error::new(
             ErrorKind::InvalidParameter,
             format!(
                 "Either \"{WINSCARD_CERT_DATA_ENV}\" or \"{WINSCARD_CERT_PATH_ENV}\" environment variable must be present"
             ),
-        ));
+        ))
     }
 }
 
@@ -88,11 +88,11 @@ pub fn private_key_from_env() -> WinScardResult<(String, PrivateKey)> {
 
         Ok((raw_private_key, private_key))
     } else {
-        return Err(Error::new(
+        Err(Error::new(
             ErrorKind::InvalidParameter,
             format!(
                 "Either \"{WINSCARD_PK_DATA_ENV}\" or \"{WINSCARD_PK_PATH_ENV}\" environment variable must be present"
             ),
-        ));
+        ))
     }
 }

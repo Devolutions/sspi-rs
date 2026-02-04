@@ -123,12 +123,11 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
 
     for attr_type_and_value in certificate.tbs_certificate.issuer.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
-            if v.ty.0 == oids::at_common_name() {
-                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
-                    if name.to_utf8_lossy().starts_with("MS-Organization-P2P-Access") {
-                        cn = true;
-                    }
-                }
+            if v.ty.0 == oids::at_common_name()
+                && let AttributeTypeAndValueParameters::CommonName(name) = &v.value
+                && name.to_utf8_lossy().starts_with("MS-Organization-P2P-Access")
+            {
+                cn = true;
             }
         }
     }
@@ -140,12 +139,11 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
     let mut client_auth = false;
 
     for extension in &certificate.tbs_certificate.extensions.0.0 {
-        if extension.extn_id().0 == oids::extended_key_usage() {
-            if let ExtensionView::ExtendedKeyUsage(ext_key_usage) = extension.extn_value() {
-                if ext_key_usage.contains(oids::kp_client_auth()) {
-                    client_auth = true;
-                }
-            }
+        if extension.extn_id().0 == oids::extended_key_usage()
+            && let ExtensionView::ExtendedKeyUsage(ext_key_usage) = extension.extn_value()
+            && ext_key_usage.contains(oids::kp_client_auth())
+        {
+            client_auth = true;
         }
     }
 

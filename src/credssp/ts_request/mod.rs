@@ -208,8 +208,10 @@ impl TsRequest {
         }
 
         /* [5] clientNonce (OCTET STRING) */
-        if self.version >= 5 && self.client_nonce.is_some() {
-            ber::write_sequence_octet_string(&mut buffer, 5, self.client_nonce.as_ref().unwrap())?;
+        if self.version >= 5
+            && let Some(client_nonce) = self.client_nonce.as_ref()
+        {
+            ber::write_sequence_octet_string(&mut buffer, 5, client_nonce)?;
         }
 
         Ok(())

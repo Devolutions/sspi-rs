@@ -103,13 +103,12 @@ cfg_if::cfg_if! {
                         let dhcp_name_server: Option<String> = interface_key.get_string("DhcpNameServer").ok().filter(|x: &String| !x.is_empty());
                         let stale_adapter: u32 = dns_adapter_key.get_u32("StaleAdapter").unwrap_or(1);
 
-                        if stale_adapter != 1 {
-                            if let Some(name_server_list) = name_server.or(dhcp_name_server) {
+                        if stale_adapter != 1
+                            && let Some(name_server_list) = name_server.or(dhcp_name_server) {
                                 let name_servers: Vec<String> = name_server_list.split(' ')
                                     .map(|c| c.trim().to_string()).filter(|x: &String| !x.is_empty()).collect();
                                 return name_servers;
                             }
-                        }
                     }
                 }
             }
@@ -275,8 +274,8 @@ cfg_if::cfg_if! {
                 url.to_string()
             };
 
-            if let Ok(url) = Url::parse(&url) {
-                if let Some(url_host) = url.host_str() {
+            if let Ok(url) = Url::parse(&url)
+                && let Some(url_host) = url.host_str() {
                     let url_port = url.port().unwrap_or(53);
                     let protocol = match url.scheme().to_lowercase().as_str() {
                         "tcp" => Protocol::Tcp,
@@ -295,7 +294,6 @@ cfg_if::cfg_if! {
                         });
                     }
                 }
-            }
 
             None
         }

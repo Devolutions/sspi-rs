@@ -191,7 +191,7 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 
 /// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The user must ensure that `p_auth_data` must be non-null and point to the valid [CredSspCred] structure.
 #[cfg(feature = "tsssp")]
@@ -674,7 +674,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 /// This function calculated the size of the credentials represented by the `SEC_WINNT_AUTH_IDENTITY_EX2`
 /// structure.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
@@ -720,7 +720,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
     Ok(64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len)
 }
 
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
@@ -928,7 +928,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
 /// Unpacks raw credentials.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -955,7 +955,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
 /// Unpacks raw credentials when the `auth_data` length is known.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).

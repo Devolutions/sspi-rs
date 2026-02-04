@@ -334,10 +334,10 @@ impl CredSspClient {
                     );
                     ts_request.client_nonce = Some(self.client_nonce);
 
-                    if let Some(nego_tokens) = &ts_request.nego_tokens {
-                        if nego_tokens.is_empty() {
-                            ts_request.nego_tokens = None;
-                        }
+                    if let Some(nego_tokens) = &ts_request.nego_tokens
+                        && nego_tokens.is_empty()
+                    {
+                        ts_request.nego_tokens = None;
                     }
 
                     self.state = CredSspState::AuthInfo;
@@ -484,6 +484,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
                     .with_credential_use(CredentialUse::Inbound)
                     .execute(
+                        // clippy::panicking_unwrap false positive. We set self.context just above.
+                        #[allow(clippy::panicking_unwrap)]
                         &mut self
                             .context
                             .as_mut()
@@ -1175,10 +1177,10 @@ impl CredSspContext {
     fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> crate::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
-        if let SspiContext::Ntlm(_) = self.sspi_context {
-            if endpoint == EndpointType::Server {
-                integer_increment_le(&mut public_key);
-            }
+        if let SspiContext::Ntlm(_) = self.sspi_context
+            && endpoint == EndpointType::Server
+        {
+            integer_increment_le(&mut public_key);
         }
 
         self.encrypt_message(&public_key)

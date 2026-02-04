@@ -260,7 +260,9 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
     }) = checksum
     {
         let mut checksum_value = checksum_value.into_inner();
-        if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
+        if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE
+            && let Some(channel_bindings) = channel_bindings
+        {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
@@ -272,8 +274,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
             }
             // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
             // 4..19 - Channel binding information (19 inclusive).
-            checksum_value[4..20]
-                .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
+            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings));
         }
 
         for extension in extensions {
@@ -316,11 +317,11 @@ pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificat
     let mut issuer = false;
     for attr_type_and_value in certificate.tbs_certificate.issuer.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
-            if v.ty.0 == oids::at_common_name() {
-                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
-                    issuer = true;
-                    username.push_str(&name.to_utf8_lossy());
-                }
+            if v.ty.0 == oids::at_common_name()
+                && let AttributeTypeAndValueParameters::CommonName(name) = &v.value
+            {
+                issuer = true;
+                username.push_str(&name.to_utf8_lossy());
             }
         }
     }
@@ -337,11 +338,11 @@ pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificat
     let mut subject = false;
     for attr_type_and_value in certificate.tbs_certificate.subject.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
-            if v.ty.0 == oids::at_common_name() {
-                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
-                    subject = true;
-                    username.push_str(&name.to_utf8_lossy());
-                }
+            if v.ty.0 == oids::at_common_name()
+                && let AttributeTypeAndValueParameters::CommonName(name) = &v.value
+            {
+                subject = true;
+                username.push_str(&name.to_utf8_lossy());
             }
         }
     }
