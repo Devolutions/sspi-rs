@@ -53,9 +53,11 @@ fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
     let mut out = String::new();
 
     {
-        // Rewrite original implementation (without #[no_mangle] attribute)
+        // Rewrite original implementation (without #[unsafe(no_mangle)] attribute)
+        let pre = item[..fn_token_idx]
+            .replace(ATTR_NO_MANGLE, "")
+            .replace("#[unsafe (no_mangle)]", "");
 
-        let pre = item[..fn_token_idx].replace(ATTR_NO_MANGLE, "");
         let rest = &item[fn_token_idx..];
         writeln!(out, "{pre}{rest} ")?;
     };
