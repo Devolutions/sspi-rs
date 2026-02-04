@@ -27,7 +27,7 @@ pub fn rename_symbol(attr: proc_macro::TokenStream, item: proc_macro::TokenStrea
     let item = item.to_string();
     match rename_symbol_impl(&attr, &item) {
         Ok(output) => output.parse().expect("invalid output token stream"),
-        Err(e) => format!(r####"compile_error!(r###"{}"###); {}"####, e, item)
+        Err(e) => format!(r####"compile_error!(r###"{e}"###); {item}"####)
             .parse()
             .unwrap(),
     }
