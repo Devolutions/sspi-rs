@@ -8,25 +8,25 @@ use std::io::Write;
 pub(crate) use as_exchange::as_exchange;
 pub use change_password::change_password;
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
+use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
-use picky_krb::messages::TgsRep;
+use picky_krb::messages::{ApRep, TgsRep};
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 
 use self::extractors::{
-    extract_ap_rep_from_krb_blob, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
-    extract_session_key_from_tgs_rep, extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
+    extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep, extract_session_key_from_tgs_rep,
+    extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
-    generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_krb_blob,
-    generate_tgs_req, get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, ChecksumValues,
-    EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, GenerateTgsReqOptions,
-    GssFlags,
+    generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_tgs_req,
+    get_client_principal_name_type, get_client_principal_realm, ChecksumOptions, ChecksumValues, EncKey,
+    GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
+use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::{serialize_message, unwrap_hostname};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
@@ -310,7 +310,7 @@ pub async fn initialize_security_context<'a>(
             let encoded_ap_req = picky_asn1_der::to_vec(&ap_req)?;
 
             let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                generate_krb_blob(ap_req, mech_id)?
+                generate_krb_message(mech_id, AP_REQ_TOKEN_ID, ap_req)?
             } else {
                 // Do not wrap if the `USE_DCE_STYLE` flag is set.
                 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
@@ -359,7 +359,7 @@ pub async fn initialize_security_context<'a>(
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&ap_rep)?;
             } else {
-                let ap_rep = extract_ap_rep_from_krb_blob(&input_token.buffer)?;
+                let ap_rep = decode_krb_message::<ApRep>(&input_token.buffer, AP_REP_TOKEN_ID)?;
 
                 let session_key = client
                     .encryption_params

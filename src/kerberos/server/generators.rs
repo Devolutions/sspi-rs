@@ -1,22 +1,19 @@
-use oid::ObjectIdentifier;
 use picky_asn1::wrapper::{
-    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1,
-    ObjectIdentifierAsn1, OctetStringAsn1, Optional,
+    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1, OctetStringAsn1,
+    Optional,
 };
-use picky_krb::constants::gss_api::AP_REP_TOKEN_ID;
 use picky_krb::constants::key_usages::AP_REP_ENC;
 use picky_krb::constants::types::AP_REP_MSG_TYPE;
 use picky_krb::data_types::{
     EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds,
 };
-use picky_krb::gss_api::{ApplicationTag0, KrbMessage};
 use picky_krb::messages::{ApRep, ApRepInner};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
-use crate::{Result, KERBEROS_VERSION};
+use crate::{Result, Secret, KERBEROS_VERSION};
 
 pub(super) fn generate_ap_rep(
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     ctime: KerberosTime,
     cusec: Microseconds,
     seq_number: Vec<u8>,
@@ -30,14 +27,14 @@ pub(super) fn generate_ap_rep(
         subkey: Optional::from(enc_params.sub_session_key.as_ref().map(|sub_key| {
             ExplicitContextTag2::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key.clone())),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key.as_ref().to_vec())),
             })
         })),
         seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
     });
 
     let cipher = encryption_type.cipher();
-    let enc_data = cipher.encrypt(session_key, AP_REP_ENC, &picky_asn1_der::to_vec(&enc_part)?)?;
+    let enc_data = cipher.encrypt(session_key.as_ref(), AP_REP_ENC, &picky_asn1_der::to_vec(&enc_part)?)?;
 
     Ok(ApRep::from(ApRepInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -48,14 +45,4 @@ pub(super) fn generate_ap_rep(
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_data)),
         }),
     }))
-}
-
-pub(super) fn generate_ap_rep_krb_blob(mech_id: ObjectIdentifier, ap_rep: ApRep) -> Result<Vec<u8>> {
-    let krb_blob = ApplicationTag0(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(mech_id),
-        krb5_token_id: AP_REP_TOKEN_ID,
-        krb_msg: ap_rep,
-    });
-
-    Ok(picky_asn1_der::to_vec(&krb_blob)?)
 }

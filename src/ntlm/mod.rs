@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
+pub use hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
 use messages::{client, server};
 
 pub use self::config::NtlmConfig;
@@ -25,7 +26,6 @@ use crate::{
     SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
     SspiImpl, PACKAGE_ID_NONE,
 };
-pub use hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
 
 pub const PKG_NAME: &str = "NTLM";
 pub const NTLM_VERSION_SIZE: usize = 8;

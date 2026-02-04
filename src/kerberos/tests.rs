@@ -61,8 +61,8 @@ fn secbuffer_readonly_with_checksum() {
         auth_identity: None,
         encryption_params: EncryptionParams {
             encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-            session_key: Some(session_key.to_vec()),
-            sub_session_key: Some(sub_session_key.to_vec()),
+            session_key: Some(session_key.to_vec().into()),
+            sub_session_key: Some(sub_session_key.to_vec().into()),
             sspi_encrypt_key_usage: ACCEPTOR_SEAL,
             sspi_decrypt_key_usage: INITIATOR_SEAL,
             ec: 16,

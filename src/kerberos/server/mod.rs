@@ -10,24 +10,27 @@ use cache::AuthenticatorCacheRecord;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
+use picky_krb::messages::ApReq;
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
 use self::cache::AuthenticatorsCache;
-use self::extractors::{decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
-use self::generators::{generate_ap_rep, generate_ap_rep_krb_blob};
+use self::extractors::{decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
+use self::generators::generate_ap_rep;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
+use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
-    SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl, Username,
+    Secret, SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl, Username,
 };
 
 /// Additional properties that are needed only for server-side Kerberos.
@@ -42,7 +45,7 @@ pub struct ServerProperties {
     /// Key that is used for TGS tickets decryption.
     /// It should be provided by the user during regular Kerberos auth. Or
     /// it will be established during AS exchange in the case of Kerberos U2U auth.
-    pub ticket_decryption_key: Option<Vec<u8>>,
+    pub ticket_decryption_key: Option<Secret<Vec<u8>>>,
     /// Name of the Kerberos service.
     pub service_name: PrincipalName,
     /// User credentials on whose behalf the TGT ticket will be requested.
@@ -68,7 +71,7 @@ impl ServerProperties {
         sname: &[&str],
         user: Option<CredentialsBuffers>,
         max_time_skew: Duration,
-        ticket_decryption_key: Option<Vec<u8>>,
+        ticket_decryption_key: Option<Secret<Vec<u8>>>,
     ) -> Result<Self> {
         let service_names = sname
             .iter()
@@ -106,7 +109,7 @@ pub async fn accept_security_context(
 
     let status = match server.state {
         KerberosState::Preauthentication => {
-            let ap_req = decode_neg_ap_req(&input_token.buffer)?;
+            let ap_req = decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)?;
 
             let server_data = server.server.as_ref().ok_or_else(|| {
                 Error::new(
@@ -132,7 +135,7 @@ pub async fn accept_security_context(
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
 
             let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
-            let session_key = ticket_enc_part.0.key.0.key_value.0 .0.clone();
+            let session_key = Secret::new(ticket_enc_part.0.key.0.key_value.0 .0.clone());
 
             let AuthenticatorInner {
                 authenticator_vno: _,
@@ -265,7 +268,7 @@ pub async fn accept_security_context(
 
                 let mut rand = StdRng::try_from_os_rng()?;
                 rand.fill_bytes(&mut sub_session_key);
-                server.encryption_params.sub_session_key = Some(sub_session_key);
+                server.encryption_params.sub_session_key = Some(sub_session_key.into());
 
                 // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
                 // A subkey MAY be included if the server desires to negotiate a different subkey.
@@ -284,7 +287,7 @@ pub async fn accept_security_context(
                     oids::krb5()
                 };
 
-                let encoded_neg_ap_rep = generate_ap_rep_krb_blob(mech_id, ap_rep)?;
+                let encoded_neg_ap_rep = generate_krb_message(mech_id, AP_REP_TOKEN_ID, ap_rep)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_rep)?;

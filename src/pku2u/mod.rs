@@ -227,7 +227,7 @@ impl Sspi for Pku2u {
         let mut payload = data_buffer.data().to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
-        let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
+        let mut checksum = cipher.encrypt(key.as_ref(), key_usage, &payload)?;
         checksum.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
@@ -281,7 +281,7 @@ impl Sspi for Pku2u {
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
         wrap_token.checksum.rotate_left(RRC.into());
 
-        let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
+        let mut decrypted = cipher.decrypt(key.as_ref(), key_usage, &wrap_token.checksum)?;
 
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
@@ -346,7 +346,7 @@ impl Sspi for Pku2u {
         let session_key = get_encryption_key(&self.encryption_params)?;
 
         Ok(crate::SessionKeys {
-            session_key: session_key.to_vec().into(),
+            session_key: session_key.clone(),
         })
     }
 
@@ -810,7 +810,8 @@ impl Pku2u {
                         check_if_empty!(
                             self.encryption_params.sub_session_key.as_ref(),
                             "sub-session key is not set"
-                        ),
+                        )
+                        .as_ref(),
                         ACCEPTOR_SIGN,
                         &self.negoex_messages,
                     )?;
@@ -970,8 +971,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key.clone()),
-                sub_session_key: Some(sub_session_key.clone()),
+                session_key: Some(session_key.clone().into()),
+                sub_session_key: Some(sub_session_key.clone().into()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
                 ec: 0,
@@ -999,8 +1000,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key),
-                sub_session_key: Some(sub_session_key),
+                session_key: Some(session_key.into()),
+                sub_session_key: Some(sub_session_key.into()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
                 ec: 0,

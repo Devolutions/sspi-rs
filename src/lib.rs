@@ -115,10 +115,8 @@ pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{
-    hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX},
-    Ntlm,
-};
+pub use self::ntlm::hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
+pub use self::ntlm::Ntlm;
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
 use crate::builders::{

@@ -3,7 +3,6 @@ use std::io::Read;
 use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
-use picky_krb::constants::gss_api::AP_REP_TOKEN_ID;
 use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
@@ -11,7 +10,7 @@ use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Ti
 use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep};
 
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, Secret};
 
 /// Extracts password salt from the KRB error.
 ///
@@ -49,7 +48,7 @@ pub fn extract_session_key_from_as_rep(
     salt: &str,
     password: &str,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -62,16 +61,16 @@ pub fn extract_session_key_from_as_rep(
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
+    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -79,14 +78,18 @@ pub fn extract_session_key_from_tgs_rep(
         .cipher();
 
     let enc_data = cipher
-        .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0 .0)
+        .decrypt(
+            session_key.as_ref(),
+            TGS_REP_ENC_SESSION_KEY,
+            &tgs_rep.0.enc_part.0.cipher.0 .0,
+        )
         .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
 
     trace!(?enc_data, "Plain TgsRep::EncData");
 
     let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
+    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts encryption type and salt from [AsRep].
@@ -170,29 +173,11 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
-/// Extracts [ApRep] from the krb_token.
-#[instrument(ret, level = "trace")]
-pub fn extract_ap_rep_from_krb_blob(mut data: &[u8]) -> Result<ApRep> {
-    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
-
-    let mut id = [0, 0];
-    data.read_exact(&mut id)?;
-
-    if id != AP_REP_TOKEN_ID {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            format!("invalid kerberos token id: expected {AP_REP_TOKEN_ID:?} but got {id:?}",),
-        ));
-    }
-
-    Ok(picky_asn1_der::from_reader(&mut data)?)
-}
-
 /// Extracts the sequence number from the [ApRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_seq_number_from_ap_rep(
     ap_rep: &ApRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
     let cipher = enc_params
@@ -202,7 +187,7 @@ pub fn extract_seq_number_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .decrypt(session_key.as_ref(), AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -225,9 +210,9 @@ pub fn extract_seq_number_from_ap_rep(
 #[instrument(level = "trace", ret)]
 pub fn extract_sub_session_key_from_ap_rep(
     ap_rep: &ApRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -235,7 +220,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
+        .decrypt(session_key.as_ref(), AP_REP_ENC, &ap_rep.0.enc_part.cipher.0 .0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -253,7 +238,8 @@ pub fn extract_sub_session_key_from_ap_rep(
         .0
         .key_value
         .0
-         .0)
+         .0
+        .into())
 }
 
 /// Extracts TGT Ticket from encoded [NegTokenTarg1].

@@ -2,6 +2,7 @@ pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod flags;
+mod messages;
 mod pa_datas;
 pub mod server;
 #[cfg(test)]
@@ -300,7 +301,7 @@ impl Sspi for Kerberos {
             mut encrypted,
             confounder,
             ki: _,
-        } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
+        } = cipher.encrypt_no_checksum(key.as_ref(), key_usage, &payload)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
         let mut data_to_sign =
@@ -317,7 +318,7 @@ impl Sspi for Kerberos {
         data_to_sign.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
         data_to_sign.extend_from_slice(&wrap_token.header());
 
-        let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
+        let checksum = cipher.encryption_checksum(key.as_ref(), key_usage, &data_to_sign)?;
 
         encrypted.extend_from_slice(&checksum);
 
@@ -419,7 +420,7 @@ impl Sspi for Kerberos {
             confounder,
             checksum,
             ki: _,
-        } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
+        } = cipher.decrypt_no_checksum(key.as_ref(), key_usage, &checksum)?;
 
         if decrypted.len() < usize::from(wrap_token.ec) + WrapToken::header_len() {
             return Err(Error::new(ErrorKind::DecryptFailure, "decrypted data is too short"));
@@ -449,7 +450,7 @@ impl Sspi for Kerberos {
             });
         data_to_sign.extend_from_slice(wrap_token_header);
 
-        let calculated_checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
+        let calculated_checksum = cipher.encryption_checksum(key.as_ref(), key_usage, &data_to_sign)?;
 
         if calculated_checksum != checksum {
             return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
@@ -527,7 +528,7 @@ impl Sspi for Kerberos {
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
     fn query_context_session_key(&self) -> Result<SessionKeys> {
         Ok(SessionKeys {
-            session_key: get_encryption_key(&self.encryption_params)?.to_vec().into(),
+            session_key: get_encryption_key(&self.encryption_params)?.clone(),
         })
     }
 
@@ -654,15 +655,12 @@ impl SspiEx for Kerberos {
     }
 
     fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
-        utils::generate_mic_token(
-            self.is_client(),
-            self.seq_number as u64,
-            data.to_vec(),
-            self.encryption_params
-                .sub_session_key
-                .as_ref()
-                .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
-        )
+        let session_key = self
+            .encryption_params
+            .sub_session_key
+            .as_ref()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?;
+        utils::generate_mic_token(self.is_client(), u64::from(self.seq_number), data.to_vec(), session_key)
     }
 }
 
@@ -701,8 +699,8 @@ pub mod test_data {
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(SESSION_KEY.to_vec()),
-                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                session_key: Some(SESSION_KEY.to_vec().into()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec().into()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
                 ec: 0,
@@ -746,8 +744,8 @@ pub mod test_data {
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(SESSION_KEY.to_vec()),
-                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                session_key: Some(SESSION_KEY.to_vec().into()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec().into()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
                 ec: 0,

@@ -10,18 +10,17 @@ use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag11, ExplicitContextTag2,
     ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7,
-    ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
-    Optional,
+    ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, OctetStringAsn1, Optional,
 };
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::{
     AP_REP_ENC, AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
 };
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REP_MSG_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV,
     NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE,
-    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
+    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
@@ -30,10 +29,10 @@ use picky_krb::data_types::{
     KerbPaPacRequest, KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PaPacOptions, PrincipalName,
     Realm, Ticket,
 };
-use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit};
+use picky_krb::gss_api::{MechType, MechTypeList};
 use picky_krb::messages::{
     ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
-    KrbPrivMessage, TgsReq, TgtReq,
+    KrbPrivMessage, TgsReq,
 };
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
@@ -45,7 +44,7 @@ use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
 use crate::krb::Krb5Conf;
 use crate::utils::parse_target_name;
-use crate::{ClientRequestFlags, Error, ErrorKind, Result};
+use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
@@ -300,7 +299,7 @@ pub fn generate_as_req(pa_datas: Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq
 pub struct GenerateTgsReqOptions<'a> {
     pub realm: &'a str,
     pub service_principal: &'a str,
-    pub session_key: &'a [u8],
+    pub session_key: &'a Secret<Vec<u8>>,
     /// [Ticket] extracted from the [AsRep] message.
     pub ticket: Ticket,
     /// [Authenticator] to be included in [TgsReq] pa-data.
@@ -639,7 +638,11 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
 }
 
 #[instrument(level = "trace", skip_all, ret)]
-pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &EncryptionParams) -> Result<ApRep> {
+pub fn generate_ap_rep(
+    session_key: &Secret<Vec<u8>>,
+    seq_number: Vec<u8>,
+    enc_params: &EncryptionParams,
+) -> Result<ApRep> {
     let current_date = OffsetDateTime::now_utc();
     let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
 
@@ -655,7 +658,7 @@ pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &Enc
     let cipher = encryption_type.cipher();
 
     let encoded_enc_ap_rep_part = picky_asn1_der::to_vec(&enc_ap_rep_part)?;
-    let encrypted_enc_ap_rep_part = cipher.encrypt(session_key, AP_REP_ENC, &encoded_enc_ap_rep_part)?;
+    let encrypted_enc_ap_rep_part = cipher.encrypt(session_key.as_ref(), AP_REP_ENC, &encoded_enc_ap_rep_part)?;
 
     Ok(ApRep::from(ApRepInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -670,7 +673,7 @@ pub fn generate_ap_rep(session_key: &[u8], seq_number: Vec<u8>, enc_params: &Enc
 
 pub fn generate_tgs_ap_req(
     ticket: Ticket,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
 ) -> Result<ApReq> {
@@ -679,7 +682,7 @@ pub fn generate_tgs_ap_req(
 
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
     let encrypted_authenticator = cipher.encrypt(
-        session_key,
+        session_key.as_ref(),
         TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
         &encoded_authenticator,
     )?;
@@ -714,7 +717,7 @@ pub fn generate_tgs_ap_req(
 #[instrument(level = "trace", ret)]
 pub fn generate_ap_req(
     ticket: Ticket,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
     options: ApOptionsFlags,
@@ -723,7 +726,7 @@ pub fn generate_ap_req(
     let cipher = encryption_type.cipher();
 
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
-    let encrypted_authenticator = cipher.encrypt(session_key, AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
+    let encrypted_authenticator = cipher.encrypt(session_key.as_ref(), AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
 
     trace!(
         plain = ?encoded_authenticator,
@@ -751,62 +754,10 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
-/// Generates the initial SPNEGO token.
-///
-/// The `sname` parameter is optional. If it is present, then the Kerberos U2U is in use, and `TgtReq` will be generated
-/// for the input `sname` and placed in the `mech_token` field.
-pub fn generate_neg_token_init(sname: Option<&[&str]>) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let mech_token = if let Some(sname) = sname {
-        let sname = sname
-            .iter()
-            .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))
-            .collect::<Result<Vec<_>>>()?;
-
-        let krb5_neg_token_init = ApplicationTag0(KrbMessage {
-            krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-            krb5_token_id: TGT_REQ_TOKEN_ID,
-            krb_msg: TgtReq {
-                pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-                msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
-                server_name: ExplicitContextTag2::from(PrincipalName {
-                    name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                    name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(sname)),
-                }),
-            },
-        });
-
-        Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&krb5_neg_token_init)?,
-        )))
-    } else {
-        None
-    };
-
-    Ok(ApplicationTag0(GssApiNegInit {
-        oid: ObjectIdentifierAsn1::from(oids::spnego()),
-        neg_token_init: ExplicitContextTag0::from(NegTokenInit {
-            mech_types: Optional::from(Some(ExplicitContextTag0::from(get_mech_list()))),
-            req_flags: Optional::from(None),
-            mech_token: Optional::from(mech_token),
-            mech_list_mic: Optional::from(None),
-        }),
-    }))
-}
-
-pub fn generate_krb_blob(ap_req: ApReq, mech_id: oid::ObjectIdentifier) -> Result<Vec<u8>> {
-    let krb_blob = ApplicationTag0(KrbMessage {
-        krb5_oid: ObjectIdentifierAsn1::from(mech_id),
-        krb5_token_id: AP_REQ_TOKEN_ID,
-        krb_msg: ap_req,
-    });
-
-    Ok(picky_asn1_der::to_vec(&krb_blob)?)
-}
-
 #[instrument(level = "trace", ret)]
 pub fn generate_krb_priv_request(
     ticket: Ticket,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     new_password: &[u8],
     authenticator: &Authenticator,
     enc_params: &EncryptionParams,
