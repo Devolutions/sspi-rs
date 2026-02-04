@@ -52,6 +52,9 @@ cryptoki = { version = "0.10", optional = true }
 symbol-rename-macro = { path = "./symbol-rename-macro" }
 windows = { version = "0.62", features = ["Win32_Security_Cryptography", "Win32_Security_Credentials", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_Security"] }
 
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
+
 [target.'cfg(not(windows))'.dependencies]
 bitflags = { workspace = true, optional = true }
 
