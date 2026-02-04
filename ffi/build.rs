@@ -11,16 +11,16 @@ mod win {
     fn generate_version_rc() -> String {
         let version = env::var("CARGO_PKG_VERSION").unwrap();
         let version_parts: Vec<&str> = version.split('.').collect();
-        
+
         // Pad to 4 components (e.g., "0.18.7" -> "0.18.7.0")
         let mut version_numbers = version_parts.clone();
         while version_numbers.len() < 4 {
             version_numbers.push("0");
         }
-        
+
         let version_commas = version_numbers.join(",");
         let version_dots = version_numbers.join(".");
-        
+
         let company_name = "Devolutions Inc.";
         let file_description = "Devolutions SSPI";
         let product_name = "Devolutions SSPI";
