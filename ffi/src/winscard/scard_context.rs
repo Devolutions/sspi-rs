@@ -73,7 +73,7 @@ fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContex
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardestablishcontext)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `context` must be a properly-aligned pointer valid for writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
@@ -123,7 +123,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `context` must be a valid pointer to a memory region that is allocated by [`SCardEstablishContext`] function.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardisvalidcontext)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
@@ -206,7 +206,7 @@ pub extern "system" fn SCardListReaderGroupsW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
@@ -250,7 +250,7 @@ pub unsafe extern "system" fn SCardListReadersA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersW)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
@@ -316,7 +316,7 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsa)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
@@ -382,7 +382,7 @@ pub unsafe extern "system" fn SCardListCardsA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
@@ -494,7 +494,7 @@ pub extern "system" fn SCardGetProviderIdW(
 ///
 /// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamea)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
@@ -557,7 +557,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 ///
 /// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
@@ -797,7 +797,7 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardfreememory)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
@@ -986,7 +986,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangea)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `rg_reader_state` must point to an array of valid [`ScardReaderStateA`](ffi_types::winscard::ScardReaderStateA) structures.
@@ -1058,7 +1058,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `rg_reader_state` must point to an array of valid [`ScardReaderStateW`](ffi_types::winscard::ScardReaderStateW) structures.
@@ -1131,7 +1131,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
@@ -1202,7 +1202,7 @@ unsafe fn read_cache(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachea)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1247,7 +1247,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1343,7 +1343,7 @@ unsafe fn write_cache(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachea)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1386,7 +1386,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1470,7 +1470,7 @@ unsafe fn get_reader_icon(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericona)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
@@ -1511,7 +1511,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericonw)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
@@ -1576,7 +1576,7 @@ unsafe fn get_device_type_id(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeida)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
@@ -1614,7 +1614,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.

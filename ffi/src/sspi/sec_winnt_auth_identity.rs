@@ -1106,7 +1106,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspiencodestringsasauthidentity)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `psz_user_name` must be a non-null pointer to a valid, null-terminated C string representing the username.
 /// - `psz_domain_name` must be a non-null pointer to a valid, null-terminated C string representing the domain name.
@@ -1202,7 +1202,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspifreeauthidentity)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `auth_data` must be a valid pointer to the identity structure allocated by an SSPI function.
 #[allow(clippy::missing_safety_doc)]
