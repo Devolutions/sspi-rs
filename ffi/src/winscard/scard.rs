@@ -665,7 +665,7 @@ pub unsafe extern "system" fn SCardGetAttrib(
 
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
         ErrorKind::InvalidParameter,
-        format!("invalid attribute id: {}", dw_attr_id)
+        format!("invalid attribute id: {dw_attr_id}")
     )));
 
     let scard = try_execute!(
@@ -718,7 +718,7 @@ pub unsafe extern "system" fn SCardSetAttrib(
     let attr_data = unsafe { from_raw_parts(pb_attr, cb_attr_len.try_into().unwrap()) };
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
         ErrorKind::InvalidParameter,
-        format!("Invalid attribute id: {}", dw_attr_id)
+        format!("Invalid attribute id: {dw_attr_id}")
     )));
     let scard = try_execute!(
         // SAFETY: `handle` is a valid raw scard context handle.

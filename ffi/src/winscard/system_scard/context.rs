@@ -833,7 +833,7 @@ impl WinScardContext for SystemScardContext {
             self.cache
                 .get(key)
                 .map(|item| Cow::Borrowed(item.as_slice()))
-                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
+                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
         }
         #[cfg(target_os = "windows")]
         {
