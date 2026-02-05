@@ -20,7 +20,7 @@ pub struct NegotiateConfig {
 impl NegotiateConfig {
     /// package_list format, "kerberos,ntlm,pku2u"
     pub fn new(
-        protocol_config: Box<dyn ProtocolConfig + Send>,
+        protocol_config: Box<dyn ProtocolConfig>,
         package_list: Option<String>,
         client_computer_name: String,
     ) -> Self {
