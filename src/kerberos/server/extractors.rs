@@ -43,10 +43,7 @@ pub(super) fn decode_initial_neg_init(data: &[u8]) -> Result<(Option<TgtReq>, Me
         if *token_oid != krb5_u2u {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
-                format!(
-                    "invalid oid inside mech_token: expected krb5 u2u ({:?}) but got {:?}",
-                    krb5_u2u, token_oid
-                ),
+                format!("invalid oid inside mech_token: expected krb5 u2u ({krb5_u2u:?}) but got {token_oid:?}"),
             ));
         }
 
@@ -191,7 +188,7 @@ pub(super) fn client_upn(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> 
     } else {
         Err(Error::new(
             ErrorKind::InvalidToken,
-            format!("unsupported principal name type: {:?}", name_type),
+            format!("unsupported principal name type: {name_type:?}"),
         ))
     }
 }

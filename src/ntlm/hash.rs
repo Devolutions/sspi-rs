@@ -65,10 +65,10 @@ impl NtlmHash {
     pub(crate) fn to_sspi_password(self) -> String {
         let mut hex = String::with_capacity(self.0.len() * 2);
         for byte in &self.0 {
-            hex.push_str(&format!("{:02x}", byte));
+            hex.push_str(&format!("{byte:02x}"));
         }
 
-        format!("{NTLM_HASH_PREFIX}{}", hex)
+        format!("{NTLM_HASH_PREFIX}{hex}")
     }
 }
 

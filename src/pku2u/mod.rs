@@ -516,8 +516,7 @@ impl Pku2u {
                         return Err(Error::new(
                             ErrorKind::InvalidToken,
                             format!(
-                                "The server selected unsupported auth scheme {:?}. The only one supported auth scheme: {}",
-                                auth_scheme, DEFAULT_NEGOEX_AUTH_SCHEME
+                                "The server selected unsupported auth scheme {auth_scheme:?}. The only one supported auth scheme: {DEFAULT_NEGOEX_AUTH_SCHEME}"
                             ),
                         ));
                     }
@@ -569,7 +568,7 @@ impl Pku2u {
                             .map_err(|err| {
                                 Error::new(
                                     ErrorKind::InternalError,
-                                    format!("Cannot calculate signer info signature: {:?}", err),
+                                    format!("Cannot calculate signer info signature: {err:?}"),
                                 )
                             })
                     }),

@@ -27,7 +27,7 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
             };
 
             let destination = CString::new(destination.as_str())
-                .map_err(|err| Error::new(ErrorKind::InvalidData, format!("invalid destination url: {:?}", err)))?;
+                .map_err(|err| Error::new(ErrorKind::InvalidData, format!("invalid destination url: {err:?}")))?;
             let mut token_len = 2048;
             let mut token_buf = vec![0; 2048];
 
@@ -49,8 +49,7 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
 
             if status != 0 {
                 return Err(Error::other(format!(
-                    "failed to get the session token. error code {:#x?}",
-                    status
+                    "failed to get the session token. error code {status:#x?}"
                 )));
             }
 
@@ -59,7 +58,7 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
                 .map_err(|err| {
                     Error::new(
                         ErrorKind::InvalidData,
-                        format!("session token must be UTF-8 valid data but it is not: {:?}", err),
+                        format!("session token must be UTF-8 valid data but it is not: {err:?}"),
                     )
                 })
         })

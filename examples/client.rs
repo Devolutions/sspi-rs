@@ -24,8 +24,7 @@ fn main() -> Result<(), io::Error> {
 
     let account_name = whoami::username();
     let computer_name = whoami::fallible::hostname().unwrap();
-    let username =
-        Username::new(&account_name, Some(&computer_name)).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let username = Username::new(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
 
     let identity = AuthIdentity {
         username,
@@ -50,7 +49,7 @@ fn main() -> Result<(), io::Error> {
     println!("Receiving the data...");
     read_message(&mut stream, &mut data)?;
 
-    println!("Encrypted message: {:?}", data);
+    println!("Encrypted message: {data:?}");
 
     let mut msg_buffer = vec![
         SecurityBufferRef::token_buf(&mut trailer),

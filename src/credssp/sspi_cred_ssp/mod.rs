@@ -436,7 +436,7 @@ impl SspiCredSsp {
                             target_hostname.to_owned().try_into().map_err(|e| {
                                 Error::new(
                                     ErrorKind::InvalidParameter,
-                                    format!("provided target name is not valid DNS name: {:?}", e),
+                                    format!("provided target name is not valid DNS name: {e:?}"),
                                 )
                             })?,
                         )
@@ -524,10 +524,10 @@ impl SspiCredSsp {
 
                     ts_request.client_nonce = self.nonce;
 
-                    if let Some(nego_tokens) = &ts_request.nego_tokens {
-                        if nego_tokens.is_empty() {
-                            ts_request.nego_tokens = None;
-                        }
+                    if let Some(nego_tokens) = &ts_request.nego_tokens
+                        && nego_tokens.is_empty()
+                    {
+                        ts_request.nego_tokens = None;
                     }
 
                     self.state = CredSspState::AuthInfo;

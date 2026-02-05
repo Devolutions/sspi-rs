@@ -51,7 +51,7 @@ impl AvPair {
                 if len != AV_PAIR_EOL_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got EOL AvPair with len {} != {}", len, AV_PAIR_EOL_SIZE),
+                        format!("Got EOL AvPair with len {len} != {AV_PAIR_EOL_SIZE}"),
                     ))
                 } else {
                     Ok(AvPair::EOL)
@@ -80,7 +80,7 @@ impl AvPair {
                 if len != AV_PAIR_FLAGS_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got Flags AvPair with len {} != {}", len, AV_PAIR_FLAGS_SIZE),
+                        format!("Got Flags AvPair with len {len} != {AV_PAIR_FLAGS_SIZE}"),
                     ))
                 } else {
                     Ok(AvPair::Flags(buffer.read_u32::<LittleEndian>()?))
@@ -90,7 +90,7 @@ impl AvPair {
                 if len != AV_PAIR_TIMESTAMP_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got Timestamp AvPair with len {} != {}", len, AV_PAIR_TIMESTAMP_SIZE),
+                        format!("Got Timestamp AvPair with len {len} != {AV_PAIR_TIMESTAMP_SIZE}"),
                     ))
                 } else {
                     Ok(AvPair::Timestamp(buffer.read_u64::<LittleEndian>()?))
@@ -103,7 +103,7 @@ impl AvPair {
                 if len < SINGLE_HOST_DATA_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got SingleHost AvPair with len {} < {}", len, SINGLE_HOST_DATA_SIZE),
+                        format!("Got SingleHost AvPair with len {len} < {SINGLE_HOST_DATA_SIZE}"),
                     ))
                 } else {
                     let mut value = [0x00; SINGLE_HOST_DATA_SIZE];
@@ -123,7 +123,7 @@ impl AvPair {
                 if len != HASH_SIZE {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got ChannelBindings AvPair with len {} != {}", len, HASH_SIZE),
+                        format!("Got ChannelBindings AvPair with len {len} != {HASH_SIZE}"),
                     ))
                 } else {
                     let mut value = [0x00; HASH_SIZE];
@@ -134,7 +134,7 @@ impl AvPair {
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid AvType: '{}'", av_type),
+                format!("Invalid AvType: '{av_type}'"),
             )),
         }
     }

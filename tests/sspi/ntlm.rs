@@ -74,7 +74,7 @@ mod nt_hash {
         let result = ntlm.initialize_security_context_impl(&mut builder);
 
         // Should succeed in creating NEGOTIATE message
-        assert!(result.is_ok(), "Failed to create NEGOTIATE message: {:?}", result);
+        assert!(result.is_ok(), "Failed to create NEGOTIATE message: {result:?}");
         let result = result.unwrap().resolve_to_result().unwrap();
         assert_eq!(result.status, sspi::SecurityStatus::ContinueNeeded);
         assert!(!output[0].buffer.is_empty(), "NEGOTIATE token should not be empty");

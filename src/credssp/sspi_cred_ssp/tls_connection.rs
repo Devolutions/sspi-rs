@@ -418,7 +418,7 @@ impl TlsConnection {
                         version => {
                             return Err(Error::new(
                                 ErrorKind::InternalError,
-                                format!("Unsupported connection protocol was used: {:?}", version),
+                                format!("Unsupported connection protocol was used: {version:?}"),
                             ));
                         }
                     },
@@ -431,7 +431,7 @@ impl TlsConnection {
                         version => {
                             return Err(Error::new(
                                 ErrorKind::InternalError,
-                                format!("Unsupported connection protocol was used: {:?}", version),
+                                format!("Unsupported connection protocol was used: {version:?}"),
                             ));
                         }
                     },

@@ -171,15 +171,13 @@ fn process_message_fields(
     if let Some(AvPair::ChannelBindings(hash)) = av_pairs
         .iter()
         .find(|av_pair| av_pair.as_u16() == AV_PAIR_CHANNEL_BINDINGS)
+        && let Some(channel_bindings) = channel_bindings.as_ref()
+        && compute_md5_channel_bindings_hash(channel_bindings) != *hash
     {
-        if let Some(channel_bindings) = channel_bindings.as_ref() {
-            if compute_md5_channel_bindings_hash(channel_bindings) != *hash {
-                return Err(crate::Error::new(
-                    crate::ErrorKind::BadBindings,
-                    "Channel bindings hash mismatch",
-                ));
-            }
-        }
+        return Err(crate::Error::new(
+            crate::ErrorKind::BadBindings,
+            "Channel bindings hash mismatch",
+        ));
     }
 
     // will not set workstation because it is not used anywhere

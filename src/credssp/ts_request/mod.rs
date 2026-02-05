@@ -134,7 +134,7 @@ impl TsRequest {
                 if length != NONCE_SIZE as u16 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got ClientNonce with invalid length: {}", length),
+                        format!("Got ClientNonce with invalid length: {length}"),
                     ));
                 }
 
@@ -208,8 +208,10 @@ impl TsRequest {
         }
 
         /* [5] clientNonce (OCTET STRING) */
-        if self.version >= 5 && self.client_nonce.is_some() {
-            ber::write_sequence_octet_string(&mut buffer, 5, self.client_nonce.as_ref().unwrap())?;
+        if self.version >= 5
+            && let Some(client_nonce) = self.client_nonce.as_ref()
+        {
+            ber::write_sequence_octet_string(&mut buffer, 5, client_nonce)?;
         }
 
         Ok(())
@@ -357,7 +359,7 @@ pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBu
         )),
         Some(cred_type) => Err(Error::new(
             ErrorKind::InvalidToken,
-            format!("Invalid or unsupported TsCredentials::cred_type value: {}", cred_type),
+            format!("Invalid or unsupported TsCredentials::cred_type value: {cred_type}"),
         )),
         None => Err(Error::new(
             ErrorKind::InvalidToken,

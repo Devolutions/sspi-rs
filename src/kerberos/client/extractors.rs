@@ -80,7 +80,7 @@ pub fn extract_session_key_from_tgs_rep(
 
     let enc_data = cipher
         .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0.0)
-        .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{:?}", e)))?;
+        .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{e:?}")))?;
 
     trace!(?enc_data, "Plain TgsRep::EncData");
 
@@ -206,7 +206,7 @@ pub fn extract_seq_number_from_ap_rep(
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
-                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
+                format!("cannot decrypt ap_rep.enc_part: {err:?}"),
             )
         })?;
 
@@ -239,7 +239,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
-                format!("cannot decrypt ap_rep.enc_part: {:?}", err),
+                format!("cannot decrypt ap_rep.enc_part: {err:?}"),
             )
         })?;
 

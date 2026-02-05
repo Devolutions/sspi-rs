@@ -23,7 +23,7 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
             .map_err(|err| {
                 Error::new(
                     ErrorKind::InternalError,
-                    format!("can not compress sc certificate: {:?}", err),
+                    format!("can not compress sc certificate: {err:?}"),
                 )
             })?;
 

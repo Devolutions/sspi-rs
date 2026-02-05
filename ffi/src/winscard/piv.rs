@@ -295,14 +295,14 @@ mod tests {
             8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
         ];
 
-        let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG.try_into().unwrap()).unwrap();
+        let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG).unwrap();
 
         assert_eq!(container_name, "1d8ac658-e065-92a0-85af-090b075fc105");
     }
 
     #[test]
     fn invalid_chuid() {
-        let cert_tag = winscard::PIV_CERT_TAG.try_into().unwrap();
+        let cert_tag = winscard::PIV_CERT_TAG;
 
         // Too short.
         let invalid_chuid = &[

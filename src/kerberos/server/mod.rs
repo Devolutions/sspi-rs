@@ -221,7 +221,7 @@ pub async fn accept_security_context(
 
             let now = OffsetDateTime::now_utc();
             let client_time = OffsetDateTime::try_from(ctime.0.0.clone())
-                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {:?}", err)))?;
+                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {err:?}")))?;
             let max_time_skew = server_data.max_time_skew;
 
             if (now - client_time).abs() > max_time_skew {
@@ -244,7 +244,7 @@ pub async fn accept_security_context(
             let ticket_start_time = OffsetDateTime::try_from(ticket_start_time).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("ticket end time is not valid: {:?}", err),
+                    format!("ticket end time is not valid: {err:?}"),
                 )
             })?;
             if ticket_start_time > now + max_time_skew {
@@ -257,7 +257,7 @@ pub async fn accept_security_context(
             let ticket_end_time = OffsetDateTime::try_from(ticket_enc_part.0.endtime.0.0).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("ticket end time is not valid: {:?}", err),
+                    format!("ticket end time is not valid: {err:?}"),
                 )
             })?;
             if now > ticket_end_time + max_time_skew {
@@ -308,7 +308,7 @@ pub async fn accept_security_context(
             }
             let ap_options =
                 u32::from_be_bytes(ap_options_bytes[1..].try_into().map_err(|err| {
-                    Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {:?}", err))
+                    Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {err:?}"))
                 })?);
             let ap_options = ApOptions::from_bits(ap_options)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "invalid ApReq ap-options"))?;

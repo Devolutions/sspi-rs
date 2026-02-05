@@ -191,7 +191,7 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 
 /// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The user must ensure that `p_auth_data` must be non-null and point to the valid [CredSspCred] structure.
 #[cfg(feature = "tsssp")]
@@ -253,7 +253,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             if result != ERROR_SUCCESS.0 {
                 return Err(Error::new(
                     ErrorKind::NoCredentials,
-                    format!("Can not get user credentials: {:0x?}", result),
+                    format!("Can not get user credentials: {result:0x?}"),
                 ));
             }
 
@@ -580,8 +580,8 @@ fn collect_smart_card_creds(
 
     let scard_type = env::var(SCARD_TYPE_ENV).map_err(|err| {
         let message = match err {
-            env::VarError::NotPresent => format!("failed to collect smart card credentials: {} env variable is not present. Process with password-based logon", SCARD_TYPE_ENV),
-            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", SCARD_TYPE_ENV),
+            env::VarError::NotPresent => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable is not present. Process with password-based logon"),
+            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable contains invalid unicode data. Process with password-based logon"),
         };
 
         Error::new(ErrorKind::NoCredentials, message)
@@ -623,8 +623,8 @@ fn collect_smart_card_creds(
 
             let pkcs11_module = env::var(PKCS11_MODULE_PATH_ENV).map_err(|err| {
                 let message = match err {
-                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {} env variable is not present. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
-                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
+                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable is not present. Process with password-based logon"),
+                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable contains invalid unicode data. Process with password-based logon"),
                 };
 
                 Error::new(ErrorKind::NoCredentials, message)
@@ -657,8 +657,7 @@ fn collect_smart_card_creds(
         scard_type => Err(Error::new(
             ErrorKind::NoCredentials,
             format!(
-                "failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon",
-                scard_type
+                "failed to collect smart card credentials: unsupported scard type: {scard_type}. Process with password-based logon"
             ),
         )),
     }
@@ -675,7 +674,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 /// This function calculated the size of the credentials represented by the `SEC_WINNT_AUTH_IDENTITY_EX2`
 /// structure.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
@@ -721,7 +720,7 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
     Ok(64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len)
 }
 
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
@@ -929,7 +928,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
 /// Unpacks raw credentials.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -956,7 +955,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
 /// Unpacks raw credentials when the `auth_data` length is known.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -1107,7 +1106,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspiencodestringsasauthidentity)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `psz_user_name` must be a non-null pointer to a valid, null-terminated C string representing the username.
 /// - `psz_domain_name` must be a non-null pointer to a valid, null-terminated C string representing the domain name.
@@ -1203,7 +1202,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspifreeauthidentity)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `auth_data` must be a valid pointer to the identity structure allocated by an SSPI function.
 #[allow(clippy::missing_safety_doc)]

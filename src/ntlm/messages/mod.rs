@@ -104,7 +104,7 @@ pub(super) fn read_ntlm_header(mut stream: impl io::Read, expected_message_type:
     if signature.as_ref() != NTLM_SIGNATURE {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
-            format!("Read NTLM signature is invalid: {:?}", signature),
+            format!("Read NTLM signature is invalid: {signature:?}"),
         ));
     }
     if message_type != expected_message_type as u32 {

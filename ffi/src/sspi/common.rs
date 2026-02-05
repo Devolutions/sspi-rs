@@ -23,7 +23,7 @@ use crate::utils::into_raw_ptr;
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecredentialshandle)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// `ph_credentials` must be a non-null pointer, allocated by the `AcquireCredentialsHandleA/W` function.
 #[instrument(skip_all)]
@@ -56,7 +56,7 @@ pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> Sec
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `ph_credential` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`](crate::sspi::sec_handle::AcquireCredentialsHandleA)
 ///   or [`AcquireCredentialsHandleW`](crate::sspi::sec_handle::AcquireCredentialsHandleW).
@@ -200,7 +200,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
@@ -267,7 +267,7 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-deletesecuritycontext)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
@@ -374,7 +374,7 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecontextbuffer)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// The `pv_context_buffer` must point to a memory allocated by an SSPI function.
 #[instrument(skip_all)]
@@ -421,7 +421,7 @@ pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -508,7 +508,7 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBuff
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -598,7 +598,7 @@ pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDes
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
-/// # Safety:
+/// # # Safety
 ///
 /// After this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.

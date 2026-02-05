@@ -299,6 +299,6 @@ mod tests {
             },
         ]);
         let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes).unwrap();
-        println!("{:?}", encoded_signed_attributes);
+        println!("{encoded_signed_attributes:?}");
     }
 }

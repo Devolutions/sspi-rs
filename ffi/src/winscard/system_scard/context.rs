@@ -752,7 +752,7 @@ impl WinScardContext for SystemScardContext {
             DeviceTypeId::from_u32(device_type_id).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
-                    format!("WinSCard has returned invalid device type id: {}", device_type_id),
+                    format!("WinSCard has returned invalid device type id: {device_type_id}"),
                 )
             })
         }
@@ -833,7 +833,7 @@ impl WinScardContext for SystemScardContext {
             self.cache
                 .get(key)
                 .map(|item| Cow::Borrowed(item.as_slice()))
-                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
+                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
         }
         #[cfg(target_os = "windows")]
         {

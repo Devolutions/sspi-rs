@@ -77,10 +77,7 @@ impl WinScardContextHandle {
         // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
-            return Err(Error::new(
-                ErrorKind::NoMemory,
-                format!("cannot allocate {} bytes", size),
-            ));
+            return Err(Error::new(ErrorKind::NoMemory, format!("cannot allocate {size} bytes")));
         }
         self.allocations.push(buff as usize);
 
@@ -548,8 +545,7 @@ pub(super) unsafe fn copy_io_request_to_scard_io_request(
         return Err(Error::new(
             ErrorKind::InsufficientBuffer,
             format!(
-                "ScardIoRequest::cb_pci_length is too small. Expected at least {} but got {}",
-                pci_info_len, scard_pci_info_len
+                "ScardIoRequest::cb_pci_length is too small. Expected at least {pci_info_len} but got {scard_pci_info_len}"
             ),
         ));
     }

@@ -131,7 +131,7 @@ impl From<KeyError> for Error {
     fn from(value: KeyError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("error: an unexpected KeyError happened: {}", value),
+            format!("error: an unexpected KeyError happened: {value}"),
         )
     }
 }
@@ -140,7 +140,7 @@ impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected RsaError happened: {}", value),
+            format!("Error: an unexpected RsaError happened: {value}"),
         )
     }
 }
@@ -149,7 +149,7 @@ impl From<TlvError> for Error {
     fn from(value: TlvError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("error: an unexpected TlvError happened: {}", value),
+            format!("error: an unexpected TlvError happened: {value}"),
         )
     }
 }
@@ -158,14 +158,14 @@ impl From<TryFromIntError> for Error {
     fn from(value: TryFromIntError) -> Self {
         Error::new(
             ErrorKind::InsufficientBuffer,
-            format!("error: can not convert integers: {}", value),
+            format!("error: can not convert integers: {value}"),
         )
     }
 }
 
 impl From<CertError> for Error {
     fn from(value: CertError) -> Self {
-        Error::new(ErrorKind::InsufficientBuffer, format!("certificate error: {}", value))
+        Error::new(ErrorKind::InsufficientBuffer, format!("certificate error: {value}"))
     }
 }
 
