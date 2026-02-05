@@ -101,7 +101,7 @@ pub(crate) async fn accept_security_context(
             let mut creds_handle = builder.credentials_handle.as_ref().and_then(|creds| (*creds).clone());
             let mut result = match &mut negotiate.protocol {
                 NegotiatedProtocol::Pku2u(pku2u) => {
-                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.auth_identity());
+                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
                     let new_builder: FilledAcceptSecurityContext<'_, Option<crate::AuthIdentityBuffers>> =
                         EmptyAcceptSecurityContext::new()
                             .with_context_requirements(builder.context_requirements)
@@ -121,7 +121,7 @@ pub(crate) async fn accept_security_context(
                     kerberos.accept_security_context_impl(yield_point, new_builder).await?
                 }
                 NegotiatedProtocol::Ntlm(ntlm) => {
-                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.auth_identity());
+                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
                     let new_builder = EmptyAcceptSecurityContext::new()
                         .with_credentials_handle(&mut creds_handle)
                         .with_context_requirements(builder.context_requirements)

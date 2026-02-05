@@ -545,7 +545,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 self.state = CredSspState::Final;
 
                 let auth_identity = try_cred_ssp_server!(
-                    AuthIdentity::try_from(read_credentials.auth_identity().unwrap())
+                    AuthIdentity::try_from(read_credentials.into_auth_identity().unwrap())
                         .map_err(|e| Error::new(ErrorKind::InvalidParameter, e)),
                     ts_request
                 );
@@ -845,7 +845,7 @@ impl<'a> SspiContext {
                     .credentials_handle
                     .as_ref()
                     .and_then(|creds| (*creds).clone())
-                    .and_then(|creds_handle| creds_handle.auth_identity());
+                    .and_then(|creds_handle| creds_handle.into_auth_identity());
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
                 pku2u.accept_security_context_impl(yield_point, new_builder).await
             }

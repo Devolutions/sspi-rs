@@ -433,7 +433,7 @@ pub enum CredentialsBuffers {
 }
 
 impl CredentialsBuffers {
-    pub fn auth_identity(self) -> Option<AuthIdentityBuffers> {
+    pub fn into_auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
             #[cfg(feature = "scard")]
