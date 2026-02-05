@@ -147,35 +147,19 @@ impl PackageListConfig {
 
 impl Negotiate {
     pub fn new_client(config: NegotiateConfig) -> Result<Self> {
-        let mode = NegotiateMode::Client;
-        let mut protocol = config.protocol_config.new_instance()?;
-
-        let package_list = PackageListConfig::parse(&config.package_list);
-        if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, true)?
-        {
-            protocol = filtered_protocol;
-        }
-
-        Ok(Negotiate {
-            state: Default::default(),
-            protocol,
-            package_list,
-            auth_identity: None,
-            client_computer_name: config.client_computer_name,
-            mode,
-            mech_types: Default::default(),
-            mic_verified: false,
-        })
+        Self::new(config, NegotiateMode::Client)
     }
 
     pub fn new_server(config: NegotiateConfig, auth_data: Vec<AuthIdentity>) -> Result<Self> {
-        let mode = NegotiateMode::Server(auth_data);
+        Self::new(config, NegotiateMode::Server(auth_data))
+    }
+
+    fn new(config: NegotiateConfig, mode: NegotiateMode) -> Result<Self> {
         let mut protocol = config.protocol_config.new_instance()?;
 
         let package_list = PackageListConfig::parse(&config.package_list);
         if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, false)?
+            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, mode.is_client())?
         {
             protocol = filtered_protocol;
         }

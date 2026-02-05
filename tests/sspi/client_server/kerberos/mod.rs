@@ -282,13 +282,13 @@ fn kerberos_auth() {
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(SERVER_COMPUTER_NAME.into()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
@@ -375,7 +375,7 @@ fn spnego_kerberos_u2u() {
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
         Box::new(client_config.clone()),
@@ -388,7 +388,7 @@ fn spnego_kerberos_u2u() {
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
@@ -475,7 +475,7 @@ fn spnego_kerberos() {
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
         Box::new(client_config.clone()),
@@ -486,7 +486,7 @@ fn spnego_kerberos() {
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),

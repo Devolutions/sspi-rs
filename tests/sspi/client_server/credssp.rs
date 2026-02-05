@@ -130,12 +130,12 @@ fn credssp_kerberos() {
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
