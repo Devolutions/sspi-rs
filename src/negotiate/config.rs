@@ -18,7 +18,17 @@ pub struct NegotiateConfig {
 }
 
 impl NegotiateConfig {
-    /// package_list format, "kerberos,ntlm,pku2u"
+    /// Creates a new instance of [NegotiateConfig].
+    ///
+    /// `package_list` specified allowed security packages for user authorization.
+    /// Security packages are specified as a comma-separated list of package names in lowercase.
+    /// If the security package is not allowed, then prepend '!' to its name. Examples:
+    ///
+    /// - "kerberos,ntlm" - allows both Kerberos and NTLM.
+    /// - "kerberos,!ntlm" - allows Kerberos but not NTLM. Forces the use of Kerberos.
+    /// - "!kerberos,ntlm" - allows NTLM but not Kerberos. Forces the use of NTLM.
+    ///
+    /// If `package_list` is None, then all packages are allowed and Kerberos is preferred.
     pub fn new(
         protocol_config: Box<dyn ProtocolConfig>,
         package_list: Option<String>,
