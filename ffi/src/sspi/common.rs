@@ -279,7 +279,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        let mut sspi_context_ptr = try_execute!(
+        let sspi_context_ptr = try_execute!(
             // SAFETY:
             // - `ph_context` is convertible to a reference.
             // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
