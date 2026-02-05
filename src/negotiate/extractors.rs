@@ -4,7 +4,8 @@ use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MechTypeLis
 use picky_krb::messages::TgtReq;
 
 use crate::negotiate::PackageListConfig;
-use crate::{Error, ErrorKind, NegotiatedProtocol};
+use crate::ntlm::NtlmConfig;
+use crate::{Error, ErrorKind, NegotiatedProtocol, Ntlm};
 
 /// Extract TGT request and mech types from the first token returned by the Kerberos client.
 #[instrument(ret, level = "trace")]
@@ -82,9 +83,11 @@ pub(super) fn negotiate_mech_type(
 
     let ntlm_oid = oids::ntlm_ssp();
     if mech_list.0.iter().any(|mech_type| mech_type.0 == ntlm_oid) && package_list.ntlm {
-        if internal_protocol.is_kerberos() {
+        if let NegotiatedProtocol::Kerberos(kerberos) = internal_protocol {
             // Negotiate is configured to use Kerberos, but only NTLM is possible (fallback to NTLM).
-            *internal_protocol = NegotiatedProtocol::Ntlm(Default::default());
+            *internal_protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig {
+                client_computer_name: kerberos.config.client_computer_name.clone(),
+            }));
         }
 
         return Ok(ntlm_oid);
