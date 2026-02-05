@@ -438,6 +438,14 @@ impl Negotiate {
 }
 
 impl<'a> Negotiate {
+    pub(crate) async fn accept_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: crate::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<crate::AcceptSecurityContextResult> {
+        server::accept_security_context(self, yield_point, builder).await
+    }
+
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
@@ -489,25 +497,20 @@ impl Sspi for Negotiate {
         &mut self,
         flags: crate::EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<SecurityStatus> {
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.encrypt_message(flags, message, sequence_number),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.encrypt_message(flags, message),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.encrypt_message(flags, message),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.encrypt_message(flags, message),
         }
     }
 
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.decrypt_message(message),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.decrypt_message(message),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.decrypt_message(message),
         }
     }
 

@@ -22,7 +22,7 @@ use sspi::{
 use url::Url;
 
 use crate::client_server::kerberos::kdc::{
-    KdcMock, PasswordCreds, UserName, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW,
+    KdcMock, PasswordCreds, UserName, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW, SERVER_COMPUTER_NAME,
 };
 use crate::client_server::kerberos::network_client::NetworkClientMock;
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
@@ -220,16 +220,16 @@ fn run_kerberos(
             network_client,
         );
 
-        let (_, token) =
-            accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
-        client_in_token = token;
-
         if client_status == SecurityStatus::Ok {
             test_encryption(client, server);
             test_stream_buffer_encryption(client, server);
             test_rpc_request_encryption(client, server);
             return;
         }
+
+        let (_, token) =
+            accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
+        client_in_token = token;
     }
 
     panic!("Kerberos authentication should not exceed 3 steps");
@@ -281,19 +281,19 @@ fn kerberos_auth() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-I7E8EFA.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse("tcp://192.168.1.103:88").unwrap()),
-        client_computer_name: Some("DESKTOP-8F33RFH.example.com".into()),
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: Some(SERVER_COMPUTER_NAME.into()),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
-        ticket_decryption_key: Some(ticket_decryption_key),
+        ticket_decryption_key: Some(ticket_decryption_key.into()),
         service_name: target_service_name,
         user: None,
         client: None,
@@ -329,7 +329,7 @@ fn kerberos_auth() {
 }
 
 #[test]
-fn kerberos_u2u_auth() {
+fn spnego_kerberos_u2u() {
     let KrbEnvironment {
         realm,
         credentials,
@@ -338,6 +338,12 @@ fn kerberos_u2u_auth() {
         target_name,
         target_service_name,
     } = init_krb_environment();
+
+    let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+
+    let identity_1 = credentials.clone().auth_identity().unwrap();
+    let mut identity_2 = identity_1.clone();
+    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(
         realm,
@@ -371,24 +377,42 @@ fn kerberos_u2u_auth() {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
         client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
-    let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
+    let spnego_client = Negotiate::new_client(NegotiateConfig::new(
+        Box::new(client_config.clone()),
+        Some(String::from("kerberos,!ntlm")),
+        CLIENT_COMPUTER_NAME.into(),
+    ))
+    .unwrap();
+
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
         client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
     };
     let server_properties = ServerProperties {
-        mech_types: MechTypeList::default(),
+        mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
-        ticket_decryption_key: None,
+        ticket_decryption_key: Some(ticket_decryption_key.into()),
         service_name: target_service_name,
-        user: None,
+        user: Some(credentials.clone()),
         client: None,
         authenticators_cache: HashSet::new(),
     };
-    let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+    let kerberos_server_config = KerberosServerConfig {
+        kerberos_config: server_config,
+        server_properties,
+    };
+    let spnego_server = Negotiate::new_server(
+        NegotiateConfig::new(
+            Box::new(kerberos_server_config),
+            Some(String::from("kerberos,!ntlm")),
+            SERVER_COMPUTER_NAME.into(),
+        ),
+        vec![identity_1, identity_2],
+    )
+    .unwrap();
 
-    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 
@@ -406,11 +430,11 @@ fn kerberos_u2u_auth() {
         | ServerRequestFlags::CONFIDENTIALITY;
 
     run_kerberos(
-        &mut SspiContext::Kerberos(kerberos_client),
+        &mut SspiContext::Negotiate(spnego_client),
         &mut client_credentials_handle,
         client_flags,
         &target_name,
-        &mut SspiContext::Kerberos(kerberos_server),
+        &mut SspiContext::Negotiate(spnego_server),
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
@@ -467,7 +491,7 @@ fn spnego_kerberos() {
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
-        ticket_decryption_key: Some(ticket_decryption_key),
+        ticket_decryption_key: Some(ticket_decryption_key.into()),
         service_name: target_service_name,
         user: None,
         client: None,
@@ -481,7 +505,7 @@ fn spnego_kerberos() {
         NegotiateConfig::new(
             Box::new(kerberos_server_config),
             Some(String::from("kerberos,!ntlm")),
-            "WIN-956CQOSSJTF.example.com".into(),
+            SERVER_COMPUTER_NAME.into(),
         ),
         vec![identity_1, identity_2],
     )

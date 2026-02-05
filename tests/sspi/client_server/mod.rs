@@ -19,10 +19,8 @@ fn test_encryption(client: &mut SspiContext, server: &mut SspiContext) {
         SecurityBufferRef::data_buf(data.as_mut_slice()),
     ];
 
-    client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-        .unwrap();
-    server.decrypt_message(&mut message, 0).unwrap();
+    client.encrypt_message(EncryptionFlags::empty(), &mut message).unwrap();
+    server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(plain_message, message[1].data());
 }
@@ -39,9 +37,7 @@ fn test_stream_buffer_encryption(client: &mut SspiContext, server: &mut SspiCont
         SecurityBufferRef::data_buf(data.as_mut_slice()),
     ];
 
-    client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-        .unwrap();
+    client.encrypt_message(EncryptionFlags::empty(), &mut message).unwrap();
 
     let mut buffer = message[0].data().to_vec();
     buffer.extend_from_slice(message[1].data());
@@ -51,7 +47,7 @@ fn test_stream_buffer_encryption(client: &mut SspiContext, server: &mut SspiCont
         SecurityBufferRef::data_buf(&mut []),
     ];
 
-    server.decrypt_message(&mut message, 0).unwrap();
+    server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(message[1].data(), plain_message);
 }
@@ -86,14 +82,12 @@ fn test_rpc_request_encryption(client: &mut SspiContext, server: &mut SspiContex
         SecurityBufferRef::token_buf(&mut token_data),
     ];
 
-    client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
-        .unwrap();
+    client.encrypt_message(EncryptionFlags::empty(), &mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(trailer[..], message[2].data()[..]);
 
-    server.decrypt_message(&mut message, 0).unwrap();
+    server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(message[1].data(), plaintext);

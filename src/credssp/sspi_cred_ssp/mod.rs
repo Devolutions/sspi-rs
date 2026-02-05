@@ -156,7 +156,6 @@ impl Sspi for SspiCredSsp {
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
@@ -188,12 +187,8 @@ impl Sspi for SspiCredSsp {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
         // https://learn.microsoft.com/en-us/windows/win32/secauthn/decryptmessage--schannel

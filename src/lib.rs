@@ -594,7 +594,7 @@ where
     ///
     /// # #[allow(unused_variables)]
     /// let result = ntlm
-    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg_buffer, 0).unwrap();
+    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg_buffer).unwrap();
     ///
     /// println!("Encrypted: {:?}", msg_buffer[1].data());
     /// ```
@@ -611,7 +611,6 @@ where
         &mut self,
         flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
     /// Generates a cryptographic checksum of the message, and also includes sequencing information to prevent message loss or insertion.
@@ -932,7 +931,7 @@ where
     /// ];
     ///
     /// let _result = server_ntlm
-    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
+    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg).unwrap();
     ///
     /// let [mut token, mut data] = msg;
     ///
@@ -943,7 +942,7 @@ where
     ///
     /// #[allow(unused_variables)]
     /// let encryption_flags = ntlm
-    ///     .decrypt_message(&mut msg_buffer, 0)
+    ///     .decrypt_message(&mut msg_buffer)
     ///     .unwrap();
     ///
     /// println!("Decrypted message: {:?}", msg_buffer[1].data());
@@ -952,11 +951,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///

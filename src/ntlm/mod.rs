@@ -517,7 +517,6 @@ impl Sspi for Ntlm {
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
@@ -553,12 +552,8 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> crate::Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }

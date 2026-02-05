@@ -828,9 +828,7 @@ impl<'a> SspiContext {
                 ntlm.accept_security_context_impl(new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.accept_security_context_impl(yield_point, builder).await,
-            SspiContext::Negotiate(negotiate) => {
-                negotiate::server::accept_security_context(negotiate, yield_point, builder).await
-            }
+            SspiContext::Negotiate(negotiate) => negotiate.accept_security_context_impl(yield_point, builder).await,
             SspiContext::Pku2u(pku2u) => {
                 let mut creds_handle = builder
                     .credentials_handle
@@ -900,31 +898,26 @@ impl Sspi for SspiContext {
         &mut self,
         flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
-            SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
-            SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message, sequence_number),
-            SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message, sequence_number),
+            SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message),
+            SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message),
+            SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message),
+            SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message),
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.encrypt_message(flags, message, sequence_number),
+            SspiContext::CredSsp(credssp) => credssp.encrypt_message(flags, message),
         }
     }
 
     #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> crate::Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
-            SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
-            SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message, sequence_number),
-            SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
+            SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message),
+            SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message),
+            SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message),
+            SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message),
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.decrypt_message(message, sequence_number),
+            SspiContext::CredSsp(credssp) => credssp.decrypt_message(message),
         }
     }
 
@@ -1283,7 +1276,7 @@ impl CredSspContext {
         ];
 
         self.sspi_context
-            .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)?;
+            .encrypt_message(EncryptionFlags::empty(), &mut buffers)?;
 
         let mut output = SecurityBufferRef::find_buffer(&buffers, BufferType::Token)?
             .data()
@@ -1301,7 +1294,7 @@ impl CredSspContext {
             SecurityBufferRef::token_buf(signature),
         ];
 
-        self.sspi_context.decrypt_message(&mut buffers, 0)?;
+        self.sspi_context.decrypt_message(&mut buffers)?;
 
         let output = SecurityBufferRef::buf_data(&buffers, BufferType::Data)?.to_vec();
 

@@ -44,7 +44,7 @@ impl Clone for NegotiateConfig {
     fn clone(&self) -> Self {
         Self {
             protocol_config: self.protocol_config.box_clone(),
-            package_list: None,
+            package_list: self.package_list.clone(),
             client_computer_name: self.client_computer_name.clone(),
         }
     }

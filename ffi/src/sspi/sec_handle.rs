@@ -146,19 +146,12 @@ impl Sspi for SspiHandle {
         &mut self,
         flags: sspi::EncryptionFlags,
         message: &mut [sspi::SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<sspi::SecurityStatus> {
-        self.sspi_context
-            .lock()?
-            .encrypt_message(flags, message, sequence_number)
+        self.sspi_context.lock()?.encrypt_message(flags, message)
     }
 
-    fn decrypt_message(
-        &mut self,
-        message: &mut [sspi::SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<sspi::DecryptionFlags> {
-        self.sspi_context.lock()?.decrypt_message(message, sequence_number)
+    fn decrypt_message(&mut self, message: &mut [sspi::SecurityBufferRef<'_>]) -> Result<sspi::DecryptionFlags> {
+        self.sspi_context.lock()?.decrypt_message(message)
     }
 
     fn query_context_sizes(&mut self) -> Result<sspi::ContextSizes> {

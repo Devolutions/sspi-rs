@@ -21,7 +21,7 @@ fn stream_buffer_decryption() {
     ];
 
     kerberos_server
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+        .encrypt_message(EncryptionFlags::empty(), &mut message)
         .unwrap();
 
     let mut buffer = message[0].data().to_vec();
@@ -32,7 +32,7 @@ fn stream_buffer_decryption() {
         SecurityBufferRef::data_buf(&mut []),
     ];
 
-    kerberos_client.decrypt_message(&mut message, 0).unwrap();
+    kerberos_client.decrypt_message(&mut message).unwrap();
 
     assert_eq!(message[1].data(), plain_message);
 }
@@ -125,7 +125,7 @@ fn secbuffer_readonly_with_checksum() {
         SecurityBufferRef::token_buf(&mut token_data),
     ];
 
-    kerberos_server.decrypt_message(&mut message, 0).unwrap();
+    kerberos_server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(plaintext[..], message[1].data()[..]);
@@ -167,13 +167,13 @@ fn rpc_request_encryption() {
     ];
 
     kerberos_client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+        .encrypt_message(EncryptionFlags::empty(), &mut message)
         .unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(trailer[..], message[2].data()[..]);
 
-    kerberos_server.decrypt_message(&mut message, 0).unwrap();
+    kerberos_server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(message[1].data(), plaintext);

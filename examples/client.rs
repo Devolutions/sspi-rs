@@ -57,7 +57,7 @@ fn main() -> Result<(), io::Error> {
         SecurityBufferRef::data_buf(&mut data),
     ];
 
-    let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer, 0)?;
+    let _decryption_flags = ntlm.decrypt_message(&mut msg_buffer)?;
 
     println!("Decrypting...");
     println!(

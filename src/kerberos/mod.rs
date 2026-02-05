@@ -233,12 +233,11 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags, _sequence_number))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
     ) -> Result<SecurityStatus> {
         if self.state != KerberosState::Final {
             return Err(Error::new(
@@ -353,12 +352,8 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         if self.state != KerberosState::Final {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,

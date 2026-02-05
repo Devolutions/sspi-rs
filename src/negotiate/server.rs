@@ -216,14 +216,13 @@ fn prepare_final_neg_token(
         None
     };
 
-    let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
     let neg_token_targ = generate_final_neg_token_targ(
         neg_result,
         response_token,
         Some(
             negotiate
                 .protocol
-                .generate_mic_token(&mech_types, crate::private::Sealed)?,
+                .generate_mic_token(&negotiate.mech_types, crate::private::Sealed)?,
         ),
     );
 
