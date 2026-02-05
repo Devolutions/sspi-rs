@@ -22,9 +22,9 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
     CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
-    SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
-    SspiImpl, PACKAGE_ID_NONE,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Secret,
+    SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags,
+    Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -87,8 +87,8 @@ pub struct Ntlm {
 
     signing: bool, // integrity
     sealing: bool, // confidentiality
-    send_signing_key: [u8; HASH_SIZE],
-    recv_signing_key: [u8; HASH_SIZE],
+    send_signing_key: Secret<[u8; HASH_SIZE]>,
+    recv_signing_key: Secret<[u8; HASH_SIZE]>,
     send_sealing_key: Option<Rc4>,
     recv_sealing_key: Option<Rc4>,
 
@@ -150,8 +150,8 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
@@ -181,8 +181,8 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
@@ -212,8 +212,8 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
@@ -271,13 +271,17 @@ impl Ntlm {
         if self.is_client {
             self.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
             self.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
-            self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
-            self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
+            self.send_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+            ));
+            self.recv_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+            ));
         } else {
             self.send_signing_key = generate_signing_key(session_key, SERVER_SIGN_MAGIC);
             self.recv_signing_key = generate_signing_key(session_key, CLIENT_SIGN_MAGIC);
-            self.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, SERVER_SEAL_MAGIC)));
-            self.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key, CLIENT_SEAL_MAGIC)));
+            self.send_sealing_key = Some(Rc4::new(generate_signing_key(session_key, SERVER_SEAL_MAGIC).as_ref()));
+            self.recv_sealing_key = Some(Rc4::new(generate_signing_key(session_key, CLIENT_SEAL_MAGIC).as_ref()));
         }
 
         Ok(())
@@ -533,7 +537,7 @@ impl Sspi for Ntlm {
                 acc
             });
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, &data_to_sign)?;
+        let digest = compute_digest(self.send_signing_key.as_ref(), sequence_number, &data_to_sign)?;
 
         // Find `Data` buffers without the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
         let data =
@@ -596,7 +600,7 @@ impl Sspi for Ntlm {
                 }
                 acc
             });
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
+        let digest = compute_digest(self.recv_signing_key.as_ref(), sequence_number, &data_to_sign)?;
         self.check_signature(sequence_number, &digest, signature)?;
 
         Ok(DecryptionFlags::empty())
@@ -679,7 +683,7 @@ impl Sspi for Ntlm {
         SecurityBufferRef::find_buffer(message, BufferType::Token)?; // check if exists
 
         let data = SecurityBufferRef::find_buffer_mut(message, BufferType::Data)?;
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(self.send_signing_key.as_ref(), sequence_number, data.data())?;
 
         self.compute_checksum(message, sequence_number, &digest)?;
 
@@ -694,7 +698,7 @@ impl Sspi for Ntlm {
         SecurityBufferRef::find_buffer(message, BufferType::Token)?; // check if exists
 
         let data = SecurityBufferRef::find_buffer(message, BufferType::Data)?;
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(self.recv_signing_key.as_ref(), sequence_number, data.data())?;
 
         let signature = SecurityBufferRef::find_buffer(message, BufferType::Token)?;
         self.check_signature(sequence_number, &digest, signature.data())?;
@@ -740,7 +744,7 @@ impl SspiEx for Ntlm {
 
         let seq_number = self.remote_seq_num();
 
-        let digest = compute_digest(&self.recv_signing_key, seq_number, data)?;
+        let digest = compute_digest(self.recv_signing_key.as_ref(), seq_number, data)?;
         self.check_signature(seq_number, &digest, signature)?;
 
         self.reset_cipher_state()?;
@@ -768,7 +772,7 @@ impl SspiEx for Ntlm {
 
         let seq_number = self.our_seq_num();
 
-        let digest = compute_digest(&self.send_signing_key, seq_number, data)?;
+        let digest = compute_digest(self.send_signing_key.as_ref(), seq_number, data)?;
 
         let mut mic_token = vec![0; SIGNATURE_SIZE];
         let mut message = [SecurityBufferRef::token_buf(&mut mic_token)];

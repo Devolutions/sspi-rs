@@ -15,7 +15,7 @@ use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
 };
-use crate::{utils, NtlmHash, NtlmHashError};
+use crate::{utils, NtlmHash, NtlmHashError, Secret};
 
 pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
@@ -126,10 +126,10 @@ pub(super) fn now_file_time_timestamp() -> crate::Result<u64> {
     convert_to_file_time(OffsetDateTime::now_utc())
 }
 
-pub(crate) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> [u8; HASH_SIZE] {
+pub(crate) fn generate_signing_key(exported_session_key: &[u8], sign_magic: &[u8]) -> Secret<[u8; HASH_SIZE]> {
     let mut value = exported_session_key.to_vec();
     value.extend_from_slice(sign_magic);
-    compute_md5(value.as_ref())
+    Secret::new(compute_md5(value.as_ref()))
 }
 
 pub(super) fn compute_message_integrity_check(

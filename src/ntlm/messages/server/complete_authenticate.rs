@@ -50,8 +50,12 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
 
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.send_sealing_key = Some(Rc4::new(
+        generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+    ));
+    context.recv_sealing_key = Some(Rc4::new(
+        generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+    ));
 
     check_mic_correctness(
         negotiate_message.message.as_ref(),

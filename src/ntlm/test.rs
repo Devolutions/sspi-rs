@@ -50,7 +50,7 @@ fn encrypt_message_crypts_data() {
 fn encrypt_message_correct_computes_digest() {
     let mut context = Ntlm::new();
     context.our_seq_number = TEST_SEQ_NUM;
-    context.send_signing_key = SIGNING_KEY;
+    context.send_signing_key = SIGNING_KEY.into();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut token = [0; 100];
@@ -72,7 +72,7 @@ fn encrypt_message_correct_computes_digest() {
 fn encrypt_message_writes_seq_num_to_signature() {
     let mut context = Ntlm::new();
     context.our_seq_number = TEST_SEQ_NUM;
-    context.send_signing_key = SIGNING_KEY;
+    context.send_signing_key = SIGNING_KEY.into();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut token = [0; 100];
@@ -94,7 +94,7 @@ fn encrypt_message_writes_seq_num_to_signature() {
 fn decrypt_message_decrypts_data() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -116,7 +116,7 @@ fn decrypt_message_decrypts_data() {
 fn decrypt_message_does_not_fail_on_correct_signature() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -134,7 +134,7 @@ fn decrypt_message_does_not_fail_on_correct_signature() {
 fn decrypt_message_fails_on_incorrect_version() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -154,7 +154,7 @@ fn decrypt_message_fails_on_incorrect_version() {
 fn decrypt_message_fails_on_incorrect_checksum() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -174,7 +174,7 @@ fn decrypt_message_fails_on_incorrect_checksum() {
 fn decrypt_message_fails_on_incorrect_seq_num() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -194,7 +194,7 @@ fn decrypt_message_fails_on_incorrect_seq_num() {
 fn decrypt_message_fails_on_incorrect_signing_key() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SEALING_KEY;
+    context.recv_signing_key = SEALING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -212,7 +212,7 @@ fn decrypt_message_fails_on_incorrect_signing_key() {
 fn decrypt_message_fails_on_incorrect_sealing_key() {
     let mut context = Ntlm::new();
     context.remote_seq_number = TEST_SEQ_NUM;
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SIGNING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -231,10 +231,10 @@ fn make_signature_verified_by_verify_signature() {
     let mut sender = Ntlm::new();
     let mut reciever = Ntlm::new();
 
-    sender.send_signing_key = SIGNING_KEY;
+    sender.send_signing_key = SIGNING_KEY.into();
     sender.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
-    reciever.recv_signing_key = SIGNING_KEY;
+    reciever.recv_signing_key = SIGNING_KEY.into();
     reciever.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut plain_test_data = TEST_DATA.to_vec();
@@ -260,7 +260,7 @@ fn make_signature_verified_by_verify_signature() {
 fn verify_signature_fails_on_invalid_signature() {
     let mut context = Ntlm::new();
 
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut test_data = TEST_DATA.to_vec();
