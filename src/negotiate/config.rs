@@ -20,7 +20,7 @@ pub struct NegotiateConfig {
 impl NegotiateConfig {
     /// Creates a new instance of [NegotiateConfig].
     ///
-    /// `package_list` specified allowed security packages for user authorization.
+    /// `package_list` specifies allowed security packages for user authorization.
     /// Security packages are specified as a comma-separated list of package names in lowercase.
     /// If the security package is not allowed, then prepend '!' to its name. Examples:
     ///
