@@ -17,6 +17,7 @@ use url::Url;
 use super::kerberos::kdc::{KdcMock, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW};
 use super::kerberos::network_client::NetworkClientMock;
 use super::kerberos::{init_krb_environment, KrbEnvironment};
+use crate::client_server::TARGET_NAME;
 use crate::client_server::kerberos::kdc::SERVER_COMPUTER_NAME;
 use crate::common::CredentialsProxyImpl;
 
@@ -90,7 +91,7 @@ fn credssp_ntlm() {
         ClientMode::Ntlm(NtlmConfig {
             client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
         }),
-        "TERMSRV/DESKTOP-8F33RFH.example.com".to_owned(),
+        TARGET_NAME.to_owned(),
     )
     .unwrap();
 

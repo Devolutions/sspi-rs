@@ -8,6 +8,8 @@ mod ntlm;
 use sspi::credssp::SspiContext;
 use sspi::{EncryptionFlags, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
+const TARGET_NAME: &str = "TERMSRV/DESKTOP-8F33RFH.example.com";
+
 fn test_encryption(client: &mut SspiContext, server: &mut SspiContext) {
     let plain_message = b"Devolutions/sspi-rs";
 

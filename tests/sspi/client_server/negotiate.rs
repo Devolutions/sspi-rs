@@ -7,7 +7,7 @@ use sspi::{
     SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
-use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 
@@ -19,7 +19,7 @@ fn run_spnego_ntlm() {
         username: Username::parse("test_user@example.com").unwrap(),
         password: Secret::from("test_password".to_owned()),
     });
-    let target_name = "TERMSRV/DESKTOP-8F33RFH.example.com";
+    let target_name = TARGET_NAME;
 
     let mut client = SspiContext::Negotiate(
         Negotiate::new_client(NegotiateConfig::new(

@@ -7,14 +7,14 @@ use sspi::{
     ServerRequestFlags, Sspi, Username,
 };
 
-use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 fn run_ntlm(config: NtlmConfig) {
     let credentials = Credentials::AuthIdentity(AuthIdentity {
         username: Username::parse("test_user").unwrap(),
         password: Secret::from("test_password".to_owned()),
     });
-    let target_name = "TERMSRV/DESKTOP-8F33RFH.example.com";
+    let target_name = TARGET_NAME;
 
     let mut client = SspiContext::Ntlm(Ntlm::with_config(config.clone()));
     let mut server = SspiContext::Ntlm(Ntlm::with_config(config));

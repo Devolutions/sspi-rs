@@ -152,8 +152,8 @@ pub(crate) async fn initialize_security_context<'a>(
                 NegotiatedProtocol::Pku2u(pku2u) => {
                     let mut credentials_handle = negotiate
                         .auth_identity
-                        .as_mut()
-                        .and_then(|c| c.clone().into_auth_identity());
+                        .as_ref()
+                        .and_then(|c| c.to_auth_identity());
                     let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                     let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
@@ -168,8 +168,8 @@ pub(crate) async fn initialize_security_context<'a>(
                 NegotiatedProtocol::Ntlm(ntlm) => {
                     let mut credentials_handle = negotiate
                         .auth_identity
-                        .as_mut()
-                        .and_then(|c| c.clone().into_auth_identity());
+                        .as_ref()
+                        .and_then(|c| c.to_auth_identity());
                     let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
                     let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
