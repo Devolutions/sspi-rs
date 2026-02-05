@@ -17,11 +17,11 @@ use picky_krb::messages::{TgtRep, TgtReq};
 use crate::{Error, ErrorKind, Result, KERBEROS_VERSION};
 
 /// Generates supported mechanism type list.
-pub(super) fn generate_mech_type_list(kerberos: bool, no_ntlm_fallback: bool) -> Result<MechTypeList> {
-    if no_ntlm_fallback && !kerberos {
+pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<MechTypeList> {
+    if !ntlm && !kerberos {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
-            "no_ntlm_fallback is set, but Kerberos is not enabled",
+            "NTLM and Kerberos are not enabled. no security packages available",
         ));
     }
 
@@ -34,7 +34,7 @@ pub(super) fn generate_mech_type_list(kerberos: bool, no_ntlm_fallback: bool) ->
         // mech_types.push(MechType::from(oids::negoex()));
     }
 
-    if !no_ntlm_fallback {
+    if ntlm {
         mech_types.push(MechType::from(oids::ntlm_ssp()));
     }
 
