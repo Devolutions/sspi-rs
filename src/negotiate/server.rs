@@ -36,7 +36,7 @@ pub(crate) async fn accept_security_context(
         NegotiateState::Initial => {
             let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
             let mech_type = negotiate_mech_type(&mech_types, negotiate.package_list, &mut negotiate.protocol)?;
-            negotiate.mech_types = mech_types;
+            negotiate.mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
             let tgt_rep = if let (Some(tgt_req), NegotiatedProtocol::Kerberos(kerberos)) =
                 (tgt_req, &mut negotiate.protocol)
@@ -98,13 +98,10 @@ pub(crate) async fn accept_security_context(
             let mut output_tokens = builder.output.to_vec();
             let mut input_tokens = input.to_vec();
 
+            let mut creds_handle = builder.credentials_handle.as_ref().and_then(|creds| (*creds).clone());
             let mut result = match &mut negotiate.protocol {
                 NegotiatedProtocol::Pku2u(pku2u) => {
-                    let mut creds_handle = builder
-                        .credentials_handle
-                        .as_ref()
-                        .and_then(|creds| (*creds).clone())
-                        .and_then(|creds_handle| creds_handle.auth_identity());
+                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.auth_identity());
                     let new_builder: FilledAcceptSecurityContext<'_, Option<crate::AuthIdentityBuffers>> =
                         EmptyAcceptSecurityContext::new()
                             .with_context_requirements(builder.context_requirements)
@@ -115,7 +112,6 @@ pub(crate) async fn accept_security_context(
                     pku2u.accept_security_context_impl(yield_point, new_builder).await?
                 }
                 NegotiatedProtocol::Kerberos(kerberos) => {
-                    let mut creds_handle = builder.credentials_handle.as_ref().and_then(|creds| (*creds).clone());
                     let new_builder = EmptyAcceptSecurityContext::new()
                         .with_context_requirements(builder.context_requirements)
                         .with_target_data_representation(builder.target_data_representation)
@@ -125,11 +121,7 @@ pub(crate) async fn accept_security_context(
                     kerberos.accept_security_context_impl(yield_point, new_builder).await?
                 }
                 NegotiatedProtocol::Ntlm(ntlm) => {
-                    let mut creds_handle = builder
-                        .credentials_handle
-                        .as_ref()
-                        .and_then(|creds| (*creds).clone())
-                        .and_then(|creds_handle| creds_handle.auth_identity());
+                    let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.auth_identity());
                     let new_builder = EmptyAcceptSecurityContext::new()
                         .with_credentials_handle(&mut creds_handle)
                         .with_context_requirements(builder.context_requirements)
@@ -149,15 +141,10 @@ pub(crate) async fn accept_security_context(
                 result.status = SecurityStatus::ContinueNeeded;
 
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-                let neg_result = if let Some(mech_list_mic) = mech_list_mic {
-                    let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
-
+                let neg_result = if mech_list_mic.is_some() {
                     negotiate.set_auth_identity()?;
-                    negotiate
-                        .protocol
-                        .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
 
-                    negotiate.mic_verified = true;
+                    negotiate.verify_mic_token(mech_list_mic.as_deref())?;
 
                     ACCEPT_COMPLETE.to_vec()
                 } else {
@@ -165,15 +152,14 @@ pub(crate) async fn accept_security_context(
                 };
 
                 prepare_final_neg_token(neg_result, negotiate, &mut builder)?;
-
-                trace!(?builder.output, "outbuilderdata");
             } else {
                 // Wrap in a NegToken.
-                let ot = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                let spnego_token = picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut ot.buffer))))?;
+                let spnego_token =
+                    picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut output_token.buffer))))?;
 
-                ot.buffer = spnego_token;
+                output_token.buffer = spnego_token;
             }
 
             result.status
@@ -189,15 +175,9 @@ pub(crate) async fn accept_security_context(
                 } = neg_token_targ.0;
 
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-                if let Some(mech_list_mic) = mech_list_mic {
-                    let mech_types = picky_asn1_der::to_vec(&negotiate.mech_types)?;
-
+                if mech_list_mic.is_some() {
                     negotiate.set_auth_identity()?;
-                    negotiate
-                        .protocol
-                        .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
-
-                    negotiate.mic_verified = true;
+                    negotiate.verify_mic_token(mech_list_mic.as_deref())?;
                 } else {
                     return Err(Error::new(
                         ErrorKind::InvalidToken,

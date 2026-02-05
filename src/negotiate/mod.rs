@@ -54,7 +54,7 @@ impl NegotiatedProtocol {
         }
     }
 
-    pub fn validate_mic_token(&mut self, token: &[u8], data: &[u8], sealed: crate::private::Sealed) -> Result<()> {
+    pub fn verify_mic_token(&mut self, token: &[u8], data: &[u8], sealed: crate::private::Sealed) -> Result<()> {
         match self {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.verify_mic_token(token, data, sealed),
             NegotiatedProtocol::Kerberos(kerberos) => kerberos.verify_mic_token(token, data, sealed),
@@ -105,7 +105,8 @@ pub struct Negotiate {
     auth_identity: Option<CredentialsBuffers>,
     client_computer_name: String,
     mode: NegotiateMode,
-    mech_types: picky_krb::gss_api::MechTypeList,
+    /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
+    mech_types: Vec<u8>,
     mic_verified: bool,
 }
 
@@ -422,6 +423,27 @@ impl Negotiate {
             let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
             self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
         }
+    }
+
+    fn verify_mic_token(&mut self, mic: Option<&[u8]>) -> Result<()> {
+        if let Some(mic) = mic {
+            self.protocol
+                .verify_mic_token(mic, &self.mech_types, crate::private::Sealed)?;
+
+            self.mic_verified = true;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Negotiate {
+    pub(crate) async fn initialize_security_context_impl(
+        &'a mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: &'a mut crate::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<crate::InitializeSecurityContextResult> {
+        client::initialize_security_context(self, yield_point, builder).await
     }
 }
 

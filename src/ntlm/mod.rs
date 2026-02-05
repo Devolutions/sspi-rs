@@ -570,7 +570,7 @@ impl Sspi for Ntlm {
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
-        let sequence_number = u32::from_le_bytes(signature[12..].try_into().unwrap());
+        let sequence_number = u32::from_le_bytes(signature[12..].try_into().expect("signature must be 16 bytes long"));
 
         let expected_seq_number = self.remote_seq_num();
         if sequence_number != expected_seq_number {

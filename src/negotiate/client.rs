@@ -36,7 +36,7 @@ pub(crate) async fn initialize_security_context<'a>(
         let auth_identity =
             AuthIdentity::try_from(&*identity).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
         let account_name = auth_identity.username.account_name();
-        let domain_name = auth_identity.username.domain_name().unwrap_or("");
+        let domain_name = auth_identity.username.domain_name().unwrap_or_default();
         negotiate.negotiate_protocol(account_name, domain_name)?;
         negotiate.auth_identity = Some(CredentialsBuffers::AuthIdentity(auth_identity.into()));
     }
@@ -91,6 +91,8 @@ pub(crate) async fn initialize_security_context<'a>(
                 matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
                 !negotiate.package_list.ntlm,
             )?;
+
+            negotiate.mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
             let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
                 sname.as_ref().map(|sname| sname.as_slice()),
@@ -176,19 +178,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             if result.status == SecurityStatus::Ok {
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-                if let Some(mech_list_mic) = mech_list_mic {
-                    let mech_types = generate_mech_type_list(
-                        matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-                        !negotiate.package_list.ntlm,
-                    )?;
-                    let mech_types = picky_asn1_der::to_vec(&mech_types)?;
-
-                    negotiate
-                        .protocol
-                        .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
-
-                    negotiate.mic_verified = true;
-                }
+                negotiate.verify_mic_token(mech_list_mic.as_deref())?;
 
                 let neg_result = if negotiate.mic_verified {
                     result.status = SecurityStatus::Ok;
@@ -244,19 +234,7 @@ pub(crate) async fn initialize_security_context<'a>(
             }
 
             let mech_list_mic = mech_list_mic.0.map(|token| token.0 .0);
-            if let Some(mech_list_mic) = mech_list_mic {
-                let mech_types = generate_mech_type_list(
-                    matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
-                    !negotiate.package_list.ntlm,
-                )?;
-                let mech_types = picky_asn1_der::to_vec(&mech_types)?;
-
-                negotiate
-                    .protocol
-                    .validate_mic_token(&mech_list_mic, &mech_types, crate::private::Sealed)?;
-
-                negotiate.mic_verified = true;
-            }
+            negotiate.verify_mic_token(mech_list_mic.as_deref())?;
 
             let status = if negotiate.mic_verified {
                 negotiate.state = NegotiateState::Ok;
