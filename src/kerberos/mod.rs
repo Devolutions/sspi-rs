@@ -689,7 +689,7 @@ pub mod test_data {
             state: KerberosState::Final,
             config: KerberosConfig {
                 kdc_url: None,
-                client_computer_name: None,
+                client_computer_name: "hostname".into(),
             },
             auth_identity: None,
             encryption_params: EncryptionParams {
@@ -734,7 +734,7 @@ pub mod test_data {
             state: KerberosState::Final,
             config: KerberosConfig {
                 kdc_url: None,
-                client_computer_name: None,
+                client_computer_name: "hostname".into(),
             },
             auth_identity: None,
             encryption_params: EncryptionParams {

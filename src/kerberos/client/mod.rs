@@ -28,7 +28,7 @@ use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
-use crate::kerberos::utils::{serialize_message, unwrap_hostname};
+use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
 use crate::utils::{generate_random_symmetric_key, utf16_bytes_to_utf8_string};
 use crate::{
@@ -114,7 +114,7 @@ pub async fn initialize_security_context<'a>(
                 snames: &[TGT_SERVICE_NAME, &realm],
                 // 4 = size of u32
                 nonce: &rand.next_u32().to_be_bytes(),
-                hostname: &unwrap_hostname(client.config.client_computer_name.as_deref())?,
+                hostname: &client.config.client_computer_name,
                 context_requirements: builder.context_requirements,
             };
             let kdc_req_body = generate_as_req_kdc_body(&options)?;

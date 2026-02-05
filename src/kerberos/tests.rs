@@ -56,7 +56,7 @@ fn secbuffer_readonly_with_checksum() {
         state: KerberosState::Final,
         config: KerberosConfig {
             kdc_url: None,
-            client_computer_name: None,
+            client_computer_name: "hostname".into(),
         },
         auth_identity: None,
         encryption_params: EncryptionParams {

@@ -86,7 +86,7 @@ pub(super) fn negotiate_mech_type(
         if let NegotiatedProtocol::Kerberos(kerberos) = internal_protocol {
             // Negotiate is configured to use Kerberos, but only NTLM is possible (fallback to NTLM).
             *internal_protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig {
-                client_computer_name: kerberos.config.client_computer_name.clone(),
+                client_computer_name: Some(kerberos.config.client_computer_name.clone()),
             }));
         }
 

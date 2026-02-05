@@ -301,7 +301,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     ))?)
                 } else {
                     let krb_config = KerberosConfig {
-                        client_computer_name: Some(client_computer_name),
+                        client_computer_name,
                         kdc_url: None,
                     };
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
@@ -1498,7 +1498,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
-                    client_computer_name:Some(try_execute!(hostname())),
+                    client_computer_name: try_execute!(hostname()),
                     kdc_url:None
                 };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(

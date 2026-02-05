@@ -259,7 +259,7 @@ impl Negotiate {
 
             if self.protocol_name() != kerberos::PKG_NAME {
                 let kerberos = Kerberos::new_client_from_config(KerberosConfig {
-                    client_computer_name: Some(self.client_computer_name.clone()),
+                    client_computer_name: self.client_computer_name.clone(),
                     kdc_url: None,
                 })?;
                 self.protocol = NegotiatedProtocol::Kerberos(kerberos);
@@ -320,7 +320,7 @@ impl Negotiate {
 
                     self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
                         kdc_url: Some(host),
-                        client_computer_name: Some(self.client_computer_name.clone()),
+                        client_computer_name: self.client_computer_name.clone(),
                     })?);
                 }
             }
@@ -360,19 +360,14 @@ impl Negotiate {
             }
             NegotiatedProtocol::Kerberos(kerberos) => {
                 if !is_kerberos {
-                    let ntlm_config = kerberos
-                        .config()
-                        .client_computer_name
-                        .clone()
-                        .map(NtlmConfig::new)
-                        .unwrap_or_default();
+                    let ntlm_config = NtlmConfig::new(kerberos.config().client_computer_name.clone());
                     filtered_protocol = Some(NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config)));
                 }
             }
             NegotiatedProtocol::Ntlm(_) => {
                 if !is_ntlm {
                     let config = KerberosConfig {
-                        client_computer_name: Some(client_computer_name.to_owned()),
+                        client_computer_name: client_computer_name.to_owned(),
                         kdc_url: None,
                     };
 

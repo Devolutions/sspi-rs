@@ -111,11 +111,3 @@ pub(super) fn generate_mic_token(
 
     Ok(mic_token_raw)
 }
-
-pub(super) fn unwrap_hostname(hostname: Option<&str>) -> Result<String> {
-    if let Some(hostname) = hostname {
-        Ok(hostname.into())
-    } else {
-        Err(Error::new(ErrorKind::InvalidParameter, "the hostname is not provided"))
-    }
-}

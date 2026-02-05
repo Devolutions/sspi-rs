@@ -59,7 +59,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             let config = KerberosConfig {
                 kdc_url: Some(host),
-                client_computer_name: Some(negotiate.client_computer_name.clone()),
+                client_computer_name: negotiate.client_computer_name.clone(),
             };
 
             negotiate.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(config)?);
