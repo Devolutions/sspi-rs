@@ -155,10 +155,21 @@ enum EndpointType {
     Server,
 }
 
+/// CredSSP client authentication protocol.
+///
+/// From MSDN: [1.3 Overview](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7):
+/// > The CredSSP Protocol then uses the Simple and Protected Generic Security Service Application Program Interface Negotiation Mechanism (SPNEGO)
+/// > to authenticate the user and server in the encrypted TLS session.
+/// > SPNEGO provides a framework for two parties that are engaged in authentication to select from a set of
+/// > possible authentication mechanisms. This framework provides selection in a manner that preserves
+/// > the opaque nature of the security protocols to the application protocol that uses SPNEGO. In this case,
+/// > the CredSSP Protocol is the application protocol that uses SPNEGO.
+///
+/// According to the specification, we should always use the Negotiate security package in CredSSP.
+/// However, mstsc and other RDP clients send plain NTLM messages (without SPNEGO wrappers) inside CredSSP when Kerberos is not possible.
 #[derive(Debug, Clone)]
 pub enum ClientMode {
     Negotiate(NegotiateConfig),
-    Kerberos(KerberosConfig),
     Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
@@ -259,9 +270,6 @@ impl CredSspClient {
             {
                 ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
                     Negotiate::new_client(negotiate_config)?,
-                ))),
-                ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    Kerberos::new_client_from_config(kerberos_config)?,
                 ))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
                     Pku2u::new_client_from_config(*pku2u)?,
@@ -392,10 +400,21 @@ impl CredSspClient {
     }
 }
 
+/// CredSSP client authentication protocol.
+///
+/// From MSDN: [1.3 Overview](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7):
+/// > The CredSSP Protocol then uses the Simple and Protected Generic Security Service Application Program Interface Negotiation Mechanism (SPNEGO)
+/// > to authenticate the user and server in the encrypted TLS session.
+/// > SPNEGO provides a framework for two parties that are engaged in authentication to select from a set of
+/// > possible authentication mechanisms. This framework provides selection in a manner that preserves
+/// > the opaque nature of the security protocols to the application protocol that uses SPNEGO. In this case,
+/// > the CredSSP Protocol is the application protocol that uses SPNEGO.
+///
+/// According to the specification, we should always use the Negotiate security package in CredSSP.
+/// However, mstsc and other RDP clients send plain NTLM messages (without SPNEGO wrappers) inside CredSSP when Kerberos is not possible.
 #[derive(Debug, Clone)]
 pub enum ServerMode {
     Negotiate(NegotiateConfig),
-    Kerberos(Box<(KerberosConfig, ServerProperties)>),
     Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
@@ -474,13 +493,6 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             neg_config,
                             try_cred_ssp_server!(self.credentials.auth_data(), ts_request)
                         ),
-                        ts_request
-                    ))))
-                }
-                ServerMode::Kerberos(kerberos_mode) => {
-                    let (kerberos_config, server_properties) = *kerberos_mode;
-                    Some(CredSspContext::new(SspiContext::Kerberos(try_cred_ssp_server!(
-                        Kerberos::new_server_from_config(kerberos_config, server_properties),
                         ts_request
                     ))))
                 }
