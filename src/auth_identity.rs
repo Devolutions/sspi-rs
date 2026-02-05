@@ -441,6 +441,14 @@ impl CredentialsBuffers {
         }
     }
 
+    pub fn to_auth_identity(&self) -> Option<AuthIdentityBuffers> {
+        match self {
+            CredentialsBuffers::AuthIdentity(identity) => Some(identity.clone()),
+            #[cfg(feature = "scard")]
+            _ => None,
+        }
+    }
+
     pub fn as_auth_identity(&self) -> Option<&AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),

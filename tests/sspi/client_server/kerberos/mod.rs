@@ -341,7 +341,7 @@ fn spnego_kerberos_u2u() {
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
-    let identity_1 = credentials.clone().auth_identity().unwrap();
+    let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
     identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
 
@@ -454,7 +454,7 @@ fn spnego_kerberos() {
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
-    let identity_1 = credentials.clone().auth_identity().unwrap();
+    let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
     identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
 

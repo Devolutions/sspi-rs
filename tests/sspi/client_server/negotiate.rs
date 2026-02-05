@@ -36,7 +36,7 @@ fn run_spnego_ntlm() {
                 Some(String::from("ntlm,!kerberos")),
                 "WIN-956CQOSSJTF.example.com".into(),
             ),
-            vec![credentials.clone().auth_identity().unwrap()],
+            vec![credentials.to_auth_identity().unwrap()],
         )
         .unwrap(),
     );
