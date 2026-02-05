@@ -41,7 +41,7 @@ impl NegotiateConfig {
         }
     }
 
-    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig + Send>, client_computer_name: String) -> Self {
+    pub fn from_protocol_config(protocol_config: Box<dyn ProtocolConfig>, client_computer_name: String) -> Self {
         Self {
             protocol_config,
             package_list: None,
