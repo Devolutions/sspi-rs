@@ -7,7 +7,7 @@ use sspi::{
     ServerRequestFlags, Sspi, Username,
 };
 
-use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption, TARGET_NAME};
 
 fn run_ntlm(config: NtlmConfig) {
     let credentials = Credentials::AuthIdentity(AuthIdentity {

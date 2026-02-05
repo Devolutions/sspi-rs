@@ -7,7 +7,7 @@ use sspi::{
     SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
-use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption, TARGET_NAME};
 
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 

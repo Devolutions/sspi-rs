@@ -17,8 +17,8 @@ use url::Url;
 use super::kerberos::kdc::{KdcMock, Validators, CLIENT_COMPUTER_NAME, KDC_URL, MAX_TIME_SKEW};
 use super::kerberos::network_client::NetworkClientMock;
 use super::kerberos::{init_krb_environment, KrbEnvironment};
-use crate::client_server::TARGET_NAME;
 use crate::client_server::kerberos::kdc::SERVER_COMPUTER_NAME;
+use crate::client_server::TARGET_NAME;
 use crate::common::CredentialsProxyImpl;
 
 const PUBLIC_KEY: &[u8] = &[
