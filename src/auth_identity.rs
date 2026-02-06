@@ -477,6 +477,14 @@ pub enum Credentials {
 }
 
 impl Credentials {
+    pub fn to_auth_identity(&self) -> Option<AuthIdentity> {
+        match self {
+            Credentials::AuthIdentity(identity) => Some(identity.clone()),
+            #[cfg(feature = "scard")]
+            _ => None,
+        }
+    }
+
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
