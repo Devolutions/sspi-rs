@@ -239,7 +239,8 @@ required-features = ["network_client"]
 
 [profile.ffi-production]
 inherits = "release"
-strip = "symbols"
+strip = false
+split-debuginfo = "packed"
 lto = true
 opt-level = "z"
 codegen-units = 1

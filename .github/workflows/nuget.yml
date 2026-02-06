@@ -156,6 +156,140 @@ jobs:
             Invoke-Expression $PushCmd
           }
 
+  package-symbols:
+    name: Package debug symbols
+    runs-on: ubuntu-latest
+    needs: [ preflight, build-native ]
+
+    steps:
+      - name: Download all symbol artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: sspi-*-release-symbols
+
+      - name: Package symbols into zip
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+
+          $PackageVersion = '${{ needs.preflight.outputs.package-version }}'
+          $SymbolsDir = "symbols"
+          New-Item -ItemType Directory -Path $SymbolsDir -Force | Out-Null
+
+          # Organize symbols by RID
+          $SymbolArtifacts = Get-ChildItem -Directory "artifacts" -Filter "sspi-*-release-symbols"
+          foreach ($Artifact in $SymbolArtifacts) {
+            # Extract RID from artifact name (e.g., sspi-win-x64-release-symbols -> win-x64)
+            $Rid = $Artifact.Name -Replace '^sspi-(.+)-release-symbols$', '$1'
+            $DestDir = Join-Path $SymbolsDir $Rid
+            New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
+
+            # Copy all contents from the artifact
+            Get-ChildItem -Path $Artifact.FullName -Recurse | ForEach-Object {
+              if (-not $_.PSIsContainer) {
+                $RelativePath = $_.FullName.Substring($Artifact.FullName.Length + 1)
+                $DestPath = Join-Path $DestDir $RelativePath
+                $DestParent = Split-Path $DestPath -Parent
+                if (-not (Test-Path $DestParent)) {
+                  New-Item -ItemType Directory -Path $DestParent -Force | Out-Null
+                }
+                Copy-Item $_.FullName $DestPath
+              }
+            }
+          }
+
+          Write-Host "Symbol directory structure:"
+          Get-ChildItem -Recurse $SymbolsDir | ForEach-Object { Write-Host $_.FullName }
+
+          # Create the zip file
+          $ZipName = "Devolutions.Sspi.$PackageVersion.symbols.zip"
+          Compress-Archive -Path "$SymbolsDir/*" -DestinationPath $ZipName -Force
+          Write-Host "Created symbols archive: $ZipName"
+
+      - name: Upload symbols zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: sspi-symbols-zip
+          path: Devolutions.Sspi.*.symbols.zip
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    if: needs.preflight.outputs.dry-run == 'false'
+    needs:
+      - preflight
+      - build-managed
+      - package-symbols
+      - publish
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download NuGet package
+        uses: actions/download-artifact@v4
+        with:
+          name: sspi-nupkg
+          path: release-assets
+
+      - name: Download symbols zip
+        uses: actions/download-artifact@v4
+        with:
+          name: sspi-symbols-zip
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+
+          $PackageVersion = '${{ needs.preflight.outputs.package-version }}'
+          $TagName = "v$PackageVersion"
+          $ReleaseName = "Devolutions.Sspi $PackageVersion"
+
+          # Get the list of assets to upload
+          $Assets = Get-ChildItem -Path "release-assets" -File
+          Write-Host "Release assets:"
+          $Assets | ForEach-Object { Write-Host "  - $($_.Name)" }
+
+          # Build the release notes
+          $ReleaseNotes = @"
+          ## Devolutions.Sspi $PackageVersion
+
+          ### NuGet Package
+          - [Devolutions.Sspi on NuGet.org](https://www.nuget.org/packages/Devolutions.Sspi/$PackageVersion)
+
+          ### Included Platforms
+          - Windows (x64, arm64)
+          - macOS (x64, arm64, universal)
+          - Linux (x64, arm64)
+          - iOS (x64, arm64, universal)
+          - Android (x86, x64, arm, arm64)
+
+          ### Debug Symbols
+          The `Devolutions.Sspi.$PackageVersion.symbols.zip` archive contains debug symbols for all platforms:
+          - Windows: `.pdb` files
+          - macOS/iOS: `.dSYM` bundles
+          - Linux/Android: `.debug` or `.dwp` files
+          "@
+
+          # Create the release with assets
+          $AssetArgs = @()
+          foreach ($Asset in $Assets) {
+            $AssetArgs += $Asset.FullName
+          }
+
+          gh release create $TagName `
+            --title $ReleaseName `
+            --notes $ReleaseNotes `
+            --target ${{ github.sha }} `
+            @AssetArgs
+
+          Write-Host "Created release: $ReleaseName with tag $TagName"
+
   notify:
     name: Notify failure
     runs-on: ubuntu-latest
@@ -164,6 +298,7 @@ jobs:
       - preflight
       - build-native
       - build-managed
+      - package-symbols
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ARCHITECTURE }}
       SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
