@@ -255,15 +255,22 @@ jobs:
             $SoFile = Join-Path $TargetDir "${LibPrefix}sspi.so"
             $DebugOutput = Join-Path $SymbolsPath "libDevolutionsSspi.so.debug"
             if (Test-Path $DwpFile) {
-              # split-debuginfo=packed produced a .dwp file
+              # split-debuginfo=packed may produce a .dwp file
               Copy-Item $DwpFile (Join-Path $SymbolsPath "libDevolutionsSspi.so.dwp")
               Write-Host "Copied DWP: $DwpFile"
             } elseif (Test-Path $SoFile) {
               # Extract debug sections from the binary using objcopy
               if ($DotNetOs -eq 'android') {
                 $ObjCopy = Join-Path $Env:ANDROID_NDK_HOME "toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy"
+                if (-not (Test-Path $ObjCopy)) {
+                  throw "llvm-objcopy not found at $ObjCopy"
+                }
               } else {
                 $ObjCopy = 'llvm-objcopy'
+                $ObjCopyCmd = Get-Command $ObjCopy -ErrorAction SilentlyContinue
+                if (-not $ObjCopyCmd) {
+                  throw "llvm-objcopy not found on PATH"
+                }
               }
               Write-Host "Extracting debug info with: $ObjCopy --only-keep-debug"
               & $ObjCopy --only-keep-debug $SoFile $DebugOutput 2>&1 | Write-Host

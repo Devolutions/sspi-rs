@@ -270,10 +270,10 @@ jobs:
           - Android (x86, x64, arm, arm64)
 
           ### Debug Symbols
-          The ``Devolutions.Sspi.$PackageVersion.symbols.zip`` archive contains debug symbols for all platforms:
-          - Windows: ``.pdb`` files
-          - macOS/iOS: ``.dSYM`` bundles
-          - Linux/Android: ``.debug`` or ``.dwp`` files
+          The `Devolutions.Sspi.$PackageVersion.symbols.zip` archive contains debug symbols for all platforms:
+          - Windows: `.pdb` files
+          - macOS/iOS: `.dSYM` bundles
+          - Linux/Android: `.debug` or `.dwp` files
           "@
 
           # Create the release with assets
