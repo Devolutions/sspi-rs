@@ -3,7 +3,6 @@ mod cache;
 mod extractors;
 mod generators;
 
-use std::io::Write;
 use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
@@ -14,7 +13,7 @@ use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
-use picky_krb::messages::ApReq;
+use picky_krb::messages::{ApRep, ApReq};
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
@@ -24,13 +23,14 @@ use self::extractors::{decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
 use self::generators::generate_ap_rep;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
+use crate::kerberos::client::extractors::extract_seq_number_from_ap_rep;
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
-    Secret, SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl, Username,
+    Secret, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
 };
 
 /// Additional properties that are needed only for server-side Kerberos.
@@ -109,7 +109,11 @@ pub async fn accept_security_context(
 
     let status = match server.state {
         KerberosState::Preauthentication => {
-            let ap_req = decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)?;
+            let ap_req = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+                picky_asn1_der::from_bytes::<ApReq>(&input_token.buffer)?
+            } else {
+                decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)?
+            };
 
             let server_data = server.server.as_ref().ok_or_else(|| {
                 Error::new(
@@ -256,7 +260,7 @@ pub async fn accept_security_context(
             // ...the server need not explicitly reply to the KRB_AP_REQ. However, if mutual authentication is being performed,
             // the KRB_AP_REQ message will have MUTUAL-REQUIRED set in its ap-options field, and a KRB_AP_REP message
             // is required in response.
-            if ap_options.contains(ApOptions::MUTUAL_REQUIRED) {
+            let status = if ap_options.contains(ApOptions::MUTUAL_REQUIRED) {
                 let key_size = server
                     .encryption_params
                     .encryption_type
@@ -287,18 +291,69 @@ pub async fn accept_security_context(
                     oids::krb5()
                 };
 
-                let encoded_neg_ap_rep = generate_krb_message(mech_id, AP_REP_TOKEN_ID, ap_rep)?;
+                let (status, encoded_ap_rep) =
+                    if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+                        let encoded_ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
+                        server.state = KerberosState::ApExchange;
+
+                        (SecurityStatus::ContinueNeeded, encoded_ap_rep)
+                    } else {
+                        let encoded_ap_rep = generate_krb_message(mech_id, AP_REP_TOKEN_ID, ap_rep)?;
+                        server.state = KerberosState::Final;
+
+                        (SecurityStatus::Ok, encoded_ap_rep)
+                    };
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                output_token.buffer.write_all(&encoded_neg_ap_rep)?;
-            }
+                output_token.buffer = encoded_ap_rep;
+
+                status
+            } else {
+                SecurityStatus::Ok
+            };
 
             server.encryption_params.session_key = Some(session_key);
+
+            status
+        }
+        KerberosState::ApExchange => {
+            if !builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+                return Err(Error::new(
+                    ErrorKind::OutOfSequence,
+                    "USE_DCE_STYLE flag must be set in context requirements",
+                ));
+            }
+
+            let ap_rep = picky_asn1_der::from_bytes::<ApRep>(&input_token.buffer)?;
+
+            let session_key = server
+                .encryption_params
+                .session_key
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
+            let seq_number = extract_seq_number_from_ap_rep(&ap_rep, session_key, &server.encryption_params)?;
+            let seq_number = u32::from_be_bytes(seq_number.try_into().map_err(|err| {
+                Error::new(
+                    ErrorKind::InvalidToken,
+                    format!("invalid ApRep sequence number: {:?}", err),
+                )
+            })?);
+
+            let expected_seq_number = server.seq_number + 1;
+            if seq_number != expected_seq_number {
+                return Err(Error::new(
+                    ErrorKind::InvalidToken,
+                    format!(
+                        "invalid client ApRep sequence number: expected {expected_seq_number} but got {seq_number}",
+                    ),
+                ));
+            }
+
             server.state = KerberosState::Final;
 
             SecurityStatus::Ok
         }
-        KerberosState::ApExchange | KerberosState::Final => {
+        KerberosState::Final => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

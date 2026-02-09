@@ -650,12 +650,19 @@ impl SspiEx for Kerberos {
     }
 
     fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
+        // Do not increment sequence number for MIC token if security context is not established.
+        // We do not want to mess up the sequence number.
+        let seq_number = if self.encryption_params.sub_session_key.is_some() {
+            self.next_seq_number()
+        } else {
+            0
+        };
         let session_key = self
             .encryption_params
             .sub_session_key
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?;
-        utils::generate_mic_token(self.is_client(), u64::from(self.seq_number), data.to_vec(), session_key)
+        utils::generate_mic_token(self.is_client(), u64::from(seq_number), data.to_vec(), session_key)
     }
 }
 

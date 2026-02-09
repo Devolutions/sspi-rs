@@ -526,8 +526,6 @@ impl Sspi for Ntlm {
             self.complete_auth_token(&mut [])?;
         }
 
-        let sequence_number = self.our_seq_num();
-
         // check if exists
         SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
@@ -536,6 +534,8 @@ impl Sspi for Ntlm {
                 acc.extend_from_slice(buffer.data());
                 acc
             });
+
+        let sequence_number = self.our_seq_num();
 
         let digest = compute_digest(self.send_signing_key.as_ref(), sequence_number, &data_to_sign)?;
 
