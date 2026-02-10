@@ -23,7 +23,7 @@ use crate::{
     CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities,
-    PackageInfo, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
+    PackageInfo, Secret, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
     ServerResponseFlags, Sspi, SspiEx, SspiImpl,
 };
 
@@ -87,10 +87,17 @@ pub struct Ntlm {
 
     signing: bool, // integrity
     sealing: bool, // confidentiality
-    send_signing_key: [u8; HASH_SIZE],
-    recv_signing_key: [u8; HASH_SIZE],
+    send_signing_key: Secret<[u8; HASH_SIZE]>,
+    recv_signing_key: Secret<[u8; HASH_SIZE]>,
     send_sealing_key: Option<Rc4>,
     recv_sealing_key: Option<Rc4>,
+
+    // If the NTLM is used as client, then our_seq_number is the client sequence number and remote seq_number is the server sequence number.
+    // If the NTLM is used as server, then our_seq_number is the server sequence number and remote seq_number is the client sequence number.
+    our_seq_number: u32,
+    remote_seq_number: u32,
+    // This flag is needed to correctly reset cipher state after MIC token generation/verification.
+    is_client: bool,
 
     session_key: Option<[u8; SESSION_KEY_SIZE]>,
 }
@@ -143,11 +150,15 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -170,11 +181,15 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -197,11 +212,15 @@ impl Ntlm {
 
             signing: true,
             sealing: true,
-            send_signing_key: [0x00; HASH_SIZE],
-            recv_signing_key: [0x00; HASH_SIZE],
+            send_signing_key: Secret::new([0x00; HASH_SIZE]),
+            recv_signing_key: Secret::new([0x00; HASH_SIZE]),
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+
+            our_seq_number: 0,
+            remote_seq_number: 0,
+            is_client: true,
         }
     }
 
@@ -225,6 +244,65 @@ impl Ntlm {
             acceptor: vec![],
             application_data: token.to_vec(),
         });
+    }
+
+    /// Resets the cipher state.
+    ///
+    /// According to the specification, we need to reset ciphers before and after MIC token generation/verification.
+    /// [3.2.5.1 NTLM RC4 Key State for MechListMIC and First Signed Message](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f38ae8e3-847d-4829-b933-5ac1911a00ba):
+    /// > When NTLM is negotiated, the SPNG server MUST set OriginalHandle to ServerHandle before generating the mechListMIC,
+    /// > then set ServerHandle to OriginalHandle after generating the mechListMIC. This results in the RC4 key state
+    /// > being the same for the mechListMIC and for the first message signed by the application.
+    /// >
+    /// > Because the RC4 key state is the same for the mechListMIC and for the first message signed by the application,
+    /// > the SPNEGO Extension server MUST set OriginalHandle to ClientHandle before validating the mechListMIC and then
+    /// > set ClientHandle to OriginalHandle after validating the mechListMIC.
+    fn reset_cipher_state(&mut self) -> crate::Result<()> {
+        use crate::ntlm::messages::computations::generate_signing_key;
+        use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
+
+        let session_key = self.session_key.as_ref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::OutOfSequence,
+                "the session key is not established, cannot reset cipher state",
+            )
+        })?;
+
+        if self.is_client {
+            self.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
+            self.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
+            self.send_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+            ));
+            self.recv_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+            ));
+        } else {
+            self.send_signing_key = generate_signing_key(session_key, SERVER_SIGN_MAGIC);
+            self.recv_signing_key = generate_signing_key(session_key, CLIENT_SIGN_MAGIC);
+            self.send_sealing_key = Some(Rc4::new(generate_signing_key(session_key, SERVER_SEAL_MAGIC).as_ref()));
+            self.recv_sealing_key = Some(Rc4::new(generate_signing_key(session_key, CLIENT_SEAL_MAGIC).as_ref()));
+        }
+
+        Ok(())
+    }
+
+    /// Returns the next sequence number for outgoing messages and increments the internal counter.
+    fn our_seq_num(&mut self) -> u32 {
+        let seq_num = self.our_seq_number;
+        self.our_seq_number = self.our_seq_number.wrapping_add(1);
+
+        seq_num
+    }
+
+    /// Returns the next sequence number for incoming messages and increments the internal counter.
+    ///
+    /// This value is used to check the sequence number of the received message.
+    fn remote_seq_num(&mut self) -> u32 {
+        let seq_num = self.remote_seq_number;
+        self.remote_seq_number = self.remote_seq_number.wrapping_add(1);
+
+        seq_num
     }
 }
 
@@ -271,7 +349,7 @@ impl SspiImpl for Ntlm {
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip_all)]
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> crate::Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -286,6 +364,8 @@ impl Ntlm {
         &mut self,
         builder: FilledAcceptSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<AcceptSecurityContextResult> {
+        self.is_client = false;
+
         let input = builder
             .input
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
@@ -327,8 +407,10 @@ impl Ntlm {
 
     pub(crate) fn initialize_security_context_impl(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
+        self.is_client = true;
+
         trace!(?builder);
 
         let status = match self.state {
@@ -439,11 +521,12 @@ impl Sspi for Ntlm {
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
+
+        let sequence_number = self.our_seq_num();
 
         // check if exists
         SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
@@ -454,7 +537,7 @@ impl Sspi for Ntlm {
                 acc
             });
 
-        let digest = compute_digest(&self.send_signing_key, sequence_number, &data_to_sign)?;
+        let digest = compute_digest(self.send_signing_key.as_ref(), sequence_number, &data_to_sign)?;
 
         // Find `Data` buffers without the `READONLY_WITH_CHECKSUM`/`READONLY` flag.
         let data =
@@ -473,12 +556,8 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> crate::Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -490,6 +569,17 @@ impl Sspi for Ntlm {
         }
 
         let (signature, encrypted_message) = encrypted.split_at(16);
+        let sequence_number = u32::from_le_bytes(signature[12..].try_into().expect("signature must be 16 bytes long"));
+
+        let expected_seq_number = self.remote_seq_num();
+        if sequence_number != expected_seq_number {
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
+                format!(
+                    "invalid incoming message sequence number: expected {expected_seq_number} but got {sequence_number}",
+                ),
+            ));
+        }
 
         let decrypted = self.recv_sealing_key.as_mut().unwrap().process(encrypted_message);
 
@@ -510,7 +600,7 @@ impl Sspi for Ntlm {
                 }
                 acc
             });
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, &data_to_sign)?;
+        let digest = compute_digest(self.recv_signing_key.as_ref(), sequence_number, &data_to_sign)?;
         self.check_signature(sequence_number, &digest, signature)?;
 
         Ok(DecryptionFlags::empty())
@@ -593,7 +683,7 @@ impl Sspi for Ntlm {
         SecurityBufferRef::find_buffer(message, BufferType::Token)?; // check if exists
 
         let data = SecurityBufferRef::find_buffer_mut(message, BufferType::Data)?;
-        let digest = compute_digest(&self.send_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(self.send_signing_key.as_ref(), sequence_number, data.data())?;
 
         self.compute_checksum(message, sequence_number, &digest)?;
 
@@ -608,7 +698,7 @@ impl Sspi for Ntlm {
         SecurityBufferRef::find_buffer(message, BufferType::Token)?; // check if exists
 
         let data = SecurityBufferRef::find_buffer(message, BufferType::Data)?;
-        let digest = compute_digest(&self.recv_signing_key, sequence_number, data.data())?;
+        let digest = compute_digest(self.recv_signing_key.as_ref(), sequence_number, data.data())?;
 
         let signature = SecurityBufferRef::find_buffer(message, BufferType::Token)?;
         self.check_signature(sequence_number, &digest, signature.data())?;
@@ -620,9 +710,77 @@ impl Sspi for Ntlm {
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
-        self.identity = Some(identity.into());
+        // If `self.identity` is already set, it means that the NTLM has accepted the final authentication message,
+        // and read username/domain from it. In this case, we only update the password.
+        if let Some(credentials) = &mut self.identity {
+            if credentials.password.as_ref().is_empty() {
+                let identity: AuthIdentityBuffers = identity.into();
+                credentials.password = identity.password;
+            }
+        } else {
+            self.identity = Some(identity.into());
+        }
 
         Ok(())
+    }
+
+    fn verify_mic_token(&mut self, signature: &[u8], data: &[u8], _: crate::private::Sealed) -> crate::Result<()> {
+        // We reset the cipher state before and after MIC token verification.
+        //
+        // [3.2.5.1 NTLM RC4 Key State for MechListMIC and First Signed Message](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f38ae8e3-847d-4829-b933-5ac1911a00ba):
+        // > When NTLM is negotiated, the SPNG server MUST set OriginalHandle to ServerHandle before generating the mechListMIC,
+        // > then set ServerHandle to OriginalHandle after generating the mechListMIC. This results in the RC4 key state
+        // > being the same for the mechListMIC and for the first message signed by the application.
+        // >
+        // > Because the RC4 key state is the same for the mechListMIC and for the first message signed by the application,
+        // > the SPNEGO Extension server MUST set OriginalHandle to ClientHandle before validating the mechListMIC and then
+        // > set ClientHandle to OriginalHandle after validating the mechListMIC.
+
+        if self.recv_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        } else {
+            self.reset_cipher_state()?;
+        }
+
+        let seq_number = self.remote_seq_num();
+
+        let digest = compute_digest(self.recv_signing_key.as_ref(), seq_number, data)?;
+        self.check_signature(seq_number, &digest, signature)?;
+
+        self.reset_cipher_state()?;
+
+        Ok(())
+    }
+
+    fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> crate::Result<Vec<u8>> {
+        // We reset the cipher state before and after MIC token generation.
+        //
+        // [3.2.5.1 NTLM RC4 Key State for MechListMIC and First Signed Message](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f38ae8e3-847d-4829-b933-5ac1911a00ba):
+        // > When NTLM is negotiated, the SPNG server MUST set OriginalHandle to ServerHandle before generating the mechListMIC,
+        // > then set ServerHandle to OriginalHandle after generating the mechListMIC. This results in the RC4 key state
+        // > being the same for the mechListMIC and for the first message signed by the application.
+        // >
+        // > Because the RC4 key state is the same for the mechListMIC and for the first message signed by the application,
+        // > the SPNEGO Extension server MUST set OriginalHandle to ClientHandle before validating the mechListMIC and then
+        // > set ClientHandle to OriginalHandle after validating the mechListMIC.
+
+        if self.send_sealing_key.is_none() {
+            self.complete_auth_token(&mut [])?;
+        } else {
+            self.reset_cipher_state()?;
+        }
+
+        let seq_number = self.our_seq_num();
+
+        let digest = compute_digest(self.send_signing_key.as_ref(), seq_number, data)?;
+
+        let mut mic_token = vec![0; SIGNATURE_SIZE];
+        let mut message = [SecurityBufferRef::token_buf(&mut mic_token)];
+        self.compute_checksum(&mut message, seq_number, &digest)?;
+
+        self.reset_cipher_state()?;
+
+        Ok(mic_token)
     }
 }
 

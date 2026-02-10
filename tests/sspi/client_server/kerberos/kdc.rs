@@ -36,6 +36,7 @@ use time::{Duration, OffsetDateTime};
 pub(crate) const MAX_TIME_SKEW: StdDuration = StdDuration::from_secs(3);
 pub(crate) const KDC_URL: &str = "tcp://192.168.1.103:88";
 pub(crate) const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
+pub(crate) const SERVER_COMPUTER_NAME: &str = "WIN-956CQOSSJTF.example.com";
 
 /// Represents user credentials in the internal KDC database.
 pub(crate) struct PasswordCreds {

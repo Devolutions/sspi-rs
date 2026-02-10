@@ -33,6 +33,10 @@ impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
 
         Ok(self.credentials.clone())
     }
+
+    fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>> {
+        Ok(vec![self.credentials.clone()])
+    }
 }
 
 pub(crate) fn create_client_credentials_handle<T>(
@@ -174,7 +178,6 @@ where
 
 pub(crate) fn check_messages_encryption(client: &mut impl Sspi, server: &mut impl Sspi) -> sspi::Result<()> {
     let server_sizes = server.query_context_sizes()?;
-    let sequence_number = 0;
 
     let mut token = vec![0; server_sizes.security_trailer as usize];
     let mut data = MESSAGE_TO_CLIENT.to_vec();
@@ -182,7 +185,7 @@ pub(crate) fn check_messages_encryption(client: &mut impl Sspi, server: &mut imp
         SecurityBufferRef::token_buf(token.as_mut_slice()),
         SecurityBufferRef::data_buf(data.as_mut_slice()),
     ];
-    server.encrypt_message(EncryptionFlags::empty(), &mut messages, sequence_number)?;
+    server.encrypt_message(EncryptionFlags::empty(), &mut messages)?;
     assert_ne!(MESSAGE_TO_CLIENT, messages[1].data());
 
     println!(
@@ -199,7 +202,7 @@ pub(crate) fn check_messages_encryption(client: &mut impl Sspi, server: &mut imp
         SecurityBufferRef::token_buf(token.take_data()),
     ];
 
-    client.decrypt_message(&mut messages, sequence_number)?;
+    client.decrypt_message(&mut messages)?;
 
     assert_eq!(MESSAGE_TO_CLIENT, messages[0].data());
 

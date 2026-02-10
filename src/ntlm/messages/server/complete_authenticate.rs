@@ -5,7 +5,16 @@ use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MA
 use crate::ntlm::{MESSAGE_INTEGRITY_CHECK_SIZE, Mic, NegotiateFlags, Ntlm, NtlmState, SESSION_KEY_SIZE};
 
 pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<SecurityStatus> {
-    check_state(context.state)?;
+    if context.state == NtlmState::Final {
+        return Ok(SecurityStatus::Ok);
+    }
+
+    if context.state != NtlmState::Completion {
+        return Err(crate::Error::new(
+            crate::ErrorKind::OutOfSequence,
+            String::from("Complete authenticate was fired but the state is not a Completion"),
+        ));
+    }
 
     let negotiate_message = context
         .negotiate_message
@@ -41,8 +50,12 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
 
     context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
     context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC)));
-    context.recv_sealing_key = Some(Rc4::new(&generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC)));
+    context.send_sealing_key = Some(Rc4::new(
+        generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+    ));
+    context.recv_sealing_key = Some(Rc4::new(
+        generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+    ));
 
     check_mic_correctness(
         negotiate_message.message.as_ref(),
@@ -56,17 +69,6 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
     context.state = NtlmState::Final;
 
     Ok(SecurityStatus::Ok)
-}
-
-fn check_state(state: NtlmState) -> crate::Result<()> {
-    if state != NtlmState::Completion {
-        Err(crate::Error::new(
-            crate::ErrorKind::OutOfSequence,
-            String::from("Complete authenticate was fired but the state is not a Completion"),
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 fn check_mic_correctness(

@@ -7,11 +7,10 @@ use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Ticket};
-use picky_krb::gss_api::NegTokenTarg1;
 use picky_krb::messages::{ApRep, AsRep, EncAsRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep};
 
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, Secret};
 
 /// Extracts password salt from the KRB error.
 ///
@@ -49,7 +48,7 @@ pub fn extract_session_key_from_as_rep(
     salt: &str,
     password: &str,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -62,16 +61,16 @@ pub fn extract_session_key_from_as_rep(
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
+    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -79,14 +78,18 @@ pub fn extract_session_key_from_tgs_rep(
         .cipher();
 
     let enc_data = cipher
-        .decrypt(session_key, TGS_REP_ENC_SESSION_KEY, &tgs_rep.0.enc_part.0.cipher.0.0)
+        .decrypt(
+            session_key.as_ref(),
+            TGS_REP_ENC_SESSION_KEY,
+            &tgs_rep.0.enc_part.0.cipher.0.0,
+        )
         .map_err(|e| Error::new(ErrorKind::DecryptFailure, format!("{e:?}")))?;
 
     trace!(?enc_data, "Plain TgsRep::EncData");
 
     let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
+    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts encryption type and salt from [AsRep].
@@ -167,32 +170,11 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
-/// Extracts [ApRep] from the [NegTokenTarg1] .
-#[instrument(ret, level = "trace")]
-pub fn extract_ap_rep_from_neg_token_targ(token: &NegTokenTarg1) -> Result<ApRep> {
-    let resp_token = &token
-        .0
-        .response_token
-        .0
-        .as_ref()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing response token in NegTokenTarg"))?
-        .0
-        .0;
-
-    let mut data = resp_token.as_slice();
-    let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
-
-    let mut t = [0, 0];
-    data.read_exact(&mut t)?;
-
-    Ok(picky_asn1_der::from_reader(&mut data)?)
-}
-
 /// Extracts the sequence number from the [ApRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_seq_number_from_ap_rep(
     ap_rep: &ApRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
 ) -> Result<Vec<u8>> {
     let cipher = enc_params
@@ -202,7 +184,7 @@ pub fn extract_seq_number_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
+        .decrypt(session_key.as_ref(), AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -225,9 +207,9 @@ pub fn extract_seq_number_from_ap_rep(
 #[instrument(level = "trace", ret)]
 pub fn extract_sub_session_key_from_ap_rep(
     ap_rep: &ApRep,
-    session_key: &[u8],
+    session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -235,7 +217,7 @@ pub fn extract_sub_session_key_from_ap_rep(
         .cipher();
 
     let res = cipher
-        .decrypt(session_key, AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
+        .decrypt(session_key.as_ref(), AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
         .map_err(|err| {
             Error::new(
                 ErrorKind::DecryptFailure,
@@ -253,7 +235,8 @@ pub fn extract_sub_session_key_from_ap_rep(
         .0
         .key_value
         .0
-        .0)
+        .0
+        .into())
 }
 
 /// Extracts TGT Ticket from encoded [NegTokenTarg1].
@@ -263,27 +246,19 @@ pub fn extract_sub_session_key_from_ap_rep(
 ///
 /// We use this oid to choose between the regular Kerberos 5 and Kerberos 5 User-to-User authentication.
 #[instrument(level = "trace", ret)]
-pub fn extract_tgt_ticket_with_oid(data: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
-    if data.is_empty() {
+pub fn extract_tgt_ticket_with_oid(mut resp_token: &[u8]) -> Result<Option<(Ticket, ObjectIdentifierAsn1)>> {
+    if resp_token.is_empty() {
         return Ok(None);
     }
 
-    let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(data)?;
+    let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut resp_token)?;
+    let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0.0)?;
 
-    if let Some(resp_token) = neg_token_targ.0.response_token.0.as_ref().map(|ticket| &ticket.0.0) {
-        let mut c = resp_token.as_slice();
+    let mut t = [0, 0];
 
-        let oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut c)?;
-        let oid: ObjectIdentifierAsn1 = picky_asn1_der::from_bytes(&oid.0.0)?;
+    resp_token.read_exact(&mut t)?;
 
-        let mut t = [0, 0];
+    let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut resp_token)?;
 
-        c.read_exact(&mut t)?;
-
-        let tgt_rep: TgtRep = picky_asn1_der::from_reader(&mut c)?;
-
-        Ok(Some((tgt_rep.ticket.0, oid)))
-    } else {
-        Ok(None)
-    }
+    Ok(Some((tgt_rep.ticket.0, oid)))
 }

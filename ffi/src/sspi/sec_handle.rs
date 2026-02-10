@@ -118,7 +118,7 @@ impl SspiImpl for SspiHandle {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut sspi::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut sspi::builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<sspi::generator::GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -146,19 +146,12 @@ impl Sspi for SspiHandle {
         &mut self,
         flags: sspi::EncryptionFlags,
         message: &mut [sspi::SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<sspi::SecurityStatus> {
-        self.sspi_context
-            .lock()?
-            .encrypt_message(flags, message, sequence_number)
+        self.sspi_context.lock()?.encrypt_message(flags, message)
     }
 
-    fn decrypt_message(
-        &mut self,
-        message: &mut [sspi::SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<sspi::DecryptionFlags> {
-        self.sspi_context.lock()?.decrypt_message(message, sequence_number)
+    fn decrypt_message(&mut self, message: &mut [sspi::SecurityBufferRef<'_>]) -> Result<sspi::DecryptionFlags> {
+        self.sspi_context.lock()?.decrypt_message(message)
     }
 
     fn query_context_sizes(&mut self) -> Result<sspi::ContextSizes> {
@@ -308,7 +301,7 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                     ))?)
                 } else {
                     let krb_config = KerberosConfig {
-                        client_computer_name: Some(client_computer_name),
+                        client_computer_name,
                         kdc_url: None,
                     };
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
@@ -1505,7 +1498,7 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
             },
             kerberos::PKG_NAME => {
                 let krb_config = KerberosConfig{
-                    client_computer_name:Some(try_execute!(hostname())),
+                    client_computer_name: try_execute!(hostname()),
                     kdc_url:None
                 };
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(

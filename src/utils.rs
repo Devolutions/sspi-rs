@@ -6,7 +6,7 @@ use rand::RngCore;
 use rand::rngs::StdRng;
 
 use crate::kerberos::EncryptionParams;
-use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
+use crate::{BufferType, Error, ErrorKind, Result, Secret, SecurityBufferFlags, SecurityBufferRef};
 
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
@@ -228,7 +228,7 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
     }
 }
 
-pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]> {
+pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&Secret<Vec<u8>>> {
     // the sub-session key is always preferred over the session key
     if let Some(key) = enc_params.sub_session_key.as_ref() {
         debug!("Encryption using sub-session key");

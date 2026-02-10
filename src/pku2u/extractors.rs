@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::pk_init::DH_NONCE_LEN;
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, Secret};
 
 pub(super) fn extract_krb_rep<'a, T: Deserialize<'a>>(mut data: &'a [u8]) -> Result<(T, &'a [u8])> {
     let _oid: ApplicationTag<Asn1RawDer, 0> = picky_asn1_der::from_reader(&mut data)?;
@@ -65,7 +65,11 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
 }
 
 #[instrument(level = "trace", ret)]
-pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &EncryptionParams) -> Result<Vec<u8>> {
+pub fn extract_session_key_from_as_rep(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -77,5 +81,5 @@ pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec())
+    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
 }

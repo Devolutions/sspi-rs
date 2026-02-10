@@ -1,7 +1,6 @@
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 
-use crate::Result;
 use crate::kerberos::client::extractors::extract_session_key_from_as_rep;
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions, generate_pa_datas_for_as_req as generate_password_based,
@@ -11,6 +10,7 @@ use crate::kerberos::encryption_params::EncryptionParams;
 use crate::pk_init::{
     GenerateAsPaDataOptions as SmartCardPaDataOptions, generate_pa_datas_for_as_req as generate_private_key_based,
 };
+use crate::{Result, Secret};
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
@@ -64,7 +64,7 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
 
 impl AsRepSessionKeyExtractor<'_> {
     #[instrument(level = "trace", ret, skip(self))]
-    pub(super) fn session_key(&mut self, as_rep: &AsRep) -> Result<Vec<u8>> {
+    pub(super) fn session_key(&mut self, as_rep: &AsRep) -> Result<Secret<Vec<u8>>> {
         match self {
             AsRepSessionKeyExtractor::AuthIdentity {
                 salt,

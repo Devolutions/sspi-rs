@@ -2,11 +2,13 @@ use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::crypto::aes::AesSize;
 
+use crate::Secret;
+
 #[derive(Debug, Clone)]
 pub struct EncryptionParams {
     pub encryption_type: Option<CipherSuite>,
-    pub session_key: Option<Vec<u8>>,
-    pub sub_session_key: Option<Vec<u8>>,
+    pub session_key: Option<Secret<Vec<u8>>>,
+    pub sub_session_key: Option<Secret<Vec<u8>>>,
     pub sspi_encrypt_key_usage: i32,
     pub sspi_decrypt_key_usage: i32,
     /// EC field of the Kerberos Wrap token.
