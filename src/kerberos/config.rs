@@ -27,7 +27,7 @@ pub struct KerberosConfig {
     /// Computer name, or "workstation name", of the client machine performing the authentication attempt
     ///
     /// This is also referred to as the "Source Workstation", i.e.: the name of the computer attempting to logon.
-    pub client_computer_name: Option<String>,
+    pub client_computer_name: String,
 }
 
 impl ProtocolConfig for KerberosConfig {
@@ -56,7 +56,7 @@ impl KerberosConfig {
 
         Self {
             kdc_url,
-            client_computer_name: Some(client_computer_name),
+            client_computer_name,
         }
     }
 
@@ -65,15 +65,6 @@ impl KerberosConfig {
             Some(kdc_url)
         } else {
             detect_kdc_url(domain)
-        }
-    }
-
-    pub fn from_kdc_url(url: &str) -> Self {
-        let kdc_url = parse_kdc_url(url);
-
-        Self {
-            kdc_url,
-            client_computer_name: None,
         }
     }
 }

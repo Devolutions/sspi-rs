@@ -200,7 +200,6 @@ impl Sspi for Pku2u {
         &mut self,
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<SecurityStatus> {
         trace!(encryption_params = ?self.encryption_params);
 
@@ -215,10 +214,12 @@ impl Sspi for Pku2u {
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
             .cipher();
 
+        let sequence_number = self.next_seq_number();
+
         let key = get_encryption_key(&self.encryption_params)?;
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
-        let mut wrap_token = WrapToken::with_seq_number(sequence_number as u64);
+        let mut wrap_token = WrapToken::with_seq_number(u64::from(sequence_number));
         wrap_token.flags = match self.mode {
             Pku2uMode::Client => CLIENT_WRAP_TOKEN_FLAGS,
             Pku2uMode::Server => SERVER_WRAP_TOKEN_FLAGS,
@@ -227,7 +228,7 @@ impl Sspi for Pku2u {
         let mut payload = data_buffer.data().to_vec();
         payload.extend_from_slice(&wrap_token.header());
 
-        let mut checksum = cipher.encrypt(key, key_usage, &payload)?;
+        let mut checksum = cipher.encrypt(key.as_ref(), key_usage, &payload)?;
         checksum.rotate_right(RRC.into());
 
         wrap_token.set_rrc(RRC);
@@ -258,12 +259,8 @@ impl Sspi for Pku2u {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -281,7 +278,7 @@ impl Sspi for Pku2u {
         let mut wrap_token = WrapToken::decode(encrypted.as_slice())?;
         wrap_token.checksum.rotate_left(RRC.into());
 
-        let mut decrypted = cipher.decrypt(key, key_usage, &wrap_token.checksum)?;
+        let mut decrypted = cipher.decrypt(key.as_ref(), key_usage, &wrap_token.checksum)?;
 
         // remove wrap token header
         decrypted.truncate(decrypted.len() - WrapToken::header_len());
@@ -346,7 +343,7 @@ impl Sspi for Pku2u {
         let session_key = get_encryption_key(&self.encryption_params)?;
 
         Ok(crate::SessionKeys {
-            session_key: session_key.to_vec().into(),
+            session_key: session_key.clone(),
         })
     }
 
@@ -414,7 +411,7 @@ impl SspiImpl for Pku2u {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -439,7 +436,7 @@ impl Pku2u {
     #[instrument(ret, level = "debug", fields(state = ?self.state), skip_all)]
     pub(crate) fn initialize_security_context_impl(
         &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
@@ -810,7 +807,8 @@ impl Pku2u {
                         check_if_empty!(
                             self.encryption_params.sub_session_key.as_ref(),
                             "sub-session key is not set"
-                        ),
+                        )
+                        .as_ref(),
                         ACCEPTOR_SIGN,
                         &self.negoex_messages,
                     )?;
@@ -970,8 +968,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key.clone()),
-                sub_session_key: Some(sub_session_key.clone()),
+                session_key: Some(session_key.clone().into()),
+                sub_session_key: Some(sub_session_key.clone().into()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
                 ec: 0,
@@ -999,8 +997,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(session_key),
-                sub_session_key: Some(sub_session_key),
+                session_key: Some(session_key.into()),
+                sub_session_key: Some(sub_session_key.into()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
                 ec: 0,
@@ -1025,7 +1023,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         ];
 
         pku2u_server
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .encrypt_message(EncryptionFlags::empty(), &mut message)
             .unwrap();
 
         let mut buffer = message[0].data().to_vec();
@@ -1036,7 +1034,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             SecurityBufferRef::data_buf(&mut []),
         ];
 
-        pku2u_client.decrypt_message(&mut message, 0).unwrap();
+        pku2u_client.decrypt_message(&mut message).unwrap();
 
         assert_eq!(message[1].data(), plain_message);
     }

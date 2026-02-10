@@ -12,7 +12,6 @@ use crate::kerberos::client::generators::{
     GenerateAsReqOptions,
 };
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
-use crate::kerberos::utils::unwrap_hostname;
 use crate::kerberos::{client, TGT_SERVICE_NAME};
 use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
@@ -20,7 +19,7 @@ use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, 
 /// Requests the TGT ticket from KDC.
 ///
 /// Basically, it performs the AS exchange, saves the session key, and returns the ticket.
-pub(super) async fn request_tgt(
+pub(crate) async fn request_tgt(
     server: &mut Kerberos,
     credentials: &CredentialsBuffers,
     tgt_req: &TgtReq,
@@ -76,7 +75,7 @@ pub(super) async fn request_tgt(
         snames: &[TGT_SERVICE_NAME, &realm],
         // 4 = size of u32
         nonce: &nonce.to_be_bytes(),
-        hostname: &unwrap_hostname(server.config.client_computer_name.as_deref())?,
+        hostname: &server.config.client_computer_name,
         context_requirements: ClientRequestFlags::empty(),
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;

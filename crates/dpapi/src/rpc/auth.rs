@@ -152,7 +152,7 @@ impl<'a> AuthProvider<'a> {
         ];
 
         self.security_context
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
+            .encrypt_message(EncryptionFlags::empty(), &mut message)?;
 
         Ok(())
     }
@@ -173,7 +173,7 @@ impl<'a> AuthProvider<'a> {
         ];
 
         self.security_context
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)?;
+            .encrypt_message(EncryptionFlags::empty(), &mut message)?;
 
         Ok(())
     }
@@ -205,7 +205,7 @@ impl<'a> AuthProvider<'a> {
             SecurityBufferRef::token_buf(security_trailer_data),
         ];
 
-        self.security_context.decrypt_message(&mut message, 0)?;
+        self.security_context.decrypt_message(&mut message)?;
 
         Ok(message[1].data().to_vec())
     }
@@ -226,7 +226,7 @@ impl<'a> AuthProvider<'a> {
             SecurityBufferRef::token_buf(security_trailer_data),
         ];
 
-        self.security_context.decrypt_message(&mut message, 0)?;
+        self.security_context.decrypt_message(&mut message)?;
 
         Ok(message[1].data().to_vec())
     }

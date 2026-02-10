@@ -279,7 +279,7 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     catch_panic!(
         check_null!(ph_context);
 
-        let mut sspi_context_ptr = try_execute!(
+        let sspi_context_ptr = try_execute!(
             // SAFETY:
             // - `ph_context` is convertible to a reference.
             // - The values behind `ph_context.dw_lower` and `ph_context.dw_upper` pointers are allocated by an SSPI function.
@@ -291,10 +291,8 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
         );
 
         // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
-        let sspi_context_ptr = unsafe { sspi_context_ptr.as_mut() };
-        // SAFETY: `sspi_context_ptr` is a valid, local pointer to the `SspiHandle` allocated by the `p_ctx_handle_to_sspi_context`.
         let _context: Box<SspiHandle> = unsafe {
-            Box::from_raw(sspi_context_ptr)
+            Box::from_raw(sspi_context_ptr.as_ptr())
         };
 
         // SAFETY:
@@ -434,7 +432,7 @@ pub unsafe extern "system" fn EncryptMessage(
     mut ph_context: PCtxtHandle,
     f_qop: u32,
     p_message: PSecBufferDesc,
-    message_seq_no: u32,
+    _message_seq_no: u32,
 ) -> SecurityStatus {
     catch_panic! {
         check_null!(ph_context);
@@ -482,7 +480,6 @@ pub unsafe extern "system" fn EncryptMessage(
         let result_status = sspi_context.encrypt_message(
             EncryptionFlags::from_bits(f_qop.try_into().unwrap()).unwrap(),
             &mut message,
-            message_seq_no.try_into().unwrap(),
         );
 
         try_execute!(
@@ -521,7 +518,7 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBuff
 pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
-    message_seq_no: u32,
+    _message_seq_no: u32,
     pf_qop: *mut u32,
 ) -> SecurityStatus {
     catch_panic! {
@@ -566,7 +563,7 @@ pub unsafe extern "system" fn DecryptMessage(
         );
 
         let (decryption_flags, result_status) =
-            match sspi_context.decrypt_message(&mut message, message_seq_no.try_into().unwrap()) {
+            match sspi_context.decrypt_message(&mut message) {
                 Ok(flags) => (flags, Ok(())),
                 Err(error) => (DecryptionFlags::empty(), Err(error)),
             };
@@ -718,7 +715,7 @@ mod tests {
         ];
 
         kerberos_server
-            .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+            .encrypt_message(EncryptionFlags::empty(), &mut message)
             .unwrap();
 
         let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);

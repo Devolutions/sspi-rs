@@ -1,4 +1,4 @@
-mod as_exchange;
+pub(crate) mod as_exchange;
 mod cache;
 mod extractors;
 mod generators;
@@ -7,38 +7,31 @@ use std::io::Write;
 use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
-use extractors::{extract_client_mic_token, select_mech_type};
-use generators::{generate_mic_token, generate_tgt_rep};
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
-use picky_krb::constants::key_usages::INITIATOR_SIGN;
+use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
+use picky_krb::messages::ApReq;
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
-use self::as_exchange::request_tgt;
 use self::cache::AuthenticatorsCache;
-use self::extractors::{
-    decode_initial_neg_init, decode_neg_ap_req, decrypt_ap_req_authenticator, decrypt_ap_req_ticket,
-};
-use self::generators::{generate_ap_rep, generate_final_neg_token_targ, generate_neg_token_targ};
-use super::utils::validate_mic_token;
+use self::extractors::{decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
+use self::generators::generate_ap_rep;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::flags::ApOptions;
+use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
-    SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
+    Secret, SecurityBuffer, SecurityStatus, ServerResponseFlags, SspiImpl, Username,
 };
-
-/// Indicated that the MIC token `SentByAcceptor` flag must not be enabled in the incoming MIC token.
-const SENT_BY_INITIATOR: u8 = 0;
 
 /// Additional properties that are needed only for server-side Kerberos.
 #[derive(Debug, Clone)]
@@ -52,7 +45,7 @@ pub struct ServerProperties {
     /// Key that is used for TGS tickets decryption.
     /// It should be provided by the user during regular Kerberos auth. Or
     /// it will be established during AS exchange in the case of Kerberos U2U auth.
-    pub ticket_decryption_key: Option<Vec<u8>>,
+    pub ticket_decryption_key: Option<Secret<Vec<u8>>>,
     /// Name of the Kerberos service.
     pub service_name: PrincipalName,
     /// User credentials on whose behalf the TGT ticket will be requested.
@@ -78,7 +71,7 @@ impl ServerProperties {
         sname: &[&str],
         user: Option<CredentialsBuffers>,
         max_time_skew: Duration,
-        ticket_decryption_key: Option<Vec<u8>>,
+        ticket_decryption_key: Option<Secret<Vec<u8>>>,
     ) -> Result<Self> {
         let service_names = sname
             .iter()
@@ -105,7 +98,7 @@ impl ServerProperties {
 /// The user should call this function until it returns `SecurityStatus::Ok`.
 pub async fn accept_security_context(
     server: &mut Kerberos,
-    yield_point: &mut YieldPointLocal,
+    _yield_point: &mut YieldPointLocal,
     builder: FilledAcceptSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<AcceptSecurityContextResult> {
     let input = builder
@@ -115,60 +108,8 @@ pub async fn accept_security_context(
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
     let status = match server.state {
-        KerberosState::Negotiate => {
-            let (tgt_req, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
-            let mech_type = select_mech_type(&mech_types)?;
-
-            let server_props = server.server.as_mut().ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidHandle,
-                    "Kerberos server properties are not initialized",
-                )
-            })?;
-            server_props.mech_types = mech_types;
-
-            let tgt_rep = if let Some(tgt_req) = tgt_req {
-                // If user sent us TgtReq than they want Kerberos User-to-User auth.
-                // At this point, we need to request TGT token in KDC and send it back to the user.
-
-                if !builder
-                    .context_requirements
-                    .contains(ServerRequestFlags::USE_SESSION_KEY)
-                {
-                    warn!("KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set.");
-                }
-
-                server.krb5_user_to_user = true;
-
-                let credentials = builder
-                    .credentials_handle
-                    .and_then(|credentials_handle| (*credentials_handle).clone())
-                    .or_else(|| server_props.user.clone());
-                let credentials = credentials.as_ref().ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::WrongCredentialHandle,
-                        "failed to request TGT ticket: no credentials provided",
-                    )
-                })?;
-
-                Some(generate_tgt_rep(
-                    request_tgt(server, credentials, &tgt_req, yield_point).await?,
-                ))
-            } else {
-                None
-            };
-
-            let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, tgt_rep)?)?;
-
-            let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-            output_token.buffer.write_all(&encoded_neg_token_targ)?;
-
-            server.state = KerberosState::Preauthentication;
-
-            SecurityStatus::ContinueNeeded
-        }
         KerberosState::Preauthentication => {
-            let ap_req = decode_neg_ap_req(&input_token.buffer)?;
+            let ap_req = decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)?;
 
             let server_data = server.server.as_ref().ok_or_else(|| {
                 Error::new(
@@ -194,7 +135,7 @@ pub async fn accept_security_context(
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
 
             let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
-            let session_key = ticket_enc_part.0.key.0.key_value.0 .0.clone();
+            let session_key = Secret::new(ticket_enc_part.0.key.0.key_value.0 .0.clone());
 
             let AuthenticatorInner {
                 authenticator_vno: _,
@@ -327,7 +268,7 @@ pub async fn accept_security_context(
 
                 let mut rand = StdRng::try_from_os_rng()?;
                 rand.fill_bytes(&mut sub_session_key);
-                server.encryption_params.sub_session_key = Some(sub_session_key);
+                server.encryption_params.sub_session_key = Some(sub_session_key.into());
 
                 // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
                 // A subkey MAY be included if the server desires to negotiate a different subkey.
@@ -340,66 +281,24 @@ pub async fn accept_security_context(
                     &server.encryption_params,
                 )?;
 
-                let mic_payload = picky_asn1_der::to_vec(
-                    &server
-                        .server
-                        .as_ref()
-                        .ok_or_else(|| {
-                            Error::new(
-                                ErrorKind::InvalidHandle,
-                                "Kerberos server properties are not initialized",
-                            )
-                        })?
-                        .mech_types,
-                )?;
-                let mic = generate_mic_token(
-                    u64::from(server.next_seq_number()),
-                    mic_payload,
-                    server
-                        .encryption_params
-                        .sub_session_key
-                        .as_ref()
-                        .expect("sub-session key should present"),
-                )?;
-
                 let mech_id = if server.krb5_user_to_user {
                     oids::krb5_user_to_user()
                 } else {
                     oids::krb5()
                 };
 
-                let encoded_neg_ap_rep = picky_asn1_der::to_vec(&generate_final_neg_token_targ(mech_id, ap_rep, mic)?)?;
+                let encoded_neg_ap_rep = generate_krb_message(mech_id, AP_REP_TOKEN_ID, ap_rep)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                 output_token.buffer.write_all(&encoded_neg_ap_rep)?;
             }
 
             server.encryption_params.session_key = Some(session_key);
-            server.state = KerberosState::ApExchange;
-
-            SecurityStatus::ContinueNeeded
-        }
-        KerberosState::ApExchange => {
-            let server_props = server.server.as_mut().ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidHandle,
-                    "Kerberos server properties are not initialized",
-                )
-            })?;
-
-            let client_mic = extract_client_mic_token(&input_token.buffer)?;
-            validate_mic_token::<SENT_BY_INITIATOR>(
-                &client_mic,
-                INITIATOR_SIGN,
-                &server.encryption_params,
-                &server_props.mech_types,
-            )?;
-
-            server.state = KerberosState::PubKeyAuth;
+            server.state = KerberosState::Final;
 
             SecurityStatus::Ok
         }
-        KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
+        KerberosState::ApExchange | KerberosState::Final => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

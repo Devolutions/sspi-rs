@@ -149,7 +149,7 @@ impl DpapiConfig {
             proxy = inner.proxy.clone().context("proxy missing")?;
             username = inner.username.clone().context("username missing")?;
             password = inner.password.clone().context("password missing")?;
-            computer_name = inner.computer_name.clone();
+            computer_name = inner.computer_name.clone().context("computer name missing")?;
             command = inner.command.clone().context("command missing")?;
             kdc_proxy_url = inner.kdc_proxy_url.clone();
         }
@@ -183,7 +183,7 @@ impl DpapiConfig {
                     proxy,
                     username: &username,
                     password: password.into(),
-                    client_computer_name: computer_name,
+                    client_computer_name: Some(computer_name),
                     network_client: &mut network_client,
                     kerberos_config,
                 },
@@ -196,7 +196,7 @@ impl DpapiConfig {
                     proxy,
                     username: &username,
                     password: password.into(),
-                    client_computer_name: computer_name,
+                    client_computer_name: Some(computer_name),
                     network_client: &mut network_client,
                     kerberos_config,
                 },

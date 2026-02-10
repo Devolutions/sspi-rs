@@ -3,21 +3,43 @@ use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
-    DataRepresentation, InitializeSecurityContextResult, Ntlm, Secret, SecurityBuffer, SecurityStatus,
-    ServerRequestFlags, Sspi, Username,
+    DataRepresentation, InitializeSecurityContextResult, Negotiate, NegotiateConfig, Secret, SecurityBuffer,
+    SecurityStatus, ServerRequestFlags, Sspi, Username,
 };
 
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption, TARGET_NAME};
 
-fn run_ntlm(config: NtlmConfig) {
+const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
+
+fn run_spnego_ntlm() {
+    let ntlm_config = NtlmConfig {
+        client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
+    };
     let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::parse("test_user").unwrap(),
+        username: Username::parse("test_user@example.com").unwrap(),
         password: Secret::from("test_password".to_owned()),
     });
     let target_name = TARGET_NAME;
 
-    let mut client = SspiContext::Ntlm(Ntlm::with_config(config.clone()));
-    let mut server = SspiContext::Ntlm(Ntlm::with_config(config));
+    let mut client = SspiContext::Negotiate(
+        Negotiate::new_client(NegotiateConfig::new(
+            Box::new(ntlm_config.clone()),
+            Some(String::from("ntlm,!kerberos")),
+            CLIENT_COMPUTER_NAME.into(),
+        ))
+        .unwrap(),
+    );
+    let mut server = SspiContext::Negotiate(
+        Negotiate::new_server(
+            NegotiateConfig::new(
+                Box::new(ntlm_config),
+                Some(String::from("ntlm,!kerberos")),
+                "WIN-956CQOSSJTF.example.com".into(),
+            ),
+            vec![credentials.to_auth_identity().unwrap()],
+        )
+        .unwrap(),
+    );
 
     let builder = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new();
     let AcquireCredentialsHandleResult {
@@ -42,7 +64,7 @@ fn run_ntlm(config: NtlmConfig) {
     let mut input_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut output_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
-    for _ in 0..3 {
+    for _ in 0..4 {
         let mut builder = client
             .initialize_security_context()
             .with_credentials_handle(&mut client_credentials_handle)
@@ -80,19 +102,10 @@ fn run_ntlm(config: NtlmConfig) {
         }
     }
 
-    panic!("NTLM authentication should not exceed 3 steps")
+    panic!("SPNEGO authentication should not exceed 4 steps")
 }
 
 #[test]
-fn ntlm_with_computer_name() {
-    run_ntlm(NtlmConfig {
-        client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
-    });
-}
-
-#[test]
-fn ntlm_without_computer_name() {
-    run_ntlm(NtlmConfig {
-        client_computer_name: None,
-    });
+fn spnego_ntlm_client_server() {
+    run_spnego_ntlm();
 }

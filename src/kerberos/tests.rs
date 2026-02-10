@@ -21,7 +21,7 @@ fn stream_buffer_decryption() {
     ];
 
     kerberos_server
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+        .encrypt_message(EncryptionFlags::empty(), &mut message)
         .unwrap();
 
     let mut buffer = message[0].data().to_vec();
@@ -32,7 +32,7 @@ fn stream_buffer_decryption() {
         SecurityBufferRef::data_buf(&mut []),
     ];
 
-    kerberos_client.decrypt_message(&mut message, 0).unwrap();
+    kerberos_client.decrypt_message(&mut message).unwrap();
 
     assert_eq!(message[1].data(), plain_message);
 }
@@ -56,13 +56,13 @@ fn secbuffer_readonly_with_checksum() {
         state: KerberosState::Final,
         config: KerberosConfig {
             kdc_url: None,
-            client_computer_name: None,
+            client_computer_name: "hostname".into(),
         },
         auth_identity: None,
         encryption_params: EncryptionParams {
             encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-            session_key: Some(session_key.to_vec()),
-            sub_session_key: Some(sub_session_key.to_vec()),
+            session_key: Some(session_key.to_vec().into()),
+            sub_session_key: Some(sub_session_key.to_vec().into()),
             sspi_encrypt_key_usage: ACCEPTOR_SEAL,
             sspi_decrypt_key_usage: INITIATOR_SEAL,
             ec: 16,
@@ -125,7 +125,7 @@ fn secbuffer_readonly_with_checksum() {
         SecurityBufferRef::token_buf(&mut token_data),
     ];
 
-    kerberos_server.decrypt_message(&mut message, 0).unwrap();
+    kerberos_server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(plaintext[..], message[1].data()[..]);
@@ -167,13 +167,13 @@ fn rpc_request_encryption() {
     ];
 
     kerberos_client
-        .encrypt_message(EncryptionFlags::empty(), &mut message, 0)
+        .encrypt_message(EncryptionFlags::empty(), &mut message)
         .unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(trailer[..], message[2].data()[..]);
 
-    kerberos_server.decrypt_message(&mut message, 0).unwrap();
+    kerberos_server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(header[..], message[0].data()[..]);
     assert_eq!(message[1].data(), plaintext);

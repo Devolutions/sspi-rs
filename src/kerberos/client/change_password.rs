@@ -13,7 +13,7 @@ use crate::kerberos::client::generators::{
     get_client_principal_realm, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions,
 };
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
-use crate::kerberos::utils::{serialize_message, unwrap_hostname};
+use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{client, CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN};
 use crate::utils::generate_random_symmetric_key;
 use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result};
@@ -36,7 +36,6 @@ pub async fn change_password<'a>(
 
     let cname_type = get_client_principal_name_type(username, domain);
     let realm = &get_client_principal_realm(username, domain);
-    let hostname = unwrap_hostname(client.config.client_computer_name.as_deref())?;
 
     let mut rand = StdRng::try_from_os_rng()?;
     let nonce = &rand.next_u32().to_ne_bytes();
@@ -48,7 +47,7 @@ pub async fn change_password<'a>(
         snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
         // 4 = size of u32
         nonce,
-        hostname: &hostname,
+        hostname: &client.config.client_computer_name,
         context_requirements: ClientRequestFlags::empty(),
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
@@ -101,7 +100,7 @@ pub async fn change_password<'a>(
         &authenticator,
         &client.encryption_params,
         seq_num,
-        &hostname,
+        &client.config.client_computer_name,
     )?;
 
     if let Some((_realm, mut kdc_url)) = client.get_kdc() {

@@ -115,10 +115,8 @@ pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{
-    hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX},
-    Ntlm,
-};
+pub use self::ntlm::hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
+pub use self::ntlm::Ntlm;
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
 use crate::builders::{
@@ -317,7 +315,9 @@ where
     /// # MSDN
     ///
     /// * [InitializeSecurityContextW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
-    fn initialize_security_context<'a>(&mut self) -> EmptyInitializeSecurityContext<'a, Self::CredentialsHandle> {
+    fn initialize_security_context<'a, 'output>(
+        &mut self,
+    ) -> EmptyInitializeSecurityContext<'a, 'output, Self::CredentialsHandle> {
         InitializeSecurityContext::new()
     }
 
@@ -594,7 +594,7 @@ where
     ///
     /// # #[allow(unused_variables)]
     /// let result = ntlm
-    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg_buffer, 0).unwrap();
+    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg_buffer).unwrap();
     ///
     /// println!("Encrypted: {:?}", msg_buffer[1].data());
     /// ```
@@ -611,7 +611,6 @@ where
         &mut self,
         flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> Result<SecurityStatus>;
 
     /// Generates a cryptographic checksum of the message, and also includes sequencing information to prevent message loss or insertion.
@@ -932,7 +931,7 @@ where
     /// ];
     ///
     /// let _result = server_ntlm
-    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg, 0).unwrap();
+    ///     .encrypt_message(sspi::EncryptionFlags::empty(), &mut msg).unwrap();
     ///
     /// let [mut token, mut data] = msg;
     ///
@@ -943,7 +942,7 @@ where
     ///
     /// #[allow(unused_variables)]
     /// let encryption_flags = ntlm
-    ///     .decrypt_message(&mut msg_buffer, 0)
+    ///     .decrypt_message(&mut msg_buffer)
     ///     .unwrap();
     ///
     /// println!("Decrypted message: {:?}", msg_buffer[1].data());
@@ -952,11 +951,7 @@ where
     /// # MSDN
     ///
     /// * [DecryptMessage function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> Result<DecryptionFlags>;
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags>;
 
     /// Retrieves information about the bounds of sizes of authentication information of the current security principal.
     ///
@@ -1277,7 +1272,7 @@ pub trait SspiImpl {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -1289,11 +1284,37 @@ pub trait SspiImpl {
     ) -> Result<GeneratorAcceptSecurityContext<'a>>;
 }
 
+mod private {
+    pub struct Sealed;
+}
+
 pub trait SspiEx
 where
     Self: Sized + SspiImpl,
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
+
+    /// Verifies a MIC (Message Integrity Code) token for the specified message data.
+    ///
+    /// This method is used only by the Negotiate security package (SPNEGO protocol implementation)
+    /// to verify the `mechListMIC` token during the authentication process.
+    fn verify_mic_token(&mut self, _token: &[u8], _data: &[u8], _: private::Sealed) -> Result<()> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "verify_mic_token is not supported",
+        ))
+    }
+
+    /// Generates a MIC (Message Integrity Code) token for the specified message data.
+    ///
+    /// This method is used only by the Negotiate security package (SPNEGO protocol implementation)
+    /// to generate `mechListMIC` token during the authentication process.
+    fn generate_mic_token(&mut self, _token: &[u8], _: private::Sealed) -> Result<Vec<u8>> {
+        Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "generate_mic_token is not supported",
+        ))
+    }
 }
 
 pub type SspiPackage<'a, CredsHandle, AuthData> =
