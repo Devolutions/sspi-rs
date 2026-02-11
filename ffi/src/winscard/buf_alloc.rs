@@ -16,7 +16,7 @@ pub(super) const SCARD_AUTOALLOCATE: u32 = 0xffffffff;
 /// * write data length of the requested data in the provided length pointer.
 /// * allocate data by ourselves and write data pointer in the provided buffer.
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `p_buf` can be null. Else, it must be valid for both reads and writes for `*pcb_buf` many bytes, and it must be properly aligned.
 /// - `pcb_buf` must be a non-null, properly-aligned pointer.
@@ -53,7 +53,7 @@ pub(super) unsafe fn build_buf_request_type<'data>(
 /// This function behaves as the [build_buf_request_type] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is multiplied by two.
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `p_buf` can be null. Else, it must be valid for both reads and writes for `*pcb_buf` many bytes, and it must be properly aligned.
 /// - `pcb_buf` must be a non-null, properly-aligned pointer.
@@ -142,7 +142,7 @@ pub(super) unsafe fn save_out_buf(out_buf: OutBuffer<'_>, p_buf: LpByte, pcb_buf
 /// This function behaves as the [save_out_buf] but here it expects a pointer
 /// to the `u16` buffer instead of `u8`. So, the buffer length is divided by two.
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `p_buf` can be null. Else, it must be a properly-aligned pointer, that points to a valid memory region and valid for both reads and writes.
 /// - `pcb_buf` must be a properly-aligned pointer, that points to a valid memory region and valid for both reads and writes.

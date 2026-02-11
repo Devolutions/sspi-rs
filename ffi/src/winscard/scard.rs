@@ -76,7 +76,7 @@ unsafe fn connect(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnecta)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader` must be a non-null pointer to a valid, null-terminated C string.
@@ -133,7 +133,7 @@ pub unsafe extern "system" fn SCardConnectA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardconnectw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader` must be a non-null pointer to a valid, null-terminated C string.
@@ -188,7 +188,7 @@ pub unsafe extern "system" fn SCardConnectW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreconnect)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pdw_active_protocol` must be a properly-aligned pointer, valid for writes.
@@ -228,7 +228,7 @@ pub unsafe extern "system" fn SCardReconnect(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scarddisconnect)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// The `handle` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardDisconnect"))]
@@ -262,7 +262,7 @@ pub unsafe extern "system" fn SCardDisconnect(handle: ScardHandle, dw_dispositio
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardbegintransaction)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// The `handle` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardBeginTransaction"))]
@@ -286,7 +286,7 @@ pub unsafe extern "system" fn SCardBeginTransaction(handle: ScardHandle) -> Scar
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardendtransaction)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// The `handle` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEndTransaction"))]
@@ -329,7 +329,7 @@ pub extern "system" fn SCardState(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusa)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `msz_reader_names` must be properly-aligned pointer, valid for both reads and writes for `*pcch_reader_len` many bytes.
@@ -406,7 +406,7 @@ pub unsafe extern "system" fn SCardStatusA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardstatusw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `msz_reader_names` must be properly-aligned pointer, valid for both reads and writes for `*pcch_reader_len` many bytes.
@@ -484,7 +484,7 @@ pub unsafe extern "system" fn SCardStatusW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardtransmit)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `pio_send_pci` must be a pointer to a valid `ScardIoRequest` structure.
@@ -571,7 +571,7 @@ pub extern "system" fn SCardGetTransmitCount(_handle: ScardHandle, pc_transmit_c
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcontrol)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `lp_in_buffer` must be valid for reads for `cb_in_buffer_size` many bytes, and it must be properly-aligned.
@@ -639,7 +639,7 @@ pub unsafe extern "system" fn SCardControl(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetattrib)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `pb_attr` can be null. If it's non-null, then it must be valid for both reads and writes for `*pcb_attr_len` many bytes,
@@ -690,7 +690,7 @@ pub unsafe extern "system" fn SCardGetAttrib(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardsetattrib)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `handle` must be a valid raw scard context handle.
 /// - `pb_atter` must be valid for reads for `cb_attr_len` many bytes, and it must be properly-aligned.

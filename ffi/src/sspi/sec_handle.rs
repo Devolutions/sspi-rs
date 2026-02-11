@@ -257,7 +257,7 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
 ///
 /// *Note*: `*context` **can** be NULL: the function will create a new security context if [PCtxHandle] is NULL.
 ///
-/// # # Safety
+/// # Safety
 ///
 /// The caller have to ensure that either `*(context)` is null or the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
 #[instrument(ret)]
@@ -368,7 +368,7 @@ fn verify_security_package(package_name: &str) -> Result<()> {
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlea)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// `psz_package` must be a non-null pointer to a valid, null-terminated C string representing the security package name.
 /// `p_auth_data` must be a non-null pointer to a valid credentials structure corresponding to the security package in use.
@@ -442,7 +442,7 @@ pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acquirecredentialshandlew)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// `psz_package` must be a non-null pointer to a valid, null-terminated C string representing the security package name.
 /// `p_auth_data` must be a non-null pointer to a valid credentials structure corresponding to the security package in use.
@@ -543,7 +543,7 @@ pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *m
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontexta)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_credentials` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`]
 ///   or [`AcquireCredentialsHandleW`].
@@ -697,7 +697,7 @@ pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-initializesecuritycontextw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_credentials` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`]
 ///   or [`AcquireCredentialsHandleW`].
@@ -1054,7 +1054,7 @@ unsafe fn query_context_attributes_common(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesa)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -1083,7 +1083,7 @@ pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32,
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querycontextattributesw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -1223,7 +1223,7 @@ pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, u32, *mut c_v
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-setcredentialsattributesa)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_context` must be a non-null, valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -1317,7 +1317,7 @@ pub type SetCredentialsAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u3
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-setcredentialsattributesw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `ph_context` must be a non-null, valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -1408,7 +1408,7 @@ pub type SetCredentialsAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u3
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpassworda)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `psz_package_name` must be a non-null pointer to a valid, null-terminated C string representing the package name.
 /// - `psz_domain_name` must be a non-null pointer to a valid, null-terminated C string representing the domain name.
@@ -1549,7 +1549,7 @@ pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-changeaccountpasswordw)
 ///
-/// # # Safety
+/// # Safety
 ///
 /// - `psz_package_name` must be a non-null pointer to a valid, null-terminated C string representing the package name.
 /// - `psz_domain_name` must be a non-null pointer to a valid, null-terminated C string representing the domain name.
