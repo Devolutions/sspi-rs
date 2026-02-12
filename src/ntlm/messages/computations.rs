@@ -10,12 +10,12 @@ use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
 use crate::channel_bindings::ChannelBindings;
-use crate::crypto::{compute_hmac_md5, compute_md4, compute_md5, compute_md5_channel_bindings_hash, HASH_SIZE};
+use crate::crypto::{HASH_SIZE, compute_hmac_md5, compute_md4, compute_md5, compute_md5_channel_bindings_hash};
 use crate::ntlm::messages::av_pair::*;
 use crate::ntlm::{
     AuthIdentityBuffers, CHALLENGE_SIZE, LM_CHALLENGE_RESPONSE_BUFFER_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
 };
-use crate::{utils, NtlmHash, NtlmHashError};
+use crate::{NtlmHash, NtlmHashError, utils};
 
 pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
@@ -52,8 +52,7 @@ fn convert_to_file_time(end_date: OffsetDateTime) -> crate::Result<u64> {
         Err(crate::Error::new(
             crate::ErrorKind::InternalError,
             format!(
-                "Failed to convert system time to file time, where the start date: {:?}, end date: {:?}",
-                start_date, end_date
+                "Failed to convert system time to file time, where the start date: {start_date:?}, end date: {end_date:?}"
             ),
         ))
     } else {

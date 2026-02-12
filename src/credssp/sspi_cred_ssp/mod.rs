@@ -10,7 +10,7 @@ use rand::{RngCore, SeedableRng};
 use rustls::client::ClientConfig;
 use rustls::{ClientConnection, Connection};
 
-use self::tls_connection::{danger, TlsConnection};
+use self::tls_connection::{TlsConnection, danger};
 use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
@@ -18,12 +18,12 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
 use crate::{
-    builders, negotiate, AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType,
-    CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags,
-    ConnectionInfo, ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation,
-    DecryptionFlags, EncryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities,
-    PackageInfo, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx,
-    SspiImpl, StreamSizes, PACKAGE_ID_NONE,
+    AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType, CertTrustErrorStatus,
+    CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
+    ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags,
+    Error, ErrorKind, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, StreamSizes,
+    builders, negotiate,
 };
 
 pub const PKG_NAME: &str = "CREDSSP";
@@ -436,7 +436,7 @@ impl SspiCredSsp {
                             target_hostname.to_owned().try_into().map_err(|e| {
                                 Error::new(
                                     ErrorKind::InvalidParameter,
-                                    format!("provided target name is not valid DNS name: {:?}", e),
+                                    format!("provided target name is not valid DNS name: {e:?}"),
                                 )
                             })?,
                         )
@@ -524,10 +524,10 @@ impl SspiCredSsp {
 
                     ts_request.client_nonce = self.nonce;
 
-                    if let Some(nego_tokens) = &ts_request.nego_tokens {
-                        if nego_tokens.is_empty() {
-                            ts_request.nego_tokens = None;
-                        }
+                    if let Some(nego_tokens) = &ts_request.nego_tokens
+                        && nego_tokens.is_empty()
+                    {
+                        ts_request.nego_tokens = None;
                     }
 
                     self.state = CredSspState::AuthInfo;

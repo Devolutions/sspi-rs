@@ -171,7 +171,7 @@ impl<'data> SecurityBufferRef<'data> {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         "the missing buffer type does not hold any buffers inside",
-                    ))
+                    ));
                 }
                 UnflaggedSecurityBuffer::Empty => UnflaggedSecurityBuffer::Empty,
             },
@@ -195,7 +195,7 @@ impl<'data> SecurityBufferRef<'data> {
                 return Err(Error::new(
                     ErrorKind::InternalError,
                     "the missing buffer type does not hold any buffers inside",
-                ))
+                ));
             }
             UnflaggedSecurityBuffer::Empty => {}
         };
@@ -250,7 +250,7 @@ impl<'data> SecurityBufferRef<'data> {
         buffers.iter().find(|b| b.buffer_type() == buffer_type).ok_or_else(|| {
             Error::new(
                 ErrorKind::InvalidToken,
-                format!("no buffer was provided with type {:?}", buffer_type),
+                format!("no buffer was provided with type {buffer_type:?}"),
             )
         })
     }
@@ -306,7 +306,7 @@ impl<'data> SecurityBufferRef<'data> {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("no buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {buffer_type:?}"),
                 )
             })
     }
@@ -415,7 +415,7 @@ impl fmt::Debug for SecurityBufferRef<'_> {
 }
 
 fn write_buffer(buf: &[u8], buf_name: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}: ", buf_name)?;
+    write!(f, "{buf_name}: ")?;
     f.write_str("0x")?;
     buf.iter().try_for_each(|byte| write!(f, "{byte:02X}"))
 }

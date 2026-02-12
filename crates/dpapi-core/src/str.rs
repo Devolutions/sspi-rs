@@ -10,7 +10,7 @@ use ironrdp_core::{DecodeError, DecodeResult, InvalidFieldErr, ReadCursor, Write
 ///
 /// *Note*: this function does not expect a NULL-char at the end of the byte slice.
 pub fn from_utf16_le(data: &[u8]) -> DecodeResult<String> {
-    if data.len() % 2 != 0 {
+    if !data.len().is_multiple_of(2) {
         return Err(DecodeError::invalid_field(
             "",
             "UTF-16 data",

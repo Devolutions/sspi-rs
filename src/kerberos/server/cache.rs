@@ -26,8 +26,8 @@ impl PartialEq for AuthenticatorCacheRecord {
                 return false;
             }
 
-            let names_1 = &name_1.name_string.0 .0;
-            let names_2 = &name_2.name_string.0 .0;
+            let names_1 = &name_1.name_string.0.0;
+            let names_2 = &name_2.name_string.0.0;
 
             if names_1.len() != names_2.len() {
                 return false;
@@ -53,7 +53,7 @@ impl Hash for AuthenticatorCacheRecord {
     fn hash<H: Hasher>(&self, state: &mut H) {
         fn hash_principal_name<H: Hasher>(name: &PrincipalName, state: &mut H) {
             name.name_type.0.hash(state);
-            for name_string in &name.name_string.0 .0 {
+            for name_string in &name.name_string.0.0 {
                 name_string.0.hash(state);
             }
         }

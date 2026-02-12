@@ -9,12 +9,12 @@ use crate::kerberos::client::extractors::{
     extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_status_code_from_krb_priv_response,
 };
 use crate::kerberos::client::generators::{
-    generate_as_req_kdc_body, generate_authenticator, generate_krb_priv_request, get_client_principal_name_type,
-    get_client_principal_realm, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions,
+    EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_as_req_kdc_body,
+    generate_authenticator, generate_krb_priv_request, get_client_principal_name_type, get_client_principal_realm,
 };
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
 use crate::kerberos::utils::{serialize_message, unwrap_hostname};
-use crate::kerberos::{client, CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN};
+use crate::kerberos::{CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN, client};
 use crate::utils::generate_random_symmetric_key;
 use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result};
 
@@ -32,7 +32,7 @@ pub async fn change_password<'a>(
     let domain = &change_password.domain_name;
     let password = &change_password.old_password;
 
-    let salt = format!("{}{}", domain, username);
+    let salt = format!("{domain}{username}");
 
     let cname_type = get_client_principal_name_type(username, domain);
     let realm = &get_client_principal_realm(username, domain);
@@ -122,20 +122,20 @@ pub async fn change_password<'a>(
         let krb_priv_response = KrbPrivMessage::deserialize(&response[4..]).map_err(|err| {
             Error::new(
                 ErrorKind::InvalidToken,
-                format!("cannot deserialize krb_priv_response: {:?}", err),
+                format!("cannot deserialize krb_priv_response: {err:?}"),
             )
         })?;
 
         let result_status = extract_status_code_from_krb_priv_response(
             &krb_priv_response.krb_priv,
-            &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0 .0,
+            &authenticator.0.subkey.0.as_ref().unwrap().0.key_value.0.0,
             &client.encryption_params,
         )?;
 
         if result_status != 0 {
             return Err(Error::new(
                 ErrorKind::WrongCredentialHandle,
-                format!("unsuccessful krb result code: {}. expected 0", result_status),
+                format!("unsuccessful krb result code: {result_status}. expected 0"),
             ));
         }
     } else {

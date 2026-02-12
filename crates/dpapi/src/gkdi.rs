@@ -1,6 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt};
-use dpapi_core::{compute_padding, decode_owned, read_padding, DecodeOwned, ReadCursor};
-use dpapi_pdu::gkdi::{GroupKeyEnvelope, KdfParameters, KeyIdentifier, KDF_ALGORITHM_NAME};
+use dpapi_core::{DecodeOwned, ReadCursor, compute_padding, decode_owned, read_padding};
+use dpapi_pdu::gkdi::{GroupKeyEnvelope, KDF_ALGORITHM_NAME, KdfParameters, KeyIdentifier};
 use dpapi_pdu::rpc::SyntaxId;
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::StdRng;
@@ -8,10 +8,10 @@ use rand::{RngCore, SeedableRng};
 use thiserror::Error;
 use uuid::uuid;
 
-use crate::crypto::{
-    compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf, KDS_SERVICE_LABEL,
-};
 use crate::Result;
+use crate::crypto::{
+    KDS_SERVICE_LABEL, compute_kek, compute_kek_from_public_key, compute_l2_key, compute_public_key, kdf,
+};
 
 pub const ISD_KEY: SyntaxId = SyntaxId {
     uuid: uuid!("b9785960-524f-11df-8b6d-83dcded72085"),

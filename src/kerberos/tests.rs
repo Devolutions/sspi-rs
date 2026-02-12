@@ -1,7 +1,7 @@
 use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
 use picky_krb::crypto::CipherSuite;
 
-use crate::kerberos::{test_data, EncryptionParams, KerberosConfig, KerberosState};
+use crate::kerberos::{EncryptionParams, KerberosConfig, KerberosState, test_data};
 use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
 #[test]

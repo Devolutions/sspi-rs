@@ -10,7 +10,7 @@ use std::io;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::ntlm::{NegotiateFlags, NTLM_VERSION_SIZE};
+use crate::ntlm::{NTLM_VERSION_SIZE, NegotiateFlags};
 
 const NTLM_SIGNATURE: &[u8; NTLM_SIGNATURE_SIZE] = b"NTLMSSP\0";
 const NTLM_SIGNATURE_SIZE: usize = 8;
@@ -104,7 +104,7 @@ pub(super) fn read_ntlm_header(mut stream: impl io::Read, expected_message_type:
     if signature.as_ref() != NTLM_SIGNATURE {
         return Err(crate::Error::new(
             crate::ErrorKind::InvalidToken,
-            format!("Read NTLM signature is invalid: {:?}", signature),
+            format!("Read NTLM signature is invalid: {signature:?}"),
         ));
     }
     if message_type != expected_message_type as u32 {

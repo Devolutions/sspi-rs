@@ -2,14 +2,15 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use dpapi_core::{
-    cast_int, cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
-    write_padding, DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
-    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor,
+    DecodeError, DecodeOwned, DecodeResult, DecodeWithContextOwned, Encode, EncodeResult, FixedPartSize,
+    InvalidFieldErr, NeedsContext, ReadCursor, StaticName, UnsupportedValueErr, WriteBuf, WriteCursor, cast_int,
+    cast_length, compute_padding, decode_uuid, encode_buf, encode_uuid, ensure_size, read_padding, size_seq,
+    write_padding,
 };
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use thiserror::Error;
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
 use crate::rpc::SyntaxId;
 
@@ -31,7 +32,7 @@ impl From<EpmError> for DecodeError {
             EpmError::InvalidFloorProtocol(_) => DecodeError::invalid_field("Floor", "floor protocol", "invalid value"),
             EpmError::InvalidFloorValue(_) => DecodeError::invalid_field("Floor", "floor value", "invalid value"),
             EpmError::UnsupportedFloor(floor_protocol) => {
-                DecodeError::unsupported_value("Floor", "floor", format!("{:?}", floor_protocol))
+                DecodeError::unsupported_value("Floor", "floor", format!("{floor_protocol:?}"))
             }
         }
         .with_source(err)

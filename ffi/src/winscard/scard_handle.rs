@@ -3,8 +3,8 @@ use std::mem::size_of;
 use std::slice::from_raw_parts_mut;
 use std::{fmt, ptr};
 
-use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use ffi_types::LpCVoid;
+use ffi_types::winscard::{LpScardIoRequest, ScardContext, ScardHandle, ScardIoRequest};
 use uuid::Uuid;
 use winscard::winscard::{AttributeId, IoRequest, Protocol, State, WinScard, WinScardContext};
 use winscard::{Error, ErrorKind, WinScardResult};
@@ -77,10 +77,7 @@ impl WinScardContextHandle {
         // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
         let buff = unsafe { libc::malloc(size) as *mut u8 };
         if buff.is_null() {
-            return Err(Error::new(
-                ErrorKind::NoMemory,
-                format!("cannot allocate {} bytes", size),
-            ));
+            return Err(Error::new(ErrorKind::NoMemory, format!("cannot allocate {size} bytes")));
         }
         self.allocations.push(buff as usize);
 
@@ -237,15 +234,14 @@ impl WinScardContextHandle {
         Ok(match buffer_type {
             RequestedBufferType::Buf(buf) => {
                 if buf.len() < data.len() {
-                    return Err(
-                        Error::new(
-                            ErrorKind::InsufficientBuffer, format!(
-                                "provided buffer is too small to fill the requested attribute into: buffer len: {}, attribute data len: {}.",
-                                buf.len(),
-                                data.len()
-                            )
-                        )
-                    );
+                    return Err(Error::new(
+                        ErrorKind::InsufficientBuffer,
+                        format!(
+                            "provided buffer is too small to fill the requested attribute into: buffer len: {}, attribute data len: {}.",
+                            buf.len(),
+                            data.len()
+                        ),
+                    ));
                 }
 
                 buf[0..data.len()].copy_from_slice(data);
@@ -549,8 +545,7 @@ pub(super) unsafe fn copy_io_request_to_scard_io_request(
         return Err(Error::new(
             ErrorKind::InsufficientBuffer,
             format!(
-                "ScardIoRequest::cb_pci_length is too small. Expected at least {} but got {}",
-                pci_info_len, scard_pci_info_len
+                "ScardIoRequest::cb_pci_length is too small. Expected at least {pci_info_len} but got {scard_pci_info_len}"
             ),
         ));
     }

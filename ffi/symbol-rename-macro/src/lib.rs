@@ -27,13 +27,17 @@ pub fn rename_symbol(attr: proc_macro::TokenStream, item: proc_macro::TokenStrea
     let item = item.to_string();
     match rename_symbol_impl(&attr, &item) {
         Ok(output) => output.parse().expect("invalid output token stream"),
-        Err(e) => format!(r####"compile_error!(r###"{}"###); {}"####, e, item)
+        Err(e) => format!(r####"compile_error!(r###"{e}"###); {item}"####)
             .parse()
             .unwrap(),
     }
 }
 
-const ATTR_NO_MANGLE: &str = "#[no_mangle]";
+// To rename symbols we convert `proc_macro::TokenStream` to `String`.
+// Sometimes, it can add extra whitespaces: https://doc.rust-lang.org/stable/proc_macro/struct.TokenStream.html#impl-Display-for-TokenStream
+// > Note: the exact form of the output is subject to change, e.g. there might be changes in the whitespace used between tokens.
+// See more: https://github.com/Devolutions/sspi-rs/pull/591#discussion_r2764202212
+const ATTR_NO_MANGLE: &str = "#[unsafe (no_mangle)]";
 
 fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
     use std::fmt::Write as _;
@@ -53,7 +57,7 @@ fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
     let mut out = String::new();
 
     {
-        // Rewrite original implementation (without #[no_mangle] attribute)
+        // Rewrite original implementation (without #[unsafe(no_mangle)] attribute)
 
         let pre = item[..fn_token_idx].replace(ATTR_NO_MANGLE, "");
         let rest = &item[fn_token_idx..];
@@ -65,7 +69,7 @@ fn rename_symbol_impl(attr: &str, item: &str) -> Result<String, AnyErr> {
 
         writeln!(
             out,
-            r#"#[no_mangle] pub unsafe extern "{call_conv}" fn {new_symbol}{fn_signature} {{"#
+            r#"#[unsafe(no_mangle)] pub unsafe extern "{call_conv}" fn {new_symbol}{fn_signature} {{"#
         )?;
         writeln!(out, "\t{fn_symbol}(")?;
         for arg in fn_args {

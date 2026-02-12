@@ -2,8 +2,8 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Once;
 
-use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
 
 static SETUP: Once = Once::new();
 
@@ -59,7 +59,7 @@ pub fn setup_logger() {
 /// (maybe in order to debug `InitSecurityInterface*`).
 ///
 /// This function can be called multiple times safely.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn RustSspiSetupLogger() {
     setup_logger();
 }

@@ -8,9 +8,9 @@ use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
-    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag11, ExplicitContextTag2,
-    ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7,
-    ExplicitContextTag8, ExplicitContextTag9, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
+    ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag7, ExplicitContextTag8,
+    ExplicitContextTag9, ExplicitContextTag11, GeneralizedTimeAsn1, IntegerAsn1, ObjectIdentifierAsn1, OctetStringAsn1,
     Optional,
 };
 use picky_asn1_der::Asn1RawDer;
@@ -47,7 +47,7 @@ use time::{Duration, OffsetDateTime};
 use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, KERBEROS_VERSION};
+use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, KERBEROS_VERSION};
 use crate::krb::Krb5Conf;
 use crate::utils::parse_target_name;
 use crate::{ClientRequestFlags, Error, ErrorKind, Result};
@@ -117,12 +117,12 @@ fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, do
             continue;
         }
 
-        if let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path) {
-            if let Some(mappings) = krb5_conf.get_values_in_section(&["domain_realm"]) {
-                for (mapping_domain, realm) in mappings {
-                    if matches_domain(&domain, mapping_domain) {
-                        return realm.to_owned();
-                    }
+        if let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path)
+            && let Some(mappings) = krb5_conf.get_values_in_section(&["domain_realm"])
+        {
+            for (mapping_domain, realm) in mappings {
+                if matches_domain(&domain, mapping_domain) {
+                    return realm.to_owned();
                 }
             }
         }
@@ -600,7 +600,9 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
     }) = checksum
     {
         let mut checksum_value = checksum_value.into_inner();
-        if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE && channel_bindings.is_some() {
+        if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE
+            && let Some(channel_bindings) = channel_bindings
+        {
             if checksum_value.len() < 20 {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
@@ -612,8 +614,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
             }
             // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
             // 4..19 - Channel binding information (19 inclusive).
-            checksum_value[4..20]
-                .copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings.as_ref().unwrap()));
+            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings));
         }
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),

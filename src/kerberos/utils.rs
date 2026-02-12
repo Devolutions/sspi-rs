@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use picky_krb::constants::key_usages::INITIATOR_SIGN;
-use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
+use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::gss_api::{MechTypeList, MicToken};
 use serde::Serialize;
 

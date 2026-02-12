@@ -1,9 +1,9 @@
-use dpapi_core::{decode_owned, EncodeVec};
+use dpapi_core::{EncodeVec, decode_owned};
 use dpapi_pdu::gkdi::{GetKey, GroupKeyEnvelope};
 use dpapi_pdu::rpc::{
-    build_tcpip_tower, BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext,
-    ContextElement, ContextResultCode, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer,
-    VerificationTrailer, EPM,
+    BindAck, BindTimeFeatureNegotiationBitmask, Command, CommandFlags, CommandPContext, ContextElement,
+    ContextResultCode, EPM, EntryHandle, EptMap, EptMapResult, Floor, Response, SecurityTrailer, VerificationTrailer,
+    build_tcpip_tower,
 };
 use dpapi_transport::{ConnectOptions, ProxyOptions, Transport};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
@@ -18,9 +18,9 @@ use uuid::Uuid;
 
 use crate::blob::{DpapiBlob, SidProtectionDescriptor};
 use crate::crypto::{cek_decrypt, cek_encrypt, cek_generate, content_decrypt, content_encrypt};
-use crate::gkdi::{get_kek, new_kek, unpack_response, ISD_KEY};
+use crate::gkdi::{ISD_KEY, get_kek, new_kek, unpack_response};
 use crate::rpc::auth::AuthError;
-use crate::rpc::{bind_time_feature_negotiation, AuthProvider, RpcClient, NDR, NDR64};
+use crate::rpc::{AuthProvider, NDR, NDR64, RpcClient, bind_time_feature_negotiation};
 use crate::{Error, Result};
 
 #[derive(Debug, Error)]

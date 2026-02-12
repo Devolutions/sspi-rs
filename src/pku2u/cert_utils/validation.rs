@@ -9,7 +9,7 @@ use crate::{Error, ErrorKind, Result};
 /// If certificate is valid then return its public key.
 #[instrument(level = "trace", ret)]
 pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPublicKey> {
-    let certificates = &signed_data.certificates.0 .0;
+    let certificates = &signed_data.certificates.0.0;
 
     if let Some(certificate) = certificates.iter().next() {
         let cert: Certificate = match certificate {

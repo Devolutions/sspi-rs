@@ -9,7 +9,7 @@ use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
 use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
 
 use super::CredSspMode;
-use crate::{ber, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind};
+use crate::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, ber};
 
 pub(super) const TS_REQUEST_VERSION: u32 = 6;
 
@@ -134,7 +134,7 @@ impl TsRequest {
                 if length != NONCE_SIZE as u16 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        format!("Got ClientNonce with invalid length: {}", length),
+                        format!("Got ClientNonce with invalid length: {length}"),
                     ));
                 }
 
@@ -208,8 +208,10 @@ impl TsRequest {
         }
 
         /* [5] clientNonce (OCTET STRING) */
-        if self.version >= 5 && self.client_nonce.is_some() {
-            ber::write_sequence_octet_string(&mut buffer, 5, self.client_nonce.as_ref().unwrap())?;
+        if self.version >= 5
+            && let Some(client_nonce) = self.client_nonce.as_ref()
+        {
+            ber::write_sequence_octet_string(&mut buffer, 5, client_nonce)?;
         }
 
         Ok(())
@@ -341,19 +343,15 @@ fn read_password_credentials(data: impl AsRef<[u8]>) -> crate::Result<AuthIdenti
         password,
     } = password_creds;
 
-    Ok(AuthIdentityBuffers::new(
-        user_name.0 .0,
-        domain_name.0 .0,
-        password.0 .0,
-    ))
+    Ok(AuthIdentityBuffers::new(user_name.0.0, domain_name.0.0, password.0.0))
 }
 
 pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBuffers> {
     let ts_credentials: TsCredentials = picky_asn1_der::from_reader(&mut buffer)?;
 
-    match ts_credentials.cred_type.0 .0.first() {
+    match ts_credentials.cred_type.0.0.first() {
         Some(&TS_PASSWORD_CREDS) => Ok(CredentialsBuffers::AuthIdentity(read_password_credentials(
-            &ts_credentials.credentials.0 .0,
+            &ts_credentials.credentials.0.0,
         )?)),
         Some(&picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS) => Err(Error::new(
             ErrorKind::UnsupportedFunction,
@@ -361,7 +359,7 @@ pub fn read_ts_credentials(mut buffer: impl Read) -> crate::Result<CredentialsBu
         )),
         Some(cred_type) => Err(Error::new(
             ErrorKind::InvalidToken,
-            format!("Invalid or unsupported TsCredentials::cred_type value: {}", cred_type),
+            format!("Invalid or unsupported TsCredentials::cred_type value: {cred_type}"),
         )),
         None => Err(Error::new(
             ErrorKind::InvalidToken,

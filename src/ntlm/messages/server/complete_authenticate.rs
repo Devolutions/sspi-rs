@@ -1,8 +1,8 @@
-use crate::crypto::{Rc4, HASH_SIZE};
+use crate::SecurityStatus;
+use crate::crypto::{HASH_SIZE, Rc4};
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
-use crate::ntlm::{Mic, NegotiateFlags, Ntlm, NtlmState, MESSAGE_INTEGRITY_CHECK_SIZE, SESSION_KEY_SIZE};
-use crate::SecurityStatus;
+use crate::ntlm::{MESSAGE_INTEGRITY_CHECK_SIZE, Mic, NegotiateFlags, Ntlm, NtlmState, SESSION_KEY_SIZE};
 
 pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<SecurityStatus> {
     check_state(context.state)?;

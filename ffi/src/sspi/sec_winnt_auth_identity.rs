@@ -2,7 +2,7 @@ use std::ptr::copy_nonoverlapping;
 use std::slice::from_raw_parts;
 
 use libc::{c_char, c_void};
-use sspi::{string_to_utf16, AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret};
+use sspi::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret, string_to_utf16};
 #[cfg(feature = "scard")]
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
 #[cfg(windows)]
@@ -10,7 +10,7 @@ use symbol_rename_macro::rename_symbol;
 #[cfg(all(feature = "scard", target_os = "windows"))]
 use windows::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
-use windows::Win32::Security::Credentials::{CredUIPromptForWindowsCredentialsW, CREDUI_INFOW};
+use windows::Win32::Security::Credentials::{CREDUI_INFOW, CredUIPromptForWindowsCredentialsW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{credentials_str_into_bytes, into_raw_ptr, w_str_len};
@@ -191,7 +191,7 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 
 /// The only one purpose of this function is to handle CredSSP credentials passed into the AcquireCredentialsHandle function.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// * The user must ensure that `p_auth_data` must be non-null and point to the valid [CredSspCred] structure.
 #[cfg(feature = "tsssp")]
@@ -199,10 +199,10 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     use std::ptr::null_mut;
 
     use sspi::string_to_utf16;
-    use windows::core::PCWSTR;
     use windows::Win32::Foundation::{ERROR_SUCCESS, HWND};
     use windows::Win32::Graphics::Gdi::HBITMAP;
     use windows::Win32::Security::Credentials::CREDUIWIN_FLAGS;
+    use windows::core::PCWSTR;
 
     // SAFETY:
     // - `p_auth_data` is non-null due to the function's safety requirement.
@@ -253,7 +253,7 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             if result != ERROR_SUCCESS.0 {
                 return Err(Error::new(
                     ErrorKind::NoCredentials,
-                    format!("Can not get user credentials: {:0x?}", result),
+                    format!("Can not get user credentials: {result:0x?}"),
                 ));
             }
 
@@ -580,8 +580,8 @@ fn collect_smart_card_creds(
 
     let scard_type = env::var(SCARD_TYPE_ENV).map_err(|err| {
         let message = match err {
-            env::VarError::NotPresent => format!("failed to collect smart card credentials: {} env variable is not present. Process with password-based logon", SCARD_TYPE_ENV),
-            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", SCARD_TYPE_ENV),
+            env::VarError::NotPresent => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable is not present. Process with password-based logon"),
+            env::VarError::NotUnicode(_) => format!("failed to collect smart card credentials: {SCARD_TYPE_ENV} env variable contains invalid unicode data. Process with password-based logon"),
         };
 
         Error::new(ErrorKind::NoCredentials, message)
@@ -591,9 +591,16 @@ fn collect_smart_card_creds(
 
     match scard_type.as_str() {
         SCARD_EMULATED => {
-            use winscard::{SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP};
+            use winscard::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, SmartCardInfo};
 
-            let SmartCardInfo { container_name, pin: scard_pin, auth_cert_der, auth_pk_pem, auth_pk: _, reader } = SmartCardInfo::try_from_env()?;
+            let SmartCardInfo {
+                container_name,
+                pin: scard_pin,
+                auth_cert_der,
+                auth_pk_pem,
+                auth_pk: _,
+                reader,
+            } = SmartCardInfo::try_from_env()?;
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
@@ -610,21 +617,25 @@ fn collect_smart_card_creds(
                     scard_pin: scard_pin.into(),
                 },
             })
-        },
+        }
         SCARD_SYSTEM_PROVIDED => {
             use crate::sspi::scard_cert::{SystemSmartCardInfo, smart_card_info};
 
             let pkcs11_module = env::var(PKCS11_MODULE_PATH_ENV).map_err(|err| {
                 let message = match err {
-                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {} env variable is not present. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
-                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {} env variable contains invalid unicode data. Process with password-based logon", PKCS11_MODULE_PATH_ENV),
+                    env::VarError::NotPresent => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable is not present. Process with password-based logon"),
+                    env::VarError::NotUnicode(_) => format!("failed to collect system smart card credentials: {PKCS11_MODULE_PATH_ENV} env variable contains invalid unicode data. Process with password-based logon"),
                 };
 
                 Error::new(ErrorKind::NoCredentials, message)
             })?;
 
             let SystemSmartCardInfo {
-                reader_name, csp_name, certificate, container_name, card_name,
+                reader_name,
+                csp_name,
+                certificate,
+                container_name,
+                card_name,
             } = smart_card_info(&username, pkcs11_module.as_ref())?;
 
             info!("System-provided smart card credentials have been collected. Process with scard-based logon.");
@@ -643,7 +654,12 @@ fn collect_smart_card_creds(
                 },
             })
         }
-        scard_type => Err(Error::new(ErrorKind::NoCredentials, format!("failed to collect smart card credentials: unsupported scard type: {}. Process with password-based logon", scard_type))),
+        scard_type => Err(Error::new(
+            ErrorKind::NoCredentials,
+            format!(
+                "failed to collect smart card credentials: unsupported scard type: {scard_type}. Process with password-based logon"
+            ),
+        )),
     }
 }
 
@@ -658,7 +674,7 @@ pub fn unpack_sec_winnt_auth_identity_ex2_a(_p_auth_data: *const c_void) -> Resu
 /// This function calculated the size of the credentials represented by the `SEC_WINNT_AUTH_IDENTITY_EX2`
 /// structure.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
@@ -704,16 +720,16 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
     Ok(64 /* size of the SEC_WINNT_AUTH_IDENTITY_EX2 */ + user_buffer_len + domain_buffer_len + creds_buffer_len)
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// * The `p_auth_data` pointer must be not null and point to the valid credentials represented
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
 #[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use sspi::credssp::NStatusCode;
-    use windows::core::{HRESULT, PSTR};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
-    use windows::Win32::Security::Credentials::{CredUnPackAuthenticationBufferA, CRED_PACK_PROTECTED_CREDENTIALS};
+    use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferA};
+    use windows::core::{HRESULT, PSTR};
 
     if p_auth_data.is_null() {
         return Err(Error::new(
@@ -838,12 +854,12 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
     use sspi::credssp::NStatusCode;
     use sspi::string_to_utf16;
-    use windows::core::PCWSTR;
     use windows::Win32::Security::Credentials::{
-        CertCredential, CredUnmarshalCredentialW, CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE,
+        CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE, CertCredential, CredUnmarshalCredentialW,
     };
+    use windows::core::PCWSTR;
 
-    use crate::sspi::win_scard_cert::{extract_certificate_by_thumbprint, finalize_smart_card_info, SmartCardInfo};
+    use crate::sspi::win_scard_cert::{SmartCardInfo, extract_certificate_by_thumbprint, finalize_smart_card_info};
 
     let mut cred_type = CRED_MARSHAL_TYPE(0);
     let mut credential = null_mut();
@@ -912,7 +928,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
 /// Unpacks raw credentials.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -939,7 +955,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w(p_auth_data: *const c_void) -
 
 /// Unpacks raw credentials when the `auth_data` length is known.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// * The `p_auth_data` must not be null and point to the valid packed credentials. For more details,
 ///   see the `pAuthBuffer` pointer requirements: [CredUnPackAuthenticationBufferW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credunpackauthenticationbufferw).
@@ -950,9 +966,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     auth_data_len: u32,
 ) -> Result<CredentialsBuffers> {
     use sspi::credssp::NStatusCode;
-    use windows::core::{HRESULT, PWSTR};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
-    use windows::Win32::Security::Credentials::{CredUnPackAuthenticationBufferW, CRED_PACK_PROTECTED_CREDENTIALS};
+    use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferW};
+    use windows::core::{HRESULT, PWSTR};
 
     use super::utils::raw_wide_str_trim_nulls;
 
@@ -1090,7 +1106,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspiencodestringsasauthidentity)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `psz_user_name` must be a non-null pointer to a valid, null-terminated C string representing the username.
 /// - `psz_domain_name` must be a non-null pointer to a valid, null-terminated C string representing the domain name.
@@ -1100,7 +1116,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 #[allow(clippy::missing_safety_doc)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiEncodeStringsAsAuthIdentity"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
     psz_user_name: *const SecWChar,
     psz_domain_name: *const SecWChar,
@@ -1186,13 +1202,13 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-sspifreeauthidentity)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `auth_data` must be a valid pointer to the identity structure allocated by an SSPI function.
 #[allow(clippy::missing_safety_doc)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SspiFreeAuthIdentity"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SspiFreeAuthIdentity(auth_data: *mut c_void) -> SecurityStatus {
     catch_panic! {
         if auth_data.is_null() {

@@ -4,7 +4,7 @@ extern crate tracing;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
-use dpapi_transport::{ConnectOptions, Stream, Transport, DEFAULT_RPC_PORT};
+use dpapi_transport::{ConnectOptions, DEFAULT_RPC_PORT, Stream, Transport};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -86,7 +86,7 @@ impl NativeTransport {
         })?;
 
         {
-            use futures_util::{future, SinkExt as _, StreamExt as _};
+            use futures_util::{SinkExt as _, StreamExt as _, future};
 
             let ws_compat = ws
                 .filter_map(|item| {

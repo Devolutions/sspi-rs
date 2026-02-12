@@ -38,12 +38,12 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{
-    SmartCard, ATR, CARD_AUTH_CERT_TAG, CHUNK_SIZE, DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, PIV_AID,
-    PIV_CERT_TAG, SUPPORTED_CONNECTION_PROTOCOL,
+    ATR, CARD_AUTH_CERT_TAG, CHUNK_SIZE, DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, PIV_AID, PIV_CERT_TAG,
+    SUPPORTED_CONNECTION_PROTOCOL, SmartCard,
 };
 pub use scard_context::{
-    Reader, ScardContext, SmartCardInfo, DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP,
-    MICROSOFT_SCARD_DRIVER_LOCATION,
+    DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP, MICROSOFT_SCARD_DRIVER_LOCATION, Reader,
+    ScardContext, SmartCardInfo,
 };
 
 /// The [WinScardResult] type.
@@ -131,7 +131,7 @@ impl From<KeyError> for Error {
     fn from(value: KeyError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("error: an unexpected KeyError happened: {}", value),
+            format!("error: an unexpected KeyError happened: {value}"),
         )
     }
 }
@@ -140,7 +140,7 @@ impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("Error: an unexpected RsaError happened: {}", value),
+            format!("Error: an unexpected RsaError happened: {value}"),
         )
     }
 }
@@ -149,7 +149,7 @@ impl From<TlvError> for Error {
     fn from(value: TlvError) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("error: an unexpected TlvError happened: {}", value),
+            format!("error: an unexpected TlvError happened: {value}"),
         )
     }
 }
@@ -158,14 +158,14 @@ impl From<TryFromIntError> for Error {
     fn from(value: TryFromIntError) -> Self {
         Error::new(
             ErrorKind::InsufficientBuffer,
-            format!("error: can not convert integers: {}", value),
+            format!("error: can not convert integers: {value}"),
         )
     }
 }
 
 impl From<CertError> for Error {
     fn from(value: CertError) -> Self {
-        Error::new(ErrorKind::InsufficientBuffer, format!("certificate error: {}", value))
+        Error::new(ErrorKind::InsufficientBuffer, format!("certificate error: {value}"))
     }
 }
 

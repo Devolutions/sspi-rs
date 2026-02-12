@@ -119,7 +119,7 @@ pub type PSecurityFunctionTableW = *mut SecurityFunctionTableW;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     crate::logging::setup_logger();
 
@@ -162,7 +162,7 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_InitSecurityInterfaceW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
     crate::logging::setup_logger();
 

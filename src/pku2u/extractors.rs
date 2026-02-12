@@ -1,14 +1,14 @@
 use std::convert::TryInto;
 
-use picky_asn1_der::application_tag::ApplicationTag;
 use picky_asn1_der::Asn1RawDer;
+use picky_asn1_der::application_tag::ApplicationTag;
 use picky_krb::constants::key_usages::AS_REP_ENC;
 use picky_krb::constants::types::PA_PK_AS_REP;
 use picky_krb::messages::{AsRep, EncAsRepPart};
 use picky_krb::pkinit::{DhRepInfo, PaPkAsRep};
 use serde::Deserialize;
 
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
+use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::pk_init::DH_NONCE_LEN;
 use crate::{Error, ErrorKind, Result};
 
@@ -28,7 +28,7 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
             .as_ref()
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "pa-datas is not present in as-rep"))?
             .iter()
-            .find(|pa_data| pa_data.padata_type.0 .0 == PA_PK_AS_REP)
+            .find(|pa_data| pa_data.padata_type.0.0 == PA_PK_AS_REP)
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
@@ -37,7 +37,7 @@ pub fn extract_pa_pk_as_rep(as_rep: &AsRep) -> Result<PaPkAsRep> {
             })?
             .padata_data
             .0
-             .0,
+            .0,
     )?)
 }
 
@@ -47,7 +47,7 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
         .server_dh_nonce
         .0
         .as_ref()
-        .map(|nonce| nonce.0 .0.clone())
+        .map(|nonce| nonce.0.0.clone())
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "DH server nonce is not present"))?;
 
     if nonce.len() != DH_NONCE_LEN {
@@ -72,7 +72,7 @@ pub fn extract_session_key_from_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
         .cipher();
 
-    let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0 .0)?;
+    let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
     trace!(?enc_data, "Plain AsRep::EncData");
 
     let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;

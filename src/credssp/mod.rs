@@ -9,8 +9,8 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-pub use ts_request::{read_ts_credentials, write_ts_credentials, NStatusCode, TsRequest};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
+pub use ts_request::{NStatusCode, TsRequest, read_ts_credentials, write_ts_credentials};
 
 #[cfg(feature = "tsssp")]
 use self::sspi_cred_ssp::SspiCredSsp;
@@ -25,12 +25,12 @@ use crate::kerberos::{self, Kerberos, ServerProperties};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
-    negotiate, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers,
-    BufferType, CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes,
-    CredentialUse, Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error,
-    ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
+    Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferRef,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username, negotiate,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -126,7 +126,7 @@ impl EarlyUserAuthResult {
         EarlyUserAuthResult::from_u32(result).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("got invalid Early User Authorization Result: {:x}", result),
+                format!("got invalid Early User Authorization Result: {result:x}"),
             )
         })
     }
@@ -334,10 +334,10 @@ impl CredSspClient {
                     );
                     ts_request.client_nonce = Some(self.client_nonce);
 
-                    if let Some(nego_tokens) = &ts_request.nego_tokens {
-                        if nego_tokens.is_empty() {
-                            ts_request.nego_tokens = None;
-                        }
+                    if let Some(nego_tokens) = &ts_request.nego_tokens
+                        && nego_tokens.is_empty()
+                    {
+                        ts_request.nego_tokens = None;
                     }
 
                     self.state = CredSspState::AuthInfo;
@@ -484,6 +484,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
                     .with_credential_use(CredentialUse::Inbound)
                     .execute(
+                        // clippy::panicking_unwrap false positive. We set self.context just above.
+                        #[allow(clippy::panicking_unwrap)]
                         &mut self
                             .context
                             .as_mut()
@@ -687,7 +689,7 @@ impl SspiImpl for SspiContext {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
                             "smart card auth is not supported in NTLM",
-                        ))
+                        ));
                     }
                     None => None,
                 };
@@ -804,14 +806,14 @@ impl<'a> SspiContext {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
                             "smart card auth is not supported in NTLM",
-                        ))
+                        ));
                     }
                     Some(None) => None,
                     None => {
                         return Err(Error::new(
                             ErrorKind::NoCredentials,
                             "credentials handle is not provided for the NTLM",
-                        ))
+                        ));
                     }
                 };
                 let new_builder = builder.full_transform(Some(&mut auth_identity));
@@ -841,26 +843,24 @@ impl<'a> SspiContext {
     ) -> crate::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
+                let mut auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle_mut() {
+                        Some(identity.clone())
+                    } else {
+                        None
+                    };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 ntlm.initialize_security_context_impl(&mut new_builder)
             }
             SspiContext::Kerberos(kerberos) => kerberos.initialize_security_context_impl(yield_point, builder).await,
             SspiContext::Negotiate(negotiate) => negotiate.initialize_security_context_impl(yield_point, builder).await,
             SspiContext::Pku2u(pku2u) => {
-                let mut auth_identity = if let Some(Some(CredentialsBuffers::AuthIdentity(ref identity))) =
-                    builder.credentials_handle_mut()
-                {
-                    Some(identity.clone())
-                } else {
-                    None
-                };
+                let mut auth_identity =
+                    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle_mut() {
+                        Some(identity.clone())
+                    } else {
+                        None
+                    };
                 let mut new_builder = builder.full_transform(Some(&mut auth_identity));
                 pku2u.initialize_security_context_impl(&mut new_builder)
             }
@@ -1108,10 +1108,7 @@ impl CredSspContext {
             if peer_version != other_peer_version {
                 Err(Error::new(
                     ErrorKind::MessageAltered,
-                    format!(
-                        "CredSSP peer changed protocol version from {} to {}",
-                        peer_version, other_peer_version
-                    ),
+                    format!("CredSSP peer changed protocol version from {peer_version} to {other_peer_version}"),
                 ))
             } else {
                 Ok(())
@@ -1180,10 +1177,10 @@ impl CredSspContext {
     fn encrypt_public_key_echo(&mut self, public_key: &[u8], endpoint: EndpointType) -> crate::Result<Vec<u8>> {
         let mut public_key = public_key.to_vec();
 
-        if let SspiContext::Ntlm(_) = self.sspi_context {
-            if endpoint == EndpointType::Server {
-                integer_increment_le(&mut public_key);
-            }
+        if let SspiContext::Ntlm(_) = self.sspi_context
+            && endpoint == EndpointType::Server
+        {
+            integer_increment_le(&mut public_key);
         }
 
         self.encrypt_message(&public_key)

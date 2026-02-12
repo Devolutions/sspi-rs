@@ -17,11 +17,11 @@ use winscard::winscard::{
 };
 use winscard::{Error, ErrorKind, WinScardResult};
 
-use super::{parse_multi_string_owned, SystemScard};
+use super::{SystemScard, parse_multi_string_owned};
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+use crate::winscard::pcsc_lite::{ScardContext, ScardHandle, initialize_pcsc_lite_api};
 
 /// Default name of the system provided smart card.
 ///
@@ -106,7 +106,9 @@ impl SystemScardContext {
 
                 use crate::sspi::sec_winnt_auth_identity::PKCS11_MODULE_PATH_ENV;
 
-                info!("Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module...");
+                info!(
+                    "Smart card certificate and container name environment variables were not set properly. Trying to determine them using the PKCS11 module..."
+                );
 
                 let pkcs11_module_path = winscard::env!(PKCS11_MODULE_PATH_ENV)?;
                 try_extract_container_name_and_certificate(Path::new(&pkcs11_module_path))?
@@ -134,7 +136,7 @@ fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -
     use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
     use picky::x509::Cert;
 
-    use crate::winscard::piv::{try_get_piv_container_name, SlotId};
+    use crate::winscard::piv::{SlotId, try_get_piv_container_name};
 
     macro_rules! try_execute {
         ($x:expr, $msg:literal) => {{
@@ -252,7 +254,7 @@ fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -
 /// * Extended Key Usage extension must present and contain Client Authentication (1.3.6.1.5.5.7.3.2) and Smart Card Logon (1.3.6.1.4.1.311.20.2.2) OIDs.
 #[cfg(not(target_os = "windows"))]
 fn validate_certificate(certificate: &[u8]) -> Result<(), Error> {
-    use picky_asn1_x509::{oids, Certificate};
+    use picky_asn1_x509::{Certificate, oids};
 
     use crate::sspi::scard_cert::extract_extended_key_usage_from_certificate;
 
@@ -442,7 +444,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
                 return Err(Error::new(
                     ErrorKind::UnsupportedFeature,
                     "only RSA 2048 keys are supported",
-                ))
+                ));
             }
         };
 
@@ -750,7 +752,7 @@ impl WinScardContext for SystemScardContext {
             DeviceTypeId::from_u32(device_type_id).ok_or_else(|| {
                 Error::new(
                     ErrorKind::InternalError,
-                    format!("WinSCard has returned invalid device type id: {}", device_type_id),
+                    format!("WinSCard has returned invalid device type id: {device_type_id}"),
                 )
             })
         }
@@ -831,7 +833,7 @@ impl WinScardContext for SystemScardContext {
             self.cache
                 .get(key)
                 .map(|item| Cow::Borrowed(item.as_slice()))
-                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{}' not found", key)))
+                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
         }
         #[cfg(target_os = "windows")]
         {
@@ -1182,7 +1184,7 @@ impl WinScardContext for SystemScardContext {
                     return Err(Error::new(
                         ErrorKind::UnsupportedFeature,
                         "ProviderId::Primary is not supported for emulated smart card",
-                    ))
+                    ));
                 }
                 ProviderId::Csp => winscard::MICROSOFT_DEFAULT_CSP.into(),
                 ProviderId::Ksp => winscard::MICROSOFT_DEFAULT_KSP.into(),

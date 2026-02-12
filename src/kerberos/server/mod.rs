@@ -29,9 +29,9 @@ use self::generators::{generate_ap_rep, generate_final_neg_token_targ, generate_
 use super::utils::validate_mic_token;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
+use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::server::extractors::client_upn;
-use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
     SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
@@ -135,7 +135,9 @@ pub async fn accept_security_context(
                     .context_requirements
                     .contains(ServerRequestFlags::USE_SESSION_KEY)
                 {
-                    warn!("KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set.");
+                    warn!(
+                        "KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set."
+                    );
                 }
 
                 server.krb5_user_to_user = true;
@@ -177,7 +179,7 @@ pub async fn accept_security_context(
                 )
             })?;
 
-            let ticket_service_name = &ap_req.0.ticket.0 .0.sname.0;
+            let ticket_service_name = &ap_req.0.ticket.0.0.sname.0;
             if *ticket_service_name != server_data.service_name {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
@@ -194,7 +196,7 @@ pub async fn accept_security_context(
                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket decryption key is not set"))?;
 
             let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
-            let session_key = ticket_enc_part.0.key.0.key_value.0 .0.clone();
+            let session_key = ticket_enc_part.0.key.0.key_value.0.0.clone();
 
             let AuthenticatorInner {
                 authenticator_vno: _,
@@ -218,8 +220,8 @@ pub async fn accept_security_context(
             }
 
             let now = OffsetDateTime::now_utc();
-            let client_time = OffsetDateTime::try_from(ctime.0 .0.clone())
-                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {:?}", err)))?;
+            let client_time = OffsetDateTime::try_from(ctime.0.0.clone())
+                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {err:?}")))?;
             let max_time_skew = server_data.max_time_skew;
 
             if (now - client_time).abs() > max_time_skew {
@@ -242,7 +244,7 @@ pub async fn accept_security_context(
             let ticket_start_time = OffsetDateTime::try_from(ticket_start_time).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("ticket end time is not valid: {:?}", err),
+                    format!("ticket end time is not valid: {err:?}"),
                 )
             })?;
             if ticket_start_time > now + max_time_skew {
@@ -252,10 +254,10 @@ pub async fn accept_security_context(
                 ));
             }
 
-            let ticket_end_time = OffsetDateTime::try_from(ticket_enc_part.0.endtime.0 .0).map_err(|err| {
+            let ticket_end_time = OffsetDateTime::try_from(ticket_enc_part.0.endtime.0.0).map_err(|err| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("ticket end time is not valid: {:?}", err),
+                    format!("ticket end time is not valid: {err:?}"),
                 )
             })?;
             if now > ticket_end_time + max_time_skew {
@@ -291,7 +293,7 @@ pub async fn accept_security_context(
 
             server_data.client = Some(client_upn(&cname.0, &crealm.0)?);
 
-            let ap_options_bytes = ap_req.0.ap_options.0 .0.as_bytes();
+            let ap_options_bytes = ap_req.0.ap_options.0.0.as_bytes();
             // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
             // The `ap-options` field has 32 bits or 4 bytes long. But it is encoded as BitStringAsn1, so the first byte
             // indicates the number of bits used. Thus, the overall number of expected bytes is 1 + 4 = 5.
@@ -306,7 +308,7 @@ pub async fn accept_security_context(
             }
             let ap_options =
                 u32::from_be_bytes(ap_options_bytes[1..].try_into().map_err(|err| {
-                    Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {:?}", err))
+                    Error::new(ErrorKind::InvalidToken, format!("invalid ApReq ap-options: {err:?}"))
                 })?);
             let ap_options = ApOptions::from_bits(ap_options)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "invalid ApReq ap-options"))?;
@@ -403,7 +405,7 @@ pub async fn accept_security_context(
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),
-            ))
+            ));
         }
     };
 

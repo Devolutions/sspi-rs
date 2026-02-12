@@ -19,7 +19,7 @@ use picky::signature::SignatureAlgorithm;
 use picky_asn1_x509::signed_data::SignedData;
 use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AS_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, INITIATOR_SIGN};
-use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
+use picky_krb::crypto::diffie_hellman::{DhNonce, generate_key};
 use picky_krb::crypto::{ChecksumSuite, CipherSuite};
 use picky_krb::gss_api::{NegTokenTarg1, WrapToken};
 use picky_krb::messages::{ApRep, AsRep};
@@ -33,19 +33,19 @@ use uuid::Uuid;
 pub use validate::validate_signed_data;
 
 use self::generators::{
-    generate_neg, generate_neg_token_init, generate_neg_token_targ, generate_pku2u_nego_req,
-    generate_server_dh_parameters, WELLKNOWN_REALM,
+    WELLKNOWN_REALM, generate_neg, generate_neg_token_init, generate_neg_token_targ, generate_pku2u_nego_req,
+    generate_server_dh_parameters,
 };
 use crate::builders::{ChangePassword, FilledAcceptSecurityContext};
 use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext, YieldPointLocal};
 use crate::kerberos::client::extractors::extract_sub_session_key_from_ap_rep;
 use crate::kerberos::client::generators::{
-    generate_ap_req, generate_as_req, generate_as_req_kdc_body, ChecksumOptions, EncKey, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions,
+    ChecksumOptions, EncKey, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_ap_req, generate_as_req,
+    generate_as_req_kdc_body,
 };
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
+use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, MAX_SIGNATURE, RRC, SECURITY_TRAILER};
 use crate::pk_init::{
-    extract_server_dh_public_key, generate_pa_datas_for_as_req, DhParameters, GenerateAsPaDataOptions,
+    DhParameters, GenerateAsPaDataOptions, extract_server_dh_public_key, generate_pa_datas_for_as_req,
 };
 use crate::pku2u::extractors::extract_krb_rep;
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
@@ -53,8 +53,8 @@ use crate::utils::{extract_encrypted_data, generate_random_symmetric_key, get_en
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
     CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, SecurityBuffer,
-    SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    Error, ErrorKind, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Result,
+    SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
 };
 
 pub const PKG_NAME: &str = "Pku2u";
@@ -251,7 +251,7 @@ impl Sspi for Pku2u {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     "Pku2u context is not established".to_owned(),
-                ))
+                ));
             }
         };
 
@@ -498,7 +498,7 @@ impl Pku2u {
                     .0
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
-                     .0;
+                    .0;
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
@@ -513,12 +513,11 @@ impl Pku2u {
                     if *auth_scheme == Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap() {
                         self.auth_scheme = Some(*auth_scheme);
                     } else {
-                        return
-                        Err(Error::new(
+                        return Err(Error::new(
                             ErrorKind::InvalidToken,
                             format!(
-                                "The server selected unsupported auth scheme {:?}. The only one supported auth scheme: {}",
-                                auth_scheme, DEFAULT_NEGOEX_AUTH_SCHEME)
+                                "The server selected unsupported auth scheme {auth_scheme:?}. The only one supported auth scheme: {DEFAULT_NEGOEX_AUTH_SCHEME}"
+                            ),
                         ));
                     }
                 } else {
@@ -569,7 +568,7 @@ impl Pku2u {
                             .map_err(|err| {
                                 Error::new(
                                     ErrorKind::InternalError,
-                                    format!("Cannot calculate signer info signature: {:?}", err),
+                                    format!("Cannot calculate signer info signature: {err:?}"),
                                 )
                             })
                     }),
@@ -615,7 +614,7 @@ impl Pku2u {
                     .0
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
-                     .0;
+                    .0;
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
@@ -636,7 +635,7 @@ impl Pku2u {
                         return Err(Error::new(
                             ErrorKind::OperationNotSupported,
                             "encKeyPack is not supported for the PA-PK-AS-REP",
-                        ))
+                        ));
                     }
                 };
 
@@ -652,7 +651,7 @@ impl Pku2u {
                 self.dh_parameters.other_public_key = Some(public_key);
 
                 self.encryption_params.encryption_type =
-                    Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
+                    Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
 
                 let session_key = generate_key(
                     check_if_empty!(self.dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
@@ -770,7 +769,7 @@ impl Pku2u {
                     .0
                     .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Missing response_token in NegTokenTarg"))?
                     .0
-                     .0;
+                    .0;
 
                 let acceptor_exchange = Exchange::decode(&buffer)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE MESSAGE");
@@ -829,7 +828,7 @@ impl Pku2u {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     format!("Got wrong PKU2U state: {:?}", self.state),
-                ))
+                ));
             }
         };
 
@@ -864,8 +863,8 @@ mod tests {
     use rand::{RngCore, SeedableRng};
     use uuid::Uuid;
 
-    use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
     use super::Pku2uMode;
+    use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
     use crate::kerberos::EncryptionParams;
     use crate::{EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBufferRef, Sspi};
 

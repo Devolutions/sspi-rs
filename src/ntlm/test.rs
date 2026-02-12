@@ -1,7 +1,7 @@
-use crate::crypto::{Rc4, HASH_SIZE};
+use crate::crypto::{HASH_SIZE, Rc4};
 use crate::ntlm::messages::test::TEST_CREDENTIALS;
 use crate::ntlm::{
-    AuthenticateMessage, ChallengeMessage, Mic, NegotiateFlags, NegotiateMessage, Ntlm, NtlmState, CHALLENGE_SIZE,
+    AuthenticateMessage, CHALLENGE_SIZE, ChallengeMessage, Mic, NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
     SIGNATURE_SIZE,
 };
 use crate::*;
@@ -242,17 +242,21 @@ fn make_signature_verified_by_verify_signature() {
         SecurityBufferRef::data_buf(&mut plain_test_data),
         SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
-    assert!(sender
-        .make_signature(0, &mut make_signature_buffers, TEST_SEQ_NUM)
-        .is_ok());
+    assert!(
+        sender
+            .make_signature(0, &mut make_signature_buffers, TEST_SEQ_NUM)
+            .is_ok()
+    );
 
     let mut verify_signature_buffers = vec![
         SecurityBufferRef::data_buf(&mut plain_test_data),
         SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
-    assert!(reciever
-        .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
-        .is_ok());
+    assert!(
+        reciever
+            .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -271,9 +275,11 @@ fn verify_signature_fails_on_invalid_signature() {
         SecurityBufferRef::data_buf(&mut test_data),
         SecurityBufferRef::token_buf(&mut token),
     ];
-    assert!(context
-        .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
-        .is_err());
+    assert!(
+        context
+            .verify_signature(&mut verify_signature_buffers, TEST_SEQ_NUM)
+            .is_err()
+    );
 }
 
 #[test]

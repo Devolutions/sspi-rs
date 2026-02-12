@@ -2,10 +2,10 @@ use std::io;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use crate::SecurityStatus;
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{MessageFields, MessageTypes, NTLM_SIGNATURE, NTLM_VERSION_SIZE};
 use crate::ntlm::{ChallengeMessage, NegotiateFlags, Ntlm, NtlmState};
-use crate::SecurityStatus;
 
 const BASE_OFFSET: usize = 48;
 const CHALLENGE_MESSAGE_OFFSET: usize = BASE_OFFSET + NTLM_VERSION_SIZE;

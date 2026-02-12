@@ -45,18 +45,17 @@ pub fn auth_cert_from_env() -> WinScardResult<Cert> {
         let raw_certificate = fs::read_to_string(cert_path).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
-                format!("Unable to read certificate from the provided file: {}", e),
+                format!("Unable to read certificate from the provided file: {e}"),
             )
         })?;
         Ok(Cert::from_pem_str(&raw_certificate)?)
     } else {
-        return Err(Error::new(
+        Err(Error::new(
             ErrorKind::InvalidParameter,
             format!(
-                "Either \"{}\" or \"{}\" environment variable must be present",
-                WINSCARD_CERT_DATA_ENV, WINSCARD_CERT_PATH_ENV
+                "Either \"{WINSCARD_CERT_DATA_ENV}\" or \"{WINSCARD_CERT_PATH_ENV}\" environment variable must be present"
             ),
-        ));
+        ))
     }
 }
 
@@ -77,27 +76,23 @@ pub fn private_key_from_env() -> WinScardResult<(String, PrivateKey)> {
         let raw_private_key = fs::read_to_string(pk_path).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
-                format!("Unable to read private key from the provided file: {}", e),
+                format!("Unable to read private key from the provided file: {e}"),
             )
         })?;
         let private_key = PrivateKey::from_pem_str(&raw_private_key).map_err(|e| {
             Error::new(
                 ErrorKind::InvalidParameter,
-                format!(
-                    "Error while trying to read a private key from a pem-encoded string: {}",
-                    e
-                ),
+                format!("Error while trying to read a private key from a pem-encoded string: {e}"),
             )
         })?;
 
         Ok((raw_private_key, private_key))
     } else {
-        return Err(Error::new(
+        Err(Error::new(
             ErrorKind::InvalidParameter,
             format!(
-                "Either \"{}\" or \"{}\" environment variable must be present",
-                WINSCARD_PK_DATA_ENV, WINSCARD_PK_PATH_ENV
+                "Either \"{WINSCARD_PK_DATA_ENV}\" or \"{WINSCARD_PK_PATH_ENV}\" environment variable must be present"
             ),
-        ));
+        ))
     }
 }

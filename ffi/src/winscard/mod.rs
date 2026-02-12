@@ -1,5 +1,5 @@
-use ffi_types::winscard::functions::{PSCardApiFunctionTable, SCardApiFunctionTable};
 use ffi_types::winscard::ScardIoRequest;
+use ffi_types::winscard::functions::{PSCardApiFunctionTable, SCardApiFunctionTable};
 use winscard::winscard::Protocol;
 
 use self::scard::*;
@@ -18,19 +18,19 @@ pub mod system_scard;
 
 // The constants below are not documented anywhere and were discovered during debugging.
 // Related example: https://github.com/bluetech/pcsc-rust/blob/b397cc8e3834a1dc791631105f37f34d321c8696/pcsc/src/lib.rs#L605-L613
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static Rust_g_rgSCardT1Pci: ScardIoRequest = ScardIoRequest {
     dw_protocol: Protocol::T1.bits(),
     cb_pci_length: 8,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static Rust_g_rgSCardT0Pci: ScardIoRequest = ScardIoRequest {
     dw_protocol: Protocol::T0.bits(),
     cb_pci_length: 8,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static Rust_g_rgSCardRawPci: ScardIoRequest = ScardIoRequest {
     dw_protocol: Protocol::Raw.bits(),
     cb_pci_length: 8,

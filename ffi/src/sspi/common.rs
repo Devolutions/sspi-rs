@@ -11,9 +11,9 @@ use symbol_rename_macro::rename_symbol;
 
 use super::credentials_attributes::CredentialsAttributes;
 use super::sec_buffer::{
-    copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers, PSecBuffer, PSecBufferDesc, SecBuffer,
+    PSecBuffer, PSecBufferDesc, SecBuffer, copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 };
-use super::sec_handle::{p_ctxt_handle_to_sspi_context, CredentialsHandle, PCredHandle, PCtxtHandle};
+use super::sec_handle::{CredentialsHandle, PCredHandle, PCtxtHandle, p_ctxt_handle_to_sspi_context};
 use super::sspi_data_types::{PTimeStamp, SecurityStatus};
 use super::utils::transform_credentials_handle;
 use crate::sspi::sec_handle::SspiHandle;
@@ -23,12 +23,12 @@ use crate::utils::into_raw_ptr;
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecredentialshandle)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// `ph_credentials` must be a non-null pointer, allocated by the `AcquireCredentialsHandleA/W` function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeCredentialsHandle"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) -> SecurityStatus {
     check_null!(ph_credential);
 
@@ -56,7 +56,7 @@ pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> Sec
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-acceptsecuritycontext)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_credential` must be a non-null, valid pointer to a credentials handle, allocated by either [`AcquireCredentialsHandleA`](crate::sspi::sec_handle::AcquireCredentialsHandleA)
 ///   or [`AcquireCredentialsHandleW`](crate::sspi::sec_handle::AcquireCredentialsHandleW).
@@ -71,7 +71,7 @@ pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> Sec
 #[instrument(skip_all)]
 #[allow(clippy::useless_conversion)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AcceptSecurityContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn AcceptSecurityContext(
     ph_credential: PCredHandle,
     mut ph_context: PCtxtHandle,
@@ -200,7 +200,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
@@ -208,7 +208,7 @@ pub type AcceptSecurityContextFn = unsafe extern "system" fn(
 /// - `p_token` must be a non-null, properly-aligned pointer to a valid `SecBufferDesc` structure.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_CompleteAuthToken"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn CompleteAuthToken(
     mut ph_context: PCtxtHandle,
     p_token: PSecBufferDesc,
@@ -267,14 +267,14 @@ pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBuffer
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-deletesecuritycontext)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated
 ///   by the `InitializeSecurityContext` function or the `AcceptSecurityContext` function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DeleteSecurityContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle) -> SecurityStatus {
     catch_panic!(
         check_null!(ph_context);
@@ -316,7 +316,7 @@ pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> Sec
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ApplyControlToken"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSecBufferDesc) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
@@ -325,7 +325,7 @@ pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImpersonateSecurityContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn ImpersonateSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
@@ -334,7 +334,7 @@ pub type ImpersonateSecurityContextFn = extern "system" fn(PCtxtHandle) -> Secur
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_RevertSecurityContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn RevertSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
@@ -343,7 +343,7 @@ pub type RevertSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecuritySt
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_MakeSignature"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn MakeSignature(
     _ph_context: PCtxtHandle,
     _f_qop: u32,
@@ -357,7 +357,7 @@ pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, 
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_VerifySignature"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn VerifySignature(
     _ph_context: PCtxtHandle,
     _message: PSecBufferDesc,
@@ -374,12 +374,12 @@ pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-freecontextbuffer)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `pv_context_buffer` must point to a memory allocated by an SSPI function.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_FreeContextBuffer"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) -> SecurityStatus {
     // NOTE: see https://github.com/Devolutions/sspi-rs/pull/141 for rationale behind libc usage.
     // SAFETY:
@@ -396,7 +396,7 @@ pub type FreeContextBufferFn = unsafe extern "system" fn(*mut c_void) -> Securit
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ExportSecurityContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn ExportSecurityContext(
     _ph_context: PCtxtHandle,
     _f_flags: u32,
@@ -410,7 +410,7 @@ pub type ExportSecurityContextFn = extern "system" fn(PCtxtHandle, u32, PSecBuff
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityContextToken"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _token: *mut *mut c_void) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
@@ -421,7 +421,7 @@ pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-encryptmessage)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -429,7 +429,7 @@ pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_EncryptMessage"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn EncryptMessage(
     mut ph_context: PCtxtHandle,
     f_qop: u32,
@@ -508,7 +508,7 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBuff
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-decryptmessage)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `ph_context` must be a valid pointer to a `SecHandle` structure.
 ///   If `dw_lower` and `dw_upper` fields are non-zero, then they must point to a memory that was allocated by an SSPI function.
@@ -517,7 +517,7 @@ pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBuff
 #[allow(clippy::useless_conversion)]
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_DecryptMessage"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn DecryptMessage(
     mut ph_context: PCtxtHandle,
     p_message: PSecBufferDesc,
@@ -598,7 +598,7 @@ pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDes
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///
-/// # Safety:
+/// # Safety
 ///
 /// After this function call, no one should touch [raw_buffers]. Otherwise, we can get UB.
 /// It's because this function creates exclusive (mutable) Rust references to the input buffers.

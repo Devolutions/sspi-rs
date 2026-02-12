@@ -78,14 +78,14 @@ pub struct InitializeSecurityContext<
 // with a different lifetime for `credentials_handle` field.
 #[allow(single_use_lifetimes)]
 impl<
-        'b,
-        'a: 'b,
-        CredsHandle,
-        CredsHandleSet: ToAssign,
-        ContextRequirementsSet: ToAssign,
-        TargetDataRepresentationSet: ToAssign,
-        OutputSet: ToAssign,
-    >
+    'b,
+    'a: 'b,
+    CredsHandle,
+    CredsHandleSet: ToAssign,
+    ContextRequirementsSet: ToAssign,
+    TargetDataRepresentationSet: ToAssign,
+    OutputSet: ToAssign,
+>
     InitializeSecurityContext<
         'a,
         CredsHandle,
@@ -126,13 +126,13 @@ impl<
 }
 
 impl<
-        'a,
-        CredsHandle,
-        CredsHandleSet: ToAssign,
-        ContextRequirementsSet: ToAssign,
-        TargetDataRepresentationSet: ToAssign,
-        OutputSet: ToAssign,
-    >
+    'a,
+    CredsHandle,
+    CredsHandleSet: ToAssign,
+    ContextRequirementsSet: ToAssign,
+    TargetDataRepresentationSet: ToAssign,
+    OutputSet: ToAssign,
+>
     InitializeSecurityContext<
         'a,
         CredsHandle,
@@ -299,12 +299,12 @@ impl<
 }
 
 impl<
-        CredsHandle,
-        CredsHandleSet: ToAssign,
-        ContextRequirementsSet: ToAssign,
-        TargetDataRepresentationSet: ToAssign,
-        OutputSet: ToAssign,
-    > Default
+    CredsHandle,
+    CredsHandleSet: ToAssign,
+    ContextRequirementsSet: ToAssign,
+    TargetDataRepresentationSet: ToAssign,
+    OutputSet: ToAssign,
+> Default
     for InitializeSecurityContext<
         '_,
         CredsHandle,

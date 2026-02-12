@@ -1,18 +1,18 @@
 use std::error::Error;
 
 use base64::Engine;
+use reqwest::StatusCode;
 use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, HOST, USER_AGENT,
     WWW_AUTHENTICATE,
 };
-use reqwest::StatusCode;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialsBuffers, DataRepresentation,
     InitializeSecurityContextResult, Kerberos, KerberosConfig, SecurityBuffer, SecurityStatus, Sspi, SspiImpl,
     Username,
 };
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let kdc_url = std::env::var("SSPI_KDC_URL").expect("missing KDC URL set in SSPI_KDC_URL"); //tcp://ad-compter-name.domain:88
@@ -64,13 +64,13 @@ pub(crate) fn get_cred_handle(
         username: Username::parse(&username).expect("username is not in the correct format"),
         password: password.into(),
     };
-    let acq_creds_handle_result = kerberos
+
+    kerberos
         .acquire_credentials_handle()
         .with_credential_use(sspi::CredentialUse::Outbound)
         .with_auth_data(&identity.into())
         .execute(kerberos)
-        .expect("AcquireCredentialsHandle resulted in error");
-    acq_creds_handle_result
+        .expect("AcquireCredentialsHandle resulted in error")
 }
 
 pub(crate) fn process_authentication(
@@ -90,7 +90,7 @@ pub(crate) fn process_authentication(
     let server_token = www_authenticate
         .to_str()
         .unwrap()
-        .replace(format!("{} ", auth_method).as_str(), "");
+        .replace(format!("{auth_method} ").as_str(), "");
     Ok((server_token, server_result.status()))
 }
 
@@ -101,9 +101,9 @@ pub(crate) fn send_http(
     auth_method: &str,
 ) -> Result<reqwest::blocking::Response, Box<dyn Error + Send + Sync>> {
     let resp = client
-        .post(format!("http://{}:5985/wsman?PSVersion=7.3.8", hostname))
-        .header(AUTHORIZATION, format!("{} {}", auth_method, negotiate_token))
-        .header(HOST, format!("{}:5985", hostname))
+        .post(format!("http://{hostname}:5985/wsman?PSVersion=7.3.8"))
+        .header(AUTHORIZATION, format!("{auth_method} {negotiate_token}"))
+        .header(HOST, format!("{hostname}:5985"))
         .header(CONNECTION, "keep-alive")
         .header(CONTENT_LENGTH, "0")
         .header(
@@ -125,7 +125,7 @@ fn step_helper(
     output_buffer: &mut [SecurityBuffer],
     hostname: &str,
 ) -> Result<InitializeSecurityContextResult, Box<dyn Error + Send + Sync>> {
-    let target_name = format!("HTTP/{}", hostname);
+    let target_name = format!("HTTP/{hostname}");
     let mut builder = kerberos
         .initialize_security_context()
         .with_credentials_handle(cred_handle)

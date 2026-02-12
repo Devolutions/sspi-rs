@@ -22,10 +22,10 @@ use self::extractors::{
     extract_session_key_from_tgs_rep, extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
-    generate_ap_rep, generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_neg_ap_req,
-    generate_neg_token_init, generate_tgs_req, get_client_principal_name_type, get_client_principal_realm,
-    get_mech_list, ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags,
+    ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
+    GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep, generate_ap_req,
+    generate_as_req_kdc_body, generate_authenticator, generate_neg_ap_req, generate_neg_token_init, generate_tgs_req,
+    get_client_principal_name_type, get_client_principal_realm, get_mech_list,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
@@ -151,7 +151,7 @@ pub async fn initialize_security_context<'a>(
             let pa_data_options = match credentials {
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
                     let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-                    let salt = format!("{}{}", domain, username);
+                    let salt = format!("{domain}{username}");
 
                     AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
                         password: &password,
@@ -166,7 +166,7 @@ pub async fn initialize_security_context<'a>(
 
                     use crate::pku2u::generate_client_dh_parameters;
                     use crate::smartcard::SmartCard;
-                    use crate::{pk_init, SmartCardIdentity};
+                    use crate::{SmartCardIdentity, pk_init};
 
                     let scard_identity = SmartCardIdentity::try_from(scard_identity_buffer)?;
 
@@ -237,7 +237,9 @@ pub async fn initialize_security_context<'a>(
             let mut context_requirements = builder.context_requirements;
 
             if client.krb5_user_to_user && !context_requirements.contains(ClientRequestFlags::USE_SESSION_KEY) {
-                warn!("KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on...");
+                warn!(
+                    "KRB5 U2U has been negotiated (selected by the server) but the USE_SESSION_KEY flag is not set. Forcibly turning it on..."
+                );
                 context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
             }
 
@@ -409,7 +411,7 @@ pub async fn initialize_security_context<'a>(
 
                 if let Some(ref token) = neg_token_targ.0.mech_list_mic.0 {
                     validate_mic_token::<SENT_BY_ACCEPTOR>(
-                        &token.0 .0,
+                        &token.0.0,
                         ACCEPTOR_SIGN,
                         &client.encryption_params,
                         &get_mech_list(),
@@ -427,7 +429,7 @@ pub async fn initialize_security_context<'a>(
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", client.state),
-            ))
+            ));
         }
     };
 

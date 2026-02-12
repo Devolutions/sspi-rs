@@ -50,7 +50,7 @@ pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Ve
     }
 }
 
-/// # Safety:
+/// # Safety
 ///
 /// The `raw_buffers` must be an array of valid `SecBuffer` structures.
 /// Each `SecBuffer` must have a valid `pv_buffer` pointer field that is valid for reads of `cb_buffer` bytes.

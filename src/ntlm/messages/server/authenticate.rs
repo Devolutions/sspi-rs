@@ -2,15 +2,15 @@ use std::io::{self, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::crypto::compute_md5_channel_bindings_hash;
-use crate::ntlm::messages::av_pair::{AvPair, MsvAvFlags, AV_PAIR_CHANNEL_BINDINGS};
-use crate::ntlm::messages::computations::*;
-use crate::ntlm::messages::{read_ntlm_header, try_read_version, MessageFields, MessageTypes};
-use crate::ntlm::{
-    AuthIdentityBuffers, AuthenticateMessage, ChannelBindings, Mic, NegotiateFlags, Ntlm, NtlmState,
-    ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE,
-};
 use crate::SecurityStatus;
+use crate::crypto::compute_md5_channel_bindings_hash;
+use crate::ntlm::messages::av_pair::{AV_PAIR_CHANNEL_BINDINGS, AvPair, MsvAvFlags};
+use crate::ntlm::messages::computations::*;
+use crate::ntlm::messages::{MessageFields, MessageTypes, read_ntlm_header, try_read_version};
+use crate::ntlm::{
+    AuthIdentityBuffers, AuthenticateMessage, ChannelBindings, ENCRYPTED_RANDOM_SESSION_KEY_SIZE,
+    MESSAGE_INTEGRITY_CHECK_SIZE, Mic, NegotiateFlags, Ntlm, NtlmState,
+};
 
 const HEADER_SIZE: usize = 64;
 
@@ -171,32 +171,36 @@ fn process_message_fields(
     if let Some(AvPair::ChannelBindings(hash)) = av_pairs
         .iter()
         .find(|av_pair| av_pair.as_u16() == AV_PAIR_CHANNEL_BINDINGS)
+        && let Some(channel_bindings) = channel_bindings.as_ref()
+        && compute_md5_channel_bindings_hash(channel_bindings) != *hash
     {
-        if let Some(channel_bindings) = channel_bindings.as_ref() {
-            if compute_md5_channel_bindings_hash(channel_bindings) != *hash {
-                return Err(crate::Error::new(
-                    crate::ErrorKind::BadBindings,
-                    "Channel bindings hash mismatch",
-                ));
-            }
-        }
+        return Err(crate::Error::new(
+            crate::ErrorKind::BadBindings,
+            "Channel bindings hash mismatch",
+        ));
     }
 
     // will not set workstation because it is not used anywhere
 
-    let encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]> = match message_fields.encrypted_random_session_key.buffer.len() {
-      0 => None,
-      ENCRYPTED_RANDOM_SESSION_KEY_SIZE => {
-        let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
-        encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
-        Some(encrypted_random_session_key)
-      },
-      key_len => {
-        return Err(crate::Error::new(
-          crate::ErrorKind::InvalidToken,
-          format!("Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."),
-        ))
-      }
+    let encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]> = match message_fields
+        .encrypted_random_session_key
+        .buffer
+        .len()
+    {
+        0 => None,
+        ENCRYPTED_RANDOM_SESSION_KEY_SIZE => {
+            let mut encrypted_random_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
+            encrypted_random_session_key.clone_from_slice(message_fields.encrypted_random_session_key.buffer.as_ref());
+            Some(encrypted_random_session_key)
+        }
+        key_len => {
+            return Err(crate::Error::new(
+                crate::ErrorKind::InvalidToken,
+                format!(
+                    "Encrypted random session key has wrong length. Expected {ENCRYPTED_RANDOM_SESSION_KEY_SIZE} bytes, got {key_len} bytes."
+                ),
+            ));
+        }
     };
 
     let mut identity = if let Some(identity) = identity {

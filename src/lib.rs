@@ -113,12 +113,10 @@ use self::builders::{
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
-pub use self::kerberos::{Kerberos, KerberosState, KERBEROS_VERSION};
+pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
-pub use self::ntlm::{
-    hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX},
-    Ntlm,
-};
+pub use self::ntlm::Ntlm;
+pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
 pub use self::secret::Secret;
 use crate::builders::{
@@ -162,7 +160,7 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
         SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
         SecurityPackageType::Other(s) => Err(Error::new(
             ErrorKind::Unknown,
-            format!("queried info about unknown package: {:?}", s),
+            format!("queried info about unknown package: {s:?}"),
         )),
     }
 }
@@ -720,7 +718,7 @@ where
     /// # MSDN
     /// * [MakeSignature function](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-makesignature)
     fn make_signature(&mut self, flags: u32, message: &mut [SecurityBufferRef<'_>], sequence_number: u32)
-        -> Result<()>;
+    -> Result<()>;
 
     /// Verifies that a message signed by using the `make_signature` function was received in the correct sequence and has not been modified.
     ///
@@ -1573,7 +1571,7 @@ impl SecurityBuffer {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("no buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {buffer_type:?}"),
                 )
             })
     }
@@ -1585,7 +1583,7 @@ impl SecurityBuffer {
             .ok_or_else(|| {
                 Error::new(
                     ErrorKind::InvalidToken,
-                    format!("no buffer was provided with type {:?}", buffer_type),
+                    format!("no buffer was provided with type {buffer_type:?}"),
                 )
             })
     }
@@ -1684,7 +1682,7 @@ impl TryFrom<u32> for SecurityBufferType {
         let buffer_type = BufferType::from_u32(buffer_type).ok_or_else(|| {
             Error::new(
                 ErrorKind::InternalError,
-                format!("u32({}) to UnflaggedSecurityBuffer conversion error", buffer_type),
+                format!("u32({buffer_type}) to UnflaggedSecurityBuffer conversion error"),
             )
         })?;
 
@@ -1692,7 +1690,7 @@ impl TryFrom<u32> for SecurityBufferType {
         let buffer_flags = SecurityBufferFlags::from_bits(buffer_flags).ok_or_else(|| {
             Error::new(
                 ErrorKind::InternalError,
-                format!("invalid SecurityBufferFlags: {}", buffer_flags),
+                format!("invalid SecurityBufferFlags: {buffer_flags}"),
             )
         })?;
 
@@ -2188,7 +2186,7 @@ impl fmt::Display for Error {
         write!(f, "{:?}: {}", self.error_type, self.description)?;
 
         if let Some(nstatus) = self.nstatus {
-            write!(f, "; status is {}", nstatus)?;
+            write!(f, "; status is {nstatus}")?;
         }
 
         Ok(())
@@ -2205,14 +2203,14 @@ impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
             ErrorKind::InternalError,
-            format!("an unexpected RsaError happened: {}", value),
+            format!("an unexpected RsaError happened: {value}"),
         )
     }
 }
 
 impl From<Asn1DerError> for Error {
     fn from(err: Asn1DerError) -> Self {
-        Self::new(ErrorKind::InvalidToken, format!("ASN1 DER error: {:?}", err))
+        Self::new(ErrorKind::InvalidToken, format!("ASN1 DER error: {err:?}"))
     }
 }
 
@@ -2245,15 +2243,15 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
         match err {
             KerberosCryptoError::KeyLength(actual, expected) => Self::new(
                 ErrorKind::InvalidParameter,
-                format!("invalid key length. actual: {}. expected: {}", actual, expected),
+                format!("invalid key length. actual: {actual}. expected: {expected}"),
             ),
             KerberosCryptoError::CipherLength(actual, expected) => Self::new(
                 ErrorKind::InvalidParameter,
-                format!("invalid cipher length. actual: {}. expected: {}", actual, expected),
+                format!("invalid cipher length. actual: {actual}. expected: {expected}"),
             ),
             KerberosCryptoError::AlgorithmIdentifier(identifier) => Self::new(
                 ErrorKind::InvalidParameter,
-                format!("unknown algorithm identifier: {}", identifier),
+                format!("unknown algorithm identifier: {identifier}"),
             ),
             KerberosCryptoError::IntegrityCheck => Self::new(ErrorKind::MessageAltered, err.to_string()),
             KerberosCryptoError::CipherError(description) => Self::new(ErrorKind::InvalidParameter, description),
@@ -2266,17 +2264,17 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
             KerberosCryptoError::SeedBitLen(description) => Self::new(ErrorKind::InvalidParameter, description),
             KerberosCryptoError::AlgorithmIdentifierData(identifier) => Self::new(
                 ErrorKind::InvalidParameter,
-                format!("unknown algorithm identifier: {:?}", identifier),
+                format!("unknown algorithm identifier: {identifier:?}"),
             ),
             KerberosCryptoError::RandError(rand) => {
-                Self::new(ErrorKind::InvalidParameter, format!("random error: {:?}", rand))
+                Self::new(ErrorKind::InvalidParameter, format!("random error: {rand:?}"))
             }
             KerberosCryptoError::TooSmallBuffer(inout) => {
-                Self::new(ErrorKind::InvalidParameter, format!("too small buffer: {:?}", inout))
+                Self::new(ErrorKind::InvalidParameter, format!("too small buffer: {inout:?}"))
             }
             KerberosCryptoError::ArrayTryFromSliceError(array) => Self::new(
                 ErrorKind::InvalidParameter,
-                format!("array try from slice error: {:?}", array),
+                format!("array try from slice error: {array:?}"),
             ),
         }
     }
@@ -2313,13 +2311,13 @@ impl From<GssApiMessageError> for Error {
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("IO error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("IO error: {err:?}"))
     }
 }
 
 impl From<getrandom::Error> for Error {
     fn from(err: getrandom::Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("rand error: {err:?}"))
     }
 }
 
@@ -2331,22 +2329,19 @@ impl From<str::Utf8Error> for Error {
 
 impl From<string::FromUtf8Error> for Error {
     fn from(err: string::FromUtf8Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-8 error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("UTF-8 error: {err:?}"))
     }
 }
 
 impl From<string::FromUtf16Error> for Error {
     fn from(err: string::FromUtf16Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-16 error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("UTF-16 error: {err:?}"))
     }
 }
 
 impl From<Error> for io::Error {
     fn from(err: Error) -> io::Error {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("{:?}: {}", err.error_type, err.description),
-        )
+        io::Error::other(format!("{:?}: {}", err.error_type, err.description))
     }
 }
 
@@ -2364,7 +2359,7 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
 
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
-        Self::new(ErrorKind::InternalError, format!("RSA key error: {:?}", err))
+        Self::new(ErrorKind::InternalError, format!("RSA key error: {err:?}"))
     }
 }
 
@@ -2373,7 +2368,7 @@ impl From<winscard::Error> for Error {
     fn from(value: winscard::Error) -> Self {
         Self::new(
             ErrorKind::InternalError,
-            format!("Error while using a smart card: {}", value),
+            format!("Error while using a smart card: {value}"),
         )
     }
 }
@@ -2383,7 +2378,7 @@ impl From<cryptoki::error::Error> for Error {
     fn from(value: cryptoki::error::Error) -> Self {
         Self::new(
             ErrorKind::NoCredentials,
-            format!("Error while using a smart card: {}", value),
+            format!("Error while using a smart card: {value}"),
         )
     }
 }

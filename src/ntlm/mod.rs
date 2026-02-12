@@ -10,22 +10,22 @@ use std::sync::LazyLock;
 
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
+pub use hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 use messages::{client, server};
 
 pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
-use crate::crypto::{compute_hmac_md5, Rc4, HASH_SIZE};
+use crate::crypto::{HASH_SIZE, Rc4, compute_hmac_md5};
 use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext};
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
     CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse,
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
-    FilledInitializeSecurityContext, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, SecurityBuffer,
-    SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus, ServerResponseFlags, Sspi, SspiEx,
-    SspiImpl, PACKAGE_ID_NONE,
+    FilledInitializeSecurityContext, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities,
+    PackageInfo, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
+    ServerResponseFlags, Sspi, SspiEx, SspiImpl,
 };
-pub use hash::{NtlmHash, NtlmHashError, NTLM_HASH_PREFIX};
 
 pub const PKG_NAME: &str = "NTLM";
 pub const NTLM_VERSION_SIZE: usize = 8;
@@ -314,7 +314,7 @@ impl Ntlm {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     format!("got wrong NTLM state: {:?}", self.state),
-                ))
+                ));
             }
         };
 
@@ -374,7 +374,7 @@ impl Ntlm {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     format!("Got wrong NTLM state: {:?}", self.state),
-                ))
+                ));
             }
         };
 

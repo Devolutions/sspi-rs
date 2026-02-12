@@ -1,6 +1,6 @@
+use sspi::Result;
 use sspi::generator::NetworkRequest;
 use sspi::network_client::NetworkClient;
-use sspi::Result;
 
 use crate::client_server::kerberos::kdc::KdcMock;
 

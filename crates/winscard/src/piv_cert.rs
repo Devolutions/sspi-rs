@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use iso7816_tlv::simple::{Tag, Tlv};
 
 use crate::ber_tlv::ber_tlv_length_encoding;
-use crate::{tlv_tags, WinScardResult};
+use crate::{WinScardResult, tlv_tags};
 
 // The X.509 Certificate for PIV Authentication has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)

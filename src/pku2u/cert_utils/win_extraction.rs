@@ -1,18 +1,18 @@
 use std::io::Read;
+use std::ptr::NonNull;
 use std::slice::from_raw_parts;
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::BoxedUint;
 use picky::key::PrivateKey;
-use picky_asn1_x509::{oids, AttributeTypeAndValueParameters, Certificate, ExtensionView};
+use picky_asn1_x509::{AttributeTypeAndValueParameters, Certificate, ExtensionView, oids};
 use windows::Win32::Foundation;
 use windows::Win32::Security::Cryptography::{
-    CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore,
-    CryptAcquireCertificatePrivateKey, NCryptExportKey, NCryptFreeObject, BCRYPT_RSAFULLPRIVATE_BLOB,
-    BCRYPT_RSAFULLPRIVATE_MAGIC, BCRYPT_RSAKEY_BLOB_MAGIC, CERT_CONTEXT, CERT_KEY_SPEC, CERT_OPEN_STORE_FLAGS,
-    CERT_QUERY_ENCODING_TYPE, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
-    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, HCERTSTORE, HCRYPTPROV_LEGACY,
-    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, NCRYPT_FLAGS, NCRYPT_HANDLE, NCRYPT_KEY_HANDLE,
+    BCRYPT_RSAFULLPRIVATE_BLOB, BCRYPT_RSAFULLPRIVATE_MAGIC, BCRYPT_RSAKEY_BLOB_MAGIC, CERT_CONTEXT, CERT_KEY_SPEC,
+    CERT_OPEN_STORE_FLAGS, CERT_QUERY_ENCODING_TYPE, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
+    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, CertCloseStore, CertEnumCertificatesInStore,
+    CertFreeCertificateContext, CertOpenStore, CryptAcquireCertificatePrivateKey, HCERTSTORE, HCRYPTPROV_LEGACY,
+    HCRYPTPROV_OR_NCRYPT_KEY_HANDLE, NCRYPT_FLAGS, NCRYPT_HANDLE, NCRYPT_KEY_HANDLE, NCryptExportKey, NCryptFreeObject,
 };
 
 use crate::credssp::NStatusCode;
@@ -106,28 +106,28 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
     .map_err(|err| {
         Error::new(
             ErrorKind::InternalError,
-            format!("Can not create a private from components: {:?}", err),
+            format!("Can not create a private from components: {err:?}"),
         )
     })?;
 
     Ok(rsa_private_key)
 }
 
-/// Validates the device certificate
+/// Validates the device certificate.
+///
 /// Requirements for the device certificate:
 /// 1. Issuer CN starts with 'MS-Organization-P2P-Access'
 /// 2. ClientAuth extended key usage present
 fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
     let mut cn = false;
 
-    for attr_type_and_value in certificate.tbs_certificate.issuer.0 .0.iter() {
+    for attr_type_and_value in certificate.tbs_certificate.issuer.0.0.iter() {
         for v in attr_type_and_value.0.iter() {
-            if v.ty.0 == oids::at_common_name() {
-                if let AttributeTypeAndValueParameters::CommonName(name) = &v.value {
-                    if name.to_utf8_lossy().starts_with("MS-Organization-P2P-Access") {
-                        cn = true;
-                    }
-                }
+            if v.ty.0 == oids::at_common_name()
+                && let AttributeTypeAndValueParameters::CommonName(name) = &v.value
+                && name.to_utf8_lossy().starts_with("MS-Organization-P2P-Access")
+            {
+                cn = true;
             }
         }
     }
@@ -138,32 +138,41 @@ fn validate_client_p2p_certificate(certificate: &Certificate) -> bool {
 
     let mut client_auth = false;
 
-    for extension in &certificate.tbs_certificate.extensions.0 .0 {
-        if extension.extn_id().0 == oids::extended_key_usage() {
-            if let ExtensionView::ExtendedKeyUsage(ext_key_usage) = extension.extn_value() {
-                if ext_key_usage.contains(oids::kp_client_auth()) {
-                    client_auth = true;
-                }
-            }
+    for extension in &certificate.tbs_certificate.extensions.0.0 {
+        if extension.extn_id().0 == oids::extended_key_usage()
+            && let ExtensionView::ExtendedKeyUsage(ext_key_usage) = extension.extn_value()
+            && ext_key_usage.contains(oids::kp_client_auth())
+        {
+            client_auth = true;
         }
     }
 
     client_auth
 }
 
-unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<PrivateKey> {
+/// Exports the certificate private key associated with the provided certificate context.
+///
+/// # Safety
+///
+/// `cert` must be a valid, non-null pointer to a `CERT_CONTEXT` structure.
+unsafe fn export_certificate_private_key(cert: NonNull<CERT_CONTEXT>) -> Result<PrivateKey> {
     let mut private_key_handle = HCRYPTPROV_OR_NCRYPT_KEY_HANDLE::default();
     let mut spec = CERT_KEY_SPEC::default();
     let mut free = windows::core::BOOL::default();
 
-    let status = CryptAcquireCertificatePrivateKey(
-        cert,
-        CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
-        None,
-        &mut private_key_handle,
-        Some(&mut spec),
-        Some(&mut free),
-    );
+    // SAFETY:
+    // - `cert` is guaranteed to be non null and is valid.
+    // - All other arguments are type checked.
+    let status = unsafe {
+        CryptAcquireCertificatePrivateKey(
+            cert.as_ptr(),
+            CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
+            None,
+            &mut private_key_handle,
+            Some(&mut spec),
+            Some(&mut free),
+        )
+    };
 
     if let Err(error) = status {
         let code = error.code();
@@ -185,66 +194,69 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     // The first call need to determine the size of the needed buffer for the private key
     // https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptexportkey
     // If pbOutput parameter is NULL, this function will place the required size in the pcbResult parameter.
-    let status = NCryptExportKey(
-        NCRYPT_KEY_HANDLE(private_key_handle.0),
-        None,
-        BCRYPT_RSAFULLPRIVATE_BLOB,
-        None,
-        None,
-        &mut private_key_buffer_len,
-        NCRYPT_FLAGS(0),
-    );
+    // SAFETY:
+    // - `private_key_handle` is a valid `NCRYPT_KEY_HANDLE` due to the validation above.
+    // - All other arguments are type checked.
+    let status = unsafe {
+        NCryptExportKey(
+            NCRYPT_KEY_HANDLE(private_key_handle.0),
+            None,
+            BCRYPT_RSAFULLPRIVATE_BLOB,
+            None,
+            None,
+            &mut private_key_buffer_len,
+            NCRYPT_FLAGS(0),
+        )
+    };
 
     if let Err(error) = status {
         let status = error.code();
 
-        let _ = NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0));
+        // SAFETY: FFI call with no outstanding preconditions.
+        let _ = unsafe { NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0)) };
 
         return match status {
             Foundation::NTE_BAD_TYPE => Err(Error::new(
                 ErrorKind::InvalidParameter,
                 format!(
-                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {:x?}",
-                    status
+                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {status:x?}"
                 ),
             )),
             Foundation::NTE_INVALID_HANDLE => Err(Error::new(
                 ErrorKind::InvalidHandle,
-                format!(
-                    "Cannot extract certificate private key: key or export key handle is invalid: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: key or export key handle is invalid: {status:x?}"),
             )),
             Foundation::NTE_INVALID_PARAMETER => Err(Error::new(
                 ErrorKind::InvalidParameter,
-                format!(
-                    "Cannot extract certificate private key: invalid parameter: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: invalid parameter: {status:x?}"),
             )),
             _ => Err(Error::new(
                 ErrorKind::InternalError,
-                format!(
-                    "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: unsuccessful extraction: {status:x?}"),
             )),
         };
     }
 
     let mut private_key_blob = vec![0; private_key_buffer_len as usize];
 
-    let status = NCryptExportKey(
-        NCRYPT_KEY_HANDLE(private_key_handle.0),
-        None,
-        BCRYPT_RSAFULLPRIVATE_BLOB,
-        None,
-        Some(&mut private_key_blob),
-        &mut private_key_buffer_len,
-        NCRYPT_FLAGS(0),
-    );
+    // SAFETY:
+    // - `private_key_handle` is a valid `NCRYPT_KEY_HANDLE`.
+    // - `private_key_blob` is of correct len due to the previous call to `NCryptExportKey`.
+    // - All other arguments are type checked.
+    let status = unsafe {
+        NCryptExportKey(
+            NCRYPT_KEY_HANDLE(private_key_handle.0),
+            None,
+            BCRYPT_RSAFULLPRIVATE_BLOB,
+            None,
+            Some(&mut private_key_blob),
+            &mut private_key_buffer_len,
+            NCRYPT_FLAGS(0),
+        )
+    };
 
-    let _ = NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0));
+    // SAFETY: FFI call with no outstanding preconditions.
+    let _ = unsafe { NCryptFreeObject(NCRYPT_HANDLE(private_key_handle.0)) };
 
     if let Err(error) = status {
         let status = error.code();
@@ -253,30 +265,20 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
             Foundation::NTE_BAD_TYPE => Err(Error::new(
                 ErrorKind::InvalidParameter,
                 format!(
-                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {:x?}",
-                    status
+                    "Cannot extract certificate private key: provided key cannot be exported into the specified BLOB type: {status:x?}"
                 ),
             )),
             Foundation::NTE_INVALID_HANDLE => Err(Error::new(
                 ErrorKind::InvalidHandle,
-                format!(
-                    "Cannot extract certificate private key: key or export key handle is invalid: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: key or export key handle is invalid: {status:x?}"),
             )),
             Foundation::NTE_INVALID_PARAMETER => Err(Error::new(
                 ErrorKind::InvalidParameter,
-                format!(
-                    "Cannot extract certificate private key: invalid parameter: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: invalid parameter: {status:x?}"),
             )),
             _ => Err(Error::new(
                 ErrorKind::InternalError,
-                format!(
-                    "Cannot extract certificate private key: unsuccessful extraction: {:x?}",
-                    status
-                ),
+                format!("Cannot extract certificate private key: unsuccessful extraction: {status:x?}"),
             )),
         };
     }
@@ -288,15 +290,33 @@ unsafe fn export_certificate_private_key(cert: *const CERT_CONTEXT) -> Result<Pr
     Ok(private_key)
 }
 
+/// Extracts the client P2P certificate and its private key from the provided certificate store
+///
+/// # Safety
+///
+/// `cert_store` must be a valid, non-null certificate store handle obtained using the `CertOpenStore` function.
 unsafe fn extract_client_p2p_certificate(cert_store: HCERTSTORE) -> Result<(Certificate, PrivateKey)> {
-    let mut certificate = CertEnumCertificatesInStore(cert_store, None);
+    // SAFETY: `cert_store` is not null.
+    let mut certificate = unsafe { CertEnumCertificatesInStore(cert_store, None) };
 
     while !certificate.is_null() {
-        let cert_der = from_raw_parts((*certificate).pbCertEncoded, (*certificate).cbCertEncoded as usize);
+        // SAFETY:
+        // - `certificate` is not null.
+        let certificate_data = unsafe { (*certificate).pbCertEncoded };
+        // SAFETY:
+        // - `certificate` is not null.
+        let certificate_len = unsafe { (*certificate).cbCertEncoded as usize };
+        // SAFETY:
+        // - `certificate` is not null.
+        // - `(*certificate).pbCertEncoded` and `(*certificate).cbCertEncoded` are valid `data` and `len`.
+        let cert_der = unsafe { from_raw_parts(certificate_data, certificate_len) };
         let cert: Certificate = picky_asn1_der::from_bytes(cert_der)?;
 
         if !validate_client_p2p_certificate(&cert) {
-            let next_certificate = CertEnumCertificatesInStore(cert_store, Some(certificate));
+            // SAFETY:
+            // - `cert_store` is not null.
+            // - `certificate` is not null.
+            let next_certificate = unsafe { CertEnumCertificatesInStore(cert_store, Some(certificate)) };
 
             certificate = next_certificate;
 
@@ -308,11 +328,15 @@ unsafe fn extract_client_p2p_certificate(cert_store: HCERTSTORE) -> Result<(Cert
             "Found suitable client p2p certificate",
         );
 
-        let private_key = export_certificate_private_key(certificate);
+        // SAFETY: `certificate` is not null.
+        let private_key = unsafe {
+            export_certificate_private_key(NonNull::new(certificate).expect("certificate pointer to be valid"))
+        };
 
         // The function always returns nonzero.
         // More info: https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-certfreecertificatecontext.
-        let _ = CertFreeCertificateContext(Some(certificate));
+        // SAFETY: `certificate` is not null.
+        let _ = unsafe { CertFreeCertificateContext(Some(certificate)) };
 
         return Ok((cert, private_key?));
     }

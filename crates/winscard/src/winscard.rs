@@ -47,8 +47,8 @@ impl TryFrom<u32> for ReaderAction {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Gow invalid disposition value: {}", value),
-                ))
+                    format!("Gow invalid disposition value: {value}"),
+                ));
             }
         })
     }
@@ -286,8 +286,8 @@ impl TryFrom<u32> for ScardScope {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Invalid ScardScope value: {}", value),
-                ))
+                    format!("Invalid ScardScope value: {value}"),
+                ));
             }
         })
     }
@@ -343,7 +343,7 @@ impl TryFrom<u32> for ShareMode {
             3 => Ok(Self::Direct),
             _ => Err(Error::new(
                 ErrorKind::InvalidParameter,
-                format!("Invalid ShareMode value: {}", value),
+                format!("Invalid ShareMode value: {value}"),
             )),
         }
     }
@@ -411,8 +411,8 @@ impl TryFrom<u32> for State {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InternalError,
-                    format!("Invalid State value: {}", value),
-                ))
+                    format!("Invalid State value: {value}"),
+                ));
             }
         })
     }
@@ -587,8 +587,8 @@ impl TryFrom<u32> for ProviderId {
             _ => {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
-                    format!("Invalid provider id: {}", value),
-                ))
+                    format!("Invalid provider id: {value}"),
+                ));
             }
         })
     }
@@ -705,7 +705,7 @@ pub trait WinScardContext {
     /// The SCardListCards function searches the smart card database and provides a list of named cards previously
     /// introduced to the system by the user.
     fn list_cards(&self, atr: Option<&[u8]>, required_interfaces: Option<&[Uuid]>)
-        -> WinScardResult<Vec<Cow<'_, str>>>;
+    -> WinScardResult<Vec<Cow<'_, str>>>;
 
     /// [SCardGetDeviceTypeIdW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
     ///
@@ -733,7 +733,7 @@ pub trait WinScardContext {
     ///
     /// The SCardWriteCache function writes a name-value pair from a smart card to the global cache maintained by the Smart Card Resource Manager.
     fn write_cache(&mut self, card_id: Uuid, freshness_counter: u32, key: String, value: Vec<u8>)
-        -> WinScardResult<()>;
+    -> WinScardResult<()>;
 
     /// [SCardListReaderGroupsW](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadergroupsw)
     ///

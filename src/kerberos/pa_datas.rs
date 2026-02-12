@@ -1,16 +1,16 @@
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 
+use crate::Result;
 use crate::kerberos::client::extractors::extract_session_key_from_as_rep;
 use crate::kerberos::client::generators::{
-    generate_pa_datas_for_as_req as generate_password_based, GenerateAsPaDataOptions as AuthIdentityPaDataOptions,
+    GenerateAsPaDataOptions as AuthIdentityPaDataOptions, generate_pa_datas_for_as_req as generate_password_based,
 };
 use crate::kerberos::encryption_params::EncryptionParams;
 #[cfg(feature = "scard")]
 use crate::pk_init::{
-    generate_pa_datas_for_as_req as generate_private_key_based, GenerateAsPaDataOptions as SmartCardPaDataOptions,
+    GenerateAsPaDataOptions as SmartCardPaDataOptions, generate_pa_datas_for_as_req as generate_private_key_based,
 };
-use crate::Result;
 
 // PA-DATAs are very different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to generate PA-DATAs based on the provided options.
@@ -77,15 +77,15 @@ impl AsRepSessionKeyExtractor<'_> {
                 enc_params,
             } => {
                 use picky_asn1_x509::signed_data::SignedData;
-                use picky_krb::crypto::diffie_hellman::{generate_key, DhNonce};
                 use picky_krb::crypto::CipherSuite;
+                use picky_krb::crypto::diffie_hellman::{DhNonce, generate_key};
                 use picky_krb::pkinit::PaPkAsRep;
 
-                use crate::pk_init::{extract_server_dh_public_key, Wrapper};
+                use crate::pk_init::{Wrapper, extract_server_dh_public_key};
                 use crate::pku2u::{
                     extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data,
                 };
-                use crate::{check_if_empty, pku2u, Error, ErrorKind};
+                use crate::{Error, ErrorKind, check_if_empty, pku2u};
 
                 let dh_rep_info = match extract_pa_pk_as_rep(as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
@@ -93,7 +93,7 @@ impl AsRepSessionKeyExtractor<'_> {
                         return Err(Error::new(
                             ErrorKind::OperationNotSupported,
                             "encKeyPack is not supported for the PA-PK-AS-REP",
-                        ))
+                        ));
                     }
                 };
 
@@ -110,7 +110,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 let public_key = extract_server_dh_public_key(&signed_data)?;
                 dh_parameters.other_public_key = Some(public_key);
 
-                enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0 .0.as_slice())?);
+                enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
 
                 let key = generate_key(
                     check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),

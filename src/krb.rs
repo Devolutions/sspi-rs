@@ -95,11 +95,7 @@ impl Krb5Conf {
             }
         }
 
-        if values.is_empty() {
-            None
-        } else {
-            Some(values)
-        }
+        if values.is_empty() { None } else { Some(values) }
     }
 
     fn enter_section(&mut self, name: &str) {

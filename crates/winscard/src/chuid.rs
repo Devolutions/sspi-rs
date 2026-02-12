@@ -1,10 +1,10 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use time::{format_description, Duration, OffsetDateTime};
+use time::{Duration, OffsetDateTime, format_description};
 use uuid::Uuid;
 
-use crate::{tlv_tags, Error, ErrorKind, WinScardResult};
+use crate::{Error, ErrorKind, WinScardResult, tlv_tags};
 
 // CHUID will always have a fixed length when excluding optional fields and asymmetric signature
 pub(crate) const CHUID_LENGTH: usize = 61;
@@ -39,13 +39,13 @@ pub(crate) fn build_chuid() -> WinScardResult<[u8; CHUID_LENGTH]> {
     let expiration_date_format = format_description::parse("[year][month][day]").map_err(|e| {
         Error::new(
             ErrorKind::InternalError,
-            format!("error while trying to parse the date format: {}", e),
+            format!("error while trying to parse the date format: {e}"),
         )
     })?;
     let expiration_date = year_from_today.format(&expiration_date_format).map_err(|e| {
         Error::new(
             ErrorKind::InternalError,
-            format!("error while trying to format a date: {}", e),
+            format!("error while trying to format a date: {e}"),
         )
     })?;
     chuid.extend_from_slice(expiration_date.as_bytes());

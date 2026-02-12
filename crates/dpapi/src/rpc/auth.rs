@@ -54,7 +54,7 @@ impl<'a> AuthProvider<'a> {
             security_context,
             is_finished: false,
             credentials_handle,
-            target_name: format!("host/{}", target_host),
+            target_name: format!("host/{target_host}"),
             network_client,
         })
     }
@@ -117,8 +117,7 @@ impl<'a> AuthProvider<'a> {
                 security_trailer_len
                     .try_into()
                     .map_err(|_| AuthError::IntConversion(format!(
-                        "cannot convert security trailer length ({}) to usize",
-                        security_trailer_len
+                        "cannot convert security trailer length ({security_trailer_len}) to usize"
                     )))?
             ],
         })

@@ -1,4 +1,4 @@
-use dpapi_core::{decode_owned, EncodeVec};
+use dpapi_core::{EncodeVec, decode_owned};
 use dpapi_pdu::gkdi::KeyIdentifier;
 use picky_asn1::restricted_string::Utf8String;
 use picky_asn1::wrapper::{
@@ -194,7 +194,7 @@ impl DpapiBlob {
             })?;
         }
 
-        let enveloped_data: EnvelopedData = picky_asn1_der::from_bytes(&content_info.content.0 .0)?;
+        let enveloped_data: EnvelopedData = picky_asn1_der::from_bytes(&content_info.content.0.0)?;
 
         if enveloped_data.version != CmsVersion::V2 {
             Err(BlobError::InvalidCmsVersion {
@@ -248,10 +248,10 @@ impl DpapiBlob {
         let enc_content = if let Some(enc_content) = enveloped_data.encrypted_content_info.encrypted_content.0 {
             // Some DPAPI blobs don't include the content in the PKCS7 payload but
             // just append it after the blob.
-            if enc_content.0 .0.is_empty() {
+            if enc_content.0.0.is_empty() {
                 src.to_vec()
             } else {
-                enc_content.0 .0
+                enc_content.0.0
             }
         } else {
             src.to_vec()

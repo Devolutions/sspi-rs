@@ -16,7 +16,7 @@ use super::parse_multi_string_owned;
 #[cfg(not(target_os = "windows"))]
 use crate::winscard::pcsc_lite::functions::PcscLiteApiFunctionTable;
 #[cfg(not(target_os = "windows"))]
-use crate::winscard::pcsc_lite::{initialize_pcsc_lite_api, ScardContext, ScardHandle};
+use crate::winscard::pcsc_lite::{ScardContext, ScardHandle, initialize_pcsc_lite_api};
 
 /// Represents a state of the current `SystemScard`.
 #[derive(Copy, Clone, Debug)]
@@ -89,13 +89,13 @@ impl SystemScard {
 
 impl Drop for SystemScard {
     fn drop(&mut self) {
-        if let HandleState::Connected(handle) = self.h_card {
-            if let Err(err) = try_execute!(
+        if let HandleState::Connected(handle) = self.h_card
+            && let Err(err) = try_execute!(
                 // SAFETY: `handle` is valid.
                 unsafe { (self.api.SCardDisconnect)(handle, 0) }
-            ) {
-                error!(?err, "Failed to disconnect the card");
-            }
+            )
+        {
+            error!(?err, "Failed to disconnect the card");
         }
     }
 }
@@ -206,12 +206,7 @@ impl WinScard for SystemScard {
                 #[allow(clippy::useless_conversion)]
                 protocol.try_into()?,
             )
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InternalError,
-                    format!("Invalid protocol value: {}", protocol),
-                )
-            })?,
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, format!("Invalid protocol value: {protocol}")))?,
             atr: atr.into(),
         };
 
@@ -296,7 +291,7 @@ impl WinScard for SystemScard {
                         "failed to extract container name: smart card selected invalid ({:?}) connection protocol",
                         self.active_protocol
                     ),
-                ))
+                ));
             }
         };
 

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{utils, Error, Secret};
+use crate::{Error, Secret, utils};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
@@ -275,7 +275,7 @@ mod scard_credentials {
     use picky_asn1_x509::Certificate;
 
     use crate::secret::SecretPrivateKey;
-    use crate::{utils, Error, ErrorKind, Secret};
+    use crate::{Error, ErrorKind, Secret, utils};
 
     /// Smart card type.
     #[derive(Clone, Eq, PartialEq, Debug)]
@@ -358,7 +358,7 @@ mod scard_credentials {
                 Some(utils::string_to_utf16(key.as_ref().to_pem_str().map_err(|e| {
                     Error::new(
                         ErrorKind::InternalError,
-                        format!("Unable to serialize a smart card private key: {}", e),
+                        format!("Unable to serialize a smart card private key: {e}"),
                     )
                 })?))
             } else {
@@ -388,7 +388,7 @@ mod scard_credentials {
                     PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)?).map_err(|e| {
                         Error::new(
                             ErrorKind::InternalError,
-                            format!("Unable to create a PrivateKey from a PEM string: {}", e),
+                            format!("Unable to create a PrivateKey from a PEM string: {e}"),
                         )
                     })?,
                 ))

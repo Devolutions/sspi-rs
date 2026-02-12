@@ -31,7 +31,7 @@ const TLS_APPLICATION_DATA_CONTENT_TYPE: u8 = 0x17;
 // This configuration just accepts any certificate
 pub(super) mod danger {
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::{pki_types, DigitallySignedStruct, Error, SignatureScheme};
+    use rustls::{DigitallySignedStruct, Error, SignatureScheme, pki_types};
 
     #[derive(Debug)]
     pub(crate) struct NoCertificateVerification;
@@ -418,7 +418,7 @@ impl TlsConnection {
                         version => {
                             return Err(Error::new(
                                 ErrorKind::InternalError,
-                                format!("Unsupported connection protocol was used: {:?}", version),
+                                format!("Unsupported connection protocol was used: {version:?}"),
                             ));
                         }
                     },
@@ -431,7 +431,7 @@ impl TlsConnection {
                         version => {
                             return Err(Error::new(
                                 ErrorKind::InternalError,
-                                format!("Unsupported connection protocol was used: {:?}", version),
+                                format!("Unsupported connection protocol was used: {version:?}"),
                             ));
                         }
                     },
@@ -454,7 +454,7 @@ impl TlsConnection {
                         return Err(Error::new(
                             ErrorKind::UnsupportedFunction,
                             format!("alg_id for {:?} is not known", common.suite),
-                        ))
+                        ));
                     }
                 };
 

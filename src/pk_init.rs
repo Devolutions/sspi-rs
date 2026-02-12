@@ -16,7 +16,7 @@ use picky_asn1_x509::signer_info::{
     Attributes, CertificateSerialNumber, DigestAlgorithmIdentifier, IssuerAndSerialNumber,
     SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
 };
-use picky_asn1_x509::{oids, AlgorithmIdentifier, Attribute, AttributeValues, Certificate, ShaVariant};
+use picky_asn1_x509::{AlgorithmIdentifier, Attribute, AttributeValues, Certificate, ShaVariant, oids};
 use picky_krb::constants::types::{PA_PAC_REQUEST_TYPE, PA_PK_AS_REQ};
 use picky_krb::crypto::diffie_hellman::compute_public_key;
 use picky_krb::data_types::{KerbPaPacRequest, KerberosTime, PaData};
@@ -279,7 +279,7 @@ pub(crate) fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<V
 #[cfg(test)]
 mod tests {
     use picky_asn1::wrapper::{Asn1SetOf, ObjectIdentifierAsn1, OctetStringAsn1};
-    use picky_asn1_x509::{oids, Attribute, AttributeValues};
+    use picky_asn1_x509::{Attribute, AttributeValues, oids};
 
     #[test]
     fn signing() {
@@ -299,6 +299,6 @@ mod tests {
             },
         ]);
         let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes).unwrap();
-        println!("{:?}", encoded_signed_attributes);
+        println!("{encoded_signed_attributes:?}");
     }
 }

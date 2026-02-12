@@ -8,15 +8,15 @@ use picky_asn1_der::Asn1RawDer;
 use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, AP_REP_TOKEN_ID, TGT_REP_TOKEN_ID};
 use picky_krb::constants::key_usages::{ACCEPTOR_SIGN, AP_REP_ENC};
 use picky_krb::constants::types::{AP_REP_MSG_TYPE, TGT_REP_MSG_TYPE};
-use picky_krb::crypto::aes::{checksum_sha_aes, AesSize};
+use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::data_types::{
     EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds, Ticket,
 };
 use picky_krb::gss_api::{ApplicationTag0, KrbMessage, MechType, MicToken, NegTokenTarg, NegTokenTarg1};
 use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 
-use crate::kerberos::{EncryptionParams, DEFAULT_ENCRYPTION_TYPE};
-use crate::{Result, KERBEROS_VERSION};
+use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
+use crate::{KERBEROS_VERSION, Result};
 
 pub(super) fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
     let response_token = tgt_rep

@@ -19,7 +19,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::{c_w_str_to_string, into_raw_ptr, str_encode_utf16};
 use crate::winscard::scard_handle::{
-    raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context, WinScardContextHandle,
+    WinScardContextHandle, raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context,
 };
 use crate::winscard::system_scard::SystemScardContext;
 
@@ -54,8 +54,7 @@ fn is_present(context: ScardContext) -> bool {
     SCARD_CONTEXTS
         .lock()
         .expect("SCARD_CONTEXTS mutex locking should not fail")
-        .iter()
-        .any(|ctx| *ctx == context)
+        .contains(&context)
 }
 
 fn release_context(context: ScardContext) {
@@ -74,12 +73,12 @@ fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContex
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardestablishcontext)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `context` must be a properly-aligned pointer valid for writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardEstablishContext"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardEstablishContext(
     dw_scope: u32,
     _r1: *const c_void,
@@ -124,12 +123,12 @@ pub unsafe extern "system" fn SCardEstablishContext(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `context` must be a valid pointer to a memory region that is allocated by [`SCardEstablishContext`] function.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseContext"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> ScardStatus {
     check_handle!(context);
 
@@ -155,11 +154,11 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardisvalidcontext)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIsValidContext"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> ScardStatus {
     if is_present(context) {
         check_handle!(context);
@@ -184,7 +183,7 @@ pub unsafe extern "system" fn SCardIsValidContext(context: ScardContext) -> Scar
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListReaderGroupsA(
     _context: ScardContext,
     _gmsz_groups: LpStr,
@@ -194,7 +193,7 @@ pub extern "system" fn SCardListReaderGroupsA(
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReaderGroupsW"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListReaderGroupsW(
     _context: ScardContext,
     _gmsz_groups: LpWStr,
@@ -207,13 +206,13 @@ pub extern "system" fn SCardListReaderGroupsW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersa)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
 /// - `pcch_readers` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersA"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardListReadersA(
     context: ScardContext,
     _msz_groups: LpCStr,
@@ -251,14 +250,14 @@ pub unsafe extern "system" fn SCardListReadersA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistreadersW)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `msz_readers` must be valid for both reads and writes for `*pcch_readers` many bytes, and it must be properly aligned.
 /// - `pcch_readers` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardListReadersW(
     context: ScardContext,
     _msz_groups: LpCWStr,
@@ -317,7 +316,7 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsa)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
@@ -326,7 +325,7 @@ unsafe fn guids_to_uuids(guids: LpCGuid, len: u32) -> WinScardResult<Option<Vec<
 /// - `pcch_cards` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardListCardsA(
     context: ScardContext,
     pb_atr: LpCByte,
@@ -383,7 +382,7 @@ pub unsafe extern "system" fn SCardListCardsA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardlistcardsw)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `pb_atr` must be valid for both reads and writes for 32 bytes, and it must be properly aligned.
@@ -392,7 +391,7 @@ pub unsafe extern "system" fn SCardListCardsA(
 /// - `pcch_cards` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListCardsW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardListCardsW(
     context: ScardContext,
     pb_atr: LpCByte,
@@ -446,7 +445,7 @@ pub unsafe extern "system" fn SCardListCardsW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListInterfacesA(
     _context: ScardContext,
     _sz_scard: LpCStr,
@@ -458,7 +457,7 @@ pub extern "system" fn SCardListInterfacesA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListInterfacesW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListInterfacesW(
     _context: ScardContext,
     _sz_scard: LpCWStr,
@@ -470,7 +469,7 @@ pub extern "system" fn SCardListInterfacesW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardGetProviderIdA(
     _context: ScardContext,
     _sz_card: LpCStr,
@@ -481,7 +480,7 @@ pub extern "system" fn SCardGetProviderIdA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetProviderIdW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardGetProviderIdW(
     _context: ScardContext,
     _sz_card: LpCWStr,
@@ -495,7 +494,7 @@ pub extern "system" fn SCardGetProviderIdW(
 ///
 /// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamea)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
@@ -503,7 +502,7 @@ pub extern "system" fn SCardGetProviderIdW(
 /// - `pcch_provider` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
     context: ScardContext,
     sz_card_name: LpCStr,
@@ -558,7 +557,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 ///
 /// [MSDN Refrence](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetcardtypeprovidernamew)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_card_name` must be a non-null pointer to a valid, null-terminated C string representing the card name.
@@ -566,7 +565,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameA(
 /// - `pcch_provider` must be a properly-aligned pointer valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetCardTypeProviderNameW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     context: ScardContext,
     sz_card_name: LpCWStr,
@@ -617,35 +616,35 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderGroupW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetReaderGroupA(_context: ScardContext, _sz_group_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderGroupW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetReaderGroupW(_context: ScardContext, _sz_group_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceReaderA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
@@ -656,7 +655,7 @@ pub extern "system" fn SCardIntroduceReaderA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceReaderW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceReaderW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
@@ -667,21 +666,21 @@ pub extern "system" fn SCardIntroduceReaderW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetReaderA(_context: ScardContext, _sz_reader_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetReaderW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetReaderW(_context: ScardContext, _sz_reader_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardAddReaderToGroupA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
@@ -692,7 +691,7 @@ pub extern "system" fn SCardAddReaderToGroupA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAddReaderToGroupW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardAddReaderToGroupW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
@@ -703,7 +702,7 @@ pub extern "system" fn SCardAddReaderToGroupW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardRemoveReaderFromGroupA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
@@ -714,7 +713,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardRemoveReaderFromGroupW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardRemoveReaderFromGroupW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
@@ -725,7 +724,7 @@ pub extern "system" fn SCardRemoveReaderFromGroupW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceCardTypeA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
@@ -741,7 +740,7 @@ pub extern "system" fn SCardIntroduceCardTypeA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardIntroduceCardTypeW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardIntroduceCardTypeW(
     _context: ScardContext,
     _sz_card_name: LpCWStr,
@@ -757,7 +756,7 @@ pub extern "system" fn SCardIntroduceCardTypeW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardSetCardTypeProviderNameA(
     _context: ScardContext,
     _sz_card_name: LpCStr,
@@ -769,7 +768,7 @@ pub extern "system" fn SCardSetCardTypeProviderNameA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardSetCardTypeProviderNameW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardSetCardTypeProviderNameW(
     _context: ScardContext,
     _sz_card_name: LpCWStr,
@@ -781,14 +780,14 @@ pub extern "system" fn SCardSetCardTypeProviderNameW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetCardTypeA(_context: ScardContext, _sz_card_name: LpCStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardForgetCardTypeW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_name: LpCWStr) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }
@@ -798,12 +797,12 @@ pub extern "system" fn SCardForgetCardTypeW(_context: ScardContext, _sz_card_nam
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardfreememory)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardFreeMemory"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardFreeMemory(context: ScardContext, pv_mem: LpCVoid) -> ScardStatus {
     check_handle!(context);
 
@@ -848,7 +847,7 @@ static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardaccessstartedevent)
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAccessStartedEvent"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardAccessStartedEvent() -> Handle {
     #[cfg(target_os = "windows")]
     {
@@ -891,7 +890,7 @@ pub extern "system" fn SCardAccessStartedEvent() -> Handle {
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasestartedevent)
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReleaseStartedEvent"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardReleaseStartedEvent() {
     #[cfg(target_os = "windows")]
     {
@@ -934,7 +933,7 @@ pub extern "system" fn SCardReleaseStartedEvent() {
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardLocateCardsA(
     _context: ScardContext,
     _msz_cards: LpCStr,
@@ -946,7 +945,7 @@ pub extern "system" fn SCardLocateCardsA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardLocateCardsW(
     _context: ScardContext,
     _msz_cards: LpCWStr,
@@ -958,7 +957,7 @@ pub extern "system" fn SCardLocateCardsW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardLocateCardsByATRA(
     _context: ScardContext,
     _rg_atr_masks: LpScardAtrMask,
@@ -971,7 +970,7 @@ pub extern "system" fn SCardLocateCardsByATRA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardLocateCardsByATRW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardLocateCardsByATRW(
     _context: ScardContext,
     _rg_atr_masks: LpScardAtrMask,
@@ -987,7 +986,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangea)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `rg_reader_state` must point to an array of valid [`ScardReaderStateA`](ffi_types::winscard::ScardReaderStateA) structures.
@@ -996,7 +995,7 @@ pub extern "system" fn SCardLocateCardsByATRW(
 ///   to a valid, null-terminated C string.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetStatusChangeA(
     context: ScardContext,
     dw_timeout: u32,
@@ -1022,25 +1021,27 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
-    let mut reader_states = try_execute!(c_reader_states
-        .iter()
-        .map(|c_reader| {
-            check_null!(c_reader.sz_reader, "reader name in reader state");
+    let mut reader_states = try_execute!(
+        c_reader_states
+            .iter()
+            .map(|c_reader| {
+                check_null!(c_reader.sz_reader, "reader name in reader state");
 
-            Ok(ReaderState {
-                // SAFETY:
-                // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
-                // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
-                // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-                reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader.cast()) }.to_string_lossy(),
-                user_data: c_reader.pv_user_data as usize,
-                current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
-                event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
-                atr_len: c_reader.cb_atr.try_into()?,
-                atr: c_reader.rgb_atr,
+                Ok(ReaderState {
+                    // SAFETY:
+                    // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
+                    // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
+                    // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
+                    reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader.cast()) }.to_string_lossy(),
+                    user_data: c_reader.pv_user_data as usize,
+                    current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+                    event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+                    atr_len: c_reader.cb_atr.try_into()?,
+                    atr: c_reader.rgb_atr,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, Error>>());
+            .collect::<Result<Vec<_>, Error>>()
+    );
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
@@ -1057,7 +1058,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetstatuschangew)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `rg_reader_state` must point to an array of valid [`ScardReaderStateW`](ffi_types::winscard::ScardReaderStateW) structures.
@@ -1066,7 +1067,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
 ///   to a valid, null-terminated C string.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetStatusChangeW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetStatusChangeW(
     context: ScardContext,
     dw_timeout: u32,
@@ -1092,27 +1093,29 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
             try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
         )
     };
-    let mut reader_states = try_execute!(c_reader_states
-        .iter()
-        .map(|c_reader| {
-            check_null!(c_reader.sz_reader, "reader name in reader state");
+    let mut reader_states = try_execute!(
+        c_reader_states
+            .iter()
+            .map(|c_reader| {
+                check_null!(c_reader.sz_reader, "reader name in reader state");
 
-            Ok(ReaderState {
-                reader_name: Cow::Owned(
-                    // SAFETY:
-                    // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
-                    // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
-                    // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-                    unsafe { c_w_str_to_string(c_reader.sz_reader) }.map_err(Error::from)?,
-                ),
-                user_data: c_reader.pv_user_data as usize,
-                current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
-                event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
-                atr_len: c_reader.cb_atr.try_into()?,
-                atr: c_reader.rgb_atr,
+                Ok(ReaderState {
+                    reader_name: Cow::Owned(
+                        // SAFETY:
+                        // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
+                        // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
+                        // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
+                        unsafe { c_w_str_to_string(c_reader.sz_reader) }.map_err(Error::from)?,
+                    ),
+                    user_data: c_reader.pv_user_data as usize,
+                    current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
+                    event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
+                    atr_len: c_reader.cb_atr.try_into()?,
+                    atr: c_reader.rgb_atr,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, Error>>());
+            .collect::<Result<Vec<_>, Error>>()
+    );
     try_execute!(context.get_status_change(dw_timeout, &mut reader_states));
 
     for (reader_state, c_reader_state) in reader_states.iter().zip(c_reader_states.iter_mut()) {
@@ -1128,12 +1131,12 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardcancel)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// The `context` must be a valid raw scard context handle.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardCancel"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardCancel(context: ScardContext) -> ScardStatus {
     check_handle!(context);
 
@@ -1199,7 +1202,7 @@ unsafe fn read_cache(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachea)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1208,7 +1211,7 @@ unsafe fn read_cache(
 /// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardReadCacheA(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -1244,7 +1247,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreadcachew)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1253,7 +1256,7 @@ pub unsafe extern "system" fn SCardReadCacheA(
 /// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardReadCacheW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardReadCacheW(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -1340,7 +1343,7 @@ unsafe fn write_cache(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachea)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1348,7 +1351,7 @@ unsafe fn write_cache(
 /// - `data` must be valid for reads for `data_len` elements, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardWriteCacheA(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -1383,7 +1386,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardwritecachew)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `card_identifier` must be a pointer to a valid [`Uuid`](ffi_types::Uuid) structure, and it must be properly-aligned.
@@ -1391,7 +1394,7 @@ pub unsafe extern "system" fn SCardWriteCacheA(
 /// - `data` must be valid for reads for `data_len` elements, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardWriteCacheW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardWriteCacheW(
     context: ScardContext,
     card_identifier: LpUuid,
@@ -1467,7 +1470,7 @@ unsafe fn get_reader_icon(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericona)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
@@ -1475,7 +1478,7 @@ unsafe fn get_reader_icon(
 /// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetReaderIconA(
     context: ScardContext,
     sz_reader_name: LpCStr,
@@ -1508,7 +1511,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetreadericonw)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
@@ -1516,7 +1519,7 @@ pub unsafe extern "system" fn SCardGetReaderIconA(
 /// - `data_len` must be valid for both reads and writes, and it must be properly aligned.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderIconW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetReaderIconW(
     context: ScardContext,
     sz_reader_name: LpCWStr,
@@ -1573,14 +1576,14 @@ unsafe fn get_device_type_id(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeida)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
 /// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
     context: ScardContext,
     sz_reader_name: LpCStr,
@@ -1611,14 +1614,14 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdA(
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardgetdevicetypeidw)
 ///
-/// # Safety:
+/// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
 /// - `sz_reader_name` must be a non-null pointer to a valid, null-terminated C string.
 /// - `pdw_device_type_id` must be a properly-aligned pointer, that points to a memory region valid for both reads and writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetDeviceTypeIdW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
     context: ScardContext,
     sz_reader_name: LpCWStr,
@@ -1646,7 +1649,7 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
     _context: ScardContext,
     _sz_reader_name: LpCStr,
@@ -1658,7 +1661,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardGetReaderDeviceInstanceIdW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
     _context: ScardContext,
     _sz_reader_name: LpCWStr,
@@ -1670,7 +1673,7 @@ pub extern "system" fn SCardGetReaderDeviceInstanceIdW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdA"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
     _context: ScardContext,
     _sz_device_instance_id: LpCStr,
@@ -1682,7 +1685,7 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdA(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardListReadersWithDeviceInstanceIdW"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
     _context: ScardContext,
     _sz_device_instance_id: LpCWStr,
@@ -1694,7 +1697,7 @@ pub extern "system" fn SCardListReadersWithDeviceInstanceIdW(
 
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardAudit"))]
 #[instrument(ret)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn SCardAudit(_context: ScardContext, _dw_event: u32) -> ScardStatus {
     ErrorKind::UnsupportedFeature.into()
 }

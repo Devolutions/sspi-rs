@@ -11,20 +11,20 @@ use std::slice::from_raw_parts;
 use picky_asn1_x509::Certificate;
 use sha1::{Digest, Sha1};
 use sspi::{Error, ErrorKind, Result};
-use windows::core::PWSTR;
 use windows::Win32::Security::Cryptography::{
+    AT_KEYEXCHANGE, CERT_OPEN_STORE_FLAGS, CERT_QUERY_ENCODING_TYPE, CERT_STORE_PROV_SYSTEM_W,
+    CERT_SYSTEM_STORE_CURRENT_USER_ID, CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_FIRST, CRYPT_NEXT, CRYPT_SILENT,
     CertCloseStore, CertEnumCertificatesInStore, CertFreeCertificateContext, CertOpenStore, CryptAcquireContextW,
-    CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, AT_KEYEXCHANGE,
-    CERT_OPEN_STORE_FLAGS, CERT_QUERY_ENCODING_TYPE, CERT_STORE_PROV_SYSTEM_W, CERT_SYSTEM_STORE_CURRENT_USER_ID,
-    CERT_SYSTEM_STORE_LOCATION_SHIFT, CRYPT_FIRST, CRYPT_NEXT, CRYPT_SILENT, HCERTSTORE, KP_CERTIFICATE,
-    PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
+    CryptDestroyKey, CryptGetKeyParam, CryptGetProvParam, CryptGetUserKey, CryptReleaseContext, HCERTSTORE,
+    KP_CERTIFICATE, PP_ENUMCONTAINERS, PP_SMARTCARD_READER, PROV_RSA_FULL,
 };
+use windows::core::PWSTR;
 
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
 // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
 pub type HCRYPTPROV = usize; // ULONG_PTR
-                             // https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
+// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
 pub type HCRYPTKEY = usize; // ULONG_PTR
 
 /// Finds a certificate in the given certificate store by thumbprint.
@@ -93,8 +93,8 @@ fn open_user_cert_store() -> Result<HCERTSTORE> {
             CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER_ID << CERT_SYSTEM_STORE_LOCATION_SHIFT),
             Some(my.as_ptr().cast()),
         )
-        .map_err(|err| Error::new(ErrorKind::NoCredentials, format!("failed to open cert store: {err:?}")))
     }
+    .map_err(|err| Error::new(ErrorKind::NoCredentials, format!("failed to open cert store: {err:?}")))
 }
 
 /// Extract raw (encoded) certificate from the certificate store by thumbprint.
@@ -357,36 +357,36 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
         };
 
         // SAFETY: `context` is obtained from the successful `acquire_key_container_context` function call.
-        if let Ok(certificate) = unsafe { get_key_container_certificate(context) } {
-            if certificate.tbs_certificate.serial_number.0 == cert_serial_number {
-                // SAFETY: `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
-                let reader_name = unsafe { get_reader_name(crypt_context_handle) };
+        if let Ok(certificate) = unsafe { get_key_container_certificate(context) }
+            && certificate.tbs_certificate.serial_number.0 == cert_serial_number
+        {
+            // SAFETY: `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.
+            let reader_name = unsafe { get_reader_name(crypt_context_handle) };
 
-                // SAFETY:
-                // - The `crypt_context_handle` was obtained using successful `CryptAcquireContextW` function call.
-                // - `dwFlags` parameter is reserved for future use and must be zero.
-                if let Err(err) = unsafe { CryptReleaseContext(crypt_context_handle, 0) } {
-                    return Err(Error::new(
-                        ErrorKind::InternalError,
-                        format!("failed to release the crypto context: {err:?}"),
-                    ));
-                }
-
-                let reader_name = match reader_name {
-                    Ok(reader_name) => reader_name,
-                    Err(err) => {
-                        error!(?err);
-                        continue;
-                    }
-                };
-
-                return Ok(SmartCardInfo {
-                    key_container_name,
-                    reader_name,
-                    certificate,
-                    csp_name: CSP_NAME.to_owned(),
-                });
+            // SAFETY:
+            // - The `crypt_context_handle` was obtained using successful `CryptAcquireContextW` function call.
+            // - `dwFlags` parameter is reserved for future use and must be zero.
+            if let Err(err) = unsafe { CryptReleaseContext(crypt_context_handle, 0) } {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    format!("failed to release the crypto context: {err:?}"),
+                ));
             }
+
+            let reader_name = match reader_name {
+                Ok(reader_name) => reader_name,
+                Err(err) => {
+                    error!(?err);
+                    continue;
+                }
+            };
+
+            return Ok(SmartCardInfo {
+                key_container_name,
+                reader_name,
+                certificate,
+                csp_name: CSP_NAME.to_owned(),
+            });
         }
 
         is_first = false;

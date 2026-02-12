@@ -25,7 +25,7 @@ use url::Url;
 pub use self::client::initialize_security_context;
 use self::config::KerberosConfig;
 pub use self::encryption_params::EncryptionParams;
-pub use self::server::{accept_security_context, ServerProperties};
+pub use self::server::{ServerProperties, accept_security_context};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{
@@ -39,10 +39,10 @@ use crate::network_client::NetworkProtocol;
 use crate::pk_init::DhParameters;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data};
 use crate::{
-    detect_kdc_url, AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType,
-    ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
+    CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PACKAGE_ID_NONE,
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, PACKAGE_ID_NONE,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -220,7 +220,7 @@ impl Kerberos {
                     };
                     let result_bytes = yield_point.suspend(request).await?;
                     let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
-                    Ok(message_response.kerb_message.0 .0)
+                    Ok(message_response.kerb_message.0.0)
                 }
             };
         }
@@ -373,7 +373,7 @@ impl Sspi for Kerberos {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     format!("Kerberos context is not established: current state: {:?}", self.state),
-                ))
+                ));
             }
         };
 
@@ -506,7 +506,7 @@ impl Sspi for Kerberos {
                 return Err(Error::new(
                     ErrorKind::OutOfSequence,
                     "Kerberos context is not established",
-                ))
+                ));
             }
         }
     }
@@ -691,8 +691,8 @@ pub mod test_data {
     use picky_krb::gss_api::MechTypeList;
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
-    use crate::kerberos::ServerProperties;
     use crate::Kerberos;
+    use crate::kerberos::ServerProperties;
 
     const SESSION_KEY: &[u8] = &[
         21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79, 112, 46,

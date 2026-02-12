@@ -2,8 +2,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
-use rand::rngs::StdRng;
 use rand::RngCore;
+use rand::rngs::StdRng;
 
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
@@ -224,7 +224,7 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
         KDC_ERR_REVOCATION_STATUS_UNAVAILABLE => (ErrorKind::InternalError, "revoked status unavailable".into()),
         KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "client name mismatch".into()),
         KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
-        code => (ErrorKind::Unknown, format!("unknown Kerberos error: {}", code)),
+        code => (ErrorKind::Unknown, format!("unknown Kerberos error: {code}")),
     }
 }
 
@@ -239,7 +239,9 @@ pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&[u8]>
 
         Ok(key)
     } else {
-        error!("No encryption keys in the krb context. Maybe security context is not established, but encryption key is requested");
+        error!(
+            "No encryption keys in the krb context. Maybe security context is not established, but encryption key is requested"
+        );
 
         Err(Error::new(
             ErrorKind::OutOfSequence,
