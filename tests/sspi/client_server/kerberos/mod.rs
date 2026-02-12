@@ -207,10 +207,11 @@ fn run_kerberos(
     server_flags: ServerRequestFlags,
 
     network_client: &mut dyn NetworkClient,
+    steps: usize,
 ) {
     let mut client_in_token = Vec::new();
 
-    for _ in 0..3 {
+    for _ in 0..steps {
         let (client_status, token) = initialize_security_context(
             client,
             client_credentials_handle,
@@ -232,7 +233,7 @@ fn run_kerberos(
         client_in_token = token;
     }
 
-    panic!("Kerberos authentication should not exceed 3 steps");
+    panic!("Kerberos authentication should not exceed {steps} steps");
 }
 
 #[test]
@@ -325,6 +326,7 @@ fn kerberos_auth() {
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
+        2,
     );
 }
 
@@ -438,11 +440,11 @@ fn spnego_kerberos_u2u() {
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
+        3,
     );
 }
 
-#[test]
-fn spnego_kerberos() {
+fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerRequestFlags, steps: usize) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -515,6 +517,21 @@ fn spnego_kerberos() {
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 
+    run_kerberos(
+        &mut SspiContext::Negotiate(spnego_client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        &mut SspiContext::Negotiate(spnego_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+        steps,
+    );
+}
+
+#[test]
+fn spnego_kerberos() {
     let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::SEQUENCE_DETECT
@@ -526,14 +543,23 @@ fn spnego_kerberos() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    run_kerberos(
-        &mut SspiContext::Negotiate(spnego_client),
-        &mut client_credentials_handle,
-        client_flags,
-        &target_name,
-        &mut SspiContext::Negotiate(spnego_server),
-        &mut server_credentials_handle,
-        server_flags,
-        &mut network_client,
-    );
+    run_spnego_kerberos(client_flags, server_flags, 3);
+}
+
+#[test]
+fn spnego_kerberos_dce_style() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::USE_DCE_STYLE
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::USE_DCE_STYLE
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+
+    run_spnego_kerberos(client_flags, server_flags, 4);
 }

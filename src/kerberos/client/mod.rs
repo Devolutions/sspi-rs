@@ -279,9 +279,9 @@ pub async fn initialize_security_context<'a>(
 
             let authenticator_options = GenerateAuthenticatorOptions {
                 kdc_rep: &tgs_rep.0,
-                // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap token generated
-                // by the `encrypt_message` method. So, we set the next sequence number but do not increment the counter,
-                // which will be incremented on each `encrypt_message` method call.
+                // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap/MIC token generated
+                // by the `encrypt_message`/`generate_mic_token` method. So, we set the next sequence number but do not increment the counter,
+                // which will be incremented on each `encrypt_message`/`generate_mic_token` method call.
                 seq_num: Some(client.seq_number + 1),
                 sub_key: Some(EncKey {
                     key_type: enc_type.clone(),

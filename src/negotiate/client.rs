@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::mem;
 
 use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE};
@@ -100,7 +99,7 @@ pub(crate) async fn initialize_security_context<'a>(
             )?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-            output_token.buffer.write_all(&encoded_neg_token_init)?;
+            output_token.buffer = encoded_neg_token_init;
 
             negotiate.state = NegotiateState::InProgress;
 
@@ -194,14 +193,8 @@ pub(crate) async fn initialize_security_context<'a>(
             } else {
                 let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                let output_token = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
-                    // Wrap in a NegToken.
-                    picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut token.buffer))))?
-                } else {
-                    // Do not wrap if the `USE_DCE_STYLE` flag is set.
-                    // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
-                    mem::take(&mut token.buffer)
-                };
+                let output_token =
+                    picky_asn1_der::to_vec(&generate_neg_token_targ_1(Some(mem::take(&mut token.buffer))))?;
 
                 token.buffer = output_token;
             }

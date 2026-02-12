@@ -4,8 +4,8 @@ use sspi::credssp::SspiContext;
 use sspi::network_client::AsyncNetworkClient;
 use sspi::{
     AcquireCredentialsHandleResult, BufferType, ClientRequestFlags, CredentialUse, Credentials, CredentialsBuffers,
-    DataRepresentation, EncryptionFlags, NegotiatedProtocol, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityStatus, Sspi, SspiImpl,
+    DataRepresentation, EncryptionFlags, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityStatus, Sspi,
+    SspiImpl,
 };
 use thiserror::Error;
 
@@ -59,22 +59,6 @@ impl<'a> AuthProvider<'a> {
         })
     }
 
-    /// Determines if the selected authorization protocol needs negotiation.
-    ///
-    /// If the returned value is positive, then the client needs to call the `initialize_security_context` method
-    /// twice in order to skip the negotiation phase.
-    pub fn needs_negotication(&self) -> bool {
-        // The first `initialize_security_context` call is Negotiation in our Kerberos implementation.
-        // We don't need its result during the RPC authentication.
-        match &self.security_context {
-            SspiContext::Kerberos(_) => true,
-            SspiContext::Negotiate(negotiate) => {
-                matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Kerberos(_))
-            }
-            _ => false,
-        }
-    }
-
     /// Returns [SecurityProvider] type in use.
     ///
     /// We determine [SecurityProvider] every time we need to construct [SecurityTrailer].
@@ -83,16 +67,7 @@ impl<'a> AuthProvider<'a> {
         Ok(match &self.security_context {
             SspiContext::Ntlm(_) => SecurityProvider::Winnt,
             SspiContext::Kerberos(_) => SecurityProvider::GssKerberos,
-            // Note: we don't use `SecurityProvider::GssNegotiate` on purpose.
-            //
-            // Using `SecurityProvider::GssNegotiate` requires creating SPNEGO packets inside `Negotiate` module,
-            // which is not implemented. So, we use `SecurityProvider::Winnt` or `SecurityProvider::GssKerberos`
-            // even in the case of `Negotiate` module.
-            SspiContext::Negotiate(negotiate) => match negotiate.negotiated_protocol() {
-                NegotiatedProtocol::Ntlm(_) => SecurityProvider::Winnt,
-                NegotiatedProtocol::Kerberos(_) => SecurityProvider::GssKerberos,
-                NegotiatedProtocol::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
-            },
+            SspiContext::Negotiate(_) => SecurityProvider::GssNegotiate,
             SspiContext::Pku2u(_) => Err(AuthError::SecurityProviderNotSupported("PKU2U"))?,
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(_) => Err(AuthError::SecurityProviderNotSupported("CredSSP"))?,
