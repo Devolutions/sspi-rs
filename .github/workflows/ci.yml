@@ -138,10 +138,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # NOTE: Pinned to a specific nightly version for reproducibility.
+      # Update this manually on a regular basis.
       - name: Install nightly toolchain and Miri
         run: |
-          rustup toolchain install nightly --component miri
-          rustup override set nightly
+          rustup toolchain install nightly-2026-02-11 --component miri
+          rustup override set nightly-2026-02-11
 
       - name: Test
         run: cargo miri test --manifest-path ffi/Cargo.toml --no-default-features --features ring
