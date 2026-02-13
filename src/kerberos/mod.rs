@@ -2,6 +2,7 @@ pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod flags;
+mod messages;
 mod pa_datas;
 pub mod server;
 #[cfg(test)]
@@ -9,7 +10,6 @@ mod tests;
 mod utils;
 
 use std::fmt::Debug;
-use std::io::Write;
 use std::sync::LazyLock;
 
 use picky_asn1::restricted_string::IA5String;
@@ -32,8 +32,6 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
     YieldPointLocal,
 };
-use crate::kerberos::client::generators::{generate_final_neg_token_targ, get_mech_list};
-use crate::kerberos::utils::generate_initiator_raw;
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
 use crate::pk_init::DhParameters;
@@ -78,13 +76,10 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("Kerberos Security Package"),
 });
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KerberosState {
-    Negotiate,
     Preauthentication,
     ApExchange,
-    PubKeyAuth,
-    Credentials,
     Final,
 }
 
@@ -110,7 +105,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
-            state: KerberosState::Negotiate,
+            state: KerberosState::Preauthentication,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
@@ -130,7 +125,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_os_rng()?;
 
         Ok(Self {
-            state: KerberosState::Negotiate,
+            state: KerberosState::Preauthentication,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
@@ -143,6 +138,10 @@ impl Kerberos {
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
         })
+    }
+
+    pub fn is_client(&self) -> bool {
+        self.server.is_none()
     }
 
     pub fn config(&self) -> &KerberosConfig {
@@ -226,26 +225,6 @@ impl Kerberos {
         }
         Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
     }
-
-    fn prepare_final_neg_token(
-        &mut self,
-        builder: &mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<()> {
-        let neg_token_targ = generate_final_neg_token_targ(Some(generate_initiator_raw(
-            picky_asn1_der::to_vec(&get_mech_list())?,
-            self.seq_number as u64,
-            self.encryption_params
-                .sub_session_key
-                .as_ref()
-                .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?,
-        )?));
-
-        let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
-
-        let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-        output_token.buffer.write_all(&encoded_final_neg_token_targ)?;
-        Ok(())
-    }
 }
 
 impl Sspi for Kerberos {
@@ -254,13 +233,19 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags, _sequence_number))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
     ) -> Result<SecurityStatus> {
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ));
+        }
+
         trace!(encryption_params = ?self.encryption_params);
 
         // checks if the Token buffer present
@@ -315,7 +300,7 @@ impl Sspi for Kerberos {
             mut encrypted,
             confounder,
             ki: _,
-        } = cipher.encrypt_no_checksum(key, key_usage, &payload)?;
+        } = cipher.encrypt_no_checksum(key.as_ref(), key_usage, &payload)?;
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
         let mut data_to_sign =
@@ -332,7 +317,7 @@ impl Sspi for Kerberos {
         data_to_sign.extend_from_slice(&vec![0; usize::from(self.encryption_params.ec)]);
         data_to_sign.extend_from_slice(&wrap_token.header());
 
-        let checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
+        let checksum = cipher.encryption_checksum(key.as_ref(), key_usage, &data_to_sign)?;
 
         encrypted.extend_from_slice(&checksum);
 
@@ -346,46 +331,36 @@ impl Sspi for Kerberos {
         let mut raw_wrap_token = Vec::with_capacity(wrap_token.checksum.len() + WrapToken::header_len());
         wrap_token.encode(&mut raw_wrap_token)?;
 
-        match self.state {
-            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => {
-                let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
+        let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
 
-                let (token, data) = if raw_wrap_token.len() < security_trailer_len {
-                    (raw_wrap_token.as_slice(), &[] as &[u8])
-                } else {
-                    raw_wrap_token.split_at(security_trailer_len)
-                };
+        let (token, data) = if raw_wrap_token.len() < security_trailer_len {
+            (raw_wrap_token.as_slice(), &[] as &[u8])
+        } else {
+            raw_wrap_token.split_at(security_trailer_len)
+        };
 
-                let data_buffer = SecurityBufferRef::buffers_of_type_and_flags_mut(
-                    message,
-                    BufferType::Data,
-                    SecurityBufferFlags::NONE,
-                )
+        let data_buffer =
+            SecurityBufferRef::buffers_of_type_and_flags_mut(message, BufferType::Data, SecurityBufferFlags::NONE)
                 .next()
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "no buffer was provided with type Data"))?;
 
-                data_buffer.write_data(data)?;
+        data_buffer.write_data(data)?;
 
-                let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
-                token_buffer.write_data(token)?;
-            }
-            KerberosState::Negotiate | KerberosState::Preauthentication | KerberosState::ApExchange => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("Kerberos context is not established: current state: {:?}", self.state),
-                ));
-            }
-        };
+        let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
+        token_buffer.write_data(token)?;
 
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _sequence_number))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
-    ) -> Result<DecryptionFlags> {
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ));
+        }
+
         trace!(encryption_params = ?self.encryption_params);
 
         let encrypted = extract_encrypted_data(message)?;
@@ -440,7 +415,7 @@ impl Sspi for Kerberos {
             confounder,
             checksum,
             ki: _,
-        } = cipher.decrypt_no_checksum(key, key_usage, &checksum)?;
+        } = cipher.decrypt_no_checksum(key.as_ref(), key_usage, &checksum)?;
 
         if decrypted.len() < usize::from(wrap_token.ec) + WrapToken::header_len() {
             return Err(Error::new(ErrorKind::DecryptFailure, "decrypted data is too short"));
@@ -470,7 +445,7 @@ impl Sspi for Kerberos {
             });
         data_to_sign.extend_from_slice(wrap_token_header);
 
-        let calculated_checksum = cipher.encryption_checksum(key, key_usage, &data_to_sign)?;
+        let calculated_checksum = cipher.encryption_checksum(key.as_ref(), key_usage, &data_to_sign)?;
 
         if calculated_checksum != checksum {
             return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
@@ -478,37 +453,26 @@ impl Sspi for Kerberos {
 
         save_decrypted_data(plaintext, message)?;
 
-        match self.state {
-            KerberosState::PubKeyAuth => {
-                self.state = KerberosState::Credentials;
-                Ok(DecryptionFlags::empty())
-            }
-            KerberosState::Credentials => {
-                self.state = KerberosState::Final;
-                Ok(DecryptionFlags::empty())
-            }
-            _ => Ok(DecryptionFlags::empty()),
-        }
+        Ok(DecryptionFlags::empty())
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         // We prevent users from calling `query_context_sizes` on a non-established security context
         // because it can lead to invalid values being returned.
-        match self.state {
-            KerberosState::PubKeyAuth | KerberosState::Credentials | KerberosState::Final => Ok(ContextSizes {
-                max_token: PACKAGE_INFO.max_token_len,
-                max_signature: MAX_SIGNATURE as u32,
-                block: 0,
-                security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
-            }),
-            _ => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    "Kerberos context is not established",
-                ));
-            }
+        if self.state != KerberosState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("Kerberos context is not established: current state: {:?}", self.state),
+            ));
         }
+
+        Ok(ContextSizes {
+            max_token: PACKAGE_INFO.max_token_len,
+            max_signature: MAX_SIGNATURE as u32,
+            block: 0,
+            security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
+        })
     }
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
@@ -559,7 +523,7 @@ impl Sspi for Kerberos {
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
     fn query_context_session_key(&self) -> Result<SessionKeys> {
         Ok(SessionKeys {
-            session_key: get_encryption_key(&self.encryption_params)?.to_vec().into(),
+            session_key: get_encryption_key(&self.encryption_params)?.clone(),
         })
     }
 
@@ -630,7 +594,7 @@ impl SspiImpl for Kerberos {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut crate::builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'b,
@@ -663,7 +627,11 @@ impl<'a> Kerberos {
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &'a mut crate::builders::FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &'a mut crate::builders::FilledInitializeSecurityContext<
+            '_,
+            '_,
+            <Self as SspiImpl>::CredentialsHandle,
+        >,
     ) -> Result<crate::InitializeSecurityContextResult> {
         initialize_security_context(self, yield_point, builder).await
     }
@@ -675,6 +643,26 @@ impl SspiEx for Kerberos {
         self.auth_identity = Some(identity.try_into()?);
 
         Ok(())
+    }
+
+    fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
+        utils::validate_mic_token(self.is_client(), token, &self.encryption_params, data)
+    }
+
+    fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
+        // Do not increment sequence number for MIC token if security context is not established.
+        // We do not want to mess up the sequence number.
+        let seq_number = if self.encryption_params.sub_session_key.is_some() {
+            self.next_seq_number()
+        } else {
+            0
+        };
+        let session_key = self
+            .encryption_params
+            .sub_session_key
+            .as_ref()
+            .ok_or_else(|| Error::new(ErrorKind::InternalError, "kerberos sub-session key is not set"))?;
+        utils::generate_mic_token(self.is_client(), u64::from(seq_number), data.to_vec(), session_key)
     }
 }
 
@@ -708,13 +696,13 @@ pub mod test_data {
             state: KerberosState::Final,
             config: KerberosConfig {
                 kdc_url: None,
-                client_computer_name: None,
+                client_computer_name: "hostname".into(),
             },
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(SESSION_KEY.to_vec()),
-                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                session_key: Some(SESSION_KEY.to_vec().into()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec().into()),
                 sspi_encrypt_key_usage: INITIATOR_SEAL,
                 sspi_decrypt_key_usage: ACCEPTOR_SEAL,
                 ec: 0,
@@ -753,13 +741,13 @@ pub mod test_data {
             state: KerberosState::Final,
             config: KerberosConfig {
                 kdc_url: None,
-                client_computer_name: None,
+                client_computer_name: "hostname".into(),
             },
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
-                session_key: Some(SESSION_KEY.to_vec()),
-                sub_session_key: Some(SUB_SESSION_KEY.to_vec()),
+                session_key: Some(SESSION_KEY.to_vec().into()),
+                sub_session_key: Some(SUB_SESSION_KEY.to_vec().into()),
                 sspi_encrypt_key_usage: ACCEPTOR_SEAL,
                 sspi_decrypt_key_usage: INITIATOR_SEAL,
                 ec: 0,

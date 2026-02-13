@@ -8,12 +8,17 @@ use sspi::credssp::{
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::ntlm::NtlmConfig;
-use sspi::{AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, Secret, Username};
+use sspi::{
+    AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, KerberosServerConfig, NegotiateConfig, Secret,
+    Username,
+};
 use url::Url;
 
 use super::kerberos::kdc::{CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, Validators};
 use super::kerberos::network_client::NetworkClientMock;
 use super::kerberos::{KrbEnvironment, init_krb_environment};
+use crate::client_server::TARGET_NAME;
+use crate::client_server::kerberos::kdc::SERVER_COMPUTER_NAME;
 use crate::common::CredentialsProxyImpl;
 
 const PUBLIC_KEY: &[u8] = &[
@@ -86,7 +91,7 @@ fn credssp_ntlm() {
         ClientMode::Ntlm(NtlmConfig {
             client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
         }),
-        "TERMSRV/DESKTOP-8F33RFH.example.com".to_owned(),
+        TARGET_NAME.to_owned(),
     )
     .unwrap();
 
@@ -106,6 +111,8 @@ fn credssp_ntlm() {
 
 #[test]
 fn credssp_kerberos() {
+    // CredSSP with Kerberos inside requires SPNEGO. We cannot use Kerberos inside CredSSP without SPNEGO.
+
     let KrbEnvironment {
         realm,
         credentials,
@@ -114,19 +121,22 @@ fn credssp_kerberos() {
         target_name,
         target_service_name,
     } = init_krb_environment();
-    let auth_identity = credentials.clone().auth_identity().unwrap();
+
+    let identity_1 = credentials.to_auth_identity().unwrap();
+    let mut identity_2 = identity_1.clone();
+    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(realm, keys, users, Validators::default());
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
-        client_computer_name: Some(CLIENT_COMPUTER_NAME.into()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
@@ -137,22 +147,34 @@ fn credssp_kerberos() {
         client: None,
         authenticators_cache: HashSet::new(),
     };
+    let kerberos_server_config = KerberosServerConfig {
+        kerberos_config: server_config,
+        server_properties,
+    };
 
     let mut client = CredSspClient::new(
         PUBLIC_KEY.to_vec(),
         credentials,
         CredSspMode::WithCredentials,
-        ClientMode::Kerberos(client_config),
+        ClientMode::Negotiate(NegotiateConfig::new(
+            Box::new(client_config.clone()),
+            Some(String::from("kerberos,!ntlm")),
+            CLIENT_COMPUTER_NAME.into(),
+        )),
         target_name,
     )
     .unwrap();
 
     let mut server = CredSspServer::new(
         PUBLIC_KEY.to_vec(),
-        CredentialsProxyImpl::new(&auth_identity),
-        ServerMode::Kerberos(Box::new((server_config, server_properties))),
+        CredentialsProxyImpl::new(&identity_2),
+        ServerMode::Negotiate(NegotiateConfig::new(
+            Box::new(kerberos_server_config),
+            Some(String::from("kerberos,!ntlm")),
+            SERVER_COMPUTER_NAME.into(),
+        )),
     )
     .unwrap();
 
-    run_credssp(&mut client, &mut server, &auth_identity, &mut network_client);
+    run_credssp(&mut client, &mut server, &identity_1, &mut network_client);
 }

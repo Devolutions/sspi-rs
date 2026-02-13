@@ -55,7 +55,7 @@ fn main() -> Result<(), io::Error> {
     println!("Unencrypted message: [{msg}]");
     println!("Encrypting...");
 
-    let _result = ntlm.encrypt_message(EncryptionFlags::empty(), &mut msg_buffer, 0)?;
+    let _result = ntlm.encrypt_message(EncryptionFlags::empty(), &mut msg_buffer)?;
 
     println!("Encrypted message: {:?}", msg_buffer[1].data());
 

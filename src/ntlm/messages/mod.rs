@@ -4,7 +4,7 @@ pub(super) mod server;
 pub(super) mod test;
 
 mod av_pair;
-mod computations;
+pub(super) mod computations;
 
 use std::io;
 
@@ -16,10 +16,10 @@ const NTLM_SIGNATURE: &[u8; NTLM_SIGNATURE_SIZE] = b"NTLMSSP\0";
 const NTLM_SIGNATURE_SIZE: usize = 8;
 
 const MAGIC_SIZE: usize = 59;
-const CLIENT_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server signing key magic constant\0";
-const SERVER_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client signing key magic constant\0";
-const CLIENT_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server sealing key magic constant\0";
-const SERVER_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client sealing key magic constant\0";
+pub(super) const CLIENT_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server signing key magic constant\0";
+pub(super) const SERVER_SIGN_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client signing key magic constant\0";
+pub(super) const CLIENT_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to client-to-server sealing key magic constant\0";
+pub(super) const SERVER_SEAL_MAGIC: &[u8; MAGIC_SIZE] = b"session key to server-to-client sealing key magic constant\0";
 
 #[derive(Clone, Copy)]
 pub(super) enum MessageTypes {

@@ -39,9 +39,7 @@ fn encrypt_message_crypts_data() {
     ];
     let expected = &ENCRYPTED_TEST_DATA;
 
-    let result = context
-        .encrypt_message(EncryptionFlags::empty(), &mut buffers, 0)
-        .unwrap();
+    let result = context.encrypt_message(EncryptionFlags::empty(), &mut buffers).unwrap();
     let output = SecurityBufferRef::find_buffer(&buffers, BufferType::Data).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
@@ -51,7 +49,8 @@ fn encrypt_message_crypts_data() {
 #[test]
 fn encrypt_message_correct_computes_digest() {
     let mut context = Ntlm::new();
-    context.send_signing_key = SIGNING_KEY;
+    context.our_seq_number = TEST_SEQ_NUM;
+    context.send_signing_key = SIGNING_KEY.into();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut token = [0; 100];
@@ -62,9 +61,7 @@ fn encrypt_message_correct_computes_digest() {
     ];
     let expected = &DIGEST_FOR_TEST_DATA;
 
-    let result = context
-        .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
-        .unwrap();
+    let result = context.encrypt_message(EncryptionFlags::empty(), &mut buffers).unwrap();
     let signature = SecurityBufferRef::find_buffer(&buffers, BufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
@@ -74,7 +71,8 @@ fn encrypt_message_correct_computes_digest() {
 #[test]
 fn encrypt_message_writes_seq_num_to_signature() {
     let mut context = Ntlm::new();
-    context.send_signing_key = SIGNING_KEY;
+    context.our_seq_number = TEST_SEQ_NUM;
+    context.send_signing_key = SIGNING_KEY.into();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut token = [0; 100];
@@ -85,9 +83,7 @@ fn encrypt_message_writes_seq_num_to_signature() {
     ];
     let expected = TEST_SEQ_NUM.to_le_bytes();
 
-    let result = context
-        .encrypt_message(EncryptionFlags::empty(), &mut buffers, TEST_SEQ_NUM)
-        .unwrap();
+    let result = context.encrypt_message(EncryptionFlags::empty(), &mut buffers).unwrap();
     let signature = SecurityBufferRef::find_buffer(&buffers, BufferType::Token).unwrap();
 
     assert_eq!(result, SecurityStatus::Ok);
@@ -97,7 +93,8 @@ fn encrypt_message_writes_seq_num_to_signature() {
 #[test]
 fn decrypt_message_decrypts_data() {
     let mut context = Ntlm::new();
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -109,7 +106,7 @@ fn decrypt_message_decrypts_data() {
     ];
     let expected = TEST_DATA;
 
-    context.decrypt_message(&mut buffers, TEST_SEQ_NUM).unwrap();
+    context.decrypt_message(&mut buffers).unwrap();
     let data = SecurityBufferRef::find_buffer(&buffers, BufferType::Data).unwrap();
 
     assert_eq!(expected, data.data());
@@ -118,7 +115,8 @@ fn decrypt_message_decrypts_data() {
 #[test]
 fn decrypt_message_does_not_fail_on_correct_signature() {
     let mut context = Ntlm::new();
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -129,13 +127,14 @@ fn decrypt_message_does_not_fail_on_correct_signature() {
         SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
 
-    context.decrypt_message(&mut buffers, TEST_SEQ_NUM).unwrap();
+    context.decrypt_message(&mut buffers).unwrap();
 }
 
 #[test]
 fn decrypt_message_fails_on_incorrect_version() {
     let mut context = Ntlm::new();
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -148,13 +147,14 @@ fn decrypt_message_fails_on_incorrect_version() {
         SecurityBufferRef::token_buf(&mut token),
     ];
 
-    assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
+    assert!(context.decrypt_message(&mut buffers).is_err());
 }
 
 #[test]
 fn decrypt_message_fails_on_incorrect_checksum() {
     let mut context = Ntlm::new();
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -167,13 +167,14 @@ fn decrypt_message_fails_on_incorrect_checksum() {
         SecurityBufferRef::token_buf(&mut token),
     ];
 
-    assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
+    assert!(context.decrypt_message(&mut buffers).is_err());
 }
 
 #[test]
 fn decrypt_message_fails_on_incorrect_seq_num() {
     let mut context = Ntlm::new();
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -186,14 +187,14 @@ fn decrypt_message_fails_on_incorrect_seq_num() {
         SecurityBufferRef::token_buf(&mut token),
     ];
 
-    assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
+    assert!(context.decrypt_message(&mut buffers).is_err());
 }
 
 #[test]
 fn decrypt_message_fails_on_incorrect_signing_key() {
     let mut context = Ntlm::new();
-
-    context.recv_signing_key = SEALING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SEALING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -204,14 +205,14 @@ fn decrypt_message_fails_on_incorrect_signing_key() {
         SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
 
-    assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
+    assert!(context.decrypt_message(&mut buffers).is_err());
 }
 
 #[test]
 fn decrypt_message_fails_on_incorrect_sealing_key() {
     let mut context = Ntlm::new();
-
-    context.recv_signing_key = SIGNING_KEY;
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SIGNING_KEY));
 
     let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
@@ -222,7 +223,7 @@ fn decrypt_message_fails_on_incorrect_sealing_key() {
         SecurityBufferRef::token_buf(&mut signature_test_data),
     ];
 
-    assert!(context.decrypt_message(&mut buffers, TEST_SEQ_NUM).is_err());
+    assert!(context.decrypt_message(&mut buffers).is_err());
 }
 
 #[test]
@@ -230,10 +231,10 @@ fn make_signature_verified_by_verify_signature() {
     let mut sender = Ntlm::new();
     let mut reciever = Ntlm::new();
 
-    sender.send_signing_key = SIGNING_KEY;
+    sender.send_signing_key = SIGNING_KEY.into();
     sender.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
-    reciever.recv_signing_key = SIGNING_KEY;
+    reciever.recv_signing_key = SIGNING_KEY.into();
     reciever.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut plain_test_data = TEST_DATA.to_vec();
@@ -263,7 +264,7 @@ fn make_signature_verified_by_verify_signature() {
 fn verify_signature_fails_on_invalid_signature() {
     let mut context = Ntlm::new();
 
-    context.recv_signing_key = SIGNING_KEY;
+    context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
 
     let mut test_data = TEST_DATA.to_vec();

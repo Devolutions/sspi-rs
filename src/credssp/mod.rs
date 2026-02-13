@@ -20,8 +20,7 @@ use crate::generator::{
     Generator, GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
     YieldPointLocal,
 };
-use crate::kerberos::config::KerberosConfig;
-use crate::kerberos::{self, Kerberos, ServerProperties};
+use crate::kerberos::{self, Kerberos};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
 use crate::{
@@ -50,6 +49,10 @@ pub trait CredentialsProxy {
     ///
     /// * `username` - The username in UPN or Down-Level Logon Name format
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData>;
+
+    /// A method signature for implementing a behavior of searching and returning
+    /// all available authentication data.
+    fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>>;
 }
 
 macro_rules! try_cred_ssp_server {
@@ -151,10 +154,21 @@ enum EndpointType {
     Server,
 }
 
+/// CredSSP client authentication protocol.
+///
+/// From MSDN: [1.3 Overview](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7):
+/// > The CredSSP Protocol then uses the Simple and Protected Generic Security Service Application Program Interface Negotiation Mechanism (SPNEGO)
+/// > to authenticate the user and server in the encrypted TLS session.
+/// > SPNEGO provides a framework for two parties that are engaged in authentication to select from a set of
+/// > possible authentication mechanisms. This framework provides selection in a manner that preserves
+/// > the opaque nature of the security protocols to the application protocol that uses SPNEGO. In this case,
+/// > the CredSSP Protocol is the application protocol that uses SPNEGO.
+///
+/// According to the specification, we should always use the Negotiate security package in CredSSP.
+/// However, mstsc and other RDP clients send plain NTLM messages (without SPNEGO wrappers) inside CredSSP when Kerberos is not possible.
 #[derive(Debug, Clone)]
 pub enum ClientMode {
     Negotiate(NegotiateConfig),
-    Kerberos(KerberosConfig),
     Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
@@ -255,9 +269,6 @@ impl CredSspClient {
             {
                 ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
                     Negotiate::new_client(negotiate_config)?,
-                ))),
-                ClientMode::Kerberos(kerberos_config) => Some(CredSspContext::new(SspiContext::Kerberos(
-                    Kerberos::new_client_from_config(kerberos_config)?,
                 ))),
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
                     Pku2u::new_client_from_config(*pku2u)?,
@@ -388,10 +399,21 @@ impl CredSspClient {
     }
 }
 
+/// CredSSP client authentication protocol.
+///
+/// From MSDN: [1.3 Overview](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7):
+/// > The CredSSP Protocol then uses the Simple and Protected Generic Security Service Application Program Interface Negotiation Mechanism (SPNEGO)
+/// > to authenticate the user and server in the encrypted TLS session.
+/// > SPNEGO provides a framework for two parties that are engaged in authentication to select from a set of
+/// > possible authentication mechanisms. This framework provides selection in a manner that preserves
+/// > the opaque nature of the security protocols to the application protocol that uses SPNEGO. In this case,
+/// > the CredSSP Protocol is the application protocol that uses SPNEGO.
+///
+/// According to the specification, we should always use the Negotiate security package in CredSSP.
+/// However, mstsc and other RDP clients send plain NTLM messages (without SPNEGO wrappers) inside CredSSP when Kerberos is not possible.
 #[derive(Debug, Clone)]
 pub enum ServerMode {
     Negotiate(NegotiateConfig),
-    Kerberos(Box<(KerberosConfig, ServerProperties)>),
     Pku2u(Box<Pku2uConfig>),
     Ntlm(NtlmConfig),
 }
@@ -464,13 +486,12 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 .take()
                 .expect("CredSsp client mode should never be empty")
             {
-                ServerMode::Negotiate(neg_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    try_cred_ssp_server!(Negotiate::new_server(neg_config), ts_request),
-                ))),
-                ServerMode::Kerberos(kerberos_mode) => {
-                    let (kerberos_config, server_properties) = *kerberos_mode;
-                    Some(CredSspContext::new(SspiContext::Kerberos(try_cred_ssp_server!(
-                        Kerberos::new_server_from_config(kerberos_config, server_properties),
+                ServerMode::Negotiate(neg_config) => {
+                    Some(CredSspContext::new(SspiContext::Negotiate(try_cred_ssp_server!(
+                        Negotiate::new_server(
+                            neg_config,
+                            try_cred_ssp_server!(self.credentials.auth_data(), ts_request)
+                        ),
                         ts_request
                     ))))
                 }
@@ -526,7 +547,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 self.state = CredSspState::Final;
 
                 let auth_identity = try_cred_ssp_server!(
-                    AuthIdentity::try_from(read_credentials.auth_identity().unwrap())
+                    AuthIdentity::try_from(read_credentials.into_auth_identity().unwrap())
                         .map_err(|e| Error::new(ErrorKind::InvalidParameter, e)),
                     ts_request
                 );
@@ -735,7 +756,7 @@ impl SspiImpl for SspiContext {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut FilledInitializeSecurityContext<'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> crate::Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,
@@ -767,7 +788,7 @@ impl<'a> SspiContext {
     #[cfg(feature = "network_client")]
     pub fn initialize_security_context_sync(
         &mut self,
-        builder: &mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         Generator::new(move |mut yield_point| async move {
             self.initialize_security_context_impl(&mut yield_point, builder).await
@@ -826,7 +847,7 @@ impl<'a> SspiContext {
                     .credentials_handle
                     .as_ref()
                     .and_then(|creds| (*creds).clone())
-                    .and_then(|creds_handle| creds_handle.auth_identity());
+                    .and_then(|creds_handle| creds_handle.into_auth_identity());
                 let new_builder = builder.full_transform(Some(&mut creds_handle));
                 pku2u.accept_security_context_impl(yield_point, new_builder).await
             }
@@ -839,7 +860,7 @@ impl<'a> SspiContext {
     async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &'a mut FilledInitializeSecurityContext<'_, <Self as SspiImpl>::CredentialsHandle>,
+        builder: &'a mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> crate::Result<InitializeSecurityContextResult> {
         match self {
             SspiContext::Ntlm(ntlm) => {
@@ -888,31 +909,26 @@ impl Sspi for SspiContext {
         &mut self,
         flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
     ) -> crate::Result<SecurityStatus> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message, sequence_number),
-            SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message, sequence_number),
-            SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message, sequence_number),
-            SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message, sequence_number),
+            SspiContext::Ntlm(ntlm) => ntlm.encrypt_message(flags, message),
+            SspiContext::Kerberos(kerberos) => kerberos.encrypt_message(flags, message),
+            SspiContext::Negotiate(negotiate) => negotiate.encrypt_message(flags, message),
+            SspiContext::Pku2u(pku2u) => pku2u.encrypt_message(flags, message),
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.encrypt_message(flags, message, sequence_number),
+            SspiContext::CredSsp(credssp) => credssp.encrypt_message(flags, message),
         }
     }
 
     #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
-    fn decrypt_message(
-        &mut self,
-        message: &mut [SecurityBufferRef<'_>],
-        sequence_number: u32,
-    ) -> crate::Result<DecryptionFlags> {
+    fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         match self {
-            SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message, sequence_number),
-            SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message, sequence_number),
-            SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message, sequence_number),
-            SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message, sequence_number),
+            SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message),
+            SspiContext::Kerberos(kerberos) => kerberos.decrypt_message(message),
+            SspiContext::Negotiate(negotiate) => negotiate.decrypt_message(message),
+            SspiContext::Pku2u(pku2u) => pku2u.decrypt_message(message),
             #[cfg(feature = "tsssp")]
-            SspiContext::CredSsp(credssp) => credssp.decrypt_message(message, sequence_number),
+            SspiContext::CredSsp(credssp) => credssp.decrypt_message(message),
         }
     }
 
@@ -1089,16 +1105,12 @@ impl SspiEx for SspiContext {
 struct CredSspContext {
     peer_version: Option<u32>,
     sspi_context: SspiContext,
-    send_seq_num: u32,
-    recv_seq_num: u32,
 }
 
 impl CredSspContext {
     fn new(sspi_context: SspiContext) -> Self {
         Self {
             peer_version: None,
-            send_seq_num: 0,
-            recv_seq_num: 0,
             sspi_context,
         }
     }
@@ -1271,17 +1283,13 @@ impl CredSspContext {
             SecurityBufferRef::data_buf(data.as_mut_slice()),
         ];
 
-        let send_seq_num = self.send_seq_num;
-
         self.sspi_context
-            .encrypt_message(EncryptionFlags::empty(), &mut buffers, send_seq_num)?;
+            .encrypt_message(EncryptionFlags::empty(), &mut buffers)?;
 
         let mut output = SecurityBufferRef::find_buffer(&buffers, BufferType::Token)?
             .data()
             .to_vec();
         output.extend_from_slice(SecurityBufferRef::find_buffer_mut(&mut buffers, BufferType::Data)?.data());
-
-        self.send_seq_num += 1;
 
         Ok(output)
     }
@@ -1294,13 +1302,9 @@ impl CredSspContext {
             SecurityBufferRef::token_buf(signature),
         ];
 
-        let recv_seq_num = self.recv_seq_num;
-
-        self.sspi_context.decrypt_message(&mut buffers, recv_seq_num)?;
+        self.sspi_context.decrypt_message(&mut buffers)?;
 
         let output = SecurityBufferRef::buf_data(&buffers, BufferType::Data)?.to_vec();
-
-        self.recv_seq_num += 1;
 
         Ok(output)
     }

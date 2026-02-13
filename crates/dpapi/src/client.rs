@@ -291,11 +291,8 @@ fn try_get_negotiate_config(
     client_computer_name: Option<String>,
     kerberos_config: Option<KerberosConfig>,
 ) -> Result<NegotiateConfig> {
-    let client_computer_name = if let Some(name) = kerberos_config
-        .as_ref()
-        .and_then(|config| config.client_computer_name.as_ref())
-    {
-        name.to_owned()
+    let client_computer_name = if let Some(kerberos_config) = kerberos_config.as_ref() {
+        kerberos_config.client_computer_name.clone()
     } else if let Some(name) = client_computer_name {
         name
     } else {

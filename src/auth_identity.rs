@@ -433,9 +433,17 @@ pub enum CredentialsBuffers {
 }
 
 impl CredentialsBuffers {
-    pub fn auth_identity(self) -> Option<AuthIdentityBuffers> {
+    pub fn into_auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
+            #[cfg(feature = "scard")]
+            _ => None,
+        }
+    }
+
+    pub fn to_auth_identity(&self) -> Option<AuthIdentityBuffers> {
+        match self {
+            CredentialsBuffers::AuthIdentity(identity) => Some(identity.clone()),
             #[cfg(feature = "scard")]
             _ => None,
         }
@@ -469,6 +477,14 @@ pub enum Credentials {
 }
 
 impl Credentials {
+    pub fn to_auth_identity(&self) -> Option<AuthIdentity> {
+        match self {
+            Credentials::AuthIdentity(identity) => Some(identity.clone()),
+            #[cfg(feature = "scard")]
+            _ => None,
+        }
+    }
+
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
