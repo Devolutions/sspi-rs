@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.8](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.7...sspi-v0.18.8)] - 2026-02-17
+
+### <!-- 1 -->Features
+
+- Improve domain->realm mapping in kerberos backend ([#604](https://github.com/Devolutions/sspi-rs/issues/604)) ([50cff70f0e](https://github.com/Devolutions/sspi-rs/commit/50cff70f0e64df4630320883f3846872a68d7e27)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Fix!(sspi): correct Negotiate (SPNEGO) implementation ([#600](https://github.com/Devolutions/sspi-rs/issues/600)) ([c016e18863](https://github.com/Devolutions/sspi-rs/commit/c016e188633b202c1de7fd84ae1f4f7253fe5dd2)) 
+
+
+
 ## [[0.18.7](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.6...sspi-v0.18.7)] - 2026-01-16
 
 ### <!-- 1 -->Features
