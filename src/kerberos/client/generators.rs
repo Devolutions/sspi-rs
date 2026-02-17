@@ -128,7 +128,7 @@ fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, do
 /// Checks if the given domain matches the mapping domain (usually from krb5.conf file).
 ///
 /// # Mapping rules
-/// 
+///
 /// We follow the MIT KRB5 behavior: https://github.com/krb5/krb5/commit/8f5ce824012f2caab6770df464f096c38dc4cb2e.
 ///
 /// - If the mapping domain starts with a dot (e.g., `.example.com`),
