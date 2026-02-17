@@ -126,20 +126,20 @@ fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, do
 }
 
 /// Checks if the given domain matches the mapping domain (usually from krb5.conf file).
-/// 
+///
 /// # Mapping rules
-/// 
+///
 /// - If the mapping domain starts with a dot (e.g., `.example.com`),
 ///   it matches all hosts under the domain `dev.mit.edu`, but not the host with the name `example.com`.
 ///   For example, ["test.example.com", "d1.example.com"] will match `.example.com`, but `example.com` will not.
 /// - If the mapping domain does not start with a dot (e.g., `example.com`),
 ///   it matches all hosts under the domain `example.com` (including `example.com`).
-/// 
+///
 /// So, the mappings order in `krb5.conf` matters.
 fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
     let domain = domain.to_lowercase();
     let mapping_domain = mapping_domain.to_lowercase();
-    
+
     if mapping_domain.starts_with('.') {
         // If mapping_domain starts with a dot, it matches subdomains only
         // e.g., `.example.com` matches `test.example.com` but not `example.com`
@@ -864,31 +864,37 @@ mod tests {
 
     #[test]
     fn test_get_client_principal_realm_from_domain() {
-        let username = "";
-        let domain = "TBT.com";
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
-
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "TBT.COM");
         assert_eq!(realm, "TBT.COM");
+
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "C1.DEV.TBT.COM");
+        assert_eq!(realm, "TEST.TBT.COM");
+
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "P1.C2.DEV.TBT.COM");
+        assert_eq!(realm, "TEST.TBT.COM");
+
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "DEV.TBT.COM");
+        assert_eq!(realm, "DEV.TBT.COM");
+
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "TEST.TBT.COM");
+        assert_eq!(realm, "STAGE.TBT.COM");
     }
 
     #[test]
     fn test_get_client_principal_realm_from_username() {
-        let username = "user@tbt.com";
-        let domain = "";
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
-
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@tbt.com", "");
         assert_eq!(realm, "TBT.COM");
-    }
 
-    #[test]
-    fn test_get_client_principal_realm_from_subdomain_and_domain() {
-        let username = "";
-        let domain = "s.tbt.com";
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@c1.dev.tbt.com", "");
+        assert_eq!(realm, "TEST.TBT.COM");
 
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], username, domain);
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@p1.c2.dev.tbt.com", "");
+        assert_eq!(realm, "TEST.TBT.COM");
 
-        assert_eq!(realm, "TBT.COM");
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@dev.tbt.com", "");
+        assert_eq!(realm, "DEV.TBT.COM");
+
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@test.tbt.com", "");
+        assert_eq!(realm, "STAGE.TBT.COM");
     }
 }
