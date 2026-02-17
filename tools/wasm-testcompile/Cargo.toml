@@ -20,4 +20,5 @@ wasm-bindgen = "0.2"
 # wasm-testcompile.
 getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
+getrandom04 = { package = "getrandom", version = "0.4", default-features = false, features = ["wasm_js"] }
 uuid = { version = "1.13", default-features = false, features = ["rng-getrandom"] }
