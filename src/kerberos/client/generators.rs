@@ -125,14 +125,29 @@ fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, do
     domain.to_uppercase()
 }
 
+/// Checks if the given domain matches the mapping domain (usually from krb5.conf file).
+/// 
+/// # Mapping rules
+/// 
+/// - If the mapping domain starts with a dot (e.g., `.example.com`),
+///   it matches all hosts under the domain `dev.mit.edu`, but not the host with the name `example.com`.
+///   For example, ["test.example.com", "d1.example.com"] will match `.example.com`, but `example.com` will not.
+/// - If the mapping domain does not start with a dot (e.g., `example.com`),
+///   it matches all hosts under the domain `example.com` (including `example.com`).
+/// 
+/// So, the mappings order in `krb5.conf` matters.
 fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
+    let domain = domain.to_lowercase();
+    let mapping_domain = mapping_domain.to_lowercase();
+    
     if mapping_domain.starts_with('.') {
-        domain
-            .split_once('.')
-            .map(|(_, remaining)| remaining.eq_ignore_ascii_case(&mapping_domain[1..]))
-            .unwrap_or(false)
+        // If mapping_domain starts with a dot, it matches subdomains only
+        // e.g., `.example.com` matches `test.example.com` but not `example.com`
+        domain.ends_with(&mapping_domain)
     } else {
-        domain.eq_ignore_ascii_case(mapping_domain)
+        // If mapping_domain doesn't start with a dot, it matches the domain itself
+        // and all subdomains (e.g., `example.com` matches `example.com` and `test.example.com`).
+        domain == mapping_domain || domain.ends_with(&format!(".{mapping_domain}"))
     }
 }
 
