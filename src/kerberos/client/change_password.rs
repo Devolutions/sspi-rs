@@ -54,7 +54,7 @@ pub async fn change_password<'a>(
 
     let pa_data_options = AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
         password: password.as_ref(),
-        salt: salt.as_bytes().to_vec(),
+        salt: salt.into_bytes(),
         enc_params: client.encryption_params.clone(),
         with_pre_auth: false,
     });

@@ -1106,8 +1106,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
     if let Ok(scard_creds) = collect_smart_card_creds(
-        auth_identity_buffers.user.as_bytes().to_vec(),
-        auth_identity_buffers.domain.as_bytes().to_vec(),
+        auth_identity_buffers.user.to_bytes(),
+        auth_identity_buffers.domain.to_bytes(),
         password.as_ref().to_vec(),
     ) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));

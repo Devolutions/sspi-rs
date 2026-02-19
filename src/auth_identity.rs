@@ -283,7 +283,7 @@ mod scard_credentials {
     use crate::utf16string::ZeroizedUtf16String;
     use crate::{Error, ErrorKind, NonEmpty, Secret, Utf16String};
 
-    /// DER-encoded x509 certificate
+    /// DER-encoded x509 certificate.
     #[derive(Clone, Eq, PartialEq, Default, Debug)]
     pub struct CertificateRaw(Vec<u8>);
 

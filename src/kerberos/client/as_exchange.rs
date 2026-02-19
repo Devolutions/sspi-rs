@@ -45,7 +45,7 @@ pub(crate) async fn as_exchange(
         if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
             debug!("salt extracted successfully from the KRB_ERROR");
 
-            pa_data_options.with_salt(correct_salt.as_bytes().to_vec());
+            pa_data_options.with_salt(correct_salt.into_bytes());
         }
     }
 
