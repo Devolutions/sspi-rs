@@ -24,15 +24,12 @@ impl Utf16StringExt for Utf16String {
         let bytes = bytes.as_ref();
 
         if bytes.len() % 2 != 0 {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                "invalid UTF-16 string: lone byte",
-            ));
+            return Err(Error::new(ErrorKind::InvalidParameter, "invalid UTF-16 string bytes"));
         }
 
         let buffer: Vec<u16> = bytes
             .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().expect("c is 2 bytes, checked earlier")))
+            .map(|c| u16::from_le_bytes(c.try_into().expect("2-bytes slice (checked earlier)")))
             .collect();
 
         Utf16String::from_vec(buffer)
@@ -56,7 +53,9 @@ impl ZeroizedUtf16String {
 
 impl Zeroize for ZeroizedUtf16String {
     fn zeroize(&mut self) {
-        // SAFETY: Borrow is safe as long as contens of the slice is valid UTF-16 after it ends.
+        // SAFETY:
+        // - The mutable borrow is safe. The `.as_mut_slice` requires to keep it UTF-16 valid.
+        //   The 0x0000 is a valid UTF-16 code unit, so we can zeroize the buffer safely without breaking the UTF-16 validity.
         let buffer = unsafe { self.0.as_mut_slice() };
         buffer.zeroize();
     }

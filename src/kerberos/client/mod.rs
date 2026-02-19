@@ -123,11 +123,11 @@ pub async fn initialize_security_context<'a>(
             let pa_data_options = match credentials {
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
                     let domain = auth_identity.domain.to_string();
-                    let salt = format!("{domain}{username}");
+                    let salt = format!("{domain}{username}").into_bytes();
 
                     AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
                         password: &password,
-                        salt: salt.as_bytes().to_vec(),
+                        salt,
                         enc_params: client.encryption_params.clone(),
                         with_pre_auth: false,
                     })
