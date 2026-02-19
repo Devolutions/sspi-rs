@@ -1001,10 +1001,6 @@ where
     ///     .with_credential_use(sspi::CredentialUse::Inbound)
     ///     .with_auth_data(&identity)
     ///     .execute(&mut ntlm).unwrap();
-    ///
-    /// let names = ntlm.query_context_names().unwrap();
-    /// println!("Username: {:?}", names.username.account_name());
-    /// println!("Domain: {:?}", names.username.domain_name());
     /// ```
     ///
     /// # MSDN
