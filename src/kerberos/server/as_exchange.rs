@@ -13,7 +13,6 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::{TGT_SERVICE_NAME, client};
-use crate::utils::utf16_bytes_to_utf8_string;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
 
 /// Requests the TGT ticket from KDC.
@@ -47,9 +46,9 @@ pub(crate) async fn request_tgt(
 
     let (username, password, realm, cname_type) = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
-            let username = utf16_bytes_to_utf8_string(&auth_identity.user)?;
-            let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-            let password = utf16_bytes_to_utf8_string(auth_identity.password.as_ref())?;
+            let username = auth_identity.user.to_string();
+            let domain = auth_identity.domain.to_string();
+            let password = auth_identity.password.as_ref().as_ref().to_string();
 
             let realm = get_client_principal_realm(&username, &domain);
             let cname_type = get_client_principal_name_type(&username, &domain);
@@ -82,12 +81,12 @@ pub(crate) async fn request_tgt(
 
     let pa_data_options = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
-            let domain = utf16_bytes_to_utf8_string(&auth_identity.domain)?;
-            let salt = format!("{domain}{username}");
+            let domain = auth_identity.domain.to_string();
+            let salt = format!("{domain}{username}").into_bytes();
 
             AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
                 password: &password,
-                salt: salt.as_bytes().to_vec(),
+                salt,
                 enc_params: server.encryption_params.clone(),
                 with_pre_auth: false,
             })

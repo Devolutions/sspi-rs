@@ -1,6 +1,8 @@
 use std::fmt;
+use std::ops::Not;
 
-use crate::{Error, Secret, utils};
+use crate::utf16string::ZeroizedUtf16String;
+use crate::{Error, Secret, Utf16String, Utf16StringExt};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
@@ -159,11 +161,11 @@ pub struct AuthIdentityBuffers {
     /// Username.
     ///
     /// Must be UTF-16 encoded.
-    pub user: Vec<u8>,
+    pub user: Utf16String,
     /// Domain.
     ///
     /// Must be UTF-16 encoded.
-    pub domain: Vec<u8>,
+    pub domain: Utf16String,
     /// Password.
     ///
     /// Must be UTF-16 encoded.
@@ -171,18 +173,18 @@ pub struct AuthIdentityBuffers {
     /// If the password is an NT hash, it should be prefixed with [`NTLM_HASH_PREFIX`](crate::NTLM_HASH_PREFIX) followed by the hash in hexadecimal format.
     ///
     /// See [`NtlmHash`](crate::NtlmHash) for more details.
-    pub password: Secret<Vec<u8>>,
+    pub password: Secret<ZeroizedUtf16String>,
 }
 
 impl AuthIdentityBuffers {
     /// Creates a new [AuthIdentityBuffers] object based on provided credentials.
     ///
     /// Provided credentials must be UTF-16 encoded.
-    pub fn new(user: Vec<u8>, domain: Vec<u8>, password: Vec<u8>) -> Self {
+    pub fn new(user: Utf16String, domain: Utf16String, password: Utf16String) -> Self {
         Self {
             user,
             domain,
-            password: password.into(),
+            password: ZeroizedUtf16String(password).into(),
         }
     }
 
@@ -195,18 +197,18 @@ impl AuthIdentityBuffers {
     /// It converts the provided credentials to UTF-16 byte vectors automatically.
     pub fn from_utf8(user: &str, domain: &str, password: &str) -> Self {
         Self {
-            user: utils::string_to_utf16(user),
-            domain: utils::string_to_utf16(domain),
-            password: utils::string_to_utf16(password).into(),
+            user: user.into(),
+            domain: domain.into(),
+            password: ZeroizedUtf16String(Utf16String::from(password)).into(),
         }
     }
 
     /// Creates a new [AuthIdentityBuffers] object based on UTF-8 username and domain, and NT hash for the password.
     pub fn from_utf8_with_hash(user: &str, domain: &str, nt_hash: &crate::NtlmHash) -> Self {
         Self {
-            user: utils::string_to_utf16(user),
-            domain: utils::string_to_utf16(domain),
-            password: utils::string_to_utf16(nt_hash.to_sspi_password()).into(),
+            user: user.into(),
+            domain: domain.into(),
+            password: ZeroizedUtf16String(Utf16String::from(nt_hash.to_sspi_password())).into(),
         }
     }
 }
@@ -214,9 +216,15 @@ impl AuthIdentityBuffers {
 impl fmt::Debug for AuthIdentityBuffers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AuthIdentityBuffers {{ user: 0x")?;
-        self.user.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        self.user
+            .as_bytes()
+            .iter()
+            .try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", domain: 0x")?;
-        self.domain.iter().try_for_each(|byte| write!(f, "{byte:02X}"))?;
+        self.domain
+            .as_bytes()
+            .iter()
+            .try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", password: {:?} }}", self.password)?;
 
         Ok(())
@@ -225,14 +233,12 @@ impl fmt::Debug for AuthIdentityBuffers {
 
 impl From<AuthIdentity> for AuthIdentityBuffers {
     fn from(credentials: AuthIdentity) -> Self {
+        let password: &str = credentials.password.as_ref().as_ref();
+
         Self {
-            user: utils::string_to_utf16(credentials.username.account_name()),
-            domain: credentials
-                .username
-                .domain_name()
-                .map(utils::string_to_utf16)
-                .unwrap_or_default(),
-            password: utils::string_to_utf16(credentials.password.as_ref()).into(),
+            user: credentials.username.account_name().into(),
+            domain: credentials.username.domain_name().unwrap_or_default().into(),
+            password: ZeroizedUtf16String(password.into()).into(),
         }
     }
 }
@@ -241,18 +247,16 @@ impl TryFrom<&AuthIdentityBuffers> for AuthIdentity {
     type Error = UsernameError;
 
     fn try_from(credentials_buffers: &AuthIdentityBuffers) -> Result<Self, Self::Error> {
-        let account_name =
-            utils::bytes_to_utf16_string(&credentials_buffers.user).map_err(|_| UsernameError::InvalidUtf16)?;
-        let domain_name = if !credentials_buffers.domain.is_empty() {
-            Some(utils::bytes_to_utf16_string(&credentials_buffers.domain).map_err(|_| UsernameError::InvalidUtf16)?)
-        } else {
-            None
-        };
+        let account_name = credentials_buffers.user.to_string();
+
+        let domain_name = credentials_buffers
+            .domain
+            .is_empty()
+            .not()
+            .then(|| credentials_buffers.domain.to_string());
 
         let username = Username::new(&account_name, domain_name.as_deref())?;
-        let password = utils::bytes_to_utf16_string(credentials_buffers.password.as_ref())
-            .map_err(|_| UsernameError::InvalidUtf16)?
-            .into();
+        let password = credentials_buffers.password.as_ref().as_ref().to_string().into();
 
         Ok(Self { username, password })
     }
@@ -272,10 +276,65 @@ mod scard_credentials {
     use std::path::PathBuf;
 
     use picky::key::PrivateKey;
+    use picky_asn1_der::Asn1DerError;
     use picky_asn1_x509::Certificate;
 
     use crate::secret::SecretPrivateKey;
-    use crate::{Error, ErrorKind, Secret, utils};
+    use crate::utf16string::ZeroizedUtf16String;
+    use crate::{Error, ErrorKind, NonEmpty, Secret, Utf16String};
+
+    /// DER-encoded x509 certificate.
+    #[derive(Clone, Eq, PartialEq, Default, Debug)]
+    pub struct CertificateRaw(Vec<u8>);
+
+    impl AsRef<[u8]> for CertificateRaw {
+        fn as_ref(&self) -> &[u8] {
+            self.0.as_ref()
+        }
+    }
+
+    impl TryFrom<Vec<u8>> for CertificateRaw {
+        type Error = Asn1DerError;
+
+        fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+            let _: Certificate = picky_asn1_der::from_bytes(value.as_ref())?;
+            Ok(Self(value))
+        }
+    }
+
+    impl From<CertificateRaw> for Vec<u8> {
+        fn from(value: CertificateRaw) -> Self {
+            value.0
+        }
+    }
+
+    impl TryFrom<&Certificate> for CertificateRaw {
+        type Error = Asn1DerError;
+
+        fn try_from(value: &Certificate) -> Result<Self, Self::Error> {
+            picky_asn1_der::to_vec(value).map(Self)
+        }
+    }
+
+    impl TryFrom<Certificate> for CertificateRaw {
+        type Error = Asn1DerError;
+
+        fn try_from(value: Certificate) -> Result<Self, Self::Error> {
+            Self::try_from(&value)
+        }
+    }
+
+    impl From<&CertificateRaw> for Certificate {
+        fn from(value: &CertificateRaw) -> Self {
+            picky_asn1_der::from_bytes(&value.0).expect("value.0 is convertible to Certificate (checked on creation)")
+        }
+    }
+
+    impl From<CertificateRaw> for Certificate {
+        fn from(value: CertificateRaw) -> Self {
+            Self::from(&value)
+        }
+    }
 
     /// Smart card type.
     #[derive(Clone, Eq, PartialEq, Debug)]
@@ -308,21 +367,21 @@ mod scard_credentials {
     #[derive(Clone, Eq, PartialEq, Debug)]
     pub struct SmartCardIdentityBuffers {
         /// UTF-16 encoded username
-        pub username: Vec<u8>,
+        pub username: Utf16String,
         /// DER-encoded X509 certificate
-        pub certificate: Vec<u8>,
+        pub certificate: CertificateRaw,
         /// UTF-16 encoded smart card name
-        pub card_name: Option<Vec<u8>>,
+        pub card_name: Option<NonEmpty<Utf16String>>,
         /// UTF-16 encoded smart card reader name
-        pub reader_name: Vec<u8>,
+        pub reader_name: Utf16String,
         /// UTF-16 encoded smart card key container name
-        pub container_name: Option<Vec<u8>>,
+        pub container_name: Option<NonEmpty<Utf16String>>,
         /// UTF-16 encoded smart card CSP name
-        pub csp_name: Vec<u8>,
+        pub csp_name: Utf16String,
         /// UTF-16 encoded smart card PIN code
-        pub pin: Secret<Vec<u8>>,
+        pub pin: Secret<ZeroizedUtf16String>,
         /// UTF-16 string with PEM-encoded RSA 2048-bit private key
-        pub private_key_pem: Option<Vec<u8>>,
+        pub private_key_pem: Option<NonEmpty<Utf16String>>,
         /// Smart card type.
         pub scard_type: SmartCardType,
     }
@@ -355,7 +414,7 @@ mod scard_credentials {
 
         fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
             let private_key = if let Some(key) = value.private_key {
-                Some(utils::string_to_utf16(key.as_ref().to_pem_str().map_err(|e| {
+                NonEmpty::new(Utf16String::from(key.as_ref().to_pem_str().map_err(|e| {
                     Error::new(
                         ErrorKind::InternalError,
                         format!("Unable to serialize a smart card private key: {e}"),
@@ -366,13 +425,13 @@ mod scard_credentials {
             };
 
             Ok(Self {
-                certificate: picky_asn1_der::to_vec(&value.certificate)?,
-                reader_name: utils::string_to_utf16(value.reader_name),
-                pin: utils::string_to_utf16(String::from_utf8_lossy(value.pin.as_ref())).into(),
-                username: utils::string_to_utf16(value.username),
-                card_name: value.card_name.map(utils::string_to_utf16),
-                container_name: value.container_name.map(utils::string_to_utf16),
-                csp_name: utils::string_to_utf16(value.csp_name),
+                certificate: value.certificate.try_into()?,
+                reader_name: value.reader_name.into(),
+                pin: ZeroizedUtf16String(String::from_utf8_lossy(value.pin.as_ref()).as_ref().into()).into(),
+                username: value.username.into(),
+                card_name: value.card_name.and_then(|value| NonEmpty::new(value.into())),
+                container_name: value.container_name.and_then(|value| NonEmpty::new(value.into())),
+                csp_name: value.csp_name.into(),
                 private_key_pem: private_key,
                 scard_type: value.scard_type,
             })
@@ -384,34 +443,32 @@ mod scard_credentials {
 
         fn try_from(value: &SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
             let private_key = if let Some(key) = &value.private_key_pem {
-                Some(SecretPrivateKey::new(
-                    PrivateKey::from_pem_str(&utils::bytes_to_utf16_string(key)?).map_err(|e| {
+                let pem_string = key.as_ref().to_string();
+
+                Some(SecretPrivateKey::new(PrivateKey::from_pem_str(&pem_string).map_err(
+                    |e| {
                         Error::new(
                             ErrorKind::InternalError,
                             format!("Unable to create a PrivateKey from a PEM string: {e}"),
                         )
-                    })?,
-                ))
+                    },
+                )?))
             } else {
                 None
             };
 
             Ok(Self {
-                certificate: picky_asn1_der::from_bytes(&value.certificate)?,
-                reader_name: utils::bytes_to_utf16_string(&value.reader_name)?,
-                pin: utils::bytes_to_utf16_string(value.pin.as_ref())?.into_bytes().into(),
-                username: utils::bytes_to_utf16_string(&value.username)?,
-                card_name: value
-                    .card_name
-                    .as_deref()
-                    .map(utils::bytes_to_utf16_string)
-                    .transpose()?,
+                certificate: Certificate::from(&value.certificate),
+                reader_name: value.reader_name.to_string(),
+                pin: value.pin.as_ref().0.to_string().into_bytes().into(),
+                username: value.username.to_string(),
+                card_name: value.card_name.as_ref().map(NonEmpty::as_ref).map(ToString::to_string),
                 container_name: value
                     .container_name
-                    .as_deref()
-                    .map(utils::bytes_to_utf16_string)
-                    .transpose()?,
-                csp_name: utils::bytes_to_utf16_string(&value.csp_name)?,
+                    .as_ref()
+                    .map(NonEmpty::as_ref)
+                    .map(ToString::to_string),
+                csp_name: value.csp_name.to_string(),
                 private_key,
                 scard_type: value.scard_type.clone(),
             })
@@ -420,7 +477,7 @@ mod scard_credentials {
 }
 
 #[cfg(feature = "scard")]
-pub use self::scard_credentials::{SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
+pub use self::scard_credentials::{CertificateRaw, SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
 
 /// Generic enum that encapsulates raw credentials for any type of authentication
 #[derive(Clone, Eq, PartialEq, Debug)]

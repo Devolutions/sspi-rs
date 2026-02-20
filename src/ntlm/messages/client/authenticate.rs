@@ -4,7 +4,6 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use rand::prelude::StdRng;
 use rand::{RngCore, SeedableRng};
 
-use crate::SecurityStatus;
 use crate::crypto::Rc4;
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{
@@ -15,6 +14,7 @@ use crate::ntlm::{
     AuthIdentityBuffers, AuthenticateMessage, ENCRYPTED_RANDOM_SESSION_KEY_SIZE, MESSAGE_INTEGRITY_CHECK_SIZE, Mic,
     NegotiateFlags, Ntlm, NtlmState, SESSION_KEY_SIZE,
 };
+use crate::{SecurityStatus, Utf16StringExt};
 
 const MIC_SIZE: usize = 16;
 const BASE_OFFSET: usize = 64;
@@ -39,9 +39,9 @@ impl AuthenticateMessageFields {
         offset: u32,
     ) -> Self {
         let mut workstation = MessageFields::new();
-        let mut domain_name = MessageFields::with_buffer(identity.domain.clone());
+        let mut domain_name = MessageFields::with_buffer(identity.domain.to_bytes());
         let mut encrypted_random_session_key = MessageFields::new();
-        let mut user_name = MessageFields::with_buffer(identity.user.clone());
+        let mut user_name = MessageFields::with_buffer(identity.user.to_bytes());
         let mut lm_challenge_response = MessageFields::with_buffer(lm_challenge_response.to_vec());
         let mut nt_challenge_response = MessageFields::with_buffer(nt_challenge_response.to_vec());
 

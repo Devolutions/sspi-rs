@@ -2,7 +2,6 @@ use std::io::{self, Read};
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::SecurityStatus;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::ntlm::messages::av_pair::{AV_PAIR_CHANNEL_BINDINGS, AvPair, MsvAvFlags};
 use crate::ntlm::messages::computations::*;
@@ -11,6 +10,7 @@ use crate::ntlm::{
     AuthIdentityBuffers, AuthenticateMessage, ChannelBindings, ENCRYPTED_RANDOM_SESSION_KEY_SIZE,
     MESSAGE_INTEGRITY_CHECK_SIZE, Mic, NegotiateFlags, Ntlm, NtlmState,
 };
+use crate::{SecurityStatus, Utf16String, Utf16StringExt};
 
 const HEADER_SIZE: usize = 64;
 
@@ -210,10 +210,10 @@ fn process_message_fields(
     };
 
     if !message_fields.user_name.buffer.is_empty() {
-        identity.user = message_fields.user_name.buffer.clone();
+        identity.user = Utf16String::from_bytes_le(message_fields.user_name.buffer)?;
     }
     if !message_fields.domain_name.buffer.is_empty() {
-        identity.domain = message_fields.domain_name.buffer;
+        identity.domain = Utf16String::from_bytes_le(message_fields.domain_name.buffer)?;
     }
 
     Ok((
