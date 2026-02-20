@@ -185,7 +185,9 @@ impl From<core::str::Utf8Error> for Error {
 }
 
 impl From<alloc::string::FromUtf16Error> for Error {
-    fn from(value: std::string::FromUtf16Error) -> Self {
+    fn from(value: alloc::string::FromUtf16Error) -> Self {
+        use crate::alloc::string::ToString;
+
         Error::new(ErrorKind::InvalidParameter, value.to_string())
     }
 }
