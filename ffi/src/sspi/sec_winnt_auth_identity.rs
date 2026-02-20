@@ -1088,8 +1088,15 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {
+        // '\\' char in UTF-16LE encoding.
+        const BACK_SLASH_UTF16: [u8; 2] = [b'\\', 0];
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
+        if let Some(index) = auth_identity_buffers
+            .user
+            .as_bytes()
+            .windows(2)
+            .position(|b| b == BACK_SLASH_UTF16)
+        {
             auth_identity_buffers.domain =
                 Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[0..index])?;
             auth_identity_buffers.user =
