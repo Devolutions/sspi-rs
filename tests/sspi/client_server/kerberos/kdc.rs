@@ -28,7 +28,7 @@ use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody, KrbError,
     KrbErrorInner, TgsRep, TgsReq,
 };
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng, TryRngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};

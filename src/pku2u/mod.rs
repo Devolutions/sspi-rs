@@ -857,7 +857,7 @@ mod tests {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::negoex::RANDOM_ARRAY_SIZE;
-    use rand::rngs::StdRng;
+    use rand::rngs::{StdRng, SysRng};
     use rand::{RngCore, SeedableRng};
     use uuid::Uuid;
 

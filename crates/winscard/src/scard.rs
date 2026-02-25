@@ -1020,6 +1020,6 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
     fn reduce_vartime(n: &BoxedUint, p: &BoxedMontyParams) -> BoxedMontyForm {
         let modulus = p.modulus().as_nz_ref().clone();
         let n_reduced = n.rem_vartime(&modulus).resize_unchecked(p.bits_precision());
-        BoxedMontyForm::new(n_reduced, p.clone())
+        BoxedMontyForm::new(n_reduced, &p)
     }
 }
