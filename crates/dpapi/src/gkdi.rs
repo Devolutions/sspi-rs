@@ -35,6 +35,9 @@ pub enum GkdiError {
 
     #[error("bad GetKey hresult: {0:x?}")]
     BadHresult(u32),
+
+    #[error(transparent)]
+    RandError(#[from] getrandom::Error),
 }
 
 /// Checks the RPC GetKey Response status (`hresult`) and tries to parse the data into [GroupKeyEnvelope].

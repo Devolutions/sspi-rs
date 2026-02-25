@@ -29,7 +29,6 @@ picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
 sha1.workspace = true
 sha2.workspace = true
 rand.workspace = true
-getrandom.workspace = true
 hmac.workspace = true
 digest = "=0.11.0-rc.5"
 tracing = { workspace = true, default-features = true }
@@ -53,6 +52,8 @@ url = "2.5"
 
 thiserror = "2.0"
 regex = "1.12"
+
+getrandom = "0.4.0-rc.0"
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released

@@ -73,9 +73,6 @@ pub enum CryptoError {
     #[error(transparent)]
     RandError(#[from] rand::rngs::SysError),
 
-    #[error(transparent)]
-    StdRngCreateFailed(#[from] getrandom::Error),
-
     #[error("invalid iv length(expected {expected}, but got {actual})")]
     InvalidIvLength { actual: usize, expected: usize },
 }
@@ -143,7 +140,10 @@ pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> CryptoResul
     }
 
     let mut rng = StdRng::try_from_rng(&mut SysRng)?;
-    let cek = Aes256Gcm::generate_key()?;
+
+    let mut cek = Key::<Aes256Gcm>::default();
+    rng.fill_bytes(&mut cek);
+
     let mut iv = [0u8; 12];
     rng.fill_bytes(&mut iv);
 
