@@ -152,7 +152,7 @@ uuid = { workspace = true, features = ["v4"], default-features = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
-rsa = { workspace = true, features = ["sha1"] }
+rsa = { workspace = true }
 tracing = { workspace = true, default-features = true }
 serde.workspace = true
 picky-krb.workspace = true
