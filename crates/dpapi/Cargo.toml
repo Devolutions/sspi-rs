@@ -48,7 +48,7 @@ p384 = { version = "=0.14.0-rc.3", features = ["ecdh"] }
 concat-kdf = { git = "https://github.com/RustCrypto/KDFs.git", rev = "f2f5c03" } # TODO: We need the new version, but it's not released yet.
 typenum = "1.18"
 aes-kw = "=0.3.0-rc.1"
-aes-gcm = "=0.11.0-rc.2"
+aes-gcm = { version = "=0.11.0-rc.2", features = ["getrandom"] }
 url = "2.5"
 
 thiserror = "2.0"

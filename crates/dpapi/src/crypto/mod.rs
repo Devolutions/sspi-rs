@@ -71,7 +71,7 @@ pub enum CryptoError {
     Kbkdf(#[from] kbkdf::Error),
 
     #[error(transparent)]
-    RandError(#[from] rand::rand_core::OsError),
+    RandError(#[from] rand::rngs::SysError),
 
     #[error(transparent)]
     StdRngCreateFailed(#[from] getrandom::Error),
