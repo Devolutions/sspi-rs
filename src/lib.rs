@@ -2344,6 +2344,12 @@ impl From<getrandom::Error> for Error {
     }
 }
 
+impl From<rand::rngs::SysError> for Error {
+    fn from(err: rand::rngs::SysError) -> Self {
+        Self::new(ErrorKind::InternalError, format!("rand error: {:?}", err))
+    }
+}
+
 impl From<str::Utf8Error> for Error {
     fn from(err: str::Utf8Error) -> Self {
         Self::new(ErrorKind::InternalError, err)

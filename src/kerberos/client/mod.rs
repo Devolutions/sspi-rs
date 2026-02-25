@@ -12,7 +12,7 @@ use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICA
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::messages::{ApRep, TgsRep};
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 
 use self::extractors::{
@@ -107,7 +107,7 @@ pub async fn initialize_security_context<'a>(
             };
             client.realm = Some(realm.clone());
 
-            let mut rand = StdRng::try_from_os_rng()?;
+            let mut rand = StdRng::try_from_rng(&mut SysRng)?;
             let options = GenerateAsReqOptions {
                 realm: &realm,
                 username: &username,

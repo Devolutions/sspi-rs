@@ -1,6 +1,6 @@
 use picky_krb::crypto::CipherSuite;
 use picky_krb::messages::KrbPrivMessage;
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 
 use crate::builders::ChangePassword;
@@ -37,7 +37,7 @@ pub async fn change_password<'a>(
     let cname_type = get_client_principal_name_type(username, domain);
     let realm = &get_client_principal_realm(username, domain);
 
-    let mut rand = StdRng::try_from_os_rng()?;
+    let mut rand = StdRng::try_from_rng(&mut SysRng)?;
     let nonce = &rand.next_u32().to_ne_bytes();
 
     let options = GenerateAsReqOptions {

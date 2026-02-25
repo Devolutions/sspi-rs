@@ -3,7 +3,7 @@ use dpapi_core::{DecodeOwned, ReadCursor, compute_padding, decode_owned, read_pa
 use dpapi_pdu::gkdi::{GroupKeyEnvelope, KDF_ALGORITHM_NAME, KdfParameters, KeyIdentifier};
 use dpapi_pdu::rpc::SyntaxId;
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
-use rand::rngs::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use thiserror::Error;
 use uuid::uuid;
@@ -78,7 +78,7 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
     let kdf_parameters: KdfParameters = decode_owned(group_key.kdf_parameters.as_slice())?;
     let hash_alg = kdf_parameters.hash_alg;
 
-    let mut rand = StdRng::try_from_os_rng()?;
+    let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
     let (kek, key_info) = if group_key.is_public_key() {
         // the L2 key is the peer's public key
