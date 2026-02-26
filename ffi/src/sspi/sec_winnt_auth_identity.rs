@@ -741,8 +741,8 @@ unsafe fn get_sec_winnt_auth_identity_ex2_size(p_auth_data: *const c_void) -> Re
 ///   by the [`SEC_WINNT_AUTH_IDENTITY_EX2`](SecWinntAuthIdentityEx2) structure.
 #[cfg(target_os = "windows")]
 pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
+    use sspi::Utf16String;
     use sspi::credssp::NStatusCode;
-    use sspi::{Utf16String, Utf16StringExt};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
     use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferA};
     use windows::core::{HRESULT, PSTR};
@@ -830,29 +830,31 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, username data is a C string and we need to delete the NULL terminator.
     username.pop();
-    auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
+    let username = str::from_utf8(&username)?;
 
     if domain_len == 0 {
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = auth_identity_buffers.user.as_bytes().iter().position(|b| *b == b'\\') {
-            auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[0..index])?;
-            auth_identity_buffers.user =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[(index + 1)..])?;
+        if let Some(index) = username.find('\\') {
+            auth_identity_buffers.domain = Utf16String::from_str(&username[0..index]);
+            auth_identity_buffers.user = Utf16String::from_str(&username[(index + 1)..]);
+        } else {
+            auth_identity_buffers.user = Utf16String::from_str(username);
         }
     } else {
+        auth_identity_buffers.user = Utf16String::from_str(username);
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, domain data is a C string and we need to delete the NULL terminator.
         domain.pop();
-        auth_identity_buffers.domain = Utf16String::from_bytes_le(domain)?;
+        auth_identity_buffers.domain = Utf16String::from_str(std::str::from_utf8(&domain)?);
     }
 
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, password data is a C string and we need to delete the NULL terminator.
     password.as_mut().pop();
-    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into();
+    let password = str::from_utf8(password.as_ref())?;
+    auth_identity_buffers.password = ZeroizedUtf16String(Utf16String::from_str(password)).into();
 
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
