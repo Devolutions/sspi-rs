@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 4 -->Bug Fixes
 
-- Fix!(sspi): correct Negotiate (SPNEGO) implementation ([#600](https://github.com/Devolutions/sspi-rs/issues/600)) ([c016e18863](https://github.com/Devolutions/sspi-rs/commit/c016e188633b202c1de7fd84ae1f4f7253fe5dd2)) 
+- Correct Negotiate (SPNEGO) implementation ([#600](https://github.com/Devolutions/sspi-rs/issues/600)) ([c016e18863](https://github.com/Devolutions/sspi-rs/commit/c016e188633b202c1de7fd84ae1f4f7253fe5dd2)) 
 
 ### <!-- 7 -->Build
 
