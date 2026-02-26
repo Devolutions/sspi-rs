@@ -11,7 +11,7 @@ use elliptic_curve::bigint::{BoxedUint, Odd};
 use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyEncryptionAlgorithmIdentifier};
 use picky_asn1_x509::{AesParameters, AlgorithmIdentifierParameters, oids};
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
-use rand::rngs::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use sspi::modpow;
 use thiserror::Error;
@@ -71,10 +71,7 @@ pub enum CryptoError {
     Kbkdf(#[from] kbkdf::Error),
 
     #[error(transparent)]
-    RandError(#[from] rand::rand_core::OsError),
-
-    #[error(transparent)]
-    StdRngCreateFailed(#[from] getrandom::Error),
+    RandError(#[from] rand::rngs::SysError),
 
     #[error("invalid iv length(expected {expected}, but got {actual})")]
     InvalidIvLength { actual: usize, expected: usize },
@@ -142,8 +139,11 @@ pub fn cek_generate(algorithm: &KeyEncryptionAlgorithmIdentifier) -> CryptoResul
         });
     }
 
-    let mut rng = StdRng::try_from_os_rng()?;
-    let cek = Aes256Gcm::generate_key()?;
+    let mut rng = StdRng::try_from_rng(&mut SysRng)?;
+
+    let mut cek = Key::<Aes256Gcm>::default();
+    rng.fill_bytes(&mut cek);
+
     let mut iv = [0u8; 12];
     rng.fill_bytes(&mut iv);
 

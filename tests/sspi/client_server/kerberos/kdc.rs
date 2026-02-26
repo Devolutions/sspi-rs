@@ -28,7 +28,7 @@ use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReq, KdcReqBody, KrbError,
     KrbErrorInner, TgsRep, TgsReq,
 };
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng, TryRngCore};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
@@ -335,7 +335,7 @@ impl KdcMock {
 
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
 
-        let mut rng = StdRng::try_from_os_rng().unwrap();
+        let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
         let mut session_key = vec![0; cipher.key_size()];
         rng.fill_bytes(&mut session_key);
 
@@ -568,7 +568,7 @@ impl KdcMock {
 
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
 
-        let mut rng = StdRng::try_from_os_rng().unwrap();
+        let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
         let mut session_key = vec![0; cipher.key_size()];
         rng.fill_bytes(&mut session_key);
         let nonce = rng.next_u32();

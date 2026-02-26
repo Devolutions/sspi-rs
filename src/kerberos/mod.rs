@@ -18,7 +18,7 @@ use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutCheck
 use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::KdcProxyMessage;
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use url::Url;
 
@@ -102,7 +102,7 @@ pub struct Kerberos {
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
-        let mut rand = StdRng::try_from_os_rng()?;
+        let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
             state: KerberosState::Preauthentication,
@@ -122,7 +122,7 @@ impl Kerberos {
 
     pub fn new_server_from_config(config: KerberosConfig, server_properties: ServerProperties) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
-        let mut rand = StdRng::try_from_os_rng()?;
+        let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
             state: KerberosState::Preauthentication,

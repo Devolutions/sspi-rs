@@ -1,9 +1,8 @@
-use crypto_bigint::rand_core::RngCore;
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::Ticket;
 use picky_krb::messages::TgtReq;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
+use rand::rngs::{StdRng, SysRng};
+use rand::{RngCore, SeedableRng};
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
@@ -66,7 +65,7 @@ pub(crate) async fn request_tgt(
     };
     server.realm = Some(realm.clone());
 
-    let mut rand = StdRng::try_from_os_rng()?;
+    let mut rand = StdRng::try_from_rng(&mut SysRng)?;
     let nonce = rand.next_u32();
     let options = GenerateAsReqOptions {
         realm: &realm,

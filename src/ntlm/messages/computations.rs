@@ -5,7 +5,7 @@ use std::io::{self, Read, Write};
 use std::sync::LazyLock;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
@@ -116,7 +116,7 @@ pub(super) fn get_authenticate_target_info(
 
 pub(super) fn generate_challenge() -> crate::Result<[u8; CHALLENGE_SIZE]> {
     let mut challenge = [0; CHALLENGE_SIZE];
-    let mut rand = StdRng::try_from_os_rng()?;
+    let mut rand = StdRng::try_from_rng(&mut SysRng)?;
     rand.fill_bytes(challenge.as_mut());
     Ok(challenge)
 }

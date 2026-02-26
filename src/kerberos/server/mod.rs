@@ -14,7 +14,7 @@ use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use picky_krb::messages::{ApRep, ApReq};
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
 
@@ -270,7 +270,7 @@ pub async fn accept_security_context(
                     .key_size();
                 let mut sub_session_key = vec![0; key_size];
 
-                let mut rand = StdRng::try_from_os_rng()?;
+                let mut rand = StdRng::try_from_rng(&mut SysRng)?;
                 rand.fill_bytes(&mut sub_session_key);
                 server.encryption_params.sub_session_key = Some(sub_session_key.into());
 

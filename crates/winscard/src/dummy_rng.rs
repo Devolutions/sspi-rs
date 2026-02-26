@@ -1,4 +1,4 @@
-use rand_core::{CryptoRng, RngCore};
+use rsa::rand_core::{CryptoRng, RngCore};
 
 // We use this generator only as a type parameter for the `rsa::hazmat::rsa_decrypt_and_check` function.
 pub(crate) struct Dummy;

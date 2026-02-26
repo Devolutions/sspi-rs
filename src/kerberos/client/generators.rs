@@ -34,7 +34,7 @@ use picky_krb::messages::{
     ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
     KrbPrivMessage, TgsReq,
 };
-use rand::prelude::StdRng;
+use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use time::{Duration, OffsetDateTime};
 
@@ -355,7 +355,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions<'_>) -> Result<TgsReq> {
         tgs_req_options |= KdcOptions::ENC_TKT_IN_SKEY;
     }
 
-    let mut rng = StdRng::try_from_os_rng()?;
+    let mut rng = StdRng::try_from_rng(&mut SysRng)?;
     let mut nonce = [0; NONCE_LEN];
     rng.fill_bytes(&mut nonce);
 
