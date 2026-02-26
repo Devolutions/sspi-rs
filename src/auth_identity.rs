@@ -217,12 +217,12 @@ impl fmt::Debug for AuthIdentityBuffers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AuthIdentityBuffers {{ user: 0x")?;
         self.user
-            .as_bytes()
+            .as_bytes_le()
             .iter()
             .try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", domain: 0x")?;
         self.domain
-            .as_bytes()
+            .as_bytes_le()
             .iter()
             .try_for_each(|byte| write!(f, "{byte:02X}"))?;
         write!(f, ", password: {:?} }}", self.password)?;

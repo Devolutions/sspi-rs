@@ -1095,14 +1095,14 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         // Sometimes username can be formatted as `DOMAIN\username`.
         if let Some(index) = auth_identity_buffers
             .user
-            .as_bytes()
+            .as_bytes_le()
             .windows(2)
             .position(|b| b == BACK_SLASH_UTF16)
         {
             auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[0..index])?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[0..index])?;
             auth_identity_buffers.user =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes()[(index + 2)..])?;
+                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[(index + 2)..])?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
@@ -1115,8 +1115,8 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
     if let Ok(scard_creds) = collect_smart_card_creds(
-        auth_identity_buffers.user.to_bytes(),
-        auth_identity_buffers.domain.to_bytes(),
+        auth_identity_buffers.user.to_bytes_le(),
+        auth_identity_buffers.domain.to_bytes_le(),
         password.as_ref().to_vec(),
     ) {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));

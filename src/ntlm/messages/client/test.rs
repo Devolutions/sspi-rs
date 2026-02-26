@@ -330,7 +330,7 @@ fn write_authenticate_correct_writes_domain_name() {
         expected
     );
     assert_eq!(
-        buff[AUTHENTICATE_OFFSET_WITH_MIC..AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes().len()],
+        buff[AUTHENTICATE_OFFSET_WITH_MIC..AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes_le().len()],
         expected_buffer[..]
     );
 }
@@ -364,9 +364,9 @@ fn write_authenticate_correct_writes_user_name() {
         buff[AUTHENTICATE_USER_NAME_START..AUTHENTICATE_WORKSTATION_START],
         expected
     );
-    let offset = AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes().len();
+    let offset = AUTHENTICATE_OFFSET_WITH_MIC + TEST_CREDENTIALS.domain.as_bytes_le().len();
     assert_eq!(
-        buff[offset..offset + TEST_CREDENTIALS.user.as_bytes().len()],
+        buff[offset..offset + TEST_CREDENTIALS.user.as_bytes_le().len()],
         expected_buffer[..]
     );
 }

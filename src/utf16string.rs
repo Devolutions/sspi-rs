@@ -10,12 +10,12 @@ use crate::{Error, ErrorKind};
 pub trait Utf16StringExt: Sized {
     fn from_bytes_le(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
 
-    /// Returns reference to internal buffer as &[u8], assuming the native endianness.
-    fn as_bytes(&self) -> &[u8];
+    /// Returns reference to internal buffer as &[u8], assuming the native (little) endianness.
+    fn as_bytes_le(&self) -> &[u8];
 
-    /// Returns internal buffer as Vec<u8>, assuming the native endianness.
-    fn to_bytes(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
+    /// Returns internal buffer as Vec<u8>, assuming the native (little) endianness.
+    fn to_bytes_le(&self) -> Vec<u8> {
+        self.as_bytes_le().to_vec()
     }
 }
 
@@ -36,7 +36,7 @@ impl Utf16StringExt for Utf16String {
             .map_err(|error| Error::new(ErrorKind::InvalidParameter, format!("invalid UTF-16 string: {error}")))
     }
 
-    fn as_bytes(&self) -> &[u8] {
+    fn as_bytes_le(&self) -> &[u8] {
         let slice: &[u16] = self.as_ref();
         bytemuck::cast_slice(slice)
     }
@@ -146,8 +146,8 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_ok());
-        assert_eq!(result.as_ref().expect("result is ok").as_bytes(), bytes);
-        assert_eq!(result.as_ref().expect("result is ok").as_bytes(), Vec::from(bytes));
+        assert_eq!(result.as_ref().expect("result is ok").as_bytes_le(), bytes);
+        assert_eq!(result.as_ref().expect("result is ok").as_bytes_le(), Vec::from(bytes));
     }
 
     #[test]

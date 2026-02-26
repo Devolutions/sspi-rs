@@ -175,7 +175,7 @@ pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[
 
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
-        let password_bytes = identity.password.as_ref().0.as_bytes();
+        let password_bytes = identity.password.as_ref().0.as_bytes_le();
         let password_str = identity.password.as_ref().0.to_string();
 
         // Check if the password field contains an NT hash with the prefix.
@@ -201,8 +201,8 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
             }
         };
 
-        let mut user_uppercase_with_domain = identity.user.to_uppercase().to_bytes();
-        user_uppercase_with_domain.extend(identity.domain.as_bytes());
+        let mut user_uppercase_with_domain = identity.user.to_uppercase().to_bytes_le();
+        user_uppercase_with_domain.extend(identity.domain.as_bytes_le());
 
         Ok(compute_hmac_md5(&hmac_key, &user_uppercase_with_domain)?)
     } else {

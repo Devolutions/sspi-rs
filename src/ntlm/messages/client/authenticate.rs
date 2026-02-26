@@ -39,9 +39,9 @@ impl AuthenticateMessageFields {
         offset: u32,
     ) -> Self {
         let mut workstation = MessageFields::new();
-        let mut domain_name = MessageFields::with_buffer(identity.domain.to_bytes());
+        let mut domain_name = MessageFields::with_buffer(identity.domain.to_bytes_le());
         let mut encrypted_random_session_key = MessageFields::new();
-        let mut user_name = MessageFields::with_buffer(identity.user.to_bytes());
+        let mut user_name = MessageFields::with_buffer(identity.user.to_bytes_le());
         let mut lm_challenge_response = MessageFields::with_buffer(lm_challenge_response.to_vec());
         let mut nt_challenge_response = MessageFields::with_buffer(nt_challenge_response.to_vec());
 

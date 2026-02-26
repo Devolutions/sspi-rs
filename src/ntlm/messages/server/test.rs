@@ -446,7 +446,7 @@ fn read_authenticate_local_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes_le());
 }
 
 #[test]
@@ -487,7 +487,7 @@ fn read_authenticate_domain_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes_le());
 }
 
 #[test]
@@ -506,7 +506,10 @@ fn read_authenticate_domain_logon_correct_reads_domain_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().domain.as_bytes());
+    assert_eq!(
+        expected.as_ref(),
+        context.identity.as_ref().unwrap().domain.as_bytes_le()
+    );
 }
 
 #[test]

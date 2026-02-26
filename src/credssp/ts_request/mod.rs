@@ -262,26 +262,26 @@ fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -
     use crate::Utf16StringExt;
 
     let smart_card_creds = TsSmartCardCreds {
-        pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes())),
+        pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes_le())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
             key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![AT_KEYEXCHANGE])),
             card_name: Optional::from(
                 credentials
                     .card_name
                     .as_ref()
-                    .map(|name| ExplicitContextTag1::from(OctetStringAsn1::from(name.as_ref().to_bytes()))),
+                    .map(|name| ExplicitContextTag1::from(OctetStringAsn1::from(name.as_ref().to_bytes_le()))),
             ),
             reader_name: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-                credentials.reader_name.to_bytes(),
+                credentials.reader_name.to_bytes_le(),
             )))),
             container_name: Optional::from(
                 credentials
                     .container_name
                     .as_ref()
-                    .map(|name| ExplicitContextTag3::from(OctetStringAsn1::from(name.as_ref().to_bytes()))),
+                    .map(|name| ExplicitContextTag3::from(OctetStringAsn1::from(name.as_ref().to_bytes_le()))),
             ),
             csp_name: Optional::from(Some(ExplicitContextTag4::from(OctetStringAsn1::from(
-                credentials.csp_name.to_bytes(),
+                credentials.csp_name.to_bytes_le(),
             )))),
         }),
         user_hint: Optional::from(None),
@@ -329,11 +329,11 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     /* TSPasswordCreds (SEQUENCE) */
     ber::write_sequence_tag(&mut buffer, password_credentials_len)?;
     /* [0] domainName (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 0, identity.domain.as_bytes())?;
+    ber::write_sequence_octet_string(&mut buffer, 0, identity.domain.as_bytes_le())?;
     /* [1] userName (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 1, identity.user.as_bytes())?;
+    ber::write_sequence_octet_string(&mut buffer, 1, identity.user.as_bytes_le())?;
     /* [2] password (OCTET STRING) */
-    ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref().0.as_bytes())?;
+    ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref().0.as_bytes_le())?;
 
     Ok(buffer)
 }
@@ -383,9 +383,9 @@ fn sizeof_ts_credentials(identity: &AuthIdentityBuffers) -> u16 {
 }
 
 fn sizeof_ts_password_creds(identity: &AuthIdentityBuffers) -> u16 {
-    ber::sizeof_sequence_octet_string(identity.domain.as_bytes().len() as u16)
-        + ber::sizeof_sequence_octet_string(identity.user.as_bytes().len() as u16)
-        + ber::sizeof_sequence_octet_string(identity.password.as_ref().0.as_bytes().len() as u16)
+    ber::sizeof_sequence_octet_string(identity.domain.as_bytes_le().len() as u16)
+        + ber::sizeof_sequence_octet_string(identity.user.as_bytes_le().len() as u16)
+        + ber::sizeof_sequence_octet_string(identity.password.as_ref().0.as_bytes_le().len() as u16)
 }
 
 fn get_nego_tokens_len(nego_tokens: &Option<Vec<u8>>) -> u16 {
