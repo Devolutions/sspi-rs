@@ -1,4 +1,5 @@
 use super::*;
+use crate::auth_identity::AuthIdentityBuffers;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
 
@@ -579,6 +580,7 @@ fn complete_authenticate_does_not_fail_on_correct_mic() {
     let mut context = Ntlm::new();
 
     context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![TEST_CREDENTIALS.clone()]);
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     context.state = NtlmState::Completion;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -609,6 +611,7 @@ fn complete_authenticate_fails_on_incorrect_challenge_message() {
     let mut context = Ntlm::new();
 
     context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![TEST_CREDENTIALS.clone()]);
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     context.state = NtlmState::Completion;
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
@@ -632,4 +635,96 @@ fn complete_authenticate_fails_on_incorrect_challenge_message() {
     ));
 
     assert!(complete_authenticate(&mut context).is_err());
+}
+
+#[test]
+fn complete_authenticate_succeeds_with_correct_candidate_among_multiple() {
+    let mut context = Ntlm::new();
+
+    let wrong_creds = AuthIdentityBuffers {
+        user: TEST_CREDENTIALS.user.clone(),
+        domain: TEST_CREDENTIALS.domain.clone(),
+        password: "WrongPassword"
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into(),
+    };
+
+    context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![wrong_creds, TEST_CREDENTIALS.clone()]);
+    context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
+    context.state = NtlmState::Completion;
+    context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
+    context.challenge_message = Some(ChallengeMessage::new(
+        vec![0x04, 0x05, 0x06],
+        Vec::new(),
+        [0x00; CHALLENGE_SIZE],
+        0,
+    ));
+    context.authenticate_message = Some(AuthenticateMessage::new(
+        DOMAIN_AUTHENTICATE_MESSAGE.to_vec(),
+        Some(Mic::new(
+            [
+                0xcf, 0x40, 0x63, 0x95, 0xcf, 0xe2, 0x50, 0x4d, 0xbb, 0x1f, 0x7b, 0x3e, 0x7, 0xd4, 0xb6, 0x49,
+            ],
+            64,
+        )),
+        DOMAIN_TARGET_INFO.to_vec(),
+        DOMAIN_CLIENT_CHALLENGE,
+        Some(DOMAIN_ENCRYPTED_SESSION_KEY),
+    ));
+
+    complete_authenticate(&mut context).unwrap();
+}
+
+#[test]
+fn complete_authenticate_fails_when_no_candidate_matches() {
+    let mut context = Ntlm::new();
+
+    let wrong_creds_1 = AuthIdentityBuffers {
+        user: TEST_CREDENTIALS.user.clone(),
+        domain: TEST_CREDENTIALS.domain.clone(),
+        password: "Wrong1"
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into(),
+    };
+    let wrong_creds_2 = AuthIdentityBuffers {
+        user: TEST_CREDENTIALS.user.clone(),
+        domain: TEST_CREDENTIALS.domain.clone(),
+        password: "Wrong2"
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect::<Vec<u8>>()
+            .into(),
+    };
+
+    context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![wrong_creds_1, wrong_creds_2]);
+    context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
+    context.state = NtlmState::Completion;
+    context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
+    context.challenge_message = Some(ChallengeMessage::new(
+        vec![0x04, 0x05, 0x06],
+        Vec::new(),
+        [0x00; CHALLENGE_SIZE],
+        0,
+    ));
+    context.authenticate_message = Some(AuthenticateMessage::new(
+        DOMAIN_AUTHENTICATE_MESSAGE.to_vec(),
+        Some(Mic::new(
+            [
+                0xcf, 0x40, 0x63, 0x95, 0xcf, 0xe2, 0x50, 0x4d, 0xbb, 0x1f, 0x7b, 0x3e, 0x7, 0xd4, 0xb6, 0x49,
+            ],
+            64,
+        )),
+        DOMAIN_TARGET_INFO.to_vec(),
+        DOMAIN_CLIENT_CHALLENGE,
+        Some(DOMAIN_ENCRYPTED_SESSION_KEY),
+    ));
+
+    let err = complete_authenticate(&mut context).unwrap_err();
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
 }

@@ -459,6 +459,33 @@ impl SspiEx for Negotiate {
             }
         }
     }
+
+    fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
+        if let Some(first) = identities.first() {
+            self.auth_identity = Some(first.clone().try_into().map_err(|_| {
+                Error::new(
+                    ErrorKind::IncompleteCredentials,
+                    "Provided credentials are not password-based",
+                )
+            })?);
+        }
+
+        match &mut self.protocol {
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                // NOTE: non-AuthIdentity credentials (e.g. SmartCard) are silently
+                // dropped here. Multi-credential only applies to password-based auth.
+                let auth_identities: Vec<_> = identities
+                    .into_iter()
+                    .filter_map(|c| c.auth_identity())
+                    .collect();
+                ntlm.custom_set_auth_identities(auth_identities)
+            }
+            _ => match identities.into_iter().next() {
+                Some(identity) => self.custom_set_auth_identity(identity),
+                None => Err(Error::new(ErrorKind::LogonDenied, "no credentials provided")),
+            },
+        }
+    }
 }
 
 impl Sspi for Negotiate {

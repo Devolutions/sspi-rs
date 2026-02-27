@@ -1,4 +1,7 @@
+use tracing::debug;
+
 use crate::SecurityStatus;
+use crate::auth_identity::AuthIdentityBuffers;
 use crate::crypto::{HASH_SIZE, Rc4};
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
@@ -29,46 +32,94 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
         .as_ref()
         .expect("authenticate message must be set on authenticate phase");
 
-    let ntlm_v2_hash = compute_ntlm_v2_hash(
-        context
-            .identity
-            .as_ref()
-            .expect("Identity must be present on complete_authenticate phase"),
-    )?;
-    let (_, key_exchange_key) = compute_ntlm_v2_response(
-        authenticate_message.client_challenge.as_ref(),
-        challenge_message.server_challenge.as_ref(),
-        authenticate_message.target_info.as_ref(),
-        ntlm_v2_hash.as_ref(),
-        challenge_message.timestamp,
-    )?;
-    let session_key = authenticate_message
-        .encrypted_random_session_key
-        .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {
-            get_session_key(key_exchange_key, &encrypted_random_session_key, context.flags)
-        })?;
+    let candidates = context.allowed_identities.as_ref().ok_or_else(|| {
+        crate::Error::new(
+            crate::ErrorKind::LogonDenied,
+            String::from("no identity available for authentication"),
+        )
+    })?;
 
-    context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
-    context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(
-        generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
-    ));
-    context.recv_sealing_key = Some(Rc4::new(
-        generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
-    ));
+    // The NTLMv2 hash must use the client's wire user/domain (from the
+    // authenticate message), not the candidate's. The client computed its
+    // hash with its own user/domain encoding (e.g. full UPN as user with
+    // empty domain), so the server must match that exactly.
+    let wire_identity = context
+        .identity
+        .as_ref()
+        .expect("identity must be set before complete_authenticate");
 
-    check_mic_correctness(
-        negotiate_message.message.as_ref(),
-        challenge_message.message.as_ref(),
-        authenticate_message.message.as_ref(),
-        &authenticate_message.mic,
-        session_key.as_ref(),
-    )?;
+    for (i, identity) in candidates.iter().enumerate() {
+        let candidate = AuthIdentityBuffers {
+            user: wire_identity.user.clone(),
+            domain: wire_identity.domain.clone(),
+            password: identity.password.clone(),
+        };
+        let ntlm_v2_hash = match compute_ntlm_v2_hash(&candidate) {
+            Ok(hash) => hash,
+            Err(e) => {
+                debug!(?e, "candidate skipped: compute_ntlm_v2_hash failed");
+                continue;
+            }
+        };
+        let (_, key_exchange_key) = match compute_ntlm_v2_response(
+            authenticate_message.client_challenge.as_ref(),
+            challenge_message.server_challenge.as_ref(),
+            authenticate_message.target_info.as_ref(),
+            ntlm_v2_hash.as_ref(),
+            challenge_message.timestamp,
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                debug!(?e, "candidate skipped: compute_ntlm_v2_response failed");
+                continue;
+            }
+        };
+        let session_key = match authenticate_message
+            .encrypted_random_session_key
+            .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {
+                get_session_key(key_exchange_key, &encrypted_random_session_key, context.flags)
+            }) {
+            Ok(key) => key,
+            Err(e) => {
+                debug!(?e, "candidate skipped: get_session_key failed");
+                continue;
+            }
+        };
 
-    context.session_key = Some(session_key);
-    context.state = NtlmState::Final;
+        if check_mic_correctness(
+            negotiate_message.message.as_ref(),
+            challenge_message.message.as_ref(),
+            authenticate_message.message.as_ref(),
+            &authenticate_message.mic,
+            session_key.as_ref(),
+        )
+        .is_ok()
+        {
+            context.send_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
+            context.recv_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
+            context.send_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+            ));
+            context.recv_sealing_key = Some(Rc4::new(
+                generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+            ));
 
-    Ok(SecurityStatus::Ok)
+            // Replace identity with the matched candidate (wire user/domain
+            // + matched password). This overwrites the original wire-only
+            // identity so downstream consumers get the authenticated result.
+            debug!(candidate_index = i, "credential candidate matched");
+            context.identity = Some(candidate);
+            context.session_key = Some(session_key);
+            context.state = NtlmState::Final;
+
+            return Ok(SecurityStatus::Ok);
+        }
+    }
+
+    Err(crate::Error::new(
+        crate::ErrorKind::LogonDenied,
+        String::from("no candidate credential matched"),
+    ))
 }
 
 fn check_mic_correctness(

@@ -1294,6 +1294,19 @@ where
 {
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()>;
 
+    /// Set multiple candidate credentials for server-side verification.
+    ///
+    /// During NTLM authentication, the server will try each candidate to find
+    /// one whose password matches the client's challenge-response.
+    ///
+    /// The default implementation uses only the first credential.
+    fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
+        match identities.into_iter().next() {
+            Some(identity) => self.custom_set_auth_identity(identity),
+            None => Err(Error::new(ErrorKind::LogonDenied, "no credentials provided")),
+        }
+    }
+
     /// Verifies a MIC (Message Integrity Code) token for the specified message data.
     ///
     /// This method is used only by the Negotiate security package (SPNEGO protocol implementation)

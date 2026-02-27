@@ -81,6 +81,9 @@ pub struct Ntlm {
     state: NtlmState,
     flags: NegotiateFlags,
     identity: Option<AuthIdentityBuffers>,
+    /// Server-side candidate credentials for authentication verification.
+    /// `complete_authenticate` tries each one until it finds a match.
+    allowed_identities: Option<Vec<AuthIdentityBuffers>>,
     version: [u8; NTLM_VERSION_SIZE],
 
     send_single_host_data: bool,
@@ -144,6 +147,7 @@ impl Ntlm {
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
             identity: None,
+            allowed_identities: None,
             version: DEFAULT_NTLM_VERSION,
 
             send_single_host_data: false,
@@ -175,6 +179,7 @@ impl Ntlm {
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
             identity: None,
+            allowed_identities: None,
             version: DEFAULT_NTLM_VERSION,
 
             send_single_host_data: false,
@@ -206,6 +211,7 @@ impl Ntlm {
             state: NtlmState::Initial,
             flags: NegotiateFlags::empty(),
             identity,
+            allowed_identities: None,
             version: DEFAULT_NTLM_VERSION,
 
             send_single_host_data: false,
@@ -382,7 +388,9 @@ impl Ntlm {
             NtlmState::Authenticate => {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-                self.identity = builder.credentials_handle.cloned().flatten();
+                let identity = builder.credentials_handle.cloned().flatten();
+                self.allowed_identities = identity.as_ref().map(|id| vec![id.clone()]);
+                self.identity = identity;
 
                 if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, BufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
@@ -720,6 +728,31 @@ impl SspiEx for Ntlm {
         } else {
             self.identity = Some(identity.into());
         }
+
+        self.allowed_identities = self.identity.as_ref().map(|id| vec![id.clone()]);
+
+        Ok(())
+    }
+
+    #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
+    fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> crate::Result<()> {
+        if identities.is_empty() {
+            return Err(Error::new(ErrorKind::LogonDenied, "no credentials provided"));
+        }
+
+        // Set identity from the first candidate (for wire user/domain
+        // during complete_authenticate), without going through
+        // custom_set_auth_identity which would also set allowed_identities.
+        if let Some(credentials) = &mut self.identity {
+            if credentials.password.as_ref().is_empty() {
+                let identity: AuthIdentityBuffers = identities[0].clone().into();
+                credentials.password = identity.password;
+            }
+        } else {
+            self.identity = Some(identities[0].clone().into());
+        }
+
+        self.allowed_identities = Some(identities.into_iter().map(AuthIdentityBuffers::from).collect());
 
         Ok(())
     }
