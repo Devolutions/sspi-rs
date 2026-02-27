@@ -83,12 +83,12 @@ rand = "0.10.0-rc.6"
 getrandom = "0.3"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
-sha1 = { version = "=0.11.0-rc.2", default-features = false }
+sha1 = { version = "=0.11.0-rc.3", default-features = false }
 sha2 = "=0.11.0-rc.3"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { version = "=7.0.0-rc.21", default-features = false }
+picky = { version = "=7.0.0-rc.22", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
