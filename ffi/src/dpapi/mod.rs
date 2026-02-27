@@ -7,7 +7,8 @@ mod session_token;
 use std::ffi::{CStr, c_void};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
+use dpapi::rpc::auth::AuthError;
+use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs, Error};
 use dpapi_native_transport::NativeTransport;
 use dpapi_transport::ProxyOptions;
 use ffi_types::common::{Dword, LpByte, LpCByte, LpCStr, LpCUuid, LpDword};
@@ -22,6 +23,7 @@ const ERROR_SUCCESS: u32 = 0;
 const NTE_INVALID_PARAMETER: u32 = 0x80090027;
 const NTE_INTERNAL_ERROR: u32 = 0x8009002d;
 const NTE_NO_MEMORY: u32 = 0x8009000e;
+const HRESULT_ERROR_ACCESS_DENIED: u32 = 0x80070005;
 
 /// Type that represents a function for obtaining the session token.
 ///
@@ -258,6 +260,10 @@ pub unsafe extern "system" fn DpapiProtectSecret(
 ///
 /// MSDN:
 /// * [NCryptUnprotectSecret function (ncryptprotect.h)](https://learn.microsoft.com/en-us/windows/win32/api/ncryptprotect/nf-ncryptprotect-ncryptunprotectsecret).
+///
+/// These error codes an be returned, in addition to the MS ones:
+/// * 0x80090340 SEC_E_KDC_INVALID_REQUEST: Kerberos authentication failed
+/// * 0x80070005: Access to the decryption key was denied
 #[instrument(skip_all)]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn DpapiUnprotectSecret(
@@ -354,8 +360,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         let mut network_client = network_client::SyncNetworkClient;
 
         let runtime  = try_execute!(Builder::new_current_thread().enable_all().build(), NTE_INTERNAL_ERROR);
-        let secret_data = try_execute!(
-            runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(
+        let secret_data_result = runtime.block_on(n_crypt_unprotect_secret::<NativeTransport>(
                 CryptUnprotectSecretArgs {
                     blob,
                     server,
@@ -365,9 +370,18 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
                     client_computer_name,
                     kerberos_config: None,
                     network_client: &mut network_client
-                })),
-            NTE_INTERNAL_ERROR
-        );
+                }));
+
+        let secret_data = match secret_data_result {
+            Ok(secret_data) => secret_data,
+            Err(Error::Auth(AuthError::Sspi(sspi_error))) => { return sspi_error.error_type as u32 },
+            Err(Error::Gkdi(dpapi::gkdi::GkdiError::BadHresult(hresult))) => { return hresult },
+            Err(Error::Gkdi(dpapi::gkdi::GkdiError::IsNotAuthorized)) => { return HRESULT_ERROR_ACCESS_DENIED },
+            Err(err) => {
+                error!(%err, "an error occurred");
+                return NTE_INTERNAL_ERROR
+            }
+        };
 
         if secret_data.as_ref().is_empty() {
             error!("Decrypted secret is empty.");
