@@ -708,7 +708,7 @@ dependencies = [
  "rfc6979",
  "rsa",
  "sec1",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "sha2",
  "sha3",
  "signature",
@@ -1953,7 +1953,7 @@ checksum = "ca3fc18bb4460ac250ba6b75dfa7cf9d0b2273e3e623f660bd6ce2c3e902342e"
 dependencies = [
  "digest 0.11.0-rc.5",
  "hmac",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
 ]
 
 [[package]]
@@ -1973,9 +1973,9 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "picky"
-version = "7.0.0-rc.21"
+version = "7.0.0-rc.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62873c981fc88c34163c3bf19b47565a95fcd3548e5a6af602dc7ca8453ffe0d"
+checksum = "e4d077505451145769907bee30661be7182a24c75e97f040ccaf5848fd5de928"
 dependencies = [
  "base64",
  "block-buffer 0.11.0",
@@ -2013,7 +2013,7 @@ dependencies = [
  "rsa",
  "sec1",
  "serde",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "sha2",
  "sha3",
  "signature",
@@ -2065,9 +2065,9 @@ dependencies = [
 
 [[package]]
 name = "picky-krb"
-version = "0.12.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fac6dd79c9c2f0ab0ae9e68b7ecec783e7dbf8145dc3b47d81c8d675eb00e248"
+checksum = "1647012bc081792da896ec538040c34aac79ce6b11cfdd68029b3baa06b0453f"
 dependencies = [
  "aes",
  "block-buffer 0.11.0",
@@ -2088,7 +2088,7 @@ dependencies = [
  "picky-asn1-x509",
  "rand 0.10.0-rc.6",
  "serde",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -2845,9 +2845,9 @@ dependencies = [
 
 [[package]]
 name = "sha1"
-version = "0.11.0-rc.2"
+version = "0.11.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e046edf639aa2e7afb285589e5405de2ef7e61d4b0ac1e30256e3eab911af9"
+checksum = "aa1ae819b9870cadc959a052363de870944a1646932d274a4e270f64bf79e5ef"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -3010,7 +3010,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "serde",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "sha2",
  "signature",
  "spki",
@@ -3046,7 +3046,7 @@ dependencies = [
  "picky-asn1",
  "picky-asn1-der",
  "picky-asn1-x509",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "sha2",
  "sspi",
  "symbol-rename-macro",
@@ -4161,7 +4161,7 @@ dependencies = [
  "proptest",
  "rand 0.10.0-rc.6",
  "rsa",
- "sha1 0.11.0-rc.2",
+ "sha1 0.11.0-rc.3",
  "time",
  "tracing",
  "uuid",
