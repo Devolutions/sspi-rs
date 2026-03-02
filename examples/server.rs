@@ -23,8 +23,8 @@ fn main() -> Result<(), io::Error> {
 
     let mut ntlm = Ntlm::new();
 
-    let account_name = whoami::username();
-    let computer_name = whoami::fallible::hostname().unwrap();
+    let account_name = whoami::username().unwrap();
+    let computer_name = whoami::hostname().unwrap();
     let username = Username::new(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
 
     let identity = AuthIdentity {

@@ -296,7 +296,7 @@ fn try_get_negotiate_config(
     } else if let Some(name) = client_computer_name {
         name
     } else {
-        whoami::fallible::hostname()?
+        whoami::hostname().map_err(|e| Error::Io(std::io::Error::other(e)))?
     };
 
     let protocol_config: Box<dyn ProtocolConfig> = if let Some(kerberos_config) = kerberos_config {
