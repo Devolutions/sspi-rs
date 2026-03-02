@@ -106,7 +106,7 @@ dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transp
 
 rsa = { version = "=0.10.0-rc.12", default-features = false }
 base64 = "0.22"
-whoami = "1.6"
+whoami = "2.1"
 tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
