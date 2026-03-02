@@ -465,7 +465,7 @@ impl SspiEx for Negotiate {
             self.auth_identity = Some(first.clone().try_into().map_err(|_| {
                 Error::new(
                     ErrorKind::IncompleteCredentials,
-                    "Provided credentials are not password-based",
+                    "provided credentials are not password-based",
                 )
             })?);
         }
