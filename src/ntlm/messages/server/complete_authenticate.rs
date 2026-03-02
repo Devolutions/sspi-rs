@@ -74,11 +74,12 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
                 continue;
             }
         };
-        let session_key = match authenticate_message
-            .encrypted_random_session_key
-            .map_or(Ok(key_exchange_key), |encrypted_random_session_key| {
+        let session_key = match authenticate_message.encrypted_random_session_key.map_or(
+            Ok(key_exchange_key),
+            |encrypted_random_session_key| {
                 get_session_key(key_exchange_key, &encrypted_random_session_key, context.flags)
-            }) {
+            },
+        ) {
             Ok(key) => key,
             Err(e) => {
                 debug!(?e, "candidate skipped: get_session_key failed");

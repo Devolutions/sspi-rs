@@ -1116,10 +1116,8 @@ impl SspiEx for SspiContext {
             SspiContext::Ntlm(ntlm) => {
                 // NOTE: non-AuthIdentity credentials (e.g. SmartCard) are silently
                 // dropped here. Multi-credential only applies to password-based auth.
-                let auth_identities: Vec<AuthIdentity> = identities
-                    .into_iter()
-                    .filter_map(|c| c.auth_identity())
-                    .collect();
+                let auth_identities: Vec<AuthIdentity> =
+                    identities.into_iter().filter_map(|c| c.auth_identity()).collect();
                 ntlm.custom_set_auth_identities(auth_identities)
             }
             SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identities(identities),
