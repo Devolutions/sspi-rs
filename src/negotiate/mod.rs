@@ -194,9 +194,9 @@ impl Negotiate {
             NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names()?,
         };
 
-        let auth_data = auth_data
+        let candidates: Vec<Credentials> = auth_data
             .iter()
-            .find(|auth_data| {
+            .filter(|auth_data| {
                 trace!("Comparing usernames: {:?} with {:?}", auth_data.username, username);
 
                 let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
@@ -211,23 +211,18 @@ impl Negotiate {
                     .eq_ignore_ascii_case(username.account_name())
                     && domains_equal
             })
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::NoCredentials,
-                    "user credentials are not found on the server side",
-                )
-            })?
-            .clone();
+            .cloned()
+            .map(Credentials::from)
+            .collect();
 
-        match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.custom_set_auth_identity(auth_data)?,
-            NegotiatedProtocol::Kerberos(kerberos) => {
-                kerberos.custom_set_auth_identity(Credentials::AuthIdentity(auth_data))?
-            }
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.custom_set_auth_identity(auth_data)?,
+        if candidates.is_empty() {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "user credentials are not found on the server side",
+            ));
         }
 
-        Ok(())
+        self.custom_set_auth_identities(candidates)
     }
 
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
