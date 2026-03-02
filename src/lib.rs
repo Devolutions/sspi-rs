@@ -282,7 +282,7 @@ where
     /// let mut ntlm = sspi::Ntlm::new();
     ///
     /// let identity = sspi::AuthIdentity {
-    ///     username: Username::new(&whoami::username(), Some(&whoami::hostname())).unwrap(),
+    ///     username: Username::new(&whoami::username().unwrap(), Some(&whoami::hostname().unwrap())).unwrap(),
     ///     password: String::from("password").into(),
     /// };
     ///
