@@ -50,6 +50,27 @@ pub trait CredentialsProxy {
     /// * `username` - The username in UPN or Down-Level Logon Name format
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData>;
 
+    /// Return all candidate credentials for this user.
+    ///
+    /// When multiple credentials are returned, the NTLM verifier will try each
+    /// one until it finds a match (or rejects if none match).
+    ///
+    /// # Security considerations
+    ///
+    /// Candidates should represent a bounded set of currently-valid credentials
+    /// (e.g., TTL-bound tokens, or "current + previous" within a defined grace
+    /// period), not an unbounded history. Implementations should cap the number
+    /// of candidates and ensure existing rate-limiting / lockout behavior remains
+    /// effective, so that multi-credential verification does not multiply online
+    /// guessing attempts. This mechanism is for selection among multiple valid
+    /// credentials, not for weakening a policy that intends immediate
+    /// invalidation.
+    ///
+    /// The default implementation wraps the single result from `auth_data_by_user`.
+    fn auth_data_candidates_by_user(&mut self, username: &Username) -> io::Result<Vec<Self::AuthenticationData>> {
+        Ok(vec![self.auth_data_by_user(username)?])
+    }
+
     /// A method signature for implementing a behavior of searching and returning
     /// all available authentication data.
     fn auth_data(&mut self) -> io::Result<Vec<Self::AuthenticationData>>;
@@ -587,18 +608,19 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             self.context.as_mut().unwrap().sspi_context.query_context_names(),
                             ts_request
                         );
-                        let auth_data = try_cred_ssp_server!(
+                        let candidates = try_cred_ssp_server!(
                             self.credentials
-                                .auth_data_by_user(&username)
+                                .auth_data_candidates_by_user(&username)
                                 .map_err(|e| Error::new(ErrorKind::LogonDenied, e.to_string())),
                             ts_request
                         );
+                        let cred_candidates = candidates.into_iter().map(Credentials::AuthIdentity).collect();
                         try_cred_ssp_server!(
                             self.context
                                 .as_mut()
                                 .unwrap()
                                 .sspi_context
-                                .custom_set_auth_identity(Credentials::AuthIdentity(auth_data)),
+                                .custom_set_auth_identities(cred_candidates),
                             ts_request
                         );
 
@@ -1097,6 +1119,23 @@ impl SspiEx for SspiContext {
             })?),
             #[cfg(feature = "tsssp")]
             SspiContext::CredSsp(credssp) => credssp.custom_set_auth_identity(identity),
+        }
+    }
+
+    fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> crate::Result<()> {
+        match self {
+            SspiContext::Ntlm(ntlm) => {
+                // NOTE: non-AuthIdentity credentials (e.g. SmartCard) are silently
+                // dropped here. Multi-credential only applies to password-based auth.
+                let auth_identities: Vec<AuthIdentity> =
+                    identities.into_iter().filter_map(|c| c.auth_identity()).collect();
+                ntlm.custom_set_auth_identities(auth_identities)
+            }
+            SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identities(identities),
+            _ => match identities.into_iter().next() {
+                Some(identity) => self.custom_set_auth_identity(identity),
+                None => Err(Error::new(ErrorKind::NoCredentials, "no credentials provided")),
+            },
         }
     }
 }

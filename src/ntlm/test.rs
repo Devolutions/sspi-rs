@@ -678,6 +678,7 @@ fn complete_auth_token_changes_state() {
     context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     context.state = NtlmState::Completion;
     context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![TEST_CREDENTIALS.clone()]);
     context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
     context.challenge_message = Some(ChallengeMessage::new(
         vec![0x04, 0x05, 0x06],
