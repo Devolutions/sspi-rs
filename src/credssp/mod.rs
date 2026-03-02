@@ -1122,6 +1122,7 @@ impl SspiEx for SspiContext {
                     .collect();
                 ntlm.custom_set_auth_identities(auth_identities)
             }
+            SspiContext::Negotiate(negotiate) => negotiate.custom_set_auth_identities(identities),
             _ => match identities.into_iter().next() {
                 Some(identity) => self.custom_set_auth_identity(identity),
                 None => Err(Error::new(ErrorKind::LogonDenied, "no credentials provided")),
