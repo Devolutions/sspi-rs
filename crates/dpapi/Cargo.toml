@@ -57,7 +57,7 @@ getrandom = "0.4.0-rc.0"
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
-block-buffer = "=0.12.0"
+block-buffer = "0.12.0"
 block-padding = "0.4"
 crypto-common = "=0.2.0-rc.8"
 crypto-bigint = "=0.7.0-rc.18"
