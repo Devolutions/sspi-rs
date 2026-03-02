@@ -1299,6 +1299,17 @@ where
     /// During NTLM authentication, the server will try each candidate to find
     /// one whose password matches the client's challenge-response.
     ///
+    /// # Security considerations
+    ///
+    /// Candidates should represent a bounded set of currently-valid credentials
+    /// (e.g., TTL-bound tokens, or "current + previous" within a defined grace
+    /// period), not an unbounded history. Implementations should cap the number
+    /// of candidates and ensure existing rate-limiting / lockout behavior remains
+    /// effective, so that multi-credential verification does not multiply online
+    /// guessing attempts. This mechanism is for selection among multiple valid
+    /// credentials, not for weakening a policy that intends immediate
+    /// invalidation.
+    ///
     /// The default implementation uses only the first credential.
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
         match identities.into_iter().next() {

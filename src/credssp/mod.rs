@@ -55,6 +55,17 @@ pub trait CredentialsProxy {
     /// When multiple credentials are returned, the NTLM verifier will try each
     /// one until it finds a match (or rejects if none match).
     ///
+    /// # Security considerations
+    ///
+    /// Candidates should represent a bounded set of currently-valid credentials
+    /// (e.g., TTL-bound tokens, or "current + previous" within a defined grace
+    /// period), not an unbounded history. Implementations should cap the number
+    /// of candidates and ensure existing rate-limiting / lockout behavior remains
+    /// effective, so that multi-credential verification does not multiply online
+    /// guessing attempts. This mechanism is for selection among multiple valid
+    /// credentials, not for weakening a policy that intends immediate
+    /// invalidation.
+    ///
     /// The default implementation wraps the single result from `auth_data_by_user`.
     fn auth_data_candidates_by_user(&mut self, username: &Username) -> io::Result<Vec<Self::AuthenticationData>> {
         Ok(vec![self.auth_data_by_user(username)?])
