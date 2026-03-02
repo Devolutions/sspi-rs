@@ -22,8 +22,8 @@ fn main() -> Result<(), io::Error> {
 
     let mut ntlm = Ntlm::new();
 
-    let account_name = whoami::username();
-    let computer_name = whoami::fallible::hostname().unwrap();
+    let account_name = whoami::username().unwrap();
+    let computer_name = whoami::hostname().unwrap();
     let username = Username::new(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
 
     let identity = AuthIdentity {
@@ -77,7 +77,7 @@ fn do_authentication(ntlm: &mut Ntlm, identity: &AuthIdentity, mut stream: &mut 
         .execute(ntlm)?;
 
     let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-    let username = whoami::username();
+    let username = whoami::username().unwrap();
 
     let mut builder = ntlm
         .initialize_security_context()
