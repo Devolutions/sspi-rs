@@ -737,7 +737,7 @@ impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> crate::Result<()> {
         if identities.is_empty() {
-            return Err(Error::new(ErrorKind::LogonDenied, "no credentials provided"));
+            return Err(Error::new(ErrorKind::NoCredentials, "no credentials provided"));
         }
 
         // Set identity from the first candidate (for wire user/domain

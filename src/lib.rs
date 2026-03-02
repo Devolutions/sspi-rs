@@ -1314,7 +1314,7 @@ where
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
         match identities.into_iter().next() {
             Some(identity) => self.custom_set_auth_identity(identity),
-            None => Err(Error::new(ErrorKind::LogonDenied, "no credentials provided")),
+            None => Err(Error::new(ErrorKind::NoCredentials, "no credentials provided")),
         }
     }
 
