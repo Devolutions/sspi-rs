@@ -284,7 +284,7 @@ mod scard_credentials {
     use crate::{Error, ErrorKind, NonEmpty, Secret, Utf16String};
 
     /// DER-encoded x509 certificate.
-    #[derive(Clone, Eq, PartialEq, Default, Debug)]
+    #[derive(Clone, Eq, PartialEq, Debug)]
     pub struct CertificateRaw(Vec<u8>);
 
     impl AsRef<[u8]> for CertificateRaw {

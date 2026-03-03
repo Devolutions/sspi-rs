@@ -10,10 +10,10 @@ use crate::{Error, ErrorKind};
 pub trait Utf16StringExt: Sized {
     fn from_bytes_le(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
 
-    /// Returns reference to internal buffer as &[u8], assuming the native (little) endianness.
+    /// Returns reference to internal buffer as &[u8], assuming the little endianness.
     fn as_bytes_le(&self) -> &[u8];
 
-    /// Returns internal buffer as Vec<u8>, assuming the native (little) endianness.
+    /// Returns internal buffer as Vec<u8>, assuming the little endianness.
     fn to_bytes_le(&self) -> Vec<u8> {
         self.as_bytes_le().to_vec()
     }

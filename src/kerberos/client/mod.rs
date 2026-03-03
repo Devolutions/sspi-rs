@@ -87,7 +87,7 @@ pub async fn initialize_security_context<'a>(
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
                     let username = auth_identity.user.to_string();
                     let domain = auth_identity.domain.to_string();
-                    let password = auth_identity.password.as_ref().0.to_string();
+                    let password = auth_identity.password.as_ref().as_ref().to_string();
 
                     let realm = get_client_principal_realm(&username, &domain);
                     let cname_type = get_client_principal_name_type(&username, &domain);

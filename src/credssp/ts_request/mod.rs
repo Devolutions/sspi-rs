@@ -259,8 +259,6 @@ fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -
     use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
     use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
 
-    use crate::Utf16StringExt;
-
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes_le())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
