@@ -7,13 +7,15 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use num_traits::FromPrimitive;
+use sspi::Utf16StringExt;
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
+use widestring::Utf16String;
 use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
 use winscard::{Error, ErrorKind, WinScardResult};
 
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
-use crate::utils::{c_w_str_to_string, into_raw_ptr};
+use crate::utils::into_raw_ptr;
 use crate::winscard::scard_handle::{
     WinScardHandle, copy_io_request_to_scard_io_request, raw_scard_context_handle_to_scard_context_handle,
     raw_scard_handle_to_scard_handle, scard_context_to_winscard_context, scard_handle_to_winscard,
@@ -160,8 +162,10 @@ pub unsafe extern "system" fn SCardConnectW(
         // - `sz_reader` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { c_w_str_to_string(sz_reader) }.map_err(Error::from)
-    );
+        unsafe { Utf16String::from_pcwstr(sz_reader) }
+            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
+    )
+    .to_string();
 
     try_execute!(
         // SAFETY:

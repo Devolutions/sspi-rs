@@ -16,8 +16,9 @@ use sspi::ntlm::NtlmConfig;
 use sspi::{
     CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers, DataRepresentation, Error,
     ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret, Sspi, SspiImpl, StreamSizes,
-    kerberos, negotiate, ntlm, pku2u,
+    Utf16StringExt, kerberos, negotiate, ntlm, pku2u,
 };
+use widestring::Utf16String;
 #[cfg(target_os = "windows")]
 use windows::Win32::Security::Cryptography::{
     CERT_CONTEXT, CERT_QUERY_ENCODING_TYPE, CERT_STORE_ADD_REPLACE_EXISTING, CERT_STORE_CREATE_NEW_FLAG,
@@ -45,7 +46,7 @@ use super::sspi_data_types::{
     SecPkgContextFlags, SecPkgContextSizes, SecPkgContextStreamSizes, SecWChar, SecurityStatus,
 };
 use super::utils::{hostname, transform_credentials_handle};
-use crate::utils::{c_w_str_to_string, into_raw_ptr};
+use crate::utils::into_raw_ptr;
 
 pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
 pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;
@@ -464,8 +465,8 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
             // - `psz_package` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_package` contains a valid null-terminator at the end of string.
             // - The memory region `psz_package` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_package) }.map_err(Error::from)
-        );
+            unsafe { Utf16String::from_pcwstr(psz_package) }.map_err(Error::from)
+        ).to_string();
         try_execute!(verify_security_package(&security_package_name));
 
         debug!(?security_package_name);
@@ -740,8 +741,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
                 // - `p_target_name` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_target_name` contains a valid null-terminator at the end of string.
                 // - The memory region `p_target_name` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { c_w_str_to_string(p_target_name) }.map_err(Error::from)
-            )
+                unsafe { Utf16String::from_pcwstr(p_target_name) }.map_err(Error::from)
+            ).to_string()
         };
         debug!(?service_principal, "Target name (SPN)");
 
@@ -1350,8 +1351,8 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
                 // - `p_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
                 // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { c_w_str_to_string(p_buffer.cast()) }.map_err(Error::from)
-            );
+                unsafe { Utf16String::from_pcwstr(p_buffer.cast()) }.map_err(Error::from)
+            ).to_string();
 
             credentials_handle.attributes.workstation = Some(workstation);
 
@@ -1383,8 +1384,8 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
                 // - `kdc_url` is non-null due to the prior check.
                 // - The memory region `kdc_url` contains a valid null-terminator at the end of string.
                 // - The memory region `kdc_url` points to is valid for reads of bytes up to and including null-terminator.
-                unsafe { c_w_str_to_string(kdc_url) }.map_err(Error::from)
-            );
+                unsafe { Utf16String::from_pcwstr(kdc_url) }.map_err(Error::from)
+            ).to_string();
             credentials_handle.attributes.kdc_url = Some(kdc_url);
 
             0
@@ -1577,37 +1578,37 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
             // - `psz_package_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_package_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_package_name` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_package_name) }.map_err(Error::from)
-        );
+            unsafe { Utf16String::from_pcwstr(psz_package_name) }.map_err(Error::from)
+        ).to_string();
 
         let mut domain = try_execute!(
             // SAFETY:
             // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_domain_name) }.map_err(Error::from)
-        );
+            unsafe { Utf16String::from_pcwstr(psz_domain_name) }.map_err(Error::from)
+        ).to_string();
         let mut username = try_execute!(
             // SAFETY:
             // - `psz_account_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_account_name` contains a valid null-terminator at the end of string.
             // - The memory region `psz_account_name` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_account_name) }.map_err(Error::from)
-        );
+            unsafe { Utf16String::from_pcwstr(psz_account_name) }.map_err(Error::from)
+        ).to_string();
         let mut password = Secret::new(try_execute!(
             // SAFETY:
             // - `psz_old_password` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_old_password` contains a valid null-terminator at the end of string.
             // - The memory region `psz_old_password` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_old_password) }.map_err(Error::from)
-        ));
+            unsafe { Utf16String::from_pcwstr(psz_old_password) }.map_err(Error::from)
+        ).to_string());
         let mut new_password = Secret::new(try_execute!(
             // SAFETY:
             // - `psz_new_password` is guaranteed to be non-null due to the prior check.
             // - The memory region `psz_new_password` contains a valid null-terminator at the end of string.
             // - The memory region `psz_new_password` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { c_w_str_to_string(psz_new_password) }.map_err(Error::from)
-        ));
+            unsafe { Utf16String::from_pcwstr(psz_new_password) }.map_err(Error::from)
+        ).to_string());
 
         // SAFETY:
         // * `security_package_name' is a `String`.
@@ -1708,6 +1709,8 @@ mod tests {
     use std::ptr::{self, null, null_mut};
 
     use libc::c_void;
+    use sspi::Utf16StringExt;
+    use widestring::Utf16String;
 
     use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
@@ -1722,7 +1725,6 @@ mod tests {
     use crate::sspi::sec_winnt_auth_identity::{
         SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SecWinntAuthIdentityA, SecWinntAuthIdentityW,
     };
-    use crate::utils::c_w_str_to_string;
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
 
@@ -1742,8 +1744,8 @@ mod tests {
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
         println!("{pkg_info:?}");
-        println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
-        println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
+        println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.name) });
+        println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.comment) });
 
         let cb_max_token = pkg_info.cb_max_token;
 
@@ -1762,8 +1764,8 @@ mod tests {
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
             println!("{pkg_info:?}");
-            println!("{:?}", unsafe { c_w_str_to_string(pkg_info.name) });
-            println!("{:?}", unsafe { c_w_str_to_string(pkg_info.comment) });
+            println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.name) });
+            println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.comment) });
         }
 
         let status = unsafe { FreeContextBuffer(packages.cast()) };

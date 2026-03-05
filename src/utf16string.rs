@@ -1,8 +1,8 @@
 use std::ops::Not;
 
-use widestring::Utf16Str;
-pub use widestring::Utf16String;
+use widestring::U16CStr;
 pub use widestring::error::Utf16Error;
+pub use widestring::{Utf16Str, Utf16String};
 use zeroize::Zeroize;
 
 use crate::{Error, ErrorKind};
@@ -17,6 +17,17 @@ pub trait Utf16StringExt: Sized {
     fn to_bytes_le(&self) -> Vec<u8> {
         self.as_bytes_le().to_vec()
     }
+
+    /// # Safety
+    ///
+    /// Behavior is undefined is any of the following conditions are violated:
+    ///
+    /// - `ptr` must be a [valid], null-terminated C string.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `ptr` is null.
+    unsafe fn from_pcwstr(ptr: *const u16) -> Result<Utf16String, Utf16Error>;
 }
 
 impl Utf16StringExt for Utf16String {
@@ -39,6 +50,13 @@ impl Utf16StringExt for Utf16String {
     fn as_bytes_le(&self) -> &[u8] {
         let slice: &[u16] = self.as_ref();
         bytemuck::cast_slice(slice)
+    }
+
+    unsafe fn from_pcwstr(ptr: *const u16) -> Result<Utf16String, Utf16Error> {
+        // SAFETY: `s` must be valid null-terminated C string (upheld by the caller).
+        let cstr = unsafe { U16CStr::from_ptr_str(ptr) };
+
+        Ok(Utf16Str::from_ucstr(cstr)?.to_owned())
     }
 }
 

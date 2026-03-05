@@ -3080,6 +3080,7 @@ dependencies = [
  "url",
  "uuid",
  "whoami",
+ "widestring",
  "windows",
  "winscard",
 ]

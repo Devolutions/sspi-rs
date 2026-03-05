@@ -17,7 +17,7 @@ use windows::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 use windows::Win32::Security::Credentials::{CREDUI_INFOW, CredUIPromptForWindowsCredentialsW};
 
 use super::sspi_data_types::{SecWChar, SecurityStatus};
-use crate::utils::{credentials_str_into_bytes, into_raw_ptr, w_str_len};
+use crate::utils::{credentials_str_into_bytes, into_raw_ptr};
 
 pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
 pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
@@ -1153,6 +1153,8 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
     psz_packed_credentials_string: *const SecWChar,
     pp_auth_identity: *mut *mut c_void,
 ) -> SecurityStatus {
+    use widestring::U16CStr;
+
     catch_panic! {
         check_null!(pp_auth_identity);
         check_null!(psz_user_name);
@@ -1163,17 +1165,17 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
         // - `psz_user_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_user_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_user_name` points to is valid for reads of bytes up to and including null-terminator.
-        let user_length = unsafe { w_str_len(psz_user_name) };
+        let user_length = unsafe { U16CStr::from_ptr_str(psz_user_name) }.len();
         // SAFETY:
         // - `psz_domain_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_domain_name` contains a valid null-terminator at the end of string.
         // - The memory region `psz_domain_name` points to is valid for reads of bytes up to and including null-terminator.
-        let domain_length = unsafe { w_str_len(psz_domain_name) };
+        let domain_length = unsafe { U16CStr::from_ptr_str(psz_domain_name) }.len();
         // SAFETY:
         // - `psz_packed_credentials_string` is guaranteed to be non-null due to the prior check.
         // - The memory region `psz_packed_credentials_string` contains a valid null-terminator at the end of string.
         // - The memory region `psz_packed_credentials_string` points to is valid for reads of bytes up to and including null-terminator.
-        let password_length = unsafe { w_str_len(psz_packed_credentials_string) };
+        let password_length = unsafe { U16CStr::from_ptr_str(psz_packed_credentials_string) }.len();
 
         if user_length == 0 || domain_length == 0 || password_length == 0 {
             return ErrorKind::InvalidParameter.to_u32().unwrap();

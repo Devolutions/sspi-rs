@@ -98,7 +98,7 @@ use picky_krb::messages::KrbError;
 #[cfg(feature = "__rustls-used")]
 pub use rustls::install_default_crypto_provider_if_necessary;
 pub use security_buffer::SecurityBufferRef;
-pub use utf16string::{NonEmpty, Utf16String, Utf16StringExt};
+pub use utf16string::{NonEmpty, Utf16Str, Utf16String, Utf16StringExt};
 use utils::map_keb_error_code_to_sspi_error;
 pub use utils::{modpow, str_to_w_buff, string_to_utf16, utf16_bytes_to_utf8_string};
 
@@ -2435,5 +2435,11 @@ impl From<cryptoki::error::Error> for Error {
             ErrorKind::NoCredentials,
             format!("Error while using a smart card: {value}"),
         )
+    }
+}
+
+impl From<widestring::error::Utf16Error> for Error {
+    fn from(value: widestring::error::Utf16Error) -> Self {
+        Self::new(ErrorKind::InternalError, format!("UTF-16 error: {value:?}"))
     }
 }

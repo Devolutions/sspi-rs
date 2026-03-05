@@ -1,6 +1,6 @@
 use super::*;
-use crate::auth_identity::AuthIdentityBuffers;
 use crate::Utf16StringExt;
+use crate::auth_identity::AuthIdentityBuffers;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
 
