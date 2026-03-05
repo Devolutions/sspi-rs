@@ -1,5 +1,6 @@
 use super::*;
 use crate::Utf16StringExt;
+use crate::utf16string::ZeroizedUtf16String;
 use crate::auth_identity::AuthIdentityBuffers;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
@@ -648,11 +649,10 @@ fn complete_authenticate_succeeds_with_correct_candidate_among_multiple() {
     let wrong_creds = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "WrongPassword"
+        password: ZeroizedUtf16String::from_bytes_le("WrongPassword"
             .encode_utf16()
             .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+            .collect::<Vec<u8>>()).unwrap().into(),
     };
 
     context.identity = Some(TEST_CREDENTIALS.clone());
@@ -689,20 +689,18 @@ fn complete_authenticate_fails_when_no_candidate_matches() {
     let wrong_creds_1 = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "Wrong1"
+        password: ZeroizedUtf16String::from_bytes_le("Wrong1"
             .encode_utf16()
             .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+            .collect::<Vec<u8>>()).unwrap().into()
     };
     let wrong_creds_2 = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "Wrong2"
+        password: ZeroizedUtf16String::from_bytes_le("Wrong2"
             .encode_utf16()
             .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+            .collect::<Vec<u8>>()).unwrap().into()
     };
 
     context.identity = Some(TEST_CREDENTIALS.clone());
