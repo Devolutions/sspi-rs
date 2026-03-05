@@ -17,7 +17,6 @@ use crate::ntlm::{
 };
 use crate::{NtlmHash, NtlmHashError, Secret, utils};
 
-pub(super) const SSPI_CREDENTIALS_HASH_LENGTH_OFFSET: usize = 512;
 pub(super) const SINGLE_HOST_DATA_SIZE: usize = 48;
 
 const NT_V2_RESPONSE_BASE_SIZE: usize = 28;
@@ -144,35 +143,6 @@ pub(super) fn compute_message_integrity_check(
     compute_hmac_md5(exported_session_key, message_integrity_check.as_ref())
 }
 
-pub(super) fn convert_password_hash(identity_password: &[u8]) -> crate::Result<[u8; HASH_SIZE]> {
-    if identity_password.len() >= SSPI_CREDENTIALS_HASH_LENGTH_OFFSET + HASH_SIZE * 2 {
-        let mut result = [0x00; HASH_SIZE];
-        let password_hash =
-            &identity_password[0..identity_password.len() - SSPI_CREDENTIALS_HASH_LENGTH_OFFSET].to_ascii_uppercase();
-
-        let magic_transform = |elem: u8| {
-            if elem > b'9' {
-                elem + 10 - b'A'
-            } else {
-                elem.wrapping_sub(b'0')
-            }
-        };
-
-        for (hash_items, res) in password_hash.chunks(2).zip(result.iter_mut()) {
-            let hn = magic_transform(*hash_items.first().unwrap());
-            let ln = magic_transform(*hash_items.last().unwrap());
-            *res = (hn << 4) | ln;
-        }
-
-        Ok(result)
-    } else {
-        Err(crate::Error::new(
-            crate::ErrorKind::InvalidToken,
-            format!("Got password with a small length: {}", identity_password.len()),
-        ))
-    }
-}
-
 pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Result<[u8; HASH_SIZE]> {
     if !identity.is_empty() {
         let password_bytes = identity.password.as_ref();
@@ -193,12 +163,7 @@ pub(super) fn compute_ntlm_v2_hash(identity: &AuthIdentityBuffers) -> crate::Res
 
             *nt_hash.as_bytes()
         } else {
-            // Usual password - compute MD4.
-            if password_bytes.len() > SSPI_CREDENTIALS_HASH_LENGTH_OFFSET {
-                convert_password_hash(password_bytes)?
-            } else {
-                compute_md4(password_bytes)
-            }
+            compute_md4(password_bytes)
         };
 
         let user_utf16 = utils::bytes_to_utf16_string(identity.user.as_ref())?;
