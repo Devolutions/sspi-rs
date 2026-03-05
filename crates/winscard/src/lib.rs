@@ -184,9 +184,10 @@ impl From<core::str::Utf8Error> for Error {
     }
 }
 
-#[cfg(feature = "std")]
-impl From<std::string::FromUtf16Error> for Error {
-    fn from(value: std::string::FromUtf16Error) -> Self {
+impl From<alloc::string::FromUtf16Error> for Error {
+    fn from(value: alloc::string::FromUtf16Error) -> Self {
+        use crate::alloc::string::ToString;
+
         Error::new(ErrorKind::InvalidParameter, value.to_string())
     }
 }

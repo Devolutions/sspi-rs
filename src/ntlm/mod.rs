@@ -721,7 +721,7 @@ impl SspiEx for Ntlm {
         // If `self.identity` is already set, it means that the NTLM has accepted the final authentication message,
         // and read username/domain from it. In this case, we only update the password.
         if let Some(credentials) = &mut self.identity {
-            if credentials.password.as_ref().is_empty() {
+            if credentials.password.as_ref().as_ref().is_empty() {
                 let identity: AuthIdentityBuffers = identity.into();
                 credentials.password = identity.password;
             }
@@ -744,7 +744,7 @@ impl SspiEx for Ntlm {
         // during complete_authenticate), without going through
         // custom_set_auth_identity which would also set allowed_identities.
         if let Some(credentials) = &mut self.identity {
-            if credentials.password.as_ref().is_empty() {
+            if credentials.password.as_ref().as_ref().is_empty() {
                 let identity: AuthIdentityBuffers = identities[0].clone().into();
                 credentials.password = identity.password;
             }
