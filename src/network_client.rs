@@ -121,10 +121,9 @@ pub mod reqwest_network_client {
             let client = crate::rustls::load_native_certs(reqwest::blocking::ClientBuilder::new())
                 .build()
                 .map_err(|e| {
-                    Error::new(
-                        ErrorKind::NoAuthenticatingAuthority,
-                        format!("failed to build reqwest client: {e}"),
-                    )
+                    let mut msg = String::from("failed to build reqwest client: ");
+                    crate::utils::write_error_chain(&mut msg, &e).expect("writing to a String is infallible");
+                    Error::new(ErrorKind::NoAuthenticatingAuthority, msg)
                 })?;
 
             let response = client
