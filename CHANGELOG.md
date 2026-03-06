@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.18.9](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.8...sspi-v0.18.9)] - 2026-03-06
+
+### <!-- 1 -->Features
+
+- Support multiple credential candidates ([#611](https://github.com/Devolutions/sspi-rs/issues/611)) ([2ded76b767](https://github.com/Devolutions/sspi-rs/commit/2ded76b76734110d45de2270d3c782c561fe54d1)) 
+
+  Enable the CredSSP server-side NTLM flow to authenticate against a bounded set of
+  concurrently-valid credential candidates for a single user, selecting the one
+  the client proves knowledge of.
+  
+  This is intended for legitimate multi-candidate scenarios (e.g. short-lived
+  tokens, or brief overlap/grace windows during rotation/replication), not for
+  keeping an unbounded password history valid.
+  
+  - Add CredentialsProxy::auth_data_candidates_by_user (backward-compatible default)
+  - Add SspiEx::custom_set_auth_identities with backward-compatible fallbacks
+  - In NTLM complete_authenticate, try candidates until one matches the client response
+    (other contexts fall back to the first candidate)
+  - Candidates must be bounded & currently valid, cap the number of candidates, and
+    preserve existing rate-limit/lockout behavior
+
+### <!-- 4 -->Bug Fixes
+
+- Include full error source chain in reqwest client build error ([#621](https://github.com/Devolutions/sspi-rs/issues/621)) ([3ba4886776](https://github.com/Devolutions/sspi-rs/commit/3ba4886776600f06b1a338b06ed4f828bd001588)) 
+
+  Without this, a failure in load_native_certs() only surfaced the
+  top-level "builder error" message. The new write_error_chain helper
+  walks std::error::Error::source() to produce a colon-separated chain,
+  matching what anyhow's {:#} formatter would emit.
+
+- Remove NTLM password length heuristic ([#619](https://github.com/Devolutions/sspi-rs/issues/619)) ([c607a229da](https://github.com/Devolutions/sspi-rs/commit/c607a229da8f5fd394f4be4c26fe7e5b90805df7)) 
+
+  `compute_ntlm_v2_hash` treats passwords longer than 512 bytes as
+  pre-computed NT hashes and tries to decode them with
+  `convert_password_hash`. This silently breaks authentication for any
+  plaintext password that exceeds that threshold (e.g. long JWT tokens).
+
+
+
 ## [[0.18.8](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.7...sspi-v0.18.8)] - 2026-02-26
 
 ### <!-- 1 -->Features
