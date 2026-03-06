@@ -8,6 +8,21 @@ use rand::rngs::StdRng;
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, Secret, SecurityBufferFlags, SecurityBufferRef};
 
+/// Writes an error and its full source chain to `w`, separated by `": "`.
+///
+/// This is a temporary workaround until [`std::error::Report`] is stabilised
+/// (tracking issue: <https://github.com/rust-lang/rust/issues/90272>), at which
+/// point callers can be migrated to `format!("{:#}", std::error::Report::new(e))`.
+pub(crate) fn write_error_chain(w: &mut impl std::fmt::Write, e: &dyn std::error::Error) -> std::fmt::Result {
+    write!(w, "{e}")?;
+    let mut source = e.source();
+    while let Some(s) = source {
+        write!(w, ": {s}")?;
+        source = s.source();
+    }
+    Ok(())
+}
+
 pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
     value
         .as_ref()
