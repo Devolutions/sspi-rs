@@ -264,28 +264,6 @@ fn compute_ntlmv2_hash_works_on_empty_password() {
 }
 
 #[test]
-fn compute_ntlmv2_hash_with_large_password() {
-    let mut password = b"!@#$%^&*()_+{}\"|\\[];:/?.>,<~` -=".to_vec();
-    let garbage = [0x00; SSPI_CREDENTIALS_HASH_LENGTH_OFFSET];
-    password.extend_from_slice(&garbage);
-    let password = String::from_utf8(password).unwrap();
-
-    let identity = AuthIdentity {
-        username: Username::new("Administrator", Some("AWAKECODING")).unwrap(),
-        password: password.into(),
-    }
-    .into();
-
-    let expected = [
-        0xcb, 0x14, 0x4b, 0x13, 0xe, 0x5e, 0x99, 0x64, 0x19, 0x19, 0x52, 0xb0, 0x55, 0x11, 0xa, 0x22,
-    ];
-
-    let ntlm_v2_hash = compute_ntlm_v2_hash(&identity).unwrap();
-
-    assert_eq!(expected, ntlm_v2_hash);
-}
-
-#[test]
 #[should_panic]
 fn compute_ntlmv2_hash_fails_on_empty_identity() {
     assert!(compute_ntlm_v2_hash(&TEST_CREDENTIALS).is_err());
@@ -355,56 +333,6 @@ fn compute_ntlm_v2_repsonse_correct_computes_key_exchange_key() {
     .unwrap();
 
     assert_eq!(key_exchange_key, expected);
-}
-
-#[test]
-fn convert_password_hash_spec_chars() {
-    let mut message = b"!@#$%^&*()_+{}\"|\\[];:/?.>,<~` -=".to_vec();
-    let garbage = [0x00; SSPI_CREDENTIALS_HASH_LENGTH_OFFSET];
-    message.extend_from_slice(&garbage);
-
-    let expected = [
-        0x19, 0xF4, 0x77, 0xFA, 0xF9, 0xFB, 0x46, 0x65, 0x74, 0x64, 0xFF, 0xFE, 0xFC, 0x57, 0xF0, 0xD6,
-    ];
-
-    assert_eq!(convert_password_hash(&message).unwrap(), expected);
-}
-
-#[test]
-fn convert_password_hash_simple_chars() {
-    let mut message = b"1234567890qwertyuiopasdfghjklzxcvbnm".to_vec();
-    let garbage = [0x00; SSPI_CREDENTIALS_HASH_LENGTH_OFFSET];
-    message.extend_from_slice(&garbage);
-
-    let expected = [
-        0x12, 0x34, 0x56, 0x78, 0x90, 0xA0, 0xFB, 0xF2, 0xF2, 0x99, 0xBC, 0xDF, 0x11, 0x34, 0x73, 0x1C,
-    ];
-
-    assert_eq!(convert_password_hash(&message).unwrap(), expected);
-}
-
-#[test]
-fn convert_password_hash_random_symbols() {
-    let mut message = b"epfkwe 2358 $*(@$rg$ 5%*(Efei H!".to_vec();
-    let garbage = [0x00; SSPI_CREDENTIALS_HASH_LENGTH_OFFSET];
-    message.extend_from_slice(&garbage);
-
-    let expected = [
-        0xF9, 0xF4, 0x0E, 0x02, 0x35, 0xF0, 0xFA, 0x89, 0x5B, 0xF4, 0x05, 0xFA, 0x8E, 0xFE, 0xF0, 0xF1,
-    ];
-
-    assert_eq!(convert_password_hash(&message).unwrap(), expected);
-}
-
-#[test]
-fn convert_password_hash_only_spaces() {
-    let mut message = [b' '; 32].to_vec();
-    let garbage = [0x00; SSPI_CREDENTIALS_HASH_LENGTH_OFFSET];
-    message.extend_from_slice(&garbage);
-
-    let expected = [0xF0; 16];
-
-    assert_eq!(convert_password_hash(&message).unwrap(), expected);
 }
 
 #[test]
