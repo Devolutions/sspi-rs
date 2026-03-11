@@ -108,6 +108,7 @@ pub struct Negotiate {
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
     mech_types: Vec<u8>,
     mic_verified: bool,
+    first_kdc_token: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,6 +174,7 @@ impl Negotiate {
             mode,
             mech_types: Default::default(),
             mic_verified: false,
+            first_kdc_token: None,
         })
     }
 
@@ -397,6 +399,22 @@ impl Negotiate {
             let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
             self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
         }
+    }
+
+    /// Fallback to NTLM protocol.
+    //
+    // Returns true if the fallback was successful, false if NTLM is disabled and fallback is not possible.
+    fn fallback_to_ntlm(&mut self) -> bool {
+        if !self.can_downgrade_ntlm() {
+            return false;
+        }
+
+        let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
+        self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
+        // We need to disable Kerberos completely after falling back to NTLM.
+        self.package_list.kerberos = false;
+
+        true
     }
 
     fn verify_mic_token(&mut self, mic: Option<&[u8]>) -> Result<()> {
