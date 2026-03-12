@@ -499,7 +499,7 @@ fn run_spnego(
     let spnego_server = Negotiate::new_server(
         NegotiateConfig::new(
             Box::new(kerberos_server_config),
-            package_list.clone(),
+            package_list,
             SERVER_COMPUTER_NAME.into(),
         ),
         vec![identity_1, identity_2],
