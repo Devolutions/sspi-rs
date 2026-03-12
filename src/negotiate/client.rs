@@ -97,7 +97,7 @@ pub(crate) async fn initialize_security_context<'a>(
                 // and `enc-tkt-in-skey` is not enabled.
                 //
                 // So, we clone the Kerberos context if U2U is used. This way, the Kerberos state will not be in progress on the second `initialize_security_context` call,
-                // and we can processed normally. But if the U2U is not used, then we will reuse the token and the Kerberos state.
+                // and we can process normally. But if the U2U is not used, then we will reuse the token and the Kerberos state.
                 let kerberos = if is_u2u { &mut kerberos.clone() } else { kerberos };
                 match try_kerberos_optimistic(kerberos, yield_point, builder).await {
                     Ok(token) => {
@@ -202,7 +202,9 @@ pub(crate) async fn initialize_security_context<'a>(
                 input_token.buffer.clear();
             }
 
-            let mut result = if let Some(token) = negotiate.first_kdc_token.take() {
+            let mut result = if matches!(negotiate.protocol, NegotiatedProtocol::Kerberos(_))
+                && let Some(token) = negotiate.first_kdc_token.take()
+            {
                 debug!("Using Kerberos token from the first optimistic Kerberos call.");
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
