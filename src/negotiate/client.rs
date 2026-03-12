@@ -15,6 +15,18 @@ use crate::{
     SspiImpl,
 };
 
+/// If the Kerberos context returns an Error, then we check for `error_type` and see if we can fallback to NTLM.
+/// We fallback to NTLM in following cases:
+/// - ErrorKind::TimeSkew: The time skew on KDC and client machines is too big.
+/// - ErrorKind::NoAuthenticatingAuthority: The Kerberos returns this error type when there is a problem with network client.
+///   For example, the network client cannot connect to the KDC, or the KDC proxy returns an error.
+/// - ErrorKind::CertificateUnknown: The KDC proxy certificate is invalid.
+const NTLM_FALLBACK_ERROR_KINDS: [ErrorKind; 3] = [
+    ErrorKind::TimeSkew,
+    ErrorKind::NoAuthenticatingAuthority,
+    ErrorKind::CertificateUnknown,
+];
+
 /// Performs one authentication step.
 ///
 /// The user should call this function until it returns `SecurityStatus::Ok`.
@@ -106,20 +118,7 @@ pub(crate) async fn initialize_security_context<'a>(
                         // We cannot reuse the token if the U2U is used, because it does not contain a TGT ticket and `enc-tkt-in-skey` is not enabled.
                         if is_u2u { None } else { Some(token) }
                     }
-                    // If the Kerberos context returns an Error, then we check for `error_type` and see if we can fallback to NTLM.
-                    // We fallback to NTLM in following cases:
-                    // - ErrorKind::TimeSkew: The time skew on KDC and client machines is too big.
-                    // - ErrorKind::NoAuthenticatingAuthority: The Kerberos returns this error type when there is a problem with network client.
-                    //   For example, the network client cannot connect to the KDC, or the KDC proxy returns an error.
-                    // - ErrorKind::CertificateUnknown: The KDC proxy certificate is invalid.
-                    Err(err)
-                        if [
-                            ErrorKind::TimeSkew,
-                            ErrorKind::NoAuthenticatingAuthority,
-                            ErrorKind::CertificateUnknown,
-                        ]
-                        .contains(&err.error_type) =>
-                    {
+                    Err(err) if NTLM_FALLBACK_ERROR_KINDS.contains(&err.error_type) => {
                         warn!("Kerberos authentication failed with {err} error, attempting NTLM fallback.");
 
                         if !negotiate.fallback_to_ntlm() {
