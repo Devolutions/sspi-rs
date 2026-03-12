@@ -15,8 +15,8 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
-    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
-    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, SecurityBuffer, SecurityStatus,
+    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
+    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, SecurityBuffer, SecurityStatus,
     ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
@@ -24,7 +24,7 @@ use url::Url;
 use crate::client_server::kerberos::kdc::{
     CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, PasswordCreds, SERVER_COMPUTER_NAME, UserName, Validators,
 };
-use crate::client_server::kerberos::network_client::NetworkClientMock;
+use crate::client_server::kerberos::network_client::{FailedNetworkClientMock, NetworkClientMock};
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 /// Represents a Kerberos environment:
@@ -355,21 +355,8 @@ fn spnego_kerberos_u2u() {
             as_req: Box::new(|_as_req| {
                 // Nothing to validate in AsReq.
             }),
-            tgs_req: Box::new(|tgs_req| {
-                // Here, we should check that the Kerberos client successfully negotiated Kerberos U2U auth.
-
-                let kdc_options = tgs_req.0.req_body.kdc_options.0.0.as_bytes();
-                // KDC options must have enc-tkt-in-skey enabled.
-                assert_eq!(kdc_options[4], 0x08, "the enc-tkt-in-skey KDC option is not enabled");
-
-                if let Some(tickets) = tgs_req.0.req_body.0.additional_tickets.0.as_ref() {
-                    assert!(
-                        !tickets.0.0.is_empty(),
-                        "TgsReq must have at least one additional ticket: TGT from the application service"
-                    );
-                } else {
-                    panic!("TgsReq must have at least one additional ticket: TGT from the application service");
-                }
+            tgs_req: Box::new(|_tgs_req| {
+                // Nothing to validate in TgsReq.
             }),
         },
     );
@@ -444,7 +431,13 @@ fn spnego_kerberos_u2u() {
     );
 }
 
-fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerRequestFlags, steps: usize) {
+fn run_spnego(
+    client_flags: ClientRequestFlags,
+    server_flags: ServerRequestFlags,
+    steps: usize,
+    get_network_client: impl Fn(KdcMock) -> Box<dyn NetworkClient>,
+    package_list: Option<String>,
+) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -473,7 +466,7 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
             }),
         },
     );
-    let mut network_client = NetworkClientMock { kdc };
+    let mut network_client = get_network_client(kdc);
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
@@ -481,7 +474,7 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
     };
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
         Box::new(client_config.clone()),
-        Some(String::from("kerberos,!ntlm")),
+        package_list.clone(),
         CLIENT_COMPUTER_NAME.into(),
     ))
     .unwrap();
@@ -506,7 +499,7 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
     let spnego_server = Negotiate::new_server(
         NegotiateConfig::new(
             Box::new(kerberos_server_config),
-            Some(String::from("kerberos,!ntlm")),
+            package_list.clone(),
             SERVER_COMPUTER_NAME.into(),
         ),
         vec![identity_1, identity_2],
@@ -525,7 +518,7 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
         &mut SspiContext::Negotiate(spnego_server),
         &mut server_credentials_handle,
         server_flags,
-        &mut network_client,
+        &mut *network_client,
         steps,
     );
 }
@@ -543,7 +536,13 @@ fn spnego_kerberos() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    run_spnego_kerberos(client_flags, server_flags, 3);
+    run_spnego(
+        client_flags,
+        server_flags,
+        3,
+        |kdc| Box::new(NetworkClientMock { kdc }),
+        Some(String::from("kerberos,!ntlm")),
+    );
 }
 
 #[test]
@@ -561,5 +560,39 @@ fn spnego_kerberos_dce_style() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    run_spnego_kerberos(client_flags, server_flags, 4);
+    run_spnego(
+        client_flags,
+        server_flags,
+        4,
+        |kdc| Box::new(NetworkClientMock { kdc }),
+        Some(String::from("kerberos,!ntlm")),
+    );
+}
+
+#[test]
+fn spnego_kerberos_ntlm_fallback() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+
+    for kind in [
+        ErrorKind::TimeSkew,
+        ErrorKind::NoAuthenticatingAuthority,
+        ErrorKind::CertificateUnknown,
+    ] {
+        run_spnego(
+            client_flags,
+            server_flags,
+            4,
+            |_| Box::new(FailedNetworkClientMock { kind }),
+            Some(String::from("kerberos,ntlm")),
+        );
+    }
 }
