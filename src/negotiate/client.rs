@@ -123,7 +123,7 @@ pub(crate) async fn initialize_security_context<'a>(
                         warn!("Kerberos authentication failed with {err} error, attempting NTLM fallback.");
 
                         if !negotiate.fallback_to_ntlm() {
-                            warn!("Failed to fallback to NTLM.");
+                            warn!("Failed to fallback to NTLM: NTLM is disabled.");
 
                             return Err(err);
                         }
@@ -366,7 +366,6 @@ async fn try_kerberos_optimistic<'a>(
 ) -> Result<Vec<u8>> {
     let result = kerberos.initialize_security_context_impl(yield_point, builder).await?;
 
-    // Check that the call succeeded (or is in progress)
     if result.status != SecurityStatus::ContinueNeeded {
         return Err(Error::new(
             ErrorKind::InternalError,

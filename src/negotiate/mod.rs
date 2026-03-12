@@ -108,6 +108,11 @@ pub struct Negotiate {
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
     mech_types: Vec<u8>,
     mic_verified: bool,
+    /// On the first `initialize_security_context` call we call the Kerberos `initialize_security_context` to get the initial token.
+    /// This is an advanced mechanism for protocol negotiation. For example, if KDC does not work properly or time skew is too big,
+    /// then we fallback to NTLM and continue the NLA.
+    /// But if the first token is generated successfully (i.g. Kerberos works properly), then we save this token and reuse on
+    /// the second `initialize_security_context` call.
     first_kdc_token: Option<Vec<u8>>,
 }
 
