@@ -16,8 +16,8 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
-    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, SecurityBuffer, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiImpl, Username,
+    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
 
@@ -437,7 +437,7 @@ fn run_spnego(
     steps: usize,
     get_network_client: impl Fn(KdcMock) -> Box<dyn NetworkClient>,
     package_list: Option<String>,
-) {
+) -> (SspiContext, SspiContext) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -472,12 +472,14 @@ fn run_spnego(
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
-    let spnego_client = Negotiate::new_client(NegotiateConfig::new(
-        Box::new(client_config.clone()),
-        package_list.clone(),
-        CLIENT_COMPUTER_NAME.into(),
-    ))
-    .unwrap();
+    let mut spnego_client = SspiContext::Negotiate(
+        Negotiate::new_client(NegotiateConfig::new(
+            Box::new(client_config.clone()),
+            package_list.clone(),
+            CLIENT_COMPUTER_NAME.into(),
+        ))
+        .unwrap(),
+    );
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
@@ -496,31 +498,35 @@ fn run_spnego(
         kerberos_config: server_config,
         server_properties,
     };
-    let spnego_server = Negotiate::new_server(
-        NegotiateConfig::new(
-            Box::new(kerberos_server_config),
-            package_list,
-            SERVER_COMPUTER_NAME.into(),
-        ),
-        vec![identity_1, identity_2],
-    )
-    .unwrap();
+    let mut spnego_server = SspiContext::Negotiate(
+        Negotiate::new_server(
+            NegotiateConfig::new(
+                Box::new(kerberos_server_config),
+                package_list,
+                SERVER_COMPUTER_NAME.into(),
+            ),
+            vec![identity_1, identity_2],
+        )
+        .unwrap(),
+    );
 
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 
     run_kerberos(
-        &mut SspiContext::Negotiate(spnego_client),
+        &mut spnego_client,
         &mut client_credentials_handle,
         client_flags,
         &target_name,
-        &mut SspiContext::Negotiate(spnego_server),
+        &mut spnego_server,
         &mut server_credentials_handle,
         server_flags,
         &mut *network_client,
         steps,
     );
+
+    (spnego_client, spnego_server)
 }
 
 #[test]
@@ -536,13 +542,20 @@ fn spnego_kerberos() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    run_spnego(
+    let (client, _server) = run_spnego(
         client_flags,
         server_flags,
         3,
         |kdc| Box::new(NetworkClientMock { kdc }),
         Some(String::from("kerberos,!ntlm")),
     );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    let negotiated_protocol = negotiate.negotiated_protocol();
+
+    assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
 }
 
 #[test]
@@ -560,13 +573,20 @@ fn spnego_kerberos_dce_style() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
-    run_spnego(
+    let (client, _server) = run_spnego(
         client_flags,
         server_flags,
         4,
         |kdc| Box::new(NetworkClientMock { kdc }),
-        Some(String::from("kerberos,!ntlm")),
+        Some(String::from("kerberos,ntlm")),
     );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    let negotiated_protocol = negotiate.negotiated_protocol();
+
+    assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
 }
 
 #[test]
@@ -587,12 +607,22 @@ fn spnego_kerberos_ntlm_fallback() {
         ErrorKind::NoAuthenticatingAuthority,
         ErrorKind::CertificateUnknown,
     ] {
-        run_spnego(
+        let (client, _server) = run_spnego(
             client_flags,
             server_flags,
             4,
             |_| Box::new(FailedNetworkClientMock { kind }),
             Some(String::from("kerberos,ntlm")),
+        );
+
+        let SspiContext::Negotiate(negotiate) = client else {
+            panic!("client must be a Negotiate context");
+        };
+        let negotiated_protocol = negotiate.negotiated_protocol();
+
+        assert!(
+            matches!(negotiated_protocol, NegotiatedProtocol::Ntlm(_)),
+            "Client should fallback to NTLM if Kerberos fails with {kind:?} error"
         );
     }
 }

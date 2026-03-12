@@ -407,8 +407,8 @@ impl Negotiate {
     }
 
     /// Fallback to NTLM protocol.
-    //
-    // Returns true if the fallback was successful, false if NTLM is disabled and fallback is not possible.
+    ///
+    /// Returns true if the fallback was successful, false if NTLM is disabled and fallback is not possible.
     fn fallback_to_ntlm(&mut self) -> bool {
         if !self.can_downgrade_ntlm() {
             return false;
