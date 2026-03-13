@@ -1,7 +1,9 @@
 use super::*;
+use crate::Utf16StringExt;
 use crate::auth_identity::AuthIdentityBuffers;
 use crate::ntlm::messages::test::*;
 use crate::ntlm::*;
+use crate::utf16string::ZeroizedUtf16String;
 
 const LOCAL_AUTHENTICATE_MESSAGE: [u8; 312] = [
     0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x03, 0x00, 0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x5a, 0x00, 0x00,
@@ -445,7 +447,7 @@ fn read_authenticate_local_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes_le());
 }
 
 #[test]
@@ -486,7 +488,7 @@ fn read_authenticate_domain_logon_correct_reads_user_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_slice());
+    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().user.as_bytes_le());
 }
 
 #[test]
@@ -505,7 +507,10 @@ fn read_authenticate_domain_logon_correct_reads_domain_name() {
 
     read_authenticate(&mut context, buffer.as_ref()).unwrap();
 
-    assert_eq!(expected.as_ref(), context.identity.as_ref().unwrap().domain.as_slice());
+    assert_eq!(
+        expected.as_ref(),
+        context.identity.as_ref().unwrap().domain.as_bytes_le()
+    );
 }
 
 #[test]
@@ -644,11 +649,14 @@ fn complete_authenticate_succeeds_with_correct_candidate_among_multiple() {
     let wrong_creds = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "WrongPassword"
-            .encode_utf16()
-            .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+        password: ZeroizedUtf16String::from_bytes_le(
+            "WrongPassword"
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap()
+        .into(),
     };
 
     context.identity = Some(TEST_CREDENTIALS.clone());
@@ -685,20 +693,26 @@ fn complete_authenticate_fails_when_no_candidate_matches() {
     let wrong_creds_1 = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "Wrong1"
-            .encode_utf16()
-            .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+        password: ZeroizedUtf16String::from_bytes_le(
+            "Wrong1"
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap()
+        .into(),
     };
     let wrong_creds_2 = AuthIdentityBuffers {
         user: TEST_CREDENTIALS.user.clone(),
         domain: TEST_CREDENTIALS.domain.clone(),
-        password: "Wrong2"
-            .encode_utf16()
-            .flat_map(|c| c.to_le_bytes())
-            .collect::<Vec<u8>>()
-            .into(),
+        password: ZeroizedUtf16String::from_bytes_le(
+            "Wrong2"
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap()
+        .into(),
     };
 
     context.identity = Some(TEST_CREDENTIALS.clone());
