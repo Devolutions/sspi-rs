@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.3.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.5...winscard-v0.3.0)] - 2026-03-13
+
+### <!-- 1 -->Features
+
+- [**breaking**] Introduce UTF-16 strings helpers and refactor auth identity types ([#606](https://github.com/Devolutions/sspi-rs/issues/606)) ([1bfee5e545](https://github.com/Devolutions/sspi-rs/commit/1bfee5e545c4a97ae631fe734b3bcf45b4b486f9)) 
+
+
+
 ## [[0.2.5](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.2.4...winscard-v0.2.5)] - 2025-12-11
 
 ### <!-- 4 -->Bug Fixes
