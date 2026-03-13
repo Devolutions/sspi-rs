@@ -37,7 +37,7 @@ whoami.workspace = true
 dpapi-core = { workspace = true, features = ["alloc"] }
 dpapi-pdu.workspace = true
 dpapi-transport.workspace = true
-sspi = { path = "../..", version = "0.18" } # public
+sspi = { path = "../..", version = "0.19" } # public
 
 kbkdf = "0.0.1"
 elliptic-curve = { version = "=0.14.0-rc.19", features = ["sec1", "std"] }

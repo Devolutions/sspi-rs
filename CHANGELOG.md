@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.19.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.9...sspi-v0.19.0)] - 2026-03-13
+
+### <!-- 1 -->Features
+
+- [**breaking**] Introduce UTF-16 strings helpers and refactor auth identity types ([#606](https://github.com/Devolutions/sspi-rs/issues/606)) ([1bfee5e545](https://github.com/Devolutions/sspi-rs/commit/1bfee5e545c4a97ae631fe734b3bcf45b4b486f9)) 
+
 ## [[0.18.9](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.8...sspi-v0.18.9)] - 2026-03-06
 
 ### <!-- 1 -->Features
