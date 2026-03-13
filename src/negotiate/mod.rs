@@ -187,6 +187,11 @@ impl Negotiate {
         self.protocol.protocol_name()
     }
 
+    #[cfg(feature = "__test-data")]
+    pub fn first_krb_token(&self) -> Option<&[u8]> {
+        self.first_kdc_token.as_deref()
+    }
+
     fn set_auth_identity(&mut self) -> Result<()> {
         let NegotiateMode::Server(auth_data) = &self.mode else {
             return Err(Error::new(

@@ -1,4 +1,4 @@
-#![cfg(feature = "network_client")] // The network_client feature is required for the client_server tests.
+#![cfg(all(feature = "network_client", feature = "__test-data"))] // The network_client feature is required for the client_server tests.
 
 mod credssp;
 mod kerberos;
