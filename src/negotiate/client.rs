@@ -188,7 +188,8 @@ pub(crate) async fn initialize_security_context<'a>(
 
             if let Some(selected_mech) = supported_mech.0 {
                 let selected_mech = &selected_mech.0;
-                debug!("The remote server has selected {selected_mech:?} mechanism id.");
+                let mech_type: String = (&selected_mech.0).into();
+                debug!("The remote server has selected {mech_type} mechanism id.");
 
                 negotiate.negotiate_protocol_by_mech_type(selected_mech)?;
             }
@@ -355,6 +356,10 @@ fn prepare_final_neg_token(
 ///
 /// Returns the Kerberos token on success, or an error if the authentication fails.
 /// The caller should handle the error kind and specially to fallback to NTLM in some cases (like `ErrorKind::TimeSkew`).
+///
+/// The function will empty the output [BufferType::Token] buffer in the builder
+/// and return the Kerberos token as a plain `Vec<u8>` buffer.
+/// So, the caller should not expect the `builder.output` buffer to contain anything.
 #[instrument(ret, skip_all)]
 async fn try_kerberos_optimistic<'a>(
     kerberos: &'a mut Kerberos,
