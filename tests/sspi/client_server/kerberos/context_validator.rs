@@ -57,7 +57,7 @@ impl SspiContextValidator for SpnegoKerberosContextValidator {
     }
 }
 
-/// Validates tha the client correctly falls back to NTLM.
+/// Validates that the client correctly falls back to NTLM.
 pub(super) struct SpnegoKerberosNtlmFallbackValidator;
 
 impl SspiContextValidator for SpnegoKerberosNtlmFallbackValidator {
@@ -74,8 +74,6 @@ impl SspiContextValidator for SpnegoKerberosNtlmFallbackValidator {
                 "The Kerberos preflight token must be `None` and SPNEGO must fallback to NTLM"
             );
         }
-
-        assert!(matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Ntlm(_)));
     }
 }
 

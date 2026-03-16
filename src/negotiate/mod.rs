@@ -111,7 +111,7 @@ pub struct Negotiate {
     /// On the first `initialize_security_context` call we call the Kerberos `initialize_security_context` to get the initial token.
     /// This is an advanced mechanism for protocol negotiation. For example, if KDC does not work properly or time skew is too big,
     /// then we fallback to NTLM and continue the NLA.
-    /// But if the first token is generated successfully (e.g. Kerberos works properly), then we save this token and reuse on
+    /// But if the first token is generated successfully (e.g. Kerberos works properly), then we save this token and reuse it on
     /// the second `initialize_security_context` call.
     first_kdc_token: Option<Vec<u8>>,
 }
@@ -271,7 +271,7 @@ impl Negotiate {
                 ));
             }
 
-            // We disable Kerberos completely when the target server has selected NTLm.
+            // We disable Kerberos completely when the target server has selected NTLM.
             self.package_list.kerberos = false;
 
             if self.protocol_name() != ntlm::PKG_NAME {
