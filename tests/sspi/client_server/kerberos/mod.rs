@@ -16,8 +16,8 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
-    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
-    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
+    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
+    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
     SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
@@ -626,11 +626,7 @@ fn spnego_kerberos_ntlm_fallback() {
         | ServerRequestFlags::CONFIDENTIALITY;
     let package_list = Some(String::from("kerberos,ntlm"));
 
-    for kind in [
-        ErrorKind::TimeSkew,
-        ErrorKind::NoAuthenticatingAuthority,
-        ErrorKind::CertificateUnknown,
-    ] {
+    for kind in sspi::FALLBACK_ERROR_KINDS {
         let (client, _server) = run_spnego(
             client_flags,
             server_flags,

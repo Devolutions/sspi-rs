@@ -48,6 +48,6 @@ pub(crate) struct FailedNetworkClientMock {
 
 impl NetworkClient for FailedNetworkClientMock {
     fn send(&self, _request: &NetworkRequest) -> Result<Vec<u8>> {
-        Err(sspi::Error::new(self.kind, "error from mock network client".to_owned()))
+        Err(sspi::Error::new(self.kind, "error from mock network client"))
     }
 }

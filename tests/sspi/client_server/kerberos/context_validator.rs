@@ -57,6 +57,7 @@ impl SspiContextValidator for SpnegoKerberosContextValidator {
     }
 }
 
+/// Validates tha the client correctly falls back to NTLM.
 pub(super) struct SpnegoKerberosNtlmFallbackValidator;
 
 impl SspiContextValidator for SpnegoKerberosNtlmFallbackValidator {
@@ -67,21 +68,18 @@ impl SspiContextValidator for SpnegoKerberosNtlmFallbackValidator {
 
         assert!(matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Ntlm(_)));
 
-        match step {
-            0 => {
-                assert!(
-                    negotiate.first_krb_token().is_none(),
-                    "The Kerberos preflight token must be `None` when KDC is not available, and SPNEGO must fallback to NTLM"
-                );
-            }
-            1 => {
-                assert!(negotiate.first_krb_token().is_none(),);
-            }
-            _ => {}
+        if step == 0 {
+            assert!(
+                negotiate.first_krb_token().is_none(),
+                "The Kerberos preflight token must be `None` and SPNEGO must fallback to NTLM"
+            );
         }
+
+        assert!(matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Ntlm(_)));
     }
 }
 
+/// Validates that the client correctly falls back to NTLM when the server selected NTLM in SPNEGO instead of Kerberos.
 pub(super) struct SpnegoServerNtlmFallbackValidator {
     pub u2u: bool,
 }
@@ -113,10 +111,10 @@ impl SspiContextValidator for SpnegoServerNtlmFallbackValidator {
             }
             1 => {
                 if self.u2u {
-                    assert!(negotiate.first_krb_token().is_none(),);
+                    assert!(negotiate.first_krb_token().is_none());
                 } else {
-                    // The preflight Kerberos token was not reused because the server fallback to NTLM. 
-                    assert!(negotiate.first_krb_token().is_some(),);
+                    // The preflight Kerberos token was not reused because the server fallback to NTLM.
+                    assert!(negotiate.first_krb_token().is_some());
                 }
 
                 assert!(matches!(negotiate.negotiated_protocol(), NegotiatedProtocol::Ntlm(_)));
