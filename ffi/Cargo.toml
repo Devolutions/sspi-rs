@@ -46,7 +46,7 @@ tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time",
 
 libc = "0.2"
 sspi = { path = "..", default-features = false, features = ["network_client"] }
-cryptoki = { version = "0.10", optional = true }
+cryptoki = { version = "0.12", optional = true }
 widestring = "1.2"
 
 [target.'cfg(windows)'.dependencies]
