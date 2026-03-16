@@ -19,9 +19,9 @@ use crate::{
 /// We fallback to NTLM in following cases:
 /// - [ErrorKind::TimeSkew]: The time skew on KDC and client machines is too big.
 /// - [ErrorKind::NoAuthenticatingAuthority]: The Kerberos returns this error type when there is a problem with network client.
+///   For example, the network client cannot connect to the KDC, or the KDC proxy returns an error.
 ///   Also, the `KDC_ERR_WRONG_REALM` Kerberos error code is mapped to this error type, so if the client is misconfigured
 ///   and tries to get a TGT for a wrong realm, we will fallback to NTLM as well.
-///   For example, the network client cannot connect to the KDC, or the KDC proxy returns an error.
 /// - [ErrorKind::CertificateUnknown]: The KDC proxy certificate is invalid.
 /// - [ErrorKind::UnknownCredentials]: The Kerberos client returns this error kind when KDC replies with `KDC_ERR_S_PRINCIPAL_UNKNOWN` error code.
 pub(crate) const NTLM_FALLBACK_ERROR_KINDS: [ErrorKind; 4] = [
