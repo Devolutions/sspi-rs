@@ -361,7 +361,7 @@ fn prepare_final_neg_token(
 /// Kerberos authentication (which performs AS and TGS exchanges).
 ///
 /// Returns the Kerberos token on success, or an error if the authentication fails.
-/// The caller should handle the error kind and specially to fallback to NTLM in some cases (like `ErrorKind::TimeSkew`).
+/// The caller should handle the error kind specially to fallback to NTLM in some cases (like `ErrorKind::TimeSkew`).
 ///
 /// The function will empty the output [BufferType::Token] buffer in the builder
 /// and return the Kerberos token as a plain `Vec<u8>` buffer.
