@@ -48,8 +48,11 @@ pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<Mech
 pub(super) fn generate_neg_token_init(
     sname: Option<&[&str]>,
     mech_list: MechTypeList,
+    first_krb_token: Option<Vec<u8>>,
 ) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let mech_token = if let Some(sname) = sname {
+    let mech_token = if let Some(token) = first_krb_token {
+        Some(ExplicitContextTag2::from(OctetStringAsn1::from(token)))
+    } else if let Some(sname) = sname {
         let sname = sname
             .iter()
             .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))

@@ -106,14 +106,10 @@ pub struct Negotiate {
     client_computer_name: String,
     mode: NegotiateMode,
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
-    mech_types: Vec<u8>,
+    ///
+    /// `mechListMIC` token verification is optional. If this field is `None` then no verification will be performed.
+    mech_types: Option<Vec<u8>>,
     mic_verified: bool,
-    /// On the first `initialize_security_context` call we call the Kerberos `initialize_security_context` to get the initial token.
-    /// This is an advanced mechanism for protocol negotiation. For example, if KDC does not work properly or time skew is too big,
-    /// then we fallback to NTLM and continue the NLA.
-    /// But if the first token is generated successfully (e.g. Kerberos works properly), then we save this token and reuse it on
-    /// the second `initialize_security_context` call.
-    first_kdc_token: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -179,17 +175,11 @@ impl Negotiate {
             mode,
             mech_types: Default::default(),
             mic_verified: false,
-            first_kdc_token: None,
         })
     }
 
     fn protocol_name(&self) -> &str {
         self.protocol.protocol_name()
-    }
-
-    #[cfg(feature = "__test-data")]
-    pub fn first_krb_token(&self) -> Option<&[u8]> {
-        self.first_kdc_token.as_deref()
     }
 
     fn set_auth_identity(&mut self) -> Result<()> {
@@ -273,8 +263,6 @@ impl Negotiate {
 
             // We disable Kerberos completely when the target server has selected NTLM.
             self.package_list.kerberos = false;
-            // Clear any cached Kerberos token since Kerberos is now disabled and will not be used.
-            self.first_kdc_token = None;
 
             if self.protocol_name() != ntlm::PKG_NAME {
                 self.protocol =

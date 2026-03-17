@@ -106,8 +106,36 @@ pub(crate) async fn initialize_security_context<'a>(
 
             debug!(?sname);
 
+            let mut result =  match &mut negotiate.protocol {
+                NegotiatedProtocol::Pku2u(pku2u) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                    let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
+
+                    builder.output = mem::take(&mut transformed_builder.output);
+
+                    result
+                }
+                NegotiatedProtocol::Kerberos(kerberos) => {
+                    kerberos.initialize_security_context_impl(yield_point, builder).await?
+                }
+                NegotiatedProtocol::Ntlm(ntlm) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                    let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
+
+                    builder.output = mem::take(&mut transformed_builder.output);
+
+                    result
+                }
+            };
+
             // Try optimistic Kerberos authentication if the negotiated protocol is Kerberos.
-            let first_krb_token = if let NegotiatedProtocol::Kerberos(kerberos) = &mut negotiate.protocol {
+            let first_token = if let NegotiatedProtocol::Kerberos(kerberos) = &mut negotiate.protocol {
                 // We try to call `initialize_security_context` on the Kerberos security package.
                 // If this call does not succeed we fallback to NTLM. But if this call succeeds, we can save the output Kerberos token
                 // and reuse it on the second Negotiate `initialize_security_context` call. Also, we need to take Kerberos U2U into the account.
@@ -117,12 +145,16 @@ pub(crate) async fn initialize_security_context<'a>(
                 // So, we clone the Kerberos context if U2U is used. This way, the Kerberos state will not be in progress on the second `initialize_security_context` call,
                 // and we can process normally. But if the U2U is not used, then we will reuse the token and the Kerberos state.
                 let kerberos = if is_u2u { &mut kerberos.clone() } else { kerberos };
-                match try_kerberos_optimistic(kerberos, yield_point, builder).await {
+                match try_optimistic(kerberos, yield_point, builder).await {
                     Ok(token) => {
                         debug!("Optimistic Kerberos authentication succeeded");
 
-                        // We cannot reuse the token if the U2U is used, because it does not contain a TGT ticket and `enc-tkt-in-skey` is not enabled.
-                        if is_u2u { None } else { Some(token) }
+                        // We cannot use the token if the U2U is used, because it does not contain a TGT ticket and `enc-tkt-in-skey` is not enabled.
+                        if is_u2u {
+                            None
+                        } else {
+                            Some(token)
+                        }
                     }
                     Err(err) if NTLM_FALLBACK_ERROR_KINDS.contains(&err.error_type) => {
                         warn!("Kerberos authentication failed with {err} error, attempting NTLM fallback.");
@@ -144,7 +176,7 @@ pub(crate) async fn initialize_security_context<'a>(
             } else {
                 None
             };
-            negotiate.first_kdc_token = first_krb_token;
+            negotiate.first_kdc_token = None;
 
             let mech_types = generate_mech_type_list(
                 matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
@@ -156,6 +188,7 @@ pub(crate) async fn initialize_security_context<'a>(
             let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
                 sname.as_ref().map(|sname| sname.as_slice()),
                 mech_types,
+                first_krb_token,
             )?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -184,14 +217,6 @@ pub(crate) async fn initialize_security_context<'a>(
                 mech_list_mic,
             } = neg_token_targ.0;
 
-            let neg_result = neg_result.0.map(|neg_result| neg_result.0.0);
-            if neg_result.as_deref() != Some(&ACCEPT_INCOMPLETE) {
-                return Err(Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("unexpected NegResult: {neg_result:?}. expected ACCEPT_INCOMPLETE({ACCEPT_INCOMPLETE:?})"),
-                ));
-            }
-
             if let Some(selected_mech) = supported_mech.0 {
                 let selected_mech = &selected_mech.0;
                 let mech_type: String = (&selected_mech.0).into();
@@ -208,46 +233,31 @@ pub(crate) async fn initialize_security_context<'a>(
                 input_token.buffer.clear();
             }
 
-            let mut result = if matches!(negotiate.protocol, NegotiatedProtocol::Kerberos(_))
-                && let Some(token) = negotiate.first_kdc_token.take()
-            {
-                debug!("Using Kerberos token from the first optimistic Kerberos call.");
+            let mut result =  match &mut negotiate.protocol {
+                NegotiatedProtocol::Pku2u(pku2u) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
-                let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                output_token.buffer = token;
+                    let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
 
-                InitializeSecurityContextResult {
-                    status: SecurityStatus::ContinueNeeded,
-                    flags: ClientResponseFlags::empty(),
-                    expiry: None,
+                    builder.output = mem::take(&mut transformed_builder.output);
+
+                    result
                 }
-            } else {
-                match &mut negotiate.protocol {
-                    NegotiatedProtocol::Pku2u(pku2u) => {
-                        let mut credentials_handle =
-                            negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
-                        let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+                NegotiatedProtocol::Kerberos(kerberos) => {
+                    kerberos.initialize_security_context_impl(yield_point, builder).await?
+                }
+                NegotiatedProtocol::Ntlm(ntlm) => {
+                    let mut credentials_handle =
+                        negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
+                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
 
-                        let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
+                    let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
 
-                        builder.output = mem::take(&mut transformed_builder.output);
+                    builder.output = mem::take(&mut transformed_builder.output);
 
-                        result
-                    }
-                    NegotiatedProtocol::Kerberos(kerberos) => {
-                        kerberos.initialize_security_context_impl(yield_point, builder).await?
-                    }
-                    NegotiatedProtocol::Ntlm(ntlm) => {
-                        let mut credentials_handle =
-                            negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
-                        let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
-
-                        let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
-
-                        builder.output = mem::take(&mut transformed_builder.output);
-
-                        result
-                    }
+                    result
                 }
             };
 
@@ -341,51 +351,18 @@ fn prepare_final_neg_token(
     let neg_token_targ = generate_final_neg_token_targ(
         neg_result,
         response_token,
-        Some(
-            negotiate
-                .protocol
-                .generate_mic_token(&negotiate.mech_types, crate::private::Sealed)?,
-        ),
+        // Some(
+        //     negotiate
+        //         .protocol
+        //         .generate_mic_token(&negotiate.mech_types, crate::private::Sealed)?,
+        // ),
+        None,
     );
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
 
-    output_token.buffer = encoded_final_neg_token_targ;
+    // output_token.buffer = encoded_final_neg_token_targ;
+    output_token.buffer = Vec::new();
 
     Ok(())
-}
-
-/// Attempts optimistic Kerberos authentication.
-///
-/// This function calls Kerberos's `initialize_security_context_impl` to generate an initial
-/// Kerberos authentication (which performs AS and TGS exchanges).
-///
-/// Returns the Kerberos token on success, or an error if the authentication fails.
-/// The caller should handle the error kind specially to fallback to NTLM in some cases (like `ErrorKind::TimeSkew`).
-///
-/// The function will empty the output [BufferType::Token] buffer in the builder
-/// and return the Kerberos token as a plain `Vec<u8>` buffer.
-/// So, the caller should not expect the `builder.output` buffer to contain anything.
-#[instrument(ret, skip_all)]
-async fn try_kerberos_optimistic<'a>(
-    kerberos: &'a mut Kerberos,
-    yield_point: &mut YieldPointLocal,
-    builder: &'a mut crate::builders::FilledInitializeSecurityContext<
-        '_,
-        '_,
-        <Negotiate as SspiImpl>::CredentialsHandle,
-    >,
-) -> Result<Vec<u8>> {
-    let result = kerberos.initialize_security_context_impl(yield_point, builder).await?;
-
-    if result.status != SecurityStatus::ContinueNeeded && result.status != SecurityStatus::Ok {
-        return Err(Error::new(
-            ErrorKind::InternalError,
-            format!("unexpected Kerberos status: {:?}", result.status),
-        ));
-    }
-
-    let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-
-    Ok(mem::take(&mut output_token.buffer))
 }
