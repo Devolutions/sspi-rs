@@ -273,6 +273,8 @@ impl Negotiate {
 
             // We disable Kerberos completely when the target server has selected NTLM.
             self.package_list.kerberos = false;
+            // Clear any cached Kerberos token since Kerberos is now disabled and will not be used.
+            self.first_kdc_token = None;
 
             if self.protocol_name() != ntlm::PKG_NAME {
                 self.protocol =
