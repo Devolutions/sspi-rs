@@ -378,7 +378,7 @@ async fn try_kerberos_optimistic<'a>(
 ) -> Result<Vec<u8>> {
     let result = kerberos.initialize_security_context_impl(yield_point, builder).await?;
 
-    if result.status != SecurityStatus::ContinueNeeded {
+    if result.status != SecurityStatus::ContinueNeeded && result.status != SecurityStatus::Ok {
         return Err(Error::new(
             ErrorKind::InternalError,
             format!("unexpected Kerberos status: {:?}", result.status),
