@@ -5,6 +5,7 @@ mod generators;
 pub(crate) mod server;
 
 use std::fmt::Debug;
+use std::mem;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 
@@ -12,6 +13,7 @@ pub use config::{NegotiateConfig, ProtocolConfig};
 use picky::oids;
 use picky_krb::gss_api::MechType;
 
+use crate::builders::FilledInitializeSecurityContext;
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
@@ -22,9 +24,9 @@ use crate::ntlm::NtlmConfig;
 use crate::utils::is_azure_ad_domain;
 use crate::{
     AcquireCredentialsHandleResult, AuthIdentity, CertTrustStatus, ContextNames, ContextSizes, CredentialUse,
-    Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, Ntlm,
-    PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, builders, kerberos, ntlm, pku2u,
+    Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Kerberos,
+    KerberosConfig, Ntlm, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer,
+    SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, builders, kerberos, ntlm, pku2u,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -73,9 +75,42 @@ impl NegotiatedProtocol {
     pub fn is_kerberos(&self) -> bool {
         matches!(self, NegotiatedProtocol::Kerberos(_))
     }
+
+    async fn initialize_security_context<'a>(
+        &'a mut self,
+        auth_identity: Option<&CredentialsBuffers>,
+        yield_point: &mut YieldPointLocal,
+        builder: &'a mut FilledInitializeSecurityContext<'_, '_, <Negotiate as SspiImpl>::CredentialsHandle>,
+    ) -> Result<InitializeSecurityContextResult> {
+        match self {
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut credentials_handle = auth_identity.and_then(|c| c.to_auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
+
+                builder.output = mem::take(&mut transformed_builder.output);
+
+                Ok(result)
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                kerberos.initialize_security_context_impl(yield_point, builder).await
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut credentials_handle = auth_identity.and_then(|c| c.to_auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
+
+                builder.output = mem::take(&mut transformed_builder.output);
+
+                Ok(result)
+            }
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum NegotiateState {
     #[default]
     Initial,
@@ -106,10 +141,14 @@ pub struct Negotiate {
     client_computer_name: String,
     mode: NegotiateMode,
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
-    ///
-    /// `mechListMIC` token verification is optional. If this field is `None` then no verification will be performed.
-    mech_types: Option<Vec<u8>>,
+    mech_types: Vec<u8>,
     mic_verified: bool,
+    /// Indicates whether `mechLitsMIC` token verification is needed or not.
+    ///
+    /// According to [RFC 4178: 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5), the `mechListMIC` is optional:
+    /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
+    /// > then the MIC token exchange is OPTIONAL.
+    mic_needed: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -175,6 +214,7 @@ impl Negotiate {
             mode,
             mech_types: Default::default(),
             mic_verified: false,
+            mic_needed: true,
         })
     }
 
@@ -248,6 +288,16 @@ impl Negotiate {
                     kdc_url: None,
                 })?;
                 self.protocol = NegotiatedProtocol::Kerberos(kerberos);
+
+                // When the server changes the protocol from the most preferred for the client to
+                // any other mechanism type, then `mechListMIC` exchange is required.
+                //
+                // [RFC 4178 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5):
+                // > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
+                // > then the MIC token exchange is OPTIONAL.
+                // > In all other cases, MIC tokens MUST be exchanged after the mechanism context is fully established.
+                self.mic_needed = true;
+                self.mic_verified = false;
             }
 
             return Ok(());
@@ -267,6 +317,16 @@ impl Negotiate {
             if self.protocol_name() != ntlm::PKG_NAME {
                 self.protocol =
                     NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
+
+                // When the server changes the protocol from the most preferred for the client to
+                // any other mechanism type, then `mechListMIC` exchange is required.
+                //
+                // [RFC 4178 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5):
+                // > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
+                // > then the MIC token exchange is OPTIONAL.
+                // > In all other cases, MIC tokens MUST be exchanged after the mechanism context is fully established.
+                self.mic_needed = true;
+                self.mic_verified = false;
             }
 
             return Ok(());
@@ -448,8 +508,8 @@ impl<'a> Negotiate {
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &'a mut crate::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::InitializeSecurityContextResult> {
+        builder: &'a mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<InitializeSecurityContextResult> {
         client::initialize_security_context(self, yield_point, builder).await
     }
 }
@@ -698,7 +758,7 @@ impl SspiImpl for Negotiate {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,

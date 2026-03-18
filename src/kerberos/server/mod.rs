@@ -108,6 +108,9 @@ pub async fn accept_security_context(
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
     let status = match server.state {
+        KerberosState::TgtExchange => {
+            todo!()
+        }
         KerberosState::Preauthentication => {
             let ap_req = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                 picky_asn1_der::from_bytes::<ApReq>(&input_token.buffer)?
