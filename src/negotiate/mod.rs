@@ -13,7 +13,7 @@ pub use config::{NegotiateConfig, ProtocolConfig};
 use picky::oids;
 use picky_krb::gss_api::MechType;
 
-use crate::builders::FilledInitializeSecurityContext;
+use crate::builders::{EmptyAcceptSecurityContext, FilledAcceptSecurityContext, FilledInitializeSecurityContext};
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
@@ -23,10 +23,11 @@ use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 use crate::{
-    AcquireCredentialsHandleResult, AuthIdentity, CertTrustStatus, ContextNames, ContextSizes, CredentialUse,
-    Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, InitializeSecurityContextResult, Kerberos,
-    KerberosConfig, Ntlm, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer,
-    SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, builders, kerberos, ntlm, pku2u,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, CertTrustStatus,
+    ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo,
+    Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
+    builders, kerberos, ntlm, pku2u,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -107,6 +108,60 @@ impl NegotiatedProtocol {
                 Ok(result)
             }
         }
+    }
+
+    async fn accept_security_context(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: &mut FilledAcceptSecurityContext<'_, <Negotiate as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        let input = builder
+            .input
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
+
+        let mut input_tokens = input.to_vec();
+        let mut output_tokens = builder.output.to_vec();
+
+        let mut creds_handle = builder.credentials_handle.as_ref().and_then(|creds| (*creds).clone());
+        let result = match self {
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
+                let new_builder: FilledAcceptSecurityContext<'_, Option<crate::AuthIdentityBuffers>> =
+                    EmptyAcceptSecurityContext::new()
+                        .with_context_requirements(builder.context_requirements)
+                        .with_target_data_representation(builder.target_data_representation)
+                        .with_input(&mut input_tokens)
+                        .with_output(&mut output_tokens)
+                        .with_credentials_handle(&mut creds_handle);
+                pku2u.accept_security_context_impl(yield_point, new_builder).await?
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                let new_builder = EmptyAcceptSecurityContext::new()
+                    .with_context_requirements(builder.context_requirements)
+                    .with_target_data_representation(builder.target_data_representation)
+                    .with_input(&mut input_tokens)
+                    .with_output(&mut output_tokens)
+                    .with_credentials_handle(&mut creds_handle);
+                kerberos.accept_security_context_impl(yield_point, new_builder).await?
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
+                let new_builder = EmptyAcceptSecurityContext::new()
+                    .with_credentials_handle(&mut creds_handle)
+                    .with_context_requirements(builder.context_requirements)
+                    .with_target_data_representation(builder.target_data_representation)
+                    .with_input(&mut input_tokens)
+                    .with_output(&mut output_tokens);
+                ntlm.accept_security_context_impl(new_builder)?
+            }
+        };
+
+        let output_token = SecurityBuffer::find_buffer_mut(&mut output_tokens, BufferType::Token)?;
+        let ot = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+        ot.buffer = mem::take(&mut output_token.buffer);
+
+        Ok(result)
     }
 }
 
@@ -502,8 +557,8 @@ impl<'a> Negotiate {
     pub(crate) async fn accept_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: crate::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
+        builder: FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
         server::accept_security_context(self, yield_point, builder).await
     }
 
@@ -751,7 +806,7 @@ impl SspiImpl for Negotiate {
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
-        builder: builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<GeneratorAcceptSecurityContext<'a>> {
         Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
             server::accept_security_context(self, &mut yield_point, builder).await

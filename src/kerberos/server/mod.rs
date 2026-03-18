@@ -9,11 +9,11 @@ use cache::AuthenticatorCacheRecord;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
-use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
-use picky_krb::messages::{ApRep, ApReq};
+use picky_krb::messages::{ApRep, ApReq, TgtReq};
 use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
 use time::OffsetDateTime;
@@ -27,7 +27,9 @@ use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
 use crate::kerberos::client::extractors::extract_seq_number_from_ap_rep;
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
+use crate::kerberos::server::as_exchange::request_tgt;
 use crate::kerberos::server::extractors::client_upn;
+use crate::kerberos::server::generators::generate_tgt_rep;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
     Secret, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
@@ -98,7 +100,7 @@ impl ServerProperties {
 /// The user should call this function until it returns `SecurityStatus::Ok`.
 pub async fn accept_security_context(
     server: &mut Kerberos,
-    _yield_point: &mut YieldPointLocal,
+    yield_point: &mut YieldPointLocal,
     builder: FilledAcceptSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<AcceptSecurityContextResult> {
     let input = builder
@@ -107,10 +109,68 @@ pub async fn accept_security_context(
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-    let status = match server.state {
-        KerberosState::TgtExchange => {
-            todo!()
+    if server.state == KerberosState::TgtExchange {
+        if let Ok(tgt_req) = decode_krb_message::<TgtReq>(&input_token.buffer, TGT_REQ_TOKEN_ID) {
+            // The first token is TGT_REQ. It means that the client wants to perform Kerberos U2U.
+
+            if !builder
+                .context_requirements
+                .contains(ServerRequestFlags::USE_SESSION_KEY)
+            {
+                warn!(
+                    "KRB5 U2U has been negotiated (requested by the client) but the USE_SESSION_KEY flag is not set."
+                );
+            }
+
+            server.krb5_user_to_user = true;
+
+            let credentials = server
+                .server
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::IncompleteCredentials, "Kerberos server configuration not present"))?
+                .user
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::IncompleteCredentials, "KRB5 U2U has been negotiated (requested by the client) but the user credentials are not preset in Kerberos server configuration"))?
+                .clone();
+
+            let tgt_rep = generate_tgt_rep(request_tgt(server, &credentials, &tgt_req, yield_point).await?);
+
+            let mech_id = if server.krb5_user_to_user {
+                oids::krb5_user_to_user()
+            } else {
+                oids::krb5()
+            };
+
+            let encoded_tgt_rep = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+                picky_asn1_der::to_vec(&tgt_rep)?
+            } else {
+                generate_krb_message(mech_id, TGT_REP_TOKEN_ID, tgt_rep)?
+            };
+
+            let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+            output_token.buffer = encoded_tgt_rep;
+
+            server.state = KerberosState::Preauthentication;
+
+            return Ok(AcceptSecurityContextResult {
+                status: SecurityStatus::ContinueNeeded,
+                flags: ServerResponseFlags::empty(),
+                expiry: None,
+            });
+        } else if let Ok(_ap_req) = decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID) {
+            // The client may send ApReq instead of TgtReq in the first message.
+            // It means that the client wants to perform regular Kerberos without U2U.
+            // In that case, we just move Kerberos state to the next one and process further.
+            server.state = KerberosState::Preauthentication;
+        } else {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "invalid Kerberos token: expected TgtReq or ApReq",
+            ));
         }
+    }
+
+    let status = match server.state {
         KerberosState::Preauthentication => {
             let ap_req = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                 picky_asn1_der::from_bytes::<ApReq>(&input_token.buffer)?
@@ -356,7 +416,7 @@ pub async fn accept_security_context(
 
             SecurityStatus::Ok
         }
-        KerberosState::Final => {
+        KerberosState::Final | KerberosState::TgtExchange => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", server.state),

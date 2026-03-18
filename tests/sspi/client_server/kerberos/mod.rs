@@ -441,7 +441,7 @@ fn spnego_kerberos_u2u() {
         server_flags,
         &mut network_client,
         3,
-        SpnegoKerberosContextValidator { u2u: true },
+        SpnegoKerberosContextValidator,
     );
 }
 
@@ -567,7 +567,7 @@ fn spnego_kerberos() {
         |kdc| Box::new(NetworkClientMock { kdc }),
         package_list.clone(),
         package_list,
-        SpnegoKerberosContextValidator { u2u: false },
+        SpnegoKerberosContextValidator,
     );
 
     let SspiContext::Negotiate(negotiate) = client else {
@@ -601,7 +601,7 @@ fn spnego_kerberos_dce_style() {
         |kdc| Box::new(NetworkClientMock { kdc }),
         package_list.clone(),
         package_list,
-        SpnegoKerberosContextValidator { u2u: false },
+        SpnegoKerberosContextValidator,
     );
 
     let SspiContext::Negotiate(negotiate) = client else {
@@ -671,7 +671,7 @@ fn spnego_kerberos_server_ntlm_fallback() {
         |kdc| Box::new(NetworkClientMock { kdc }),
         client_package_list,
         server_package_list,
-        SpnegoServerNtlmFallbackValidator { u2u: false },
+        SpnegoServerNtlmFallbackValidator,
     );
 
     let SspiContext::Negotiate(negotiate) = client else {
