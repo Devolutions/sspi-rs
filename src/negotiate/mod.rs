@@ -296,6 +296,8 @@ impl Negotiate {
                 // > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
                 // > then the MIC token exchange is OPTIONAL.
                 // > In all other cases, MIC tokens MUST be exchanged after the mechanism context is fully established.
+                // > ...Note that the MIC token exchange is required if a mechanism other than
+                // > the initiator's first choice is chosen.
                 self.mic_needed = true;
                 self.mic_verified = false;
             }
@@ -317,17 +319,17 @@ impl Negotiate {
             if self.protocol_name() != ntlm::PKG_NAME {
                 self.protocol =
                     NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
-
-                // When the server changes the protocol from the most preferred for the client to
-                // any other mechanism type, then `mechListMIC` exchange is required.
-                //
-                // [RFC 4178 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5):
-                // > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
-                // > then the MIC token exchange is OPTIONAL.
-                // > In all other cases, MIC tokens MUST be exchanged after the mechanism context is fully established.
-                self.mic_needed = true;
-                self.mic_verified = false;
             }
+
+            // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
+            // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC
+            // > in AUTHENTICATE_MESSAGE ([MS-NLMP] section 2.2.1.3), then the mechListMIC field becomes
+            // > mandatory in order for the authentication to succeed.
+            //
+            // We always include NTLM MIC token inside AUTHENTICATE_MESSAGE. So, we need to perform
+            // SPNEGO `mechListMIC` exchange.
+            self.mic_needed = true;
+            self.mic_verified = false;
 
             return Ok(());
         }

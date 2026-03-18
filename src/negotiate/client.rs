@@ -204,8 +204,10 @@ pub(crate) async fn initialize_security_context<'a>(
                 .await?;
 
             if result.status == SecurityStatus::Ok {
-                let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
-                negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                if negotiate.mic_needed {
+                    let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
+                    negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                }
 
                 let neg_result = if negotiate.mic_verified || !negotiate.mic_needed {
                     result.status = SecurityStatus::Ok;
@@ -220,9 +222,13 @@ pub(crate) async fn initialize_security_context<'a>(
                 };
 
                 let server_neg_result = server_neg_result.0.map(|neg_result| neg_result.0.0);
-                if server_neg_result.as_deref() != Some(&ACCEPT_COMPLETE) && negotiate.state == NegotiateState::Ok {
+                debug!(?server_neg_result);
+                debug!(?negotiate.state);
+                if server_neg_result.as_deref() == Some(&ACCEPT_COMPLETE) && negotiate.state == NegotiateState::Ok {
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                     output_token.buffer.clear();
+
+                    return Ok(result);
                 }
 
                 prepare_neg_token(neg_result, negotiate, builder)?;
@@ -308,9 +314,7 @@ fn prepare_neg_token(
     let neg_token_targ = generate_final_neg_token_targ(neg_result, response_token, mic);
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
-
-    // output_token.buffer = encoded_final_neg_token_targ;
-    output_token.buffer = Vec::new();
+    output_token.buffer = encoded_final_neg_token_targ;
 
     Ok(())
 }
