@@ -1,7 +1,7 @@
 use std::fs::OpenOptions;
 
-use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
 
 const DPAPI_LOG_PATH_ENV: &str = "DPAPI_LOG_PATH";
 

@@ -87,6 +87,7 @@ pub(crate) async fn initialize_security_context<'a>(
             if builder
                 .context_requirements
                 .contains(ClientRequestFlags::USE_SESSION_KEY)
+                || builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE)
             {
                 negotiate.mic_needed = true;
                 negotiate.mic_verified = false;

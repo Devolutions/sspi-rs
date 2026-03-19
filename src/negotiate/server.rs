@@ -10,7 +10,7 @@ use crate::negotiate::extractors::{decode_initial_neg_init, negotiate_mech_type}
 use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, Negotiate, NegotiatedProtocol, Result, SecurityBuffer,
-    SecurityStatus, ServerResponseFlags, SspiImpl,
+    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Performs one authentication step.
@@ -120,7 +120,7 @@ pub(crate) async fn accept_security_context(
             } else {
                 false
             };
-            if is_kerberos_u2u {
+            if is_kerberos_u2u || builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                 negotiate.mic_needed = true;
                 negotiate.mic_verified = false;
             }
