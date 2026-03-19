@@ -224,9 +224,6 @@ pub(crate) async fn initialize_security_context<'a>(
 
                 let server_neg_result = server_neg_result.0.map(|neg_result| neg_result.0.0);
 
-                debug!(?server_neg_result);
-                debug!(?negotiate.state);
-
                 if server_neg_result.as_deref() == Some(&ACCEPT_COMPLETE) && negotiate.state == NegotiateState::Ok {
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                     output_token.buffer.clear();

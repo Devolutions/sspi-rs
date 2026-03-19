@@ -32,7 +32,7 @@ use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::utils::{generate_random_symmetric_key, parse_target_name, utf16_bytes_to_utf8_string};
+use crate::utils::{generate_random_symmetric_key, parse_target_name};
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
