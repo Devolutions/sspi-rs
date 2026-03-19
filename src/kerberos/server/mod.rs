@@ -110,7 +110,11 @@ pub async fn accept_security_context(
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
     if server.state == KerberosState::TgtExchange {
-        if let Ok(tgt_req) = decode_krb_message::<TgtReq>(&input_token.buffer, TGT_REQ_TOKEN_ID) {
+        if let Ok(tgt_req) = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+            picky_asn1_der::from_bytes::<TgtReq>(&input_token.buffer).map_err(Error::from)
+        } else {
+            decode_krb_message::<TgtReq>(&input_token.buffer, TGT_REQ_TOKEN_ID)
+        } {
             // The first token is TGT_REQ. It means that the client wants to perform Kerberos U2U.
 
             if !builder
@@ -157,7 +161,11 @@ pub async fn accept_security_context(
                 flags: ServerResponseFlags::empty(),
                 expiry: None,
             });
-        } else if let Ok(_ap_req) = decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID) {
+        } else if let Ok(_ap_req) = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
+            picky_asn1_der::from_bytes::<ApReq>(&input_token.buffer).map_err(Error::from)
+        } else {
+            decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)
+        } {
             // The client may send ApReq instead of TgtReq in the first message.
             // It means that the client wants to perform regular Kerberos without U2U.
             // In that case, we just move Kerberos state to the next one and process further.

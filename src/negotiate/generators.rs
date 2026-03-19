@@ -85,6 +85,7 @@ pub(super) fn generate_final_neg_token_targ(
 }
 
 pub(super) fn generate_neg_token_targ(
+    neg_result: Vec<u8>,
     mech_type: ObjectIdentifier,
     response_token: Option<Vec<u8>>,
 ) -> Result<NegTokenTarg1> {
@@ -92,7 +93,7 @@ pub(super) fn generate_neg_token_targ(
         response_token.map(|response_token| ExplicitContextTag2::from(OctetStringAsn1::from(response_token)));
 
     Ok(NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(neg_result)))),
         supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(mech_type)))),
         response_token: Optional::from(response_token),
         mech_list_mic: Optional::from(None),

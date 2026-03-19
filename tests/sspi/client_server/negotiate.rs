@@ -83,16 +83,18 @@ fn run_spnego_ntlm() {
 
         input_token[0].buffer.clear();
 
-        let builder = server
-            .accept_security_context()
-            .with_credentials_handle(&mut server_credentials_handle)
-            .with_context_requirements(ServerRequestFlags::empty())
-            .with_target_data_representation(DataRepresentation::Native)
-            .with_input(&mut output_token)
-            .with_output(&mut input_token);
-        server.accept_security_context_sync(builder).unwrap();
+        if !output_token[0].buffer.is_empty() {
+            let builder = server
+                .accept_security_context()
+                .with_credentials_handle(&mut server_credentials_handle)
+                .with_context_requirements(ServerRequestFlags::empty())
+                .with_target_data_representation(DataRepresentation::Native)
+                .with_input(&mut output_token)
+                .with_output(&mut input_token);
+            server.accept_security_context_sync(builder).unwrap();
 
-        output_token[0].buffer.clear();
+            output_token[0].buffer.clear();
+        }
 
         if status == SecurityStatus::Ok {
             test_encryption(&mut client, &mut server);

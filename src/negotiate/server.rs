@@ -9,8 +9,8 @@ use crate::negotiate::NegotiateState;
 use crate::negotiate::extractors::{decode_initial_neg_init, negotiate_mech_type};
 use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
 use crate::{
-    AcceptSecurityContextResult, BufferType, Error, ErrorKind, Negotiate, Result, SecurityBuffer, SecurityStatus,
-    ServerResponseFlags, SspiImpl,
+    AcceptSecurityContextResult, BufferType, Error, ErrorKind, Negotiate, NegotiatedProtocol, Result, SecurityBuffer,
+    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Performs one authentication step.
@@ -35,6 +35,8 @@ pub(crate) async fn accept_security_context(
             let (mech_type, mech_index) = negotiate_mech_type(&mech_types, negotiate)?;
             negotiate.mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
+            let mut status = SecurityStatus::ContinueNeeded;
+
             let encoded_neg_token_targ = if mech_index != 0 {
                 // The selected mech type is not the most preferred one by client, so MIC token exchange is required according to RFC 4178.
                 //
@@ -47,34 +49,86 @@ pub(crate) async fn accept_security_context(
                 negotiate.mic_needed = true;
                 negotiate.mic_verified = false;
 
+                negotiate.state = NegotiateState::InProgress;
+
                 // The selected mech type is not the most preferred one by client, so we cannot use the token sent by the client.
-                picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, None)?)?
+                picky_asn1_der::to_vec(&generate_neg_token_targ(ACCEPT_INCOMPLETE.to_vec(), mech_type, None)?)?
             } else {
-                // The selected mech type is the most preferred one by client, so we can use the token sent by the client.
-                let response_token = if let Some(mut mech_token) = mech_token {
+                // The selected mech type is the most preferred one by client.
+                if negotiate.protocol.is_ntlm() {
+                    // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
+                    // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC
+                    // > in AUTHENTICATE_MESSAGE ([MS-NLMP] section 2.2.1.3), then the mechListMIC field becomes
+                    // > mandatory in order for the authentication to succeed.
+                    //
+                    // We always include NTLM MIC token inside AUTHENTICATE_MESSAGE. So, we need to perform
+                    // SPNEGO `mechListMIC` exchange.
+                    negotiate.mic_needed = true;
+                    negotiate.mic_verified = false;
+                } else {
+                    // So, MIC exchange is not needed and we can use the token sent by the client.
+                    negotiate.mic_needed = false;
+                }
+
+                let (response_token, neg_result) = if let Some(mut mech_token) = mech_token {
                     input_token.buffer = mem::take(&mut mech_token);
 
-                    negotiate
+                    let result = negotiate
                         .protocol
                         .accept_security_context(yield_point, &mut builder)
                         .await?;
+                    println!("(initial): accept_security_context result: {result:?}");
+
+                    println!(
+                        "server: MIC needed: {}, MIC verified: {}",
+                        negotiate.mic_needed, negotiate.mic_verified
+                    );
+                    let neg_result =
+                        if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
+                            if !negotiate.mic_needed || (negotiate.mic_needed && negotiate.mic_verified) {
+                                negotiate.state = NegotiateState::Ok;
+                                status = SecurityStatus::Ok;
+
+                                ACCEPT_COMPLETE
+                            } else {
+                                negotiate.state = NegotiateState::VerifyMic;
+
+                                ACCEPT_INCOMPLETE
+                            }
+                        } else {
+                            negotiate.state = NegotiateState::InProgress;
+
+                            ACCEPT_INCOMPLETE
+                        };
 
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                    Some(mem::take(&mut output_token.buffer))
+                    (Some(mem::take(&mut output_token.buffer)), neg_result)
                 } else {
-                    None
+                    (None, ACCEPT_INCOMPLETE)
                 };
 
-                picky_asn1_der::to_vec(&generate_neg_token_targ(mech_type, response_token)?)?
+                picky_asn1_der::to_vec(&generate_neg_token_targ(
+                    neg_result.to_vec(),
+                    mech_type,
+                    response_token,
+                )?)?
             };
+
+            let is_kerberos_u2u = if let NegotiatedProtocol::Kerberos(kerberos) = &negotiate.protocol {
+                kerberos.krb5_user_to_user
+            } else {
+                false
+            };
+            if is_kerberos_u2u {
+                negotiate.mic_needed = true;
+                negotiate.mic_verified = false;
+            }
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_neg_token_targ;
 
-            negotiate.state = NegotiateState::InProgress;
-
-            SecurityStatus::ContinueNeeded
+            status
         }
         NegotiateState::InProgress => {
             let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
@@ -99,21 +153,31 @@ pub(crate) async fn accept_security_context(
                 .await?;
 
             if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
-                negotiate.state = NegotiateState::VerifyMic;
-                result.status = SecurityStatus::ContinueNeeded;
-
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
-                let neg_result = if mech_list_mic.is_some() || !negotiate.mic_needed {
+                if mech_list_mic.is_some() && negotiate.mic_needed {
                     negotiate.set_auth_identity()?;
-
                     negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+
+                    negotiate.mic_verified = true;
+                }
+
+                println!(
+                    "server: MIC needed: {}, MIC verified: {}",
+                    negotiate.mic_needed, negotiate.mic_verified
+                );
+                let neg_result = if !negotiate.mic_needed || (negotiate.mic_needed && negotiate.mic_verified) {
+                    negotiate.state = NegotiateState::Ok;
+                    result.status = SecurityStatus::Ok;
 
                     ACCEPT_COMPLETE.to_vec()
                 } else {
+                    negotiate.state = NegotiateState::VerifyMic;
+                    result.status = SecurityStatus::ContinueNeeded;
+
                     ACCEPT_INCOMPLETE.to_vec()
                 };
 
-                prepare_final_neg_token(neg_result, negotiate, &mut builder)?;
+                prepare_neg_token(neg_result, negotiate, &mut builder)?;
             } else {
                 // Wrap in a NegToken.
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -150,10 +214,10 @@ pub(crate) async fn accept_security_context(
 
             SecurityStatus::Ok
         }
-        _ => {
+        NegotiateState::Ok => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
-                "initialize_security_context called after negotiation completed",
+                "accept_security_context called after negotiation completed",
             ));
         }
     };
@@ -165,7 +229,7 @@ pub(crate) async fn accept_security_context(
     })
 }
 
-fn prepare_final_neg_token(
+fn prepare_neg_token(
     neg_result: Vec<u8>,
     negotiate: &mut Negotiate,
     builder: &mut FilledAcceptSecurityContext<'_, <Negotiate as SspiImpl>::CredentialsHandle>,

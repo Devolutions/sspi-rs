@@ -218,6 +218,7 @@ fn run_kerberos(
     let mut client_in_token = Vec::new();
 
     for step in 0..steps {
+        println!("----------------------");
         let (client_status, token) = initialize_security_context(
             client,
             client_credentials_handle,
@@ -227,9 +228,16 @@ fn run_kerberos(
             network_client,
         );
 
+        println!("client status: {client_status:?}, token: {token:?}");
+
         context_validator.validate_client(step, client);
 
         if client_status == SecurityStatus::Ok {
+            println!("token when client is finished: {token:?}");
+            if !token.is_empty() {
+                accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
+            }
+
             test_encryption(client, server);
             test_stream_buffer_encryption(client, server);
             test_rpc_request_encryption(client, server);
@@ -239,6 +247,8 @@ fn run_kerberos(
         let (_, token) =
             accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
         client_in_token = token;
+
+        println!("client {client_in_token:?}")
     }
 
     panic!("Kerberos authentication should not exceed {steps} steps");
@@ -547,7 +557,7 @@ fn run_spnego(
 }
 
 #[test]
-fn spnego_kerberos() {
+fn spnego_kerberos_1() {
     let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::SEQUENCE_DETECT

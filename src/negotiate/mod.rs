@@ -77,6 +77,10 @@ impl NegotiatedProtocol {
         matches!(self, NegotiatedProtocol::Kerberos(_))
     }
 
+    pub fn is_ntlm(&self) -> bool {
+        matches!(self, NegotiatedProtocol::Ntlm(_))
+    }
+
     async fn initialize_security_context<'a>(
         &'a mut self,
         auth_identity: Option<&CredentialsBuffers>,
