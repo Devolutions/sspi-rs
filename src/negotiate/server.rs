@@ -77,12 +77,7 @@ pub(crate) async fn accept_security_context(
                         .protocol
                         .accept_security_context(yield_point, &mut builder)
                         .await?;
-                    println!("(initial): accept_security_context result: {result:?}");
 
-                    println!(
-                        "server: MIC needed: {}, MIC verified: {}",
-                        negotiate.mic_needed, negotiate.mic_verified
-                    );
                     let neg_result =
                         if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
                             if !negotiate.mic_needed || negotiate.mic_verified {
@@ -161,10 +156,6 @@ pub(crate) async fn accept_security_context(
                     negotiate.mic_verified = true;
                 }
 
-                println!(
-                    "server: MIC needed: {}, MIC verified: {}",
-                    negotiate.mic_needed, negotiate.mic_verified
-                );
                 let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
                     negotiate.state = NegotiateState::Ok;
                     result.status = SecurityStatus::Ok;

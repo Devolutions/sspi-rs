@@ -204,12 +204,6 @@ pub(crate) async fn initialize_security_context<'a>(
                 .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
                 .await?;
 
-            println!("initialize_security_context result: {result:?}");
-            println!(
-                "client: MIC needed: {}, MIC verified: {}",
-                negotiate.mic_needed, negotiate.mic_verified
-            );
-
             if result.status == SecurityStatus::Ok {
                 if negotiate.mic_needed {
                     let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
@@ -237,8 +231,6 @@ pub(crate) async fn initialize_security_context<'a>(
                     let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                     output_token.buffer.clear();
 
-                    println!("{:?}", negotiate.state);
-
                     return Ok(result);
                 }
 
@@ -255,7 +247,6 @@ pub(crate) async fn initialize_security_context<'a>(
             Ok(result)
         }
         NegotiateState::VerifyMic => {
-            println!("Verifying MIC token...");
             let input = builder
                 .input
                 .as_mut()
