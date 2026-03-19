@@ -10,7 +10,7 @@ use crate::negotiate::extractors::{decode_initial_neg_init, negotiate_mech_type}
 use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, Negotiate, NegotiatedProtocol, Result, SecurityBuffer,
-    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
+    SecurityStatus, ServerResponseFlags, SspiImpl,
 };
 
 /// Performs one authentication step.
@@ -85,7 +85,7 @@ pub(crate) async fn accept_security_context(
                     );
                     let neg_result =
                         if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
-                            if !negotiate.mic_needed || (negotiate.mic_needed && negotiate.mic_verified) {
+                            if !negotiate.mic_needed || negotiate.mic_verified {
                                 negotiate.state = NegotiateState::Ok;
                                 status = SecurityStatus::Ok;
 
@@ -165,7 +165,7 @@ pub(crate) async fn accept_security_context(
                     "server: MIC needed: {}, MIC verified: {}",
                     negotiate.mic_needed, negotiate.mic_verified
                 );
-                let neg_result = if !negotiate.mic_needed || (negotiate.mic_needed && negotiate.mic_verified) {
+                let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
                     negotiate.state = NegotiateState::Ok;
                     result.status = SecurityStatus::Ok;
 

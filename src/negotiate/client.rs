@@ -215,7 +215,7 @@ pub(crate) async fn initialize_security_context<'a>(
                     negotiate.verify_mic_token(mech_list_mic.as_deref())?;
                 }
 
-                let neg_result = if !negotiate.mic_needed || (negotiate.mic_needed && negotiate.mic_verified) {
+                let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
                     result.status = SecurityStatus::Ok;
                     negotiate.state = NegotiateState::Ok;
 
