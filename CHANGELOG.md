@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.19.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.0...sspi-v0.19.1)] - 2026-03-23
+
+### <!-- 3 -->Revert
+
+- Use ring backend for iOS builds to work around aws-lc-sys ioctl bug ([811b6a24b4](https://github.com/Devolutions/sspi-rs/commit/811b6a24b4e6072b9076cc164f38dc48c6a48185)) 
+
+### <!-- 4 -->Bug Fixes
+
+- Improve NTLM fallback ([#627](https://github.com/Devolutions/sspi-rs/issues/627)) ([88bb31796c](https://github.com/Devolutions/sspi-rs/commit/88bb31796c9bfb0d248b6e32eedbd166d8603679)) 
+
+  Improved SPNEGO/Negotiate authentication resilience by introducing
+  an explicit Kerberos-first attempt with a controlled fallback to NTLM for
+  a defined set of Kerberos failure conditions (per the referenced FreeRDP
+  behavior), and updates the Kerberos/SPNEGO token flow to support
+  that behavior reliably.
+
+- Handle ISC_REQ_USE_DCE_STYLE and SECBUFFER_READONLY in EncryptMessage ([#629](https://github.com/Devolutions/sspi-rs/issues/629)) ([93e962be78](https://github.com/Devolutions/sspi-rs/commit/93e962be78d6b43bf41e9e30d4935903786602c7)) 
+
+  Adjusts the NTLM SSPI implementation to better interoperate with RPC/FreeRDP over RD Gateway by (a) treating `ISC_REQ_USE_DCE_STYLE` as implying sealing/signing, and (b) allowing `EncryptMessage` to operate in sign-only mode when all `SECBUFFER_DATA` buffers are marked `SECBUFFER_READONLY`.
+
+### <!-- 7 -->Build
+
+- Use ring backend for iOS builds to work around aws-lc-sys ioctl bug ([#631](https://github.com/Devolutions/sspi-rs/issues/631)) ([8b9bc32001](https://github.com/Devolutions/sspi-rs/commit/8b9bc320015be945414256344eb2cee4b68c28c9)) 
+
+
+
 ## [[0.19.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.9...sspi-v0.19.0)] - 2026-03-13
 
 ### <!-- 1 -->Features
