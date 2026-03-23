@@ -634,7 +634,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             ts_request.pub_key_auth.take().ok_or_else(|| {
                                 Error::new(
                                     ErrorKind::InvalidToken,
-                                    String::from("CredSsp server expected an encrypted public key"),
+                                    String::from("CredSSP server expected an encrypted public key"),
                                 )
                             }),
                             ts_request
