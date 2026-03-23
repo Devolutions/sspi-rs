@@ -22,12 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Adjusts the NTLM SSPI implementation to better interoperate with RPC/FreeRDP over RD Gateway by (a) treating `ISC_REQ_USE_DCE_STYLE` as implying sealing/signing, and (b) allowing `EncryptMessage` to operate in sign-only mode when all `SECBUFFER_DATA` buffers are marked `SECBUFFER_READONLY`.
 
-### <!-- 7 -->Build
-
-- Use ring backend for iOS builds to work around aws-lc-sys ioctl bug ([#631](https://github.com/Devolutions/sspi-rs/issues/631)) ([8b9bc32001](https://github.com/Devolutions/sspi-rs/commit/8b9bc320015be945414256344eb2cee4b68c28c9)) 
-
-
-
 ## [[0.19.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.18.9...sspi-v0.19.0)] - 2026-03-13
 
 ### <!-- 1 -->Features
