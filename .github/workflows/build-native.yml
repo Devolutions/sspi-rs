@@ -181,8 +181,15 @@ jobs:
           # No pregenerated Android bindings are provided for aws-lc-sys at this time.
           # See: https://github.com/aws/aws-lc-rs/tree/main/aws-lc-sys#pregenerated-bindings-availability
           # For simplicity, we’re using the ring crypto backend.
-          if ($DotNetOs -Eq 'android') {
-            $CargoArgs += @('--no-default-features', '--features', 'scard,ring')
+          if ($DotNetOs -Eq ‘android’) {
+            $CargoArgs += @(‘--no-default-features’, ‘--features’, ‘scard,ring’)
+          }
+
+          # aws-lc-sys fails to compile on iOS arm64 with Clang 15.0.7 due to a call to
+          # undeclared ‘ioctl’ in urandom.c (Linux-only code compiled unconditionally).
+          # Use the ring crypto backend until upstream fixes the issue.
+          if ($DotNetOs -Eq ‘ios’) {
+            $CargoArgs += @(‘--no-default-features’, ‘--features’, ‘scard,ring’)
           }
 
           if ($DotNetOs -eq 'linux') {
