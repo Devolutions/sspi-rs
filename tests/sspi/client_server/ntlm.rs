@@ -30,9 +30,15 @@ fn test_readonly_buffers_encryption(client: &mut SspiContext, server: &mut SspiC
     ];
 
     client.encrypt_message(EncryptionFlags::empty(), &mut message).unwrap();
+
+    // Make sure that readonly buffers was not encrypted.
+    assert_eq!(plain_message, message[1].data());
+    assert_eq!(plain_message, message[2].data());
+
     server.decrypt_message(&mut message).unwrap();
 
     assert_eq!(plain_message, message[1].data());
+    assert_eq!(plain_message, message[2].data());
 }
 
 fn run_ntlm(config: NtlmConfig) {
