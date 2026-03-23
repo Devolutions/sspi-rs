@@ -8,10 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [[0.19.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.0...sspi-v0.19.1)] - 2026-03-23
 
-### <!-- 3 -->Revert
-
-- Use ring backend for iOS builds to work around aws-lc-sys ioctl bug ([811b6a24b4](https://github.com/Devolutions/sspi-rs/commit/811b6a24b4e6072b9076cc164f38dc48c6a48185)) 
-
 ### <!-- 4 -->Bug Fixes
 
 - Improve NTLM fallback ([#627](https://github.com/Devolutions/sspi-rs/issues/627)) ([88bb31796c](https://github.com/Devolutions/sspi-rs/commit/88bb31796c9bfb0d248b6e32eedbd166d8603679)) 
