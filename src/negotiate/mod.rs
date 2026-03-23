@@ -202,7 +202,7 @@ pub struct Negotiate {
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
     mech_types: Vec<u8>,
     mic_verified: bool,
-    /// Indicates whether `mechLitsMIC` token verification is needed or not.
+    /// Indicates whether `mechListMIC` token verification is needed or not.
     ///
     /// According to [RFC 4178: 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5), the `mechListMIC` is optional:
     /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
