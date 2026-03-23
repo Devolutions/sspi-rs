@@ -8,7 +8,7 @@ use std::io::Write;
 pub(crate) use as_exchange::as_exchange;
 pub use change_password::change_password;
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE};
+use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::messages::{ApRep, TgsRep};
@@ -27,11 +27,12 @@ use self::generators::{
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
+use crate::kerberos::client::generators::generate_tgt_req;
 use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
-use crate::utils::generate_random_symmetric_key;
+use crate::utils::{generate_random_symmetric_key, parse_target_name};
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
@@ -50,6 +51,47 @@ pub async fn initialize_security_context<'a>(
     >,
 ) -> Result<InitializeSecurityContextResult> {
     trace!(?builder);
+
+    if let KerberosState::TgtExchange = client.state {
+        if builder
+            .context_requirements
+            .contains(ClientRequestFlags::USE_SESSION_KEY)
+        {
+            client.krb5_user_to_user = true;
+
+            let (service_name, service_principal_name) = parse_target_name(builder.target_name.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::NoCredentials,
+                    "Service target name (service principal name) is not provided",
+                )
+            })?)?;
+
+            let tgt_req = generate_tgt_req(&[service_name, service_principal_name])?;
+
+            let encoded_neg_tgt_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+                generate_krb_message(oids::krb5_user_to_user(), TGT_REQ_TOKEN_ID, tgt_req)?
+            } else {
+                // Do not wrap if the `USE_DCE_STYLE` flag is set.
+                // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
+                picky_asn1_der::to_vec(&tgt_req)?
+            };
+
+            let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+            output_token.buffer = encoded_neg_tgt_req;
+
+            client.state = KerberosState::Preauthentication;
+
+            trace!(output_buffers = ?builder.output);
+
+            return Ok(InitializeSecurityContextResult {
+                status: SecurityStatus::ContinueNeeded,
+                flags: ClientResponseFlags::empty(),
+                expiry: None,
+            });
+        } else {
+            client.state = KerberosState::Preauthentication;
+        }
+    }
 
     let status = match client.state {
         KerberosState::Preauthentication => {
@@ -310,14 +352,12 @@ pub async fn initialize_security_context<'a>(
                 context_requirements.into(),
             )?;
 
-            let encoded_ap_req = picky_asn1_der::to_vec(&ap_req)?;
-
             let encoded_neg_ap_req = if !builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
                 generate_krb_message(mech_id, AP_REQ_TOKEN_ID, ap_req)?
             } else {
                 // Do not wrap if the `USE_DCE_STYLE` flag is set.
                 // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/190ab8de-dc42-49cf-bf1b-ea5705b7a087
-                encoded_ap_req
+                picky_asn1_der::to_vec(&ap_req)?
             };
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -380,7 +420,7 @@ pub async fn initialize_security_context<'a>(
             client.state = KerberosState::Final;
             SecurityStatus::Ok
         }
-        KerberosState::Final => {
+        KerberosState::Final | KerberosState::TgtExchange => {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,
                 format!("got wrong Kerberos state: {:?}", client.state),

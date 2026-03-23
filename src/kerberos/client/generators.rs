@@ -20,7 +20,7 @@ use picky_krb::constants::key_usages::{
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REP_MSG_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV,
     NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE,
-    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE,
+    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
@@ -32,7 +32,7 @@ use picky_krb::data_types::{
 use picky_krb::gss_api::{MechType, MechTypeList};
 use picky_krb::messages::{
     ApMessage, ApRep, ApRepInner, ApReq, ApReqInner, AsReq, KdcRep, KdcReq, KdcReqBody, KrbPriv, KrbPrivInner,
-    KrbPrivMessage, TgsReq,
+    KrbPrivMessage, TgsReq, TgtReq,
 };
 use rand::rngs::{StdRng, SysRng};
 use rand::{RngCore, SeedableRng};
@@ -151,6 +151,22 @@ fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
         // and all subdomains (e.g., `example.com` matches `example.com` and `test.example.com`).
         domain == mapping_domain || domain.ends_with(&format!(".{mapping_domain}"))
     }
+}
+
+pub(super) fn generate_tgt_req(sname: &[&str]) -> Result<TgtReq> {
+    let sname = sname
+        .iter()
+        .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(TgtReq {
+        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
+        server_name: ExplicitContextTag2::from(PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(sname)),
+        }),
+    })
 }
 
 /// Parameters for generating pa-datas for [AsReq] message.

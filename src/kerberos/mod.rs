@@ -78,6 +78,7 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum KerberosState {
+    TgtExchange,
     Preauthentication,
     ApExchange,
     Final,
@@ -105,7 +106,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
-            state: KerberosState::Preauthentication,
+            state: KerberosState::TgtExchange,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
@@ -125,7 +126,7 @@ impl Kerberos {
         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
-            state: KerberosState::Preauthentication,
+            state: KerberosState::TgtExchange,
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),

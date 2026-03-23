@@ -8,7 +8,7 @@ mod network_client;
 mod session_token;
 
 use std::fs;
-use std::io::{stdin, stdout, Error, ErrorKind, Read, Result, Write};
+use std::io::{Error, ErrorKind, Read, Result, Write, stdin, stdout};
 
 use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
 use dpapi_native_transport::NativeTransport;

@@ -1,20 +1,16 @@
 use oid::ObjectIdentifier;
 use picky::oids;
-use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
-    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1,
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
     ObjectIdentifierAsn1, OctetStringAsn1, Optional,
 };
 use picky_asn1_der::Asn1RawDer;
-use picky_krb::constants::gss_api::{ACCEPT_INCOMPLETE, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
-use picky_krb::constants::types::{NT_SRV_INST, TGT_REP_MSG_TYPE, TGT_REQ_MSG_TYPE};
-use picky_krb::data_types::{KerberosStringAsn1, PrincipalName, Ticket};
+use picky_krb::constants::gss_api::ACCEPT_INCOMPLETE;
 use picky_krb::gss_api::{
-    ApplicationTag0, GssApiNegInit, KrbMessage, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
+    ApplicationTag0, GssApiNegInit, MechType, MechTypeList, NegTokenInit, NegTokenTarg, NegTokenTarg1,
 };
-use picky_krb::messages::{TgtRep, TgtReq};
 
-use crate::{Error, ErrorKind, KERBEROS_VERSION, Result};
+use crate::{Error, ErrorKind, Result};
 
 /// Generates supported mechanism type list.
 pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<MechTypeList> {
@@ -46,34 +42,10 @@ pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<Mech
 /// The `sname` parameter is optional. If it is present, then the Kerberos U2U is in use, and `TgtReq` will be generated
 /// for the input `sname` and placed in the `mech_token` field.
 pub(super) fn generate_neg_token_init(
-    sname: Option<&[&str]>,
     mech_list: MechTypeList,
+    mech_token: Option<Vec<u8>>,
 ) -> Result<ApplicationTag0<GssApiNegInit>> {
-    let mech_token = if let Some(sname) = sname {
-        let sname = sname
-            .iter()
-            .map(|sname| Ok(KerberosStringAsn1::from(IA5String::from_string(sname.to_string())?)))
-            .collect::<Result<Vec<_>>>()?;
-
-        let krb5_neg_token_init = ApplicationTag0(KrbMessage {
-            krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-            krb5_token_id: TGT_REQ_TOKEN_ID,
-            krb_msg: TgtReq {
-                pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-                msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REQ_MSG_TYPE])),
-                server_name: ExplicitContextTag2::from(PrincipalName {
-                    name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-                    name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(sname)),
-                }),
-            },
-        });
-
-        Some(ExplicitContextTag2::from(OctetStringAsn1::from(
-            picky_asn1_der::to_vec(&krb5_neg_token_init)?,
-        )))
-    } else {
-        None
-    };
+    let mech_token = mech_token.map(|token| ExplicitContextTag2::from(OctetStringAsn1::from(token)));
 
     Ok(ApplicationTag0(GssApiNegInit {
         oid: ObjectIdentifierAsn1::from(oids::spnego()),
@@ -112,30 +84,18 @@ pub(super) fn generate_final_neg_token_targ(
     })
 }
 
-pub(super) fn generate_neg_token_targ(mech_type: ObjectIdentifier, tgt_rep: Option<TgtRep>) -> Result<NegTokenTarg1> {
-    let response_token = tgt_rep
-        .map(|tgt_rep| {
-            Result::Ok(ExplicitContextTag2::from(OctetStringAsn1::from(
-                picky_asn1_der::to_vec(&ApplicationTag0(KrbMessage {
-                    krb5_oid: ObjectIdentifierAsn1::from(oids::krb5_user_to_user()),
-                    krb5_token_id: TGT_REP_TOKEN_ID,
-                    krb_msg: tgt_rep,
-                }))?,
-            )))
-        })
-        .transpose()?;
+pub(super) fn generate_neg_token_targ(
+    neg_result: Vec<u8>,
+    mech_type: ObjectIdentifier,
+    response_token: Option<Vec<u8>>,
+) -> Result<NegTokenTarg1> {
+    let response_token =
+        response_token.map(|response_token| ExplicitContextTag2::from(OctetStringAsn1::from(response_token)));
+
     Ok(NegTokenTarg1::from(NegTokenTarg {
-        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(ACCEPT_INCOMPLETE.to_vec())))),
+        neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(neg_result)))),
         supported_mech: Optional::from(Some(ExplicitContextTag1::from(MechType::from(mech_type)))),
         response_token: Optional::from(response_token),
         mech_list_mic: Optional::from(None),
     }))
-}
-
-pub(super) fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
-    TgtRep {
-        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
-        ticket: ExplicitContextTag2::from(ticket),
-    }
 }

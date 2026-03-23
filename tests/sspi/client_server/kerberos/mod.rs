@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+mod context_validator;
 pub(super) mod kdc;
 pub(super) mod network_client;
 
@@ -16,15 +17,19 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
-    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, SecurityBuffer, SecurityStatus,
-    ServerRequestFlags, Sspi, SspiImpl, Username,
+    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
 
+use crate::client_server::kerberos::context_validator::{
+    EmptySspiContextValidator, SpnegoKerberosContextValidator, SpnegoKerberosNtlmFallbackValidator,
+    SpnegoServerNtlmFallbackValidator, SspiContextValidator,
+};
 use crate::client_server::kerberos::kdc::{
     CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, PasswordCreds, SERVER_COMPUTER_NAME, UserName, Validators,
 };
-use crate::client_server::kerberos::network_client::NetworkClientMock;
+use crate::client_server::kerberos::network_client::{FailedNetworkClientMock, NetworkClientMock};
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
 /// Represents a Kerberos environment:
@@ -208,10 +213,12 @@ fn run_kerberos(
 
     network_client: &mut dyn NetworkClient,
     steps: usize,
+    mut context_validator: impl SspiContextValidator,
 ) {
     let mut client_in_token = Vec::new();
 
-    for _ in 0..steps {
+    for step in 0..steps {
+        println!("----------------------");
         let (client_status, token) = initialize_security_context(
             client,
             client_credentials_handle,
@@ -221,7 +228,16 @@ fn run_kerberos(
             network_client,
         );
 
+        println!("client status: {client_status:?}, token: {token:?}");
+
+        context_validator.validate_client(step, client);
+
         if client_status == SecurityStatus::Ok {
+            println!("token when client is finished: {token:?}");
+            if !token.is_empty() {
+                accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
+            }
+
             test_encryption(client, server);
             test_stream_buffer_encryption(client, server);
             test_rpc_request_encryption(client, server);
@@ -231,6 +247,8 @@ fn run_kerberos(
         let (_, token) =
             accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
         client_in_token = token;
+
+        println!("client {client_in_token:?}")
     }
 
     panic!("Kerberos authentication should not exceed {steps} steps");
@@ -327,6 +345,7 @@ fn kerberos_auth() {
         server_flags,
         &mut network_client,
         2,
+        EmptySspiContextValidator,
     );
 }
 
@@ -355,21 +374,12 @@ fn spnego_kerberos_u2u() {
             as_req: Box::new(|_as_req| {
                 // Nothing to validate in AsReq.
             }),
-            tgs_req: Box::new(|tgs_req| {
-                // Here, we should check that the Kerberos client successfully negotiated Kerberos U2U auth.
-
-                let kdc_options = tgs_req.0.req_body.kdc_options.0.0.as_bytes();
-                // KDC options must have enc-tkt-in-skey enabled.
-                assert_eq!(kdc_options[4], 0x08, "the enc-tkt-in-skey KDC option is not enabled");
-
-                if let Some(tickets) = tgs_req.0.req_body.0.additional_tickets.0.as_ref() {
-                    assert!(
-                        !tickets.0.0.is_empty(),
-                        "TgsReq must have at least one additional ticket: TGT from the application service"
-                    );
-                } else {
-                    panic!("TgsReq must have at least one additional ticket: TGT from the application service");
-                }
+            tgs_req: Box::new(|_tgs_req| {
+                // Nothing to validate in TgsReq.
+                //
+                // Previously, we were able to validate the presence of the additional ticket and enc-tkt-in-skey flag.
+                // But since we use a preflight Kerberos exchange to check if the Kerberos is possible,
+                // we can no longer do that.
             }),
         },
     );
@@ -441,10 +451,19 @@ fn spnego_kerberos_u2u() {
         server_flags,
         &mut network_client,
         3,
+        SpnegoKerberosContextValidator,
     );
 }
 
-fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerRequestFlags, steps: usize) {
+fn run_spnego(
+    client_flags: ClientRequestFlags,
+    server_flags: ServerRequestFlags,
+    steps: usize,
+    get_network_client: impl Fn(KdcMock) -> Box<dyn NetworkClient>,
+    client_package_list: Option<String>,
+    server_package_list: Option<String>,
+    context_validator: impl SspiContextValidator,
+) -> (SspiContext, SspiContext) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -473,18 +492,20 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
             }),
         },
     );
-    let mut network_client = NetworkClientMock { kdc };
+    let mut network_client = get_network_client(kdc);
 
     let client_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
-    let spnego_client = Negotiate::new_client(NegotiateConfig::new(
-        Box::new(client_config.clone()),
-        Some(String::from("kerberos,!ntlm")),
-        CLIENT_COMPUTER_NAME.into(),
-    ))
-    .unwrap();
+    let mut spnego_client = SspiContext::Negotiate(
+        Negotiate::new_client(NegotiateConfig::new(
+            Box::new(client_config.clone()),
+            client_package_list.clone(),
+            CLIENT_COMPUTER_NAME.into(),
+        ))
+        .unwrap(),
+    );
 
     let server_config = KerberosConfig {
         kdc_url: Some(Url::parse(KDC_URL).unwrap()),
@@ -503,35 +524,40 @@ fn run_spnego_kerberos(client_flags: ClientRequestFlags, server_flags: ServerReq
         kerberos_config: server_config,
         server_properties,
     };
-    let spnego_server = Negotiate::new_server(
-        NegotiateConfig::new(
-            Box::new(kerberos_server_config),
-            Some(String::from("kerberos,!ntlm")),
-            SERVER_COMPUTER_NAME.into(),
-        ),
-        vec![identity_1, identity_2],
-    )
-    .unwrap();
+    let mut spnego_server = SspiContext::Negotiate(
+        Negotiate::new_server(
+            NegotiateConfig::new(
+                Box::new(kerberos_server_config),
+                server_package_list.clone(),
+                SERVER_COMPUTER_NAME.into(),
+            ),
+            vec![identity_1, identity_2],
+        )
+        .unwrap(),
+    );
 
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
     let mut client_credentials_handle = Some(credentials.clone());
     let mut server_credentials_handle = Some(credentials);
 
     run_kerberos(
-        &mut SspiContext::Negotiate(spnego_client),
+        &mut spnego_client,
         &mut client_credentials_handle,
         client_flags,
         &target_name,
-        &mut SspiContext::Negotiate(spnego_server),
+        &mut spnego_server,
         &mut server_credentials_handle,
         server_flags,
-        &mut network_client,
+        &mut *network_client,
         steps,
+        context_validator,
     );
+
+    (spnego_client, spnego_server)
 }
 
 #[test]
-fn spnego_kerberos() {
+fn spnego_kerberos_1() {
     let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
         | ClientRequestFlags::SEQUENCE_DETECT
@@ -542,8 +568,24 @@ fn spnego_kerberos() {
         | ServerRequestFlags::SEQUENCE_DETECT
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
+    let package_list = Some(String::from("kerberos,ntlm"));
 
-    run_spnego_kerberos(client_flags, server_flags, 3);
+    let (client, _server) = run_spnego(
+        client_flags,
+        server_flags,
+        3,
+        |kdc| Box::new(NetworkClientMock { kdc }),
+        package_list.clone(),
+        package_list,
+        SpnegoKerberosContextValidator,
+    );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    let negotiated_protocol = negotiate.negotiated_protocol();
+
+    assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
 }
 
 #[test]
@@ -560,6 +602,92 @@ fn spnego_kerberos_dce_style() {
         | ServerRequestFlags::SEQUENCE_DETECT
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
+    let package_list = Some(String::from("kerberos,ntlm"));
 
-    run_spnego_kerberos(client_flags, server_flags, 4);
+    let (client, _server) = run_spnego(
+        client_flags,
+        server_flags,
+        4,
+        |kdc| Box::new(NetworkClientMock { kdc }),
+        package_list.clone(),
+        package_list,
+        SpnegoKerberosContextValidator,
+    );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    let negotiated_protocol = negotiate.negotiated_protocol();
+
+    assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
+}
+
+#[test]
+fn spnego_kerberos_ntlm_fallback() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+    let package_list = Some(String::from("kerberos,ntlm"));
+
+    for kind in sspi::FALLBACK_ERROR_KINDS {
+        let (client, _server) = run_spnego(
+            client_flags,
+            server_flags,
+            4,
+            |_| Box::new(FailedNetworkClientMock { kind }),
+            package_list.clone(),
+            package_list.clone(),
+            SpnegoKerberosNtlmFallbackValidator,
+        );
+
+        let SspiContext::Negotiate(negotiate) = client else {
+            panic!("client must be a Negotiate context");
+        };
+        let negotiated_protocol = negotiate.negotiated_protocol();
+
+        assert!(
+            matches!(negotiated_protocol, NegotiatedProtocol::Ntlm(_)),
+            "Client should fallback to NTLM if Kerberos fails with {kind:?} error"
+        );
+    }
+}
+
+#[test]
+fn spnego_kerberos_server_ntlm_fallback() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+    let client_package_list = Some(String::from("kerberos,ntlm"));
+    let server_package_list = Some(String::from("!kerberos,ntlm"));
+
+    let (client, _server) = run_spnego(
+        client_flags,
+        server_flags,
+        4,
+        |kdc| Box::new(NetworkClientMock { kdc }),
+        client_package_list,
+        server_package_list,
+        SpnegoServerNtlmFallbackValidator,
+    );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    let negotiated_protocol = negotiate.negotiated_protocol();
+
+    assert!(matches!(negotiated_protocol, NegotiatedProtocol::Ntlm(_)),);
 }

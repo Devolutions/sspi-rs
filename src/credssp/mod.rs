@@ -383,7 +383,7 @@ impl CredSspClient {
                 let pub_key_auth = ts_request.pub_key_auth.take().ok_or_else(|| {
                     Error::new(
                         ErrorKind::InvalidToken,
-                        String::from("expected an encrypted public key"),
+                        String::from("CredSspi client expected an encrypted public key"),
                     )
                 })?;
                 let peer_version = self
@@ -634,7 +634,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             ts_request.pub_key_auth.take().ok_or_else(|| {
                                 Error::new(
                                     ErrorKind::InvalidToken,
-                                    String::from("expected an encrypted public key"),
+                                    String::from("CredSsp server expected an encrypted public key"),
                                 )
                             }),
                             ts_request

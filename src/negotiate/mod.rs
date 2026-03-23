@@ -5,6 +5,7 @@ mod generators;
 pub(crate) mod server;
 
 use std::fmt::Debug;
+use std::mem;
 use std::net::IpAddr;
 use std::sync::LazyLock;
 
@@ -12,6 +13,7 @@ pub use config::{NegotiateConfig, ProtocolConfig};
 use picky::oids;
 use picky_krb::gss_api::MechType;
 
+use crate::builders::{EmptyAcceptSecurityContext, FilledAcceptSecurityContext, FilledInitializeSecurityContext};
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
@@ -21,10 +23,11 @@ use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 use crate::{
-    AcquireCredentialsHandleResult, AuthIdentity, CertTrustStatus, ContextNames, ContextSizes, CredentialUse,
-    Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosConfig, Ntlm,
-    PACKAGE_ID_NONE, PackageCapabilities, PackageInfo, Pku2u, Result, SecurityBuffer, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl, builders, kerberos, ntlm, pku2u,
+    AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, CertTrustStatus,
+    ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo,
+    Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
+    builders, kerberos, ntlm, pku2u,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -73,9 +76,100 @@ impl NegotiatedProtocol {
     pub fn is_kerberos(&self) -> bool {
         matches!(self, NegotiatedProtocol::Kerberos(_))
     }
+
+    pub fn is_ntlm(&self) -> bool {
+        matches!(self, NegotiatedProtocol::Ntlm(_))
+    }
+
+    async fn initialize_security_context<'a>(
+        &'a mut self,
+        auth_identity: Option<&CredentialsBuffers>,
+        yield_point: &mut YieldPointLocal,
+        builder: &'a mut FilledInitializeSecurityContext<'_, '_, <Negotiate as SspiImpl>::CredentialsHandle>,
+    ) -> Result<InitializeSecurityContextResult> {
+        match self {
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut credentials_handle = auth_identity.and_then(|c| c.to_auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
+
+                builder.output = mem::take(&mut transformed_builder.output);
+
+                Ok(result)
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                kerberos.initialize_security_context_impl(yield_point, builder).await
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut credentials_handle = auth_identity.and_then(|c| c.to_auth_identity());
+                let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
+
+                let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
+
+                builder.output = mem::take(&mut transformed_builder.output);
+
+                Ok(result)
+            }
+        }
+    }
+
+    async fn accept_security_context(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        builder: &mut FilledAcceptSecurityContext<'_, <Negotiate as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
+        let input = builder
+            .input
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
+
+        let mut input_tokens = input.to_vec();
+        let mut output_tokens = builder.output.to_vec();
+
+        let mut creds_handle = builder.credentials_handle.as_ref().and_then(|creds| (*creds).clone());
+        let result = match self {
+            NegotiatedProtocol::Pku2u(pku2u) => {
+                let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
+                let new_builder: FilledAcceptSecurityContext<'_, Option<crate::AuthIdentityBuffers>> =
+                    EmptyAcceptSecurityContext::new()
+                        .with_context_requirements(builder.context_requirements)
+                        .with_target_data_representation(builder.target_data_representation)
+                        .with_input(&mut input_tokens)
+                        .with_output(&mut output_tokens)
+                        .with_credentials_handle(&mut creds_handle);
+                pku2u.accept_security_context_impl(yield_point, new_builder).await?
+            }
+            NegotiatedProtocol::Kerberos(kerberos) => {
+                let new_builder = EmptyAcceptSecurityContext::new()
+                    .with_context_requirements(builder.context_requirements)
+                    .with_target_data_representation(builder.target_data_representation)
+                    .with_input(&mut input_tokens)
+                    .with_output(&mut output_tokens)
+                    .with_credentials_handle(&mut creds_handle);
+                kerberos.accept_security_context_impl(yield_point, new_builder).await?
+            }
+            NegotiatedProtocol::Ntlm(ntlm) => {
+                let mut creds_handle = creds_handle.and_then(|creds_handle| creds_handle.into_auth_identity());
+                let new_builder = EmptyAcceptSecurityContext::new()
+                    .with_credentials_handle(&mut creds_handle)
+                    .with_context_requirements(builder.context_requirements)
+                    .with_target_data_representation(builder.target_data_representation)
+                    .with_input(&mut input_tokens)
+                    .with_output(&mut output_tokens);
+                ntlm.accept_security_context_impl(new_builder)?
+            }
+        };
+
+        let output_token = SecurityBuffer::find_buffer_mut(&mut output_tokens, BufferType::Token)?;
+        let ot = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+        ot.buffer = mem::take(&mut output_token.buffer);
+
+        Ok(result)
+    }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum NegotiateState {
     #[default]
     Initial,
@@ -108,6 +202,12 @@ pub struct Negotiate {
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
     mech_types: Vec<u8>,
     mic_verified: bool,
+    /// Indicates whether `mechLitsMIC` token verification is needed or not.
+    ///
+    /// According to [RFC 4178: 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5), the `mechListMIC` is optional:
+    /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
+    /// > then the MIC token exchange is OPTIONAL.
+    mic_needed: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,6 +273,7 @@ impl Negotiate {
             mode,
             mech_types: Default::default(),
             mic_verified: false,
+            mic_needed: true,
         })
     }
 
@@ -225,6 +326,7 @@ impl Negotiate {
         self.custom_set_auth_identities(candidates)
     }
 
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
         let enabled_packages = self.package_list;
 
@@ -236,12 +338,27 @@ impl Negotiate {
                 ));
             }
 
+            // We disable NTLM completely when the target server has selected Kerberos.
+            self.package_list.ntlm = false;
+
             if self.protocol_name() != kerberos::PKG_NAME {
                 let kerberos = Kerberos::new_client_from_config(KerberosConfig {
                     client_computer_name: self.client_computer_name.clone(),
                     kdc_url: None,
                 })?;
                 self.protocol = NegotiatedProtocol::Kerberos(kerberos);
+
+                // When the server changes the protocol from the most preferred for the client to
+                // any other mechanism type, then `mechListMIC` exchange is required.
+                //
+                // [RFC 4178 5. Processing of mechListMIC](https://www.rfc-editor.org/rfc/rfc4178.html#section-5):
+                // > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
+                // > then the MIC token exchange is OPTIONAL.
+                // > In all other cases, MIC tokens MUST be exchanged after the mechanism context is fully established.
+                // > ...Note that the MIC token exchange is required if a mechanism other than
+                // > the initiator's first choice is chosen.
+                self.mic_needed = true;
+                self.mic_verified = false;
             }
 
             return Ok(());
@@ -255,10 +372,23 @@ impl Negotiate {
                 ));
             }
 
+            // We disable Kerberos completely when the target server has selected NTLM.
+            self.package_list.kerberos = false;
+
             if self.protocol_name() != ntlm::PKG_NAME {
                 self.protocol =
                     NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
             }
+
+            // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
+            // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC
+            // > in AUTHENTICATE_MESSAGE ([MS-NLMP] section 2.2.1.3), then the mechListMIC field becomes
+            // > mandatory in order for the authentication to succeed.
+            //
+            // We always include NTLM MIC token inside AUTHENTICATE_MESSAGE. So, we need to perform
+            // SPNEGO `mechListMIC` exchange.
+            self.mic_needed = true;
+            self.mic_verified = false;
 
             return Ok(());
         }
@@ -399,6 +529,22 @@ impl Negotiate {
         }
     }
 
+    /// Fallback to NTLM protocol.
+    ///
+    /// Returns true if the fallback was successful, false if NTLM is disabled and fallback is not possible.
+    fn fallback_to_ntlm(&mut self) -> bool {
+        if !self.can_downgrade_ntlm() {
+            return false;
+        }
+
+        let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
+        self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
+        // We need to disable Kerberos completely after falling back to NTLM.
+        self.package_list.kerberos = false;
+
+        true
+    }
+
     fn verify_mic_token(&mut self, mic: Option<&[u8]>) -> Result<()> {
         if let Some(mic) = mic {
             self.protocol
@@ -415,16 +561,16 @@ impl<'a> Negotiate {
     pub(crate) async fn accept_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: crate::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::AcceptSecurityContextResult> {
+        builder: FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<AcceptSecurityContextResult> {
         server::accept_security_context(self, yield_point, builder).await
     }
 
     pub(crate) async fn initialize_security_context_impl(
         &'a mut self,
         yield_point: &mut YieldPointLocal,
-        builder: &'a mut crate::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
-    ) -> Result<crate::InitializeSecurityContextResult> {
+        builder: &'a mut FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
+    ) -> Result<InitializeSecurityContextResult> {
         client::initialize_security_context(self, yield_point, builder).await
     }
 }
@@ -664,7 +810,7 @@ impl SspiImpl for Negotiate {
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn accept_security_context_impl<'a>(
         &'a mut self,
-        builder: builders::FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
+        builder: FilledAcceptSecurityContext<'a, Self::CredentialsHandle>,
     ) -> Result<GeneratorAcceptSecurityContext<'a>> {
         Ok(GeneratorAcceptSecurityContext::new(move |mut yield_point| async move {
             server::accept_security_context(self, &mut yield_point, builder).await
@@ -673,7 +819,7 @@ impl SspiImpl for Negotiate {
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
         &'ctx mut self,
-        builder: &'b mut builders::FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
+        builder: &'b mut FilledInitializeSecurityContext<'ctx, 'ctx, Self::CredentialsHandle>,
     ) -> Result<GeneratorInitSecurityContext<'g>>
     where
         'ctx: 'g,

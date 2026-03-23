@@ -3,11 +3,11 @@ use picky_asn1::wrapper::{
     Optional,
 };
 use picky_krb::constants::key_usages::AP_REP_ENC;
-use picky_krb::constants::types::AP_REP_MSG_TYPE;
+use picky_krb::constants::types::{AP_REP_MSG_TYPE, TGT_REP_MSG_TYPE};
 use picky_krb::data_types::{
-    EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds,
+    EncApRepPart, EncApRepPartInner, EncryptedData, EncryptionKey, KerberosTime, Microseconds, Ticket,
 };
-use picky_krb::messages::{ApRep, ApRepInner};
+use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{KERBEROS_VERSION, Result, Secret};
@@ -45,4 +45,12 @@ pub(super) fn generate_ap_rep(
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(enc_data)),
         }),
     }))
+}
+
+pub(super) fn generate_tgt_rep(ticket: Ticket) -> TgtRep {
+    TgtRep {
+        pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+        msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![TGT_REP_MSG_TYPE])),
+        ticket: ExplicitContextTag2::from(ticket),
+    }
 }

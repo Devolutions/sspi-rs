@@ -116,6 +116,8 @@ use self::builders::{
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
+#[cfg(feature = "__test-data")]
+pub use self::negotiate::client::FALLBACK_ERROR_KINDS;
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};

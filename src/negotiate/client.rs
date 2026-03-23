@@ -8,11 +8,28 @@ use crate::negotiate::NegotiateState;
 use crate::negotiate::generators::{
     generate_final_neg_token_targ, generate_mech_type_list, generate_neg_token_init, generate_neg_token_targ_1,
 };
-use crate::utils::parse_target_name;
 use crate::{
     AuthIdentity, BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Negotiate, NegotiatedProtocol, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
+
+/// If the Kerberos context returns an Error, then we check for `error_type` and see if we can fallback to NTLM.
+/// We fallback to NTLM in following cases:
+/// - [ErrorKind::TimeSkew]: The time skew on KDC and client machines is too big.
+/// - [ErrorKind::NoAuthenticatingAuthority]: The Kerberos returns this error type when there is a problem with network client.
+///   For example, the network client cannot connect to the KDC, or the KDC proxy returns an error.
+///   Also, the `KDC_ERR_WRONG_REALM` Kerberos error code is mapped to this error type, so if the client is misconfigured
+///   and tries to get a TGT for a wrong realm, we will fallback to NTLM as well.
+/// - [ErrorKind::CertificateUnknown]: The KDC proxy certificate is invalid.
+/// - [ErrorKind::UnknownCredentials]: The Kerberos client returns this error kind when KDC replies with `KDC_ERR_S_PRINCIPAL_UNKNOWN` error code.
+pub(crate) const NTLM_FALLBACK_ERROR_KINDS: [ErrorKind; 4] = [
+    ErrorKind::TimeSkew,
+    ErrorKind::NoAuthenticatingAuthority,
+    ErrorKind::CertificateUnknown,
+    ErrorKind::UnknownCredentials,
+];
+#[cfg(feature = "__test-data")]
+pub const FALLBACK_ERROR_KINDS: [ErrorKind; 4] = NTLM_FALLBACK_ERROR_KINDS;
 
 /// Performs one authentication step.
 ///
@@ -67,24 +84,69 @@ pub(crate) async fn initialize_security_context<'a>(
 
     match negotiate.state {
         NegotiateState::Initial => {
-            let sname = if builder
+            if builder
                 .context_requirements
                 .contains(ClientRequestFlags::USE_SESSION_KEY)
+                || builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE)
             {
-                let (service_name, service_principal_name) =
-                    parse_target_name(builder.target_name.ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::NoCredentials,
-                            "Service target name (service principal name) is not provided",
-                        )
-                    })?)?;
-
-                Some([service_name, service_principal_name])
+                negotiate.mic_needed = true;
+                negotiate.mic_verified = false;
             } else {
-                None
-            };
+                negotiate.mic_needed = false;
+                negotiate.mic_verified = true;
+            }
 
-            debug!(?sname);
+            let result = negotiate
+                .protocol
+                .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
+                .await;
+
+            let first_token = match result {
+                Ok(result) => {
+                    if result.status != SecurityStatus::ContinueNeeded && result.status != SecurityStatus::Ok {
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            format!("unexpected status: {:?}", result.status),
+                        ));
+                    }
+
+                    let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+                    Some(mem::take(&mut token.buffer))
+                }
+                Err(err)
+                    if matches!(negotiate.protocol, NegotiatedProtocol::Kerberos(_))
+                        && NTLM_FALLBACK_ERROR_KINDS.contains(&err.error_type) =>
+                {
+                    warn!("Kerberos authentication failed with {err} error, attempting NTLM fallback.");
+
+                    if !negotiate.fallback_to_ntlm() {
+                        warn!("Failed to fallback to NTLM: NTLM is disabled.");
+
+                        return Err(err);
+                    }
+
+                    debug!("Fallback to NTLM succeeded");
+
+                    let result = negotiate
+                        .protocol
+                        .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
+                        .await?;
+
+                    if result.status != SecurityStatus::ContinueNeeded && result.status != SecurityStatus::Ok {
+                        return Err(Error::new(
+                            ErrorKind::InternalError,
+                            format!("unexpected status: {:?}", result.status),
+                        ));
+                    }
+
+                    let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+
+                    Some(mem::take(&mut token.buffer))
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            };
 
             let mech_types = generate_mech_type_list(
                 matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
@@ -93,10 +155,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             negotiate.mech_types = picky_asn1_der::to_vec(&mech_types)?;
 
-            let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(
-                sname.as_ref().map(|sname| sname.as_slice()),
-                mech_types,
-            )?)?;
+            let encoded_neg_token_init = picky_asn1_der::to_vec(&generate_neg_token_init(mech_types, first_token)?)?;
 
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_neg_token_init;
@@ -118,23 +177,16 @@ pub(crate) async fn initialize_security_context<'a>(
             let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
             let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(input_token.buffer.as_slice())?;
             let NegTokenTarg {
-                neg_result,
+                neg_result: server_neg_result,
                 supported_mech,
                 response_token,
                 mech_list_mic,
             } = neg_token_targ.0;
 
-            let neg_result = neg_result.0.map(|neg_result| neg_result.0.0);
-            if neg_result.as_deref() != Some(&ACCEPT_INCOMPLETE) {
-                return Err(Error::new(
-                    ErrorKind::InvalidToken,
-                    format!("unexpected NegResult: {neg_result:?}. expected ACCEPT_INCOMPLETE({ACCEPT_INCOMPLETE:?})"),
-                ));
-            }
-
             if let Some(selected_mech) = supported_mech.0 {
                 let selected_mech = &selected_mech.0;
-                debug!("The remote server has selected {selected_mech:?} mechanism id.");
+                let mech_type: String = (&selected_mech.0).into();
+                debug!("The remote server has selected {mech_type} mechanism id.");
 
                 negotiate.negotiate_protocol_by_mech_type(selected_mech)?;
             }
@@ -147,37 +199,18 @@ pub(crate) async fn initialize_security_context<'a>(
                 input_token.buffer.clear();
             }
 
-            let mut result = match &mut negotiate.protocol {
-                NegotiatedProtocol::Pku2u(pku2u) => {
-                    let mut credentials_handle = negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
-                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
-
-                    let result = pku2u.initialize_security_context_impl(&mut transformed_builder)?;
-
-                    builder.output = mem::take(&mut transformed_builder.output);
-
-                    result
-                }
-                NegotiatedProtocol::Kerberos(kerberos) => {
-                    kerberos.initialize_security_context_impl(yield_point, builder).await?
-                }
-                NegotiatedProtocol::Ntlm(ntlm) => {
-                    let mut credentials_handle = negotiate.auth_identity.as_ref().and_then(|c| c.to_auth_identity());
-                    let mut transformed_builder = builder.full_transform(Some(&mut credentials_handle));
-
-                    let result = ntlm.initialize_security_context_impl(&mut transformed_builder)?;
-
-                    builder.output = mem::take(&mut transformed_builder.output);
-
-                    result
-                }
-            };
+            let mut result = negotiate
+                .protocol
+                .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
+                .await?;
 
             if result.status == SecurityStatus::Ok {
-                let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
-                negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                if negotiate.mic_needed {
+                    let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
+                    negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                }
 
-                let neg_result = if negotiate.mic_verified {
+                let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
                     result.status = SecurityStatus::Ok;
                     negotiate.state = NegotiateState::Ok;
 
@@ -189,7 +222,16 @@ pub(crate) async fn initialize_security_context<'a>(
                     ACCEPT_INCOMPLETE.to_vec()
                 };
 
-                prepare_final_neg_token(neg_result, negotiate, builder)?;
+                let server_neg_result = server_neg_result.0.map(|neg_result| neg_result.0.0);
+
+                if server_neg_result.as_deref() == Some(&ACCEPT_COMPLETE) && negotiate.state == NegotiateState::Ok {
+                    let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
+                    output_token.buffer.clear();
+
+                    return Ok(result);
+                }
+
+                prepare_neg_token(neg_result, negotiate, builder)?;
             } else {
                 let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
@@ -247,7 +289,7 @@ pub(crate) async fn initialize_security_context<'a>(
     }
 }
 
-fn prepare_final_neg_token(
+fn prepare_neg_token(
     neg_result: Vec<u8>,
     negotiate: &mut Negotiate,
     builder: &mut crate::builders::FilledInitializeSecurityContext<'_, '_, <Negotiate as SspiImpl>::CredentialsHandle>,
@@ -260,18 +302,18 @@ fn prepare_final_neg_token(
         None
     };
 
-    let neg_token_targ = generate_final_neg_token_targ(
-        neg_result,
-        response_token,
+    let mic = if negotiate.mic_needed {
         Some(
             negotiate
                 .protocol
                 .generate_mic_token(&negotiate.mech_types, crate::private::Sealed)?,
-        ),
-    );
+        )
+    } else {
+        None
+    };
+    let neg_token_targ = generate_final_neg_token_targ(neg_result, response_token, mic);
 
     let encoded_final_neg_token_targ = picky_asn1_der::to_vec(&neg_token_targ)?;
-
     output_token.buffer = encoded_final_neg_token_targ;
 
     Ok(())
