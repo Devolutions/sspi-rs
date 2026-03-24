@@ -42,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      contents: write # Required to push the version tag.
 
     steps:
       - name: Checkout repository
