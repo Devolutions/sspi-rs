@@ -523,13 +523,15 @@ impl Negotiate {
         let should_downgrade = Self::is_target_name_ip_address(target_name);
         let can_downgrade = self.can_downgrade_ntlm();
 
-        if can_downgrade && should_downgrade && !self.is_protocol_ntlm() {
-            let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
-            self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
-
+        if can_downgrade && should_downgrade {
             // Disable Kerberos and Pku2u when downgrading to NTLM, as they are not suitable because of the target name format.
             self.package_list.kerberos = false;
             self.package_list.pku2u = false;
+
+            if !self.is_protocol_ntlm() {
+                let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
+                self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
+            }
         }
     }
 
