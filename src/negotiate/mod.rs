@@ -235,7 +235,7 @@ impl PackageListConfig {
                 match package_name.as_str() {
                     "ntlm" => ntlm = enabled,
                     "kerberos" => kerberos = enabled,
-                    "pku2u" => pku2u = enabled,
+                    "pku2u" | "u2u" => pku2u = enabled,
                     _ => warn!("unexpected package name: {}", &package_name),
                 }
             }
