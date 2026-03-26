@@ -208,10 +208,6 @@ pub struct Negotiate {
     /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
     /// > then the MIC token exchange is OPTIONAL.
     mic_needed: bool,
-    /// True when the target SPN contains a raw IP address rather than a hostname.
-    /// Kerberos cannot obtain a service ticket for an IP address (no valid SPN can be constructed),
-    /// so this flag prevents Kerberos from being selected in that case.
-    target_is_ip: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -278,7 +274,6 @@ impl Negotiate {
             mech_types: Default::default(),
             mic_verified: false,
             mic_needed: true,
-            target_is_ip: false,
         })
     }
 
@@ -341,24 +336,6 @@ impl Negotiate {
                     ErrorKind::InvalidToken,
                     "Kerberos mechanism was selected by the server but is disabled in package_list",
                 ));
-            }
-
-            // Kerberos requires a hostname to construct a valid SPN. If the target was specified
-            // as a raw IP address, fall back to NTLM instead of attempting Kerberos and producing
-            // an invalid token that the server will reject.
-            if self.target_is_ip {
-                if !enabled_packages.ntlm {
-                    return Err(Error::new(
-                        ErrorKind::NoAuthenticatingAuthority,
-                        "Kerberos was selected by the server but the target is an IP address and NTLM is not available",
-                    ));
-                }
-                self.package_list.kerberos = false;
-                if !self.is_protocol_ntlm() {
-                    let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
-                    self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
-                }
-                return Ok(());
             }
 
             // We disable NTLM completely when the target server has selected Kerberos.
@@ -447,7 +424,6 @@ impl Negotiate {
             }
 
             if enabled_packages.kerberos
-                && !self.target_is_ip
                 && let Some(host) = detect_kdc_url(&get_client_principal_realm(username, domain))
             {
                 debug!("Negotiate: try Kerberos");
@@ -545,12 +521,15 @@ impl Negotiate {
 
     fn check_target_name_for_ntlm_downgrade(&mut self, target_name: &str) {
         let should_downgrade = Self::is_target_name_ip_address(target_name);
-        self.target_is_ip = should_downgrade;
         let can_downgrade = self.can_downgrade_ntlm();
 
         if can_downgrade && should_downgrade && !self.is_protocol_ntlm() {
             let ntlm_config = NtlmConfig::new(self.client_computer_name.clone());
             self.protocol = NegotiatedProtocol::Ntlm(Ntlm::with_config(ntlm_config));
+
+            // Disable Kerberos and Pku2u when downgrading to NTLM, as they are not suitable because of the target name format.
+            self.package_list.kerberos = false;
+            self.package_list.pku2u = false;
         }
     }
 
