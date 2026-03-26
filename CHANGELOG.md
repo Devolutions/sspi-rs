@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.19.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.1...sspi-v0.19.2)] - 2026-03-26
+
+### <!-- 4 -->Bug Fixes
+
+- Fall back to NTLM when the target SPN is an IP address ([#637](https://github.com/Devolutions/sspi-rs/issues/637)) ([67dbac66cc](https://github.com/Devolutions/sspi-rs/commit/67dbac66cc98cb4fcec9864f345290e52745122e)) 
+
+  Using sspi-rs from FreeRDP on macOS, I'm connecting to an Active
+  Directory domain controller supporting both NTLM and Kerberos, and using
+  "Negotiate". This is a properly configured environment where KDC is
+  findable by DNS SRV record. I supply full domain credentials as a UPN
+  ("administrator@rjm.local").
+  
+  Connect to **WIN-JF4AA2B84HV.rjm.local** - Kerberos expected - **Works**
+  ✅
+  Connect to **192.168.254.7** - NTLM expected - **Doesn't work** 🔴 
+  
+  FreeRDP logs the following
+  
+  > SPNEGO failed with NTSTATUS: (null) [0x80090308] 
+  
+  But if we look in detail at the logged exchange:
+  
+  ```
+  [credssp_auth_authenticate]: output token size: 40
+  [nla_decode_ts_request]: <<----- nego token
+  [credssp_auth_authenticate]: output token size: 40   ← 2nd send — STILL 40 bytes ✗
+  [nla_decode_ts_request]: <<----- error code 0x80090308
+  ```
+  
+  ---------------
+  
+  ##### Bug: downgrade fires too early 
+  
+  The code runs in this order:
+  1. `check_target_name_for_ntlm_downgrade` → sees IP → but protocol is
+  already NTLM (the default) → does nothing
+  2. `negotiate_protocol` → finds a KDC on the network → switches to
+  Kerberos
+  The safety check ran before the thing it was supposed to guard against.
+  So Kerberos got selected anyway.
+  
+  This PR adds a `target_is_ip` flag that's set early. Kerberos is skipped
+  entirely when target is an IP, and it's further checked in
+  `negotiate_protocol_by_mech_type` if the server tries to select Kerberos
+  anyway (not sure about that part - Claude considers it "defence in
+  depth" and necessary).
+  
+  ---------
+
+
+
 ## [[0.19.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.0...sspi-v0.19.1)] - 2026-03-23
 
 ### <!-- 4 -->Bug Fixes
