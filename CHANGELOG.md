@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### <!-- 4 -->Bug Fixes
 
 - Fall back to NTLM when the target SPN is an IP address ([#637](https://github.com/Devolutions/sspi-rs/issues/637)) ([67dbac66cc](https://github.com/Devolutions/sspi-rs/commit/67dbac66cc98cb4fcec9864f345290e52745122e)) 
+
 ## [[0.19.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.0...sspi-v0.19.1)] - 2026-03-23
 
 ### <!-- 4 -->Bug Fixes
