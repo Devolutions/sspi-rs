@@ -202,7 +202,6 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
     use std::ptr::null_mut;
 
     use sspi::{U16CString, U16CStringExt};
-
     use windows::Win32::Foundation::{ERROR_SUCCESS, HWND};
     use windows::Win32::Graphics::Gdi::HBITMAP;
     use windows::Win32::Security::Credentials::CREDUIWIN_FLAGS;
@@ -577,13 +576,13 @@ fn collect_smart_card_creds(
     const SCARD_EMULATED: &str = "emulated";
     const SCARD_SYSTEM_PROVIDED: &str = "system";
 
-    username = U16CString::from_bytes_le_truncate(&mut username)?.to_bytes();
-    pin = U16CString::from_bytes_le_truncate(&mut pin)?.to_bytes();
+    username = U16CString::from_bytes_le_truncate(&username)?.to_bytes();
+    pin = U16CString::from_bytes_le_truncate(&pin)?.to_bytes();
 
     if !username.contains(&b'@') {
         username.extend_from_slice(&[b'@', 0]);
 
-        username = U16CString::from_bytes_le_truncate(&mut domain)?.to_bytes();
+        domain = U16CString::from_bytes_le_truncate(&domain)?.to_bytes();
         username.extend_from_slice(&domain);
     }
 
@@ -1087,7 +1086,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, username data is a wide C string and we need to delete the NULL terminator.
-    username = U16CString::from_bytes_le_truncate(&mut username)?.to_bytes();
+    username = U16CString::from_bytes_le_truncate(&username)?.to_bytes();
     auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {
@@ -1109,7 +1108,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
         // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
         // So, domain data is a wide C string and we need to delete the NULL terminator.
-        domain.truncate(domain.len() - 2);
+        domain = U16CString::from_bytes_le_truncate(&domain)?.to_bytes();
         auth_identity_buffers.domain = Utf16String::from_bytes_le(domain)?;
     }
 
@@ -1126,9 +1125,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, password data is a wide C string and we need to delete the NULL terminator.
-    let new_len = password.as_ref().len() - 2;
-    password.as_mut().truncate(new_len);
-    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into();
+    auth_identity_buffers.password = ZeroizedUtf16String::from_bytes_le_truncate(password.as_ref())?.into();
 
     Ok(CredentialsBuffers::AuthIdentity(auth_identity_buffers))
 }
@@ -1154,7 +1151,7 @@ pub unsafe extern "system" fn SspiEncodeStringsAsAuthIdentity(
     psz_packed_credentials_string: *const SecWChar,
     pp_auth_identity: *mut *mut c_void,
 ) -> SecurityStatus {
-    use widestring::U16CStr;
+    use sspi::U16CStr;
 
     catch_panic! {
         check_null!(pp_auth_identity);

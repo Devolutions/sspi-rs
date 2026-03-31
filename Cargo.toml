@@ -113,6 +113,7 @@ serde = "1"
 byteorder = "1.5"
 crypto-bigint = { version = "=0.7.0-rc.18", default-features = false, features = ["alloc"] }
 hmac = "=0.13.0-rc.3"
+widestring = "1.2"
 
 [features]
 default = ["aws-lc-rs"]
@@ -160,6 +161,8 @@ picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 crypto-bigint.workspace = true
 hmac.workspace = true
+widestring.workspace = true
+
 url = "2.5"
 
 md-5 = "=0.11.0-rc.2"
@@ -175,8 +178,6 @@ rustls = { version = "0.23", optional = true, default-features = false, features
 rustls-native-certs = { version = "0.8", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 async-recursion = "1.1"
-
-widestring = "1.2"
 bytemuck = "1.24"
 
 [target.'cfg(windows)'.dependencies]

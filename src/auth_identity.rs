@@ -7,7 +7,6 @@ use crate::{Error, Secret, Utf16String, Utf16StringExt};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UsernameError {
     MixedFormat,
-    InvalidUtf16,
 }
 
 impl std::error::Error for UsernameError {}
@@ -16,7 +15,6 @@ impl fmt::Display for UsernameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UsernameError::MixedFormat => write!(f, "mixed username format"),
-            UsernameError::InvalidUtf16 => write!(f, "invalid UTF-16 string"),
         }
     }
 }

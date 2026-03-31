@@ -10,7 +10,7 @@ use ffi_types::winscard::{
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
-use sspi::{U16CString, Utf16String, Utf16StringExt};
+use sspi::{U16CString, U16CStringExt};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use uuid::Uuid;
@@ -599,7 +599,8 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     let context = context_handle.scard_context();
     let provider_name =
         try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())));
-    let wide_provider_name = Utf16String::from_str(&provider_name).to_bytes_le();
+    let wide_provider_name =
+        try_execute!(U16CString::from_str(&provider_name).map_err(Error::from)).to_bytes_with_nul();
 
     let buffer_type = try_execute!(
         // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.

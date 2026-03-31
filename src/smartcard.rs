@@ -245,8 +245,6 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 /// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
 #[cfg(target_os = "windows")]
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
-    use crate::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
-    
     use std::ptr;
 
     use windows::Win32::Security::Cryptography::{
@@ -255,6 +253,8 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash,
     };
     use windows::core::{Owned, PCWSTR};
+
+    use crate::{U16CString, U16CStringExt};
 
     let mut provider = Owned::default();
     // SAFETY: FFI call with no outstanding preconditions.
@@ -269,7 +269,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         )
     })?;
 
-    let container_name = Utf16String::from_str(container_name).into_vec_with_nul();
+    let container_name = U16CString::from_str_truncate(container_name).into_vec_with_nul();
     let container_name = PCWSTR::from_raw(container_name.as_ptr());
 
     let mut key = Owned::default();

@@ -137,7 +137,7 @@ pub unsafe extern "system" fn SCardConnectA(
 /// # Safety
 ///
 /// - `context` must be a valid raw scard context handle.
-/// - `sz_reader` must be a non-null pointer to a valid, null-terminated C string.
+/// - `sz_reader` must be a properly-aligned, non-null pointer to a valid, null-terminated wide character string (UTF-16).
 /// - `ph_card` must be a properly-aligned pointer, valid for writes.
 /// - `pdw_active_protocol` must be a properly-aligned pointer, valid for writes.
 #[cfg_attr(windows, rename_symbol(to = "Rust_SCardConnectW"))]
@@ -159,8 +159,9 @@ pub unsafe extern "system" fn SCardConnectW(
     let reader_name = try_execute!(
         // SAFETY:
         // - `sz_reader` is guaranteed to be non-null due to the prior check.
+        // - `sz_reader` is guaranteed to be properly aligned for `u16` access (upheld by the caller per the function's safety contract).
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
-        // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
+        // - The memory region `sz_reader` points to is valid for reads of u16 code units up to and including the null-terminating u16.
         unsafe { U16CString::from_ptr_str(sz_reader) }
             .to_string()
             .map_err(Error::from)

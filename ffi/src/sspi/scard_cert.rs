@@ -29,24 +29,23 @@ const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
 /// Contains smart card certificate, reader name, container name, and other fields.
 #[derive(Debug)]
 pub struct SystemSmartCardInfo {
-    /// UTF-16 encoded reader name.
+    /// UTF-16 LE encoded reader name.
     ///
     /// Reader name is the selected slot description.
     pub reader_name: Vec<u8>,
-    /// UTF-16 encoded smart card CSP name.
+    /// UTF-16 LE encoded smart card CSP name.
     pub csp_name: Vec<u8>,
     /// Certificate.
     pub certificate: Vec<u8>,
-    /// UTF-16 encoded smart card key container name.
+    /// UTF-16 LE encoded smart card key container name.
     pub container_name: Option<Vec<u8>>,
-    /// UTF-16 encoded smart card name.
+    /// UTF-16 LE encoded smart card name.
     pub card_name: Option<Vec<u8>>,
 }
 
 /// Collects system-provided smart card information.
 ///
-/// The username must be in FQDN (user@domain) format and UTF-16 encoded.
-/// The PIN code must be UTF-16 encoded.
+/// The username must be in FQDN (user@domain) format and UTF-16 LE encoded.
 #[instrument(level = "trace", ret)]
 pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
     use cryptoki::context::CInitializeFlags;
@@ -100,7 +99,7 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
 
             container_name = try_get_piv_container_name(reader_name, &label)
                 .as_deref()
-                .map(|str| Utf16String::from_str(str).to_bytes_le())
+                .map(|name| Utf16String::from_str(name).to_bytes_le())
                 .ok();
 
             if container_name.is_some() {

@@ -2,7 +2,9 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use sspi::{Error, KERBEROS_VERSION, PackageInfo, U16CString, Utf16String, Utf16StringExt, enumerate_security_packages};
+use sspi::{
+    Error, KERBEROS_VERSION, PackageInfo, U16CString, Utf16String, Utf16StringExt, enumerate_security_packages,
+};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
 
@@ -450,8 +452,12 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
         let pkg_name = try_execute!(
             // SAFETY:
             // - `p_package_name` is guaranteed to be non-null due to the prior check.
-            // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
-            // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
+            // - The memory region `p_package_name` points to is properly aligned for `u16` reads
+            //   (guaranteed by the Windows SSPI calling convention for `LPCWSTR`).
+            // - The memory region `p_package_name` contains a sequence of valid `u16` values
+            //   terminated by a null (`0u16`) value.
+            // - The memory region `p_package_name` points to is valid for reads of `u16` values
+            //   up to and including the null terminator.
             unsafe { U16CString::from_ptr_str(p_package_name) }.to_string().map_err(Error::from)
         );
 
@@ -475,7 +481,10 @@ pub type QuerySecurityPackageInfoFnW = unsafe extern "system" fn(*const SecWChar
     reason = "undocumented unsafe is acceptable in tests"
 )]
 mod tests {
+    use std::ffi::CStr;
     use std::ptr::null_mut;
+
+    use sspi::U16CString;
 
     use super::{EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, SecPkgInfoA, SecPkgInfoW};
     use crate::sspi::common::FreeContextBuffer;
@@ -501,7 +510,19 @@ mod tests {
 
         for i in 0..(packages_amount as usize) {
             let pkg_info = unsafe { packages.add(i) };
-            let _ = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+            let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+
+            assert!(!pkg_info.name.is_null());
+            let name = unsafe { CStr::from_ptr(pkg_info.name) }
+                .to_str()
+                .expect("package name must be valid UTF-8");
+            assert!(!name.is_empty());
+
+            assert!(!pkg_info.comment.is_null());
+            let comment = unsafe { CStr::from_ptr(pkg_info.comment) }
+                .to_str()
+                .expect("package comment must be valid UTF-8");
+            assert!(!comment.is_empty());
         }
 
         let pv_context_buffer = packages.cast();
@@ -530,7 +551,19 @@ mod tests {
 
         for i in 0..(packages_amount as usize) {
             let pkg_info = unsafe { packages.add(i) };
-            let _ = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+            let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
+
+            assert!(!pkg_info.name.is_null());
+            let name = unsafe { U16CString::from_ptr_str(pkg_info.name) }
+                .to_string()
+                .expect("package name must be valid UTF-16");
+            assert!(!name.is_empty());
+
+            assert!(!pkg_info.comment.is_null());
+            let comment = unsafe { U16CString::from_ptr_str(pkg_info.comment) }
+                .to_string()
+                .expect("package comment must be valid UTF-16");
+            assert!(!comment.is_empty());
         }
 
         let pv_context_buffer = packages.cast();

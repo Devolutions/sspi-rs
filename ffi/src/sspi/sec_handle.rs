@@ -14,9 +14,9 @@ use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
 use sspi::kerberos::config::KerberosConfig;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    kerberos, negotiate, ntlm, pku2u, CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers,
-    DataRepresentation, Error, ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret,
-    Sspi, SspiImpl, StreamSizes, U16CString,
+    CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers, DataRepresentation, Error,
+    ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret, Sspi, SspiImpl, StreamSizes,
+    U16CString, kerberos, negotiate, ntlm, pku2u,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::Security::Cryptography::{
@@ -1419,9 +1419,9 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
 
             let kdc_url = try_execute!(
                 // SAFETY:
-                // - `p_buffer` is guaranteed to be non-null due to the prior check.
-                // - The memory region `p_buffer` contains a valid null-terminator at the end of string.
-                // - The memory region `p_buffer` points to is valid for reads of bytes up to and including null-terminator.
+                // - `kdc_url` is guaranteed to be non-null due to the prior null check.
+                // - The memory region `kdc_url` contains a valid null-terminator at the end of string.
+                // - The memory region `kdc_url` points to is valid for reads of bytes up to and including the null-terminator.
             unsafe { U16CString::from_ptr_str(kdc_url) }.to_string().map_err(Error::from)
             );
             credentials_handle.attributes.kdc_url = Some(kdc_url);
@@ -1747,7 +1747,7 @@ mod tests {
     use std::ptr::{self, null, null_mut};
 
     use libc::{c_ulonglong, c_void};
-    use sspi::{Utf16String, Utf16StringExt};
+    use sspi::U16CString;
 
     use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
@@ -1781,8 +1781,18 @@ mod tests {
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
         println!("{pkg_info:?}");
-        println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.name) }.unwrap().to_string());
-        println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.comment) }.unwrap().to_string());
+        println!(
+            "{:?}",
+            unsafe { U16CString::from_ptr_str(pkg_info.name) }
+                .to_string()
+                .expect("package name returned by QuerySecurityPackageInfoW is valid UTF-16")
+        );
+        println!(
+            "{:?}",
+            unsafe { U16CString::from_ptr_str(pkg_info.comment) }
+                .to_string()
+                .expect("package comment returned by QuerySecurityPackageInfoW is valid UTF-16")
+        );
 
         let cb_max_token = pkg_info.cb_max_token;
 
@@ -1801,8 +1811,18 @@ mod tests {
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
             println!("{pkg_info:?}");
-            println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.name) }.unwrap().to_string());
-            println!("{:?}", unsafe { Utf16String::from_pcwstr(pkg_info.comment) }.unwrap().to_string());
+            println!(
+                "{:?}",
+                unsafe { U16CString::from_ptr_str(pkg_info.name) }
+                    .to_string()
+                    .expect("package name returned by EnumerateSecurityPackagesW is valid UTF-16")
+            );
+            println!(
+                "{:?}",
+                unsafe { U16CString::from_ptr_str(pkg_info.comment) }
+                    .to_string()
+                    .expect("package comment returned by EnumerateSecurityPackagesW is valid UTF-16")
+            );
         }
 
         let status = unsafe { FreeContextBuffer(packages.cast()) };

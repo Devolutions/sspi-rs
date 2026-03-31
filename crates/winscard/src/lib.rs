@@ -177,29 +177,27 @@ impl From<core::convert::Infallible> for Error {
 
 impl From<core::str::Utf8Error> for Error {
     fn from(value: core::str::Utf8Error) -> Self {
-        #[cfg(not(feature = "std"))]
-        use alloc::string::ToString;
-
-        Error::new(ErrorKind::InternalError, value.to_string())
+        Error::new(ErrorKind::InternalError, format!("UTF-8 error: {value}"))
     }
 }
 
 impl From<alloc::string::FromUtf16Error> for Error {
     fn from(value: alloc::string::FromUtf16Error) -> Self {
-        use crate::alloc::string::ToString;
-
-        Error::new(ErrorKind::InvalidParameter, value.to_string())
+        Error::new(ErrorKind::InvalidParameter, format!("UTF-16 error: {value}"))
     }
 }
 
 impl From<widestring::error::Utf16Error> for Error {
     fn from(value: widestring::error::Utf16Error) -> Self {
-        use crate::alloc::string::ToString;
-
-        Self::new(ErrorKind::InvalidParameter, value.to_string())
+        Error::new(ErrorKind::InvalidParameter, format!("UTF-16 error: {value}"))
     }
 }
 
+impl From<widestring::error::ContainsNul<u16>> for Error {
+    fn from(value: widestring::error::ContainsNul<u16>) -> Self {
+        Error::new(ErrorKind::InvalidParameter, format!("UTF-16 error: {value}"))
+    }
+}
 
 #[cfg(feature = "std")]
 impl From<std::ffi::NulError> for Error {
