@@ -4115,6 +4115,7 @@ dependencies = [
  "time",
  "tracing",
  "uuid",
+ "widestring",
 ]
 
 [[package]]

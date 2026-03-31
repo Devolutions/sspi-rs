@@ -29,8 +29,3 @@ pub(crate) unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: 
         Vec::new()
     }
 }
-
-#[cfg(any(feature = "scard", feature = "tsssp"))]
-pub(crate) fn str_encode_utf16(data: &str) -> Vec<u8> {
-    data.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
-}

@@ -23,32 +23,9 @@ pub(crate) fn write_error_chain(w: &mut impl std::fmt::Write, e: &dyn std::error
     Ok(())
 }
 
-pub fn string_to_utf16(value: impl AsRef<str>) -> Vec<u8> {
-    value
-        .as_ref()
-        .encode_utf16()
-        .flat_map(|i| i.to_le_bytes().to_vec())
-        .collect::<Vec<u8>>()
-}
-
-pub fn str_to_w_buff(data: &str) -> Vec<u16> {
-    data.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
 #[cfg_attr(not(target_os = "windows"), allow(unused))]
 pub(crate) fn is_azure_ad_domain(domain: &str) -> bool {
     domain == crate::pku2u::AZURE_AD_DOMAIN
-}
-
-pub fn utf16_bytes_to_utf8_string(data: &[u8]) -> Result<String> {
-    debug_assert_eq!(data.len() % 2, 0);
-    String::from_utf16(
-        &data
-            .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
-            .collect::<Vec<u16>>(),
-    )
-    .map_err(Error::from)
 }
 
 pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {

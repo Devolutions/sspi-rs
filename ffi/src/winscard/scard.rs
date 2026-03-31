@@ -7,10 +7,9 @@ use ffi_types::winscard::{
 };
 use ffi_types::{LpByte, LpCByte, LpCStr, LpCVoid, LpCWStr, LpDword, LpStr, LpVoid, LpWStr};
 use num_traits::FromPrimitive;
-use sspi::Utf16StringExt;
+use sspi::U16CString;
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
-use widestring::Utf16String;
 use winscard::winscard::{AttributeId, Protocol, ScardConnectData, ShareMode};
 use winscard::{Error, ErrorKind, WinScardResult};
 
@@ -162,10 +161,10 @@ pub unsafe extern "system" fn SCardConnectW(
         // - `sz_reader` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(sz_reader) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(sz_reader) }
+            .to_string()
+            .map_err(Error::from)
+    );
 
     try_execute!(
         // SAFETY:

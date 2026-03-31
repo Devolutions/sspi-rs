@@ -245,6 +245,8 @@ fn encode_digest(digest: Vec<u8>) -> Result<Vec<u8>> {
 /// This function uses the Cryptography Next Generation (CNG) API to sign the data: https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/.
 #[cfg(target_os = "windows")]
 fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> Result<Vec<u8>> {
+    use crate::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
+    
     use std::ptr;
 
     use windows::Win32::Security::Cryptography::{
@@ -253,8 +255,6 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         NCryptOpenStorageProvider, NCryptSetProperty, NCryptSignHash,
     };
     use windows::core::{Owned, PCWSTR};
-
-    use crate::utils::{str_to_w_buff, string_to_utf16};
 
     let mut provider = Owned::default();
     // SAFETY: FFI call with no outstanding preconditions.
@@ -269,7 +269,7 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
         )
     })?;
 
-    let container_name = str_to_w_buff(container_name);
+    let container_name = Utf16String::from_str(container_name).into_vec_with_nul();
     let container_name = PCWSTR::from_raw(container_name.as_ptr());
 
     let mut key = Owned::default();
@@ -294,8 +294,8 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
 
     // NCRYPT_PIN_PROPERTY: https://learn.microsoft.com/en-us/windows/win32/seccng/key-storage-property-identifiers
     // > A pointer to a null-terminated Unicode string that contains the PIN.
-    let mut pin = string_to_utf16(std::str::from_utf8(pin)?);
-    pin.extend_from_slice(&[0, 0]);
+    let pin = U16CString::from_utf8_bytes(pin)?.to_bytes_with_nul();
+
     // SAFETY:
     // - `key` is a valid handle obtained from `NCryptOpenKey`.
     // - `pin` is a valid UTF-16 string and null-terminated.

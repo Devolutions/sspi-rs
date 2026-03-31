@@ -2,13 +2,44 @@ use std::ops::Not;
 
 use widestring::U16CStr;
 pub use widestring::error::Utf16Error;
-pub use widestring::{Utf16Str, Utf16String};
+pub use widestring::{Utf16Str, Utf16String, U16CString};
 use zeroize::Zeroize;
 
 use crate::{Error, ErrorKind};
 
+fn bytes_le_to_vec_u16(bytes: impl AsRef<[u8]>) -> Result<Vec<u16>, Error> {
+    let bytes = bytes.as_ref();
+
+    if bytes.len() % 2 != 0 {
+        return Err(Error::new(ErrorKind::InternalError, "utf-16 error: lone byte"));
+    }
+
+    Ok(bytes
+        .chunks(2)
+        .map(|c| u16::from_le_bytes(c.try_into().expect("c is 2 bytes, checked earlier")))
+        .collect())
+}
+
 pub trait Utf16StringExt: Sized {
+    /// Constructs new string from [`u8`] slice of UTF-16 data.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `bytes` has a non-odd number of elements.
+    ///
+    /// This function will return an error if `bytes` contains an invalid UTF-16 character (lone surrogate).
     fn from_bytes_le(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
+
+    /// Constructs new string from [`u8`] slice of UTF-8 data.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `bytes` contains an invalid UTF-8 character.
+    fn from_utf8_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
+
+    /// Converts a string into a vector of its elements, appending nul byte to the end.
+    fn into_vec_with_nul(self) -> Vec<u16>;
+
 
     /// Returns reference to internal buffer as &[u8], assuming the little endianness.
     fn as_bytes_le(&self) -> &[u8];
@@ -31,20 +62,16 @@ pub trait Utf16StringExt: Sized {
 }
 
 impl Utf16StringExt for Utf16String {
-    fn from_bytes_le(bytes: impl AsRef<[u8]>) -> Result<Utf16String, Error> {
-        let bytes = bytes.as_ref();
+    fn from_bytes_le(bytes: impl AsRef<[u8]>) -> Result<Self, Error> {
+        let buffer = bytes_le_to_vec_u16(bytes)?;
 
-        if bytes.len() % 2 != 0 {
-            return Err(Error::new(ErrorKind::InvalidParameter, "invalid UTF-16 string bytes"));
-        }
+        Ok(Utf16String::from_vec(buffer)?)
+    }
 
-        let buffer: Vec<u16> = bytes
-            .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().expect("2-bytes slice (checked earlier)")))
-            .collect();
-
-        Utf16String::from_vec(buffer)
-            .map_err(|error| Error::new(ErrorKind::InvalidParameter, format!("invalid UTF-16 string: {error}")))
+    fn from_utf8_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, Error> {
+         let bytes = bytes.as_ref();
+        let str = std::str::from_utf8(bytes).map_err(Error::from)?;
+        Ok(Self::from_str(str))
     }
 
     fn as_bytes_le(&self) -> &[u8] {
@@ -52,11 +79,80 @@ impl Utf16StringExt for Utf16String {
         bytemuck::cast_slice(slice)
     }
 
+    fn into_vec_with_nul(self) -> Vec<u16> {
+        let mut vec = self.into_vec();
+        vec.push(0);
+        vec
+    }
+
     unsafe fn from_pcwstr(ptr: *const u16) -> Result<Utf16String, Utf16Error> {
         // SAFETY: `s` must be valid null-terminated C string (upheld by the caller).
         let cstr = unsafe { U16CStr::from_ptr_str(ptr) };
 
         Ok(Utf16Str::from_ucstr(cstr)?.to_owned())
+    }
+}
+
+pub trait U16CStringExt: Sized {
+    /// Constructs new string from [`u8`] slice of UTF-16 data, truncating at the first nul terminator.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `bytes` has a non-odd number of elements.
+    ///
+    /// This function will return an error if `bytes` contains an invalid UTF-16 character (lone surrogate).
+    fn from_bytes_le_truncate(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
+
+    /// Constructs new string from [`u8`] slice of UTF-8 data.
+    ///
+    /// The string will be scanned for nul values, which are invalid anywhere except the final character.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if `bytes` contains an invalid UTF-8 character.
+    ///
+    /// This function will return an error if `bytes` contains a nul value anywhere except the final position.
+    fn from_utf8_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, Error>;
+
+    /// Returns reference to internal buffer (excluding nul byte) as &[u8], assuming the native endianness.
+    fn as_bytes(&self) -> &[u8];
+
+    /// Returns reference to internal buffer (including nul byte) as &[u8], assuming the native endianness.
+    fn as_bytes_with_nul(&self) -> &[u8];
+
+    /// Returns internal buffer as Vec<u8> (excluding nul byte), assuming the native endianness.
+    fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+
+    /// Returns internal buffer as Vec<u8> (including nul byte), assuming the native endianness.
+    fn to_bytes_with_nul(&self) -> Vec<u8> {
+        self.as_bytes_with_nul().to_vec()
+    }
+}
+
+impl U16CStringExt for U16CString {
+    fn from_bytes_le_truncate(bytes: impl AsRef<[u8]>) -> Result<Self, Error> {
+        let buffer = bytes_le_to_vec_u16(bytes)?;
+
+        Ok(U16CString::from_vec_truncate(buffer))
+    }
+
+    fn from_utf8_bytes(bytes: impl AsRef<[u8]>) -> Result<Self, Error> {
+        let bytes = bytes.as_ref();
+        let str = std::str::from_utf8(bytes).map_err(Error::from)?;
+
+        Ok(Self::from_str(str)?)
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        let slice = self.as_slice();
+        bytemuck::cast_slice(slice)
+    }
+
+    fn as_bytes_with_nul(&self) -> &[u8] {
+        let slice = self.as_slice_with_nul();
+        bytemuck::cast_slice(slice)
     }
 }
 
@@ -106,11 +202,15 @@ impl<T: AsRef<Utf16Str>> AsRef<T> for NonEmpty<T> {
 
 #[cfg(test)]
 mod tests {
+
+    use widestring::U16CString;
+
+    use crate::{ErrorKind, NonEmpty, U16CStringExt};
+
     use super::{Utf16String, Utf16StringExt};
-    use crate::{ErrorKind, NonEmpty};
 
     #[test]
-    fn from_bytes_le_lone_byte() {
+    fn utf16_from_bytes_le_lone_byte() {
         let bytes = [
             0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
             0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x00,
@@ -119,14 +219,11 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_err());
-        assert_eq!(
-            result.expect_err("result is err").error_type,
-            ErrorKind::InvalidParameter
-        );
+        assert_eq!(result.expect_err("result is err").error_type, ErrorKind::InternalError);
     }
 
     #[test]
-    fn from_bytes_le_lone_surrogate() {
+    fn utf16_from_bytes_le_lone_surrogate() {
         let bytes = [
             0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
             0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x00, 0xd8,
@@ -135,14 +232,11 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_err());
-        assert_eq!(
-            result.expect_err("result is err").error_type,
-            ErrorKind::InvalidParameter
-        );
+        assert_eq!(result.expect_err("result is err").error_type, ErrorKind::InternalError);
     }
 
     #[test]
-    fn from_bytes_le_valid_bytes() {
+    fn utf16_from_bytes_le_valid_bytes() {
         let bytes = [
             0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
             0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00,
@@ -155,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn from_bytes_le_roundtrip() {
+    fn utf16_from_bytes_le_roundtrip() {
         let bytes = [
             0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
             0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00,
@@ -166,6 +260,72 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.as_ref().expect("result is ok").as_bytes_le(), bytes);
         assert_eq!(result.as_ref().expect("result is ok").as_bytes_le(), Vec::from(bytes));
+    }
+
+    #[test]
+    fn u16c_from_bytes_le_truncate_lone_byte() {
+        let bytes = [
+            0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00, 0x00,
+        ];
+
+        let result = U16CString::from_bytes_le_truncate(bytes);
+
+        assert!(result.is_err());
+        assert_eq!(result.expect_err("result is err").error_type, ErrorKind::InternalError);
+    }
+
+    #[test]
+    fn u16c_from_bytes_le_truncate_lone_surrogate() {
+        let bytes = [
+            0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00, 0x00, 0xd8,
+        ];
+
+        let result = U16CString::from_bytes_le_truncate(bytes);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn u16c_from_bytes_le_roundtrip() {
+        let bytes = [
+            0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00,
+        ];
+
+        let result = U16CString::from_bytes_le_truncate(bytes).expect("succeeds");
+
+        assert_eq!(result.as_bytes(), bytes);
+        assert_eq!(result.to_bytes(), Vec::from(bytes));
+    }
+
+    #[test]
+    fn u16c_from_bytes_le_null_terminated_roundtrip() {
+        let bytes = [
+            0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00, 0x00, 0x00, 0x42, 0x00,
+        ];
+
+        let result = U16CString::from_bytes_le_truncate(bytes).expect("succeeds");
+
+        let bytes = &bytes[..bytes.len() - 4];
+
+        assert_eq!(result.as_bytes(), bytes);
+        assert_eq!(result.to_bytes(), Vec::from(bytes));
+    }
+
+    #[test]
+    fn u16c_bytes_with_nul() {
+        let bytes = [
+            0x45, 0x00, 0x6c, 0x00, 0x20, 0x00, 0x50, 0x00, 0x73, 0x00, 0x79, 0x00, 0x20, 0x00, 0x43, 0x00, 0x6f, 0x00,
+            0x6e, 0x00, 0x67, 0x00, 0x72, 0x00, 0x6f, 0x00, 0x6f, 0x00, 0x00, 0x00,
+        ];
+
+        let result = U16CString::from_bytes_le_truncate(bytes).expect("succeeds");
+
+        assert_eq!(result.as_bytes_with_nul(), bytes);
+        assert_eq!(result.to_bytes_with_nul(), Vec::from(bytes));
     }
 
     #[test]

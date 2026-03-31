@@ -5,7 +5,6 @@ use libc::{c_char, c_void};
 use sspi::utf16string::ZeroizedUtf16String;
 use sspi::{
     AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, NonEmpty, Result, Secret, Utf16String, Utf16StringExt,
-    string_to_utf16,
 };
 #[cfg(feature = "scard")]
 use sspi::{SmartCardIdentityBuffers, SmartCardType};
@@ -202,7 +201,8 @@ pub unsafe fn get_auth_data_identity_version_and_flags(p_auth_data: *const c_voi
 unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> Result<CredentialsBuffers> {
     use std::ptr::null_mut;
 
-    use sspi::string_to_utf16;
+    use sspi::{U16CString, U16CStringExt};
+
     use windows::Win32::Foundation::{ERROR_SUCCESS, HWND};
     use windows::Win32::Graphics::Gdi::HBITMAP;
     use windows::Win32::Security::Credentials::CREDUIWIN_FLAGS;
@@ -224,8 +224,14 @@ unsafe fn credssp_auth_data_to_identity_buffers(p_auth_data: *const c_void) -> R
             // More info: https://blog.gentilkiwi.com/tag/cred_type_domain_password
             //
             // In this case, we just asked the user to re-enter the credentials.
-            let message = string_to_utf16("We're unable to load saved credentials\0");
-            let caption = string_to_utf16("Enter credentials\0");
+            let message = U16CString::from_str("We're unable to load saved credentials")
+                .expect("str does not contain nul")
+                .to_bytes_with_nul();
+
+            let caption = U16CString::from_str("Enter credentials")
+                .expect("str does not contain nul")
+                .to_bytes_with_nul();
+
             let cred_ui_info = CREDUI_INFOW {
                 cbSize: size_of::<CREDUI_INFOW>().try_into().unwrap(),
                 hwndParent: HWND::default(),
@@ -384,20 +390,20 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
-        let user = string_to_utf16(String::from_utf8(username_data)?);
+        let user = Utf16String::from_utf8_bytes(username_data)?.to_bytes_le();
 
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
-        let domain = string_to_utf16(String::from_utf8(domain_data)?);
+        let domain = Utf16String::from_utf8_bytes(domain_data)?.to_bytes_le();
 
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let password_data =
             unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
-        let password = string_to_utf16(String::from_utf8(password_data)?);
+        let password = Utf16String::from_utf8_bytes(password_data)?.to_bytes_le();
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
@@ -421,20 +427,20 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, auth_data.user_length as usize) };
-        let user = string_to_utf16(String::from_utf8(username_data)?);
+        let user = Utf16String::from_utf8_bytes(username_data)?.to_bytes_le();
 
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, auth_data.domain_length as usize) };
-        let domain = string_to_utf16(String::from_utf8(domain_data)?);
+        let domain = Utf16String::from_utf8_bytes(domain_data)?.to_bytes_le();
 
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let password_data =
             unsafe { credentials_str_into_bytes(auth_data.password, auth_data.password_length as usize) };
-        let password = string_to_utf16(String::from_utf8(password_data)?);
+        let password = Utf16String::from_utf8_bytes(password_data)?.to_bytes_le();
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
@@ -565,21 +571,19 @@ fn collect_smart_card_creds(
 ) -> Result<SmartCardIdentityBuffers> {
     use std::env;
 
-    use sspi::{Utf16String, Utf16StringExt};
-
-    use crate::sspi::utils::raw_wide_str_trim_nulls;
+    use sspi::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
 
     const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
     const SCARD_EMULATED: &str = "emulated";
     const SCARD_SYSTEM_PROVIDED: &str = "system";
 
-    raw_wide_str_trim_nulls(&mut username);
-    raw_wide_str_trim_nulls(&mut pin);
+    username = U16CString::from_bytes_le_truncate(&mut username)?.to_bytes();
+    pin = U16CString::from_bytes_le_truncate(&mut pin)?.to_bytes();
 
     if !username.contains(&b'@') {
         username.extend_from_slice(&[b'@', 0]);
 
-        raw_wide_str_trim_nulls(&mut domain);
+        username = U16CString::from_bytes_le_truncate(&mut domain)?.to_bytes();
         username.extend_from_slice(&domain);
     }
 
@@ -873,7 +877,6 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
     use std::ptr::null_mut;
 
     use sspi::credssp::NStatusCode;
-    use sspi::string_to_utf16;
     use windows::Win32::Security::Credentials::{
         CERT_CREDENTIAL_INFO, CRED_MARSHAL_TYPE, CertCredential, CredUnmarshalCredentialW,
     };
@@ -922,8 +925,8 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
         unsafe { (*cert_credential).rgbHashOfCert }.as_ref(),
     )?;
 
-    let username = string_to_utf16(crate::sspi::scard_cert::extract_upn_from_certificate(&certificate)?);
-
+    let username = crate::sspi::scard_cert::extract_upn_from_certificate(&certificate)?;
+    let username = Utf16String::from_str(&username).to_bytes_le();
     let SmartCardInfo {
         key_container_name,
         reader_name,
@@ -986,12 +989,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     auth_data_len: u32,
 ) -> Result<CredentialsBuffers> {
     use sspi::credssp::NStatusCode;
-    use sspi::{Utf16String, Utf16StringExt};
+    use sspi::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
     use windows::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
     use windows::Win32::Security::Credentials::{CRED_PACK_PROTECTED_CREDENTIALS, CredUnPackAuthenticationBufferW};
     use windows::core::{HRESULT, PWSTR};
-
-    use super::utils::raw_wide_str_trim_nulls;
 
     if p_auth_data.is_null() {
         return Err(Error::new(
@@ -1086,7 +1087,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.
     // The `CredUnPackAuthenticationBufferW` function always returns credentials as strings.
     // So, username data is a wide C string and we need to delete the NULL terminator.
-    raw_wide_str_trim_nulls(&mut username);
+    username = U16CString::from_bytes_le_truncate(&mut username)?.to_bytes();
     auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {

@@ -192,6 +192,15 @@ impl From<alloc::string::FromUtf16Error> for Error {
     }
 }
 
+impl From<widestring::error::Utf16Error> for Error {
+    fn from(value: widestring::error::Utf16Error) -> Self {
+        use crate::alloc::string::ToString;
+
+        Self::new(ErrorKind::InvalidParameter, value.to_string())
+    }
+}
+
+
 #[cfg(feature = "std")]
 impl From<std::ffi::NulError> for Error {
     fn from(value: std::ffi::NulError) -> Self {

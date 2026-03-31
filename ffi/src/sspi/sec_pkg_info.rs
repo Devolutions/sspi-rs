@@ -2,10 +2,9 @@ use std::ffi::CStr;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping;
 
-use sspi::{Error, KERBEROS_VERSION, PackageInfo, Utf16StringExt, enumerate_security_packages, str_to_w_buff};
+use sspi::{Error, KERBEROS_VERSION, PackageInfo, U16CString, Utf16String, Utf16StringExt, enumerate_security_packages};
 #[cfg(windows)]
 use symbol_rename_macro::rename_symbol;
-use widestring::Utf16String;
 
 use super::sspi_data_types::{SecChar, SecWChar, SecurityStatus};
 
@@ -27,10 +26,10 @@ pub struct RawSecPkgInfoW(pub *mut SecPkgInfoW);
 #[allow(clippy::useless_conversion)]
 impl From<PackageInfo> for RawSecPkgInfoW {
     fn from(pkg_info: PackageInfo) -> Self {
-        let pkg_name = str_to_w_buff(pkg_info.name.as_ref());
+        let pkg_name = Utf16String::from_str(&pkg_info.name).into_vec_with_nul();
         let name_bytes_len = pkg_name.len() * 2;
 
-        let pkg_comment = str_to_w_buff(&pkg_info.comment);
+        let pkg_comment = Utf16String::from_str(&pkg_info.comment).into_vec_with_nul();
         let comment_bytes_len = pkg_comment.len() * 2;
 
         let pkg_info_w_size = size_of::<SecPkgInfoW>();
@@ -315,8 +314,8 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         let mut comments = Vec::with_capacity(packages.len());
 
         for package in &packages {
-            let name = str_to_w_buff(package.name.as_ref());
-            let comment = str_to_w_buff(&package.comment);
+            let name = Utf16String::from_str(&package.name).into_vec_with_nul();
+            let comment = Utf16String::from_str(&package.comment).into_vec_with_nul();
 
             size += (name.len() + comment.len()) * 2;
 
@@ -453,8 +452,8 @@ pub unsafe extern "system" fn QuerySecurityPackageInfoW(
             // - `p_package_name` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_package_name` contains a valid null-terminator at the end of string.
             // - The memory region `p_package_name` points to is valid for reads of bytes up to and including null-terminator.
-            unsafe { Utf16String::from_pcwstr(p_package_name) }.map_err(Error::from)
-        ).to_string();
+            unsafe { U16CString::from_ptr_str(p_package_name) }.to_string().map_err(Error::from)
+        );
 
         let pkg_info: RawSecPkgInfoW = try_execute!(enumerate_security_packages())
             .into_iter()

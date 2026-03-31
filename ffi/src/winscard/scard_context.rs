@@ -10,16 +10,15 @@ use ffi_types::winscard::{
 };
 use ffi_types::{Handle, LpByte, LpCByte, LpCGuid, LpCStr, LpCVoid, LpCWStr, LpDword, LpGuid, LpStr, LpUuid, LpWStr};
 use libc::c_void;
-use sspi::Utf16StringExt;
+use sspi::{U16CString, Utf16String, Utf16StringExt};
 #[cfg(target_os = "windows")]
 use symbol_rename_macro::rename_symbol;
 use uuid::Uuid;
-use widestring::Utf16String;
 use winscard::winscard::{CurrentState, ReaderState, WinScardContext};
 use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, WinScardResult};
 
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
-use crate::utils::{into_raw_ptr, str_encode_utf16};
+use crate::utils::into_raw_ptr;
 use crate::winscard::scard_handle::{
     WinScardContextHandle, raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context,
 };
@@ -585,10 +584,10 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
         // - `sz_card_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_card_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_card_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(sz_card_name) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(sz_card_name) }
+            .to_string()
+            .map_err(Error::from)
+    );
 
     let context_handle = try_execute!(
         // SAFETY:
@@ -600,7 +599,7 @@ pub unsafe extern "system" fn SCardGetCardTypeProviderNameW(
     let context = context_handle.scard_context();
     let provider_name =
         try_execute!(context.get_card_type_provider_name(&card_name, try_execute!(dw_provide_id.try_into())));
-    let wide_provider_name = str_encode_utf16(provider_name.as_ref());
+    let wide_provider_name = Utf16String::from_str(&provider_name).to_bytes_le();
 
     let buffer_type = try_execute!(
         // SAFETY: `szProvider` is valid for both reads and writes for `*pcch_provider` many elements.
@@ -1109,9 +1108,9 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
                         // - `c_reader.sz_reader` is guaranteed to be non-null due to the prior check.
                         // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
                         // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
-                        unsafe { Utf16String::from_pcwstr(c_reader.sz_reader) }
-                            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))?
-                            .to_string(),
+                        unsafe { U16CString::from_ptr_str(c_reader.sz_reader) }
+                            .to_string()
+                            .map_err(Error::from)?,
                     ),
                     user_data: c_reader.pv_user_data as usize,
                     current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
@@ -1278,10 +1277,10 @@ pub unsafe extern "system" fn SCardReadCacheW(
         // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(lookup_name) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(lookup_name) }
+            .to_string()
+            .map_err(Error::from)
+    );
 
     try_execute!(
         // SAFETY:
@@ -1418,10 +1417,10 @@ pub unsafe extern "system" fn SCardWriteCacheW(
         // - `lookup_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `lookup_name` contains a valid null-terminator at the end of string.
         // - The memory region `lookup_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(lookup_name) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(lookup_name) }
+            .to_string()
+            .map_err(Error::from)
+    );
     try_execute!(
         // SAFETY:
         // - `context` is a valid raw scard context handle.
@@ -1543,10 +1542,10 @@ pub unsafe extern "system" fn SCardGetReaderIconW(
         // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(sz_reader_name) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(sz_reader_name) }
+            .to_string()
+            .map_err(Error::from)
+    );
 
     try_execute!(
         // SAFETY:
@@ -1646,10 +1645,10 @@ pub unsafe extern "system" fn SCardGetDeviceTypeIdW(
         // - `sz_reader_name` is guaranteed to be non-null due to the prior check.
         // - The memory region `sz_reader_name` contains a valid null-terminator at the end of string.
         // - The memory region `sz_reader_name` points to is valid for reads of bytes up to and including null-terminator.
-        unsafe { Utf16String::from_pcwstr(sz_reader_name) }
-            .map_err(|err| Error::new(ErrorKind::InvalidParameter, err.to_string()))
-    )
-    .to_string();
+        unsafe { U16CString::from_ptr_str(sz_reader_name) }
+            .to_string()
+            .map_err(Error::from)
+    );
 
     try_execute!(
         // SAFETY:
