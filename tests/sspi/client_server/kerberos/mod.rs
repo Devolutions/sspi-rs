@@ -201,6 +201,7 @@ pub(super) fn accept_security_context(
     (result.status, output_token.remove(0).buffer)
 }
 
+#[allow(clippy::too_many_arguments, reason = "many arguments are acceptable in test helpers")]
 fn run_kerberos(
     client: &mut SspiContext,
     client_credentials_handle: &mut Option<CredentialsBuffers>,
