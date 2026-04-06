@@ -132,7 +132,7 @@ struct ScardLogonParams {
 #[cfg(not(target_os = "windows"))]
 #[instrument(err)]
 fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -> Result<ScardLogonParams, Error> {
-    use cryptoki::context::{CInitializeArgs, Pkcs11};
+    use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
     use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
     use picky::x509::Cert;
 
@@ -152,7 +152,7 @@ fn try_extract_container_name_and_certificate(pkcs11_module: &std::path::Path) -
 
     let pkcs11 = try_execute!(Pkcs11::new(pkcs11_module), "failed to open PKCS11 module");
     try_execute!(
-        pkcs11.initialize(CInitializeArgs::OsThreads),
+        pkcs11.initialize(CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK)),
         "failed to initialize PKCS11 module"
     );
 
