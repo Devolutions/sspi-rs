@@ -11,7 +11,7 @@ use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryp
 
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 
-fn run_spnego_ntlm() {
+fn run_spnego_ntlm(target_name: Option<&str>) {
     let ntlm_config = NtlmConfig {
         client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
@@ -19,7 +19,6 @@ fn run_spnego_ntlm() {
         username: Username::parse("test_user@example.com").unwrap(),
         password: Secret::from("test_password".to_owned()),
     });
-    let target_name = TARGET_NAME;
 
     let mut client = SspiContext::Negotiate(
         Negotiate::new_client(NegotiateConfig::new(
@@ -75,9 +74,9 @@ fn run_spnego_ntlm() {
                     | ClientRequestFlags::CONFIDENTIALITY,
             )
             .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(target_name)
             .with_input(&mut input_token)
             .with_output(&mut output_token);
+        builder.target_name = target_name;
         let InitializeSecurityContextResult { status, .. } =
             client.initialize_security_context_sync(&mut builder).unwrap();
 
@@ -109,5 +108,10 @@ fn run_spnego_ntlm() {
 
 #[test]
 fn spnego_ntlm_client_server() {
-    run_spnego_ntlm();
+    run_spnego_ntlm(Some(TARGET_NAME));
+}
+
+#[test]
+fn spnego_ntlm_without_target_name() {
+    run_spnego_ntlm(None);
 }
