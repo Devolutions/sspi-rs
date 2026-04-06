@@ -41,12 +41,11 @@ fn test_readonly_buffers_encryption(client: &mut SspiContext, server: &mut SspiC
     assert_eq!(plain_message, message[2].data());
 }
 
-fn run_ntlm(config: NtlmConfig) {
+fn run_ntlm(config: NtlmConfig, target_name: Option<&str>) {
     let credentials = Credentials::AuthIdentity(AuthIdentity {
         username: Username::parse("test_user").unwrap(),
         password: Secret::from("test_password".to_owned()),
     });
-    let target_name = TARGET_NAME;
 
     let mut client = SspiContext::Ntlm(Ntlm::with_config(config.clone()));
     let mut server = SspiContext::Ntlm(Ntlm::with_config(config));
@@ -85,9 +84,9 @@ fn run_ntlm(config: NtlmConfig) {
                     | ClientRequestFlags::CONFIDENTIALITY,
             )
             .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(target_name)
             .with_input(&mut input_token)
             .with_output(&mut output_token);
+        builder.target_name = target_name;
         let InitializeSecurityContextResult { status, .. } =
             client.initialize_security_context_sync(&mut builder).unwrap();
 
@@ -118,14 +117,30 @@ fn run_ntlm(config: NtlmConfig) {
 
 #[test]
 fn ntlm_with_computer_name() {
-    run_ntlm(NtlmConfig {
-        client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
-    });
+    run_ntlm(
+        NtlmConfig {
+            client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
+        },
+        Some(TARGET_NAME),
+    );
 }
 
 #[test]
 fn ntlm_without_computer_name() {
-    run_ntlm(NtlmConfig {
-        client_computer_name: None,
-    });
+    run_ntlm(
+        NtlmConfig {
+            client_computer_name: None,
+        },
+        Some(TARGET_NAME),
+    );
+}
+
+#[test]
+fn ntlm_without_target_name() {
+    run_ntlm(
+        NtlmConfig {
+            client_computer_name: None,
+        },
+        None,
+    );
 }
