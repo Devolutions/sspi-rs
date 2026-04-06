@@ -50,8 +50,10 @@ pub struct SystemSmartCardInfo {
 /// The PIN code must be UTF-16 encoded.
 #[instrument(level = "trace", ret)]
 pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSmartCardInfo> {
+    use cryptoki::context::CInitializeFlags;
+
     let pkcs11 = Pkcs11::new(pkcs11_module)?;
-    pkcs11.initialize(CInitializeArgs::OsThreads)?;
+    pkcs11.initialize(CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK))?;
 
     let username = utf16_bytes_to_utf8_string(username)?;
 

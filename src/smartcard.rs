@@ -148,8 +148,10 @@ impl SmartCard {
     /// Creates a new [SmartCard] instance with the system provided smart card inside.
     #[cfg(not(target_arch = "wasm32"))]
     fn new_system_provided(pkcs11_module_path: &Path, user_pin: Secret<Vec<u8>>, reader_name: String) -> Result<Self> {
+        use cryptoki::context::CInitializeFlags;
+
         let pkcs11 = Pkcs11::new(pkcs11_module_path)?;
-        pkcs11.initialize(CInitializeArgs::OsThreads)?;
+        pkcs11.initialize(CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK))?;
 
         Ok(Self {
             smart_card_type: SmartCardApi::Pkcs11 {
@@ -190,7 +192,7 @@ impl SmartCard {
                 let session = pkcs11_module.open_ro_session(slot)?;
 
                 let pin = String::from_utf8(self.pin.as_ref().to_vec())?;
-                let pin = AuthPin::new(pin);
+                let pin = AuthPin::new(pin.into());
                 session.login(UserType::User, Some(&pin))?;
 
                 let objects = session.find_objects(&[
