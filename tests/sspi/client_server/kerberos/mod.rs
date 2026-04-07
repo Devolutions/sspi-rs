@@ -709,8 +709,12 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
         keys,
         users,
         Validators {
-            as_req: Box::new(|_as_req| {}),
-            tgs_req: Box::new(|_tgs_req| {}),
+            as_req: Box::new(|_as_req| {
+                panic!("AS_REQ should not be sent when the SPN is an IP address");
+            }),
+            tgs_req: Box::new(|_tgs_req| {
+                panic!("TGS_REQ should not be sent when the SPN is an IP address");
+            }),
         },
     );
     let mut network_client = NetworkClientMock { kdc };
