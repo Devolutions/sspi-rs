@@ -218,7 +218,6 @@ fn run_kerberos(
     let mut client_in_token = Vec::new();
 
     for step in 0..steps {
-        println!("----------------------");
         let (client_status, token) = initialize_security_context(
             client,
             client_credentials_handle,
@@ -228,12 +227,9 @@ fn run_kerberos(
             network_client,
         );
 
-        println!("client status: {client_status:?}, token: {token:?}");
-
         context_validator.validate_client(step, client);
 
         if client_status == SecurityStatus::Ok {
-            println!("token when client is finished: {token:?}");
             if !token.is_empty() {
                 accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
             }
@@ -247,8 +243,6 @@ fn run_kerberos(
         let (_, token) =
             accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
         client_in_token = token;
-
-        println!("client {client_in_token:?}")
     }
 
     panic!("Kerberos authentication should not exceed {steps} steps");
@@ -690,4 +684,104 @@ fn spnego_kerberos_server_ntlm_fallback() {
     let negotiated_protocol = negotiate.negotiated_protocol();
 
     assert!(matches!(negotiated_protocol, NegotiatedProtocol::Ntlm(_)),);
+}
+
+// This test ensures that the client falls back to NTLM when the SPN is an IP address, which is not supported by Kerberos.
+#[test]
+fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
+    let KrbEnvironment {
+        realm,
+        credentials,
+        keys,
+        users,
+        target_name: _,
+        target_service_name,
+    } = init_krb_environment();
+
+    let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+
+    let identity_1 = credentials.to_auth_identity().unwrap();
+    let mut identity_2 = identity_1.clone();
+    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+
+    let kdc = KdcMock::new(
+        realm,
+        keys,
+        users,
+        Validators {
+            as_req: Box::new(|_as_req| {}),
+            tgs_req: Box::new(|_tgs_req| {}),
+        },
+    );
+    let mut network_client = NetworkClientMock { kdc };
+
+    let client_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
+    };
+    let spnego_client = Negotiate::new_client(NegotiateConfig::new(
+        Box::new(client_config.clone()),
+        Some(String::from("kerberos,ntlm")),
+        CLIENT_COMPUTER_NAME.into(),
+    ))
+    .unwrap();
+
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+
+    let server_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
+    };
+    let server_properties = ServerProperties {
+        mech_types: MechTypeList::from(Vec::new()),
+        max_time_skew: MAX_TIME_SKEW,
+        ticket_decryption_key: Some(ticket_decryption_key.into()),
+        service_name: target_service_name,
+        user: Some(credentials.clone()),
+        client: None,
+        authenticators_cache: HashSet::new(),
+    };
+    let kerberos_server_config = KerberosServerConfig {
+        kerberos_config: server_config,
+        server_properties,
+    };
+    let spnego_server = Negotiate::new_server(
+        NegotiateConfig::new(
+            Box::new(kerberos_server_config),
+            Some(String::from("kerberos,ntlm")),
+            SERVER_COMPUTER_NAME.into(),
+        ),
+        vec![identity_1, identity_2],
+    )
+    .unwrap();
+
+    let mut client_credentials_handle = Some(credentials.clone());
+    let mut server_credentials_handle = Some(credentials);
+
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::USE_SESSION_KEY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::USE_SESSION_KEY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+
+    run_kerberos(
+        &mut SspiContext::Negotiate(spnego_client),
+        &mut client_credentials_handle,
+        client_flags,
+        // The client must fallback to NTLM when the SPN is an IP address.
+        "TERMSRV/192.168.1.104",
+        &mut SspiContext::Negotiate(spnego_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+        3,
+        SpnegoKerberosNtlmFallbackValidator,
+    );
 }
