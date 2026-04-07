@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check formatting
         shell: pwsh
@@ -43,7 +43,7 @@ jobs:
             runner: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Compiling the ffi module is enough to lint the whole sspi workspace
       - name: Check clippy
@@ -121,7 +121,7 @@ jobs:
             additional-args: --features tsssp
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Test
         env:
@@ -136,7 +136,7 @@ jobs:
       SSPI_RS_IS_RUNNING_TESTS: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # NOTE: Pinned to a specific nightly version for reproducibility.
       # Update this manually on a regular basis.
@@ -154,7 +154,7 @@ jobs:
     needs: formatting
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Prepare runner
         run: sudo apt-get install wabt

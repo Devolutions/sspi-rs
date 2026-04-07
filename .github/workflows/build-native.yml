@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get version
         id: get-version
@@ -66,7 +66,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure Android NDK
         uses: Devolutions/actions-public/cargo-android-ndk@v1
@@ -323,14 +323,14 @@ jobs:
           }
 
       - name: Upload native components
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-${{matrix.os}}-${{matrix.arch}}-${{matrix.build}}
           path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
 
       - name: Upload debug symbols
         if: matrix.build == 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-${{matrix.os}}-${{matrix.arch}}-${{matrix.build}}-symbols
           path: symbols/${{matrix.os}}-${{matrix.arch}}
@@ -347,7 +347,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup CCTools
         uses: Devolutions/actions-public/setup-cctools@v1
@@ -376,7 +376,7 @@ jobs:
           version: "18.1.8"
 
       - name: Download native components
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dependencies/runtimes
 
@@ -487,14 +487,14 @@ jobs:
           }
 
       - name: Upload native components
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-${{ matrix.os }}-universal-${{ matrix.build }}
           path: dependencies/runtimes/${{ matrix.os }}-universal
 
       - name: Upload universal debug symbols
         if: matrix.build == 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-${{ matrix.os }}-universal-${{ matrix.build }}-symbols
           path: symbols/${{ matrix.os }}-universal

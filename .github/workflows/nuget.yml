@@ -64,7 +64,7 @@ jobs:
 
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Prepare dependencies
         shell: pwsh
@@ -72,7 +72,7 @@ jobs:
           New-Item -ItemType Directory -Path "dependencies/runtimes" | Out-Null
 
       - name: Download native components
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dependencies/runtimes
 
@@ -102,7 +102,7 @@ jobs:
           dotnet build .\ffi\dotnet\Devolutions.Sspi.sln -o package
 
       - name: Upload managed components
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-nupkg
           path: package/*.nupkg
@@ -120,7 +120,7 @@ jobs:
 
     steps:
       - name: Download NuGet package artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sspi-nupkg
           path: package
@@ -163,7 +163,7 @@ jobs:
 
     steps:
       - name: Download all symbol artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: sspi-*-release-symbols
@@ -208,7 +208,7 @@ jobs:
           Write-Host "Created symbols archive: $ZipName"
 
       - name: Upload symbols zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sspi-symbols-zip
           path: Devolutions.Sspi.*.symbols.zip
@@ -227,13 +227,13 @@ jobs:
 
     steps:
       - name: Download NuGet package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sspi-nupkg
           path: release-assets
 
       - name: Download symbols zip
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sspi-symbols-zip
           path: release-assets
