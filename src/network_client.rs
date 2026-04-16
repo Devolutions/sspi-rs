@@ -54,7 +54,8 @@ pub trait NetworkClient: Send + Sync {
 #[cfg(feature = "network_client")]
 pub mod reqwest_network_client {
     use std::io::{Read, Write};
-    use std::net::{IpAddr, Ipv4Addr, TcpStream, UdpSocket};
+    use std::net::{IpAddr, Ipv4Addr, TcpStream, ToSocketAddrs, UdpSocket};
+    use std::time::Duration;
 
     use byteorder::{BigEndian, ReadBytesExt};
     use url::Url;
@@ -63,14 +64,38 @@ pub mod reqwest_network_client {
     use crate::generator::NetworkRequest;
     use crate::{Error, ErrorKind, Result};
 
+    // Per-KDC connection timeout. MIT krb5 defaults to 3s; Windows uses 5s.
+    const KDC_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
     #[derive(Debug, Clone, Default)]
     pub struct ReqwestNetworkClient;
 
     impl ReqwestNetworkClient {
         fn send_tcp(&self, url: &Url, data: &[u8]) -> Result<Vec<u8>> {
             let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
-            let mut stream = TcpStream::connect(addr)
+            let addrs = addr
+                .to_socket_addrs()
                 .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}")))?;
+            let mut last_err = Error::new(
+                ErrorKind::NoAuthenticatingAuthority,
+                "no KDC addresses to connect to".to_owned(),
+            );
+            let mut connected = None;
+            for addr in addrs {
+                debug!(%addr, "attempting KDC TCP connect");
+                match TcpStream::connect_timeout(&addr, KDC_CONNECT_TIMEOUT) {
+                    Ok(s) => {
+                        debug!(%addr, "KDC TCP connect succeeded");
+                        connected = Some(s);
+                        break;
+                    }
+                    Err(e) => {
+                        debug!(%addr, error = %e, "KDC TCP connect failed");
+                        last_err = Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}"));
+                    }
+                }
+            }
+            let mut stream = connected.ok_or(last_err)?;
 
             stream
                 .write(data)
@@ -94,14 +119,21 @@ pub mod reqwest_network_client {
             let port =
                 portpicker::pick_unused_port().ok_or_else(|| Error::new(ErrorKind::InternalError, "No free ports"))?;
             let udp_socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::LOCALHOST), port))?;
+            udp_socket
+                .set_read_timeout(Some(KDC_CONNECT_TIMEOUT))
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}")))?;
 
             let addr = format!("{}:{}", url.host_str().unwrap_or_default(), url.port().unwrap_or(88));
-            udp_socket.send_to(data, addr)?;
+            udp_socket
+                .send_to(data, addr)
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}")))?;
 
             // 48 000 bytes: default maximum token len in Windows
             let mut buf = vec![0; 0xbb80];
 
-            let n = udp_socket.recv(&mut buf)?;
+            let n = udp_socket
+                .recv(&mut buf)
+                .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}")))?;
 
             let mut reply_buf = Vec::with_capacity(n + 4);
             reply_buf.extend_from_slice(&(n as u32).to_be_bytes());
