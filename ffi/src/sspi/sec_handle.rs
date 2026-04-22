@@ -1747,7 +1747,7 @@ mod tests {
     use std::ffi::CStr;
     use std::ptr::{self, null, null_mut};
 
-    use libc::c_void;
+    use libc::{c_ulonglong, c_void};
     use sspi::Utf16StringExt;
     use widestring::Utf16String;
 
@@ -2251,5 +2251,53 @@ mod tests {
 
         let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
         assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn query_context_session_key() {
+        use std::slice::from_raw_parts;
+
+        use sspi::credssp::SspiContext;
+
+        use crate::sspi::sec_handle::{QueryContextAttributesW, SECPKG_ATTR_SESSION_KEY, SspiHandle};
+        use crate::sspi::sspi_data_types::SecPkgContextSessionKey;
+        use crate::utils::into_raw_ptr;
+
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+
+        // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
+        // We use Kerberos fake_client because we need established security context to query the session key.
+        let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
+        let sspi_context_ptr = into_raw_ptr(sspi_context);
+        let mut sec_handle = SecHandle {
+            dw_lower: sspi_context_ptr as c_ulonglong,
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+        };
+
+        let mut session_key = SecPkgContextSessionKey {
+            session_key_len: 0,
+            session_key: null_mut(),
+        };
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut sec_handle,
+                SECPKG_ATTR_SESSION_KEY,
+                ptr::from_mut(&mut session_key).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        // Print the session key
+        let key = unsafe { from_raw_parts(session_key.session_key, session_key.session_key_len as usize) };
+        println!("Session key length: {}", session_key.session_key_len);
+        println!("Session key: {:02x?}", key);
+
+        // Free the key buffer using FreeContextBuffer
+        let status = unsafe { FreeContextBuffer(session_key.session_key.cast()) };
+        assert_eq!(status, 0);
+
+        let _ = unsafe { Box::from_raw(sec_handle.dw_upper as *mut String) };
+        let _ = unsafe { Box::from_raw(sec_handle.dw_lower as *mut SspiHandle) };
     }
 }
