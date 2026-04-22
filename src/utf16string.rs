@@ -266,7 +266,10 @@ mod tests {
         let result = Utf16String::from_bytes_le(bytes);
 
         assert!(result.is_err());
-        assert_eq!(result.expect_err("result is err").error_type, ErrorKind::InternalError);
+        assert_eq!(
+            result.expect_err("result is err").error_type,
+            ErrorKind::InvalidParameter
+        );
     }
 
     #[test]
@@ -322,7 +325,10 @@ mod tests {
         let result = Utf16String::from_bytes_le_truncate(bytes);
 
         assert!(result.is_err());
-        assert_eq!(result.expect_err("result is err").error_type, ErrorKind::InternalError);
+        assert_eq!(
+            result.expect_err("result is err").error_type,
+            ErrorKind::InvalidParameter
+        );
     }
 
     #[test]

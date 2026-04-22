@@ -2444,12 +2444,12 @@ impl From<cryptoki::error::Error> for Error {
 
 impl From<widestring::error::Utf16Error> for Error {
     fn from(value: widestring::error::Utf16Error) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-16 error: {value}"))
+        Self::new(ErrorKind::InvalidParameter, format!("UTF-16 error: {value}"))
     }
 }
 
 impl From<widestring::error::ContainsNul<u16>> for Error {
     fn from(value: widestring::error::ContainsNul<u16>) -> Self {
-        Self::new(ErrorKind::InternalError, format!("UTF-16 error: {value}"))
+        Self::new(ErrorKind::InvalidParameter, format!("UTF-16 error: {value}"))
     }
 }
