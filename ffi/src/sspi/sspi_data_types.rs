@@ -100,7 +100,7 @@ pub struct SecPkgContextConnectionInfo {
 
 /// [_SecPkgContext_SessionKey](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_sessionkey)
 ///
-/// ```not_rust
+/// ```c
 /// typedef struct _SecPkgContext_SessionKey {
 ///   unsigned long SessionKeyLength;
 ///   unsigned char *SessionKey;
