@@ -113,7 +113,6 @@ serde = "1"
 byteorder = "1.5"
 crypto-bigint = { version = "=0.7.0-rc.18", default-features = false, features = ["alloc"] }
 hmac = "=0.13.0-rc.3"
-widestring = "1.2"
 
 [features]
 default = ["aws-lc-rs"]
@@ -161,7 +160,7 @@ picky-asn1 = { workspace = true, features = ["time_conversion"] }
 byteorder.workspace = true
 crypto-bigint.workspace = true
 hmac.workspace = true
-widestring.workspace = true
+widestring = "1.2"
 
 url = "2.5"
 
