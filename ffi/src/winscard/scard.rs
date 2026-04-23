@@ -161,6 +161,7 @@ pub unsafe extern "system" fn SCardConnectW(
         // - `sz_reader` is guaranteed to be non-null due to the prior check.
         // - `sz_reader` is guaranteed to be properly aligned for `u16` access (upheld by the caller per the function's safety contract).
         // - The memory region `sz_reader` contains a valid null-terminator at the end of string.
+        // - The memory region `sz_reader` is properly aligned for `u16`, per safety preconditions.
         // - The memory region `sz_reader` points to is valid for reads of u16 code units up to and including the null-terminating u16.
         unsafe { U16CString::from_ptr_str(sz_reader) }
             .to_string()

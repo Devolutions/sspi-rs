@@ -436,7 +436,8 @@ pub type QuerySecurityPackageInfoFnA = unsafe extern "system" fn(*const SecChar,
 ///
 /// # Safety
 ///
-/// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name.
+/// `p_package_name` must be a non-null pointer to a valid, null-terminated C string representing package name
+/// and must be properly aligned for `u16`.
 /// `pp_package_name` must be a pointer that is valid both for reads and writes.
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityPackageInfoW"))]
