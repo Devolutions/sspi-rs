@@ -29,7 +29,7 @@ use picky_krb::messages::{
     KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng, TryRngCore};
+use rand_core::{Rng as _, SeedableRng as _, TryRng as _};
 use sspi::kerberos::KERBEROS_VERSION;
 use time::{Duration, OffsetDateTime};
 

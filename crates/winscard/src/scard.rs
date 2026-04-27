@@ -590,7 +590,7 @@ mod tests {
     use picky::signature::SignatureAlgorithm;
     use proptest::prelude::*;
     use proptest::{collection, option, prop_compose};
-    use rand::Rng;
+    use rand::RngExt;
     use rand::distr::Uniform;
     use rsa::BoxedUint;
     use rsa::traits::PublicKeyParts;
