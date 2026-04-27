@@ -28,7 +28,7 @@ use picky_krb::negoex::messages::{Exchange, Nego, Verify};
 use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
 use picky_krb::pkinit::PaPkAsRep;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use uuid::Uuid;
 pub use validate::validate_signed_data;
 
@@ -851,14 +851,14 @@ impl SspiEx for Pku2u {
 
 #[cfg(test)]
 mod tests {
-    use crypto_bigint::rand_core::TryRngCore;
+    use crypto_bigint::rand_core::TryRng;
     use picky::key::PrivateKey;
     use picky_asn1_x509::Certificate;
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::negoex::RANDOM_ARRAY_SIZE;
     use rand::rngs::{StdRng, SysRng};
-    use rand::{RngCore, SeedableRng};
+    use rand_core::{Rng as _, SeedableRng as _};
     use uuid::Uuid;
 
     use super::Pku2uMode;

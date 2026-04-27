@@ -19,7 +19,7 @@ use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::KdcProxyMessage;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use url::Url;
 
 pub use self::client::initialize_security_context;

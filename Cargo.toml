@@ -79,16 +79,17 @@ unused_result_ok = "warn"
 uuid = { version = "1.18", default-features = false }
 tracing = { version = "0.1",  default-features = false }
 bitflags = "2.11"
-rand = "0.10.0-rc.6"
+rand = "0.10"
+rand_core = "0.10"
 getrandom = "0.3"
 cfg-if = "1"
 time = { version = "0.3", default-features = false }
-sha1 = { version = "=0.11.0-rc.3", default-features = false }
-sha2 = "=0.11.0-rc.3"
+sha1 = { version = "0.11", default-features = false }
+sha2 = "0.11"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { version = "=7.0.0-rc.22", default-features = false }
+picky = { version = "=7.0.0-rc.23", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
@@ -104,15 +105,15 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
-rsa = { version = "=0.10.0-rc.12", default-features = false }
+rsa = { version = "=0.10.0-rc.17", default-features = false }
 base64 = "0.22"
 whoami = "2.1"
 tracing-subscriber = "0.3"
 proptest = "1.6"
 serde = "1"
 byteorder = "1.5"
-crypto-bigint = { version = "=0.7.0-rc.18", default-features = false, features = ["alloc"] }
-hmac = "=0.13.0-rc.3"
+crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
+hmac = "0.13"
 
 [features]
 default = ["aws-lc-rs"]
@@ -139,6 +140,7 @@ __install-crypto-provider = []
 [dependencies]
 bitflags.workspace = true
 rand.workspace = true
+rand_core.workspace = true
 getrandom.workspace = true
 cfg-if.workspace = true
 picky.workspace = true
@@ -164,7 +166,7 @@ widestring = "1.2"
 
 url = "2.5"
 
-md-5 = "=0.11.0-rc.2"
+md-5 = "0.11"
 md4 = "0.10"
 crypto-mac = "0.11"
 oid = "0.2"
@@ -200,29 +202,29 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
-digest = "=0.11.0-rc.5"
-block-buffer = "0.12.0"
-crypto-common = "=0.2.0-rc.8"
+digest = "0.11"
+crypto-common = "0.2"
 pkcs1 = "=0.8.0-rc.4"
-pkcs8 = "=0.11.0-rc.8"
-der = "=0.8.0-rc.10"
-spki = "=0.8.0-rc.4"
+pkcs8 = "=0.11.0-rc.11"
+der = "0.8"
 pem-rfc7468 = "1.0"
-signature = "=3.0.0-rc.6"
-p256 = "=0.14.0-rc.3"
-primefield = "=0.14.0-rc.3"
-primeorder = "=0.14.0-rc.3"
-p384 = "=0.14.0-rc.3"
-p521 = "=0.14.0-rc.3"
-crypto-primes = "=0.7.0-pre.6"
+signature = "=3.0.0-rc.10"
+p256 = "=0.14.0-rc.9"
+primefield = "=0.14.0-rc.9"
+primeorder = "=0.14.0-rc.9"
+p384 = "=0.14.0-rc.9"
+p521 = "=0.14.0-rc.9"
 
 # "Zero-knowledge Cryptography in Rust" crates
 ff = { version = "=0.14.0-pre.0", default-features = false }
 group = "=0.14.0-pre.0"
+rustcrypto-ff = "=0.14.0-rc.1"
+rustcrypto-ff_derive = "=0.14.0-rc.0"
+rustcrypto-group = "=0.14.0-rc.1"
 
 # "dalek cryptography" crates
-ed25519-dalek = "=3.0.0-pre.4"
-curve25519-dalek = "=5.0.0-pre.4"
+ed25519-dalek = "=3.0.0-pre.6"
+curve25519-dalek = "=5.0.0-pre.6"
 
 [dev-dependencies]
 base64.workspace = true

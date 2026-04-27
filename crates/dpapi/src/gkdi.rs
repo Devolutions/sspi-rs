@@ -4,7 +4,7 @@ use dpapi_pdu::gkdi::{GroupKeyEnvelope, KDF_ALGORITHM_NAME, KdfParameters, KeyId
 use dpapi_pdu::rpc::SyntaxId;
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use thiserror::Error;
 use uuid::uuid;
 

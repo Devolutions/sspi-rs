@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use time::OffsetDateTime;
 
 use crate::channel_bindings::ChannelBindings;

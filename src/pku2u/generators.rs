@@ -25,7 +25,7 @@ use picky_krb::gss_api::{
 };
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoReq, Pku2uNegoReqMetadata};
-use rand::RngCore;
+use rand_core::Rng as _;
 use rand::rngs::StdRng;
 use time::OffsetDateTime;
 
