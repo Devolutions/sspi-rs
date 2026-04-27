@@ -96,7 +96,7 @@ picky-krb = "0.12"
 
 tokio = "1.47"
 ffi-types = { path = "crates/ffi-types" }
-winscard = { version = "0.4", path = "crates/winscard" }
+winscard = { version = "0.3", path = "crates/winscard" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
