@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "sspi"
-version = "0.20.0"
+version = "0.19.3"
 dependencies = [
  "async-dnssd",
  "async-recursion",
@@ -4088,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "winscard"
-version = "0.4.0"
+version = "0.3.1"
 dependencies = [
  "base64",
  "bitflags 2.11.1",

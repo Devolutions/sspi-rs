@@ -6,11 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [[0.4.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.0...winscard-v0.4.0)] - 2026-04-27
+## [[0.3.1](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.0...winscard-v0.3.1)] - 2026-04-27
 
 ### <!-- 4 -->Bug Fixes
 
-- [**breaking**] Remove legacy UTF-16 helpers ([#648](https://github.com/Devolutions/sspi-rs/issues/648)) ([b8f21e1bf3](https://github.com/Devolutions/sspi-rs/commit/b8f21e1bf33eea2f66a1818c3c190bca5be6e568)) 
+- Remove legacy UTF-16 helpers ([#648](https://github.com/Devolutions/sspi-rs/issues/648)) ([b8f21e1bf3](https://github.com/Devolutions/sspi-rs/commit/b8f21e1bf33eea2f66a1818c3c190bca5be6e568)) 
 
 
 
