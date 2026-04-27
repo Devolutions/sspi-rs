@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.20.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.2...sspi-v0.20.0)] - 2026-04-27
+
+### <!-- 4 -->Bug Fixes
+
+- [**breaking**] Remove legacy UTF-16 helpers ([#648](https://github.com/Devolutions/sspi-rs/issues/648)) ([b8f21e1bf3](https://github.com/Devolutions/sspi-rs/commit/b8f21e1bf33eea2f66a1818c3c190bca5be6e568)) 
+
+- Add KDC connect timeout to prevent 75s hang on unreachable KDC ([#647](https://github.com/Devolutions/sspi-rs/issues/647)) ([abb9ffe16d](https://github.com/Devolutions/sspi-rs/commit/abb9ffe16d86941290466c7a53b56d1f0b738f18)) 
+
+
 ## [[0.19.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.19.1...sspi-v0.19.2)] - 2026-03-26
 
 ### <!-- 4 -->Bug Fixes
