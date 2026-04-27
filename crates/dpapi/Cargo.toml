@@ -58,28 +58,15 @@ getrandom = "0.4"
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
-crypto-common = "0.2"
-crypto-bigint = "0.7"
-hkdf = "0.13"
 pkcs8 = "=0.11.0-rc.11"
-der = "0.8"
-pem-rfc7468 = "1.0"
 signature = "=3.0.0-rc.10"
 ecdsa = "=0.17.0-rc.17"
 rfc6979 = "=0.5.0-rc.5"
-aes = "0.9"
 aead = "=0.6.0-rc.10"
-cipher = "0.5"
-inout = "=0.2.2"
-ctr = "0.10"
 ed25519 = "=3.0.0-rc.4"
-cbc = "0.2"
-des = "0.9"
 pbkdf2 = "=0.13.0-rc.10"
-md-5 = "0.11"
 pkcs1 = "=0.8.0-rc.4"
 rsa = { version = "=0.10.0-rc.17", default-features = false }
-sha3 = "0.11"
 ff = { version = "=0.14.0-pre.0", default-features = false }
 group = "=0.14.0-pre.0"
 rustcrypto-ff = "=0.14.0-rc.1"
