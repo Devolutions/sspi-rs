@@ -1,8 +1,8 @@
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
 use crypto_bigint::{BoxedUint, Odd, Resize};
 use picky_krb::crypto::CipherSuite;
-use rand_core::Rng as _;
 use rand::rngs::StdRng;
+use rand_core::Rng as _;
 
 use crate::kerberos::EncryptionParams;
 use crate::{BufferType, Error, ErrorKind, Result, Secret, SecurityBufferFlags, SecurityBufferRef};
