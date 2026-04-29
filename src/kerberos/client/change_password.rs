@@ -1,7 +1,7 @@
 use picky_krb::crypto::CipherSuite;
 use picky_krb::messages::KrbPrivMessage;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 
 use crate::builders::ChangePassword;
 use crate::generator::YieldPointLocal;

@@ -6,7 +6,7 @@ use std::sync::{Arc, LazyLock};
 use async_recursion::async_recursion;
 use picky_asn1_x509::Certificate;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use rustls::client::ClientConfig;
 use rustls::{ClientConnection, Connection};
 

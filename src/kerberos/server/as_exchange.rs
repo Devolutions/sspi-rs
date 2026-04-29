@@ -2,7 +2,7 @@ use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::Ticket;
 use picky_krb::messages::TgtReq;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;

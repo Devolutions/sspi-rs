@@ -2,7 +2,7 @@ macro_rules! kout {
     ($name:ident, $size:ident) => {
         pub(crate) struct $name;
 
-        impl digest::crypto_common::KeySizeUser for $name {
+        impl digest::common::KeySizeUser for $name {
             type KeySize = digest::consts::$size;
         }
     };

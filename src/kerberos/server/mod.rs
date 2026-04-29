@@ -15,7 +15,7 @@ use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalNam
 use picky_krb::gss_api::MechTypeList;
 use picky_krb::messages::{ApRep, ApReq, TgtReq};
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use time::OffsetDateTime;
 
 use self::cache::AuthenticatorsCache;

@@ -8,7 +8,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use ts_request::{NONCE_SIZE, TS_REQUEST_VERSION};
 pub use ts_request::{NStatusCode, TsRequest, read_ts_credentials, write_ts_credentials};
 

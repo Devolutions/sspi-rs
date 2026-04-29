@@ -13,7 +13,7 @@ use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::messages::{ApRep, TgsRep};
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 
 use self::extractors::{
     extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep, extract_session_key_from_tgs_rep,

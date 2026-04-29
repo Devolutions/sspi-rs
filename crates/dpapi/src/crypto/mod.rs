@@ -12,7 +12,7 @@ use picky_asn1_x509::enveloped_data::{ContentEncryptionAlgorithmIdentifier, KeyE
 use picky_asn1_x509::{AesParameters, AlgorithmIdentifierParameters, oids};
 use picky_krb::crypto::aes::AES256_KEY_SIZE;
 use rand::rngs::{StdRng, SysRng};
-use rand::{RngCore, SeedableRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use sspi::modpow;
 use thiserror::Error;
 use uuid::Uuid;
@@ -444,7 +444,7 @@ pub fn compute_kek(
 
         (shared_secret, HashAlg::Sha256)
     } else if secret_algorithm.starts_with("ECDH_P") {
-        use elliptic_curve::sec1::FromEncodedPoint;
+        use elliptic_curve::sec1::FromSec1Point;
         use elliptic_curve::{PublicKey, SecretKey};
 
         let ecdh_pub_key_info: EcdhKey = decode_owned(public_key)?;
@@ -455,8 +455,8 @@ pub fn compute_kek(
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
-                let public_key: p256::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p256::EncodedPoint::from_affine_coordinates(&x, &y, false),
+                let public_key: p256::PublicKey = Option::from(PublicKey::from_sec1_point(
+                    &p256::Sec1Point::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
 
@@ -471,8 +471,8 @@ pub fn compute_kek(
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
-                let public_key: p384::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p384::EncodedPoint::from_affine_coordinates(&x, &y, false),
+                let public_key: p384::PublicKey = Option::from(PublicKey::from_sec1_point(
+                    &p384::Sec1Point::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
                 let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
@@ -486,8 +486,8 @@ pub fn compute_kek(
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
                 let y = Array::try_from(ecdh_pub_key_info.y.to_be_bytes())
                     .map_err(|_| CryptoError::InvalidEllipticCurvePoint)?;
-                let public_key: p521::PublicKey = Option::from(PublicKey::from_encoded_point(
-                    &p521::EncodedPoint::from_affine_coordinates(&x, &y, false),
+                let public_key: p521::PublicKey = Option::from(PublicKey::from_sec1_point(
+                    &p521::Sec1Point::from_affine_coordinates(&x, &y, false),
                 ))
                 .ok_or(CryptoError::InvalidEllipticCurvePoint)?;
                 let secret_key = SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
@@ -554,7 +554,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
         }
         .encode_vec()?)
     } else if secret_algorithm.starts_with("ECDH_P") {
-        use elliptic_curve::sec1::ToEncodedPoint;
+        use elliptic_curve::sec1::ToSec1Point;
 
         let ecdh_pub_key_info: EcdhKey = decode_owned(peer_public_key)?;
 
@@ -562,7 +562,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             EllipticCurve::P256 => {
                 let secret_key = p256::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
-                let point = public_key.to_encoded_point(false);
+                let point = public_key.to_sec1_point(false);
 
                 (
                     BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
@@ -572,7 +572,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             EllipticCurve::P384 => {
                 let secret_key = p384::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
-                let point = public_key.to_encoded_point(false);
+                let point = public_key.to_sec1_point(false);
 
                 (
                     BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
@@ -582,7 +582,7 @@ pub fn compute_public_key(secret_algorithm: &str, private_key: &[u8], peer_publi
             EllipticCurve::P521 => {
                 let secret_key = p521::SecretKey::from_slice(private_key).map_err(CryptoError::from)?;
                 let public_key = secret_key.public_key();
-                let point = public_key.to_encoded_point(false);
+                let point = public_key.to_sec1_point(false);
 
                 (
                     BoxedUint::from_be_slice_vartime(point.x().ok_or(CryptoError::MissingPointCoordinate("x"))?),
