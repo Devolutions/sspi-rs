@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.20.1...sspi-v0.21.0)] - 2026-05-06
+
+### <!-- 4 -->Bug Fixes
+
+- [**breaking**] Remove redundant PKCS#1 padding when signing hashes ([#660](https://github.com/Devolutions/sspi-rs/issues/660)) ([9e8a108f02](https://github.com/Devolutions/sspi-rs/commit/9e8a108f02704fdbcab23d0fadb2c0d3f5514c0e)) 
+
+
+
 ## [[0.20.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.20.0...sspi-v0.20.1)] - 2026-04-29
 
 ### <!-- 7 -->Build
