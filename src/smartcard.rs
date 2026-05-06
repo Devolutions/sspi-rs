@@ -167,7 +167,7 @@ impl SmartCard {
         match &mut self.smart_card_type {
             SmartCardApi::PivEmulated(scard) => {
                 scard.verify_pin(self.pin.as_ref())?;
-                Ok(scard.sign_hashed(&encode_digest(digest)?)?)
+                Ok(scard.sign_hashed(digest)?)
             }
             #[cfg(not(target_arch = "wasm32"))]
             SmartCardApi::Pkcs11 {
