@@ -203,7 +203,7 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
 pkcs1 = "=0.8.0-rc.4"
-pkcs8 = "=0.11.0-rc.11"
+pkcs8 = "=0.11.0"
 signature = "=3.0.0-rc.10"
 p256 = "=0.14.0-rc.9"
 primefield = "=0.14.0-rc.9"
