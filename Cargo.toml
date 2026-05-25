@@ -105,7 +105,7 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
-rsa = { version = "=0.10.0-rc.17", default-features = false }
+rsa = { version = "=0.10.0-rc.18", default-features = false }
 base64 = "0.22"
 whoami = "2.1"
 tracing-subscriber = "0.3"
