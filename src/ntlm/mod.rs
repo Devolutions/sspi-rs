@@ -490,14 +490,19 @@ impl Ntlm {
         sequence_number: u32,
         digest: &[u8; 16],
     ) -> crate::Result<()> {
-        let checksum = if self.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
-            self.send_sealing_key
-                .as_mut()
-                .expect("NTLM send_sealing_key must be set")
-                .process(&digest[0..SIGNATURE_CHECKSUM_SIZE])
-        } else {
-            digest[0..SIGNATURE_CHECKSUM_SIZE].to_vec()
-        };
+        let checksum: [u8; SIGNATURE_CHECKSUM_SIZE] =
+            if self.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+                self.send_sealing_key
+                    .as_mut()
+                    .expect("NTLM send_sealing_key must be set")
+                    .process(&digest[0..SIGNATURE_CHECKSUM_SIZE])
+                    .try_into()
+                    .expect("checksum must be SIGNATURE_CHECKSUM_SIZE bytes long")
+            } else {
+                digest[0..SIGNATURE_CHECKSUM_SIZE]
+                    .try_into()
+                    .expect("checksum must be SIGNATURE_CHECKSUM_SIZE bytes long")
+            };
 
         let signature_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
         if signature_buffer.buf_len() < SIGNATURE_SIZE {
@@ -510,14 +515,19 @@ impl Ntlm {
     }
 
     fn check_signature(&mut self, sequence_number: u32, digest: &[u8; 16], signature: &[u8]) -> crate::Result<()> {
-        let checksum = if self.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
-            self.recv_sealing_key
-                .as_mut()
-                .expect("NTLM recv_sealing_key must be set")
-                .process(&digest[0..SIGNATURE_CHECKSUM_SIZE])
-        } else {
-            digest[0..SIGNATURE_CHECKSUM_SIZE].to_vec()
-        };
+        let checksum: [u8; SIGNATURE_CHECKSUM_SIZE] =
+            if self.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
+                self.recv_sealing_key
+                    .as_mut()
+                    .expect("NTLM recv_sealing_key must be set")
+                    .process(&digest[0..SIGNATURE_CHECKSUM_SIZE])
+                    .try_into()
+                    .expect("checksum must be SIGNATURE_CHECKSUM_SIZE bytes long")
+            } else {
+                digest[0..SIGNATURE_CHECKSUM_SIZE]
+                    .try_into()
+                    .expect("checksum must be SIGNATURE_CHECKSUM_SIZE bytes long")
+            };
 
         let expected_signature = compute_signature(&checksum, sequence_number);
 
