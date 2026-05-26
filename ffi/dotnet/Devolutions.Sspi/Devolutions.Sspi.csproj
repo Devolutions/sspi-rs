@@ -11,6 +11,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
+    <Configurations>Debug;Release;PkgTest</Configurations>
+  </PropertyGroup>
+
+  <!-- This build configuration creates a package for the PackageTests to pick up: its version will always be the latest -->
+  <PropertyGroup Condition="'$(Configuration)'=='PkgTest'">
+    <Version>3000.0.0-$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</Version>
   </PropertyGroup>
 
   <PropertyGroup>

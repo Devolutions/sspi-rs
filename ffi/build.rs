@@ -128,4 +128,42 @@ fn main() {
         fs::write(&merged_def_file, merged_content).expect("Failed to write merged .def file");
         println!("cargo:rustc-link-arg=/DEF:{}", merged_def_file.display());
     }
+
+    if !is_running_tests {
+        let mut csbindgen_builder = csbindgen::Builder::default()
+            .input_extern_file("src/logging.rs")
+            .input_extern_file("src/sspi/common.rs")
+            .input_extern_file("src/sspi/sec_handle.rs")
+            .input_extern_file("src/sspi/sec_pkg_info.rs")
+            .input_extern_file("src/sspi/sec_winnt_auth_identity.rs")
+            .input_extern_file("src/sspi/security_tables.rs")
+            .input_extern_file("src/sspi/sec_buffer.rs")
+            .input_extern_file("src/sspi/sspi_data_types.rs");
+
+        #[cfg(feature = "dpapi")]
+        {
+            csbindgen_builder = csbindgen_builder
+                .input_extern_file("src/dpapi/mod.rs")
+                .input_extern_file("src/dpapi/api.rs");
+        }
+
+        #[cfg(feature = "scard")]
+        {
+            csbindgen_builder = csbindgen_builder
+                .input_extern_file("src/winscard/mod.rs")
+                .input_extern_file("src/winscard/scard_context.rs")
+                .input_extern_file("src/winscard/scard.rs")
+                .input_extern_file("../crates/ffi-types/src/winscard/functions.rs")
+                .input_extern_file("../crates/ffi-types/src/winscard/mod.rs")
+                .input_extern_file("../crates/ffi-types/src/common.rs");
+        }
+
+        csbindgen_builder
+            .csharp_namespace("Devolutions.Sspi")
+            .csharp_class_name("Sspi")
+            .csharp_class_accessibility("public")
+            .csharp_dll_name("DevolutionsSspi")
+            .generate_csharp_file("dotnet/Devolutions.Sspi/Sspi.g.cs")
+            .expect("generate C# bindings");
+    }
 }
