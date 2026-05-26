@@ -49,6 +49,7 @@ fn encrypt_message_crypts_data() {
 #[test]
 fn encrypt_message_correct_computes_digest() {
     let mut context = Ntlm::new();
+    context.flags.set(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH, true);
     context.our_seq_number = TEST_SEQ_NUM;
     context.send_signing_key = SIGNING_KEY.into();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
@@ -66,6 +67,30 @@ fn encrypt_message_correct_computes_digest() {
 
     assert_eq!(result, SecurityStatus::Ok);
     assert_eq!(expected, &signature.data()[4..12]);
+}
+
+#[test]
+fn encrypt_message_correct_computes_unencrypted_digest() {
+    // When the NTLM_SSP_NEGOTIATE_KEY_EXCH flag is not set, the digest should be computed without encryption (HMAC only).
+    let digest = &[70, 148, 67, 212, 16, 164, 169, 167];
+
+    let mut context = Ntlm::new();
+    context.our_seq_number = TEST_SEQ_NUM;
+    context.send_signing_key = SIGNING_KEY.into();
+    context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
+
+    let mut token = [0; 100];
+    let mut data = TEST_DATA.to_vec();
+    let mut buffers = vec![
+        SecurityBufferRef::token_buf(token.as_mut_slice()),
+        SecurityBufferRef::data_buf(data.as_mut_slice()),
+    ];
+
+    let result = context.encrypt_message(EncryptionFlags::empty(), &mut buffers).unwrap();
+    let signature = SecurityBufferRef::find_buffer(&buffers, BufferType::Token).unwrap();
+
+    assert_eq!(result, SecurityStatus::Ok);
+    assert_eq!(digest, &signature.data()[4..12]);
 }
 
 #[test]
@@ -93,6 +118,7 @@ fn encrypt_message_writes_seq_num_to_signature() {
 #[test]
 fn decrypt_message_decrypts_data() {
     let mut context = Ntlm::new();
+    context.flags.set(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH, true);
     context.remote_seq_number = TEST_SEQ_NUM;
     context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
@@ -113,8 +139,30 @@ fn decrypt_message_decrypts_data() {
 }
 
 #[test]
+fn decrypt_message_does_not_fail_on_unencrypted_signature() {
+    // When the NTLM_SSP_NEGOTIATE_KEY_EXCH flag is not set, the digest should be computed without encryption (HMAC only).
+    let signature = [1, 0, 0, 0, 70, 148, 67, 212, 16, 164, 169, 167, 210, 2, 150, 73];
+
+    let mut context = Ntlm::new();
+    context.remote_seq_number = TEST_SEQ_NUM;
+    context.recv_signing_key = SIGNING_KEY.into();
+    context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
+
+    let mut encrypted_test_data = ENCRYPTED_TEST_DATA.to_vec();
+    let mut signature_test_data = signature.to_vec();
+
+    let mut buffers = vec![
+        SecurityBufferRef::data_buf(&mut encrypted_test_data),
+        SecurityBufferRef::token_buf(&mut signature_test_data),
+    ];
+
+    context.decrypt_message(&mut buffers).unwrap();
+}
+
+#[test]
 fn decrypt_message_does_not_fail_on_correct_signature() {
     let mut context = Ntlm::new();
+    context.flags.set(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH, true);
     context.remote_seq_number = TEST_SEQ_NUM;
     context.recv_signing_key = SIGNING_KEY.into();
     context.recv_sealing_key = Some(Rc4::new(&SEALING_KEY));
