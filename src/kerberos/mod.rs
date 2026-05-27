@@ -678,8 +678,8 @@ pub mod test_data {
     use picky_krb::gss_api::MechTypeList;
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
-    use crate::Kerberos;
     use crate::kerberos::ServerProperties;
+    use crate::{AuthIdentityBuffers, CredentialsBuffers, Kerberos, Secret, Utf16String, ZeroizedUtf16String};
 
     const SESSION_KEY: &[u8] = &[
         21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79, 112, 46,
@@ -697,7 +697,11 @@ pub mod test_data {
                 kdc_url: None,
                 client_computer_name: "hostname".into(),
             },
-            auth_identity: None,
+            auth_identity: Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
+                user: Utf16String::from_str("fake_user"),
+                domain: Utf16String::from_str("FAKE_DOMAIN"),
+                password: Secret::new(ZeroizedUtf16String(Utf16String::from_str("fake_password"))),
+            })),
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
                 session_key: Some(SESSION_KEY.to_vec().into()),
