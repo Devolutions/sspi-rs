@@ -24,9 +24,10 @@ impl NegotiateConfig {
     /// Security packages are specified as a comma-separated list of package names in lowercase.
     /// If the security package is not allowed, then prepend '!' to its name. Examples:
     ///
-    /// - "kerberos,ntlm" - allows both Kerberos and NTLM.
-    /// - "kerberos,!ntlm" - allows Kerberos but not NTLM. Forces the use of Kerberos.
-    /// - "!kerberos,ntlm" - allows NTLM but not Kerberos. Forces the use of NTLM.
+    /// - "kerberos,ntlm" - allows both Kerberos and NTLM but not PKU2U.
+    /// - "kerberos,!ntlm" - allows Kerberos but not NTLM and not PKU2U. Forces the use of Kerberos.
+    /// - "!kerberos,ntlm" - allows NTLM but not Kerberos and not PKU2U. Forces the use of NTLM.
+    /// - "!ntlm" - allows Kerberos and PKU2U but not NTLM.
     ///
     /// If `package_list` is None, then all packages are allowed and Kerberos is preferred.
     pub fn new(
