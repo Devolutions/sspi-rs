@@ -17,7 +17,7 @@ use sspi::ntlm::NtlmConfig;
 use sspi::{
     CertContext, ClientRequestFlags, ConnectionInfo, Credentials, CredentialsBuffers, DataRepresentation, Error,
     ErrorKind, Kerberos, Negotiate, NegotiateConfig, Ntlm, PackageInfo, Result, Secret, Sspi, SspiImpl, StreamSizes,
-    U16CString, kerberos, negotiate, ntlm, pku2u,
+    U16CString, Utf16String, Utf16StringExt, kerberos, negotiate, ntlm, pku2u,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::Security::Cryptography::{
@@ -1033,6 +1033,10 @@ unsafe fn query_context_attributes_common(
                     libc::malloc(session_key_len)
                 }.cast::<u8>();
 
+                if buf.is_null() {
+                    return ErrorKind::InsufficientMemory.to_u32().unwrap();
+                }
+
                 // SAFETY:
                 // - `session_key.as_ref().as_ptr()` pointer is valid for reads of `session_key_len` bytes,
                 //   because it is Rust-allocated vector of u8 values with size of `session_key_len`.
@@ -1057,13 +1061,18 @@ unsafe fn query_context_attributes_common(
 
                 if is_wide {
                     let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesW>();
-                    let wide_username: Vec<u16> = sspi_names.username.account_name().encode_utf16().chain(std::iter::once(0)).collect();
+                    // We use `.inner()` instead of `.account_name()` because we want to return the full username, including the domain part.
+                    let wide_username = Utf16String::from_str(sspi_names.username.inner()).into_vec_with_nul();
                     let username_len = wide_username.len();
 
                     // SAFETY: Memory allocation is safe.
                     let buf = unsafe {
                         libc::malloc(username_len * size_of::<u16>())
                     }.cast::<u16>();
+
+                    if buf.is_null() {
+                        return ErrorKind::InsufficientMemory.to_u32().unwrap();
+                    }
 
                     // SAFETY:
                     // - `wide_username.as_ptr()` pointer is valid for reads of `username_len` u16 values,
@@ -1085,13 +1094,18 @@ unsafe fn query_context_attributes_common(
                 } else {
                     let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesA>();
 
-                    let username = sspi_names.username.account_name();
+                    // We use `.inner()` instead of `.account_name()` because we want to return the full username, including the domain part.
+                    let username = sspi_names.username.inner();
 
                     // SAFETY: Memory allocation is safe.
                     let buf = unsafe {
                         // +1 for the null terminator.
                         libc::malloc(username.len() + 1)
                     }.cast::<u8>();
+
+                    if buf.is_null() {
+                        return ErrorKind::InsufficientMemory.to_u32().unwrap();
+                    }
 
                     // SAFETY:
                     // - `username.as_ptr()` pointer is valid for reads of `username.len()` bytes,
